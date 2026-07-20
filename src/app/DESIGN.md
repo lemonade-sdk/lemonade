@@ -15,11 +15,11 @@ This document is the contract for Lemonade's desktop and web UI. It describes th
 
 ### Source of truth and naming
 
-- `src/styles/tokens.css` is the only source of visual constants.
+- `src/styles/tokens.css` is the source of shared and repeated visual constants.
 - `src/styles/styles.css` implements components and feature layout with those tokens.
 - Shared component classes use the `workspace-*` prefix. Feature classes may refine a shared component but must not redefine its typography, spacing scale, surface hierarchy, focus treatment, or control shape.
 - React implementations of the shared panels and controls live in `src/components/WorkspacePanels.tsx`, `WorkspaceRailHeader.tsx`, and `WorkspaceMobileMenuButton.tsx`.
-- Dynamic values such as progress percentage, measured resizer position, chart geometry, and backend identity may be passed through inline custom properties. Fixed visual values must use tokens or classes.
+- Dynamic values such as progress percentage, measured resizer position, chart geometry, and backend identity may be passed through inline custom properties. Repeated fixed values use tokens; feature-local geometry stays in its named class.
 
 ### Color
 
@@ -27,10 +27,11 @@ This document is the contract for Lemonade's desktop and web UI. It describes th
 | --- | --- | --- |
 | Layered surfaces | `--surface-base`, `--surface-1`, `--surface-2`, `--surface-3`, `--surface-raised`, `--surface-overlay` | Base is the canvas; higher numbers indicate stronger grouping or interaction. Adjacent panels use borders, not unrelated background colors. |
 | Text | `--text-primary`, `--text-secondary`, `--text-tertiary`, `--text-disabled` | Primary for titles/values, secondary for body copy, tertiary for supporting copy, disabled only for unavailable content. |
-| Product accent | `--accent`, `--accent-hover`, `--accent-fg`, `--accent-on`, `--accent-soft`, `--accent-strong`, `--accent-focus` | Primary actions, active navigation, and keyboard focus only. |
-| Semantic state | `--success`, `--warn`, `--danger`, `--info` and `*-soft`; compatibility aliases `--status-ok`, `--status-warning`, `--status-error` | Never use a capability or backend color to communicate operational state. |
+| Product accent | `--accent`, `--accent-hover`, `--accent-fg`, `--accent-on`, `--accent-soft`, `--accent-strong`, `--accent-surface`, `--accent-border`, `--accent-focus` | Primary actions, active navigation, and keyboard focus only. |
+| Semantic state | `--success`, `--warn`, `--danger`, `--info` and `*-soft`; `--danger-on`; compatibility aliases `--status-ok`, `--status-warning`, `--status-error` | Never use a capability or backend color to communicate operational state. |
 | Structure | `--border`, `--border-subtle`, `--border-strong` | Subtle separates panels and rows; strong indicates focus or emphasized selection. |
 | Capability identity | `--cap-chat`, `--cap-vision`, `--cap-code`, `--cap-embedding`, `--cap-reranking`, `--cap-image`, `--cap-image-edit`, `--cap-audio`, `--cap-audio-generation`, `--cap-tts`, `--cap-model3d` | Used only for capability glyphs/chips. |
+| Provider identity | `--provider-hugging-face`, `--provider-hugging-face-fg`, `--provider-modelscope`, `--provider-modelscope-fg` | Stable provider marks and compact provider results only; never status or general decoration. |
 | Backend identity | `--backend-*` | Used only for compact backend marks. The backend helper returns these variables; components do not own hex values. |
 | Monitoring data | `--chart-*` | Used only for charts, gauges, and their legends. Series color is stable within a chart. |
 
@@ -54,7 +55,7 @@ A pane gets one visible title. Rail labels describe the rail's purpose (`History
 
 ### Spacing and sizing
 
-- All layout spacing uses the 4 px grid in `--space-*`; `--space-0-5` (2 px) and `--space-1-5` (6 px) are allowed for compact internal alignment.
+- Shared layout spacing uses the 4 px grid in `--space-*`; `--space-0-5` (2 px) and `--space-1-5` (6 px) support compact internal alignment. One-pixel structure and feature-local optical alignment may remain in the owning class.
 - Panel padding uses `--panel-padding-inline` and `--panel-padding-block`. Dense list rows may use `--space-2`/`--space-3`.
 - Controls use `--control-height-xs`, `--control-height-sm`, `--control-height-md`, or `--control-height-lg`. `--control-height` aliases the normal 36 px control.
 - Icon-only toolbar controls use `--icon-button-size` and always have an accessible name and tooltip.
@@ -67,7 +68,7 @@ A pane gets one visible title. Rail labels describe the rail's purpose (`History
 - `--radius-md`: inputs, buttons, list selections, cards, and icon containers.
 - `--radius-lg`: prominent empty-state or modal containers.
 - `--radius-pill`: the primary tab selector, status dots, counters, and true pills only. Standard buttons are not pills.
-- `--shadow-sm`: selected tab or lightweight floating control; `--shadow-md`: popover; `--shadow-lg`: modal or mobile sheet. Permanent panels use borders, not shadows.
+- `--shadow-sm`: selected tab or lightweight floating control; `--shadow-md`: popover; `--shadow-lg`: modal or mobile sheet; `--shadow-top`: an anchored bottom sheet or footer. Permanent panels use borders, not shadows.
 
 ### Icons
 

@@ -119,7 +119,7 @@ const panelSource = fs.readFileSync(path.join(root, 'src/components/GlobalModelS
 const chatSource = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
 const presetSource = fs.readFileSync(path.join(root, 'src/components/PresetManager.tsx'), 'utf8');
 
-assert.match(listSource, /onOpenRouter[\s\S]*onOpenGlobalSettings[\s\S]*Icon name="settings"/, 'settings must sit beside the router action');
+assert.match(listSource, /onOpenRouter && \([\s\S]*?icon="router"[\s\S]*?onOpenGlobalSettings && \([\s\S]*?icon="settings"/, 'settings must sit beside the router action');
 assert.match(managerSource, /showGlobalSettings \?[\s\S]*<GlobalModelSettingsPanel/);
 assert.match(managerSource, /loadWithGlobalModelPolicy/);
 assert.match(managerSource, /handleUpdateAllModels/);

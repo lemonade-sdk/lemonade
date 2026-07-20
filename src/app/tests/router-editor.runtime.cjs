@@ -141,7 +141,7 @@ assert.equal(renamedLabelTree.label, 'coding', 'semantic concept renames must up
 assert.equal(router.routerNodeReferencesClassifier(renamedLabelTree, 'topic'), true);
 
 assert.match(listSource, /onOpenRouter/);
-assert.match(listSource, /<Icon name="router"/);
+assert.match(listSource, /onOpenRouter && \([\s\S]*?icon="router"/);
 assert.match(managerSource, /<RouterEditorPanel/);
 assert.match(managerSource, /showRouterEditor \?/);
 assert.match(managerSource, /await onRegister|handleRegisterRouter/);

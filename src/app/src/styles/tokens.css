@@ -12,6 +12,7 @@
   --surface-titlebar: var(--surface-1);
   --surface-alpha-1: rgba(255, 255, 255, 0.10);
   --surface-alpha-05: rgba(255, 255, 255, 0.05);
+  --surface-alpha-02: rgba(255, 255, 255, 0.02);
 
   --text-primary:   #F2EFE5;
   --text-secondary: #C7C2B5;
@@ -24,6 +25,8 @@
   --accent-fg:      var(--accent);
   --accent-soft:    rgba(252, 216, 70, 0.14);
   --accent-strong:  rgba(252, 216, 70, 0.24);
+  --accent-surface: var(--accent-soft);
+  --accent-border:  color-mix(in srgb, var(--accent) 28%, transparent);
   --accent-on:      #000000;
   --accent-focus:   var(--accent);
 
@@ -33,6 +36,7 @@
   --warn-soft:      rgba(242, 185, 79, 0.15);
   --danger:         #EF8D7F;
   --danger-soft:    rgba(239, 141, 127, 0.15);
+  --danger-on:      #FFFFFF;
   --info:           #88BDE9;
   --info-soft:      rgba(136, 189, 233, 0.15);
 
@@ -56,7 +60,7 @@
   --warning: var(--warn);
   --warning-soft: var(--warn-soft);
 
-  /* ---------- Capability, backend, and monitoring identity ---------- */
+  /* ---------- Capability, provider, backend, and monitoring identity ---------- */
   --cap-chat:       var(--accent-fg);
   --cap-vision:     #B58CFF;
   --cap-code:       #6AD0A3;
@@ -68,6 +72,11 @@
   --cap-audio-generation: #2DD4BF;
   --cap-tts:        #FF7AB6;
   --cap-model3d:    #818CF8;
+
+  --provider-hugging-face:    #FF9D00;
+  --provider-hugging-face-fg: #FFB84D;
+  --provider-modelscope:      #4C8DFF;
+  --provider-modelscope-fg:   #7BA9FF;
 
   --backend-llamacpp:          #FACC15;
   --backend-vllm:              #60A5FA;
@@ -164,6 +173,7 @@
   --shadow-lg:
     0 18px 48px rgba(0, 0, 0, 0.42),
     0 8px 16px rgba(0, 0, 0, 0.20);
+  --shadow-top: 0 -8px 24px rgba(0, 0, 0, 0.24);
 
   /* ---------- Motion ---------- */
   --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
@@ -221,6 +231,7 @@
 
   --surface-alpha-1: rgba(0, 0, 0, 0.1);
   --surface-alpha-05: rgba(0, 0, 0, 0.05);
+  --surface-alpha-02: rgba(0, 0, 0, 0.02);
 
   --text-primary:   #000000;
   --text-secondary: #2D2F2F;
@@ -258,4 +269,5 @@
   --shadow-lg:
     0 18px 48px rgba(0, 0, 0, 0.12),
     0 8px 16px rgba(0, 0, 0, 0.06);
+  --shadow-top: 0 -8px 24px rgba(0, 0, 0, 0.10);
 }
