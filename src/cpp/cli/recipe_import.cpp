@@ -1,6 +1,7 @@
 #include "lemon_cli/recipe_import.h"
 
 #include "lemon/model_manager.h"
+#include "lemon/model_registry.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 
@@ -30,7 +31,11 @@ const std::vector<std::string> kKnownKeys = {
     "labels",
     "recipe",
     "recipe_options",
-    "size"
+    "routing",
+    "source",
+    "registry_source",
+    "size",
+    "system_prompt"
 };
 
 bool is_json_recipe_file(const nlohmann::json& entry) {
@@ -213,6 +218,34 @@ static void normalize_model_json_keys(nlohmann::json& obj) {
     for (const auto& key : keys_to_remove) {
         obj.erase(key);
     }
+
+    // Export only portable remote provenance. Local origins such as
+    // local_upload/local_path refer to machine-specific paths and were
+    // intentionally omitted by the old transform. Remote registrations keep a
+    // canonical source so an imported model continues to update from the same
+    // registry. `registry_source` alone is accepted for internal/older exports.
+    const bool has_public_source = obj.contains("source") && obj["source"].is_string();
+    const std::string public_source = has_public_source
+        ? obj["source"].get<std::string>() : std::string();
+    if (has_public_source && !lemon::is_remote_registry_source(public_source)) {
+        obj.erase("source");
+        obj.erase("registry_source");
+    } else {
+        std::string remote_source = public_source;
+        if (remote_source.empty() && obj.contains("registry_source") &&
+            obj["registry_source"].is_string()) {
+            remote_source = obj["registry_source"].get<std::string>();
+        }
+        if (!remote_source.empty() && lemon::is_remote_registry_source(remote_source)) {
+            const std::string canonical = lemon::remote_registry_source_name(
+                lemon::parse_remote_registry_source(remote_source));
+            obj["source"] = canonical;
+            obj["registry_source"] = canonical;
+        } else {
+            obj.erase("source");
+            obj.erase("registry_source");
+        }
+    }
 }
 
 } // namespace
@@ -243,7 +276,7 @@ bool validate_and_transform_model_json(nlohmann::json& model_data) {
         return false;
     }
 
-    bool is_collection = lemon::is_collection_recipe(model_data["recipe"].get<std::string>());
+    bool is_collection = lemon::is_model_collection_recipe(model_data["recipe"].get<std::string>());
 
     bool has_checkpoints = model_data.contains("checkpoints") && model_data["checkpoints"].is_object();
     bool has_checkpoint = model_data.contains("checkpoint") && model_data["checkpoint"].is_string();

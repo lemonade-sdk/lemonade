@@ -208,6 +208,10 @@
         <File Id="toolDefinitions.json" Source="$(var.BuildDir)\Release\resources\toolDefinitions.json" KeyPath="yes" />
       </Component>
 
+      <Component Id="ArchitectureDefaultsJson" Directory="ResourcesDir" Guid="f04a62d1-8b3e-4c2a-9f5d-7e1b8c3a0d4e">
+        <File Id="architecture_defaults.json" Source="$(var.BuildDir)\Release\resources\architecture_defaults.json" KeyPath="yes" />
+      </Component>
+
       <Component Id="FaviconIco" Directory="StaticDir" Guid="c0d1e2f3-a4b5-4c6d-7e8f-9a0b1c2d3e4f">
         <File Id="favicon.ico" Source="$(var.BuildDir)\Release\resources\static\favicon.ico" KeyPath="yes" />
       </Component>

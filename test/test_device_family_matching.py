@@ -12,6 +12,7 @@ import unittest
 # Python replica of system_info.cpp::device_matches_constraint()
 # ---------------------------------------------------------------------------
 
+
 def device_matches_constraint(device_family: str, allowed_families: set) -> bool:
     if not allowed_families:
         return True  # Empty = all families allowed
@@ -20,16 +21,18 @@ def device_matches_constraint(device_family: str, allowed_families: set) -> bool
         return True
 
     for af in allowed_families:
-        if len(af) > 1 and af.endswith('X'):
+        if len(af) > 1 and af.endswith("X"):
             prefix = af[:-1]
             if device_family.startswith(prefix):
                 return True
 
     return False
 
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestDeviceFamilyMatching(unittest.TestCase):
     def test_wildcard_matching(self):
@@ -57,6 +60,7 @@ class TestDeviceFamilyMatching(unittest.TestCase):
         self.assertTrue(device_matches_constraint("gfx1103", {"gfx103X", "gfx110X"}))
         self.assertTrue(device_matches_constraint("gfx1201", {"gfx110X", "gfx120X"}))
         self.assertFalse(device_matches_constraint("gfx1151", {"gfx103X", "gfx110X"}))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -158,7 +158,10 @@
 }
 
 html, body {
-  overflow-x: hidden;
+  /* clip (not hidden) hides horizontal overflow WITHOUT creating a scroll
+     container, so descendant `position: sticky` (the scrollytelling graphic)
+     still works. overflow:hidden would silently break it. */
+  overflow-x: clip;
   width: 100%;
 }
 
@@ -191,22 +194,24 @@ body.install-options {
    links = base, github = base×1.25, brand = base×1.563
    Icons use em units so they scale with their parent text. */
 .navbar {
-  --nav-base: 1.05rem;
+  --nav-base: 0.98rem;
   --nav-scale: 1.25;
   --nav-link: var(--nav-base);
   --nav-action: calc(var(--nav-base) * var(--nav-scale));
   --nav-brand: calc(var(--nav-base) * var(--nav-scale) * var(--nav-scale));
 
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  padding: 1rem 3rem;
-  background: rgba(255, 255, 255, 0.70);
+  gap: 1.5rem;
+  padding: 1rem clamp(1rem, 3vw, 3rem);
+  background: var(--glass-bg-dense);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   position: relative;
   transition: var(--transition-medium);
   border-bottom: none;
+  z-index: 20;
 }
 
 .navbar-brand {
@@ -219,9 +224,9 @@ body.install-options {
   font-family: var(--font-display);
   font-size: var(--nav-brand);
   font-weight: 900;
-  color: #18181b;
+  color: var(--text-primary);
   text-decoration: none;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .brand-icon {
@@ -248,10 +253,11 @@ body.install-options {
 
 .navbar-links {
   display: flex;
-  gap: 2rem;
+  gap: clamp(1rem, 2vw, 1.75rem);
   align-items: center;
-  justify-self: center;
+  justify-self: start;
   line-height: 1.1;
+  min-width: 0;
 }
 
 .navbar a {
@@ -270,25 +276,114 @@ body.install-options {
   font-family: var(--font-display);
   font-size: var(--nav-link);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   color: var(--text-nav);
 }
 
 .navbar-brand .brand-title a {
-  color: #18181b;
+  color: var(--text-primary);
 }
 
 .navbar a:hover,
 .navbar-brand .brand-title a:hover {
-  color: #18181b;
+  color: var(--text-primary);
 }
 
 /* Navbar right-side actions */
 .navbar-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.65rem;
   justify-self: end;
+  min-width: 0;
+}
+
+.navbar-socials {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-btn);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-light);
+}
+
+.navbar-social-link {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border-radius: var(--radius-btn);
+  color: var(--text-primary);
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+  transition: background 0.2s ease, transform 0.2s ease, color 0.2s ease;
+}
+
+.navbar-social-link:hover,
+.navbar-social-link:focus {
+  background: var(--glass-bg-hover);
+  transform: translateY(-1px);
+}
+
+.navbar-social-link svg {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+.navbar-social-link-count {
+  width: auto;
+  min-width: 4.2rem;
+  padding: 0 0.6rem;
+}
+
+.navbar-persona-toggle {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-btn);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-light);
+}
+
+.navbar-persona-option {
+  border: none;
+  border-radius: var(--radius-btn);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+  padding: 0.62rem 1rem;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  white-space: nowrap;
+}
+
+.navbar-persona-option:hover,
+.navbar-persona-option:focus {
+  color: var(--text-primary);
+}
+
+.navbar-persona-option.is-active {
+  background: var(--primary-yellow);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-yellow);
 }
 
 /* Hamburger toggle — hidden at desktop, shown at mobile via media query */
@@ -311,7 +406,7 @@ body.install-options {
   display: block;
   width: 22px;
   height: 2px;
-  background: #18181b;
+  background: var(--text-primary);
   border-radius: 2px;
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
@@ -390,7 +485,7 @@ body.install-options {
   width: 100%;
   margin: 0 auto;
   position: relative;
-  overflow-x: hidden;
+  overflow-x: clip;   /* clip, not hidden -> doesn't break sticky descendants */
 }
 
 .main > * {
@@ -1718,6 +1813,31 @@ body.install-options {
   font-weight: 400;
 }
 
+/* Dark theme (developer persona sets data-md-color-scheme="zest-dark"): the footer
+   is otherwise a hardcoded white bar, which reads as a jarring bright strip at the
+   bottom of the dark page. Blend it into the dark page and lift the text to the
+   cream foreground tokens. */
+[data-md-color-scheme="zest-dark"] .site-footer {
+  background-color: transparent;
+  border-top: 1px solid var(--outline-variant);
+}
+[data-md-color-scheme="zest-dark"] .footer-rail-link,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--community,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--product {
+  color: var(--text-secondary);
+}
+[data-md-color-scheme="zest-dark"] .footer-rail-link:hover,
+[data-md-color-scheme="zest-dark"] .footer-rail-link:focus,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--community:hover,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--community:focus,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--product:hover,
+[data-md-color-scheme="zest-dark"] .footer-rail-link--product:focus {
+  color: var(--text-primary);
+}
+[data-md-color-scheme="zest-dark"] .copyright {
+  color: var(--text-muted);
+}
+
 /* Footer responsive design */
 @media (min-width: 1024px) {
 }
@@ -2576,6 +2696,24 @@ body.install-options {
     justify-self: auto;
   }
 
+  .navbar-actions {
+    gap: 0.4rem;
+  }
+
+  .navbar-socials {
+    display: none;
+  }
+
+  .navbar-persona-option {
+    font-size: 0.82rem;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .navbar-install-btn {
+    font-size: 0.88rem;
+    padding: 0.58em 1rem;
+  }
+
   .navbar-toggle {
     display: inline-flex;
   }
@@ -2597,7 +2735,7 @@ body.install-options {
   .navbar-links a {
     padding: 0.75rem 0.25rem;
     font-size: 1.05rem;
-    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    border-top: 1px solid var(--outline-variant);
   }
 }
 
@@ -3065,6 +3203,23 @@ body.install-options {
 
   .navbar-brand .brand-title {
     font-size: 1.1rem;
+  }
+
+  .navbar-actions {
+    gap: 0.25rem;
+  }
+
+  .navbar-persona-toggle {
+    padding: 0.18rem;
+  }
+
+  .navbar-persona-option {
+    font-size: 0.74rem;
+    padding: 0.5rem 0.48rem;
+  }
+
+  .navbar-install-btn {
+    display: none;
   }
 
   .breadcrumb {
@@ -4063,92 +4218,8 @@ body.install-options {
   padding-top: 0;
 }
 
-/* --- Split Hero --- */
-/* Perfect fourth typographic scale (1.333 ratio) for hero:
-   subtitle = base, headline = base × 1.333^3 ≈ base × 2.37
-   Spacing uses the same scale for vertical rhythm. */
-.hp-hero {
-  --hero-base: clamp(1rem, 1.6vw, 1.18rem);
-  --hero-scale: 1.333;
-  --hero-subtitle: var(--hero-base);
-  --hero-headline: calc(var(--hero-base) * var(--hero-scale) * var(--hero-scale) * var(--hero-scale));
-  --hero-gap: calc(var(--hero-base) * var(--hero-scale));
-  --hero-section-gap: calc(var(--hero-base) * var(--hero-scale) * var(--hero-scale));
-
-  display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
-  gap: var(--hero-section-gap);
-  align-items: center;
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: var(--page-space-xl) 1.5rem 0;
-  min-height: auto;
-  position: relative;
-}
-
-.hp-hero-left {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--hero-gap);
-  max-width: 560px;
-}
-
-.hp-subtitle-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--hero-gap);
-  width: min(460px, 100%);
-}
-
-.hp-headline {
-  font-family: var(--font-display);
-  font-size: var(--hero-headline);
-  font-weight: 800;
-  color: var(--text-primary);
-  line-height: 1.06;
-  margin: 0;
-  letter-spacing: -0.035em;
-}
-
-/* "local ___." line — keeps static text and carousel on the same baseline */
-.hp-headline-line2 {
-  display: inline;
-  white-space: nowrap;
-}
-
-/* Carousel word — inline, normal flow, baseline-aligned by nature */
-.hp-carousel-word {
-  display: inline;
-  color: var(--primary-yellow-darker);
-  font-weight: 800;
-  transition: opacity 200ms ease-out, transform 200ms ease-out;
-}
-
-/* Exiting — fades out and slides up slightly */
-.hp-carousel-word.is-exiting {
-  opacity: 0;
-  transform: translateY(-0.15em);
-}
-
-/* Entering — starts below, snaps instantly (no transition) */
-.hp-carousel-word.is-entering {
-  opacity: 0;
-  transform: translateY(0.15em);
-  transition: none;
-}
-
-.hp-subtitle {
-  font-family: var(--font-body);
-  font-size: var(--hero-subtitle);
-  color: var(--text-secondary);
-  margin: 0;
-  line-height: 1.55;
-  font-weight: 450;
-  max-width: 420px;
-}
-
+/* --- Hero CTA buttons (the legacy hero is gone; these are reused by the
+   Community section's Discord/GitHub call-to-action) --- */
 .hp-cta-row {
   display: flex;
   flex-wrap: wrap;
@@ -4182,12 +4253,6 @@ body.install-options {
   font-weight: 500;
   opacity: 0.75;
   font-style: normal;
-}
-
-.hp-hero-right {
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 /* Demo panel — glassmorphic light theme per DESIGN.md */
@@ -4448,7 +4513,15 @@ body.install-options {
 
 .hp-reveal.hp-visible {
   opacity: 1;
-  transform: translateY(0);
+  /* `none`, not translateY(0): a lingering transform would establish a containing
+     block and permanently break the sticky journey TOC. They render identically. */
+  transform: none;
+}
+
+/* Used for one frame when a persona swap re-lifts a section: snap straight back
+   to the hidden state instead of animating "out", so it can cleanly lift in. */
+.hp-reveal.hp-reveal-instant {
+  transition: none;
 }
 
 .hp-section {
@@ -4485,11 +4558,11 @@ body.install-options {
 
 .hp-section-heading {
   font-family: var(--font-display);
-  /* One perfect fourth step below hero headline (hero = base × 1.333³, section = base × 1.333²) */
-  font-size: clamp(1.35rem, 2.4vw, 2.1rem);
+  /* Modern section headline: larger than body by roughly two perfect-fourth steps. */
+  font-size: clamp(1.7rem, 3.1vw, 2.6rem);
   font-weight: 800;
   color: var(--text-primary);
-  margin: 0 0 var(--page-space-sm);
+  margin: 0 0 calc(var(--page-space-base) * 0.4);
   letter-spacing: -0.03em;
   line-height: 1.12;
 }
@@ -4503,114 +4576,27 @@ body.install-options {
   line-height: 1.65;
 }
 
-
-/* --- Value proposition cards --- */
-.hp-value-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
-  text-align: left;
-}
-
-.hp-value-card {
-  padding: 1.5rem;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.hp-value-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 24px 64px rgba(45, 47, 47, 0.08);
-}
-
-.hp-value-header {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.5rem;
-}
-
-.hp-value-icon {
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: var(--radius-round);
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(255, 255, 255, 1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-.hp-value-icon .material-symbols-outlined {
-  font-size: 1.1rem;
+/* Inline links in body copy use the page's theme-safe gold accent
+   (--accent-gold reads dark-on-dark in the dark scheme, so brighten it
+   to --primary-yellow there) instead of the unreadable default blue. */
+.hp-section-desc a {
   color: var(--accent-gold);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
+
+[data-md-color-scheme="zest-dark"] .hp-section-desc a {
+  color: var(--primary-yellow);
+}
+
+.hp-section-desc a:hover {
+  text-decoration: none;
+}
+
 
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-}
-
-.hp-value-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-family: var(--font-display);
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--accent-gold);
-  text-decoration: none;
-  margin-top: 1rem;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.hp-value-card:hover .hp-value-link {
-  opacity: 1;
-}
-
-.hp-value-card h3 {
-  font-family: var(--font-display);
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.hp-value-card p {
-  font-family: var(--font-body);
-  font-size: 0.88rem;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.hp-value-list {
-  list-style: none;
-  padding: 0;
-  margin: 0.75rem 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.hp-value-list li {
-  font-family: var(--font-body);
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  padding-left: 1.1em;
-  position: relative;
-}
-
-.hp-value-list li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.45em;
-  width: 0.45em;
-  height: 0.45em;
-  background: var(--primary-yellow);
-  border-radius: var(--radius-round);
 }
 
 .hp-logo-ticker {
@@ -4650,6 +4636,254 @@ body.install-options {
   height: 34px;
   width: auto;
   object-fit: contain;
+}
+
+/* --- Community section ("Built in the open") ---
+   Two-column band: left = message + primary CTA (the hierarchy anchor),
+   right = compact working-group proof; a slim engine ticker grounds it. */
+.hp-community {
+  max-width: 1180px;
+  text-align: left;
+  /* Theme-safe accent: --accent-gold (#5C4B00) is dark-on-dark in the dark
+     scheme, so the eyebrow/links/icons need a brighter gold there. */
+  --community-gold: var(--accent-gold);
+}
+
+[data-md-color-scheme="zest-dark"] .hp-community {
+  --community-gold: var(--primary-yellow);
+}
+
+.hp-community-card {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: var(--page-space-lg);
+}
+
+.hp-community-layout {
+  display: grid;
+  /* Left column a touch wider so the copy doesn't read as cramped next to the
+     airy working-group table on the right. */
+  grid-template-columns: minmax(300px, 0.92fr) minmax(420px, 1.08fr);
+  gap: calc(var(--page-space-lg) * 1.15);
+  align-items: start;
+}
+
+/* LEFT column — copy + ask */
+.hp-community-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.05rem;
+}
+
+.hp-community-eyebrow {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--community-gold);
+  /* Sit as a label tight above the headline, then let the 1.05rem rhythm breathe. */
+  margin-bottom: -0.45rem;
+}
+
+.hp-community-copy .hp-section-heading {
+  margin: 0;
+}
+
+.hp-community-copy .hp-section-desc {
+  margin: 0;
+  text-align: left;
+  max-width: 42ch;
+}
+
+.hp-community-cta-row {
+  width: auto;
+  gap: 0.55rem;
+  margin-top: 0.45rem;
+  flex-wrap: nowrap;
+}
+
+/* Compact so Discord + GitHub share one row inside the narrow left column.
+   (Beats the base `.hp-cta-row .download-btn` rule on source order.) */
+.hp-community-cta-row .download-btn,
+.hp-community-cta-row .dev-btn {
+  font-size: 0.95rem;
+  padding: 0.58em 1.05em;
+  white-space: nowrap;
+}
+
+/* Neutralize the legacy hero's `@media (max-width:980px) .hp-cta-row{order:3}`,
+   which would otherwise push these buttons below the text links on mobile. */
+.hp-community-copy .hp-community-cta-row {
+  order: 0;
+}
+
+.hp-community-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.4rem;
+  margin-top: 0.55rem;
+}
+
+.hp-community-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--community-gold);
+  text-decoration: none;
+}
+
+.hp-community-links a:hover {
+  text-decoration: underline;
+}
+
+/* RIGHT column — working groups (the proof) */
+.hp-community-groups {
+  min-width: 0;
+}
+
+.hp-community-groups-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin: 0 0 0.7rem;
+}
+
+.hp-community-groups-head .material-symbols-outlined {
+  font-size: 1.1rem;
+  color: var(--community-gold);
+}
+
+.hp-community .hp-wg-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+}
+
+/* Inner-line "table" cells (echoes the dev-quickstart proof grid): no per-card
+   glass, just subtle dividers between the two columns and the rows. */
+.hp-wg-card {
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.15rem;
+  min-width: 0;
+  text-decoration: none;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--outline-variant);
+  border-bottom: 1px solid var(--outline-variant);
+  border-radius: 0;
+  transition: background 0.18s ease;
+}
+
+.hp-wg-card:nth-child(2n) {
+  /* right column — no divider on the outer edge */
+  border-right: 0;
+}
+
+.hp-wg-card:nth-last-child(-n + 2) {
+  /* last row — no divider beneath (assumes an even count; working groups are 6) */
+  border-bottom: 0;
+}
+
+.hp-wg-card:hover {
+  background: color-mix(in srgb, var(--primary-yellow) 7%, transparent);
+}
+
+.hp-wg-name {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 0.25rem;
+  letter-spacing: -0.01em;
+}
+
+.hp-wg-goal {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin: 0 0 0.6rem;
+  flex: 1 1 auto;
+  /* keep cards uniform: clamp the goal to two lines */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hp-wg-lead {
+  align-self: flex-start;
+  font-family: var(--font-display);
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+}
+
+/* Ticker — slim ambient strip grounding the section */
+.hp-community-ticker-strip {
+  width: min(1120px, 100%);
+  margin: var(--page-space-md) auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hp-community-trust-caption {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.hp-community .hp-logo-ticker {
+  width: 100%;
+  margin-top: 0;
+}
+
+/* Dark mode: several engine logos are black/dark-gray artwork that vanishes on the
+   dark background, so seat each on a soft light chip (keeps their brand colors). */
+[data-md-color-scheme="zest-dark"] .hp-community .hp-logo-chip {
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 9px;
+  padding: 6px 12px;
+}
+
+/* Stack to one column before the two-column band gets too tight for the CTA row */
+@media (max-width: 980px) {
+  .hp-community-layout {
+    grid-template-columns: 1fr;
+    gap: var(--page-space-md);
+  }
+}
+
+@media (max-width: 520px) {
+  /* Single-column table: drop the column divider, keep row dividers between cells */
+  .hp-community .hp-wg-grid {
+    grid-template-columns: 1fr;
+  }
+  .hp-wg-card {
+    border-right: 0;
+    border-bottom: 1px solid var(--outline-variant);
+  }
+  .hp-wg-card:last-child {
+    border-bottom: 0;
+  }
 }
 
 .hp-section-release {
@@ -4743,284 +4977,6 @@ body.install-options {
   margin: var(--page-space-md) auto 0;
   align-self: center;
 }
-
-/* --- Technical details section --- */
-.hp-tech-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  text-align: left;
-  background: var(--glass-bg-dense);
-  overflow: hidden;
-}
-
-.hp-tech-item {
-  padding: 1.5rem 1.75rem;
-  position: relative;
-}
-
-/* Etched-glass vertical divider between columns */
-.hp-tech-item:not(:nth-child(4n))::after {
-  content: '';
-  position: absolute;
-  top: 18%;
-  bottom: 18%;
-  right: 0;
-  width: 1px;
-  background: linear-gradient(to bottom, transparent, rgba(45, 47, 47, 0.14), transparent);
-  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.45);
-}
-
-/* Etched-glass horizontal divider between rows (only after top row of 4) */
-.hp-tech-item:not(:nth-last-child(-n+4))::before {
-  content: '';
-  position: absolute;
-  left: 6%;
-  right: 6%;
-  bottom: 0;
-  height: 1px;
-  background: linear-gradient(to right, transparent, rgba(45, 47, 47, 0.14), transparent);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
-}
-
-.hp-tech-header {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-}
-
-.hp-tech-icon {
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: var(--radius-round);
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(255, 255, 255, 1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-.hp-tech-icon .material-symbols-outlined {
-  font-size: 1.1rem;
-  color: var(--accent-gold);
-}
-
-.hp-tech-item h3 {
-  font-family: var(--font-display);
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-/* --- Unified API section --- */
-.hp-api-layout {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.1rem;
-  text-align: left;
-  margin-top: 1.25rem;
-  --hp-api-block-width: 100%;
-}
-
-.hp-api-modalities {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.7rem;
-  width: min(var(--hp-api-block-width), 100%);
-}
-
-.hp-api-modality {
-  appearance: none;
-  -webkit-appearance: none;
-  background: rgba(26, 27, 48, 0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius);
-  padding: 0.62rem 0.72rem;
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
-  -webkit-tap-highlight-color: transparent;
-  outline: none;
-  position: relative;
-  overflow: hidden;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-  min-height: 52px;
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-}
-
-.hp-api-modality-icon {
-  font-size: 1.15rem;
-  color: rgba(255, 224, 102, 0.78);
-  flex-shrink: 0;
-}
-
-.hp-api-modality.is-active .hp-api-modality-icon {
-  color: #fff2b3;
-}
-
-.hp-api-modality:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255, 224, 102, 0.32);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
-}
-
-.hp-api-modality.is-active {
-  border-color: rgba(255, 224, 102, 0.55);
-  background: linear-gradient(145deg, #21233f, #2a2d50);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 224, 102, 0.24);
-}
-
-.hp-api-modality:focus-visible {
-  border-color: rgba(255, 224, 102, 0.42);
-}
-
-.hp-api-modality:active {
-  background: linear-gradient(145deg, #191a2e, #1f2036);
-  transform: translateY(0);
-}
-
-.hp-api-modality.is-active:active {
-  background: linear-gradient(145deg, #1b1d33, #242642);
-}
-
-.hp-api-modality h3 {
-  margin: 0;
-  font-size: 0.92rem;
-  font-weight: 620;
-  color: rgba(255, 255, 255, 0.96);
-}
-
-.hp-api-modality.is-active h3 {
-  color: #fff2b3;
-}
-
-.hp-api-sample-panel {
-  background: rgba(26, 27, 48, 0.92);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  color: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius-xl);
-  padding: 1.1rem 1.15rem;
-  height: auto;
-  width: min(var(--hp-api-block-width), 100%);
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  align-self: center;
-  box-shadow: var(--shadow-ambient);
-}
-
-.hp-api-sample-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-}
-
-.hp-api-copy-btn {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
-  border-radius: var(--radius);
-  line-height: 0;
-  padding: 0.46rem;
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
-}
-
-.hp-api-copy-btn svg {
-  width: 0.95rem;
-  height: 0.95rem;
-  display: block;
-  fill: currentColor;
-}
-
-.hp-api-copy-btn:hover,
-.hp-api-copy-btn:focus {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 224, 102, 0.42);
-  transform: translateY(-1px);
-}
-
-.hp-api-copy-btn.is-copied {
-  color: #ffe680;
-  border-color: rgba(255, 224, 102, 0.55);
-  background: rgba(255, 224, 102, 0.16);
-}
-
-.hp-api-sample-method {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 0.92rem;
-  font-weight: 600;
-  gap: 0.48rem;
-}
-
-.hp-api-cta {
-  margin-top: 1.6rem;
-  display: flex;
-  justify-content: center;
-}
-
-.hp-api-cta .marketplace-cta-btn {
-  margin: 0;
-}
-
-.hp-api-sample-panel pre {
-  margin: 0.68rem 0 0;
-  border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.08);
-  padding: 0.86rem 0.95rem;
-  overflow: visible;
-  max-height: none;
-  white-space: pre-wrap !important;
-  overflow-wrap: normal !important;
-  word-break: normal !important;
-  word-wrap: normal !important;
-}
-
-.hp-api-sample-panel code {
-  color: #ffffff;
-  font-size: 0.9rem;
-  line-height: 1.5;
-  font-family: var(--font-mono);
-  display: block;
-  min-width: 0;
-  white-space: pre-wrap !important;
-  overflow-wrap: normal !important;
-  word-break: normal !important;
-  word-wrap: normal !important;
-}
-
-.hp-api-method {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.52);
-  margin-bottom: 0.6rem;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.hp-method-badge {
-  background: rgba(255, 224, 102, 0.14);
-  color: #ffe066;
-  font-size: 0.62rem;
-  font-weight: 700;
-  padding: 0.15rem 0.38rem;
-  border-radius: var(--radius);
-  letter-spacing: 0.04em;
-}
-
 
 /* --- Ecosystem section --- */
 .hp-eco-apps {
@@ -5225,6 +5181,50 @@ body.install-options {
   margin: 0.75rem 0 0.35rem;
 }
 
+/* Fedora ships two side-by-side editions (43 / 44). `min-width: 0` lets each
+   column shrink so the pair fits the card instead of overrunning it, and the long
+   `wget` URL scrolls/wraps within its own console rather than forcing the row wide. */
+.gs-fedora-cols {
+  display: flex;
+  gap: 12px;
+}
+.gs-fedora-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.gs-install-block {
+  margin-top: 16px;
+}
+
+/* Below the card width the two editions stack so neither is clipped. */
+@media (max-width: 720px) {
+  .gs-fedora-cols {
+    flex-direction: column;
+    gap: 0;
+  }
+  /* On phones a horizontally-scrolling command hides most of a long `wget` URL.
+     Wrap install commands instead so the whole command is visible (the copy
+     button still grabs the full text). Desktop keeps single-line `pre`. */
+  .gs-console pre {
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  /* With wrapped multi-line content the centred copy button would sit on top of
+     the text — pin it to the top-right corner and reserve a clear gutter so the
+     wrapped lines never run under it. */
+  .gs-console {
+    padding-right: 2.75rem;
+  }
+  .gs-copy-btn {
+    top: 0.6rem;
+    transform: none;
+  }
+  .gs-copy-btn:hover,
+  .gs-copy-btn:focus {
+    transform: translateY(-1px);
+  }
+}
+
 /* Install download button */
 .gs-download-link {
   display: inline-flex;
@@ -5273,6 +5273,21 @@ body.install-options {
 }
 
 /* --- Homepage responsive --- */
+@media (max-width: 1180px) {
+  .navbar-social-link:not(.navbar-social-link-count) {
+    display: none;
+  }
+
+  .navbar-links {
+    gap: 0.95rem;
+  }
+
+  .navbar-persona-option {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
+
 @media (max-width: 1024px) {
   .hp-main {
     margin-top: 0 !important;
@@ -5325,48 +5340,6 @@ body.install-options {
     max-width: 440px;
     height: 310px;
     margin: 0 auto;
-  }
-
-
-  .hp-tech-grid,
-  .hp-value-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  /* Recompute etched dividers for 2-column layout */
-  .hp-tech-item:not(:nth-child(4n))::after { display: none; }
-  .hp-tech-item:not(:nth-last-child(-n+4))::before { display: none; }
-
-  .hp-tech-item:not(:nth-child(2n))::after {
-    content: '';
-    display: block;
-    position: absolute;
-    top: 18%;
-    bottom: 18%;
-    right: 0;
-    width: 1px;
-    background: linear-gradient(to bottom, transparent, rgba(45, 47, 47, 0.14), transparent);
-    box-shadow: 1px 0 0 rgba(255, 255, 255, 0.45);
-  }
-
-  .hp-tech-item:not(:nth-last-child(-n+2))::before {
-    content: '';
-    display: block;
-    position: absolute;
-    left: 6%;
-    right: 6%;
-    bottom: 0;
-    height: 1px;
-    background: linear-gradient(to right, transparent, rgba(45, 47, 47, 0.14), transparent);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
-  }
-
-  .hp-api-modalities {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .hp-api-sample-panel {
-    height: auto;
   }
 
   .hp-release-carousel {
@@ -5455,14 +5428,6 @@ body.install-options {
     flex: 0 1 auto;
   }
 
-  .hp-api-modalities {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .hp-api-sample-panel code {
-    font-size: 0.84rem;
-  }
-
   .hp-eco-apps {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -5490,40 +5455,7 @@ body.install-options {
 }
 
 @media (max-width: 480px) {
-  .hp-tech-grid,
-  .hp-value-grid {
-    grid-template-columns: 1fr;
-  }
-
-  /* 1-column: no vertical dividers; horizontal between all but last */
-  .hp-tech-item:not(:nth-child(2n))::after { display: none; }
-  .hp-tech-item:not(:nth-last-child(-n+2))::before { display: none; }
-
-  .hp-tech-item:not(:last-child)::before {
-    content: '';
-    display: block;
-    position: absolute;
-    left: 6%;
-    right: 6%;
-    bottom: 0;
-    height: 1px;
-    background: linear-gradient(to right, transparent, rgba(45, 47, 47, 0.14), transparent);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
-  }
-
-  .hp-api-modalities {
-    grid-template-columns: 1fr;
-  }
-
-  .hp-api-sample-panel {
-    height: auto;
-    padding: 0.95rem;
-  }
-
   .hp-demo-panel,
-  .hp-tech-card,
-  .hp-api-modality,
-  .hp-api-sample-panel,
   .hp-eco-app {
     border-radius: var(--radius);
   }
@@ -5576,5 +5508,36 @@ body.install-options {
 
   .gs-console code {
     font-size: 0.8rem;
+  }
+
+  /* The download button is min-width:320px + 2rem side padding (~384px), which
+     overruns the quickstart card on phones. Let it shrink to the card width. */
+  .gs-download-link {
+    min-width: 0;
+    width: 100%;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  /* Community Discord + GitHub buttons are forced onto one line (.hp-cta-row
+     nowrap at 720); below the card width they clip. Let them wrap and each fill
+     a row. Two classes beat the single-class nowrap rules on specificity. */
+  .hp-community .hp-community-cta-row {
+    flex-wrap: wrap;
+  }
+  .hp-community .hp-community-cta-row .download-btn,
+  .hp-community .hp-community-cta-row .dev-btn {
+    flex: 1 1 12rem;
+    justify-content: center;
+  }
+
+  /* Section CTAs (View Release, Explore the Marketplace) carry a fixed
+     min-width:320px for a consistent desktop size. Inside the release card — whose
+     heavy side padding leaves only ~265px of inner width on a phone — that 320px
+     overruns the right padding. Drop the floor and let the button fill the card. */
+  .hp-section-cta {
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
   }
 }

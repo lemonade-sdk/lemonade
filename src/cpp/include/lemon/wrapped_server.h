@@ -17,6 +17,7 @@
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "recipe_options.h"
+#include "backends/backend_descriptor.h"
 
 namespace lemon {
 
@@ -119,7 +120,12 @@ public:
 
     // Pinned status for eviction prevention
     bool is_pinned() const { return pinned_; }
-    void set_pinned(bool pinned) { pinned_ = pinned; }
+    void set_pinned(bool pinned) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        pinned_ = pinned;
+        if (pinned) recipe_options_.set_option("pinned", true);
+        else recipe_options_.remove_option("pinned");
+    }
 
     // Acquire model for inference, safely recovering from DOWNSIZING/EVICTING if necessary.
     // Blocks if LOADING.
@@ -187,6 +193,14 @@ public:
             state_cv_.notify_all();
         }
         return false;
+    }
+
+    void rescue_from_eviction() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (state_ == ModelState::EVICTING) {
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
+        }
     }
 
     void release_inference() {
@@ -258,6 +272,7 @@ public:
     // Multi-model support: Model metadata
     void set_model_metadata(const std::string& model_name, const std::string& checkpoint,
                            ModelType type, DeviceType device, const RecipeOptions& recipe_options) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         model_name_ = model_name;
         checkpoint_ = checkpoint;
         model_type_ = type;
@@ -269,7 +284,10 @@ public:
     std::string get_checkpoint() const { return checkpoint_; }
     ModelType get_model_type() const { return model_type_; }
     DeviceType get_device_type() const { return device_type_; }
-    RecipeOptions get_recipe_options() const { return recipe_options_; }
+    RecipeOptions get_recipe_options() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return recipe_options_;
+    }
     int get_process_id() const { return get_process_handle_snapshot().pid; }
     int get_backend_port() const;
 
@@ -293,6 +311,11 @@ public:
     // Unload the model and stop the server
     virtual void unload() = 0;
 
+    void set_load_cancel_flag(std::atomic<bool>* f) { load_cancel_ = f; }
+
+    static void set_request_cancel_flag(std::atomic<bool>* f);
+    static std::atomic<bool>* current_request_cancel();
+
     // Downsize the model on soft idle (e.g., clear KV cache). Returns true if the
     // downsize succeeded (or was a no-op), false if the backend operation failed.
     // The default is a successful no-op: backends that cannot downsize transition
@@ -307,17 +330,53 @@ public:
         // No-op by default
     }
 
-    // ICompletionServer implementation - forward requests to the wrapped server
-    virtual json chat_completion(const json& request) override = 0;
-    virtual json completion(const json& request) override = 0;
-    virtual json responses(const json& request) = 0;
+    // Default to an "unsupported" error so non-chat backends (TTS, image,
+    // transcription) inherit a sensible response instead of stubbing each one.
+    virtual json chat_completion(const json& request) override {
+        return unsupported_capability_error("chat completion");
+    }
+    virtual json completion(const json& request) override {
+        return unsupported_capability_error("text completion");
+    }
+    virtual json responses(const json& request) {
+        return unsupported_capability_error("responses");
+    }
+
+    // Descriptor association (set by the backend registry at create() time). The
+    // effective_* hooks below default to the descriptor's declared values; a
+    // backend whose device or eviction rule depends on the chosen backend
+    // variant overrides them (e.g. whisper on npu vs cpu, llamacpp on cpu vs gpu).
+    void set_descriptor(const BackendDescriptor* descriptor) { descriptor_ = descriptor; }
+    const BackendDescriptor* get_descriptor() const { return descriptor_; }
+
+    // Effective accelerator device for this load. The router calls this after it
+    // resolves the "<recipe>_backend" option but before eviction. Defaults to the
+    // descriptor's default_device; variant-dependent backends override.
+    virtual DeviceType effective_device(const RecipeOptions& options) const {
+        (void)options;
+        return descriptor_ ? descriptor_->default_device : device_type_;
+    }
+
+    // Effective slot/eviction policy for this load. The router switches on this
+    // value to enforce NPU exclusivity and LRU slot accounting. Defaults to the
+    // descriptor's slot_policy; variant-dependent backends override.
+    virtual SlotPolicy effective_slot_policy(const RecipeOptions& options) const {
+        (void)options;
+        return descriptor_ ? descriptor_->slot_policy : SlotPolicy::Standard;
+    }
+
+    // Dynamic availability check. Returns "" if the backend can run on this
+    // system, or a user-facing reason why it cannot. Defaults to "available";
+    // backends with runtime-dependent availability (cloud) override.
+    virtual std::string availability() const { return ""; }
 
     // Forward streaming requests to the wrapped server (public for Router access)
     // Virtual so backends can transform request (e.g., FLM needs checkpoint in model field)
     using TelemetryCallback = std::function<void(int input_tokens,
-                                                int output_tokens,
-                                                double time_to_first_token,
-                                                double tokens_per_second)>;
+                                                 int output_tokens,
+                                                 double time_to_first_token,
+                                                 double tokens_per_second,
+                                                 const std::string& error_message)>;
 
     virtual void forward_streaming_request(const std::string& endpoint,
                                            const std::string& request_body,
@@ -332,6 +391,18 @@ public:
     }
 
     Telemetry get_telemetry() const { return telemetry_; }
+
+    virtual std::map<std::string, nlohmann::json> get_additional_telemetry() {
+        return {};
+    }
+
+    virtual std::string get_additional_telemetry_url() const {
+        return "";
+    }
+
+    virtual std::function<std::map<std::string, nlohmann::json>(const std::string&)> get_additional_telemetry_parser() const {
+        return nullptr;
+    }
 
     // Mark observable backend progress. Streaming proxies call this for every
     // delivered chunk; non-streaming requests call it on start/finish and when
@@ -372,6 +443,17 @@ protected:
         WrappedServer& server_;
         BackendRequestKind kind_;
     };
+
+    // Standard "this backend does not serve <what>" error payload, matching the
+    // shape backends return from unsupported capability methods.
+    json unsupported_capability_error(const std::string& what) const {
+        return json{{"error", {
+            {"message", server_name_ + " does not support " + what +
+                            ". Use the appropriate endpoint for this model type instead."},
+            {"type", "unsupported_operation"},
+            {"code", "model_not_applicable"}
+        }}};
+    }
 
     static bool has_process_handle(const ProcessHandle& handle);
     ProcessHandle get_process_handle_snapshot() const;
@@ -420,6 +502,7 @@ protected:
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
+    const BackendDescriptor* descriptor_ = nullptr;  // Non-owning; set by the backend registry at create()
 
     // Multi-model support fields
     std::string model_name_;
@@ -442,6 +525,7 @@ protected:
     bool maintenance_in_progress_;
     long load_duration_ms_;
     bool pinned_ = false;
+    std::atomic<bool>* load_cancel_ = nullptr;
 
 private:
     void begin_backend_request(BackendRequestKind kind);

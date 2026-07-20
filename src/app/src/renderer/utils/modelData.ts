@@ -1,4 +1,4 @@
-import { isCollectionRecipe } from './recipeNames';
+import { isModelCollectionRecipe } from './recipeNames';
 
 export const USER_MODEL_PREFIX = 'user.';
 
@@ -26,17 +26,35 @@ export interface ModelInfo {
   cost_output_per_million?: number;
   mmproj?: string;
   source?: string;
+  registry_source?: 'huggingface' | 'modelscope';
   model_name?: string;
   reasoning?: boolean;
   vision?: boolean;
   downloaded?: boolean;
+  update_available?: boolean;
   image_defaults?: ImageDefaults;
+  // Per-collection system prompt template (collection.omni only). Overrides the
+  // global default in toolDefinitions.json when set. Keeps {tool_list} and
+  // {tool_guidance} placeholders so runtime substitution still works.
+  system_prompt?: string;
+  // collection.router policies. Kept opaque in the general model catalog; router
+  // authoring tools validate against the routing schema.
+  routing?: unknown;
   [key: string]: unknown;
 }
 
 export interface ModelsData {
   [key: string]: ModelInfo;
 }
+
+export type TtsVoiceMode = 'fixed' | 'clone' | 'design';
+
+export const getTtsVoiceMode = (info?: ModelInfo | null): TtsVoiceMode => {
+  if (!info) return 'fixed';
+  if ((info.labels || []).includes('voice-design')) return 'design';
+  if (info.recipe === 'openmoss') return 'clone';
+  return 'fixed';
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -71,7 +89,7 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   const checkpoint = typeof info['checkpoint'] === 'string' ? info['checkpoint'] : '';
   const recipe = typeof info['recipe'] === 'string' ? info['recipe'] : '';
 
-  if (!recipe || (!checkpoint && !isCollectionRecipe(recipe))) {
+  if (!recipe || (!checkpoint && !isModelCollectionRecipe(recipe))) {
     return null;
   }
 
@@ -107,6 +125,11 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
     normalized.source = source;
   }
 
+  const registrySource = info['registry_source'];
+  if (registrySource === 'huggingface' || registrySource === 'modelscope') {
+    normalized.registry_source = registrySource;
+  }
+
   const modelName = info['model_name'];
   if (typeof modelName === 'string' && modelName) {
     normalized.model_name = modelName;
@@ -130,6 +153,15 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   const reasoning = info['reasoning'];
   if (typeof reasoning === 'boolean') {
     normalized.reasoning = reasoning;
+  }
+
+  const systemPrompt = info['system_prompt'];
+  if (typeof systemPrompt === 'string' && systemPrompt) {
+    normalized.system_prompt = systemPrompt;
+  }
+
+  if (isRecord(info['routing'])) {
+    normalized.routing = info['routing'];
   }
 
   const vision = info['vision'];
@@ -163,6 +195,7 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         // Use the suggested field from the API response
         suggested: model.suggested === true,
         downloaded: model.downloaded || false,
+        update_available: model.update_available === true,
       };
 
       if (Array.isArray(model.labels)) {
@@ -187,6 +220,10 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 
       if (typeof model.source === 'string' && model.source) {
         modelInfo.source = model.source;
+      }
+
+      if (model.registry_source === 'huggingface' || model.registry_source === 'modelscope') {
+        modelInfo.registry_source = model.registry_source;
       }
 
       if (typeof model.model_name === 'string' && model.model_name) {
@@ -217,6 +254,14 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 
       if (typeof model.vision === 'boolean') {
         modelInfo.vision = model.vision;
+      }
+
+      if (typeof model.system_prompt === 'string' && model.system_prompt) {
+        modelInfo.system_prompt = model.system_prompt;
+      }
+
+      if (model.routing && typeof model.routing === 'object' && !Array.isArray(model.routing)) {
+        modelInfo.routing = model.routing;
       }
 
       // cloud_provider distinguishes per-provider buckets in the Model
@@ -274,7 +319,11 @@ const EXPORT_KNOWN_KEYS = new Set([
   'labels',
   'recipe',
   'recipe_options',
+  'routing',
+  'source',
+  'registry_source',
   'size',
+  'system_prompt',
 ]);
 
 const toExportEntry = (raw: Record<string, unknown>): Record<string, unknown> => {
@@ -286,6 +335,33 @@ const toExportEntry = (raw: Record<string, unknown>): Record<string, unknown> =>
   }
   if (isRecord(entry.checkpoints) && 'checkpoint' in entry) {
     delete entry.checkpoint;
+  }
+
+  // Preserve only portable remote provenance. Local origins refer to paths on
+  // the exporting machine and must not be replayed on import.
+  const publicSource = typeof raw.source === 'string' ? raw.source.toLowerCase() : '';
+  const explicitRegistry = typeof raw.registry_source === 'string'
+    ? raw.registry_source.toLowerCase()
+    : '';
+  const isRemoteSource = (value: string): value is 'huggingface' | 'modelscope' =>
+    value === 'huggingface' || value === 'modelscope';
+
+  if (publicSource && !isRemoteSource(publicSource)) {
+    delete entry.source;
+    delete entry.registry_source;
+  } else {
+    const registrySource = isRemoteSource(publicSource)
+      ? publicSource
+      : isRemoteSource(explicitRegistry)
+        ? explicitRegistry
+        : '';
+    if (registrySource) {
+      entry.source = registrySource;
+      entry.registry_source = registrySource;
+    } else {
+      delete entry.source;
+      delete entry.registry_source;
+    }
   }
   return entry;
 };
@@ -307,7 +383,7 @@ export const normalizeModelExportPayload = (
   const name = typeof payload.model_name === 'string' && payload.model_name ? payload.model_name : fallbackId;
   payload.model_name = name.startsWith(USER_MODEL_PREFIX) ? name : `${USER_MODEL_PREFIX}${name}`;
 
-  if (isCollectionRecipe(typeof payload.recipe === 'string' ? payload.recipe : undefined)) {
+  if (isModelCollectionRecipe(typeof payload.recipe === 'string' ? payload.recipe : undefined)) {
     // Normalize each embedded component with the same transform. Components
     // are leaf models: drop their (empty) collection fields and keep bare
     // names — the server decides `user.` prefixing when registering them.

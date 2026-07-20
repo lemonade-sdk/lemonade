@@ -119,6 +119,53 @@
         { "role": "user", "content": "Summarize the key takeaway from our discussion, referencing both topics we covered." }
       ],
       "max_tokens": 100
+    },
+    {
+      "name": "embed-small-string",
+      "category": "embed",
+      "input": "A minimalist poster of a lemon tree in flat design style, high contrast, clean background.",
+      "warmup_runs": 0,
+      "measurement_runs": 3
+    },
+    {
+      "name": "embed-small-array",
+      "category": "embed",
+      "input": [
+        "A minimalist poster of a lemon tree in flat design style, high contrast, clean background.",
+        "The quick brown fox jumps over the lazy dog."
+      ],
+      "warmup_runs": 0,
+      "measurement_runs": 3
+    },
+    {
+      "name": "embed-long-string",
+      "category": "embed",
+      "input": "First, let's clarify what we mean by server software, as it's sometimes confused with server hardware, which is the actual physical systems running in data centers. - Server software refers to a process running on a computer that listens for and responds to requests initiated by client software (i.e., applications). - Server software often runs on server hardware, but there are many examples of server software running on the same client hardware (laptop, desktop computer, tablet, or smartphone) as the application. All LLM servers (cloud or local) adhere to an application-program interface (API). This API lets the application make LLM requests to the server software.  While there are several popular LLM server APIs available in the LLM ecosystem, the OpenAI API has emerged as the industry standard because it is (at the time of this writing) the only API that meets these three criteria: 1. Dozens of popular LLM servers support OpenAI API. 1. Dozens of popular LLM applications support OpenAI API. 1. OpenAI API is broadly supported in both local and cloud.  Crucially, while OpenAI offers their own LLM API-as-a-cloud-service, their API standard is rigorously documented and available for other cloud and local servers to adopt.  The Python above will work with Lemonade Server, along with a variety of other cloud and local LLM servers, just by changing the base_url, api_key, and model as needed. This example demonstrates that details like deployment location (local vs. cloud), hardware type (GPU vs. NPU), and backend implementation (OGA vs. llama.cpp), etc. are hidden behind a unified interface.  Lemonade can route inference to a remote OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, Together, …) alongside locally-loaded models. Cloud-routed models appear in the same /v1/models listing as local ones, dot-namespaced by provider (e.g. fireworks.kimi-k2p5), and accept identical chat-completion requests. From an application's perspective the routing is invisible — the same OpenAI API call reaches a local backend or a remote provider depending on which model was named.",
+      "warmup_runs": 0,
+      "measurement_runs": 3
+    },
+    {
+      "name": "embed-long-array",
+      "category": "embed",
+      "input": [
+        "First, let's clarify what we mean by server software, as it's sometimes confused with server hardware, which is the actual physical systems running in data centers.",
+        "Server software refers to a process running on a computer that listens for and responds to requests initiated by client software (i.e., applications).",
+        "Server software often runs on server hardware, but there are many examples of server software running on the same client hardware (laptop, desktop computer, tablet, or smartphone) as the application.",
+        "All LLM servers (cloud or local) adhere to an application-program interface (API).",
+        "This API lets the application make LLM requests to the server software.",
+        "While there are several popular LLM server APIs available in the LLM ecosystem, the OpenAI API has emerged as the industry standard because it is (at the time of this writing) the only API that meets these three criteria:",
+        "Dozens of popular LLM servers support OpenAI API.",
+        "Dozens of popular LLM applications support OpenAI API.",
+        "OpenAI API is eroadly supported in both local and cloud.",
+        "Crucially, while OpenAI offers their own LLM API-as-a-cloud-service, their API standard is rigorously documented and available for other cloud and local servers to adopt.",
+        "The Python above will work with Lemonade Server, along with a variety of other cloud and local LLM servers, just by changing the base_url, api_key, and model as needed.",
+        "This example demonstrates that details like deployment location (local vs. cloud), hardware type (GPU vs. NPU), and backend implementation (OGA vs. llama.cpp), etc. are hidden behind a unified interface.",
+        "Lemonade can route inference to a remote OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, Together, …) alongside locally-loaded models.",
+        "Cloud-routed models appear in the same /v1/models listing as local ones, dot-namespaced by provider (e.g. fireworks.kimi-k2p5), and accept identical chat-completion requests.",
+        "From an application's perspective the routing is invisible — the same OpenAI API call reaches a local backend or a remote provider depending on which model was named."
+      ],
+      "warmup_runs": 0,
+      "measurement_runs": 3
     }
   ]
 }

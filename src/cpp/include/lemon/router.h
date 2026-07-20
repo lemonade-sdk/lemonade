@@ -1,10 +1,13 @@
 #pragma once
 
+#include <atomic>
 #include <string>
 #include <memory>
 #include <map>
 #include <mutex>
+#include <set>
 #include <condition_variable>
+#include <thread>
 #include <vector>
 #include <optional>
 #include <nlohmann/json.hpp>
@@ -23,6 +26,10 @@ namespace lemon {
 using json = nlohmann::json;
 
 class CloudProviderRegistry;
+
+namespace telemetry {
+class InferenceSpan;
+}
 
 struct ModelTelemetryIdentity {
     std::string model_name;
@@ -43,6 +50,7 @@ struct ModelTelemetryRecord {
 
 class EvictionEngine;
 class GlobalVramMonitor;
+class SuspendInhibitor;
 
 class Router {
 public:
@@ -67,12 +75,18 @@ public:
                     RecipeOptions options,
                     bool do_not_upgrade = true,
                     bool allow_reload_on_option_change = false,
-                    std::optional<bool> pinned = std::nullopt);
+                    std::optional<bool> pinned = std::nullopt,
+                    std::atomic<bool>* cancel_flag = nullptr);
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
     std::string get_loaded_model() const;
     std::string get_loaded_recipe() const;
+
+    // The single live model of this type, or "" when none or more than one is
+    // loaded. Endpoints that let the caller omit "model" use this so an
+    // ambiguous choice is refused rather than silently resolved.
+    std::string get_sole_loaded_model_of_type(ModelType type) const;
 
     json get_all_loaded_models() const;
 
@@ -99,10 +113,11 @@ public:
     // Returns empty string if the backend does not support streaming transcription.
     std::string get_streaming_transcription_address(const std::string& model_name) const;
 
-    json chat_completion(const json& request);
+    json chat_completion(const json& request, std::atomic<bool>* cancel = nullptr);
     json completion(const json& request);
     json embeddings(const json& request);
     json reranking(const json& request);
+    json classify(const json& request);
     json get_slots();
     json slots_action(int slot_id, const std::string& action, const json& request_body);
     json tokenize(const json& request);
@@ -110,10 +125,15 @@ public:
 
     json audio_transcriptions(const json& request);
     void audio_speech(const json& request, httplib::DataSink& sink);
+    std::vector<std::string> audio_speech_supported_formats(const std::string& model_name);
 
     json image_generations(const json& request);
     json image_edits(const json& request);
     json image_variations(const json& request);
+
+    void audio_generations(const json& request, httplib::DataSink& sink);
+    std::vector<std::string> audio_generation_supported_formats(const std::string& model_name);
+    void model_3d_generations(const json& request, httplib::DataSink& sink);
 
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void completion_stream(const std::string& request_body, httplib::DataSink& sink);
@@ -129,6 +149,15 @@ public:
                          double time_to_first_token, double tokens_per_second);
 
     void update_prompt_tokens(const std::string& model_name, int prompt_tokens);
+
+    bool begin_exclusive(std::atomic<bool>* cancel = nullptr);
+    void end_exclusive();
+
+    std::map<std::string, bool> snapshot_loaded_models() const;
+    std::map<std::string, json> unload_job_models(const std::map<std::string, int>& owned_live,
+                                                  const std::map<std::string, bool>& snapshot_pins);
+    int loaded_model_pid(const std::string& model_name) const;
+    std::string canonical_model_name(const std::string& model_name) const;
 
     // Test hooks
     void simulate_vram_pressure(double pct);
@@ -152,8 +181,14 @@ private:
     bool is_loading_ = false;                    // True when a load operation is in progress
     std::condition_variable load_cv_;            // Signals when load completes
 
+    bool exclusive_active_ = false;
+    std::thread::id exclusive_owner_;
+    std::condition_variable exclusive_cv_;
+    void wait_for_slot_clearance(std::unique_lock<std::mutex>& lock);
+
     std::unique_ptr<GlobalVramMonitor> vram_monitor_;
     std::unique_ptr<EvictionEngine> eviction_engine_;
+    std::unique_ptr<SuspendInhibitor> suspend_inhibitor_;
 
     // Helper methods for multi-model management
     WrappedServer* find_server_by_model_name(const std::string& model_name) const;
@@ -167,7 +202,7 @@ private:
     bool has_npu_server() const;
     WrappedServer* find_npu_server() const;
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;
-    WrappedServer* find_flm_server_by_type(ModelType type) const;
+    WrappedServer* find_coexisting_server_by_type(ModelType type) const;
     void evict_all_npu_servers();
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
@@ -189,7 +224,7 @@ private:
     auto execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr));
 
     template<typename Func>
-    void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func);
+    void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span = nullptr);
 };
 
 } // namespace lemon

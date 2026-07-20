@@ -7,6 +7,9 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
+        # Allow the vendored model-viewer bundle (see src/app/src/renderer/vendor/README.md),
+        # which is necessarily larger than 500 KB.
+        exclude: ^src/app/src/renderer/vendor/model-viewer\.min\.js$
 
   - repo: https://github.com/psf/black
     rev: 26.1.0
