@@ -204,7 +204,8 @@ static bool is_unmetered_recipe(const std::string& recipe) {
 }
 
 int Router::count_servers_in_pool(ModelType type,
-                                         ResidencyClass residency_class) const {
+                                  ResidencyClass residency_class,
+                                  const std::string& model_name) const {
     int count = 0;
     for (const auto& server : loaded_servers_) {
         // Unmetered backends (cloud) consume no local memory and therefore do
@@ -215,8 +216,10 @@ int Router::count_servers_in_pool(ModelType type,
         if (server->is_backend_alive() &&
             same_residency_pool(server->get_model_type(),
                                 server->get_residency_class(),
+                                server->get_model_name(),
                                 type,
-                                residency_class)) {
+                                residency_class,
+                                model_name)) {
             count++;
         }
     }
@@ -225,7 +228,8 @@ int Router::count_servers_in_pool(ModelType type,
 
 WrappedServer* Router::find_lru_server_in_pool(
     ModelType type,
-    ResidencyClass residency_class) const {
+    ResidencyClass residency_class,
+    const std::string& model_name) const {
     WrappedServer* lru = nullptr;
 
     for (const auto& server : loaded_servers_) {
@@ -237,8 +241,10 @@ WrappedServer* Router::find_lru_server_in_pool(
         if (server->is_backend_alive() &&
             same_residency_pool(server->get_model_type(),
                                 server->get_residency_class(),
+                                server->get_model_name(),
                                 type,
-                                residency_class)) {
+                                residency_class,
+                                model_name)) {
             if (server->is_pinned()) {
                 continue;
             }
@@ -251,14 +257,16 @@ WrappedServer* Router::find_lru_server_in_pool(
     return lru;
 }
 
-void Router::ensure_residency_capacity(ModelType type,
-                                       ResidencyClass residency_class) {
+void Router::ensure_residency_capacity(
+    ModelType type,
+    ResidencyClass residency_class,
+    const std::string& model_name) {
     const int limit = residency_limit(residency_class, config_->max_loaded_models());
-    if (limit == -1 || count_servers_in_pool(type, residency_class) < limit) {
+    if (limit == -1 || count_servers_in_pool(type, residency_class, model_name) < limit) {
         return;
     }
 
-    WrappedServer* lru = find_lru_server_in_pool(type, residency_class);
+    WrappedServer* lru = find_lru_server_in_pool(type, residency_class, model_name);
     if (!lru) {
         throw SlotsPinnedException(residency_pool_to_string(type, residency_class));
     }
@@ -267,6 +275,60 @@ void Router::ensure_residency_capacity(ModelType type,
                          << residency_pool_to_string(type, residency_class)
                          << ", evicting LRU: " << lru->get_model_name() << std::endl;
     evict_server(lru);
+}
+
+void Router::transition_server_residency_locked(
+    WrappedServer* server,
+    ResidencyClass requested_residency_class) {
+    if (!server || server->get_residency_class() == requested_residency_class) {
+        return;
+    }
+
+    if (!is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
+        // Admit into the destination pool before changing the live role. Standard
+        // admission remains type-wide; helper admission is keyed by model name.
+        ensure_residency_capacity(
+            server->get_model_type(), requested_residency_class,
+            server->get_model_name());
+    }
+
+    const ResidencyClass previous = server->get_residency_class();
+    server->set_residency_class(requested_residency_class);
+
+    LOG(INFO, "Router") << "Changed loaded model " << server->get_model_name()
+                         << " residency from "
+                         << residency_class_to_string(previous)
+                         << " to "
+                         << residency_class_to_string(requested_residency_class)
+                         << std::endl;
+}
+
+bool Router::ensure_loaded_model_residency(
+    const std::string& model_name,
+    LoadPurpose load_purpose) {
+    const std::string canonical_model_name = resolve_model_name(model_name);
+    const ResidencyClass requested_residency_class =
+        residency_class_for_load_purpose(load_purpose);
+
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    load_cv_.wait(lock, [&] {
+        return !is_loading_ &&
+               (!exclusive_active_ ||
+                exclusive_owner_ == std::this_thread::get_id());
+    });
+
+    prune_unavailable_servers_locked();
+
+    WrappedServer* existing =
+        find_server_by_model_name(canonical_model_name);
+    if (!existing || !existing->is_backend_alive()) {
+        return false;
+    }
+
+    transition_server_residency_locked(
+        existing, requested_residency_class);
+    existing->update_access_time();
+    return true;
 }
 
 bool Router::has_npu_server() const {
@@ -586,21 +648,11 @@ void Router::load_model(const std::string& model_name,
                 evict_server(existing);
                 // Fall through to create and load with new options
             } else {
-                // A model first loaded directly can later become a router/classifier
-                // dependency. Promote the live process in place instead of loading a
-                // duplicate. We intentionally do not auto-demote routing helpers on a
-                // normal inference request; explicit unload resets the role.
-                if (requested_residency_class == ResidencyClass::RoutingHelper &&
-                    existing->get_residency_class() != ResidencyClass::RoutingHelper) {
-                    if (!is_unmetered_recipe(existing->get_recipe_options().get_recipe())) {
-                        ensure_residency_capacity(existing->get_model_type(),
-                                                  ResidencyClass::RoutingHelper);
-                    }
-                    existing->set_residency_class(ResidencyClass::RoutingHelper);
-                    LOG(INFO, "Router") << "Promoted loaded model "
-                                         << canonical_model_name
-                                         << " to routing_helper residency" << std::endl;
-                }
+                // Residency follows the current use of the live process. Promotion
+                // and demotion both reuse the process and obey destination-pool
+                // admission and pinning rules.
+                transition_server_residency_locked(
+                    existing, requested_residency_class);
                 LOG(DEBUG, "Router") << "Model already loaded, updating access time and pinned status" << std::endl;
                 existing->set_pinned(final_pinned);
                 existing->update_access_time();
@@ -628,7 +680,9 @@ void Router::load_model(const std::string& model_name,
                 for (const auto& server : loaded_servers_) {
                     if (server->is_backend_alive() &&
                         (server->get_device_type() & DEVICE_NPU) &&
-                        server->get_residency_class() != requested_residency_class) {
+                        should_reject_residency_displacement(
+                            requested_residency_class,
+                            server->get_residency_class())) {
                         throw RouterResidencyConflictException(
                             canonical_model_name,
                             server->get_model_name(),
@@ -651,7 +705,9 @@ void Router::load_model(const std::string& model_name,
                     if (server->is_backend_alive() && (server->get_device_type() & DEVICE_NPU) &&
                         slot_policy_for_recipe(server->get_recipe_options().get_recipe()) !=
                             SlotPolicy::CoexistByType) {
-                        if (server->get_residency_class() != requested_residency_class) {
+                        if (should_reject_residency_displacement(
+                                requested_residency_class,
+                                server->get_residency_class())) {
                             throw RouterResidencyConflictException(
                                 canonical_model_name,
                                 server->get_model_name(),
@@ -669,7 +725,9 @@ void Router::load_model(const std::string& model_name,
                 // 2. Evict FLM of the SAME model type (max 1 per type: 1 LLM, 1 transcription, 1 embed)
                 WrappedServer* same_type_flm = find_coexisting_server_by_type(model_type);
                 if (same_type_flm) {
-                    if (same_type_flm->get_residency_class() != requested_residency_class) {
+                    if (should_reject_residency_displacement(
+                            requested_residency_class,
+                            same_type_flm->get_residency_class())) {
                         throw RouterResidencyConflictException(
                             canonical_model_name,
                             same_type_flm->get_model_name(),
@@ -692,7 +750,8 @@ void Router::load_model(const std::string& model_name,
         // slot of the same ModelType. Cloud remains unmetered and outside both pools.
         const bool is_unmetered_load = is_unmetered_recipe(model_info.recipe);
         if (!is_unmetered_load) {
-            ensure_residency_capacity(model_type, requested_residency_class);
+            ensure_residency_capacity(model_type, requested_residency_class,
+                                      canonical_model_name);
         }
 
         // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
@@ -2376,20 +2435,17 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
     }
 }
 
-int Router::count_pinned_servers_by_type(ModelType type) const {
+int Router::count_pinned_servers_in_pool(
+    ModelType type,
+    ResidencyClass residency_class) const {
     int count = 0;
     for (const auto& server : loaded_servers_) {
-        // Unmetered servers (cloud) never occupy a slot, so they don't count.
         if (is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
             continue;
         }
-        // /health.pinned_models is compared with max_models by the CLI, and
-        // max_models describes only the standard user-facing pool. A pinned
-        // routing helper must therefore not produce a false "all slots pinned"
-        // warning for a standard model load.
         if (server->is_backend_alive() &&
             server->get_model_type() == type &&
-            server->get_residency_class() == ResidencyClass::Standard &&
+            server->get_residency_class() == residency_class &&
             server->is_pinned()) {
             count++;
         }
@@ -2400,13 +2456,26 @@ int Router::count_pinned_servers_by_type(ModelType type) const {
 json Router::get_pinned_model_counts() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     return {
-        {"llm", count_pinned_servers_by_type(ModelType::LLM)},
-        {"embedding", count_pinned_servers_by_type(ModelType::EMBEDDING)},
-        {"reranking", count_pinned_servers_by_type(ModelType::RERANKING)},
-        {"transcription", count_pinned_servers_by_type(ModelType::TRANSCRIPTION)},
-        {"image", count_pinned_servers_by_type(ModelType::IMAGE)},
-        {"tts", count_pinned_servers_by_type(ModelType::TTS)},
-        {"classification", count_pinned_servers_by_type(ModelType::CLASSIFICATION)}
+        {"llm", count_pinned_servers_in_pool(ModelType::LLM, ResidencyClass::Standard)},
+        {"embedding", count_pinned_servers_in_pool(ModelType::EMBEDDING, ResidencyClass::Standard)},
+        {"reranking", count_pinned_servers_in_pool(ModelType::RERANKING, ResidencyClass::Standard)},
+        {"transcription", count_pinned_servers_in_pool(ModelType::TRANSCRIPTION, ResidencyClass::Standard)},
+        {"image", count_pinned_servers_in_pool(ModelType::IMAGE, ResidencyClass::Standard)},
+        {"tts", count_pinned_servers_in_pool(ModelType::TTS, ResidencyClass::Standard)},
+        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::Standard)}
+    };
+}
+
+json Router::get_pinned_helper_counts() const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    return {
+        {"llm", count_pinned_servers_in_pool(ModelType::LLM, ResidencyClass::RoutingHelper)},
+        {"embedding", count_pinned_servers_in_pool(ModelType::EMBEDDING, ResidencyClass::RoutingHelper)},
+        {"reranking", count_pinned_servers_in_pool(ModelType::RERANKING, ResidencyClass::RoutingHelper)},
+        {"transcription", count_pinned_servers_in_pool(ModelType::TRANSCRIPTION, ResidencyClass::RoutingHelper)},
+        {"image", count_pinned_servers_in_pool(ModelType::IMAGE, ResidencyClass::RoutingHelper)},
+        {"tts", count_pinned_servers_in_pool(ModelType::TTS, ResidencyClass::RoutingHelper)},
+        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::RoutingHelper)}
     };
 }
 

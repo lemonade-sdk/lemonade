@@ -2186,12 +2186,17 @@ void Server::auto_load_model_if_needed(
     const std::string& requested_model,
     const json& request_options,
     LoadPurpose load_purpose) {
-    // Standard requests keep the fast no-op path. Routing dependencies still
-    // enter Router::load_model when already live so a standard process can be
-    // promoted to routing_helper residency without a reload.
-    if (load_purpose == LoadPurpose::UserInference &&
-        router_->is_model_loaded(requested_model)) {
-        LOG(DEBUG, "Server") << "Model already loaded: " << requested_model << std::endl;
+    // A live process follows its current use without a reload: routing work
+    // promotes it to RoutingHelper, while direct inference demotes it into the
+    // counted Standard pool. Destination-pool admission remains authoritative.
+    if (router_->ensure_loaded_model_residency(
+            requested_model, load_purpose)) {
+        LOG(DEBUG, "Server")
+            << "Model already loaded: " << requested_model
+            << " (residency="
+            << residency_class_to_string(
+                   residency_class_for_load_purpose(load_purpose))
+            << ")" << std::endl;
         if (request_options.contains("ctx_size")) {
             auto loaded_ctx = router_->get_model_recipe_options(requested_model)
                                   .get_option("ctx_size");
@@ -2324,6 +2329,7 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 
     // Add pinned model counts
     response["pinned_models"] = router_->get_pinned_model_counts();
+    response["pinned_helper_models"] = router_->get_pinned_helper_counts();
 
     // Add WebSocket server port for realtime API and log streaming
     if (websocket_server_ && websocket_server_->is_running()) {

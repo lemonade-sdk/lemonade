@@ -15,6 +15,7 @@ using lemon::residency_class_to_string;
 using lemon::residency_limit;
 using lemon::residency_pool_to_string;
 using lemon::same_residency_pool;
+using lemon::should_reject_residency_displacement;
 
 static int failures = 0;
 
@@ -38,19 +39,42 @@ int main() {
           residency_limit(ResidencyClass::Standard, 3) == 3);
     check("standard pool preserves unlimited",
           residency_limit(ResidencyClass::Standard, -1) == -1);
-    check("routing helper has one slot independent of standard limit",
+    check("each distinct helper model has one capacity identity",
           residency_limit(ResidencyClass::RoutingHelper, -1) == 1 &&
               residency_limit(ResidencyClass::RoutingHelper, 8) == 1);
 
-    check("same type and role share a pool",
-          same_residency_pool(ModelType::LLM, ResidencyClass::Standard,
-                              ModelType::LLM, ResidencyClass::Standard));
-    check("same type but different role do not share a pool",
-          !same_residency_pool(ModelType::LLM, ResidencyClass::Standard,
-                               ModelType::LLM, ResidencyClass::RoutingHelper));
-    check("different types do not share a helper pool",
-          !same_residency_pool(ModelType::LLM, ResidencyClass::RoutingHelper,
-                               ModelType::EMBEDDING, ResidencyClass::RoutingHelper));
+    check("standard same type and different models share capacity",
+          same_residency_pool(ModelType::LLM, ResidencyClass::Standard, "model-a",
+                              ModelType::LLM, ResidencyClass::Standard, "model-b"));
+    check("same helper model shares its helper capacity identity",
+          same_residency_pool(ModelType::LLM, ResidencyClass::RoutingHelper, "helper-a",
+                              ModelType::LLM, ResidencyClass::RoutingHelper, "helper-a"));
+    check("distinct same-type helper models do not compete",
+          !same_residency_pool(ModelType::LLM, ResidencyClass::RoutingHelper, "helper-a",
+                               ModelType::LLM, ResidencyClass::RoutingHelper, "helper-b"));
+    check("different residency classes never share capacity",
+          !same_residency_pool(ModelType::LLM, ResidencyClass::Standard, "model-a",
+                               ModelType::LLM, ResidencyClass::RoutingHelper, "model-a"));
+    check("different standard model types do not share capacity",
+          !same_residency_pool(ModelType::LLM, ResidencyClass::Standard, "model-a",
+                               ModelType::EMBEDDING, ResidencyClass::Standard, "model-b"));
+
+    check("routing helper cannot displace standard residency",
+          should_reject_residency_displacement(
+              ResidencyClass::RoutingHelper,
+              ResidencyClass::Standard));
+    check("routing helper cannot displace another routing helper",
+          should_reject_residency_displacement(
+              ResidencyClass::RoutingHelper,
+              ResidencyClass::RoutingHelper));
+    check("standard request may displace routing helper",
+          !should_reject_residency_displacement(
+              ResidencyClass::Standard,
+              ResidencyClass::RoutingHelper));
+    check("standard request may replace standard residency",
+          !should_reject_residency_displacement(
+              ResidencyClass::Standard,
+              ResidencyClass::Standard));
 
     check("health class string is stable",
           residency_class_to_string(ResidencyClass::RoutingHelper) ==

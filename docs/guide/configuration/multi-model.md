@@ -27,11 +27,21 @@ residency pool. This is intentionally independent from both `ModelType` and the
 backend's hardware slot policy:
 
 - A router LLM remains an **LLM**; it is not reclassified as a classification model.
-- Each model type has one routing-helper slot in addition to its normal
-  `max_loaded_models` slots. With the default `max_loaded_models=1`, one router
-  LLM and one selected LLM candidate can therefore stay warm together.
-- If an already-loaded standard model is later used as a routing dependency, its
-  live process is promoted in place without a reload or duplicate process.
+- Standard pools continue to use `max_loaded_models` per `ModelType`.
+- Routing-helper capacity is keyed by the distinct helper model rather than by
+  `ModelType`. Multiple classifier or router models of the same type required by
+  one or more policies can therefore remain warm together without consuming or
+  evicting standard user-facing slots. A second process for the same helper model
+  is never created.
+- With the default `max_loaded_models=1`, a router LLM and one selected standard
+  LLM candidate can stay warm together; additional distinct helper models can
+  also remain resident until explicit or pressure-based eviction removes them.
+- Residency follows the current use of the live process. A standard model used
+  as a routing dependency is promoted in place; a routing helper called directly
+  by the user is demoted into the counted standard pool in place. Destination-pool
+  admission and pinning rules apply before either transition. The
+  `router.model == candidate` case therefore promotes for routing and demotes for
+  candidate inference within the same request without creating a second process.
 - Pinning is pool-local for count-based LRU: a pinned normal candidate does not
   block the routing-helper slot, and a pinned helper does not block normal slots.
 - Cloud (`Unmetered`) models consume neither pool and report `slot_pool: unmetered`.
@@ -39,12 +49,16 @@ backend's hardware slot policy:
   helper never makes an otherwise unique candidate ambiguous.
 - Explicit idle/VRAM-pressure eviction remains independent; an unpinned routing
   helper can still be evicted when dynamic eviction is enabled.
-- Backend/device constraints remain authoritative. If a routing helper and
-  candidate cannot physically coexist (for example, exclusive NPU ownership),
-  the load fails with HTTP `409` and code `router_residency_conflict` instead of
-  repeatedly evicting one another.
+- Backend/device constraints remain authoritative. Internal routing work never
+  evicts an already-resident model to acquire an exclusive hardware slot; that
+  attempt fails with HTTP `409` and code `router_residency_conflict`. This also
+  prevents two incompatible NPU/FLM helpers from repeatedly evicting one another.
+  A direct user request has precedence and may evict a resident routing helper
+  through the backend's normal exclusivity policy.
 
 `GET /api/v1/health` exposes `residency_class` and `slot_pool` for every live model.
+`pinned_models` remains the standard-pool summary used with `max_models`, while
+`pinned_helper_models` separately reports pinned routing helpers by `ModelType`.
 
 ## Device Constraints
 

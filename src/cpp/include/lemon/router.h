@@ -81,6 +81,12 @@ public:
         LoadPurpose load_purpose = LoadPurpose::UserInference,
         std::atomic<bool>* cancel_flag = nullptr);
 
+    // Apply request intent to an already-live process without reloading it.
+    // Returns false when the requested model is not currently live.
+    bool ensure_loaded_model_residency(
+        const std::string& model_name,
+        LoadPurpose load_purpose);
+
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
     std::string get_loaded_model() const;
@@ -97,6 +103,9 @@ public:
 
     // Get pinned model counts per type
     json get_pinned_model_counts() const;
+    // Pinned routing helpers, separated from the standard counts used by
+    // the CLI's max_models preflight.
+    json get_pinned_helper_counts() const;
 
     // Pin or unpin a model
     void set_model_pinned(const std::string& model_name, bool pinned);
@@ -199,10 +208,17 @@ private:
     void prune_unavailable_servers_locked();
     bool reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options);
     bool is_watchdog_reset_response(const json& response) const;
-    int count_servers_in_pool(ModelType type, ResidencyClass residency_class) const;
-    int count_pinned_servers_by_type(ModelType type) const;
-    WrappedServer* find_lru_server_in_pool(ModelType type, ResidencyClass residency_class) const;
-    void ensure_residency_capacity(ModelType type, ResidencyClass residency_class);
+    int count_servers_in_pool(ModelType type, ResidencyClass residency_class,
+                              const std::string& model_name) const;
+    int count_pinned_servers_in_pool(ModelType type,
+                                      ResidencyClass residency_class) const;
+    WrappedServer* find_lru_server_in_pool(ModelType type, ResidencyClass residency_class,
+                                                  const std::string& model_name) const;
+    void ensure_residency_capacity(ModelType type, ResidencyClass residency_class,
+                                   const std::string& model_name);
+    void transition_server_residency_locked(
+        WrappedServer* server,
+        ResidencyClass requested_residency_class);
     bool has_npu_server() const;
     WrappedServer* find_npu_server() const;
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;

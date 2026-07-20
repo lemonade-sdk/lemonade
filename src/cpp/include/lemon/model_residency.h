@@ -43,18 +43,41 @@ inline std::string residency_class_to_string(ResidencyClass residency_class) {
     return "standard";
 }
 
-// Router/classifier dependencies get one warm process per ModelType. Keeping
-// this independent from max_loaded_models prevents a normal LLM candidate from
-// evicting an LLM router when the user keeps the default standard limit of 1.
+// Standard pools honor max_loaded_models. A RoutingHelper pool is scoped to
+// one distinct helper model, so the per-pool limit stays one while multiple
+// helper models required by a policy can remain resident together.
 inline int residency_limit(ResidencyClass residency_class, int standard_limit) {
     return residency_class == ResidencyClass::RoutingHelper ? 1 : standard_limit;
 }
 
+// Standard capacity remains shared by ModelType. Routing-helper capacity is
+// keyed by the distinct helper model, so a policy can keep multiple same-type
+// helpers warm without making them compete for one type-wide slot.
 inline bool same_residency_pool(ModelType lhs_type,
                                 ResidencyClass lhs_class,
+                                const std::string& lhs_model,
                                 ModelType rhs_type,
-                                ResidencyClass rhs_class) {
-    return lhs_type == rhs_type && lhs_class == rhs_class;
+                                ResidencyClass rhs_class,
+                                const std::string& rhs_model) {
+    if (lhs_class != rhs_class) {
+        return false;
+    }
+    if (lhs_class == ResidencyClass::RoutingHelper) {
+        return lhs_type == rhs_type && lhs_model == rhs_model;
+    }
+    return lhs_type == rhs_type;
+}
+
+// Internal routing work must not evict an already-resident process to acquire
+// an exclusive hardware slot. Reject helper -> standard and helper -> helper
+// displacement deterministically instead of creating cross-request NPU/FLM
+// thrashing. A direct user request has precedence and may evict a helper via
+// the backend's normal exclusivity policy.
+inline bool should_reject_residency_displacement(
+    ResidencyClass incoming,
+    ResidencyClass resident) {
+    (void)resident;
+    return incoming == ResidencyClass::RoutingHelper;
 }
 
 inline std::string residency_pool_to_string(ModelType type,
