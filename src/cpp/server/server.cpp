@@ -20,6 +20,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
+#include "lemon/thinking_controls.h"
 #include "lemon/prometheus_metrics.h"
 #include "lemon/runtime_config.h"
 #include "telemetry.h"
@@ -79,37 +80,7 @@ namespace lemon {
 
 namespace {
 
-bool should_disable_thinking(const json& request_json) {
-    // enable_thinking takes precedence over thinking when both are present.
-    if (request_json.contains("enable_thinking") && request_json["enable_thinking"].is_boolean()) {
-        return request_json["enable_thinking"].get<bool>() == false;
-    }
 
-    if (request_json.contains("thinking")) {
-        const auto& thinking = request_json["thinking"];
-        if (thinking.is_boolean()) {
-            return thinking.get<bool>() == false;
-        }
-        if (thinking.is_object()) {
-            const std::string type = thinking.value("type", "");
-            if (type == "disabled") {
-                return true;
-            }
-            if (type == "enabled") {
-                return false;
-            }
-        }
-    }
-
-    return false;
-}
-
-bool strip_handled_thinking_fields(json& request_json) {
-    bool modified = false;
-    modified = request_json.erase("enable_thinking") > 0 || modified;
-    modified = request_json.erase("thinking") > 0 || modified;
-    return modified;
-}
 
 // Normalize client-provided model names: strip ":latest" suffix (Ollama/Docker convention)
 // Returns true if the model name was modified
@@ -131,31 +102,6 @@ bool normalize_client_model_name(json& request_json) {
     return false;
 }
 
-bool prepend_no_think_to_last_user_message(json& request_json) {
-    if (!request_json.contains("messages") || !request_json["messages"].is_array()) {
-        LOG(DEBUG, "Server") << "No messages array found for /no_think injection" << std::endl;
-        return false;
-    }
-
-    auto& messages = request_json["messages"];
-
-    for (int i = static_cast<int>(messages.size()) - 1; i >= 0; i--) {
-        if (messages[i].is_object() &&
-            messages[i].contains("role") &&
-            messages[i]["role"].is_string() &&
-            messages[i]["role"].get<std::string>() == "user" &&
-            messages[i].contains("content") &&
-            messages[i]["content"].is_string()) {
-
-            std::string original_content = messages[i]["content"].get<std::string>();
-            messages[i]["content"] = "/no_think\n" + original_content;
-            return true;
-        }
-    }
-
-    LOG(DEBUG, "Server") << "No string-content user message found for /no_think injection" << std::endl;
-    return false;
-}
 
 bool valid_error_status(int status_code) {
     return status_code >= 400 && status_code <= 599;
@@ -2833,10 +2779,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.
-        if (should_disable_thinking(request_json)) {
-            request_modified = prepend_no_think_to_last_user_message(request_json) || request_modified;
-        }
-        request_modified = strip_handled_thinking_fields(request_json) || request_modified;
+        request_modified = normalize_thinking_controls(request_json) || request_modified;
 
         // If we modified the request (or normalized the model name earlier), serialize to string
         // The early normalize_client_model_name() call modifies request_json but doesn't set a flag,
