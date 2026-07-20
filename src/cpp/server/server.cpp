@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/error_types.h"
 #include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
@@ -139,6 +140,21 @@ void set_error_response(const json& response, httplib::Response& res,
     res.set_content(response.dump(), "application/json");
 }
 
+void set_router_residency_conflict_response(
+    const RouterResidencyConflictException& error,
+    httplib::Response& res) {
+    res.status = 409;
+    const json response = {
+        {"error", {
+            {"message", error.what()},
+            {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+            {"param", "model"},
+            {"code", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+        }},
+    };
+    res.set_content(response.dump(), "application/json");
+}
+
 void attach_route_decision(json& response, httplib::Response& res,
                            const std::optional<RouterDispatchResult>& dispatch) {
     if (!dispatch.has_value()) {
@@ -184,7 +200,8 @@ void set_route_decision_sse_content_provider(
 }
 
 int get_http_status_from_error(const std::string& error_code) {
-    if (error_code == "slots_pinned_error") {
+    if (error_code == "slots_pinned_error" ||
+        error_code == "router_residency_conflict") {
         return 409;
     } else if (error_code == "model_load_error") {
         return 500;
@@ -413,7 +430,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             if (params.contains("pinned") && params["pinned"].is_boolean())
                 pinned = params["pinned"].get<bool>();
             try {
-                router_->load_model(model, info, options, true, true, pinned, &cancel);
+                router_->load_model(model, info, options, true, true, pinned,
+                                    LoadPurpose::UserInference, &cancel);
             } catch (const std::exception& e) {
                 throw lemon::jobs::JobError(500, e.what());
             }
@@ -555,7 +573,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                     std::optional<bool> pinned = std::nullopt;
                     if (kv.second.contains("pinned") && kv.second["pinned"].is_boolean())
                         pinned = kv.second["pinned"].get<bool>();
-                    router_->load_model(kv.first, info, options, true, true, pinned, cancel);
+                    router_->load_model(kv.first, info, options, true, true, pinned,
+                                        LoadPurpose::UserInference, cancel);
                     const int pid = router_->loaded_model_pid(kv.first);
                     std::lock_guard<std::mutex> lk(*state_mutex);
                     auto it = job_states->find(job_id);
@@ -2094,7 +2113,18 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
         return error_response;
     }
 
-    // Case 3: Model exists and is available, but failed to load (engine error or pinned slots constraint)
+    // Case 3: Model exists and is available, but failed to load.
+    if (exception_msg.rfind("Routing residency conflict:", 0) == 0) {
+        error_response["error"] = {
+            {"message", exception_msg},
+            {"type", "router_residency_conflict"},
+            {"param", "model"},
+            {"code", "router_residency_conflict"},
+            {"requested_model", requested_model}
+        };
+        return error_response;
+    }
+
     if (exception_msg.find("are pinned") != std::string::npos) {
         error_response["error"] = {
             {"message", exception_msg},
@@ -2154,9 +2184,13 @@ nlohmann::json Server::extract_auto_load_options(const json& request) {
 
 void Server::auto_load_model_if_needed(
     const std::string& requested_model,
-    const json& request_options) {
-    // Check if this specific model is already loaded (multi-model aware)
-    if (router_->is_model_loaded(requested_model)) {
+    const json& request_options,
+    LoadPurpose load_purpose) {
+    // Standard requests keep the fast no-op path. Routing dependencies still
+    // enter Router::load_model when already live so a standard process can be
+    // promoted to routing_helper residency without a reload.
+    if (load_purpose == LoadPurpose::UserInference &&
+        router_->is_model_loaded(requested_model)) {
         LOG(DEBUG, "Server") << "Model already loaded: " << requested_model << std::endl;
         if (request_options.contains("ctx_size")) {
             auto loaded_ctx = router_->get_model_recipe_options(requested_model)
@@ -2209,7 +2243,11 @@ void Server::auto_load_model_if_needed(
     // Load model with do_not_upgrade=true, applying per-request options on first load.
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    router_->load_model(requested_model, info, RecipeOptions(info.recipe, request_options), true);
+    router_->load_model(requested_model, info,
+                        RecipeOptions(info.recipe, request_options), true,
+                        /*allow_reload_on_option_change=*/false,
+                        /*pinned=*/std::nullopt,
+                        load_purpose);
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
@@ -2620,7 +2658,10 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
     // immutable policy into it.
     RoutePolicy policy = *collection_info.route_policy;
     ClassifierServices services = make_router_classifier_services(
-        *router_, [this](const std::string& m) { auto_load_model_if_needed(m); });
+        *router_, [this](const std::string& m) {
+            auto_load_model_if_needed(m, json::object(),
+                                      LoadPurpose::RoutingDependency);
+        });
     RoutingPolicyEngine engine(std::move(policy), std::move(services));
 
     RouteContext ctx = build_route_context(request_json, collection_info.model_name);
@@ -2657,6 +2698,11 @@ std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
         request_json["model"] = dispatch->selected_model;
         request_json.erase("route_trace");
         return dispatch;
+    } catch (const RouterResidencyConflictException&) {
+        // This is a deterministic hardware-policy conflict, not a routing miss.
+        // Let the endpoint serialize it as HTTP 409 instead of silently falling
+        // back to trying to load the collection recipe itself.
+        throw;
     } catch (const std::exception& e) {
         LOG(WARNING, "Server") << "Router collection dispatch failed for '"
                                << requested_model << "': " << e.what() << std::endl;
@@ -2711,6 +2757,11 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         }
                     }
                 }
+            } catch (const RouterResidencyConflictException& e) {
+                LOG(WARNING, "Server") << "Router residency conflict for '"
+                                       << requested_model << "': " << e.what() << std::endl;
+                set_router_residency_conflict_response(e, res);
+                return;
             } catch (const std::exception& e) {
                 LOG(DEBUG, "Server") << "Collection check failed for '" << requested_model
                                      << "': " << e.what() << std::endl;
@@ -3145,6 +3196,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
             }
         }
 
+    } catch (const RouterResidencyConflictException& e) {
+        LOG(WARNING, "Server") << "Router residency conflict in completions: "
+                               << e.what() << std::endl;
+        set_router_residency_conflict_response(e, res);
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_completions: " << e.what() << std::endl;
         res.status = 500;
@@ -4607,6 +4662,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             res.set_content(response.dump(), "application/json");
         }
 
+    } catch (const RouterResidencyConflictException& e) {
+        LOG(WARNING, "Server") << "Router residency conflict in responses: "
+                               << e.what() << std::endl;
+        set_router_residency_conflict_response(e, res);
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_responses: " << e.what() << std::endl;
         res.status = 500;

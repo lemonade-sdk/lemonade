@@ -1943,6 +1943,23 @@ if(EXISTS "${_GGUF_CAPS_TEST_SRC}")
     add_test(NAME GgufCapabilitiesTest COMMAND test_gguf_capabilities)
 endif()
 
+# Model residency role/pool contract for router dependencies
+set(_MODEL_RESIDENCY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_residency.cpp"
+)
+if(EXISTS "${_MODEL_RESIDENCY_TEST_SRC}")
+    add_executable(test_model_residency
+        test/cpp/test_model_residency.cpp
+    )
+    target_include_directories(test_model_residency PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    include(CTest)
+    add_test(NAME ModelResidencyTest COMMAND test_model_residency)
+endif()
+
 # Pure version-resolution policy test (lemon::resolve_latest_pin). Header-only
 # logic, so the test links nothing beyond the standard library — regression
 # coverage for #2265 (fall back to the installed binary when the GitHub

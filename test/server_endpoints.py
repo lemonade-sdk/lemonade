@@ -43,6 +43,7 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    SECOND_TEST_MODEL_EVICTION,
     get_default_lemond_binary,
     SHARED_REPO_MODEL_A_NAME,
     SHARED_REPO_MODEL_A_CHECKPOINT,
@@ -3426,6 +3427,313 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
             stop_provider()
+
+    def test_021zk_router_llm_residency_live(self):
+        """Regression coverage for #2725.
+
+        With max_loaded_models=1, the router LLM must occupy routing_helper/llm
+        while the selected candidate occupies standard/llm. Repeated requests must
+        keep both backend processes warm, and a pinned standard candidate must not
+        block reloading the routing helper.
+
+        Structured router-output correctness is intentionally not asserted here.
+        That contract is covered deterministically by test_021zj using a mock cloud
+        router. A real local router may fail open to default_model without affecting
+        the residency behavior covered by this test.
+        """
+
+        router_model = SECOND_TEST_MODEL_EVICTION
+        candidate_model = ENDPOINT_TEST_MODEL
+
+        pull_model_with_retry(router_model)
+        pull_model_with_retry(candidate_model)
+
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterL0a-{suffix}"
+        public_name = canonical_name[5:]
+
+        try:
+            unload_all = requests.post(
+                f"{self.base_url}/unload",
+                json={},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(unload_all.status_code, 200, unload_all.text)
+
+            routing = {
+                "candidates": [candidate_model],
+                "default_model": candidate_model,
+                "router": {
+                    "type": "llm",
+                    "model": router_model,
+                    "prompt": (
+                        "You are a model router. Always choose "
+                        f"{candidate_model} for every request."
+                    ),
+                },
+            }
+
+            pull_response = self._pull_router_collection(
+                canonical_name,
+                routing=routing,
+                overrides={"components": [router_model, candidate_model]},
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            # First routed request loads the router into routing_helper/llm and the
+            # selected/default candidate into standard/llm.
+            first_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Explain gradient descent.",
+                        }
+                    ],
+                    "max_tokens": 16,
+                    "route_trace": True,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                first_response.status_code,
+                200,
+                first_response.text,
+            )
+
+            first_body = first_response.json()
+            self.assertNotIn("error", first_body, first_body)
+
+            first_route = first_body.get("x_lemonade_route")
+            self.assertIsInstance(first_route, dict)
+            self.assertEqual(
+                first_route.get("route_to"),
+                candidate_model,
+                "the router must select or fail open to the configured candidate",
+            )
+
+            health = requests.get(
+                f"{self.base_url}/health",
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+
+            self.assertEqual(
+                health.get("max_models", {}).get("llm"),
+                1,
+                "the test must exercise the default standard LLM limit",
+            )
+
+            loaded = {
+                item.get("model_name"): item
+                for item in health.get("all_models_loaded", [])
+            }
+
+            self.assertIn(router_model, loaded, loaded)
+            self.assertIn(candidate_model, loaded, loaded)
+
+            self.assertEqual(
+                loaded[router_model].get("residency_class"),
+                "routing_helper",
+            )
+            self.assertEqual(
+                loaded[router_model].get("slot_pool"),
+                "routing_helper/llm",
+            )
+            self.assertEqual(
+                loaded[candidate_model].get("residency_class"),
+                "standard",
+            )
+            self.assertEqual(
+                loaded[candidate_model].get("slot_pool"),
+                "standard/llm",
+            )
+
+            first_pids = {
+                router_model: int(loaded[router_model]["pid"]),
+                candidate_model: int(loaded[candidate_model]["pid"]),
+            }
+
+            # A second request must reuse both live processes.
+            second_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Explain gradient descent again.",
+                        }
+                    ],
+                    "max_tokens": 16,
+                    "route_trace": True,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                second_response.status_code,
+                200,
+                second_response.text,
+            )
+
+            second_body = second_response.json()
+            self.assertNotIn("error", second_body, second_body)
+            self.assertEqual(
+                second_body.get("x_lemonade_route", {}).get("route_to"),
+                candidate_model,
+            )
+
+            health_after = requests.get(
+                f"{self.base_url}/health",
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+
+            loaded_after = {
+                item.get("model_name"): item
+                for item in health_after.get("all_models_loaded", [])
+            }
+
+            self.assertIn(router_model, loaded_after, loaded_after)
+            self.assertIn(candidate_model, loaded_after, loaded_after)
+
+            self.assertEqual(
+                int(loaded_after[router_model]["pid"]),
+                first_pids[router_model],
+                "router backend must stay warm across routed requests",
+            )
+            self.assertEqual(
+                int(loaded_after[candidate_model]["pid"]),
+                first_pids[candidate_model],
+                "candidate backend must stay warm across routed requests",
+            )
+
+            # Pinning is local to the standard pool. Remove only the helper and
+            # verify that it can be loaded again without evicting or being blocked
+            # by the pinned standard candidate.
+            pin_response = requests.post(
+                f"{self.base_url.replace('/api/v1', '')}/internal/pin",
+                json={
+                    "model_name": candidate_model,
+                    "pinned": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                pin_response.status_code,
+                200,
+                pin_response.text,
+            )
+
+            unload_router = requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": router_model},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                unload_router.status_code,
+                200,
+                unload_router.text,
+            )
+
+            pinned_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Explain gradient descent briefly.",
+                        }
+                    ],
+                    "max_tokens": 16,
+                    "route_trace": True,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                pinned_response.status_code,
+                200,
+                pinned_response.text,
+            )
+
+            pinned_body = pinned_response.json()
+            self.assertNotIn("error", pinned_body, pinned_body)
+            self.assertEqual(
+                pinned_body.get("x_lemonade_route", {}).get("route_to"),
+                candidate_model,
+            )
+
+            pinned_health = requests.get(
+                f"{self.base_url}/health",
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+
+            pinned_loaded = {
+                item.get("model_name"): item
+                for item in pinned_health.get("all_models_loaded", [])
+            }
+
+            self.assertIn(router_model, pinned_loaded, pinned_loaded)
+            self.assertIn(candidate_model, pinned_loaded, pinned_loaded)
+
+            self.assertTrue(
+                pinned_loaded[candidate_model].get("pinned"),
+                "the standard candidate must remain pinned",
+            )
+            self.assertEqual(
+                pinned_health.get("pinned_models", {}).get("llm"),
+                1,
+                "only pinned standard models count against max_models; "
+                "routing helpers use their own pool",
+            )
+            self.assertEqual(
+                int(pinned_loaded[candidate_model]["pid"]),
+                first_pids[candidate_model],
+                "reloading the helper must not evict the pinned candidate",
+            )
+            self.assertEqual(
+                pinned_loaded[candidate_model].get("slot_pool"),
+                "standard/llm",
+            )
+            self.assertEqual(
+                pinned_loaded[router_model].get("residency_class"),
+                "routing_helper",
+            )
+            self.assertEqual(
+                pinned_loaded[router_model].get("slot_pool"),
+                "routing_helper/llm",
+            )
+
+            print(
+                "[OK] L0a residency: stable router/candidate PIDs and "
+                "pool-local pinning at max_loaded_models=1"
+            )
+
+        finally:
+            # Explicit unload is permitted even when the candidate is pinned.
+            for body in (
+                {"model_name": router_model},
+                {"model_name": candidate_model},
+            ):
+                try:
+                    requests.post(
+                        f"{self.base_url}/unload",
+                        json=body,
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is

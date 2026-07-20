@@ -20,6 +20,32 @@ Models are categorized into these types:
 
 Each type has its own independent LRU cache, all sharing the same slot limit set by `max_loaded_models`.
 
+## Router and Classifier Dependencies
+
+Models loaded internally to choose a candidate use a separate **routing-helper**
+residency pool. This is intentionally independent from both `ModelType` and the
+backend's hardware slot policy:
+
+- A router LLM remains an **LLM**; it is not reclassified as a classification model.
+- Each model type has one routing-helper slot in addition to its normal
+  `max_loaded_models` slots. With the default `max_loaded_models=1`, one router
+  LLM and one selected LLM candidate can therefore stay warm together.
+- If an already-loaded standard model is later used as a routing dependency, its
+  live process is promoted in place without a reload or duplicate process.
+- Pinning is pool-local for count-based LRU: a pinned normal candidate does not
+  block the routing-helper slot, and a pinned helper does not block normal slots.
+- Cloud (`Unmetered`) models consume neither pool and report `slot_pool: unmetered`.
+- Implicit model selection prefers a normal `standard` model, so a warm internal
+  helper never makes an otherwise unique candidate ambiguous.
+- Explicit idle/VRAM-pressure eviction remains independent; an unpinned routing
+  helper can still be evicted when dynamic eviction is enabled.
+- Backend/device constraints remain authoritative. If a routing helper and
+  candidate cannot physically coexist (for example, exclusive NPU ownership),
+  the load fails with HTTP `409` and code `router_residency_conflict` instead of
+  repeatedly evicting one another.
+
+`GET /api/v1/health` exposes `residency_class` and `slot_pool` for every live model.
+
 ## Device Constraints
 
 <!-- BEGIN GENERATED: npu-exclusivity -->
@@ -98,7 +124,7 @@ To prevent frequently used models from being auto-evicted by the LRU policy, you
   ```
   Or via a POST request to `/internal/pin`.
 - **Pre-emptive Warnings:** The CLI checks `/api/v1/health` before loading a new model. If all slots for that model type are occupied by pinned models, the CLI will output a pre-emptive warning alerting you that loading will fail.
-- **Capacity Failures:** If all loaded models of a type are pinned and a request to load another model of that type is received, the load request fails with a `409 Conflict` HTTP status containing a `slots_pinned_error` code. You must unpin or unload at least one model of that type to free up a slot.
+- **Capacity Failures:** If every model in the target `(residency class, model type)` pool is pinned and another model needs that pool, the load request fails with a `409 Conflict` HTTP status containing a `slots_pinned_error` code. You must unpin or unload a model from that pool to free its slot.
 
 ## Per-Model Settings
 

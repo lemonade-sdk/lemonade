@@ -15,6 +15,7 @@
 #include "utils/http_client.h"
 #include "server_capabilities.h"
 #include "model_manager.h"
+#include "model_residency.h"
 #include "backend_manager.h"
 #include "recipe_options.h"
 #include "backends/backend_descriptor.h"
@@ -283,6 +284,8 @@ public:
     std::string get_model_name() const { return model_name_; }
     std::string get_checkpoint() const { return checkpoint_; }
     ModelType get_model_type() const { return model_type_; }
+    ResidencyClass get_residency_class() const { return residency_class_; }
+    void set_residency_class(ResidencyClass residency_class) { residency_class_ = residency_class; }
     DeviceType get_device_type() const { return device_type_; }
     RecipeOptions get_recipe_options() const {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -508,6 +511,7 @@ protected:
     std::string model_name_;
     std::string checkpoint_;
     ModelType model_type_ = ModelType::LLM;
+    ResidencyClass residency_class_ = ResidencyClass::Standard;
     DeviceType device_type_ = DEVICE_NONE;
     std::chrono::steady_clock::time_point last_access_time_;
     RecipeOptions recipe_options_;

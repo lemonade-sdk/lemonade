@@ -16,6 +16,7 @@
 
 #include "fake_classifier_services.h"
 #include "lemon/routing_policy.h"
+#include "lemon/error_types.h"
 #include "lemon/routing_policy_parser.h"
 
 #include <cstdio>
@@ -255,6 +256,22 @@ static void test_classifier_backend_failure() {
     check("llm: backend failure yields Score::ok=false", !s.ok);
 }
 
+static void test_classifier_residency_conflict_propagates() {
+    ClassifierServices svc;
+    svc.chat = [](const std::string&, const std::string&, const std::string&) -> std::string {
+        throw lemon::RouterResidencyConflictException(
+            "router-model", "candidate-model", "exclusive NPU access");
+    };
+    auto llm = make_llm({"Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"});
+    bool propagated = false;
+    try {
+        (void)llm->evaluate(ClassifierContext{make_route("hi"), svc});
+    } catch (const lemon::RouterResidencyConflictException&) {
+        propagated = true;
+    }
+    check("llm: residency conflict propagates for HTTP 409", propagated);
+}
+
 // ---------------------------------------------------------------------------
 // Parser desugaring
 // ---------------------------------------------------------------------------
@@ -344,6 +361,7 @@ int main() {
     test_classifier_fenced_json_is_tolerated();
     test_classifier_rejects_non_exact_replies();
     test_classifier_backend_failure();
+    test_classifier_residency_conflict_propagates();
     test_desugar_shape();
     test_desugar_rejects_router_plus_rules();
     test_e2e_routes_to_chosen();
