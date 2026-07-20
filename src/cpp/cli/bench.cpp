@@ -610,25 +610,26 @@ static void compute_tps_from_tokens_and_time(BenchRunResult& result) {
     }
 }
 
-#define FIVE_MINUTES_MS 300000
 BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response) {
+                                bool capture_response,
+                                int timeout) {
     if (scenario.category == "embed")
-        return run_single_bench_embed(client, model, scenario, memory_tracking, capture_response);
+        return run_single_bench_embed(client, model, scenario, memory_tracking, capture_response, timeout);
     if (scenario.category == "imagegen")
-        return run_single_bench_imagegen(client, model, scenario, memory_tracking, capture_response);
+        return run_single_bench_imagegen(client, model, scenario, memory_tracking, capture_response, timeout);
     // default mode is text generation
-    return run_single_bench_textgen(client, model, scenario, memory_tracking, capture_response);
+    return run_single_bench_textgen(client, model, scenario, memory_tracking, capture_response, timeout);
 }
 
 BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response) {
+                                bool capture_response,
+                                int timeout) {
     BenchRunResult result;
     result.success = false;  // assume failure until proven otherwise
 
@@ -649,7 +650,7 @@ BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
 
     try {
         std::string response = client.make_request("/api/v1/chat/completions", "POST", body, "application/json",
-                                                   FIVE_MINUTES_MS, FIVE_MINUTES_MS);
+                                                   timeout, timeout);
         auto resp_json = json::parse(response);
 
         if (capture_response) {
@@ -712,7 +713,8 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response) {
+                                bool capture_response,
+                                int timeout) {
     BenchRunResult result;
     result.success = false;
 
@@ -733,7 +735,7 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
     try {
         std::string response = client.make_request(
             "/api/v1/embeddings", "POST", body, "application/json",
-            FIVE_MINUTES_MS, FIVE_MINUTES_MS);
+            timeout, timeout);
 
         auto resp_json = json::parse(response);
 
@@ -781,7 +783,8 @@ BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response) {
+                                bool capture_response,
+                                int timeout) {
     BenchRunResult result;
     result.success = false;
 
@@ -825,7 +828,7 @@ BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
     try {
         std::string response = client.make_request(
             "/api/v1/images/generations", "POST", body, "application/json",
-            FIVE_MINUTES_MS, FIVE_MINUTES_MS);
+            timeout, timeout);
 
         auto resp_json = json::parse(response);
 
@@ -874,6 +877,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                                  const std::string& recipe,
                                  const std::string& backend,
                                  int ctx_size,
+                                 int timeout,
                                  const std::string& backend_args,
                                  const std::string& response_log_path,
                                  const std::string& response_timestamp) {
@@ -902,7 +906,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
             }
         }
         std::cout << "    Warmup " << (i + 1) << "/" << warmup << "..." << std::flush;
-        run_single_bench(client, model, scenario, false, false);
+        run_single_bench(client, model, scenario, false, false, timeout);
         std::cout << " done" << std::endl;
     }
 
@@ -918,7 +922,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
         }
 
         std::cout << "    Run " << (i + 1) << "/" << runs << "..." << std::flush;
-        auto run_result = run_single_bench(client, model, scenario, memory_tracking, !response_log_path.empty());
+        auto run_result = run_single_bench(client, model, scenario, memory_tracking, !response_log_path.empty(), timeout);
         if (!run_result.success) {
             result.failed_runs++;
             std::cout << " FAILED (excluded from stats)" << std::endl;
@@ -1701,7 +1705,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                         if (config.measurement_runs > 0) runs = config.measurement_runs;
 
                         auto scenario_result = run_scenario(client, model, scenario, warmup, runs,
-                                                            config.memory_tracking, config.reload, recipe, backend, ctx_size, recipe_args,
+                                                            config.memory_tracking, config.reload,
+                                                            recipe, backend, ctx_size, config.timeout, recipe_args,
                                                             config.response_log,
                                                             command_timestamp);
                         backend_result.scenarios.push_back(scenario_result);
@@ -1928,6 +1933,8 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--whispercpp-args", opts.whispercpp_args, "Custom args for whisper-server. Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    cmd->add_option("--timeout", opts.timeout, "Timeout in seconds for individual requests (default: 300)")
+        ->type_name("SECONDS");
     return cmd;
 }
 
@@ -1954,6 +1961,7 @@ BenchConfig build_bench_config(const std::string& output_file,
     if (!cli.vllm_args.empty()) config.backend_args["vllm"] = cli.vllm_args;
     if (!cli.sdcpp_args.empty()) config.backend_args["sd-cpp"] = cli.sdcpp_args;
     if (!cli.whispercpp_args.empty()) config.backend_args["whispercpp"] = cli.whispercpp_args;
+    config.timeout = cli.timeout * 1000;
     return config;
 }
 

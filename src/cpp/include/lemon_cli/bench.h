@@ -136,21 +136,24 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response);
+                                bool capture_response,
+                                int timeout);
 
 // Benchmark a single text generation
 BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response);
+                                bool capture_response,
+                                int timeout);
 
 // Run a single benchmark measurement with embedding
 BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response);
+                                bool capture_response,
+                                int timeout);
 
 
 // Run a single benchmark measurement of image generation
@@ -158,7 +161,8 @@ BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response);
+                                bool capture_response,
+                                int timeout);
 
 // Run a full scenario (warmup + measurement runs).
 // When reload=true, unloads+loads the model before each measurement run to clear prompt cache.
@@ -172,6 +176,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                                  const std::string& recipe,
                                  const std::string& backend,
                                  int ctx_size,
+                                 int timeout,
                                  const std::string& backend_args,
                                  const std::string& response_log_path,
                                  const std::string& response_timestamp = "");
@@ -200,6 +205,7 @@ struct BenchCliOptions {
     std::vector<std::string> vllm_args;
     std::vector<std::string> sdcpp_args;
     std::vector<std::string> whispercpp_args;
+    int timeout = 300;
 };
 
 // ============================================================
@@ -225,6 +231,7 @@ struct BenchConfig {
     // Backend-specific custom args (keyed by recipe name: "llamacpp", "flm", "vllm", "sd-cpp", "whispercpp")
     // Each recipe can have multiple arg sets; all combinations are benchmarked.
     std::map<std::string, std::vector<std::string>> backend_args;
+    int timeout = 300;
 };
 
 // Main entry point for bench command
