@@ -1,10 +1,13 @@
 #pragma once
 
+#include <atomic>
 #include <string>
 #include <memory>
 #include <map>
 #include <mutex>
+#include <set>
 #include <condition_variable>
+#include <thread>
 #include <vector>
 #include <optional>
 #include <nlohmann/json.hpp>
@@ -72,7 +75,8 @@ public:
                     RecipeOptions options,
                     bool do_not_upgrade = true,
                     bool allow_reload_on_option_change = false,
-                    std::optional<bool> pinned = std::nullopt);
+                    std::optional<bool> pinned = std::nullopt,
+                    std::atomic<bool>* cancel_flag = nullptr);
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
@@ -109,7 +113,7 @@ public:
     // Returns empty string if the backend does not support streaming transcription.
     std::string get_streaming_transcription_address(const std::string& model_name) const;
 
-    json chat_completion(const json& request);
+    json chat_completion(const json& request, std::atomic<bool>* cancel = nullptr);
     json completion(const json& request);
     json embeddings(const json& request);
     json reranking(const json& request);
@@ -146,6 +150,15 @@ public:
 
     void update_prompt_tokens(const std::string& model_name, int prompt_tokens);
 
+    bool begin_exclusive(std::atomic<bool>* cancel = nullptr);
+    void end_exclusive();
+
+    std::map<std::string, bool> snapshot_loaded_models() const;
+    std::map<std::string, json> unload_job_models(const std::map<std::string, int>& owned_live,
+                                                  const std::map<std::string, bool>& snapshot_pins);
+    int loaded_model_pid(const std::string& model_name) const;
+    std::string canonical_model_name(const std::string& model_name) const;
+
     // Test hooks
     void simulate_vram_pressure(double pct);
 
@@ -167,6 +180,11 @@ private:
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_
     bool is_loading_ = false;                    // True when a load operation is in progress
     std::condition_variable load_cv_;            // Signals when load completes
+
+    bool exclusive_active_ = false;
+    std::thread::id exclusive_owner_;
+    std::condition_variable exclusive_cv_;
+    void wait_for_slot_clearance(std::unique_lock<std::mutex>& lock);
 
     std::unique_ptr<GlobalVramMonitor> vram_monitor_;
     std::unique_ptr<EvictionEngine> eviction_engine_;
