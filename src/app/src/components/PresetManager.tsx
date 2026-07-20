@@ -41,6 +41,14 @@ import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { LEMONADE_MCP_SERVER, listMcpServerOptions, type McpServerOption } from '../tools/mcpRuntime';
 import { DEFAULT_TTS_VOICE, OPENMOSS_VOICE_PRESETS, TTS_VOICES } from '../features/audio/ttsSettings';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
+import {
+  WorkspaceActionButton,
+  WorkspaceActionGroup,
+  WorkspaceDetailEmpty,
+  WorkspaceDetailPanel,
+  WorkspaceListPanel,
+  WorkspaceMetadataChip,
+} from './WorkspacePanels';
 
 const CAPABILITIES: Capability[] = ['chat', 'omni', 'vision', 'code', 'tts'];
 const VISIBLE_STARTERS = STARTERS.filter(preset => preset.applies_to.some(capability => CAPABILITIES.includes(capability)));
@@ -215,6 +223,13 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   }, [knownModels, loadedModels, appliedPresets]);
 
   const appliedModelNames = useMemo(() => Object.keys(appliedPresets), [appliedPresets]);
+  const visiblePresetCount = libraryFilter === 'mine'
+    ? userPresets.length
+    : libraryFilter === 'starters'
+      ? VISIBLE_STARTERS.length + 1
+      : libraryFilter === 'applied'
+        ? appliedModelNames.length
+        : allPresets.length;
 
   const linkedModelsByPreset = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -406,25 +421,40 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
           onClick={mobileRail.toggle}
           triggerRef={mobileRail.triggerRef}
         />
-        <div className="recipes__main">
-        <div className="recipes__head workspace-pane__header">
-          <div className="recipes__title">
-            <h1>{libraryFilter === 'all' ? 'Preset library' : libraryFilter === 'mine' ? 'My presets' : libraryFilter === 'starters' ? 'Starter library' : 'Applied models'}</h1>
-            <span className="recipes__title-sub" data-recipes-count>{VISIBLE_STARTERS.length + 1} starters · {userPresets.length} yours</span>
-          </div>
-          <div className="recipes__actions">
-            <button className="btn btn--primary" onClick={handleNewPreset}>+ New Preset</button>
+        <WorkspaceListPanel
+          className="recipes__main preset-list-panel"
+          title="Presets"
+          subtitle={<span data-recipes-count>{visiblePresetCount} {visiblePresetCount === 1 ? 'item' : 'items'}</span>}
+          actions={(
+            <WorkspaceActionGroup className="recipes__actions" label="Preset list actions">
+            <WorkspaceActionButton
+              appearance="primary"
+              size="toolbar"
+              icon="compose"
+              iconOnly
+              onClick={handleNewPreset}
+              aria-label="New preset"
+              title="New preset"
+            />
             <div className="dropdown">
-              <button className="btn btn--ghost dropdown__trigger" onClick={() => setImportOpen(!importOpen)}>
-                + Import <span className="dropdown__caret">▾</span>
-              </button>
+              <WorkspaceActionButton
+                className="dropdown__trigger"
+                size="toolbar"
+                icon="file-up"
+                iconOnly
+                onClick={() => setImportOpen(!importOpen)}
+                aria-label="Import presets"
+                aria-expanded={importOpen}
+                title="Import presets"
+              />
               <div className="dropdown__menu" hidden={!importOpen}>
                 <button className="dropdown__item" onClick={handleImportFile}>From file…</button>
                 <button className="dropdown__item" onClick={handleImportClipboard}>From clipboard</button>
               </div>
             </div>
-          </div>
-        </div>
+            </WorkspaceActionGroup>
+          )}
+        >
 
         <div className="recipes__body">
           <p className="recipes__lede">
@@ -443,7 +473,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             {userPresets.length > 0 ? (
               <div className="recipe-grid" data-recipe-grid="yours">
                 {userPresets.map(preset => (
-                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} highlight={highlightPresetId === preset.id} onClick={() => openSlideover(preset)} onApply={() => openSlideover(preset)} onClone={() => handleClone(preset)} onExport={() => handleExport(preset)} />
+                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} selected={selectedPreset?.id === preset.id} highlight={highlightPresetId === preset.id} onClick={() => openSlideover(preset)} onApply={() => openSlideover(preset)} onClone={() => handleClone(preset)} onExport={() => handleExport(preset)} />
                 ))}
               </div>
             ) : (
@@ -468,10 +498,10 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
               <span className="zone__rule" />
             </div>
             <div className="recipe-grid recipe-grid--starters-combined">
-              <PresetCard preset={DEFAULT_PRESET} linkedModels={linkedModelsByPreset.get(DEFAULT_PRESET.id)} onClick={() => openSlideover(DEFAULT_PRESET)} onCustomize={() => handleCustomize(DEFAULT_PRESET)} onClone={() => handleClone(DEFAULT_PRESET)} />
+              <PresetCard preset={DEFAULT_PRESET} linkedModels={linkedModelsByPreset.get(DEFAULT_PRESET.id)} selected={selectedPreset?.id === DEFAULT_PRESET.id} onClick={() => openSlideover(DEFAULT_PRESET)} onCustomize={() => handleCustomize(DEFAULT_PRESET)} onClone={() => handleClone(DEFAULT_PRESET)} />
               <div className="recipe-grid__contents" data-recipe-grid="starters">
                 {VISIBLE_STARTERS.map(preset => (
-                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} onClick={() => openSlideover(preset)} onCustomize={() => handleCustomize(preset)} onClone={() => handleClone(preset)} />
+                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} selected={selectedPreset?.id === preset.id} onClick={() => openSlideover(preset)} onCustomize={() => handleCustomize(preset)} onClone={() => handleClone(preset)} />
                 ))}
               </div>
             </div>
@@ -520,8 +550,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
           )}
 
         </div>
-        </div>
-      </section>
+        </WorkspaceListPanel>
 
       <div className={`scrim${selectedPreset ? ' is-open' : ''}`} onClick={closeSlideover} />
       <aside
@@ -532,7 +561,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
         aria-modal="true"
         aria-label="Preset details"
       >
-        {selectedPreset && (
+        {selectedPreset ? (
           <SlideoverContent
             preset={selectedPreset}
             models={allModelOptions}
@@ -548,8 +577,15 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             onDelete={handleDelete}
             onClose={closeSlideover}
           />
+        ) : (
+          <WorkspaceDetailEmpty
+            icon="sliders-horizontal"
+            title="Select a preset"
+            description="Choose a preset from the list to review its intent, linked models, and actions."
+          />
         )}
       </aside>
+      </section>
     </>
   );
 };
@@ -561,13 +597,14 @@ function linkedModelsText(preset: Preset, linkedModels: string[]): string {
 const PresetCard: React.FC<{
   preset: Preset;
   linkedModels?: string[];
+  selected?: boolean;
   highlight?: boolean;
   onClick: () => void;
   onClone?: () => void;
   onCustomize?: () => void;
   onApply?: () => void;
   onExport?: () => void;
-}> = ({ preset, linkedModels, highlight, onClick, onClone, onCustomize, onApply, onExport }) => {
+}> = ({ preset, linkedModels, selected, highlight, onClick, onClone, onCustomize, onApply, onExport }) => {
   const descId = `preset-card-desc-${preset.id}`;
   const capLabels = presetLabelsFor(preset).map(c => CAPABILITY_LABELS[c] || c).join(', ');
   const paramLines = paramsPreviewLines(preset);
@@ -580,7 +617,7 @@ const PresetCard: React.FC<{
   descParts.push(`MCP: ${mcpDisplayText(preset)}`);
   return (
   <article
-    className={`recipe-card${highlight ? ' recipe-card--flash' : ''}`}
+    className={`recipe-card${selected ? ' recipe-card--selected' : ''}${highlight ? ' recipe-card--flash' : ''}`}
     data-recipe-id={preset.id}
   >
     {/* Overlay button covers the card for pointer/keyboard activation without nesting interactive roles */}
@@ -852,54 +889,89 @@ const SlideoverContent: React.FC<{
   );
 
   return (
-    <>
-      <div className="slideover__head">
-        <div className="slideover__top">
-          <div className="slideover__title-wrap">
-            <div className="slideover__title-with-icon">
-              <PresetIcon preset={preset} className="preset-icon preset-icon--lg" />
-              {isReadOnly ? <h2 className="slideover__title" data-recipe-name>{preset.name}</h2> : (
-                <input className="slideover__title-input" value={name} onChange={event => setName(event.target.value)} placeholder="Preset name" data-recipe-name aria-label="Preset name" />
-              )}
-            </div>
-          </div>
-          <button className="slideover__close" onClick={onClose} aria-label="Close">✕</button>
-        </div>
-        <div className="slideover__meta-row">
-          {normalizedAppliesTo.map(cap => <CapabilityChip key={cap} cap={cap} />)}
-          {preset.starter && <span className="recipe-badge recipe-badge--starter" data-recipe-starter-badge>Starter</span>}
-          {preset.auto_opt_run_id && (
-            <button
-              type="button"
-              className="autoopt-preset-chip"
-              onClick={() => {
-                const runId = preset.auto_opt_run_id!;
-                if (autoOptState.runs.some(run => run.id === runId)) {
-                  setMissingRunNote(false);
-                  openAutoOptRun(runId);
-                } else {
-                  setMissingRunNote(true);
-                }
-              }}
-              title="Open the AutoOpt run that produced this preset"
-              data-preset-autoopt-chip
-            >
-              ⚙ Optimized by AutoOpt
-            </button>
+    <WorkspaceDetailPanel
+      className="preset-detail-panel"
+      ariaLabel={`Preset details: ${preset.name}`}
+      leading={<PresetIcon preset={preset} size={22} className="preset-icon preset-icon--lg" />}
+      title={isReadOnly ? (
+        <h2 className="slideover__title" data-recipe-name>{preset.name}</h2>
+      ) : (
+        <input className="slideover__title-input" value={name} onChange={event => setName(event.target.value)} placeholder="Preset name" data-recipe-name aria-label="Preset name" />
+      )}
+      metadata={(
+        <>
+          {normalizedAppliesTo.map(cap => (
+            <WorkspaceMetadataChip key={cap} emphasis="medium">
+              <CapabilityIcon capability={cap} size={12} aria-hidden="true" />
+              {CAPABILITY_LABELS[cap] || cap}
+            </WorkspaceMetadataChip>
+          ))}
+          {preset.starter && (
+            <WorkspaceMetadataChip emphasis="high" tone="accent" dataAttributes={{ 'data-recipe-starter-badge': true }}>
+              Starter
+            </WorkspaceMetadataChip>
           )}
-        </div>
-        {linkedModels.length > 0 && (
-          <p className={`preset-linked-note${preset.auto_opt_run_id ? ' preset-linked-note--optimized' : ''}`} data-preset-editor-linked>
-            <Icon name={preset.auto_opt_run_id ? 'gauge' : 'hard-drive'} size={13} aria-hidden="true" />
-            {linkedModelsText(preset, linkedModels)}
-          </p>
-        )}
-        {missingRunNote && <p className="preset-help" data-preset-autoopt-missing>Run no longer exists on this machine.</p>}
-        {isReadOnly ? <p className="slideover__desc" data-recipe-desc>{preset.description}</p> : (
-          <textarea className="slideover__desc-input" value={description} onChange={event => setDescription(event.target.value)} placeholder="Description (optional)" rows={2} data-recipe-desc aria-label="Description" />
-        )}
-      </div>
-
+          {preset.auto_opt_run_id && (
+            <WorkspaceMetadataChip
+              emphasis="high"
+              tone="accent"
+              icon="gauge"
+              title="Open the AutoOpt run that produced this preset"
+              dataAttributes={{ 'data-preset-autoopt-chip': true }}
+              buttonProps={{
+                onClick: () => {
+                  const runId = preset.auto_opt_run_id!;
+                  if (autoOptState.runs.some(run => run.id === runId)) {
+                    setMissingRunNote(false);
+                    openAutoOptRun(runId);
+                  } else {
+                    setMissingRunNote(true);
+                  }
+                },
+              }}
+            >
+              Optimized by AutoOpt
+            </WorkspaceMetadataChip>
+          )}
+          {linkedModels.length > 0 && (
+            <WorkspaceMetadataChip
+              emphasis="low"
+              icon={preset.auto_opt_run_id ? 'gauge' : 'hard-drive'}
+              className={preset.auto_opt_run_id ? 'preset-linked-note--optimized' : ''}
+              dataAttributes={{ 'data-preset-editor-linked': true }}
+            >
+              {linkedModelsText(preset, linkedModels)}
+            </WorkspaceMetadataChip>
+          )}
+        </>
+      )}
+      description={isReadOnly ? (
+        <p className="slideover__desc" data-recipe-desc>{preset.description}</p>
+      ) : (
+        <textarea className="slideover__desc-input" value={description} onChange={event => setDescription(event.target.value)} placeholder="Description (optional)" rows={2} data-recipe-desc aria-label="Description" />
+      )}
+      headerExtras={missingRunNote && <p className="preset-help" data-preset-autoopt-missing>Run no longer exists on this machine.</p>}
+      actions={(
+        <WorkspaceActionGroup className="preset-detail-actions" label={`Actions for ${preset.name}`}>
+          <WorkspaceActionButton appearance="quiet" icon="download" onClick={() => onExport(currentPreset)}>Export</WorkspaceActionButton>
+          {preset.starter ? (
+            <>
+              <WorkspaceActionButton appearance="secondary" icon="copy" onClick={() => onClone(preset)} data-recipe-clone>Clone</WorkspaceActionButton>
+              <WorkspaceActionButton appearance="primary" icon="edit" onClick={() => onCustomize(preset)} data-recipe-customize>Customize</WorkspaceActionButton>
+            </>
+          ) : (
+            <>
+              <WorkspaceActionButton appearance="secondary" icon="copy" onClick={() => onClone(currentPreset)} data-recipe-clone>Clone</WorkspaceActionButton>
+              <WorkspaceActionButton appearance="danger" icon="trash" onClick={() => onDelete(preset)} data-recipe-delete>Delete</WorkspaceActionButton>
+              <WorkspaceActionButton appearance="primary" icon={saved ? 'check' : undefined} className={saved ? 'btn--saved' : ''} onClick={handleSave}>{saved ? 'Saved' : 'Save'}</WorkspaceActionButton>
+            </>
+          )}
+        </WorkspaceActionGroup>
+      )}
+      onClose={onClose}
+      closeLabel="Close preset details"
+      closeClassName="slideover__close"
+    >
       <div className="slideover__body">
         <p className="preset-intent-explainer">Presets describe how you want to use a model. Lemonade resolves concrete runtime settings through Model Tuning for each model.</p>
 
@@ -1082,14 +1154,14 @@ const SlideoverContent: React.FC<{
                     <textarea className="input preset-prompt-textarea" rows={7} value={selectedSystemPrompt.prompt} onChange={event => updateSelectedSystemPrompt({ prompt: event.target.value })} />
                   </div>
                   <div className="preset-prompt-actions">
-                    <button type="button" className="btn btn--ghost btn--tiny" onClick={deleteSelectedCustomPrompt}>Delete custom prompt</button>
+                    <WorkspaceActionButton appearance="danger" size="small" icon="trash" onClick={deleteSelectedCustomPrompt}>Delete custom prompt</WorkspaceActionButton>
                   </div>
                 </div>
               ) : (
                 <p className="preset-prompt-preview">{selectedSystemPrompt.prompt}</p>
               )}
             </details>
-            {!isReadOnly && <button type="button" className="btn btn--ghost btn--tiny" onClick={addCustomSystemPrompt}>+ Custom prompt</button>}
+            {!isReadOnly && <WorkspaceActionButton appearance="secondary" size="small" icon="plus" onClick={addCustomSystemPrompt}>Custom prompt</WorkspaceActionButton>}
           </div>
         )}
 
@@ -1107,7 +1179,7 @@ const SlideoverContent: React.FC<{
                 return <option key={nameForModel} value={nameForModel} disabled={!compatible} title={reason}>{nameForModel} · {caps.map(cap => CAPABILITY_LABELS[cap]).join(', ')}</option>;
               })}
             </select>
-            <button className="btn btn--primary" disabled={!canApply} onClick={() => selectedModel && onApply(currentPreset.id, selectedModel)}>Apply</button>
+            <WorkspaceActionButton appearance="primary" disabled={!canApply} onClick={() => selectedModel && onApply(currentPreset.id, selectedModel)}>Apply</WorkspaceActionButton>
           </div>
           {selectedModel && !canApply && <p className="preset-error" role="tooltip">Incompatible preset for this model.</p>}
           {applySuccess && <p className="preset-success">✓ {applySuccess}</p>}
@@ -1115,22 +1187,7 @@ const SlideoverContent: React.FC<{
 
       </div>
 
-      <div className="slideover__foot">
-        <button className="btn btn--ghost" onClick={() => onExport(currentPreset)}>Export</button>
-        {preset.starter ? (
-          <>
-            <button className="btn btn--ghost" onClick={() => onClone(preset)} data-recipe-clone>Clone</button>
-            <button className="btn btn--primary" onClick={() => onCustomize(preset)} data-recipe-customize>Customize</button>
-          </>
-        ) : (
-          <>
-            <button className="btn btn--ghost" onClick={() => onClone(currentPreset)} data-recipe-clone>Clone</button>
-            <button className="btn btn--ghost" style={{ color: 'var(--danger)' }} onClick={() => onDelete(preset)} data-recipe-delete>Delete</button>
-            <button className={`btn btn--primary${saved ? ' btn--saved' : ''}`} onClick={handleSave}>{saved ? '✓ Saved' : 'Save'}</button>
-          </>
-        )}
-      </div>
-    </>
+    </WorkspaceDetailPanel>
   );
 };
 

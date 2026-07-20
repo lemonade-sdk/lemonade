@@ -2924,7 +2924,7 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
   test('A133 — custom-model action is grouped with the Models heading and keyboard reachable', async ({ page }) => {
     await goToModelsWithNavMock(page);
 
-    const title = page.locator('.model-list-panel__title');
+    const title = page.locator('.model-list-panel .workspace-list-panel__header');
     const heading = title.getByRole('heading', { name: 'Models' });
     const customModelsBtn = title.getByRole('button', { name: 'Open custom models' });
     await expect(title).toBeVisible();

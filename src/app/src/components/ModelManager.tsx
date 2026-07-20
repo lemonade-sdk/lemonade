@@ -19,6 +19,7 @@ import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
 import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
 import RouterEditorPanel from './RouterEditorPanel';
 import GlobalModelSettingsPanel, { type UpdateAllModelsResult } from './GlobalModelSettingsPanel';
+import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, WorkspaceMetadataChip } from './WorkspacePanels';
 import { ROUTER_RECIPE, type RouterPullRequest } from '../features/router/routerTypes';
 import { deleteRouterRecord, loadRouterRecords, routerRecordToModelInfo } from '../features/router/routerStore';
 import {
@@ -2228,6 +2229,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setCustomDraft(createEmptyCustomDraft(mode));
     setCustomError(null);
     setShowCustomForm(true);
+    setMobileDetailOpen(true);
     void refreshCustomRecipeAvailability();
   };
 
@@ -3736,13 +3738,40 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         </div>
       ) : showCustomEditor ? (
         <div className="manager__detail-form-panel">
-          <section className="zone custom-model-form" aria-label={customFormTitle}>
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--available" />
-              <span className="zone__title">{customFormTitle}</span>
-              {isCustomOmniCollectionDraft && <span className="zone__count">collection wrapper</span>}
-              <span className="zone__rule" />
-            </div>
+          <WorkspaceDetailPanel
+            className="custom-model-editor custom-model-form"
+            ariaLabel={customFormTitle}
+            leading={<Icon name="compose" size={20} aria-hidden="true" />}
+            title={<h2 className="custom-model-editor__title">{customFormTitle}</h2>}
+            metadata={(
+              <>
+                <WorkspaceMetadataChip emphasis="high" tone="accent">
+                  {isCustomOmniCollectionDraft ? 'Omni collection' : 'Custom model'}
+                </WorkspaceMetadataChip>
+                {editingCustomModelName && <WorkspaceMetadataChip emphasis="medium">Editing saved definition</WorkspaceMetadataChip>}
+              </>
+            )}
+            description={<p>Register a model or collection that is not included in the Lemonade catalog.</p>}
+            actions={(
+              <WorkspaceActionGroup className="custom-model-editor__actions" label={`${customFormTitle} actions`}>
+                <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>Export</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>Import</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Cancel</WorkspaceActionButton>
+                <WorkspaceActionButton
+                  appearance="primary"
+                  icon="check"
+                  type="submit"
+                  form="custom-model-editor-form"
+                  disabled={customRecipeOptions.length === 0}
+                >
+                  Save
+                </WorkspaceActionButton>
+              </WorkspaceActionGroup>
+            )}
+            onClose={closeCustomForm}
+            closeLabel="Close custom model editor"
+          >
+            <div className="custom-model-form__body">
             <div className="custom-model-form__toolbar">
               {editingCustomModelName ? (
                 <span className="custom-model-form__editing-badge">Editing saved collection</span>
@@ -3766,12 +3795,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   </button>
                 </div>
               )}
-              <div className="custom-model-form__io-actions">
-                <button className="btn btn--ghost btn--tiny" type="button" onClick={handleExportCustomModels}>Export JSON</button>
-                <button className="btn btn--ghost btn--tiny" type="button" onClick={() => customJsonInputRef.current?.click()}>Import JSON</button>
-              </div>
             </div>
-            <form className="custom-model-form__grid" onSubmit={handleSaveCustomModel}>
+            <form id="custom-model-editor-form" className="custom-model-form__grid" onSubmit={handleSaveCustomModel}>
               <label className="custom-model-form__field">Name
                 <input
                   value={customDraft.displayName}
@@ -4002,12 +4027,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 </>
               )}
               {customError && <div className="custom-model-form__error"><Icon name="alert" size={14} /> {customError}</div>}
-              <div className="custom-model-form__actions">
-                <button className="btn btn--primary" type="submit" disabled={customRecipeOptions.length === 0}>Save {isCustomOmniCollectionDraft ? 'Omni collection' : 'custom model'}</button>
-                <button className="btn btn--ghost" type="button" onClick={closeCustomForm}>Cancel</button>
-              </div>
             </form>
-          </section>
+            </div>
           <input
             ref={customJsonInputRef}
             className="hidden-file-input"
@@ -4016,6 +4037,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             onChange={e => { void handleImportCustomModels(e.target.files?.[0]); }}
           />
           {customJsonNotice && <div className="manager__inline-notice">{customJsonNotice}</div>}
+          </WorkspaceDetailPanel>
         </div>
       ) : (
         <ModelDetailPanel

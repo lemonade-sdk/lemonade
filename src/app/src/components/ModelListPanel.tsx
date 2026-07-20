@@ -18,6 +18,7 @@ import { Icon, CapabilityIcon } from './Icon';
 import type { IconName } from './Icon';
 import type { CapabilityIconTarget } from './Icon';
 import { activeDownloadForModel, type DownloadListItem } from '../features/downloadManager/downloadStore';
+import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceListPanel } from './WorkspacePanels';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -601,46 +602,50 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   const handleFilterBtnClick = () => setFilterOpen(v => !v);
 
   return (
-    <div className="model-list-panel">
-      {/* Title */}
-      <div className="model-list-panel__title manager__title">
-        <h1>Models</h1>
-        <div className="model-list-panel__title-actions">
+    <WorkspaceListPanel
+      className="model-list-panel"
+      headerClassName="manager__title"
+      title="Models"
+      subtitle={`${flatList.length} ${flatList.length === 1 ? 'model' : 'models'}`}
+      actions={(
+        <WorkspaceActionGroup className="model-list-panel__title-actions" label="Model list actions">
           {onOpenCustomModels && (
-            <button
-              type="button"
+            <WorkspaceActionButton
               className="model-list-panel__custom-menu-btn"
+              appearance="primary"
+              size="toolbar"
+              icon="compose"
+              iconOnly
               onClick={onOpenCustomModels}
               aria-label="Open custom models"
               title="Manage custom models"
-            >
-              <Icon name="user-round-cog" size={19} />
-            </button>
+            />
           )}
           {onOpenRouter && (
-            <button
-              type="button"
+            <WorkspaceActionButton
               className="model-list-panel__custom-menu-btn model-list-panel__custom-menu-btn--router"
+              size="toolbar"
+              icon="router"
+              iconOnly
               onClick={onOpenRouter}
               aria-label="Open router editor"
               title="Create or edit a model router"
-            >
-              <Icon name="router" size={19} />
-            </button>
+            />
           )}
           {onOpenGlobalSettings && (
-            <button
-              type="button"
+            <WorkspaceActionButton
               className="model-list-panel__custom-menu-btn model-list-panel__custom-menu-btn--settings"
+              size="toolbar"
+              icon="settings"
+              iconOnly
               onClick={onOpenGlobalSettings}
               aria-label="Open global model settings"
               title="Global model settings"
-            >
-              <Icon name="settings" size={19} />
-            </button>
+            />
           )}
-        </div>
-      </div>
+        </WorkspaceActionGroup>
+      )}
+    >
 
       {/* Search bar */}
       <div className="model-list-panel__search-row">
@@ -839,11 +844,10 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         </select>
       </div>
 
-      {/* List count */}
-      <div className="model-list-panel__count" aria-live="polite" aria-atomic="true">
+      <span className="sr-only model-list-panel__count" aria-live="polite" aria-atomic="true">
         {flatList.length} model{flatList.length !== 1 ? 's' : ''}
         {filterTab !== 'all' && ` (${FILTER_TABS.find(t => t.key === filterTab)?.label})`}
-      </div>
+      </span>
 
       {/* Scrollable area: model list + optional inline registry result zones */}
       <div className="model-list-panel__scroll-area">
@@ -960,7 +964,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       )}
       {registryZone}
       </div>
-    </div>
+    </WorkspaceListPanel>
   );
 };
 

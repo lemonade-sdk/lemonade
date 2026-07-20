@@ -104,6 +104,10 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M12 15V3\"></path><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"></path><path d=\"m7 10 5 5 5-5\"></path>"
   },
+  "compose": {
+    "viewBox": "0 0 24 24",
+    "body": "<path d=\"M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7\"></path><path d=\"M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z\"></path>"
+  },
   "expand": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"m15 15 6 6\"></path><path d=\"m15 9 6-6\"></path><path d=\"M21 16v5h-5\"></path><path d=\"M21 8V3h-5\"></path><path d=\"M3 16v5h5\"></path><path d=\"m3 21 6-6\"></path><path d=\"M3 8V3h5\"></path><path d=\"M9 9 3 3\"></path>"
@@ -119,6 +123,10 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
   "file": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\"></path><path d=\"M14 2v5a1 1 0 0 0 1 1h5\"></path>"
+  },
+  "file-up": {
+    "viewBox": "0 0 24 24",
+    "body": "<path d=\"M12 22h6a2 2 0 0 0 2-2V8l-6-6H6a2 2 0 0 0-2 2v6\"></path><path d=\"M14 2v5a1 1 0 0 0 1 1h5\"></path><path d=\"M5 12v6\"></path><path d=\"m2 15 3-3 3 3\"></path>"
   },
   "flask-conical": {
     "viewBox": "0 0 24 24",

@@ -509,17 +509,17 @@ test.describe('Lemonade UI — Feature Parity', () => {
     });
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await expect(page.locator('.titlebar__status-dot')).toHaveClass(/titlebar__status-dot--connected/);
+    await expect(page.locator('.titlebar__status-dot').first()).toHaveClass(/titlebar__status-dot--connected/);
 
     // Navigate to Presets
     await page.locator('.titlebar__nav').getByText('Presets').click();
     await page.waitForSelector('.recipes');
 
     // Title visible
-    await expect(page.locator('.recipes__title h1')).toContainText('Preset library');
+    await expect(page.locator('.preset-list-panel .workspace-list-panel__heading h1')).toHaveText('Presets');
 
     // Count subtitle visible
-    await expect(page.locator('.recipes__title-sub')).toContainText('starters');
+    await expect(page.locator('.preset-list-panel .workspace-list-panel__subtitle')).toContainText('items');
 
     // Lede explains the intent-to-tuning separation.
     const lede = page.locator('.recipes__lede');
@@ -554,13 +554,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await recipesView.locator('[data-empty="yours"] button').getByText('Pick a starter').click();
     await expect(recipesView.locator('[data-starter-zone]')).toBeFocused();
 
-    // Starter cards expose both flows: edit a customized copy or clone directly.
-    await expect(starterCards.first().getByRole('button', { name: 'Customize' })).toBeVisible();
-    await expect(starterCards.first().getByRole('button', { name: 'Clone' })).toBeVisible();
-
-    // Click a preset card to open slide-over
+    // Click a preset row to open its persistent detail pane.
     await starterCards.first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open');
+
+    // Starter actions live in the detail pane rather than crowding the list.
+    await expect(page.locator('.slideover').getByRole('button', { name: 'Customize' })).toBeVisible();
+    await expect(page.locator('.slideover').getByRole('button', { name: 'Clone' })).toBeVisible();
 
     // Slide-over has preset name
     await expect(page.locator('.slideover__title')).toBeVisible();
@@ -623,8 +623,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
     expect(zoneTitles).not.toContain('Applied to models');
 
-    // New Preset button visible
-    await expect(page.locator('.recipes__actions .btn--primary')).toContainText('New Preset');
+    // New Preset action uses the same compact list-header template as Models.
+    await expect(page.locator('.recipes__actions').getByRole('button', { name: 'New preset' })).toBeVisible();
 
     await page.screenshot({ path: 'screenshots/13-presets-view.png', fullPage: true });
 
@@ -660,7 +660,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
 
     const defaultCard = recipesView.locator('[data-recipe-id="s-default"]');
-    await defaultCard.getByRole('button', { name: 'Clone' }).click();
+    await defaultCard.locator('.recipe-card__overlay-btn').click();
+    await page.locator('.slideover [data-recipe-clone]').click();
     const yourCards = recipesView.locator('[data-recipe-grid="yours"] .recipe-card');
     await expect(yourCards).toHaveCount(1);
     await expect(yourCards.first()).toHaveClass(/recipe-card--flash/);
@@ -668,7 +669,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('.slideover.is-open')).toHaveCount(0);
 
     const balancedCard = recipesView.locator('[data-recipe-id="s-balanced"]');
-    await balancedCard.getByRole('button', { name: 'Customize' }).click();
+    await balancedCard.locator('.recipe-card__overlay-btn').click();
+    await page.locator('.slideover [data-recipe-customize]').click();
     await expect(yourCards).toHaveCount(2);
     await expect(page.locator('.slideover.is-open')).toBeVisible();
     await expect(page.locator('.slideover__title-input')).toHaveValue('Balanced (copy)');

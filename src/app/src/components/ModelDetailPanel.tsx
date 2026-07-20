@@ -23,6 +23,13 @@ import {
 } from '../presetStore';
 import { Icon, CapabilityIcon, PresetIcon, type IconName } from './Icon';
 import { modelIsCustom } from './ModelListPanel';
+import {
+  WorkspaceActionButton,
+  WorkspaceActionGroup,
+  WorkspaceActionLink,
+  WorkspaceDetailPanel,
+  WorkspaceMetadataChip,
+} from './WorkspacePanels';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 
 /* ── Helpers (local copies to keep component self-contained) ──── */
@@ -841,67 +848,34 @@ const HfDetailView: React.FC<{
   };
 
   return (
-    <div className={`model-detail-panel model-detail-panel--hf model-detail-panel--${provider}`} role="region" aria-label={`${providerMeta.label} model: ${repoName}`}>
-      {onClose && (
-        <button
-          type="button"
-          className="model-detail-panel__close-btn"
-          onClick={onClose}
-          aria-label="Close detail panel"
-        >
-          ×
-        </button>
-      )}
-      {onBack && (
-        <button
-          type="button"
-          className="model-detail-panel__back-btn"
-          onClick={onBack}
-          aria-label="Back to models list"
-        >
-          ← Back to models
-        </button>
-      )}
-
-      <div className="model-detail-panel__head model-detail-panel__head--hf">
-        <div className="hf-detail__source-label">
-          <Icon name="cloud" size={11} aria-hidden="true" /> {providerMeta.label}
-        </div>
-        <h2
-          className="model-detail-panel__name"
-          ref={panelHeadingRef}
-          tabIndex={-1}
-          id="detail-panel-heading"
-        >
+    <WorkspaceDetailPanel
+      className={`model-detail-panel model-detail-panel--hf model-detail-panel--${provider}`}
+      ariaLabel={`${providerMeta.label} model: ${repoName}`}
+      title={(
+        <h2 className="model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
           {repoName}
         </h2>
-
-        <div className="model-detail-panel__meta">
+      )}
+      metadata={(
+        <>
+          <WorkspaceMetadataChip emphasis="high" tone="accent" icon="cloud">{providerMeta.label}</WorkspaceMetadataChip>
           {pipelineTag && (
-            <span className="model-detail-panel__badge model-detail-panel__badge--pipeline">{pipelineTag}</span>
+            <WorkspaceMetadataChip emphasis="medium" tone="accent" className="model-detail-panel__badge--pipeline">{pipelineTag}</WorkspaceMetadataChip>
           )}
           {hfVariants?.recipe && (
-            <span className="model-detail-panel__badge model-detail-panel__badge--recipe">
-              {recipeDisplayLabel(hfVariants.recipe)}
-            </span>
+            <WorkspaceMetadataChip emphasis="medium">{recipeDisplayLabel(hfVariants.recipe)}</WorkspaceMetadataChip>
           )}
-          <span className="model-detail-panel__badge">{fmtDownloads(hfModel.downloads)} downloads</span>
-          <span className="model-detail-panel__badge">{fmtDownloads(hfModel.likes)} likes</span>
+          <WorkspaceMetadataChip emphasis="low">{fmtDownloads(hfModel.downloads)} downloads</WorkspaceMetadataChip>
+          <WorkspaceMetadataChip emphasis="low">{fmtDownloads(hfModel.likes)} likes</WorkspaceMetadataChip>
           {hfModel.createdAt && (
-            <span className="model-detail-panel__badge">{new Date(hfModel.createdAt).toLocaleDateString()}</span>
+            <WorkspaceMetadataChip emphasis="low">{new Date(hfModel.createdAt).toLocaleDateString()}</WorkspaceMetadataChip>
           )}
-        </div>
-
-        {displayTags.length > 0 && (
-          <div className="hf-detail__tag-row">
-            {displayTags.map(t => (
-              <span key={t} className="row__label row__label--hf">{t}</span>
-            ))}
-          </div>
-        )}
-
-        <div className="model-detail-panel__actions" aria-label={`Actions for ${repoName}`}>
-          {isPulling ? (
+          {displayTags.map(tag => <WorkspaceMetadataChip key={tag} emphasis="low">{tag}</WorkspaceMetadataChip>)}
+        </>
+      )}
+      actions={(
+        <WorkspaceActionGroup className="model-detail-panel__actions" label={`Actions for ${repoName}`}>
+          {isPulling && (
             <>
               <div className="row__progress">
                 <div className="row__progress-bar">
@@ -910,28 +884,30 @@ const HfDetailView: React.FC<{
                 <span className="row__progress-text">{pullPct.toFixed(0)}%</span>
               </div>
               {onCancelHfPull && (
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--sm"
-                  onClick={() => onCancelHfPull(hfModel.id)}
-                  aria-label={`Cancel download of ${repoName}`}
-                >
+                <WorkspaceActionButton appearance="secondary" onClick={() => onCancelHfPull(hfModel.id)} aria-label={`Cancel download of ${repoName}`}>
                   Cancel
-                </button>
+                </WorkspaceActionButton>
               )}
             </>
-          ) : null}
-          <a
-            className="model-detail-panel__hf-link"
+          )}
+          <WorkspaceActionLink
+            appearance="secondary"
+            icon="globe"
             href={providerMeta.url(repoName)}
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`View ${repoName} on ${providerMeta.label} (opens in new tab)`}
           >
-            <Icon name="globe" size={12} /> {providerMeta.label}
-          </a>
-        </div>
-      </div>
+            Open on {providerMeta.label}
+          </WorkspaceActionLink>
+        </WorkspaceActionGroup>
+      )}
+      onBack={onBack}
+      backLabel="Back to models"
+      backClassName="model-detail-panel__back-btn"
+      onClose={onClose}
+      closeClassName="model-detail-panel__close-btn"
+    >
 
       <div
         className="detail-tabs__tablist"
@@ -980,7 +956,7 @@ const HfDetailView: React.FC<{
           )}
         </div>
       ))}
-    </div>
+    </WorkspaceDetailPanel>
   );
 };
 
@@ -2605,7 +2581,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   if (!model) {
     return (
-      <div className="model-detail-panel model-detail-panel--empty" aria-label="Model detail">
+      <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label="Model detail">
         {onBack && (
           <button
             type="button"
@@ -2666,254 +2642,201 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const activeTemperatureValue = formatResolvedTemperature(activeSettingsTuning?.sampling.temperature);
   const activeContextValue = formatResolvedContext(activeSettingsTuning?.recipe_options.ctx_size);
 
+  const detailMetadata = (
+    <>
+      {recipe && (
+        <WorkspaceMetadataChip emphasis="medium" tone="accent">{recipeDisplayLabel(recipe)}</WorkspaceMetadataChip>
+      )}
+      {model.size != null && model.size > 0 && (
+        <WorkspaceMetadataChip emphasis="low">{fmtSize(model.size)}</WorkspaceMetadataChip>
+      )}
+      {cap && (
+        <WorkspaceMetadataChip emphasis="medium">
+          <CapabilityIcon capability={cap} size={12} aria-hidden="true" />
+          {capabilityLabel(cap)}
+        </WorkspaceMetadataChip>
+      )}
+      {isLoaded && (
+        <WorkspaceMetadataChip emphasis="high" tone="success">
+          <span className="row__pulse" aria-hidden="true" /> Running
+        </WorkspaceMetadataChip>
+      )}
+      {isDownloaded && !isLoaded && (
+        <WorkspaceMetadataChip emphasis="high" tone="success">Ready</WorkspaceMetadataChip>
+      )}
+      {activeSettingsTuning && (
+        <>
+          <WorkspaceMetadataChip
+            emphasis="low"
+            icon="thermometer"
+            title={`Temperature intent ${activeTemperatureHint}; effective value ${activeTemperatureValue}`}
+          >
+            Temperature <strong>{activeTemperatureHint}</strong> {activeTemperatureValue}
+          </WorkspaceMetadataChip>
+          <WorkspaceMetadataChip
+            emphasis="low"
+            icon="scan-text"
+            title={activeUsesSavedModelSettings
+              ? `Saved model context: ${activeContextValue}`
+              : `Context intent ${activeContextHint}; effective value ${activeContextValue}`}
+          >
+            Context <strong>{activeContextHint}</strong> {activeContextValue}
+          </WorkspaceMetadataChip>
+        </>
+      )}
+      {hfRepo && (
+        <WorkspaceMetadataChip
+          emphasis="low"
+          icon="globe"
+          href={`https://huggingface.co/${hfRepo}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`View ${name} on Hugging Face`}
+        >
+          Hugging Face
+        </WorkspaceMetadataChip>
+      )}
+    </>
+  );
+
+  const detailActions = (
+    <WorkspaceActionGroup className="model-detail-panel__actions" label={`Actions for ${name}`}>
+      {onToggleFavorite && (
+        <WorkspaceActionButton
+          className={`model-detail-panel__fav-btn${isFavorite ? ' model-detail-panel__fav-btn--on' : ''}`}
+          appearance={isFavorite ? 'primary' : 'quiet'}
+          icon="star"
+          onClick={() => onToggleFavorite(name)}
+          aria-pressed={isFavorite}
+          aria-label={isFavorite ? `Remove ${name} from favorites` : `Add ${name} to favorites`}
+          title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        >
+          {isFavorite ? 'Favorited' : 'Favorite'}
+        </WorkspaceActionButton>
+      )}
+      {isPulling ? (
+        <>
+          <div className="row__progress">
+            <div className="row__progress-bar">
+              <div className="row__progress-fill" style={{ width: `${pullPct}%` }} />
+            </div>
+            <span className="row__progress-text">{pullPct.toFixed(0)}%</span>
+          </div>
+          <WorkspaceActionButton appearance="secondary" icon="x" onClick={() => onCancelPull(name)} aria-label={`Cancel download of ${name}`}>
+            Cancel
+          </WorkspaceActionButton>
+        </>
+      ) : isLoaded ? (
+        <>
+          {(canUpdatePreset || isUpdatingPreset) && (
+            <WorkspaceActionButton
+              ref={updateBtnRef}
+              className="model-detail-panel__update-preset-btn"
+              appearance="primary"
+              icon="rotate-ccw"
+              onClick={handleUpdatePreset}
+              disabled={isUpdatingPreset || !canUpdatePreset}
+              aria-busy={isUpdatingPreset}
+              aria-label={isUpdatingPreset
+                ? (updateStatus.phase === 'reload' ? `Reloading ${name} with new preset…` : `Applying preset for ${name}…`)
+                : (presetChangeKind === 'reload' ? `Reload ${name} to apply preset` : `Apply preset for ${name}`)}
+            >
+              {isUpdatingPreset
+                ? (updateStatus.phase === 'reload' ? 'Reloading…' : 'Applying…')
+                : (presetChangeKind === 'reload' ? 'Reload to apply preset' : 'Apply preset')}
+            </WorkspaceActionButton>
+          )}
+          <WorkspaceActionButton
+            ref={unloadBtnRef}
+            appearance="secondary"
+            icon="stop"
+            onClick={() => onUnload(loadedModel!)}
+            disabled={isLoadingThis || isUpdatingPreset}
+            aria-label={isLoadingThis ? `Working on ${name}…` : `Unload ${name}`}
+          >
+            {isLoadingThis ? 'Working…' : 'Unload'}
+          </WorkspaceActionButton>
+        </>
+      ) : isDownloaded ? (
+        <WorkspaceActionButton
+          appearance="primary"
+          icon="play"
+          onClick={() => onLoad(model)}
+          disabled={isLoadingThis}
+          aria-label={isLoadingThis ? `Loading ${name}…` : `Load ${name}`}
+        >
+          {isLoadingThis ? 'Loading…' : 'Load'}
+        </WorkspaceActionButton>
+      ) : (
+        <>
+          <WorkspaceActionButton appearance="secondary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
+            Download
+          </WorkspaceActionButton>
+          <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPullAndLoad(model)} aria-label={`Get and load ${name}`}>
+            Get & Load
+          </WorkspaceActionButton>
+        </>
+      )}
+      {(isDownloaded || isLoaded) && (
+        <WorkspaceActionButton
+          appearance="danger"
+          icon="trash"
+          onClick={() => onDelete(model)}
+          disabled={isLoadingThis}
+          aria-label={(model as any).custom ? `Delete custom model definition for ${name}` : `Delete downloaded files for ${name}`}
+          title={(model as any).custom ? 'Delete model definition' : 'Delete downloaded files'}
+        >
+          Delete
+        </WorkspaceActionButton>
+      )}
+    </WorkspaceActionGroup>
+  );
+
+  const detailHeaderExtras = (
+    <>
+      {loadError?.modelName === name && (
+        <div className="model-detail-panel__error" role="alert">
+          <Icon name="alert" size={13} /> {loadError.message}
+        </div>
+      )}
+      <div
+        className={`model-detail-panel__preset-update${updateStatus.phase !== 'idle' ? ' model-detail-panel__preset-update--active' : ''}`}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-preset-update-phase={updateStatus.phase}
+      >
+        {updateStatus.phase === 'reload' && <span className="model-detail-panel__preset-update-spinner" aria-hidden="true" />}
+        {updateStatus.msg}
+      </div>
+      {canUpdatePreset && updateStatus.phase === 'idle' && (
+        <p className="model-detail-panel__preset-update-hint" aria-hidden="true">
+          {presetChangeKind === 'reload'
+            ? 'A different preset is linked. Updating will reload the model to apply it.'
+            : 'A different preset is linked. Updating applies it live — no reload needed.'}
+        </p>
+      )}
+    </>
+  );
+
   return (
-    <div className="model-detail-panel" role="region" aria-label={`Model details: ${name}`}>
-
-      {/* Close button */}
-      {onClose && (
-        <button
-          type="button"
-          className="model-detail-panel__close-btn"
-          onClick={onClose}
-          aria-label="Close detail panel"
-        >
-          ×
-        </button>
-      )}
-
-      {/* Back button for narrow viewports */}
-      {onBack && (
-        <button
-          type="button"
-          className="model-detail-panel__back-btn"
-          onClick={onBack}
-          aria-label="Back to models list"
-        >
-          ← Back to models
-        </button>
-      )}
-
-      {/* Header */}
-      <div className="model-detail-panel__head">
-        <h2
-          className="model-detail-panel__name"
-          ref={panelHeadingRef}
-          tabIndex={-1}
-          id="detail-panel-heading"
-        >
+    <WorkspaceDetailPanel
+      className="model-detail-panel"
+      ariaLabel={`Model details: ${name}`}
+      title={(
+        <h2 className="model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
           {model.display_name || name}
         </h2>
-
-        {/* Metadata row */}
-        <div className="model-detail-panel__meta">
-          {recipe && (
-            <span className="model-detail-panel__badge model-detail-panel__badge--recipe">
-              {recipeDisplayLabel(recipe)}
-            </span>
-          )}
-          {model.size != null && model.size > 0 && (
-            <span className="model-detail-panel__badge">{fmtSize(model.size)}</span>
-          )}
-          {cap && (
-            <span className="model-detail-panel__badge model-detail-panel__badge--cap">
-              <CapabilityIcon capability={cap} size={11} />
-              {capabilityLabel(cap)}
-            </span>
-          )}
-          {isLoaded && (
-            <span className="model-detail-panel__status model-detail-panel__status--running">
-              <span className="row__pulse" aria-hidden="true" /> Running
-            </span>
-          )}
-          {isDownloaded && !isLoaded && (
-            <span className="model-detail-panel__status model-detail-panel__status--ready">Ready</span>
-          )}
-        </div>
-
-        {/* Primary actions */}
-        <div className="model-detail-panel__actions" aria-label={`Actions for ${name}`}>
-          {onToggleFavorite && (
-            <button
-              type="button"
-              className={`model-detail-panel__fav-btn${isFavorite ? ' model-detail-panel__fav-btn--on' : ''}`}
-              onClick={() => onToggleFavorite(name)}
-              aria-pressed={isFavorite}
-              aria-label={isFavorite ? `Remove ${name} from favorites` : `Add ${name} to favorites`}
-              title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-            >
-              <span aria-hidden="true" className="model-detail-panel__fav-icon">{isFavorite ? '★' : '☆'}</span>
-            </button>
-          )}
-          {isPulling ? (
-            <>
-              <div className="row__progress">
-                <div className="row__progress-bar">
-                  <div className="row__progress-fill" style={{ width: `${pullPct}%` }} />
-                </div>
-                <span className="row__progress-text">{pullPct.toFixed(0)}%</span>
-              </div>
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm"
-                onClick={() => onCancelPull(name)}
-                aria-label={`Cancel download of ${name}`}
-              >
-                Cancel
-              </button>
-            </>
-          ) : isLoaded ? (
-            <>
-              {/* Update preset (#2356): appears next to Unload when a different
-                  preset has been linked to this loaded model. */}
-              {(canUpdatePreset || isUpdatingPreset) && (
-                <button
-                  ref={updateBtnRef}
-                  type="button"
-                  className="btn btn--primary btn--sm model-detail-panel__update-preset-btn"
-                  onClick={handleUpdatePreset}
-                  disabled={isUpdatingPreset || !canUpdatePreset}
-                  aria-busy={isUpdatingPreset}
-                  aria-label={
-                    isUpdatingPreset
-                      ? (updateStatus.phase === 'reload' ? `Reloading ${name} with new preset…` : `Applying preset for ${name}…`)
-                      : (presetChangeKind === 'reload'
-                        ? `Reload ${name} to apply preset`
-                        : `Apply preset for ${name}`)
-                  }
-                >
-                  <Icon name="rotate-ccw" size={13} aria-hidden="true" />{' '}
-                  {isUpdatingPreset
-                    ? (updateStatus.phase === 'reload' ? 'Reloading…' : 'Applying…')
-                    : (presetChangeKind === 'reload' ? 'Reload to apply preset' : 'Apply preset')}
-                </button>
-              )}
-              <button
-                ref={unloadBtnRef}
-                type="button"
-                className="btn btn--ghost btn--sm"
-                onClick={() => onUnload(loadedModel!)}
-                disabled={isLoadingThis || isUpdatingPreset}
-                aria-label={isLoadingThis ? `Working on ${name}…` : `Unload ${name}`}
-              >
-                {isLoadingThis ? 'Working…' : 'Unload'}
-              </button>
-            </>
-          ) : isDownloaded ? (
-            <button
-              type="button"
-              className="btn btn--primary btn--sm"
-              onClick={() => onLoad(model)}
-              disabled={isLoadingThis}
-              aria-label={isLoadingThis ? `Loading ${name}…` : `Load ${name}`}
-            >
-              {isLoadingThis ? 'Loading…' : <><Icon name="play" size={13} /> Load</>}
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm"
-                onClick={() => onPull(model)}
-                aria-label={`Download ${name}`}
-              >
-                <Icon name="download" size={13} /> Download
-              </button>
-              <button
-                type="button"
-                className="btn btn--primary btn--sm"
-                onClick={() => onPullAndLoad(model)}
-                aria-label={`Get and load ${name}`}
-              >
-                <Icon name="download" size={13} /> Get & Load
-              </button>
-            </>
-          )}
-          {activeSettingsTuning && (
-            <div
-              className="model-detail-panel__effective-settings"
-              aria-label={`Effective settings from ${activeSettingsPreset.name} preset`}
-            >
-              <div
-                className="model-detail-panel__setting-pill"
-                title={`Temperature intent ${activeTemperatureHint}; effective value ${activeTemperatureValue}`}
-              >
-                <Icon name="thermometer" size={13} aria-hidden="true" />
-                <span className="model-detail-panel__setting-label">Temperature</span>
-                <span className="model-detail-panel__setting-intent">{activeTemperatureHint}</span>
-                <strong className="model-detail-panel__setting-value">{activeTemperatureValue}</strong>
-              </div>
-              <div
-                className="model-detail-panel__setting-pill"
-                title={activeUsesSavedModelSettings
-                  ? `Saved model context: ${activeContextValue}`
-                  : `Context intent ${activeContextHint}; effective value ${activeContextValue}`}
-              >
-                <Icon name="scan-text" size={13} aria-hidden="true" />
-                <span className="model-detail-panel__setting-label">Context</span>
-                <span className="model-detail-panel__setting-intent">{activeContextHint}</span>
-                <strong className="model-detail-panel__setting-value">{activeContextValue}</strong>
-              </div>
-            </div>
-          )}
-          {(isDownloaded || isLoaded) && (
-            <button
-              type="button"
-              className="btn btn--ghost btn--sm btn--danger"
-              onClick={() => onDelete(model)}
-              disabled={isLoadingThis}
-              aria-label={(model as any).custom ? `Delete custom model definition for ${name}` : `Delete downloaded files for ${name}`}
-            >
-              <Icon name="trash" size={13} />
-            </button>
-          )}
-        </div>
-
-        {/* Load error */}
-        {loadError?.modelName === name && (
-          <div className="model-detail-panel__error" role="alert">
-            <Icon name="alert" size={13} /> {loadError.message}
-          </div>
-        )}
-
-        {/* Update-preset feedback + live region (#2356).
-            Always-present polite live region so screen readers announce the
-            live-apply / reload outcome; a visible pill mirrors it sighted. */}
-        <div
-          className={`model-detail-panel__preset-update${updateStatus.phase !== 'idle' ? ' model-detail-panel__preset-update--active' : ''}`}
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          data-preset-update-phase={updateStatus.phase}
-        >
-          {updateStatus.phase === 'reload' && (
-            <span className="model-detail-panel__preset-update-spinner" aria-hidden="true" />
-          )}
-          {updateStatus.msg}
-        </div>
-
-        {/* Sighted hint explaining why Update preset appeared (not announced —
-            the button's accessible name already conveys the reload semantics). */}
-        {canUpdatePreset && updateStatus.phase === 'idle' && (
-          <p className="model-detail-panel__preset-update-hint" aria-hidden="true">
-            {presetChangeKind === 'reload'
-              ? 'A different preset is linked. Updating will reload the model to apply it.'
-              : 'A different preset is linked. Updating applies it live — no reload needed.'}
-          </p>
-        )}
-
-        {/* HF link */}
-        {hfRepo && (
-          <a
-            className="model-detail-panel__hf-link"
-            href={`https://huggingface.co/${hfRepo}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`View ${name} on Hugging Face (opens in new tab)`}
-          >
-            <Icon name="globe" size={12} /> Hugging Face
-          </a>
-        )}
-      </div>
+      )}
+      metadata={detailMetadata}
+      actions={detailActions}
+      headerExtras={detailHeaderExtras}
+      onBack={onBack}
+      backLabel="Back to models"
+      backClassName="model-detail-panel__back-btn"
+      onClose={onClose}
+      closeClassName="model-detail-panel__close-btn"
+    >
 
       {/* Tablist */}
       <div
@@ -2978,7 +2901,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           )}
         </div>
       ))}
-    </div>
+    </WorkspaceDetailPanel>
   );
 };
 
