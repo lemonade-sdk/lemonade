@@ -204,6 +204,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
       setResult(null);
     } finally {
       setIsValidating(false);
+    }
   };
 
   return (
