@@ -107,6 +107,17 @@ std::string Router::resolve_model_name(const std::string& model_name) const {
     return model_name.empty() ? model_name : model_manager_->resolve_model_name(model_name);
 }
 
+std::optional<ModelInfo> Router::try_get_model_info(const std::string& model_name) const {
+    if (model_name.empty() || !model_manager_->model_exists(model_name)) {
+        return std::nullopt;
+    }
+    try {
+        return model_manager_->get_model_info(model_name);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
 WrappedServer* Router::get_most_recent_server() const {
     auto most_recent_in_class = [this](ResidencyClass residency_class) {
         WrappedServer* most_recent = nullptr;

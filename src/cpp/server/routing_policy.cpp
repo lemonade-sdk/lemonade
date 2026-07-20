@@ -1284,8 +1284,38 @@ NamedLeafFactories make_deterministic_leaf_factories() {
     return factories;
 }
 
-RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services)
-    : policy_(std::move(policy)), services_(std::move(services)) {
+namespace {
+
+void attach_estimated_cost(Decision& decision, const CostServices& cost_services) {
+    if (!cost_services.cost_of) {
+        return;
+    }
+    CostInfo info = cost_services.cost_of(decision.route_to);
+    json estimated = json::object();
+    if (info.cost_tier) {
+        estimated["cost_tier"] = *info.cost_tier;
+    }
+    if (info.cost_input_per_million) {
+        estimated["cost_input_per_million"] = *info.cost_input_per_million;
+    }
+    if (info.cost_output_per_million) {
+        estimated["cost_output_per_million"] = *info.cost_output_per_million;
+    }
+    if (info.latency_ms_hint) {
+        estimated["latency_ms_hint"] = *info.latency_ms_hint;
+    }
+    if (!estimated.empty()) {
+        decision.outputs["estimated_cost"] = std::move(estimated);
+    }
+}
+
+} // namespace
+
+RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services,
+                                         CostServices cost_services)
+    : policy_(std::move(policy)),
+      services_(std::move(services)),
+      cost_services_(std::move(cost_services)) {
     // Compile every rule's match expression once, at construction, so route()
     // does pure tree-walking on immutable state. Classifier leaves resolve
     // against policy_.classifiers; deterministic leaf types (keywords/regex/
@@ -1309,7 +1339,9 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
     try {
         for (std::size_t i = 0; i < compiled_rules_.size(); ++i) {
             if (compiled_rules_[i]->evaluate(eval)) {
-                return Decision(policy_.rules[i], want_trace, std::move(eval.trace));
+                Decision decision(policy_.rules[i], want_trace, std::move(eval.trace));
+                attach_estimated_cost(decision, cost_services_);
+                return decision;
             }
         }
     } catch (const std::exception& e) {
@@ -1321,7 +1353,9 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
                                 << std::endl;
     }
 
-    return Decision(policy_.default_model, want_trace, std::move(eval.trace));
+    Decision decision(policy_.default_model, want_trace, std::move(eval.trace));
+    attach_estimated_cost(decision, cost_services_);
+    return decision;
 }
 
 } // namespace lemon

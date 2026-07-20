@@ -106,6 +106,39 @@ redistribution. Fixtures live in `test/cpp/fixtures/routing/`:
 Levels **compose** — one policy may mix a router, classifiers, and deterministic
 conditions across its rules.
 
+## Cost reporting (`outputs.estimated_cost`)
+
+After the engine resolves `route_to` (matched rule or `default_model`), it looks
+up cost metadata for that candidate via `CostServices` and, when any field is
+present, merges it into the decision as `outputs.estimated_cost`:
+
+```json
+"estimated_cost": {
+  "cost_tier": "medium",
+  "cost_input_per_million": 3.0,
+  "cost_output_per_million": 15.0,
+  "latency_ms_hint": 40.0
+}
+```
+
+All keys are optional. This is **illustrative, not a billing figure** — the same
+caveat as the per-million fields on `/v1/models`.
+
+**Where the numbers come from**
+
+| Field | Source |
+|-------|--------|
+| `cost_input_per_million` / `cost_output_per_million` | Typed `ModelInfo` fields when `>= 0` (cloud auto-discovery already populates these); otherwise the same keys in `ModelInfo::extras` for hand-authored entries |
+| `cost_tier` | `extras` only (`"free"` \| `"low"` \| `"medium"` \| `"high"`) |
+| `latency_ms_hint` | `extras` only (local/compute proxy) |
+
+No `server_models.json` schema change is required: unrecognized keys already land
+in `extras`. Authors can add e.g. `"cost_tier": "free"` or
+`"cost_input_per_million": 3.0` on a model entry today.
+
+Phase A is reporting only. Automated cheapest-candidate selection (`cost_select`
+on `route_to`) is deferred.
+
 ## Contract surface
 
 The C++ types/interfaces these schemas back live in

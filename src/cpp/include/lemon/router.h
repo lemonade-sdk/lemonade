@@ -171,6 +171,10 @@ public:
     int loaded_model_pid(const std::string& model_name) const;
     std::string canonical_model_name(const std::string& model_name) const;
 
+    // Registry lookup for seams that need ModelInfo without owning ModelManager
+    // (e.g. routing CostServices). Returns nullopt when the name is unknown.
+    std::optional<ModelInfo> try_get_model_info(const std::string& model_name) const;
+
     // Test hooks
     void simulate_vram_pressure(double pct);
 

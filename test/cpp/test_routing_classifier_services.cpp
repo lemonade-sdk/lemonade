@@ -494,6 +494,110 @@ static void test_build_route_context_responses_uses_last_user_message() {
           ctx.input == "thanks that helps");
 }
 
+static lemon::CostServices fake_cost_services() {
+    lemon::CostServices services;
+    services.cost_of = [](const std::string& candidate) -> lemon::CostInfo {
+        lemon::CostInfo info;
+        if (candidate == "model-a") {
+            info.cost_tier = "free";
+            info.latency_ms_hint = 12.0;
+        } else if (candidate == "model-b") {
+            info.cost_tier = "medium";
+            info.cost_input_per_million = 3.0;
+            info.cost_output_per_million = 15.0;
+        }
+        return info;
+    };
+    return services;
+}
+
+static void test_estimated_cost_attached_on_matched_rule() {
+    RoutePolicy policy;
+    policy.candidates = {"model-a", "model-b"};
+    policy.default_model = "model-b";
+    policy.rules = {
+        rule("prefer-a", leaf(json{{"keywords_any", json::array({"alpha"})}}), "model-a"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{},
+                               fake_cost_services());
+    Decision decision = engine.route(route_context("alpha path"), false);
+    check("matched rule routes to model-a",
+          decision.route_to == "model-a" && !decision.default_used);
+    check("matched rule attaches estimated_cost",
+          decision.outputs.contains("estimated_cost") &&
+          decision.outputs["estimated_cost"].value("cost_tier", "") == "free" &&
+          near(decision.outputs["estimated_cost"].value("latency_ms_hint", -1.0), 12.0) &&
+          !decision.outputs["estimated_cost"].contains("cost_input_per_million"));
+}
+
+static void test_estimated_cost_attached_on_default() {
+    RoutePolicy policy;
+    policy.candidates = {"model-a", "model-b"};
+    policy.default_model = "model-b";
+    policy.rules = {
+        rule("prefer-a", leaf(json{{"keywords_any", json::array({"alpha"})}}), "model-a"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{},
+                               fake_cost_services());
+    Decision decision = engine.route(route_context("no match here"), false);
+    check("default routes to model-b",
+          decision.route_to == "model-b" && decision.default_used);
+    check("default attaches estimated_cost",
+          decision.outputs.contains("estimated_cost") &&
+          decision.outputs["estimated_cost"].value("cost_tier", "") == "medium" &&
+          near(decision.outputs["estimated_cost"].value("cost_input_per_million", -1.0), 3.0) &&
+          near(decision.outputs["estimated_cost"].value("cost_output_per_million", -1.0), 15.0));
+}
+
+static void test_estimated_cost_omitted_when_candidate_has_no_cost_data() {
+    lemon::CostServices services;
+    services.cost_of = [](const std::string&) { return lemon::CostInfo{}; };
+
+    RoutePolicy policy;
+    policy.candidates = {"model-a", "model-b"};
+    policy.default_model = "model-b";
+    policy.rules = {
+        rule("prefer-a", leaf(json{{"keywords_any", json::array({"alpha"})}}), "model-a"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{},
+                               std::move(services));
+    Decision decision = engine.route(route_context("alpha path"), false);
+    check("no estimated_cost when CostInfo is empty",
+          !decision.outputs.contains("estimated_cost"));
+}
+
+static void test_resolve_cost_info_typed_and_extras() {
+    // Typed fields (cloud discovery path from PR #1785) win when >= 0.
+    lemon::CostInfo from_typed = lemon::resolve_cost_info(1.25, 10.0, {});
+    check("typed cost_input_per_million is used when >= 0",
+          from_typed.cost_input_per_million.has_value() &&
+          near(*from_typed.cost_input_per_million, 1.25));
+    check("typed cost_output_per_million is used when >= 0",
+          from_typed.cost_output_per_million.has_value() &&
+          near(*from_typed.cost_output_per_million, 10.0));
+
+    // Hand-authored extras path when typed fields are unknown (< 0).
+    std::map<std::string, json> extras = {
+        {"cost_tier", "free"},
+        {"cost_input_per_million", 0.0},
+        {"latency_ms_hint", 8.5},
+    };
+    lemon::CostInfo from_extras = lemon::resolve_cost_info(-1.0, -1.0, extras);
+    check("extras cost_tier is read",
+          from_extras.cost_tier.has_value() && *from_extras.cost_tier == "free");
+    check("extras cost_input_per_million is read when typed is unknown",
+          from_extras.cost_input_per_million.has_value() &&
+          near(*from_extras.cost_input_per_million, 0.0));
+    check("extras latency_ms_hint is read",
+          from_extras.latency_ms_hint.has_value() &&
+          near(*from_extras.latency_ms_hint, 8.5));
+    check("unknown typed prices stay nullopt without extras",
+          !lemon::resolve_cost_info(-1.0, -1.0, {}).cost_input_per_million.has_value());
+}
+
 int main() {
     test_embed_uses_router_embeddings_shape();
     test_semantic_similarity_loops_through_router_embeddings();
@@ -514,6 +618,10 @@ int main() {
     test_build_route_context_responses_bare_parts();
     test_build_route_context_responses_string_input_no_image();
     test_build_route_context_responses_uses_last_user_message();
+    test_estimated_cost_attached_on_matched_rule();
+    test_estimated_cost_attached_on_default();
+    test_estimated_cost_omitted_when_candidate_has_no_cost_data();
+    test_resolve_cost_info_typed_and_extras();
 
     if (g_failures == 0) {
         std::printf("All routing classifier service tests passed.\n");

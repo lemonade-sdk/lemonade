@@ -462,4 +462,58 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
     return ctx;
 }
 
+namespace {
+
+template <typename T>
+T extras_get(const std::map<std::string, json>& extras, const std::string& key,
+             const T& fallback) {
+    auto it = extras.find(key);
+    if (it == extras.end() || it->second.is_null()) {
+        return fallback;
+    }
+    try {
+        return it->second.get<T>();
+    } catch (...) {
+        return fallback;
+    }
+}
+
+} // namespace
+
+CostInfo resolve_cost_info(double cost_input_per_million,
+                           double cost_output_per_million,
+                           const std::map<std::string, json>& extras) {
+    CostInfo out;
+
+    if (cost_input_per_million >= 0.0) {
+        out.cost_input_per_million = cost_input_per_million;
+    } else {
+        const double from_extras = extras_get<double>(extras, "cost_input_per_million", -1.0);
+        if (from_extras >= 0.0) {
+            out.cost_input_per_million = from_extras;
+        }
+    }
+
+    if (cost_output_per_million >= 0.0) {
+        out.cost_output_per_million = cost_output_per_million;
+    } else {
+        const double from_extras = extras_get<double>(extras, "cost_output_per_million", -1.0);
+        if (from_extras >= 0.0) {
+            out.cost_output_per_million = from_extras;
+        }
+    }
+
+    const std::string tier = extras_get<std::string>(extras, "cost_tier", "");
+    if (!tier.empty()) {
+        out.cost_tier = tier;
+    }
+
+    const double latency = extras_get<double>(extras, "latency_ms_hint", -1.0);
+    if (latency >= 0.0) {
+        out.latency_ms_hint = latency;
+    }
+
+    return out;
+}
+
 } // namespace lemon

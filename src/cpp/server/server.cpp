@@ -2744,7 +2744,9 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
             auto_load_model_if_needed(m, json::object(),
                                       LoadPurpose::RoutingDependency);
         });
-    RoutingPolicyEngine engine(std::move(policy), std::move(services));
+    CostServices cost_services = make_router_cost_services(*router_);
+    RoutingPolicyEngine engine(std::move(policy), std::move(services),
+                               std::move(cost_services));
 
     RouteContext ctx = build_route_context(request_json, collection_info.model_name);
     const bool want_trace = request_json.value("route_trace", false);
