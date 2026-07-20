@@ -190,6 +190,30 @@ input, textarea {
 [data-theme="light"] .titlebar__theme-toggle { background: var(--surface-titlebar); }
 .titlebar__theme-toggle:hover { background: var(--surface-2); }
 
+.titlebar__window-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+}
+
+.titlebar__window-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.titlebar__window-btn--close:hover {
+  background: #e81123 !important;
+  color: #ffffff !important;
+}
+
 .titlebar__status-dot {
   width: 8px;
   height: 8px;
@@ -5547,14 +5571,23 @@ input, textarea {
 
 .logs-level__select {
   height: 28px;
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-5) 0 var(--space-2);
   background: var(--surface-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   font-size: 0.78rem;
   color: var(--text-primary);
   cursor: pointer;
-  appearance: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23807a6c'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-2) center;
+}
+
+.logs-level__select option {
+  background: var(--surface-2);
+  color: var(--text-primary);
 }
 
 .logs-level__select:disabled {
