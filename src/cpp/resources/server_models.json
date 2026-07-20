@@ -545,17 +545,11 @@
         ],
         "size": 0.38
     },
-    "Tiny-Gemma-Test-Model-GGUF": {
+    "Tiny-Test-Model-GGUF": {
         "checkpoint": "unsloth/gemma-3-270m-it-GGUF:gemma-3-270m-it-UD-IQ2_M.gguf",
         "recipe": "llamacpp",
         "suggested": false,
         "size": 0.18
-    },
-    "Tiny-Test-Model-GGUF": {
-        "checkpoint": "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf",
-        "recipe": "llamacpp",
-        "suggested": false,
-        "size": 0.09
     },
     "Qwen3-1.7B-GGUF": {
         "checkpoint": "unsloth/Qwen3-1.7B-GGUF:Q4_0",
