@@ -1,5 +1,6 @@
 import React from 'react';
 import { Icon } from './Icon';
+import { WorkspaceActionButton } from './WorkspacePanels';
 import {
   classifierLabels,
   createRouterGroup,
@@ -63,6 +64,7 @@ const ScoreInput: React.FC<{
   <label className="router-node__compact-field">
     <span>{label}</span>
     <input
+      className="input"
       type="number"
       min="0"
       max="1"
@@ -93,14 +95,14 @@ const RouterLeafEditor: React.FC<{
       <div className="router-node__leaf-row">
         <label className="router-node__type-field">
           <span className="sr-only">Condition type</span>
-          <select value={node.type} onChange={event => changeType(event.target.value as RouterLeafType)}>
+          <select className="select" value={node.type} onChange={event => changeType(event.target.value as RouterLeafType)}>
             {LEAF_TYPES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
         </label>
 
         {(node.type === 'keywords_any' || node.type === 'keywords_all') && (
           <input
-            className="router-node__grow"
+            className="input router-node__grow"
             value={node.textValue ?? ''}
             placeholder="Comma-separated keywords"
             onChange={event => update({ textValue: event.target.value })}
@@ -108,7 +110,7 @@ const RouterLeafEditor: React.FC<{
         )}
         {node.type === 'regex' && (
           <input
-            className="router-node__grow router-node__mono"
+            className="input router-node__grow router-node__mono"
             value={node.textValue ?? ''}
             placeholder="ECMAScript regex"
             onChange={event => update({ textValue: event.target.value })}
@@ -116,7 +118,7 @@ const RouterLeafEditor: React.FC<{
         )}
         {(node.type === 'min_chars' || node.type === 'max_chars') && (
           <input
-            className="router-node__number"
+            className="input router-node__number"
             type="number"
             min="0"
             step="1"
@@ -125,7 +127,7 @@ const RouterLeafEditor: React.FC<{
           />
         )}
         {(node.type === 'has_tools' || node.type === 'has_images') && (
-          <select value={node.booleanValue === false ? 'false' : 'true'} onChange={event => update({ booleanValue: event.target.value === 'true' })}>
+          <select className="select" value={node.booleanValue === false ? 'false' : 'true'} onChange={event => update({ booleanValue: event.target.value === 'true' })}>
             <option value="true">is true</option>
             <option value="false">is false</option>
           </select>
@@ -137,6 +139,7 @@ const RouterLeafEditor: React.FC<{
           <label>
             <span>Classifier</span>
             <select
+              className="select"
               value={node.classifierId ?? ''}
               onChange={event => {
                 const classifier = classifiers.find(item => item.id === event.target.value);
@@ -153,7 +156,7 @@ const RouterLeafEditor: React.FC<{
           </label>
           <label>
             <span>Label</span>
-            <select value={node.label ?? ''} onChange={event => update({ label: event.target.value || undefined })}>
+            <select className="select" value={node.label ?? ''} onChange={event => update({ label: event.target.value || undefined })}>
               <option value="">Use classifier default</option>
               {labels.map(label => <option key={label} value={label}>{label}</option>)}
             </select>
@@ -167,11 +170,12 @@ const RouterLeafEditor: React.FC<{
         <div className="router-node__details router-node__details--metadata">
           <label>
             <span>Metadata key</span>
-            <input value={node.metadataKey ?? ''} placeholder="task_class" onChange={event => update({ metadataKey: event.target.value })} />
+            <input className="input" value={node.metadataKey ?? ''} placeholder="task_class" onChange={event => update({ metadataKey: event.target.value })} />
           </label>
           <label>
             <span>Comparator</span>
             <select
+              className="select"
               value={node.metadataComparator ?? 'equals'}
               onChange={event => update({ metadataComparator: event.target.value as RouterMetadataComparator })}
             >
@@ -183,7 +187,7 @@ const RouterLeafEditor: React.FC<{
           {(node.metadataComparator ?? 'equals') === 'exists' ? (
             <label>
               <span>Expected</span>
-              <select value={node.booleanValue === false ? 'false' : 'true'} onChange={event => update({ booleanValue: event.target.value === 'true' })}>
+              <select className="select" value={node.booleanValue === false ? 'false' : 'true'} onChange={event => update({ booleanValue: event.target.value === 'true' })}>
                 <option value="true">present</option>
                 <option value="false">missing</option>
               </select>
@@ -191,7 +195,7 @@ const RouterLeafEditor: React.FC<{
           ) : (
             <label className="router-node__grow-field">
               <span>{node.metadataComparator === 'any' ? 'Comma-separated values' : 'Value'}</span>
-              <input value={node.metadataValues ?? ''} onChange={event => update({ metadataValues: event.target.value })} />
+              <input className="input" value={node.metadataValues ?? ''} onChange={event => update({ metadataValues: event.target.value })} />
             </label>
           )}
         </div>
@@ -227,7 +231,7 @@ export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classi
       <div className="router-node__group-head">
         <div className="router-node__operator">
           <span>Match</span>
-          <select value={node.operator} onChange={event => changeOperator(event.target.value as RouterGroupNode['operator'])}>
+          <select className="select" value={node.operator} onChange={event => changeOperator(event.target.value as RouterGroupNode['operator'])}>
             <option value="all">ALL conditions</option>
             <option value="any">ANY condition</option>
             <option value="not">NOT condition</option>
@@ -235,8 +239,8 @@ export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classi
         </div>
         {node.operator !== 'not' && (
           <div className="router-node__group-actions">
-            <button type="button" className="btn btn--ghost btn--tiny" onClick={addCondition}><Icon name="plus" size={13} /> Condition</button>
-            <button type="button" className="btn btn--ghost btn--tiny" onClick={addGroup}><Icon name="plus" size={13} /> Group</button>
+            <WorkspaceActionButton size="small" icon="plus" onClick={addCondition}>Condition</WorkspaceActionButton>
+            <WorkspaceActionButton size="small" icon="plus" onClick={addGroup}>Group</WorkspaceActionButton>
           </div>
         )}
       </div>

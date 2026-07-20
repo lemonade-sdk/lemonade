@@ -264,17 +264,17 @@ test.describe('Accessibility — ARIA landmarks', () => {
 
   test('A12 — status dot has role="status" for live connection announcements', async ({ page }) => {
     await page.goto('/');
-    await page.waitForSelector('.titlebar__status-dot');
+    await page.waitForSelector('.titlebar__status-dot--brand');
 
-    const role = await page.locator('.titlebar__status-dot').getAttribute('role');
+    const role = await page.locator('.titlebar__status-dot--brand').getAttribute('role');
     expect(role).toBe('status');
   });
 
   test('A13 — status dot aria-label reflects one of the three connection states', async ({ page }) => {
     await page.goto('/');
-    await page.waitForSelector('.titlebar__status-dot');
+    await page.waitForSelector('.titlebar__status-dot--brand');
 
-    const label = await page.locator('.titlebar__status-dot').getAttribute('aria-label');
+    const label = await page.locator('.titlebar__status-dot--brand').getAttribute('aria-label');
     expect(label).toBeTruthy();
     expect(['Connected', 'Connecting…', 'Offline']).toContain(label);
   });
@@ -2947,7 +2947,7 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
   test('A134 — on narrow viewport the nav toggle controls the rail and is keyboard reachable', async ({ page }) => {
     await page.setViewportSize({ width: 640, height: 900 });
     await goToModelsWithNavMock(page);
-    const toggle = page.locator('.manager__nav-toggle');
+    const toggle = page.getByRole('button', { name: 'Open model filters', exact: true });
     await expect(toggle).toBeVisible();
     expect(await toggle.getAttribute('aria-controls')).toBe('model-nav-rail');
     expect(await toggle.getAttribute('aria-expanded')).toBe('false');
@@ -3798,7 +3798,7 @@ test.describe('MCP failure recovery', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Presets');
-    await page.getByRole('button', { name: '+ New Preset' }).first().click();
+    await page.getByRole('button', { name: 'New preset', exact: true }).first().click();
 
     const none = page.locator('[data-preset-mcp-none]');
     await expect(none).toBeVisible();

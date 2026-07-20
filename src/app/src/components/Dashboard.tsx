@@ -1,10 +1,9 @@
 import React, { useMemo } from 'react';
 import { AreaChart as RechartArea, Area, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { LoadedModel } from '../api';
-import { useDashboardData, HISTORY_LEN, SessionCounters } from '../hooks/useDashboardData';
+import { useDashboardData } from '../hooks/useDashboardData';
 import { dashboardMemoryTopology } from '../features/dashboard/memoryTopology';
-import { Icon } from './Icon';
-import { WorkspacePaneHeader } from './WorkspacePanels';
+import { WorkspaceActionButton, WorkspacePaneHeader } from './WorkspacePanels';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -204,8 +203,6 @@ const ModelRow = React.memo<{ model: LoadedModel }>(({ model }) => (
    ██  MAIN DASHBOARD
    ══════════════════════════════════════════════════════════════ */
 
-const POLL_INTERVAL = 2000;
-
 interface DashboardProps {
   isActive: boolean;
 }
@@ -242,14 +239,17 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
               <span className="dash2-bar__dot" data-connected={!!health} />
               <span><strong>{health ? `Lemonade ${health.version}` : 'Disconnected'}</strong>{health && <small>{elapsed(counters.sessionStart)}</small>}</span>
             </div>
-            <button className={`dash2-bar__btn ${paused ? 'is-paused' : ''}`}
+            <WorkspaceActionButton
+              size="small"
+              appearance="secondary"
+              icon={paused ? 'play' : 'pause'}
+              className={`dash2-bar__btn${paused ? ' is-paused' : ''}`}
               onClick={() => setPaused(p => !p)}
               title={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
               aria-label={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
               data-dashboard-poll-toggle>
-              <Icon name={paused ? 'play' : 'pause'} size={14} aria-hidden="true" />
-              <span>{paused ? 'Resume' : 'Pause'}</span>
-            </button>
+              {paused ? 'Resume' : 'Pause'}
+            </WorkspaceActionButton>
           </div>}
         />
 
@@ -257,7 +257,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
 
       <div className="dash2-scroll">
         {/* ═══ HERO — Aggregate Throughput ═══ */}
-        <div className="dash2-card dash2-card--glow">
+        <div className="dash2-card">
           <h2 className="dash2-card__h">Aggregate Throughput</h2>
 
           {/* Inline metrics — guaranteed visible with explicit colors */}

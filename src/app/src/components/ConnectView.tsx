@@ -6,7 +6,13 @@ import McpPanel from './McpPanel';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
-import { WorkspacePaneHeader } from './WorkspacePanels';
+import {
+  WorkspaceActionButton,
+  WorkspaceActionGroup,
+  WorkspacePaneHeader,
+  WorkspaceResourceList,
+  WorkspaceResourceRow,
+} from './WorkspacePanels';
 
 interface ConnectViewProps {
   status: ConnectionStatus;
@@ -431,6 +437,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
             <div className="form-field">
               <label className="form-field__label" htmlFor="host-input">Server URL</label>
               <input
+                className="input"
                 id="host-input"
                 type="text"
                 value={host}
@@ -445,6 +452,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
             <div className="form-field">
               <label className="form-field__label" htmlFor="key-input">API Key (optional)</label>
               <input
+                className="input"
                 id="key-input"
                 type="text"
                 value={apiKey}
@@ -467,14 +475,14 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
             {error && <div className="connect__error">Warning: {error}</div>}
             {notice && <div className="connect__notice">{notice}</div>}
 
-            <div className="connect__actions">
-              <button type="submit" className="btn btn--primary" disabled={connecting || !host.trim()}>
+            <WorkspaceActionGroup className="connect__actions" label="Server connection actions">
+              <WorkspaceActionButton type="submit" appearance="primary" icon="plug" disabled={connecting || !host.trim()}>
                 {connecting ? 'Connecting...' : 'Connect'}
-              </button>
-              <button type="button" className="btn btn--ghost" onClick={() => { void handleClearLocalData(); }}>
+              </WorkspaceActionButton>
+              <WorkspaceActionButton appearance="quiet" onClick={() => { void handleClearLocalData(); }}>
                 Clear permitted local data
-              </button>
-            </div>
+              </WorkspaceActionButton>
+            </WorkspaceActionGroup>
           </form>
         </section>
         )}
@@ -482,37 +490,36 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
         {activeSection === 'support' && (
         <section className="connect__section connect__section--help">
           <p className="connect__hint">Quick access to project support, documentation, and community channels.</p>
-          <div className="connect__help-grid" aria-label="Help links">
+          <WorkspaceResourceList label="Help links">
             {HELP_LINKS.map(link => (
-              <button key={link.href} className="connect__help-card" type="button" onClick={() => openExternal(link.href)}>
-                <span className="connect__help-icon"><Icon name={link.icon} size={18} /></span>
-                <span>
-                  <strong>{link.label}</strong>
-                  <small>{link.description}</small>
-                </span>
-              </button>
+              <WorkspaceResourceRow
+                key={link.href}
+                title={link.label}
+                description={link.description}
+                leading={<Icon name={link.icon} size={18} />}
+                onClick={() => openExternal(link.href)}
+              />
             ))}
-          </div>
+          </WorkspaceResourceList>
         </section>
         )}
 
         {activeSection === 'storage' && (
         <section className="connect__section connect__section--directories">
-          <h2>Custom model directories</h2>
           <p className="connect__hint">Keep the normal Lemonade model cache separate from an external GGUF directory scanned as extra custom models.</p>
           <div className="connect__directory-grid">
-            <label className="connect__directory-field">Models directory
-              <input value={directories.modelsDir} onChange={e => setDirectories(prev => ({ ...prev, modelsDir: e.target.value }))} placeholder="Default Lemonade model cache" />
+            <label className="form-field"><span className="form-field__label">Models directory</span>
+              <input className="input" value={directories.modelsDir} onChange={e => setDirectories(prev => ({ ...prev, modelsDir: e.target.value }))} placeholder="Default Lemonade model cache" />
             </label>
-            <label className="connect__directory-field">External custom models directory
-              <input value={directories.extraModelsDir} onChange={e => setDirectories(prev => ({ ...prev, extraModelsDir: e.target.value }))} placeholder="/path/to/llama.cpp/models" />
+            <label className="form-field"><span className="form-field__label">External custom models directory</span>
+              <input className="input" value={directories.extraModelsDir} onChange={e => setDirectories(prev => ({ ...prev, extraModelsDir: e.target.value }))} placeholder="/path/to/llama.cpp/models" />
             </label>
           </div>
-          <div className="connect__actions">
-            <button className="btn btn--primary" type="button" onClick={() => { void handleSaveDirectories(); }} disabled={savingDirectories}>
+          <WorkspaceActionGroup className="connect__actions" label="Directory actions">
+            <WorkspaceActionButton appearance="primary" icon="check" onClick={() => { void handleSaveDirectories(); }} disabled={savingDirectories}>
               {savingDirectories ? 'Saving...' : 'Save directories'}
-            </button>
-          </div>
+            </WorkspaceActionButton>
+          </WorkspaceActionGroup>
           {directoryNotice && <div className="connect__notice">{directoryNotice}</div>}
           {directoryError && <div className="connect__error">{directoryError}</div>}
         </section>
@@ -521,59 +528,58 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
         {activeSection === 'cloud' && (
         <section className="connect__section connect__section--cloud">
           <div className="connect__section-head">
-            <button className="btn btn--ghost" type="button" onClick={() => { void loadCloudProviders(); }} disabled={status !== 'connected' || cloudBusy || cloudLoading}>{cloudLoading ? 'Refreshing...' : 'Refresh'}</button>
+            <WorkspaceActionButton appearance="quiet" size="small" icon="rotate-ccw" onClick={() => { void loadCloudProviders(); }} disabled={status !== 'connected' || cloudBusy || cloudLoading}>{cloudLoading ? 'Refreshing...' : 'Refresh'}</WorkspaceActionButton>
           </div>
           <p className="connect__hint">Register OpenAI-compatible providers on the connected Lemonade server. Runtime keys can be replaced or cleared without editing files.</p>
-          <div className="connect__quick-fill">
+          <WorkspaceActionGroup className="connect__quick-fill" label="Provider templates">
             {CLOUD_QUICK_FILL.map(item => (
-              <button key={item.provider} className="btn btn--ghost" type="button" disabled={cloudBusy} onClick={() => { setProviderName(item.provider); setProviderBaseUrl(item.baseUrl); }}>
+              <WorkspaceActionButton key={item.provider} appearance="secondary" size="small" disabled={cloudBusy} onClick={() => { setProviderName(item.provider); setProviderBaseUrl(item.baseUrl); }}>
                 {item.label}
-              </button>
+              </WorkspaceActionButton>
             ))}
-          </div>
+          </WorkspaceActionGroup>
           <div className="connect__provider-form">
             <label className="sr-only" htmlFor="cloud-provider-name">Provider name</label>
-            <input id="cloud-provider-name" value={providerName} onChange={e => setProviderName(e.target.value)} placeholder="provider name, e.g. fireworks" />
+            <input className="input" id="cloud-provider-name" value={providerName} onChange={e => setProviderName(e.target.value)} placeholder="provider name, e.g. fireworks" />
             <label className="sr-only" htmlFor="cloud-provider-url">Base URL</label>
-            <input id="cloud-provider-url" value={providerBaseUrl} onChange={e => setProviderBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" aria-describedby="cloud-provider-url-hint" />
+            <input className="input" id="cloud-provider-url" value={providerBaseUrl} onChange={e => setProviderBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" aria-describedby="cloud-provider-url-hint" />
             <label className="sr-only" htmlFor="cloud-provider-key">Provider API key (optional)</label>
-            <input id="cloud-provider-key" value={providerApiKey} onChange={e => setProviderApiKey(e.target.value)} type="password" placeholder="API key (optional)" />
-            <button className="btn btn--primary connect__add-provider" type="button" onClick={() => { void handleInstallCloudProvider(); }} disabled={status !== 'connected' || cloudBusy}>Add provider</button>
+            <input className="input" id="cloud-provider-key" value={providerApiKey} onChange={e => setProviderApiKey(e.target.value)} type="password" placeholder="API key (optional)" />
+            <WorkspaceActionButton className="connect__add-provider" appearance="primary" icon="plus" onClick={() => { void handleInstallCloudProvider(); }} disabled={status !== 'connected' || cloudBusy}>Add provider</WorkspaceActionButton>
           </div>
           <span id="cloud-provider-url-hint" className="sr-only">Full https:// base URL of the OpenAI-compatible provider endpoint.</span>
           {cloudError && <div className="connect__error">{cloudError}</div>}
           {cloudNotice && <div className="connect__notice">{cloudNotice}</div>}
-          <div className="connect__provider-list">
+          <WorkspaceResourceList className="connect__provider-list" label="Cloud providers">
             {providers.length === 0 ? (
               <div className="connect__empty">{status === 'connected' ? (cloudLoading && !cloudLoadedOnce ? 'Loading cloud providers...' : 'No cloud providers configured yet.') : 'Connect to a server to manage cloud providers.'}</div>
             ) : providers.map(provider => {
               const authed = provider.env_var_set || provider.runtime_key_set;
               return (
-                <div key={provider.name} className="connect__provider-row">
-                  <div>
-                    <strong>{provider.name}</strong>
-                    <span>{provider.models_discovered} models · {provider.base_url || 'no URL'}</span>
-                    <span>{authed ? `Auth configured${provider.env_var_set ? ` via ${provider.env_var}` : ''}` : `No API key${provider.env_var ? ` (${provider.env_var})` : ''}`}</span>
-                  </div>
-                  <div className="connect__provider-actions">
+                <WorkspaceResourceRow
+                  key={provider.name}
+                  title={provider.name}
+                  description={`${provider.models_discovered} models · ${provider.base_url || 'no URL'}`}
+                  metadata={authed ? `Auth configured${provider.env_var_set ? ` via ${provider.env_var}` : ''}` : `No API key${provider.env_var ? ` (${provider.env_var})` : ''}`}
+                  actions={<WorkspaceActionGroup className="connect__provider-actions" label={`Actions for ${provider.name}`}>
                     {editingProvider === provider.name ? (
                       <>
-                        <input type="password" value={editingApiKey} onChange={e => setEditingApiKey(e.target.value)} placeholder="New API key" aria-label={`New API key for ${editingProvider ?? 'provider'}`} />
-                        <button className="btn btn--primary" type="button" disabled={cloudBusy || !editingApiKey.trim()} onClick={() => { void handleSaveProviderKey(provider.name); }}>Save key</button>
-                        <button className="btn btn--ghost" type="button" onClick={() => { setEditingProvider(null); setEditingApiKey(''); }}>Cancel</button>
+                        <input className="input" type="password" value={editingApiKey} onChange={e => setEditingApiKey(e.target.value)} placeholder="New API key" aria-label={`New API key for ${editingProvider ?? 'provider'}`} />
+                        <WorkspaceActionButton appearance="primary" size="small" disabled={cloudBusy || !editingApiKey.trim()} onClick={() => { void handleSaveProviderKey(provider.name); }}>Save key</WorkspaceActionButton>
+                        <WorkspaceActionButton appearance="quiet" size="small" onClick={() => { setEditingProvider(null); setEditingApiKey(''); }}>Cancel</WorkspaceActionButton>
                       </>
                     ) : (
                       <>
-                        {!provider.env_var_set && <button className="btn btn--ghost" type="button" onClick={() => setEditingProvider(provider.name)}>Set key</button>}
-                        {provider.runtime_key_set && !provider.env_var_set && <button className="btn btn--ghost" type="button" onClick={() => { void handleClearProviderKey(provider.name); }}>Clear key</button>}
-                        <button className="btn btn--ghost" type="button" onClick={() => { void handleRemoveProvider(provider.name); }}>Remove</button>
+                        {!provider.env_var_set && <WorkspaceActionButton appearance="secondary" size="small" onClick={() => setEditingProvider(provider.name)}>Set key</WorkspaceActionButton>}
+                        {provider.runtime_key_set && !provider.env_var_set && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => { void handleClearProviderKey(provider.name); }}>Clear key</WorkspaceActionButton>}
+                        <WorkspaceActionButton appearance="danger" size="small" icon="trash" onClick={() => { void handleRemoveProvider(provider.name); }}>Remove</WorkspaceActionButton>
                       </>
                     )}
-                  </div>
-                </div>
+                  </WorkspaceActionGroup>}
+                />
               );
             })}
-          </div>
+          </WorkspaceResourceList>
         </section>
         )}
 
@@ -583,31 +589,27 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, accountSess
 
         {activeSection === 'apps' && (
         <section className="connect__section connect__section--marketplace">
-          <div className="connect__section-head">
-            <h2>Marketplace</h2>
-            <input className="connect__marketplace-search" value={marketplaceSearch} onChange={e => setMarketplaceSearch(e.target.value)} placeholder="Search apps..." aria-label="Search marketplace apps" />
+          <div className="connect__section-head connect__section-head--search">
+            <input className="input connect__marketplace-search" value={marketplaceSearch} onChange={e => setMarketplaceSearch(e.target.value)} placeholder="Search apps..." aria-label="Search marketplace apps" />
           </div>
           {marketplaceLoading ? <div className="connect__empty">Loading marketplace...</div> : marketplaceError ? <div className="connect__error">Marketplace unavailable: {marketplaceError}</div> : (
-            <div className="connect__marketplace-grid">
+            <WorkspaceResourceList label="Compatible apps">
               {filteredMarketplaceApps.slice(0, 12).map(app => (
-                <article key={app.id || app.name} className="connect__marketplace-card">
-                  <div className="connect__marketplace-head">
-                    {app.logo ? <img src={app.logo} alt="" /> : <span>{app.name.slice(0, 1).toUpperCase()}</span>}
-                    <div>
-                      <strong>{app.name}</strong>
-                      {app.category?.[0] && <span>{app.category[0]}</span>}
-                    </div>
-                  </div>
-                  <p>{app.description || 'No description available.'}</p>
-                  <div className="connect__marketplace-actions">
-                    {app.links?.app && <button className="btn btn--ghost" type="button" onClick={() => openExternal(app.links?.app)}>Visit</button>}
-                    {app.links?.guide && <button className="btn btn--ghost" type="button" onClick={() => openExternal(app.links?.guide)}>Guide</button>}
-                    {app.links?.video && <button className="btn btn--ghost" type="button" onClick={() => openExternal(app.links?.video)}>Video</button>}
-                  </div>
-                </article>
+                <WorkspaceResourceRow
+                  key={app.id || app.name}
+                  title={app.name}
+                  description={app.description || 'No description available.'}
+                  metadata={app.category?.[0]}
+                  leading={app.logo ? <img className="connect__app-logo" src={app.logo} alt="" /> : <span className="connect__app-logo connect__app-logo--fallback">{app.name.slice(0, 1).toUpperCase()}</span>}
+                  actions={<WorkspaceActionGroup className="connect__marketplace-actions" label={`Links for ${app.name}`}>
+                    {app.links?.app && <WorkspaceActionButton appearance="secondary" size="small" icon="globe" onClick={() => openExternal(app.links?.app)}>Visit</WorkspaceActionButton>}
+                    {app.links?.guide && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.guide)}>Guide</WorkspaceActionButton>}
+                    {app.links?.video && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.video)}>Video</WorkspaceActionButton>}
+                  </WorkspaceActionGroup>}
+                />
               ))}
               {filteredMarketplaceApps.length === 0 && <div className="connect__empty">No marketplace apps match your search.</div>}
-            </div>
+            </WorkspaceResourceList>
           )}
         </section>
         )}

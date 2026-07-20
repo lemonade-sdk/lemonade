@@ -22,18 +22,11 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar');
 
-    await expect(page.locator('.titlebar__lemon')).not.toBeVisible();
-    const appControls = page.getByRole('button', { name: 'App controls', exact: true });
-    await expect(appControls).toBeVisible();
-    await expect(appControls.locator('[data-icon="settings"]')).toBeVisible();
-    await expect(page.locator('.titlebar__utility-menu .account-menu__trigger')).not.toBeVisible();
-    await appControls.click();
+    await expect(page.locator('.titlebar__lemon')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'App controls', exact: true })).not.toBeVisible();
     await expect(page.locator('.titlebar__utility-menu .account-menu__trigger')).toBeVisible();
-    await expect(page.locator('.titlebar__utility-menu').getByRole('status')).toHaveAccessibleName(/Server (connected|connecting|offline)/i);
     await expect(page.locator('.titlebar__utility-menu').getByRole('button', { name: 'Toggle theme' })).toBeVisible();
     await expect(page.locator('.titlebar__utility-menu').getByRole('button', { name: 'Open download manager' })).toBeVisible();
-    await appControls.click();
-    await expect(page.locator('.titlebar__utility-menu .account-menu__trigger')).not.toBeVisible();
 
     // Titlebar brand
     await expect(page.locator('.titlebar__brand')).toContainText('lemonade');
@@ -48,7 +41,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(nav.getByText('Connect')).toBeVisible();
 
     // Status dot visible
-    await expect(page.locator('.titlebar__status-dot')).toBeVisible();
+    await expect(page.locator('.titlebar__status-dot--brand')).toBeVisible();
 
     await page.screenshot({ path: 'screenshots/01-app-loaded.png', fullPage: true });
   });
@@ -445,6 +438,14 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar');
 
+    const appControls = page.getByRole('button', { name: 'App controls', exact: true });
+    await expect(appControls).toBeVisible();
+    await expect(appControls.locator('[data-icon="settings"]')).toBeVisible();
+    await appControls.click();
+    await expect(page.locator('.titlebar__utility-menu .account-menu__trigger')).toBeVisible();
+    await expect(page.locator('.titlebar__utility-menu').getByRole('status')).toHaveAccessibleName(/Server (connected|connecting|offline)/i);
+    await appControls.click();
+
     const workspaces: Array<{ tab: string; trigger: string; dialog: string; visibleControls?: string[] }> = [
       { tab: 'Chat', trigger: 'Open conversation history', dialog: 'Conversations' },
       {
@@ -740,7 +741,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.goto('/');
     await page.locator('.titlebar__nav').getByText('Models').click();
-    await expect(page.locator('.titlebar__status-dot')).toHaveClass(/titlebar__status-dot--connected/);
+    await expect(page.locator('.titlebar__status-dot--brand')).toHaveClass(/titlebar__status-dot--connected/);
     await page.locator('.model-list-item').filter({ hasText: 'Preset Beta Model' }).click();
     await page.getByRole('tab', { name: 'Presets' }).click();
 
@@ -749,7 +750,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel.locator('.detail-presets__explanation')).toBeVisible();
     await expect(panel.getByText('Preset intent, translated for this model')).toBeVisible();
 
-    const headerSettings = page.locator('.model-detail-panel__effective-settings');
+    const headerSettings = page.locator('.model-detail-panel .workspace-detail-panel__metadata');
     await expect(headerSettings).toContainText('Temperature');
     await expect(headerSettings).toContainText('Balanced');
     await expect(headerSettings).toContainText('0.70');

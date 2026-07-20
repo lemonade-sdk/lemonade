@@ -4,6 +4,12 @@ import { capabilityFromModelInfo } from '../modelCapabilities';
 import { Icon } from './Icon';
 import RouterNodeEditor from './RouterNodeEditor';
 import {
+  WorkspaceActionButton,
+  WorkspaceActionGroup,
+  WorkspaceDetailPanel,
+  WorkspaceMetadataChip,
+} from './WorkspacePanels';
+import {
   buildRouterPullRequest,
   classifierLabels,
   createEmptyRouterDraft,
@@ -318,30 +324,41 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   };
 
   return (
-    <section className="router-editor" aria-label="Router editor">
-      <header className="router-editor__header">
-        <div className="router-editor__heading">
-          <span className="router-editor__icon"><Icon name="router" size={20} /></span>
-          <div>
-            <div className="router-editor__eyebrow">Models · collection.router</div>
-            <h2>Router</h2>
-          </div>
-        </div>
-        <button type="button" className="router-editor__close" onClick={onClose} aria-label="Close router editor" title="Close"><Icon name="x" size={18} /></button>
-      </header>
+    <WorkspaceDetailPanel
+      className="router-editor"
+      ariaLabel="Router editor"
+      leading={<Icon name="router" size={20} aria-hidden="true" />}
+      title={<h2 className="workspace-detail-panel__title">Router</h2>}
+      metadata={<WorkspaceMetadataChip emphasis="high" tone="accent">collection.router</WorkspaceMetadataChip>}
+      description={<p>Build and register a virtual model that routes requests across compatible candidates.</p>}
+      actions={(
+        <WorkspaceActionGroup label="Router editor actions">
+          {draft.modelName && (
+            <WorkspaceActionButton appearance="danger" icon="trash" onClick={() => { void deleteCurrent(); }}>Delete</WorkspaceActionButton>
+          )}
+          <span className="workspace-action-group__spacer" />
+          <WorkspaceActionButton appearance="secondary" icon="x" onClick={onClose}>Close</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="primary" icon="check" disabled={saving || validationErrors.length > 0} onClick={() => { void save(); }}>
+            {saving ? 'Registering…' : 'Save & register'}
+          </WorkspaceActionButton>
+        </WorkspaceActionGroup>
+      )}
+      onClose={onClose}
+      closeLabel="Close router editor"
+    >
 
       <div className="router-editor__toolbar">
-        <button type="button" className="btn btn--ghost btn--tiny" onClick={resetDraft}><Icon name="plus" size={13} /> New</button>
+        <WorkspaceActionButton size="small" icon="compose" onClick={resetDraft}>New</WorkspaceActionButton>
         <label className="router-editor__saved-select">
           <span className="sr-only">Saved routers</span>
-          <select value={draft.modelName || ''} onChange={event => loadSaved(event.target.value)}>
+          <select className="select" value={draft.modelName || ''} onChange={event => loadSaved(event.target.value)}>
             <option value="">Unsaved router</option>
             {savedRecords.map(record => <option key={record.model_name} value={record.model_name}>{record.display_name}</option>)}
           </select>
         </label>
         <span className="router-editor__toolbar-spacer" />
-        <button type="button" className="btn btn--ghost btn--tiny" onClick={() => importRef.current?.click()}><Icon name="download" size={13} /> Import</button>
-        <button type="button" className="btn btn--ghost btn--tiny" disabled={!request} onClick={() => request && downloadJson(routerDisplayName(request.model_name), request)}><Icon name="file" size={13} /> Export</button>
+        <WorkspaceActionButton size="small" icon="file-up" onClick={() => importRef.current?.click()}>Import</WorkspaceActionButton>
+        <WorkspaceActionButton size="small" icon="file" disabled={!request} onClick={() => request && downloadJson(routerDisplayName(request.model_name), request)}>Export</WorkspaceActionButton>
         <input ref={importRef} className="hidden-file-input" type="file" accept="application/json,.json" onChange={event => { void importFile(event.target.files?.[0]); }} />
       </div>
 
@@ -360,7 +377,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
           <section className="router-editor__json-panel">
             <div className="router-editor__section-head">
               <div><h3>Registration payload</h3><p>Exact body sent to <code>/api/v1/pull</code>.</p></div>
-              <button type="button" className="btn btn--ghost btn--tiny" disabled={!jsonPreview} onClick={() => { void copyText(jsonPreview).then(() => setNotice('JSON copied.')); }}><Icon name="copy" size={13} /> Copy</button>
+              <WorkspaceActionButton size="small" icon="copy" disabled={!jsonPreview} onClick={() => { void copyText(jsonPreview).then(() => setNotice('JSON copied.')); }}>Copy</WorkspaceActionButton>
             </div>
             {jsonPreview ? <pre>{jsonPreview}</pre> : <div className="router-editor__empty">Fix validation errors to generate the payload.</div>}
           </section>
@@ -371,8 +388,8 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                 <div><h3>Identity</h3><p>Saved as a user-scoped virtual model.</p></div>
               </div>
               <div className="router-editor__form-grid">
-                <label><span>Router name</span><input value={draft.name} placeholder="Fast-or-smart" onChange={event => setPatch({ name: event.target.value })} /></label>
-                <label><span>Model ID</span><input value={draft.modelName || (draft.name ? `user.${draft.name.replace(/[^A-Za-z0-9._-]+/g, '-')}` : '')} readOnly /></label>
+                <label><span>Router name</span><input className="input" value={draft.name} placeholder="Fast-or-smart" onChange={event => setPatch({ name: event.target.value })} /></label>
+                <label><span>Model ID</span><input className="input" value={draft.modelName || (draft.name ? `user.${draft.name.replace(/[^A-Za-z0-9._-]+/g, '-')}` : '')} readOnly /></label>
               </div>
             </section>
 
@@ -398,7 +415,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
               </div>
               <label className="router-editor__default-model">
                 <span>Default model <small>Used when no rule matches or evaluation fails.</small></span>
-                <select value={draft.defaultModel} onChange={event => setPatch({ defaultModel: event.target.value })}>
+                <select className="select" value={draft.defaultModel} onChange={event => setPatch({ defaultModel: event.target.value })}>
                   <option value="">Select default</option>
                   {draft.candidates.map(candidate => <option key={candidate} value={candidate}>{candidate}</option>)}
                 </select>
@@ -409,8 +426,8 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
               <div className="router-editor__section-head">
                 <div><h3>Classifiers</h3><p>Optional model-backed signals evaluated once per request.</p></div>
                 <div className="router-editor__section-actions">
-                  <button type="button" className="btn btn--ghost btn--tiny" onClick={() => addClassifier('classifier')}><Icon name="plus" size={13} /> Classifier</button>
-                  <button type="button" className="btn btn--ghost btn--tiny" onClick={() => addClassifier('semantic_similarity')}><Icon name="plus" size={13} /> Semantic</button>
+                  <WorkspaceActionButton size="small" icon="plus" onClick={() => addClassifier('classifier')}>Classifier</WorkspaceActionButton>
+                  <WorkspaceActionButton size="small" icon="plus" onClick={() => addClassifier('semantic_similarity')}>Semantic</WorkspaceActionButton>
                 </div>
               </div>
               {draft.classifiers.length === 0 ? <div className="router-editor__empty">No classifiers. Deterministic rules need none.</div> : (
@@ -421,28 +438,28 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                       <article className="router-editor__classifier" key={`${classifier.id}-${index}`}>
                         <div className="router-editor__card-head">
                           <strong>{classifier.type === 'semantic_similarity' ? 'Semantic similarity' : 'Text classifier'}</strong>
-                          <button type="button" className="router-editor__icon-btn" onClick={() => removeClassifier(index)} title="Remove classifier"><Icon name="trash" size={14} /></button>
+                          <WorkspaceActionButton appearance="danger" size="small" icon="trash" iconOnly onClick={() => removeClassifier(index)} aria-label="Remove classifier" title="Remove classifier" />
                         </div>
                         <div className="router-editor__form-grid router-editor__form-grid--classifier">
-                          <label><span>ID</span><input value={classifier.id} onChange={event => updateClassifier(index, { id: event.target.value })} /></label>
-                          <label><span>Type</span><select value={classifier.type} onChange={event => updateClassifier(index, { ...createRouterClassifier(index, event.target.value as RouterClassifier['type']), id: classifier.id })}><option value="classifier">classifier</option><option value="semantic_similarity">semantic_similarity</option></select></label>
-                          <label className="router-editor__wide"><span>Model</span><select value={classifier.model} onChange={event => updateClassifier(index, { model: event.target.value })}><option value="">Select model</option>{(classifier.type === 'semantic_similarity' ? embeddingModels : models).filter(model => String((model as any).recipe || '').toLowerCase() !== 'collection.router').map(model => <option key={modelName(model)} value={modelName(model)}>{modelLabel(model)} · {modelName(model)}</option>)}</select></label>
+                          <label><span>ID</span><input className="input" value={classifier.id} onChange={event => updateClassifier(index, { id: event.target.value })} /></label>
+                          <label><span>Type</span><select className="select" value={classifier.type} onChange={event => updateClassifier(index, { ...createRouterClassifier(index, event.target.value as RouterClassifier['type']), id: classifier.id })}><option value="classifier">classifier</option><option value="semantic_similarity">semantic_similarity</option></select></label>
+                          <label className="router-editor__wide"><span>Model</span><select className="select" value={classifier.model} onChange={event => updateClassifier(index, { model: event.target.value })}><option value="">Select model</option>{(classifier.type === 'semantic_similarity' ? embeddingModels : models).filter(model => String((model as any).recipe || '').toLowerCase() !== 'collection.router').map(model => <option key={modelName(model)} value={modelName(model)}>{modelLabel(model)} · {modelName(model)}</option>)}</select></label>
                           {classifier.type === 'classifier' ? (
-                            <label className="router-editor__wide"><span>Output labels <small>Comma-separated</small></span><input value={classifier.labels.join(', ')} onChange={event => updateClassifier(index, { labels: event.target.value.split(',').map(label => label.trimStart()), defaultLabel: undefined })} /></label>
+                            <label className="router-editor__wide"><span>Output labels <small>Comma-separated</small></span><input className="input" value={classifier.labels.join(', ')} onChange={event => updateClassifier(index, { labels: event.target.value.split(',').map(label => label.trimStart()), defaultLabel: undefined })} /></label>
                           ) : (
                             <div className="router-editor__wide router-editor__concepts">
-                              <div className="router-editor__mini-head"><span>Concepts and reference phrases</span><button type="button" className="btn btn--ghost btn--tiny" onClick={() => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [nextConceptName(classifier.referencePhrases)]: ['example phrase'] } })}><Icon name="plus" size={12} /> Concept</button></div>
+                              <div className="router-editor__mini-head"><span>Concepts and reference phrases</span><WorkspaceActionButton size="small" icon="plus" onClick={() => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [nextConceptName(classifier.referencePhrases)]: ['example phrase'] } })}>Concept</WorkspaceActionButton></div>
                               {Object.entries(classifier.referencePhrases).map(([concept, phrases], conceptIndex) => (
                                 <div className="router-editor__concept" key={`${concept}-${conceptIndex}`}>
-                                  <input value={concept} aria-label="Concept name" onChange={event => renameSemanticConcept(index, concept, event.target.value)} />
-                                  <input value={phrases.join(', ')} aria-label="Reference phrases" placeholder="Comma-separated phrases" onChange={event => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [concept]: event.target.value.split(',').map(phrase => phrase.trimStart()) } })} />
-                                  <button type="button" className="router-editor__icon-btn" title="Remove concept" onClick={() => { const next = { ...classifier.referencePhrases }; delete next[concept]; updateClassifier(index, { referencePhrases: next, defaultLabel: undefined }); }}><Icon name="trash" size={13} /></button>
+                                  <input className="input" value={concept} aria-label="Concept name" onChange={event => renameSemanticConcept(index, concept, event.target.value)} />
+                                  <input className="input" value={phrases.join(', ')} aria-label="Reference phrases" placeholder="Comma-separated phrases" onChange={event => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [concept]: event.target.value.split(',').map(phrase => phrase.trimStart()) } })} />
+                                  <WorkspaceActionButton appearance="danger" size="small" icon="trash" iconOnly title="Remove concept" aria-label="Remove concept" onClick={() => { const next = { ...classifier.referencePhrases }; delete next[concept]; updateClassifier(index, { referencePhrases: next, defaultLabel: undefined }); }} />
                                 </div>
                               ))}
                             </div>
                           )}
-                          <label><span>Default label</span><select value={classifier.defaultLabel || ''} onChange={event => updateClassifier(index, { defaultLabel: event.target.value || undefined })}><option value="">None</option>{labels.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
-                          <label><span>On error</span><select value={classifier.onError} onChange={event => updateClassifier(index, { onError: event.target.value as RouterClassifier['onError'] })}><option value="match_false">Do not match</option><option value="match_true">Match rule</option></select></label>
+                          <label><span>Default label</span><select className="select" value={classifier.defaultLabel || ''} onChange={event => updateClassifier(index, { defaultLabel: event.target.value || undefined })}><option value="">None</option>{labels.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
+                          <label><span>On error</span><select className="select" value={classifier.onError} onChange={event => updateClassifier(index, { onError: event.target.value as RouterClassifier['onError'] })}><option value="match_false">Do not match</option><option value="match_true">Match rule</option></select></label>
                         </div>
                       </article>
                     );
@@ -454,7 +471,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
             <section className="router-editor__section">
               <div className="router-editor__section-head">
                 <div><h3>Ordered rules</h3><p>First matching rule wins. The default model handles the remainder.</p></div>
-                <button type="button" className="btn btn--ghost btn--tiny" onClick={addRule}><Icon name="plus" size={13} /> Rule</button>
+                <WorkspaceActionButton size="small" icon="plus" onClick={addRule}>Rule</WorkspaceActionButton>
               </div>
               <div className="router-editor__rule-list">
                 {draft.rules.map((rule, index) => (
@@ -469,13 +486,13 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                       </div>
                     </div>
                     <div className="router-editor__rule-meta">
-                      <label><span>Rule ID</span><input value={rule.id} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === index ? { ...item, id: event.target.value } : item) })} /></label>
-                      <label><span>Route to</span><select value={rule.routeTo} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === index ? { ...item, routeTo: event.target.value } : item) })}><option value="">Select candidate</option>{draft.candidates.map(candidate => <option key={candidate} value={candidate}>{candidate}</option>)}</select></label>
+                      <label><span>Rule ID</span><input className="input" value={rule.id} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === index ? { ...item, id: event.target.value } : item) })} /></label>
+                      <label><span>Route to</span><select className="select" value={rule.routeTo} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === index ? { ...item, routeTo: event.target.value } : item) })}><option value="">Select candidate</option>{draft.candidates.map(candidate => <option key={candidate} value={candidate}>{candidate}</option>)}</select></label>
                     </div>
                     <RouterNodeEditor node={rule.condition} classifiers={draft.classifiers} onChange={condition => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === index ? { ...item, condition } : item) })} />
                     <details className="router-editor__outputs">
                       <summary>Optional decision outputs</summary>
-                      <textarea value={rule.outputsText || ''} placeholder={'{\n  "tier": "fast"\n}'} spellCheck={false} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === index ? { ...item, outputsText: event.target.value } : item) })} />
+                      <textarea className="textarea" value={rule.outputsText || ''} placeholder={'{\n  "tier": "fast"\n}'} spellCheck={false} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === index ? { ...item, outputsText: event.target.value } : item) })} />
                     </details>
                   </article>
                 ))}
@@ -495,13 +512,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
         {notice && <div className="router-editor__message router-editor__message--success"><Icon name="check" size={14} /> {notice}</div>}
       </div>
 
-      <footer className="router-editor__footer">
-        {draft.modelName && <button type="button" className="btn btn--danger btn--tiny" onClick={() => { void deleteCurrent(); }}><Icon name="trash" size={13} /> Delete</button>}
-        <span />
-        <button type="button" className="btn btn--ghost" onClick={onClose}>Close</button>
-        <button type="button" className="btn btn--primary" disabled={saving || validationErrors.length > 0} onClick={() => { void save(); }}>{saving ? 'Registering…' : 'Save & register'}</button>
-      </footer>
-    </section>
+    </WorkspaceDetailPanel>
   );
 };
 

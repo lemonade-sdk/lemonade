@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
-import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel, modelMatchesCapabilityTags, ModelCapability } from '../modelCapabilities';
-import { CapabilityIcon, Icon, PresetIcon } from './Icon';
+import { capabilityFromModelInfo, modelMatchesCapabilityTags } from '../modelCapabilities';
+import { Icon } from './Icon';
 import { scopedStorageKey, type AccountSession } from '../features/accounts/accountStore';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
-import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
-import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
+import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
+import { DEFAULT_CONTEXT_SIZE } from '../presetStore';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
-import { TTS_SETTINGS_EVENT, TtsPlaybackMode, loadTtsPlaybackSettings, saveActiveTtsModel, saveSpeakUserText, saveTtsPlaybackMode } from '../features/audio/ttsSettings';
 import { ModelListPanel, modelIsCustom, modelMatchesBackend, modelMatchesFilter, modelMatchesTag } from './ModelListPanel';
 import type { PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
@@ -32,36 +31,9 @@ import {
   savePinnedModelNames,
   type GlobalModelSettings,
 } from '../features/modelSettings/globalModelSettings';
-import { backendColor, backendCompactLabel, backendLabel } from '../modelPresentation';
+import { backendLabel } from '../modelPresentation';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
-
-function formatSize(gb: number): string {
-  if (!Number.isFinite(gb) || gb <= 0) return 'size unknown';
-  if (gb >= 1) return `${gb.toFixed(1)} GB`;
-  if (gb >= 0.01) return `${(gb * 1000).toFixed(0)} MB`;
-  return `< 1 MB`;
-}
-
-function positiveNumber(value: unknown): number | undefined {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? n : undefined;
-}
-
-function supportsContextDisplay(capability: ReturnType<typeof capabilityFromModelInfo> | ReturnType<typeof capabilityFromLoaded>): boolean {
-  return capability === 'chat' || capability === 'omni' || capability === 'unknown';
-}
-
-function contextSizeForDisplay(model: ModelInfo | null | undefined, liveCtxSize?: unknown, fallbackCtxSize?: unknown): number | undefined {
-  if (!model) return positiveNumber(liveCtxSize) ?? positiveNumber(fallbackCtxSize) ?? DEFAULT_CONTEXT_SIZE;
-  const capability = capabilityFromModelInfo(model);
-  if (!supportsContextDisplay(capability)) return undefined;
-  return positiveNumber(liveCtxSize) ?? modelContextSize(model, fallbackCtxSize);
-}
-
-function contextLabel(ctx: number): string {
-  return `${(ctx / 1024).toFixed(0)}K`;
-}
 
 function modelName(m: ModelInfo | null | undefined): string {
   if (!m) return '';
@@ -73,51 +45,13 @@ function objectRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-function withLoadedRecipeOptions(info: ModelInfo | null | undefined, loaded: LoadedModel | null | undefined): ModelInfo | null {
-  if (!info && !loaded) return null;
-  if (!loaded) return info || null;
-  const base = info || ({ id: loaded.model_name, name: loaded.model_name } as ModelInfo);
-  const recipeOptions = {
-    ...objectRecord((base as any).recipe_options),
-    ...objectRecord(loaded.recipe_options),
-  };
-  return {
-    ...base,
-    model_name: (base as any).model_name || loaded.model_name,
-    name: (base as any).name || loaded.model_name,
-    checkpoint: (base as any).checkpoint || loaded.checkpoint,
-    recipe: (base as any).recipe || loaded.recipe,
-    type: (base as any).type || loaded.type,
-    recipe_options: recipeOptions,
-  } as ModelInfo;
-}
-
 function modelLabels(m: ModelInfo | null | undefined): string[] {
   const labels = (m as any)?.labels;
   if (!Array.isArray(labels)) return [];
   return labels.map(label => String(label).trim()).filter(Boolean);
 }
 
-const BackendBadge: React.FC<{ recipe: string; running?: boolean }> = ({ recipe, running = false }) => {
-  const label = backendLabel(recipe);
-  return (
-    <div
-      className={`row__backend-badge${running ? ' row__backend-badge--running' : ''}`}
-      style={{ '--backend-color': backendColor(recipe) } as React.CSSProperties}
-      title={label}
-      aria-label={label}
-    >
-      <span>{backendCompactLabel(recipe)}</span>
-    </div>
-  );
-};
-
 const recipeLabel = backendLabel;
-
-function modelType(m: ModelInfo): string {
-  const cap = capabilityFromModelInfo(m);
-  return cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
-}
 
 function labelDisplay(label: string): string {
   const map: Record<string, string> = {
@@ -170,90 +104,6 @@ function labelDisplay(label: string): string {
   };
   const key = String(label || '').toLowerCase();
   return map[key] || label;
-}
-
-type CapabilityIconTarget = ModelCapability | 'all' | 'vision' | 'code' | 'transcription' | 'popular' | 'tools' | 'reasoning' | 'mtp';
-
-function iconForCapabilityLabel(label: string): CapabilityIconTarget {
-  const key = String(label || '').toLowerCase().trim();
-  if (['all'].includes(key)) return 'all';
-  if (['hot', 'popular'].includes(key)) return 'popular';
-  if (['tool-calling', 'tools'].includes(key)) return 'tools';
-  if (['reasoning'].includes(key)) return 'reasoning';
-  if (['mtp'].includes(key)) return 'mtp';
-  if (['chat', 'llm'].includes(key)) return 'chat';
-  if (['omni', 'multimodal', 'multi-modal'].includes(key)) return 'omni';
-  if (['vision', 'image-input', 'vlm', 'vision-language'].includes(key)) return 'vision';
-  if (['coding', 'code'].includes(key)) return 'code';
-  if (['image', 'image-generation', 'diffusion', 'edit', 'image-edit', 'image-editing', 'upscaling'].includes(key)) return 'image';
-  if (['audio-generation', 'music-generation', 'sound-generation', 'sfx'].includes(key)) return 'audio-generation';
-  if (['audio', 'transcription', 'realtime-transcription', 'chat-transcription', 'asr', 'stt', 'speech-to-text'].includes(key)) return 'transcription';
-  if (['tts', 'speech', 'text-to-speech', 'voice-design'].includes(key)) return 'tts';
-  if (['3d', '3d-generation', 'image-to-3d', 'model3d'].includes(key)) return 'model3d';
-  if (['embedding', 'embeddings'].includes(key)) return 'embedding';
-  if (['reranking', 'reranker', 'rerank'].includes(key)) return 'reranking';
-  return 'unknown';
-}
-
-function labelFromCapability(capability: ModelCapability): string | null {
-  switch (capability) {
-    case 'chat': return 'chat';
-    case 'omni': return 'omni';
-    case 'image': return 'image';
-    case 'audio': return 'transcription';
-    case 'audio-generation': return 'audio-generation';
-    case 'tts': return 'tts';
-    case 'model3d': return '3d';
-    case 'embedding': return 'embedding';
-    case 'reranking': return 'reranking';
-    default: return null;
-  }
-}
-
-function findModelInfoByDisplayName(models: ModelInfo[], name: string): ModelInfo | null {
-  const needle = String(name || '').trim().toLowerCase();
-  if (!needle) return null;
-  return models.find(model => modelName(model).toLowerCase() === needle
-    || String(model.display_name || '').trim().toLowerCase() === needle
-    || String(model.id || '').trim().toLowerCase() === needle) || null;
-}
-
-function capabilityLabelsForModel(model: ModelInfo | null | undefined, allModels: ModelInfo[]): string[] {
-  const labels: string[] = [];
-  const addLabel = (raw: unknown) => {
-    const label = String(raw || '').trim().toLowerCase();
-    if (!label || ['llamacpp', 'custom'].includes(label)) return;
-    labels.push(label);
-  };
-
-  modelLabels(model).forEach(addLabel);
-
-  if (model && isCollectionModel(model)) {
-    for (const componentName of getCollectionComponents(model)) {
-      const component = findModelInfoByDisplayName(allModels, componentName);
-      if (component) {
-        modelLabels(component).forEach(addLabel);
-        addLabel(labelFromCapability(capabilityFromModelInfo(component)));
-      }
-    }
-  }
-
-  if (model) addLabel(labelFromCapability(capabilityFromModelInfo(model)));
-
-  const unique = new Map<string, string>();
-  for (const label of labels) {
-    const display = labelDisplay(label);
-    const key = display.toLowerCase();
-    if (!unique.has(key)) unique.set(key, label);
-  }
-  return [...unique.values()];
-}
-
-function hfUrl(checkpoint: string): string | null {
-  if (!checkpoint) return null;
-  const parts = checkpoint.split(':')[0];
-  if (!parts.includes('/')) return null;
-  return `https://huggingface.co/${parts}`;
 }
 
 function formatDownloads(n: number): string {
@@ -853,18 +703,6 @@ function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset:
   };
 }
 
-const FILTER_TABS: { key: FilterTab; label: string; icon: ModelCapability | 'all' }[] = [
-  { key: 'all', label: 'All', icon: 'all' },
-  { key: 'llm', label: 'LLM', icon: 'chat' },
-  { key: 'omni', label: 'Omni', icon: 'omni' },
-  { key: 'image', label: 'Image', icon: 'image' },
-  { key: 'audio', label: 'Audio', icon: 'audio' },
-  { key: 'audio-generation', label: 'Music & SFX', icon: 'audio-generation' },
-  { key: 'tts', label: 'TTS', icon: 'tts' },
-  { key: 'model3d', label: '3D', icon: 'model3d' },
-  { key: 'embedding', label: 'Embed', icon: 'embedding' },
-];
-
 function createEmptyCustomDraft(mode: CustomFormMode = 'model'): CustomModelDraftState {
   const isOmniCollection = mode === 'omni-collection';
   return {
@@ -929,23 +767,6 @@ function customDraftFromModel(model: ModelInfo): CustomModelDraftState {
       maxTokens: tool.max_tokens ? String(tool.max_tokens) : '',
     })),
   };
-}
-
-function loadedIsVirtualOmniCollection(model: LoadedModel): boolean {
-  const recipe = String(model.recipe || '').toLowerCase();
-  const components = model.recipe_options?.components;
-  return (recipe === 'collection.omni' || recipe === 'collection')
-    && model.recipe_options?.virtual_collection === true
-    && Array.isArray(components)
-    && components.some(component => typeof component === 'string' && component.trim().length > 0);
-}
-
-function canShowPresetHighlight(m: ModelInfo | null | undefined): boolean {
-  if (!m) return true;
-  const recipe = String((m as any).recipe || '').toLowerCase();
-  if (recipe === 'collection.omni' || recipe === 'collection') return false;
-  if (isCollectionModel(m)) return false;
-  return capabilityFromModelInfo(m) !== 'omni';
 }
 
 type OmniComponentOptionSource = 'custom' | 'downloaded' | 'registered';
@@ -1254,7 +1075,7 @@ interface ModelManagerProps {
   accountSession: AccountSession;
 }
 
-const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedModel, accountSession }) => {
+const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSession }) => {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [connectionStatus, setConnectionStatus] = useState(api.status);
@@ -1264,7 +1085,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const pullAbortRef = useRef<Record<string, AbortController>>({});
-  const [expandedModel, setExpandedModel] = useState<string | null>(null);
   const [selectedDetailModelId, setSelectedDetailModelId] = useState<string | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1276,7 +1096,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const mobileRail = useWorkspaceMobileRail();
   const [navRailCollapsed, setNavRailCollapsed] = useState(false);
   const [modelListWidth, setModelListWidth] = useState(loadModelListWidth);
-  const [showAllAvailable, setShowAllAvailable] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Remote registry search state. Provider switches are intentionally separate
@@ -1317,14 +1136,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [capabilityFilter, setCapabilityFilter] = useState<Set<string>>(() => new Set());
   // Real disk usage for the storage meter (null until/unless lemond exposes it).
   const [storageInfo, setStorageInfo] = useState<import('../api').StorageInfo | null>(null);
-  const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings(accountSession.storageScope));
   const [globalModelSettings, setGlobalModelSettings] = useState<GlobalModelSettings>(() => loadGlobalModelSettings(accountSession.storageScope));
   const automaticUpdateStartedRef = useRef(false);
   const customJsonInputRef = useRef<HTMLInputElement>(null);
 
-  const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
-  const [appliedPresets, setAppliedPresets] = useState<Record<string, string>>(loadApplied);
-  const [presetNotice, setPresetNotice] = useState<string | null>(null);
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
   const hasVisibleModelsRef = useRef(false);
   const modelsSnapshotRef = useRef<string>('');
@@ -1433,13 +1248,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, [models.length]);
 
   useEffect(() => {
-    const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
-    reloadTtsSettings();
-    window.addEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
-    return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
-  }, [accountSession.storageScope]);
-
-  useEffect(() => {
     const reloadGlobalSettings = () => setGlobalModelSettings(loadGlobalModelSettings(accountSession.storageScope));
     automaticUpdateStartedRef.current = false;
     reloadGlobalSettings();
@@ -1468,17 +1276,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   useEffect(() => {
     void refreshCustomRecipeAvailability();
   }, [connectionStatus, refreshCustomRecipeAvailability]);
-
-  const reloadPresetState = useCallback(() => {
-    setUserPresets(loadUserPresets());
-    setAppliedPresets(loadApplied());
-  }, [accountSession.storageScope]);
-
-  useEffect(() => {
-    reloadPresetState();
-    window.addEventListener(PRESET_STORE_EVENT, reloadPresetState);
-    return () => window.removeEventListener(PRESET_STORE_EVENT, reloadPresetState);
-  }, [reloadPresetState]);
 
   const refresh = useCallback(async () => {
     if (!api.isConnected) {
@@ -2329,53 +2126,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     });
   };
 
-  const activeTtsModelName = ttsPlaybackSettings.modelName;
-
-  const toggleTtsSpeechModel = (name: string) => {
-    const next = activeTtsModelName === name ? null : name;
-    saveActiveTtsModel(accountSession.storageScope, next);
-    setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
-  };
-
-  const setSpeakUserText = (enabled: boolean) => {
-    saveSpeakUserText(accountSession.storageScope, enabled);
-    setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
-  };
-
-  const setTtsPlaybackMode = (mode: TtsPlaybackMode) => {
-    saveTtsPlaybackMode(accountSession.storageScope, mode);
-    setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
-  };
-
-  const renderPinAndSpeechControl = (name: string, isPinned: boolean, capability: ModelCapability) => {
-    const pinButton = (
-      <button
-        type="button"
-        className={`row__pin${isPinned ? ' row__pin--active' : ''}`}
-        onClick={(e) => { e.stopPropagation(); togglePinnedModel(name); }}
-        title={isPinned ? `Unpin ${name}` : `Pin ${name}`}
-        aria-label={isPinned ? `Unpin ${name}` : `Pin ${name}`}
-        aria-pressed={isPinned}
-      ><Icon name="pin" size={13} /></button>
-    );
-
-    if (capability !== 'tts') return pinButton;
-    const isSpeechActive = activeTtsModelName === name;
-    return (
-      <span className="row__tts-actions" title="TTS playback controls">
-        {pinButton}
-        <button
-          type="button"
-          className={`row__speech${isSpeechActive ? ' row__speech--active' : ''}`}
-          onClick={(e) => { e.stopPropagation(); toggleTtsSpeechModel(name); }}
-          title={isSpeechActive ? `Stop using ${name} for spoken replies` : `Read assistant chat messages with ${name}`}
-          aria-label={isSpeechActive ? `Disable spoken replies using ${name}` : `Use ${name} for spoken replies`}
-          aria-pressed={isSpeechActive}
-        ><Icon name="speech" size={13} /></button>
-      </span>
-    );
-  };
-
   const handleSaveCustomModel = async (e: React.FormEvent) => {
     e.preventDefault();
     setCustomError(null);
@@ -2542,22 +2292,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return merged;
   }, [routerModels, customModels, models, loadedModels]);
 
-  const allPresets = useMemo(() => [DEFAULT_PRESET, ...STARTERS, ...userPresets], [userPresets]);
-
-  const activePresetForName = useCallback((name: string): Preset => {
-    const presetId = appliedPresets[name] || DEFAULT_PRESET.id;
-    return allPresets.find(p => p.id === presetId) || DEFAULT_PRESET;
-  }, [allPresets, appliedPresets]);
-
-  const focusedModelName = expandedModel || selectedModel || '';
-  const focusedModelInfo = useMemo(() => {
-    if (!focusedModelName) return null;
-    const info = allModels.find(m => modelName(m) === focusedModelName) || ({ id: focusedModelName, name: focusedModelName } as ModelInfo);
-    const loaded = loadedModels.find(m => m.model_name === focusedModelName);
-    return withLoadedRecipeOptions(info, loaded);
-  }, [allModels, focusedModelName, loadedModels]);
-  const focusedPreset = focusedModelName ? activePresetForName(focusedModelName) : null;
-
   const omniComponentOptions = useMemo(() => {
     const roles: Record<OmniComponentRole, OmniComponentOption[]> = {
       llm: [],
@@ -2686,23 +2420,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const pinnedNameSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
   const favoriteNameSet = useMemo(() => new Set(favoriteModels.map(name => name.toLowerCase())), [favoriteModels]);
 
-  const { downloaded, available } = useMemo(() => {
-    const dl: ModelInfo[] = [];
-    const av: ModelInfo[] = [];
-    for (const m of allModels) {
-      const name = modelName(m);
-      if (loadedNames.has(name)) continue;
-      const hasActiveDownload = Boolean(activeDownloadForModel(downloadItems, name))
-        || (isCollectionModel(m) && getCollectionComponents(m).some(component => Boolean(activeDownloadForModel(downloadItems, component))));
-      const isDownloaded = !hasActiveDownload && (isCollectionModel(m)
-        ? isCollectionFullyDownloaded(m, allModels)
-        : Boolean((m as any).downloaded));
-      if (isDownloaded) dl.push(m);
-      else av.push(m);
-    }
-    return { downloaded: dl, available: av };
-  }, [allModels, downloadItems, loadedNames]);
-
   const handleUpdateAllModels = useCallback(async (): Promise<UpdateAllModelsResult> => {
     const candidates = allModels.filter(model => {
       const name = modelName(model);
@@ -2743,73 +2460,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       setGlobalModelSettings(next);
     });
   }, [accountSession.storageScope, globalModelSettings, handleUpdateAllModels, modelsLoading]);
-
-  const applyFilter = useCallback((list: ModelInfo[]) => {
-    let filtered = list;
-
-    // Type filter. The Omni tab is intentionally collection-only: single VLMs
-    // are useful chat/vision models, but they are not Omni collections.
-    if (filterTab !== 'all') {
-      filtered = filtered.filter(m => {
-        if (filterTab === 'omni') return isCollectionModel(m);
-        const type = modelType(m);
-        if (filterTab === 'embedding') return type === 'embedding' || type === 'reranking';
-        return type === filterTab;
-      });
-    }
-
-    // Search
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(m => {
-        const name = modelName(m).toLowerCase();
-        const labels = modelLabels(m).join(' ').toLowerCase();
-        const recipe = ((m as any).recipe || '').toLowerCase();
-        return name.includes(q) || labels.includes(q) || recipe.includes(q);
-      });
-    }
-
-    return filtered;
-  }, [filterTab, searchQuery]);
-
-  const filteredDownloaded = useMemo(() => applyFilter(downloaded), [applyFilter, downloaded]);
-  const filteredAvailable = useMemo(() => applyFilter(available), [applyFilter, available]);
-  const visibleFilteredDownloaded = useMemo(() => filteredDownloaded.filter(m => !pinnedNameSet.has(modelName(m).toLowerCase())), [filteredDownloaded, pinnedNameSet]);
-  const visibleFilteredAvailable = useMemo(() => filteredAvailable.filter(m => !pinnedNameSet.has(modelName(m).toLowerCase())), [filteredAvailable, pinnedNameSet]);
-
-  // Filter running models by search/type too
-  const filteredRunning = useMemo(() => {
-    if (filterTab === 'all' && !searchQuery.trim()) return displayLoadedModels;
-    return displayLoadedModels.filter(m => {
-      // Type filter
-      if (filterTab !== 'all') {
-        const info = allModels.find(mi => modelName(mi) === m.model_name);
-        if (filterTab === 'omni') {
-          if (!(info ? isCollectionModel(info) : loadedIsVirtualOmniCollection(m))) return false;
-        } else {
-          const cap = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(m);
-          const type = cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
-          if (filterTab === 'embedding') {
-            if (type !== 'embedding' && type !== 'reranking') return false;
-          } else if (type !== filterTab) return false;
-        }
-      }
-      // Search
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        if (!String(m.model_name || '').toLowerCase().includes(q) && !String(m.recipe || '').toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-  }, [displayLoadedModels, filterTab, searchQuery, allModels]);
-
-  // Available zone: show first N unless expanded or searching
-  const AVAILABLE_INITIAL = 20;
-  const visibleAvailable = useMemo(() => {
-    if (showAllAvailable || searchQuery.trim() || filterTab !== 'all') return visibleFilteredAvailable;
-    return visibleFilteredAvailable.slice(0, AVAILABLE_INITIAL);
-  }, [visibleFilteredAvailable, showAllAvailable, searchQuery, filterTab]);
-  const hiddenAvailableCount = visibleFilteredAvailable.length - visibleAvailable.length;
 
   const localRegistryRefs = useMemo(() => {
     const refs = new Set<string>();
@@ -2876,389 +2526,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     closeCustomForm();
   };
 
-  /* ── Toggle detail ───────────────────────────────────────── */
-  const toggleDetail = (name: string) => {
-    setExpandedModel(prev => prev === name ? null : name);
-  };
-
-  /* ── Render helpers ──────────────────────────────────────── */
-
-  const renderLabels = (labels: string[]) => {
-    const normalizedLabels = labels.map(label => String(label).trim().toLowerCase()).filter(Boolean);
-    if (normalizedLabels.length === 0) return null;
-    const displayLabels = [...new Map(normalizedLabels
-      .filter(l => l !== 'llamacpp' && l !== 'custom')
-      .map(l => [labelDisplay(l).toLowerCase(), l] as const)).values()];
-    if (displayLabels.length === 0) return null;
-    return (
-      <div className="row__labels">
-        {displayLabels.map(l => (
-          <span key={l} className="row__label row__label--with-icon">
-            <CapabilityIcon capability={iconForCapabilityLabel(l)} size={10} />
-            {labelDisplay(l)}
-          </span>
-        ))}
-      </div>
-    );
-  };
-
-  const renderModelDetail = (m: ModelInfo, liveCtxSize?: number) => {
-    const name = modelName(m);
-    const checkpoint = (m as any).checkpoint || '';
-    const checkpoints = (m as any).checkpoints || {};
-    const recipe = (m as any).recipe || '';
-    const activePreset = activePresetForName(name);
-    const capability = capabilityFromModelInfo(m);
-    const isDefaultPassthrough = activePreset.id === DEFAULT_PRESET.id && !presetHasApplicablePreviewOverrides(activePreset, capability);
-    const explicitCtx = positiveNumber(liveCtxSize) ?? positiveNumber((m as any).max_context_window);
-    const displayCtx = contextSizeForDisplay(m, liveCtxSize, serverDefaultCtxSize);
-    const activePresetLines = effectivePresetParamPreviewLines(activePreset, m, displayCtx);
-    const showContext = Boolean(displayCtx);
-    const compositeModels = Array.isArray((m as any).composite_models) ? (m as any).composite_models : [];
-    const collectionComponents = getCollectionComponents(m);
-    const detailCapabilityLabels = capabilityLabelsForModel(m, allModels);
-    const url = hfUrl(checkpoint);
-    const exportData = {
-      ...m,
-      ...(explicitCtx ? { max_context_window: explicitCtx } : {}),
-    };
-
-    return (
-      <div className="row__detail">
-        <div className="detail__grid">
-          {/* Left column: metadata */}
-          <div className="detail__meta">
-            <div className="detail__field">
-              <span className="detail__label">Backend</span>
-              <span className="detail__value">{recipeLabel(recipe)}</span>
-            </div>
-            <div className="detail__field">
-              <span className="detail__label">Active preset</span>
-              <span className="detail__value detail__preset-value"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
-              <span className="detail__hint">{loadedNames.has(name) ? 'Runtime behavior applies now. Load options apply after reload.' : 'Applies on load. Backend remains auto by Lemonade.'}</span>
-            </div>
-            <div className="detail__field">
-              <span className="detail__label">{isDefaultPassthrough ? 'Model defaults' : 'Preset settings'}</span>
-              <span className="detail__value detail__param-lines">{activePresetLines.map(line => <span key={line}>{line}</span>)}</span>
-              {isDefaultPassthrough && <span className="detail__hint">No preset override is sent; Lemonade uses the model's current defaults.</span>}
-            </div>
-            {m.size && (
-              <div className="detail__field">
-                <span className="detail__label">Size</span>
-                <span className="detail__value">{formatSize(m.size)}</span>
-              </div>
-            )}
-            {showContext && (
-              <div className="detail__field">
-                <span className="detail__label">Context</span>
-                <span className="detail__value">{contextLabel(displayCtx!)} tokens</span>
-              </div>
-            )}
-            {detailCapabilityLabels.length > 0 && (
-              <div className="detail__field">
-                <span className="detail__label">Capabilities</span>
-                <div className="detail__caps">
-                  {detailCapabilityLabels.map(l => (
-                    <span key={l} className="detail__cap detail__cap--with-icon">
-                      <CapabilityIcon capability={iconForCapabilityLabel(l)} size={12} />
-                      {labelDisplay(l)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {capability === 'tts' && activeTtsModelName === name && (
-              <div className="detail__field detail__field--wide detail__tts-playback">
-                <span className="detail__label">Speech playback</span>
-                <div className="detail__tts-controls">
-                  <div className="detail__tts-mode" role="group" aria-label="Speech playback mode">
-                    <span>Mode</span>
-                    <span className="detail__tts-mode-buttons">
-                      {(['demand', 'always'] as TtsPlaybackMode[]).map(mode => (
-                        <button
-                          key={mode}
-                          type="button"
-                          className={`detail__tts-mode-button${ttsPlaybackSettings.playbackMode === mode ? ' detail__tts-mode-button--active' : ''}`}
-                          onClick={() => setTtsPlaybackMode(mode)}
-                          aria-pressed={ttsPlaybackSettings.playbackMode === mode}
-                        >
-                          {mode === 'demand' ? 'On demand' : 'Always'}
-                        </button>
-                      ))}
-                    </span>
-                  </div>
-                  <label className="detail__tts-toggle">
-                    <span>Also read user text</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={1}
-                      value={ttsPlaybackSettings.speakUserText ? 1 : 0}
-                      onChange={e => setSpeakUserText(Number(e.target.value) === 1)}
-                      aria-label="Also read user text"
-                    />
-                    <strong>{ttsPlaybackSettings.speakUserText ? 'On' : 'Off'}</strong>
-                  </label>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Right column: checkpoint / HF link */}
-          <div className="detail__source">
-            <div className="detail__field">
-              <span className="detail__label">Checkpoint</span>
-              <span className="detail__value detail__value--mono">{checkpoint || '—'}</span>
-            </div>
-            {Object.keys(checkpoints).length > 1 && (
-              <div className="detail__field">
-                <span className="detail__label">Components</span>
-                {Object.entries(checkpoints).map(([k, v]) => (
-                  <div key={k} className="detail__checkpoint">
-                    <span className="detail__ck-key">{k}</span>
-                    <span className="detail__ck-val">{String(v)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {compositeModels.length > 0 && (
-              <div className="detail__field">
-                <span className="detail__label">Includes</span>
-                <div className="detail__caps">
-                  {compositeModels.map((c: string) => (
-                    <span key={c} className="detail__cap">{c}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {collectionComponents.length > 0 && (
-              <div className="detail__field">
-                <span className="detail__label">Omni components</span>
-                <div className="detail__caps">
-                  {collectionComponents.map(component => (
-                    <span key={component} className="detail__cap">{component}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {url && (
-              <a className="detail__hf-link" href={url} target="_blank" rel="noopener noreferrer">
-                View on Hugging Face
-              </a>
-            )}
-            <button
-              type="button"
-              className="detail__json-export"
-              onClick={(event) => { event.stopPropagation(); exportJsonFile(name, exportData); }}
-            >
-              Export JSON
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderRunningModel = (m: LoadedModel) => {
-    if (!m?.model_name) return null;
-    const info = allModels.find(mi => modelName(mi) === m.model_name);
-    const cap = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(m);
-    const componentCount = Array.isArray(m.recipe_options?.components) ? m.recipe_options.components.length : 0;
-    const runningCtx = supportsContextDisplay(cap)
-      ? (positiveNumber(m.recipe_options?.ctx_size) ?? (info ? contextSizeForDisplay(info, undefined, serverDefaultCtxSize) : serverDefaultCtxSize))
-      : undefined;
-    const isActive = selectedModel === m.model_name;
-    const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
-    const activePreset = activePresetForName(m.model_name);
-    const isPinned = pinnedNameSet.has(m.model_name.toLowerCase());
-    return (
-      <div className={`row row--running${isActive ? ' row--active' : ''}`} key={m.model_name}>
-        <div className="row__summary">
-          <button type="button" className="row__content" onClick={() => toggleDetail(m.model_name)} aria-expanded={expandedModel === m.model_name}>
-            <div className="row__main">
-              <BackendBadge recipe={m.recipe} running />
-              <div className="row__text">
-                <span className="row__name-wrap"><span className="row__name">{m.model_name}</span>{info && (info as any).custom && <span className="row__label row__label--custom">Custom</span>}</span>
-                <span className="row__sub">
-                  {recipeLabel(m.recipe)} · {(m.device || 'device').toUpperCase()}
-                  {` · ${capabilityIcon(cap)} ${capabilityLabel(cap)}`}
-                  {runningCtx ? ` · ${contextLabel(runningCtx)} ctx` : ''}
-                  {componentCount > 0 ? ` · ${componentCount} components loaded` : ''}
-                </span>
-                <span className="row__preset-pill"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
-              </div>
-            </div>
-            <span className="row__expand">{expandedModel === m.model_name ? '▾' : '▸'}</span>
-          </button>
-          <div className="row__right">
-            {renderPinAndSpeechControl(m.model_name, isPinned, cap)}
-            <CopyInlineButton text={m.model_name} title={`Copy model ID: ${m.model_name}`} />
-            <span className="row__status-pill row__status-pill--running">
-              <span className="row__pulse" /> {isActive ? `Active ${capabilityLabel(cap)} mode` : 'Running'}
-            </span>
-            {selectable && !isActive && (
-              <button className="row__action" aria-label={`Use ${m.model_name} in ${capabilityLabel(cap)} mode`} onClick={(e) => { e.stopPropagation(); onModelSelect(m.model_name); }}>
-                Use in {capabilityLabel(cap)} mode
-              </button>
-            )}
-            <button
-              className="row__action row__action--unload"
-              aria-label={loadingModel === m.model_name ? `Working on ${m.model_name}…` : `Unload ${m.model_name}`}
-              onClick={(e) => { e.stopPropagation(); handleUnload(m); }}
-              disabled={loadingModel === m.model_name}
-            >
-              {loadingModel === m.model_name ? 'Working…' : 'Unload'}
-            </button>
-            <button
-              className="row__action row__action--delete"
-              onClick={(e) => {
-                e.stopPropagation();
-                const infoForDelete = allModels.find(mi => modelName(mi) === m.model_name);
-                if (infoForDelete) handleDelete(infoForDelete);
-              }}
-              disabled={loadingModel === m.model_name}
-              title={info && (info as any).custom ? 'Delete custom model definition' : 'Delete model files'}
-              aria-label={`Delete ${m.model_name}`}
-            >
-              <Icon name="x" size={14} />
-            </button>
-          </div>
-        </div>
-
-        {expandedModel === m.model_name && (() => {
-          // find matching ModelInfo for detail
-          const info = allModels.find(mi => modelName(mi) === m.model_name);
-          if (!info) return null;
-          const liveInfo = withLoadedRecipeOptions(info, m) || info;
-          const liveCtx = m.recipe_options?.ctx_size as number | undefined;
-          return (
-            <>
-              {renderModelDetail(liveInfo, liveCtx)}
-              {m.recipe_options && Object.keys(m.recipe_options).length > 0 && (
-                <div className="row__detail row__detail--live">
-                  <div className="detail__field">
-                    <span className="detail__label">Active Recipe Options</span>
-                    <div className="detail__recipe-options">
-                      {Object.entries(m.recipe_options).map(([k, v]) => (
-                        <span key={k} className="detail__recipe-opt">
-                          <span className="detail__ro-key">{k}</span>
-                          <span className="detail__ro-val">{String(v)}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          );
-        })()}
-      </div>
-    );
-  };
-
-  const renderModelRow = (m: ModelInfo, isDownloaded: boolean) => {
-    const name = modelName(m);
-    if (!name) return null;
-    const isCollection = isCollectionModel(m);
-    const isLoading = loadingModel === name;
-    const activeDownload = activeDownloadForModel(downloadItems, name);
-    const pullPercent = activeDownload?.percent ?? pulling[name];
-    const isPulling = pullPercent !== undefined;
-    const activePreset = activePresetForName(name);
-    const cap = capabilityFromModelInfo(m);
-    const isPinned = pinnedNameSet.has(name.toLowerCase());
-    const rowCtx = contextSizeForDisplay(m, undefined, serverDefaultCtxSize);
-
-    return (
-      <div className={`row${expandedModel === name ? ' row--expanded' : ''}`} key={name}>
-        <div className="row__summary">
-          <button type="button" className="row__content" onClick={() => toggleDetail(name)} aria-expanded={expandedModel === name}>
-            <div className="row__main">
-              <BackendBadge recipe={String((m as any).recipe || '')} />
-              <div className="row__text">
-                <span className="row__name-wrap"><span className="row__name">{m.display_name || name}</span>{(m as any).custom && <span className="row__label row__label--custom">Custom</span>}</span>
-                <span className="row__sub">
-                  {recipeLabel((m as any).recipe || '')}
-                  {isCollection ? ` · ${collectionComponentLabel(m)}` : ''}
-                  {m.size ? ` · ${formatSize(m.size)}` : ''}
-                  {rowCtx ? ` · ${contextLabel(rowCtx)} ctx` : ''}
-                </span>
-                {renderLabels(capabilityLabelsForModel(m, allModels))}
-                <span className="row__preset-pill"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
-              </div>
-            </div>
-            <span className="row__expand">{expandedModel === name ? '▾' : '▸'}</span>
-          </button>
-          <div className="row__right">
-            {renderPinAndSpeechControl(name, isPinned, cap)}
-            <CopyInlineButton text={name} title={`Copy model ID: ${name}`} />
-            {isPulling ? (
-              <div className="row__progress">
-                <div className="row__progress-bar">
-                  <div className="row__progress-fill" style={{ width: `${pullPercent}%` }} />
-                </div>
-                <span className="row__progress-text">{pullPercent.toFixed(0)}%</span>
-                <button
-                  className="row__action row__action--cancel"
-                  onClick={(e) => { e.stopPropagation(); handleCancelPull(name); }}
-                  title={`Cancel download of ${name}`}
-                  aria-label={`Cancel download of ${name}`}
-                ><Icon name="x" size={13} /></button>
-              </div>
-            ) : isDownloaded ? (
-              <>
-                <span className="row__status-pill row__status-pill--ready">Ready</span>
-                <button
-                  className="row__action"
-                  aria-label={isLoading ? `Loading ${name}…` : `Load ${name}`}
-                  onClick={(e) => { e.stopPropagation(); handleLoad(m); }}
-                  disabled={isLoading}
-                >
-                  {isLoading ? 'Loading…' : <><Icon name="play" size={13} /> Load</>}
-                </button>
-                <button
-                  className="row__action row__action--delete"
-                  onClick={(e) => { e.stopPropagation(); handleDelete(m); }}
-                  disabled={isLoading}
-                  title={(m as any).custom ? 'Delete custom model definition' : 'Delete model files'}
-                  aria-label={`Delete ${name}`}
-                >
-                  <Icon name="x" size={14} />
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  className="row__action row__action--download"
-                  aria-label={`Download ${name}`}
-                  onClick={(e) => { e.stopPropagation(); handlePull(m); }}
-                  disabled={isPulling}
-                >
-                  <Icon name="download" size={13} /> Download
-                </button>
-                <button
-                  className="row__action"
-                  aria-label={`Get and load ${name}`}
-                  onClick={(e) => { e.stopPropagation(); handlePullAndLoad(m); }}
-                  disabled={isPulling}
-                >
-                  <><Icon name="download" size={13} /><Icon name="play" size={13} /> Get & Load</>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {expandedModel === name && renderModelDetail(m)}
-        {loadError?.modelName === name && (
-          <div className="row__load-error">
-            <Icon name="alert" size={13} /> {loadError.message}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   const renderRemoteRow = (provider: ModelRegistryProvider, result: HFModelResult) => {
     const key = providerKey(provider, result.id);
@@ -3441,11 +2708,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     huggingface: hasHuggingFaceActivity ? filteredHfResults.length : 0,
     modelscope: hasModelScopeActivity ? filteredModelScopeResults.length : 0,
   };
-  const showManagerEmpty = !modelsLoading
-    && filteredRunning.length === 0
-    && visibleFilteredDownloaded.length === 0
-    && visibleFilteredAvailable.length === 0
-    && !hasRemoteActivity;
   const isCustomOmniCollectionDraft = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
   const customFormTitle = editingCustomModelName ? 'Edit Omni collection' : (isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model');
   const customRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
@@ -3460,18 +2722,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     && selectedCustomRecipeName === 'llamacpp'
     && supportsVisionProjectorField(customDraft.capability);
   const showImageExtraCheckpointFields = !isCustomOmniCollectionDraft && selectedCustomRecipeName === 'sd-cpp';
-  const pinnedVisibleModels = useMemo(() => {
-    if (pinnedModels.length === 0) return [];
-    const map = new Map(allModels.map(m => [modelName(m).toLowerCase(), m] as const));
-    return pinnedModels
-      .map(name => map.get(name.toLowerCase()))
-      .filter((m): m is ModelInfo => Boolean(m) && !loadedNames.has(modelName(m)));
-  }, [allModels, pinnedModels, loadedNames]);
-  const totalDownloaded = downloaded.length + displayLoadedModels.length;
-  const totalPulling = new Set([
-    ...Object.keys(pulling),
-    ...downloadItems.filter(item => item.downloadType === 'model' && (item.status === 'downloading' || item.status === 'paused' || item.running === true)).map(item => item.modelName),
-  ]).size;
   const updateOmniComponent = (role: OmniComponentRole, value: string) => {
     if (role === 'llm') {
       const selectedInfo = allModels.find(m => modelName(m) === value);
@@ -3500,7 +2750,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const searchHuggingFaceFromPicker = (query: string) => {
     setFilterTab('all');
     setSearchQuery(query);
-    setShowAllAvailable(true);
   };
 
 
@@ -3679,7 +2928,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             className="custom-model-editor custom-model-form"
             ariaLabel={customFormTitle}
             leading={<Icon name="compose" size={20} aria-hidden="true" />}
-            title={<h2 className="custom-model-editor__title">{customFormTitle}</h2>}
+            title={<h2 className="workspace-detail-panel__title custom-model-editor__title">{customFormTitle}</h2>}
             metadata={(
               <>
                 <WorkspaceMetadataChip emphasis="high" tone="accent">
@@ -3736,19 +2985,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <form id="custom-model-editor-form" className="custom-model-form__grid" onSubmit={handleSaveCustomModel}>
               <label className="custom-model-form__field">Name
                 <input
+                  className="input"
                   value={customDraft.displayName}
                   onChange={e => handleCustomDraftChange({ displayName: e.target.value })}
                   placeholder={isCustomOmniCollectionDraft ? 'My Omni collection' : 'My custom model'}
                 />
               </label>
               <label className="custom-model-form__field">Extra labels
-                <input value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder="tool-calling, reasoning" />
+                <input className="input" value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder="tool-calling, reasoning" />
               </label>
 
               {!isCustomOmniCollectionDraft && (
                 <>
                   <label className="custom-model-form__field">Capability
-                    <select value={customDraft.capability} onChange={e => {
+                    <select className="select" value={customDraft.capability} onChange={e => {
                       const nextCapability = e.target.value as CustomModelCapability;
                       handleCustomDraftChange({
                         capability: nextCapability,
@@ -3760,7 +3010,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                     </select>
                   </label>
                   <label className="custom-model-form__field">Recipe/backend
-                    <select value={selectedCustomRecipe?.value || ''} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} disabled={customRecipeOptions.length === 0}>
+                    <select className="select" value={selectedCustomRecipe?.value || ''} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} disabled={customRecipeOptions.length === 0}>
                       {customRecipeOptions.length === 0
                         ? <option value="">No compatible backend available</option>
                         : customRecipeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -3774,6 +3024,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                       />
                     )}
                     <input
+                      className="input"
                       value={customDraft.checkpoint}
                       onChange={e => handleCustomDraftChange({ checkpoint: e.target.value })}
                       placeholder={primaryCheckpointPlaceholder}
@@ -3786,6 +3037,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                         note={mmprojCheckpointExample?.note}
                       />
                       <input
+                        className="input"
                         value={customDraft.mmproj}
                         onChange={e => handleCustomDraftChange({ mmproj: e.target.value })}
                         placeholder="Optional"
@@ -3800,6 +3052,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                           note={textEncoderCheckpointExample?.note}
                         />
                         <input
+                          className="input"
                           value={customDraft.imageTextEncoder}
                           onChange={e => handleCustomDraftChange({ imageTextEncoder: e.target.value })}
                           placeholder="Optional"
@@ -3811,6 +3064,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                           note={vaeCheckpointExample?.note}
                         />
                         <input
+                          className="input"
                           value={customDraft.imageVae}
                           onChange={e => handleCustomDraftChange({ imageVae: e.target.value })}
                           placeholder="Optional"
@@ -3841,6 +3095,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                     <div className="custom-model-form__advanced-body">
                       <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field">Omni tool system prompt
                         <textarea
+                          className="textarea"
                           value={customDraft.omniSystemPrompt}
                           onChange={e => handleCustomDraftChange({ omniSystemPrompt: e.target.value })}
                           rows={8}
@@ -3848,7 +3103,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                         />
                       </label>
                       <div className="custom-model-form__prompt-actions custom-model-form__wide">
-                        <button className="btn btn--ghost btn--tiny" type="button" onClick={() => handleCustomDraftChange({ omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE })}>Reset to default</button>
+                        <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => handleCustomDraftChange({ omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE })}>Reset to default</WorkspaceActionButton>
                       </div>
                       <div className="custom-model-form__tools custom-model-form__wide">
                         <div className="custom-model-form__section-head">
@@ -3857,10 +3112,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                             <span>Add an editable example, choose its endpoint, then select one of the models configured in this collection.</span>
                           </div>
                           <div className="custom-model-form__section-actions">
-                            <button className="btn btn--ghost btn--tiny" type="button" onClick={() => addOmniCustomTool('generic')}>+ LLM example</button>
-                            <button className="btn btn--ghost btn--tiny" type="button" onClick={() => addOmniCustomTool('vision')}>+ Vision example</button>
-                            <button className="btn btn--ghost btn--tiny" type="button" onClick={() => addOmniCustomTool('image')}>+ Image example</button>
-                            <button className="btn btn--ghost btn--tiny" type="button" onClick={addCoderReviewerPair}>+ Coding pair</button>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('generic')}>LLM example</WorkspaceActionButton>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('vision')}>Vision example</WorkspaceActionButton>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('image')}>Image example</WorkspaceActionButton>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={addCoderReviewerPair}>Coding pair</WorkspaceActionButton>
                           </div>
                         </div>
                         {customDraft.omniCustomTools.length === 0 ? (
@@ -3876,10 +3131,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                                   <strong>Tool {index + 1}</strong>
                                   <small>Editable example · {tool.targetType === 'chat' ? 'Chat / LLM' : tool.targetType === 'vision' ? 'Vision' : 'Image generation'}</small>
                                 </div>
-                                <button className="btn btn--ghost btn--tiny" type="button" onClick={() => removeOmniCustomTool(tool.id)}>Remove</button>
+                                <WorkspaceActionButton appearance="danger" size="small" icon="trash" onClick={() => removeOmniCustomTool(tool.id)}>Remove</WorkspaceActionButton>
                               </div>
                               <label className="custom-model-form__field">Tool name
                                 <input
+                                  className="input"
                                   value={tool.name}
                                   onChange={e => updateOmniCustomTool(tool.id, { name: sanitizeOmniToolName(e.target.value) })}
                                   placeholder="ask_coder"
@@ -3887,6 +3143,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                               </label>
                               <label className="custom-model-form__field">Execution type
                                 <select
+                                  className="select"
                                   value={tool.targetType}
                                   onChange={e => changeOmniCustomToolTargetType(tool, e.target.value as CustomOmniToolTargetType)}
                                 >
@@ -3898,6 +3155,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                               </label>
                               <label className="custom-model-form__field custom-model-form__wide">Target model
                                 <select
+                                  className="select"
                                   value={selectedTarget}
                                   onChange={e => updateOmniCustomTool(tool.id, { targetModel: e.target.value })}
                                   disabled={targetOptions.length === 0}
@@ -3911,6 +3169,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                               </label>
                               <label className="custom-model-form__field custom-model-form__wide">Description
                                 <input
+                                  className="input"
                                   value={tool.description}
                                   onChange={e => updateOmniCustomTool(tool.id, { description: e.target.value })}
                                   placeholder="When should the planner use this tool?"
@@ -3920,6 +3179,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                                 <>
                                   <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Target system prompt
                                     <textarea
+                                      className="textarea"
                                       value={tool.systemPrompt}
                                       onChange={e => updateOmniCustomTool(tool.id, { systemPrompt: e.target.value })}
                                       rows={4}
@@ -3928,6 +3188,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                                   </label>
                                   <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Target user prompt template
                                     <textarea
+                                      className="textarea"
                                       value={tool.promptTemplate}
                                       onChange={e => updateOmniCustomTool(tool.id, { promptTemplate: e.target.value })}
                                       rows={4}
@@ -3938,6 +3199,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                               )}
                               <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Tool argument schema JSON
                                 <textarea
+                                  className="textarea"
                                   value={tool.parametersJson}
                                   onChange={e => updateOmniCustomTool(tool.id, { parametersJson: e.target.value })}
                                   rows={5}
@@ -3948,6 +3210,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                               {promptDriven && (
                                 <label className="custom-model-form__field">Max tokens
                                   <input
+                                    className="input"
                                     value={tool.maxTokens}
                                     inputMode="numeric"
                                     onChange={e => updateOmniCustomTool(tool.id, { maxTokens: e.target.value.replace(/[^0-9]/g, '') })}

@@ -852,7 +852,7 @@ const HfDetailView: React.FC<{
       className={`model-detail-panel model-detail-panel--hf model-detail-panel--${provider}`}
       ariaLabel={`${providerMeta.label} model: ${repoName}`}
       title={(
-        <h2 className="model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
+        <h2 className="workspace-detail-panel__title model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
           {repoName}
         </h2>
       )}
@@ -2824,7 +2824,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       className="model-detail-panel"
       ariaLabel={`Model details: ${name}`}
       title={(
-        <h2 className="model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
+        <h2 className="workspace-detail-panel__title model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
           {model.display_name || name}
         </h2>
       )}

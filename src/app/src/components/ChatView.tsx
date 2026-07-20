@@ -6,6 +6,7 @@ import LogViewer from './LogViewer';
 import { Icon, CapabilityIcon, PresetIcon } from './Icon';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
+import { WorkspaceActionButton } from './WorkspacePanels';
 
 const Model3DResult = lazy(() => import('./Model3DResult'));
 import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
@@ -13,11 +14,9 @@ import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   canSelectInComposer,
-  canUseChatCompletions,
   capabilityBadge,
   capabilityFromLoaded,
   capabilityFromModelInfo,
-  capabilityIcon,
   capabilityLabel,
   modelDisplayName,
   modelInitial,
@@ -2621,12 +2620,7 @@ ${finalText}`
         />
 
         <div className="rail__new-wrap">
-          <button className="rail__new" onClick={handleNewChat} aria-label="New chat">
-            <span className="rail__new-icon" aria-hidden="true">
-              <Icon name="plus" size={14} />
-            </span>
-            <span className="rail__new-label">New chat</span>
-          </button>
+          <WorkspaceActionButton className="rail__new" appearance="primary" icon="compose" onClick={handleNewChat} aria-label="New chat">New chat</WorkspaceActionButton>
         </div>
 
         <ul className="rail__list" role="listbox" aria-label="Conversations" onKeyDown={handleRailKeyDown}>
@@ -2699,14 +2693,9 @@ ${finalText}`
         </div>
         <div className="bottom-sheet__header">
           <strong>Conversations</strong>
-          <button type="button" onClick={closeMobileSheet} aria-label="Close conversation history" title="Close panel">
-            <Icon name="x" size={17} />
-          </button>
+          <WorkspaceActionButton size="toolbar" appearance="quiet" icon="x" iconOnly onClick={closeMobileSheet} aria-label="Close conversation history" title="Close panel" />
         </div>
-        <button className="bottom-sheet__new" onClick={() => { handleNewChat(); closeMobileSheet(); }}>
-          <Icon name="plus" size={14} />
-          New Chat
-        </button>
+        <WorkspaceActionButton className="bottom-sheet__new" appearance="primary" icon="compose" onClick={() => { handleNewChat(); closeMobileSheet(); }}>New chat</WorkspaceActionButton>
         <ul className="bottom-sheet__list rail__list" role="listbox" aria-label="Conversations" onKeyDown={handleSheetKeyDown}>
           {conversations.map((c, idx) => {
             const badge = capabilityBadge(c.model?.capability || 'chat');

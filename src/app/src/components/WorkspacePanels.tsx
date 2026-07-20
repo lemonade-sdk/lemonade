@@ -87,8 +87,7 @@ function workspaceActionClassName(
   iconOnly: boolean,
   className: string,
 ): string {
-  const legacyAppearance = appearance === 'primary' ? 'btn--primary' : `btn--ghost${appearance === 'danger' ? ' btn--danger' : ''}`;
-  return `btn ${legacyAppearance} workspace-action-button workspace-action-button--${appearance} workspace-action-button--${size}${size === 'small' ? ' btn--sm' : ''}${iconOnly ? ' workspace-action-button--icon-only' : ''}${className ? ` ${className}` : ''}`;
+  return `btn btn--${appearance} btn--${size} workspace-action-button workspace-action-button--${appearance} workspace-action-button--${size}${iconOnly ? ' btn--icon-only workspace-action-button--icon-only' : ''}${className ? ` ${className}` : ''}`;
 }
 
 interface WorkspaceActionButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -157,6 +156,61 @@ export const WorkspaceActionGroup: React.FC<WorkspaceActionGroupProps> = ({ chil
     {children}
   </div>
 );
+
+interface WorkspaceResourceListProps {
+  children: React.ReactNode;
+  label: string;
+  className?: string;
+}
+
+export const WorkspaceResourceList: React.FC<WorkspaceResourceListProps> = ({ children, label, className = '' }) => (
+  <div className={`workspace-resource-list${className ? ` ${className}` : ''}`} aria-label={label}>
+    {children}
+  </div>
+);
+
+interface WorkspaceResourceRowProps {
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  metadata?: React.ReactNode;
+  leading?: React.ReactNode;
+  actions?: React.ReactNode;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
+  className?: string;
+  ariaLabel?: string;
+  ariaDescribedBy?: string;
+}
+
+export const WorkspaceResourceRow: React.FC<WorkspaceResourceRowProps> = ({
+  title,
+  description,
+  metadata,
+  leading,
+  actions,
+  onClick,
+  className = '',
+  ariaLabel,
+  ariaDescribedBy,
+}) => {
+  const content = <>
+    {leading && <span className="workspace-resource-row__leading" aria-hidden="true">{leading}</span>}
+    <span className="workspace-resource-row__body">
+      <strong className="workspace-resource-row__title">{title}</strong>
+      {description && <span className="workspace-resource-row__description">{description}</span>}
+      {metadata && <span className="workspace-resource-row__metadata">{metadata}</span>}
+    </span>
+    {actions
+      ? <span className="workspace-resource-row__actions">{actions}</span>
+      : onClick && <Icon name="chevron-right" size={14} className="workspace-resource-row__chevron" aria-hidden="true" />}
+  </>;
+  const rowClassName = `workspace-resource-row${onClick ? ' workspace-resource-row--interactive' : ''}${className ? ` ${className}` : ''}`;
+
+  if (onClick) {
+    return <button type="button" className={rowClassName} onClick={onClick} aria-label={ariaLabel} aria-describedby={ariaDescribedBy}>{content}</button>;
+  }
+
+  return <article className={rowClassName}>{content}</article>;
+};
 
 interface WorkspacePaneHeaderProps {
   title: React.ReactNode;

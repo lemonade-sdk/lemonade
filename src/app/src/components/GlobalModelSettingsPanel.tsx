@@ -3,6 +3,12 @@ import type { LoadedModel, ModelInfo } from '../api';
 import { capabilityFromModelInfo } from '../modelCapabilities';
 import { Icon } from './Icon';
 import {
+  WorkspaceActionButton,
+  WorkspaceActionGroup,
+  WorkspaceDetailPanel,
+  WorkspaceMetadataChip,
+} from './WorkspacePanels';
+import {
   DEFAULT_GLOBAL_MODEL_SETTINGS,
   estimatedLoadedSizeGb,
   loadGlobalModelSettings,
@@ -145,17 +151,26 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
   };
 
   return (
-    <section className="global-model-settings" aria-label="Global model settings">
-      <header className="global-model-settings__header">
-        <div>
-          <span className="global-model-settings__eyebrow">Models</span>
-          <h2><Icon name="settings" size={20} aria-hidden="true" /> Global model settings</h2>
-          <p>Defaults for model memory, loading, chat reasoning, speech and updates.</p>
-        </div>
-        <button type="button" className="global-model-settings__close" onClick={onClose} aria-label="Close global model settings">
-          <Icon name="x" size={18} />
-        </button>
-      </header>
+    <WorkspaceDetailPanel
+      className="global-model-settings"
+      ariaLabel="Global model settings"
+      leading={<Icon name="settings" size={20} aria-hidden="true" />}
+      title={<h2 className="workspace-detail-panel__title">Global model settings</h2>}
+      metadata={<WorkspaceMetadataChip emphasis="high" tone="accent">Defaults</WorkspaceMetadataChip>}
+      description={<p>Defaults for model memory, loading, chat reasoning, speech, and updates.</p>}
+      actions={(
+        <WorkspaceActionGroup label="Global model settings actions">
+          <WorkspaceActionButton appearance="quiet" icon="rotate-ccw" onClick={handleReset}>Reset defaults</WorkspaceActionButton>
+          <span className="workspace-action-group__spacer" />
+          <WorkspaceActionButton appearance="secondary" icon="x" onClick={onClose}>Cancel</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="primary" icon="check" className={saved ? 'btn--saved' : ''} onClick={handleSave}>
+            {saved ? 'Saved' : 'Save settings'}
+          </WorkspaceActionButton>
+        </WorkspaceActionGroup>
+      )}
+      onClose={onClose}
+      closeLabel="Close global model settings"
+    >
 
       <div className="global-model-settings__body">
         <section className="global-settings-card">
@@ -167,7 +182,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
           <div className="global-settings-grid global-settings-grid--two">
             <label className="global-settings-field">
               <span>Budget source</span>
-              <select value={draft.resourceBudgetMode} onChange={event => patchDraft('resourceBudgetMode', event.target.value as ResourceBudgetMode)}>
+              <select className="select" value={draft.resourceBudgetMode} onChange={event => patchDraft('resourceBudgetMode', event.target.value as ResourceBudgetMode)}>
                 <option value="server">Automatic / server managed</option>
                 <option value="vram">Custom VRAM budget</option>
                 <option value="memory">Custom system memory budget</option>
@@ -177,6 +192,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
               <span>Budget</span>
               <div className="global-settings-number">
                 <input
+                  className="input"
                   type="number"
                   min={1}
                   max={1024}
@@ -200,7 +216,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
           <div className="global-settings-grid global-settings-grid--two">
             <label className="global-settings-field">
               <span>Loading policy</span>
-              <select value={draft.loadingPolicy} onChange={event => patchDraft('loadingPolicy', event.target.value as ModelLoadingPolicy)}>
+              <select className="select" value={draft.loadingPolicy} onChange={event => patchDraft('loadingPolicy', event.target.value as ModelLoadingPolicy)}>
                 <option value="keep-loaded">Keep loaded models</option>
                 <option value="single-active">Single active model</option>
                 <option value="budget-aware">Stay within budget</option>
@@ -208,7 +224,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
             </label>
             <label className="global-settings-field">
               <span>Eviction order</span>
-              <select value={draft.evictionPolicy} onChange={event => patchDraft('evictionPolicy', event.target.value as ModelEvictionPolicy)}>
+              <select className="select" value={draft.evictionPolicy} onChange={event => patchDraft('evictionPolicy', event.target.value as ModelEvictionPolicy)}>
                 <option value="lru">Least recently used</option>
                 <option value="largest">Largest first</option>
                 <option value="oldest-process">Oldest process first</option>
@@ -225,11 +241,11 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
         <section className="global-settings-card">
           <div className="global-settings-card__head"><div><Icon name="pin" size={18} /><h3>Pinned models</h3></div><span>{pinnedRows.length} pinned</span></div>
           <div className="global-settings-pin-add">
-            <select value={pinCandidate} onChange={event => setPinCandidate(event.target.value)}>
+            <select className="select" value={pinCandidate} onChange={event => setPinCandidate(event.target.value)}>
               <option value="">Select a model to pin…</option>
               {pinOptions.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)}
             </select>
-            <button type="button" className="btn btn--ghost" disabled={!pinCandidate} onClick={handleAddPin}>Pin model</button>
+            <WorkspaceActionButton icon="pin" disabled={!pinCandidate} onClick={handleAddPin}>Pin model</WorkspaceActionButton>
           </div>
           {pinnedRows.length ? (
             <div className="global-settings-pinned-list">
@@ -237,7 +253,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
                 <div key={row.name} className="global-settings-pinned-row">
                   <Icon name="pin" size={14} />
                   <span><strong>{row.label}</strong><small>{row.name}{row.size > 0 ? ` · ${formatGb(row.size)}` : ''}</small></span>
-                  <button type="button" onClick={() => onTogglePin(row.name)} aria-label={`Unpin ${row.label}`} title={`Unpin ${row.label}`}><Icon name="x" size={14} /></button>
+                  <WorkspaceActionButton appearance="quiet" size="small" icon="x" iconOnly onClick={() => onTogglePin(row.name)} aria-label={`Unpin ${row.label}`} title={`Unpin ${row.label}`} />
                 </div>
               ))}
             </div>
@@ -256,7 +272,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
           <div className="global-settings-card__head"><div><Icon name="tts" size={18} /><h3>Chat speech</h3></div></div>
           <label className="global-settings-field">
             <span>Default TTS model</span>
-            <select value={ttsModel || ''} onChange={event => setTtsModel(event.target.value || null)}>
+            <select className="select" value={ttsModel || ''} onChange={event => setTtsModel(event.target.value || null)}>
               <option value="">No default speech model</option>
               <optgroup label="Kokoro · English">
                 {kokoroModels.length
@@ -290,20 +306,13 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
           </label>
           <div className="global-settings-update-action">
             <div><strong>Update all models now</strong><small>Starts a pull/update for every downloaded or currently loaded model.</small></div>
-            <button type="button" className="btn btn--ghost" disabled={updating} onClick={handleUpdateAll}>{updating ? 'Starting…' : 'Update all'}</button>
+            <WorkspaceActionButton icon="rotate-ccw" disabled={updating} onClick={handleUpdateAll}>{updating ? 'Starting…' : 'Update all'}</WorkspaceActionButton>
           </div>
           {updateNotice && <p className="global-settings-notice" role="status">{updateNotice}</p>}
         </section>
       </div>
 
-      <footer className="global-model-settings__footer">
-        <button type="button" className="btn btn--ghost" onClick={handleReset}>Reset defaults</button>
-        <div>
-          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className={`btn btn--primary${saved ? ' btn--saved' : ''}`} onClick={handleSave}>{saved ? '✓ Saved' : 'Save settings'}</button>
-        </div>
-      </footer>
-    </section>
+    </WorkspaceDetailPanel>
   );
 };
 

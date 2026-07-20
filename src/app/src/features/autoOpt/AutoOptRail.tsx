@@ -6,6 +6,7 @@ import AutoOptWizard from './AutoOptWizard';
 import AutoOptRunDetail from './AutoOptRunDetail';
 import { Icon } from '../../components/Icon';
 import WorkspaceRailHeader from '../../components/WorkspaceRailHeader';
+import { WorkspaceActionButton } from '../../components/WorkspacePanels';
 
 export const AUTOOPT_OPEN_RUN_EVENT = 'lemonade:autoopt-open-run';
 
@@ -160,14 +161,15 @@ const AutoOptRail: React.FC<{
             <small>{state.runs.length}</small>
           </div>
           <p className="context-rail__hint">Benchmark a loaded model and save the winning runtime configuration as model tuning.</p>
-          <button
-            type="button"
-            className="btn btn--primary btn--small"
+          <WorkspaceActionButton
+            appearance="primary"
+            size="small"
+            icon="play"
             onClick={() => setWizardOpen(true)}
             data-autoopt-run-optimizer
           >
-            <Icon name="play" size={13} /> Run optimizer
-          </button>
+            Run optimizer
+          </WorkspaceActionButton>
           <p className="sr-only" role="status" aria-live="polite" aria-atomic="true" data-autoopt-announcement>{announcement}</p>
           {state.lastError && (
             <p className="context-rail__notice preset-error" data-autoopt-rail-error>⚠ {state.lastError}</p>
@@ -190,29 +192,29 @@ const AutoOptRail: React.FC<{
                     </span>
                   </button>
                   <div className="auto-run-card__actions">
-                    <button type="button" className="btn btn--ghost btn--tiny" onClick={() => openDetail(run.id)} data-autoopt-inspect={run.id}>Inspect</button>
+                    <WorkspaceActionButton size="small" onClick={() => openDetail(run.id)} data-autoopt-inspect={run.id}>Inspect</WorkspaceActionButton>
                     {active ? (
-                      <button
-                        type="button"
-                        className="btn btn--ghost btn--tiny"
+                      <WorkspaceActionButton
+                        size="small"
                         disabled={cancelling}
                         onClick={() => autoOptStore.cancelRun(run.id)}
                         aria-label={`Cancel AutoOpt run for ${run.model}`}
                         data-autoopt-cancel={run.id}
                       >
                         {cancelling ? 'Cancelling…' : 'Cancel'}
-                      </button>
+                      </WorkspaceActionButton>
                     ) : (
-                      <button
-                        type="button"
-                        className="btn btn--ghost btn--tiny auto-run-card__delete-action"
+                      <WorkspaceActionButton
+                        appearance="danger"
+                        size="small"
+                        icon="trash"
+                        iconOnly
+                        className="auto-run-card__delete-action"
                         onClick={() => deleteRun(run.id)}
                         aria-label={`Delete AutoOpt run for ${run.model}`}
                         title="Delete this run"
                         data-autoopt-delete={run.id}
-                      >
-                        ✕
-                      </button>
+                      />
                     )}
                   </div>
                 </article>

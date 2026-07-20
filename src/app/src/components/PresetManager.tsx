@@ -48,6 +48,7 @@ import {
   WorkspaceDetailPanel,
   WorkspaceListPanel,
   WorkspaceMetadataChip,
+  WorkspaceResourceRow,
 } from './WorkspacePanels';
 
 const CAPABILITIES: Capability[] = ['chat', 'omni', 'vision', 'code', 'tts'];
@@ -473,17 +474,17 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             {userPresets.length > 0 ? (
               <div className="recipe-grid" data-recipe-grid="yours">
                 {userPresets.map(preset => (
-                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} selected={selectedPreset?.id === preset.id} highlight={highlightPresetId === preset.id} onClick={() => openSlideover(preset)} onApply={() => openSlideover(preset)} onClone={() => handleClone(preset)} onExport={() => handleExport(preset)} />
+                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} selected={selectedPreset?.id === preset.id} highlight={highlightPresetId === preset.id} onClick={() => openSlideover(preset)} />
                 ))}
               </div>
             ) : (
               <div className="empty-state--inset" data-empty="yours">
                 <p className="preset-empty-title">Your presets are empty.</p>
                 <p className="preset-empty-copy">Pick a starter, customize it, or create a preset from scratch.</p>
-                <div className="preset-empty-actions">
-                  <button className="btn btn--ghost" onClick={scrollToStarters}>Pick a starter</button>
-                  <button className="btn btn--ghost" onClick={handleNewPreset}>+ New Preset</button>
-                </div>
+                <WorkspaceActionGroup className="preset-empty-actions" label="Empty preset library actions">
+                  <WorkspaceActionButton icon="library" onClick={scrollToStarters}>Pick a starter</WorkspaceActionButton>
+                  <WorkspaceActionButton appearance="primary" icon="compose" onClick={handleNewPreset}>New preset</WorkspaceActionButton>
+                </WorkspaceActionGroup>
               </div>
             )}
           </div>
@@ -498,10 +499,10 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
               <span className="zone__rule" />
             </div>
             <div className="recipe-grid recipe-grid--starters-combined">
-              <PresetCard preset={DEFAULT_PRESET} linkedModels={linkedModelsByPreset.get(DEFAULT_PRESET.id)} selected={selectedPreset?.id === DEFAULT_PRESET.id} onClick={() => openSlideover(DEFAULT_PRESET)} onCustomize={() => handleCustomize(DEFAULT_PRESET)} onClone={() => handleClone(DEFAULT_PRESET)} />
+              <PresetCard preset={DEFAULT_PRESET} linkedModels={linkedModelsByPreset.get(DEFAULT_PRESET.id)} selected={selectedPreset?.id === DEFAULT_PRESET.id} onClick={() => openSlideover(DEFAULT_PRESET)} />
               <div className="recipe-grid__contents" data-recipe-grid="starters">
                 {VISIBLE_STARTERS.map(preset => (
-                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} selected={selectedPreset?.id === preset.id} onClick={() => openSlideover(preset)} onCustomize={() => handleCustomize(preset)} onClone={() => handleClone(preset)} />
+                  <PresetCard key={preset.id} preset={preset} linkedModels={linkedModelsByPreset.get(preset.id)} selected={selectedPreset?.id === preset.id} onClick={() => openSlideover(preset)} />
                 ))}
               </div>
             </div>
@@ -531,8 +532,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
                         <span className="preset-status-chip">Will apply on next load</span>
                       </div>
                       <div className="applied-row__actions">
-                        {preset && <button className="btn btn--tiny btn--ghost" onClick={() => openSlideover(preset)}>Edit</button>}
-                        <button className="btn btn--tiny btn--ghost" onClick={() => handleDetach(name)}>Detach</button>
+                        {preset && <WorkspaceActionButton size="small" icon="edit" onClick={() => openSlideover(preset)}>Edit</WorkspaceActionButton>}
+                        <WorkspaceActionButton size="small" appearance="quiet" icon="x" onClick={() => handleDetach(name)}>Detach</WorkspaceActionButton>
                       </div>
                     </div>
                   );
@@ -545,7 +546,9 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             <div className="empty-state--inset" data-empty="applied">
               <p className="preset-empty-title">No presets are staged.</p>
               <p className="preset-empty-copy">Open a preset and apply it to a model to see it here.</p>
-              <div className="preset-empty-actions"><button className="btn btn--ghost" onClick={() => setLibraryFilter('all')}>Browse library</button></div>
+              <WorkspaceActionGroup className="preset-empty-actions" label="Empty applied presets actions">
+                <WorkspaceActionButton icon="library" onClick={() => setLibraryFilter('all')}>Browse library</WorkspaceActionButton>
+              </WorkspaceActionGroup>
             </div>
           )}
 
@@ -600,11 +603,7 @@ const PresetCard: React.FC<{
   selected?: boolean;
   highlight?: boolean;
   onClick: () => void;
-  onClone?: () => void;
-  onCustomize?: () => void;
-  onApply?: () => void;
-  onExport?: () => void;
-}> = ({ preset, linkedModels, selected, highlight, onClick, onClone, onCustomize, onApply, onExport }) => {
+}> = ({ preset, linkedModels, selected, highlight, onClick }) => {
   const descId = `preset-card-desc-${preset.id}`;
   const capLabels = presetLabelsFor(preset).map(c => CAPABILITY_LABELS[c] || c).join(', ');
   const paramLines = paramsPreviewLines(preset);
@@ -615,55 +614,35 @@ const PresetCard: React.FC<{
   if (paramLines.length) descParts.push(`Intent: ${paramLines.join('; ')}`);
   descParts.push(`Prompt: ${promptDisplayText(preset)}`);
   descParts.push(`MCP: ${mcpDisplayText(preset)}`);
-  return (
-  <article
-    className={`recipe-card${selected ? ' recipe-card--selected' : ''}${highlight ? ' recipe-card--flash' : ''}`}
-    data-recipe-id={preset.id}
-  >
-    {/* Overlay button covers the card for pointer/keyboard activation without nesting interactive roles */}
-    <button
-      className="recipe-card__overlay-btn"
-      onClick={onClick}
-      aria-label={`Open Preset: ${preset.name}`}
-      aria-describedby={descId}
-    />
-    {/* sr-only description for #2345: exposes intent/prompt/MCP metadata to AT */}
-    <span id={descId} className="sr-only">{descParts.join('. ')}.</span>
+  const metadata = <>
     {preset.starter && <span className="starter-badge">Starter</span>}
-    <div className="recipe-card__head"><PresetIcon preset={preset} /><span className="recipe-card__name">{preset.name}</span></div>
-    <p className="recipe-card__desc">{preset.description}</p>
+    {presetLabelsFor(preset).map(capability => (
+      <CapabilityChip key={capability} cap={capability} small />
+    ))}
     {linkedModels && linkedModels.length > 0 && (
-      <p className={`recipe-card__linked${preset.auto_opt_run_id ? ' recipe-card__linked--optimized' : ''}`} data-preset-linked-models aria-hidden="true">
-        <Icon name={preset.auto_opt_run_id ? 'gauge' : 'hard-drive'} size={12} aria-hidden="true" />
+      <span className={preset.auto_opt_run_id ? 'recipe-card__linked--optimized' : ''} data-preset-linked-models>
         {linkedModelsText(preset, linkedModels)}
-      </p>
+      </span>
     )}
-    <div className="cap-chip-list cap-chip-list--card" title="Applies to">
-      {presetLabelsFor(preset).map(cap => <CapabilityChip key={cap} cap={cap} small />)}
-    </div>
-    <div className="recipe-card__params" aria-hidden="true">
-      <span className="recipe-card__param-key">intent</span>
-      <span className="recipe-card__param-val preset-param-lines">{paramsPreviewLines(preset).map(line => <span key={line}>{line}</span>)}</span>
-    </div>
-    <div className="recipe-card__behavior" aria-hidden="true">
-      <span>prompt</span><strong>{promptDisplayText(preset)}</strong>
-      <span>MCP</span><strong>{mcpDisplayText(preset)}</strong>
-    </div>
-    <div className="recipe-card__actions" onClick={e => e.stopPropagation()}>
-      {preset.starter ? (
-        <>
-          {onCustomize && <button className="recipe-card__action recipe-card__action--primary" onClick={onCustomize}>Customize</button>}
-          {onClone && <button className="recipe-card__action" onClick={onClone}>Clone</button>}
-        </>
-      ) : (
-        <>
-          {onApply && <button className="recipe-card__action recipe-card__action--primary" onClick={onApply}>Apply</button>}
-          {onClone && <button className="recipe-card__action" onClick={onClone}>Clone</button>}
-          {onExport && <button className="recipe-card__action" onClick={onExport}>Export</button>}
-        </>
-      )}
-    </div>
-  </article>
+  </>;
+
+  return (
+    <article
+      className={`recipe-card${selected ? ' recipe-card--selected' : ''}${highlight ? ' recipe-card--flash' : ''}`}
+      data-recipe-id={preset.id}
+    >
+      <WorkspaceResourceRow
+        className="recipe-card__overlay-btn"
+        title={<span className="recipe-card__name">{preset.name}</span>}
+        description={preset.description}
+        metadata={metadata}
+        leading={<PresetIcon preset={preset} />}
+        onClick={onClick}
+        ariaLabel={`Open Preset: ${preset.name}`}
+        ariaDescribedBy={descId}
+      />
+      <span id={descId} className="sr-only">{descParts.join('. ')}.</span>
+    </article>
   );
 };
 
@@ -894,7 +873,7 @@ const SlideoverContent: React.FC<{
       ariaLabel={`Preset details: ${preset.name}`}
       leading={<PresetIcon preset={preset} size={22} className="preset-icon preset-icon--lg" />}
       title={isReadOnly ? (
-        <h2 className="slideover__title" data-recipe-name>{preset.name}</h2>
+        <h2 className="workspace-detail-panel__title slideover__title" data-recipe-name>{preset.name}</h2>
       ) : (
         <input className="slideover__title-input" value={name} onChange={event => setName(event.target.value)} placeholder="Preset name" data-recipe-name aria-label="Preset name" />
       )}

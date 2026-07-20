@@ -123,13 +123,15 @@ Use two panels when selection does not require a distinct list, and three when f
 
 ## Tab-specific styles
 
+The labels below are normative boundaries, not backlog states. **Justified specialization** names feature UI that may remain distinct. **Prohibited variation** names divergence that the implementation must not contain and that future changes must not reintroduce.
+
 ### Chat
 
 **Layout:** two panels: `.workspace-rail` history and `.chat__main`. The composer is anchored within the main pane.
 
 **Justified specialization:** conversational message rhythm, Markdown/code rendering, capability-specific composer controls, generated media, and the centered empty-state hero are unique to chat. The mobile history bottom sheet is justified because conversations are frequently switched while retaining draft context.
 
-**Not justified:** independent rail header, button, badge, or mobile-menu geometry. These must inherit the workspace tokens and shared controls. Capability color is semantic, never decorative.
+**Prohibited variation:** independent rail header, button, badge, or mobile-menu geometry. These must inherit the workspace tokens and shared controls. Capability color is semantic, never decorative.
 
 ### Models
 
@@ -137,7 +139,7 @@ Use two panels when selection does not require a distinct list, and three when f
 
 **Justified specialization:** dense model availability rows, provider search results, download progress, backend identity marks, README/files/tuning tabs, and the resizer reflect model-management data.
 
-**Not justified:** custom list/detail backgrounds, headings, action buttons, metadata order, editor shells, or filter sizing. Model and preset list/detail panels share the workspace grammar. Custom model, router, and global-settings editors occupy the same detail shell.
+**Prohibited variation:** custom list/detail backgrounds, headings, action buttons, metadata order, editor shells, or filter sizing. Model and preset list/detail panels share the workspace grammar. Custom model, router, and global-settings editors occupy the same detail shell.
 
 ### Presets
 
@@ -145,7 +147,7 @@ Use two panels when selection does not require a distinct list, and three when f
 
 **Justified specialization:** intent chips, linked-model state, AutoOpt progress, and parameter editors communicate preset-specific concepts.
 
-**Not justified:** card-grid presentation in the list, modal-like detail styling on desktop, or unique creation-form hierarchy. The library is a single-column list matching Models; creation and editing use the shared detail shell. `compose` creates, while `file-up` imports.
+**Prohibited variation:** card-grid presentation in the list, modal-like detail styling on desktop, or unique creation-form hierarchy. The library is a single-column list matching Models; creation and editing use the shared detail shell. `compose` creates, while `file-up` imports.
 
 ### Backends
 
@@ -153,13 +155,13 @@ Use two panels when selection does not require a distinct list, and three when f
 
 **Justified specialization:** the matrix is the clearest representation of device × capability support. Backend identity colors are allowed only as small stable identifiers.
 
-**Not justified:** bespoke filter rows, page header, status controls, banners, or button geometry. They use workspace filters, pane headers, semantic state, and shared controls.
+**Prohibited variation:** bespoke filter rows, page header, status controls, banners, or button geometry. They use workspace filters, pane headers, semantic state, and shared controls.
 
 ### Monitor
 
 **Layout:** the first rail selects Overview, Requests, or Logs. Overview uses one content pane; Requests and Logs use a second functional filter/list subpanel plus a detail/output pane.
 
-**Overview — justified specialization:** charts, gauges, metric cards, tabular numerals, and stable `--chart-*` series colors. Glow and ornamental gradients are not justified.
+**Overview — justified specialization:** charts, gauges, metric cards, tabular numerals, and stable `--chart-*` series colors. Glow and ornamental gradients are prohibited.
 
 **Requests — justified specialization:** trace waterfall, metric strip, prompt diff, and replay/improvement workspaces. These are dense diagnostic artifacts. Their surrounding header, tabs, forms, buttons, cards, and modals still use system tokens.
 
@@ -171,7 +173,24 @@ Use two panels when selection does not require a distinct list, and three when f
 
 **Justified specialization:** provider brand marks, endpoint examples, and marketplace metadata. Forms use a bounded reading width.
 
-**Not justified:** card-heavy pages, independent headings inside an already titled pane, custom input heights, or unique help-link styling. Sections use the pane header, standard forms/actions, and restrained row/card grouping.
+**Prohibited variation:** card-heavy pages, independent headings inside an already titled pane, custom input heights, or unique help-link styling. Sections use the pane header, standard forms/actions, and restrained row/card grouping.
+
+## Conformance audit
+
+The implementation was audited against every boundary above on 2026-07-20. The current system conforms as follows:
+
+| Area | Implemented boundary |
+| --- | --- |
+| App chrome | One centered rounded primary selector; one contextual mobile menu position; compact utilities live under the settings control; the decorative lemon icon is not rendered. |
+| Rails and mobile context | Chat, Models, Presets, Backends, Monitor, and Connect use `WorkspaceRailHeader` and `WorkspaceMobileMenuButton`. Mobile panels share the same dialog, backdrop, focus-return, Escape, and toggle behavior. |
+| Lists and details | Models and Presets use `WorkspaceListPanel`, `WorkspaceResourceRow`, `WorkspaceDetailPanel`, ordered `WorkspaceMetadataChip` groups, and shared empty states. Both libraries are single-column scrolling lists. |
+| Editors | Preset creation, custom models, Router, and Global Model Settings use the shared detail header, metadata, action bar, button appearances, and form controls. Specialized editors retain only task-specific fields and content structures. |
+| Backends | The filter rail, pane header, status actions, and buttons use workspace components. Only the device × capability matrix and compact backend identity marks remain specialized. |
+| Monitor | Overview retains charts and gauges without ornamental glow. Requests and Logs retain diagnostic artifacts while their navigation, filters, forms, and actions use the workspace grammar. |
+| Connect | Settings navigation, pane headers, fields, actions, provider/help/app rows, and bounded content use shared components and control sizing. |
+| CSS integrity | Component colors resolve through tokens, `styles.css` contains no literal product colors, and the audit contains no exact duplicate rule blocks in the same cascade context. Remaining `!important` declarations are limited to third-party SVG theming, reduced-motion enforcement, mobile browser input behavior, and measured/virtualized layout overrides. |
+
+“Prohibited variation” entries remain in this specification after conformance because they are regression guards, not unresolved work.
 
 ## Change checklist
 

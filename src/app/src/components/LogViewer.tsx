@@ -419,7 +419,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
           <label className="logs-level">
               <span className="logs-level__label">Minimum level</span>
             <select
-              className="logs-level__select"
+              className="select logs-level__select"
               value={filterLevel}
               onChange={e => setFilterLevel(e.target.value as LogLevel)}
             >
@@ -432,7 +432,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
           <label className="logs-level">
               <span className="logs-level__label">Server capture level</span>
             <select
-              className="logs-level__select"
+              className="select logs-level__select"
               value={serverLevel}
               disabled={isSettingLevel}
               onChange={e => handleServerLevelChange(e.target.value as LogLevel)}
@@ -444,28 +444,26 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
           </label>
           </div>
 
-          <div className="workspace-control-group logs-sources">
+          <div className="workspace-control-group workspace-filter-list logs-sources">
             <span className="workspace-control-group__label">Sources</span>
-            <button type="button" className={tagFilter === 'all' ? 'is-active' : ''} onClick={() => setTagFilter('all')}>
-              <span>All sources</span><small>{logs.length}</small>
+            <button type="button" className={`workspace-filter-list__item${tagFilter === 'all' ? ' is-active' : ''}`} onClick={() => setTagFilter('all')}>
+              <span className="workspace-filter-list__icon"><Icon name="logs" size={14} aria-hidden="true" /></span>
+              <span className="workspace-filter-list__label">All sources</span><small className="workspace-filter-list__count">{logs.length}</small>
             </button>
             {logSources.map(([tag, count]) => (
-              <button key={tag} type="button" className={tagFilter === tag ? 'is-active' : ''} onClick={() => setTagFilter(tag)}>
-                <span>{tag}</span><small>{count}</small>
+              <button key={tag} type="button" className={`workspace-filter-list__item${tagFilter === tag ? ' is-active' : ''}`} onClick={() => setTagFilter(tag)}>
+                <span className="workspace-filter-list__icon"><Icon name="terminal-square" size={14} aria-hidden="true" /></span>
+                <span className="workspace-filter-list__label">{tag}</span><small className="workspace-filter-list__count">{count}</small>
               </button>
             ))}
           </div>
         </div>
 
         <div className={`${embedded ? 'monitor-subpanel__footer' : 'workspace-rail__footer'} logs-rail__actions`}>
-          <button className="logs-btn" onClick={clearLogs} title="Clear logs" aria-label="Clear log output">
-            <Icon name="trash" size={13} /> Clear output
-          </button>
+          <WorkspaceActionButton className="logs-btn" icon="trash" onClick={clearLogs} title="Clear logs" aria-label="Clear log output">Clear output</WorkspaceActionButton>
 
           {connStatus !== 'connected' && (
-            <button className="logs-btn logs-btn--accent" onClick={connect} title="Reconnect" aria-label="Reconnect to log stream">
-              <Icon name="rotate-ccw" size={13} /> Reconnect
-            </button>
+            <WorkspaceActionButton className="logs-btn" appearance="primary" icon="rotate-ccw" onClick={connect} title="Reconnect" aria-label="Reconnect to log stream">Reconnect</WorkspaceActionButton>
           )}
         </div>
       </aside>
@@ -538,8 +536,9 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
 
       {/* ── Jump to bottom ───────────────────────────────── */}
       {!autoScroll && filteredLogs.length > 0 && (
-        <button
+        <WorkspaceActionButton
           className="logs-jump"
+          icon="chevron-down"
           onClick={() => {
             autoScrollRef.current = true;
             setAutoScroll(true);
@@ -556,8 +555,8 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
             }
           }}
         >
-          ↓ Jump to bottom
-        </button>
+          Jump to bottom
+        </WorkspaceActionButton>
       )}
       </div>
     </section>

@@ -14,7 +14,7 @@ import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
-import { WorkspacePaneHeader } from './WorkspacePanels';
+import { WorkspaceActionButton, WorkspaceActionGroup, WorkspacePaneHeader } from './WorkspacePanels';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
 
@@ -349,9 +349,7 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
             <span className="backend-args-dialog__eyebrow">Backend arguments</span>
             <h2 id="backend-args-title">{label}</h2>
           </div>
-          <button className="icon-btn" onClick={onClose} aria-label="Close backend arguments">
-            <Icon name="x" size={16} aria-hidden="true" />
-          </button>
+          <WorkspaceActionButton size="toolbar" appearance="quiet" icon="x" iconOnly onClick={onClose} aria-label="Close backend arguments" />
         </div>
         <p className="backend-args-dialog__copy">
           These arguments apply to every model using this exact backend. Model tuning and explicit load options override conflicting values.
@@ -377,18 +375,18 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
         <p className="backend-args-dialog__hint">
           One shell-style argument string. Saving replaces the previous entry for this backend.
         </p>
-        <div className="backend-args-dialog__actions">
+        <WorkspaceActionGroup className="backend-args-dialog__actions" label="Backend argument actions">
           {hasSavedArgs && (
-            <button className="btn btn--ghost" onClick={() => onClear(backendKeyValue)} data-backend-args-clear>
+            <WorkspaceActionButton appearance="danger" icon="trash" onClick={() => onClear(backendKeyValue)} data-backend-args-clear>
               Clear
-            </button>
+            </WorkspaceActionButton>
           )}
           <span className="backend-args-dialog__spacer" />
-          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn--primary" onClick={() => onSave(backendKeyValue, args)} data-backend-args-save>
+          <WorkspaceActionButton onClick={onClose}>Cancel</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="primary" icon="check" onClick={() => onSave(backendKeyValue, args)} data-backend-args-save>
             Save backend args
-          </button>
-        </div>
+          </WorkspaceActionButton>
+        </WorkspaceActionGroup>
       </aside>
     </>
   );
@@ -791,8 +789,12 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         {showTech && info.message && <span className="cell__message">{info.message}</span>}
         <div className="cell__actions" onClick={e => e.stopPropagation()}>
           {supportsArgs && (
-            <button
+            <WorkspaceActionButton
               type="button"
+              size="toolbar"
+              appearance="quiet"
+              icon="terminal-square"
+              iconOnly
               className={`cell__args-button${tuning ? ' is-active' : ''}`}
               onClick={event => {
                 argsTriggerRef.current = event.currentTarget;
@@ -802,43 +804,54 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               aria-label={`${tuning ? 'Edit' : 'Add'} backend arguments for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
               data-backend-args-button={cellKey}
             >
-              <Icon name="terminal-square" size={14} aria-hidden="true" />
-            </button>
+            </WorkspaceActionButton>
           )}
           {(info.state === 'installable') && (
-            <button
+            <WorkspaceActionButton
+              size="small"
+              appearance="primary"
+              icon="download"
               className="cell__swap"
               disabled={isInstalling}
               aria-label={`Install ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
               onClick={() => handleInstall(recipe, backend)}>
               {isInstalling ? 'Installing…' : 'Install'}
-            </button>
+            </WorkspaceActionButton>
           )}
           {(info.state === 'update_required' || info.state === 'update_available') && (
-            <button
+            <WorkspaceActionButton
+              size="small"
+              appearance="primary"
+              icon="rotate-ccw"
               className="cell__swap"
               disabled={isInstalling}
               aria-label={`Update ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
               onClick={() => handleInstall(recipe, backend, true)}>
               {isInstalling ? 'Updating…' : 'Update'}
-            </button>
+            </WorkspaceActionButton>
           )}
           {info.state === 'action_required' && info.action && (
-            <button
+            <WorkspaceActionButton
+              size="small"
+              appearance="secondary"
+              icon="book-open"
               className="cell__swap"
               aria-label={`Setup guide for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
               onClick={() => handleAction(info.action)}>
-              Setup guide ▸
-            </button>
+              Setup guide
+            </WorkspaceActionButton>
           )}
           {canShowUninstall(info) && (
-            <button
+            <WorkspaceActionButton
+              size="small"
+              appearance="danger"
+              icon="trash"
               className="cell__swap cell__swap--danger"
               disabled={isInstalling}
               aria-label={`Uninstall ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
               onClick={() => handleUninstall(recipe, backend)}>
               {isInstalling ? 'Working…' : 'Uninstall'}
-            </button>
+            </WorkspaceActionButton>
           )}
         </div>
         {showBackendProgress && backendDownload && (
@@ -937,9 +950,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         actions={updatesAvailable > 0 ? (
           <div className="backends__header-update" data-backends-banner>
             <span className="sr-only" data-backends-banner-text>{updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available</span>
-            <button className="btn btn--primary" data-backends-banner-action onClick={handleUpdateAll} disabled={installing !== null}>
+            <WorkspaceActionButton appearance="primary" icon="rotate-ccw" data-backends-banner-action onClick={handleUpdateAll} disabled={installing !== null}>
               {installing ? 'Updating…' : `Update all (${updatesAvailable})`}
-            </button>
+            </WorkspaceActionButton>
           </div>
         ) : undefined}
       />
@@ -950,7 +963,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           <div className="banner banner--error" data-backends-error>
             <span className="banner__icon" aria-hidden="true"><Icon name="alert" size={16} /></span>
             <span className="banner__text">Could not load backend system info: {error}</span>
-            <button className="banner__action" onClick={() => void fetchInfo()} disabled={loading}>Retry</button>
+            <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => void fetchInfo()} disabled={loading}>Retry</WorkspaceActionButton>
           </div>
         )}
 
