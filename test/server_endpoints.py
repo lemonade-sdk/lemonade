@@ -919,7 +919,7 @@ class EndpointTests(ServerTestBase):
         /v1/chat/completions. When `sse_chunks` is provided, the chat
         endpoint emits each chunk as an SSE `data:` line (the caller is
         responsible for shaping each chunk as OpenAI-compat JSON) and
-        terminates with `data: [DONE]\\n\\n`. Otherwise it falls back to
+        terminates with `data: [DONE]\n\n`. Otherwise it falls back to
         the non-streaming chat_handler(body) -> dict shape. Returns
         (base_url, stop_fn). The base URL ends with /v1.
         """
@@ -3436,9 +3436,9 @@ class EndpointTests(ServerTestBase):
         and demotion reuse live processes, pool-local pinning remains valid, and
         a later third standard model must not leave two user-facing LLMs resident.
         """
-        router_model = SECOND_TEST_MODEL_EVICTION
+        router_model = MULTI_MODEL_TERTIARY
         candidate_model = ENDPOINT_TEST_MODEL
-        third_model = MULTI_MODEL_TERTIARY
+        third_model = SECOND_TEST_MODEL_EVICTION
         for model in (router_model, candidate_model, third_model):
             pull_model_with_retry(model)
 
@@ -3457,7 +3457,8 @@ class EndpointTests(ServerTestBase):
                 json={
                     "model": router_model,
                     "messages": [{"role": "user", "content": "Reply briefly."}],
-                    "max_tokens": 4,
+                    "max_tokens": 1,
+                    "enable_thinking": False,
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
@@ -3499,7 +3500,7 @@ class EndpointTests(ServerTestBase):
                     json={
                         "model": public_name,
                         "messages": [{"role": "user", "content": message}],
-                        "max_tokens": 16,
+                        "max_tokens": 1,
                         "route_trace": True,
                     },
                     timeout=TIMEOUT_MODEL_OPERATION,
@@ -3619,7 +3620,8 @@ class EndpointTests(ServerTestBase):
                     "messages": [
                         {"role": "user", "content": "Reply directly and briefly."}
                     ],
-                    "max_tokens": 4,
+                    "max_tokens": 1,
+                    "enable_thinking": False,
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
@@ -3646,7 +3648,7 @@ class EndpointTests(ServerTestBase):
                 json={
                     "model": third_model,
                     "messages": [{"role": "user", "content": "Say hello."}],
-                    "max_tokens": 4,
+                    "max_tokens": 1,
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
