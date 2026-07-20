@@ -569,6 +569,65 @@ static void test_estimated_cost_omitted_when_candidate_has_no_cost_data() {
           !decision.outputs.contains("estimated_cost"));
 }
 
+// #2763 review: cost_of is caller-injected and must never make route() throw.
+static void test_estimated_cost_swallows_cost_of_exception() {
+    lemon::CostServices services;
+    services.cost_of = [](const std::string&) -> lemon::CostInfo {
+        throw std::runtime_error("boom");
+    };
+
+    RoutePolicy policy;
+    policy.candidates = {"model-a", "model-b"};
+    policy.default_model = "model-b";
+    policy.rules = {
+        rule("prefer-a", leaf(json{{"keywords_any", json::array({"alpha"})}}), "model-a"),
+    };
+
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{},
+                               std::move(services));
+    Decision matched;
+    bool matched_threw = false;
+    try {
+        matched = engine.route(route_context("alpha path"), false);
+    } catch (...) {
+        matched_threw = true;
+    }
+    check("route() does not throw when cost_of throws on the matched-rule path",
+          !matched_threw && matched.route_to == "model-a" &&
+          !matched.outputs.contains("estimated_cost"));
+
+    Decision defaulted;
+    bool default_threw = false;
+    try {
+        defaulted = engine.route(route_context("no match here"), false);
+    } catch (...) {
+        default_threw = true;
+    }
+    check("route() does not throw when cost_of throws on the default path",
+          !default_threw && defaulted.route_to == "model-b" &&
+          !defaulted.outputs.contains("estimated_cost"));
+}
+
+// #2763 review: engine-attached cost must not clobber a rule author's own
+// outputs["estimated_cost"].
+static void test_estimated_cost_preserves_author_set_value() {
+    Rule prefer_a = rule("prefer-a", leaf(json{{"keywords_any", json::array({"alpha"})}}),
+                          "model-a");
+    prefer_a.outputs = json{{"estimated_cost", "author-provided"}};
+
+    RoutePolicy policy;
+    policy.candidates = {"model-a", "model-b"};
+    policy.default_model = "model-b";
+    policy.rules = {prefer_a};
+
+    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{},
+                               fake_cost_services());
+    Decision decision = engine.route(route_context("alpha path"), false);
+    check("author-set outputs.estimated_cost is not overwritten by the engine",
+          decision.outputs.contains("estimated_cost") &&
+          decision.outputs["estimated_cost"] == json("author-provided"));
+}
+
 static void test_resolve_cost_info_typed_and_extras() {
     // Typed fields (cloud discovery path from PR #1785) win when >= 0.
     lemon::CostInfo from_typed = lemon::resolve_cost_info(1.25, 10.0, {});
@@ -621,6 +680,8 @@ int main() {
     test_estimated_cost_attached_on_matched_rule();
     test_estimated_cost_attached_on_default();
     test_estimated_cost_omitted_when_candidate_has_no_cost_data();
+    test_estimated_cost_swallows_cost_of_exception();
+    test_estimated_cost_preserves_author_set_value();
     test_resolve_cost_info_typed_and_extras();
 
     if (g_failures == 0) {

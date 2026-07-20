@@ -424,7 +424,9 @@ public:
     // Decision carries a per-condition trace. Never throws: any unexpected
     // failure fails open to default_model with default_used=true. After
     // resolving route_to, non-null CostInfo fields are merged into
-    // outputs["estimated_cost"] when cost_services.cost_of is set.
+    // outputs["estimated_cost"] when cost_services.cost_of is set and the
+    // matched rule didn't already set that key itself; a throwing cost_of is
+    // logged and ignored rather than propagated.
     Decision route(const RouteContext& ctx, bool want_trace) const;
 
     const RoutePolicy& policy() const { return policy_; }

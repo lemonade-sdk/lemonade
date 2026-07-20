@@ -108,10 +108,13 @@ std::string Router::resolve_model_name(const std::string& model_name) const {
 }
 
 std::optional<ModelInfo> Router::try_get_model_info(const std::string& model_name) const {
-    if (model_name.empty() || !model_manager_->model_exists(model_name)) {
+    if (model_name.empty()) {
         return std::nullopt;
     }
     try {
+        if (!model_manager_->model_exists(model_name)) {
+            return std::nullopt;
+        }
         return model_manager_->get_model_info(model_name);
     } catch (...) {
         return std::nullopt;

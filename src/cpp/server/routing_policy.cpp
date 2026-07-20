@@ -1286,11 +1286,25 @@ NamedLeafFactories make_deterministic_leaf_factories() {
 
 namespace {
 
+// Best-effort: cost_of is caller-injected and must never make route() throw,
+// so any exception here is logged and swallowed rather than propagated. Also
+// leaves an author-set outputs["estimated_cost"] alone rather than clobbering it.
 void attach_estimated_cost(Decision& decision, const CostServices& cost_services) {
-    if (!cost_services.cost_of) {
+    if (!cost_services.cost_of || decision.outputs.contains("estimated_cost")) {
         return;
     }
-    CostInfo info = cost_services.cost_of(decision.route_to);
+    CostInfo info;
+    try {
+        info = cost_services.cost_of(decision.route_to);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Routing") << "CostServices::cost_of threw for candidate '"
+                                << decision.route_to << "': " << e.what() << std::endl;
+        return;
+    } catch (...) {
+        LOG(WARNING, "Routing") << "CostServices::cost_of threw an unknown exception for "
+                                << "candidate '" << decision.route_to << "'" << std::endl;
+        return;
+    }
     json estimated = json::object();
     if (info.cost_tier) {
         estimated["cost_tier"] = *info.cost_tier;
