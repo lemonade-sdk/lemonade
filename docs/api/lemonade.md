@@ -867,6 +867,7 @@ This endpoint is not part of the OpenAI API, so it is a Lemonade-specific extens
 | `image` | Yes | Base64-encoded input image (optionally a `data:` URL). |
 | `resolution` | No | Cascade resolution: `512`, `1024`, or `1536`. Default: `512`. |
 | `bg_removal` | No | Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with real backgrounds. |
+| `uv` | No | UV atlas method: `xatlas` (default) or `box`. `xatlas` runs a full UV unwrap giving every face unique atlas space — best quality, but chart computation is superlinear in face count. `box` is a faster 6-plane projection with occlusion-aware bucket assignment and depth-tested rasterization; small texture artifacts remain possible in concave regions. |
 | `seed` | No | Random seed for reproducibility. |
 | `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `glb`); other values are rejected with `400 Bad Request`. Default: `glb`. |
 
@@ -1666,6 +1667,24 @@ curl http://localhost:13305/live
 ```json
 {"status":"ok"}
 ```
+
+## Job Engine API
+
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Run client-posted sequences of server operations as durable, background **jobs** — steps that pass data forward, branch on results, and have a pause / interrupt / resume / delete / query lifecycle that survives client disconnect and server restart. Exclusive ops (`load`/`unload`/`chat`) hold a Router slot so normal traffic queues behind a running job.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/v1/jobs` | Create a job from `{name, definition:{steps} \| steps, inputs}`; returns `202 {"id"}`, or `400` on an invalid step graph. |
+| `GET` | `/v1/jobs` | List job summaries. |
+| `GET` | `/v1/jobs/{id}` | Full job record (status, per-step state, context). |
+| `POST` | `/v1/jobs/{id}/pause` | Stop after the current step. |
+| `POST` | `/v1/jobs/{id}/interrupt` | Cancel the current step now; resumable. |
+| `POST` | `/v1/jobs/{id}/resume` | Continue a paused/interrupted job. |
+| `DELETE` | `/v1/jobs/{id}` | Remove a job. |
+
+See [`docs/dev/job-system.md`](../dev/job-system.md) for the step schema, op set, and lifecycle, and [`docs/dev/job-expression-language.md`](../dev/job-expression-language.md) for the `when`/`branch` expression grammar.
 
 ## Internal Endpoints
 
