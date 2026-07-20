@@ -303,15 +303,13 @@ public:
         score.ok = true;
 
         const json parsed = parse_structured_reply(reply);
-        if (!parsed.is_object() ||
-            !parsed.contains("model") || !parsed["model"].is_string()) {
-            // Malformed reply => empty labels => identity rules all miss =>
-            // fail-open to default_model.
-            return score;
-        }
-        // The contract requires BOTH fields: a route without an auditable
-        // rationale is not a valid structured choice (#2405 acceptance).
-        if (!parsed.contains("rationale") || !parsed["rationale"].is_string()) {
+        if (!parsed.is_object() || parsed.size() != 2 ||
+            !parsed.contains("model") || !parsed["model"].is_string() ||
+            !parsed.contains("rationale") || !parsed["rationale"].is_string()) {
+            // The backend only guarantees a JSON object. Lemonade owns the
+            // portable protocol contract: exactly `model` and `rationale`, no
+            // missing fields and no backend/model-invented extras. Invalid
+            // replies fail open to default_model.
             return score;
         }
         const std::string rationale = trim_copy(parsed["rationale"].get<std::string>());

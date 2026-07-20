@@ -3348,16 +3348,12 @@ class EndpointTests(ServerTestBase):
             body = chat_response_http.json()
             self.assertNotIn("error", body, body)
 
-            # The engine routed to the candidate the mock router selected, and
-            # the completion was produced by the real local candidate.
+            # Lemonade's route envelope is the backend-independent source of
+            # truth for the selected candidate. The OpenAI `model` field remains
+            # backend-owned and may contain a checkpoint/path or be omitted.
             route = body.get("x_lemonade_route")
             self.assertIsInstance(route, dict)
             self.assertEqual(route.get("route_to"), candidate_model)
-            self.assertEqual(
-                body.get("model"),
-                candidate_model,
-                "response model must be the routed candidate",
-            )
 
             # The trace carries the structured choice: the winning
             # classifier:__router entry names the candidate as its label and

@@ -385,6 +385,14 @@ static void test_chat_service_is_constrained_invocation() {
     check("chat bounds output with a tight max_tokens",
           captured.contains("max_tokens") && captured["max_tokens"].is_number_integer() &&
           captured["max_tokens"].get<int>() > 0 && captured["max_tokens"].get<int>() <= 256);
+
+    const json response_format = captured.value("response_format", json::object());
+    check("chat requests backend-neutral JSON object output",
+          response_format == json{{"type", "json_object"}});
+    check("chat does not leak a backend-specific JSON-schema envelope",
+          !response_format.contains("schema") &&
+          !response_format.contains("json_schema"));
+
     check("chat disables thinking via /no_think injection (cross-backend form)",
           captured["messages"][1].value("content", "").rfind("/no_think\n", 0) == 0);
     check("chat strips handled thinking fields before dispatch",

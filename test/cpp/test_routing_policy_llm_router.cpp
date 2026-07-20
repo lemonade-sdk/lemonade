@@ -227,6 +227,8 @@ static void test_classifier_rejects_non_exact_replies() {
          "{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": \"   \"}"},
         {"llm: JSON with non-string rationale is rejected",
          "{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": 42}"},
+        {"llm: JSON with extra properties is rejected",
+         "{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": \"ok\", \"confidence\": 0.9}"},
         {"llm: fenced JSON followed by trailing prose is rejected",
          "```json\n{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": \"ok\"}\n```\nHope that helps!"},
         {"llm: opening fence without a closing fence is rejected",

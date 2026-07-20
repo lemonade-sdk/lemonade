@@ -16,6 +16,11 @@ namespace {
 // this bound keeps a misbehaving router model from streaming an essay.
 constexpr int kClassifierChatMaxTokens = 256;
 
+json llm_router_response_format() {
+    // Use the portable JSON object contract; Lemonade validates the fields.
+    return {{"type", "json_object"}};
+}
+
 void throw_if_error_response(const json& response, const std::string& context) {
     if (!response.is_object() || !response.contains("error")) {
         return;
@@ -340,6 +345,7 @@ ClassifierServices make_classifier_services_from_router_calls(
             {"temperature", 0.0},
             {"max_tokens", kClassifierChatMaxTokens},
             {"enable_thinking", false},
+            {"response_format", llm_router_response_format()},
             {"messages", json::array({
                 {{"role", "system"}, {"content", prompt}},
                 {{"role", "user"}, {"content", input}},
