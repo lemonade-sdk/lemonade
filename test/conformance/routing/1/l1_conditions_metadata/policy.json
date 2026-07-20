@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "model_name": "user.Conditions-Metadata",
+  "recipe": "collection.router",
+  "components": ["local", "cloud"],
+  "routing": {
+    "candidates": ["local", "cloud"],
+    "default_model": "cloud",
+    "rules": [
+      { "id": "sensitive-task-stays-local",
+        "match": { "any": [
+          { "metadata": { "key": "task_class", "any": ["payment", "checkout"] } },
+          { "metadata": { "key": "consent", "equals": "denied" } } ] },
+        "route_to": "local" },
+      { "id": "no-consent-recorded-stays-local",
+        "match": { "metadata": { "key": "consent", "exists": false } },
+        "route_to": "local" }
+    ]
+  }
+}
