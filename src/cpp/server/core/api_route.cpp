@@ -292,27 +292,6 @@ const json& argument_source(const RouteRequest& req, const RouteArg& arg) {
     return arg.in == ArgIn::Query || arg.in == ArgIn::Path ? req.params : req.body;
 }
 
-// The streaming plumbing reports a backend failure as a payload in the sink rather than
-// throwing: an SSE-style "data: {\"error\":...}" event or the backend's own JSON error body.
-json extract_error_payload(const std::string& buf) {
-    std::string body = buf;
-    if (body.rfind("data: ", 0) == 0) {
-        body = body.substr(6);
-    }
-    const auto start = body.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos || body[start] != '{') {
-        return nullptr;
-    }
-    try {
-        auto parsed = json::parse(body.substr(start));
-        if (parsed.is_object() && parsed.contains("error")) {
-            return parsed;
-        }
-    } catch (...) {
-    }
-    return nullptr;
-}
-
 bool valid_error_status(int status_code) {
     return status_code >= 400 && status_code <= 599;
 }
@@ -393,6 +372,25 @@ void set_router_residency_conflict_response(const std::exception& error, httplib
 }
 
 } // namespace
+
+json extract_error_payload(const std::string& buf) {
+    std::string body = buf;
+    if (body.rfind("data: ", 0) == 0) {
+        body = body.substr(6);
+    }
+    const auto start = body.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos || body[start] != '{') {
+        return nullptr;
+    }
+    try {
+        auto parsed = json::parse(body.substr(start));
+        if (parsed.is_object() && parsed.contains("error")) {
+            return parsed;
+        }
+    } catch (...) {
+    }
+    return nullptr;
+}
 
 nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec) {
     using ordered_json = nlohmann::ordered_json;

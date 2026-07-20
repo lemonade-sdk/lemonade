@@ -201,6 +201,11 @@ extern const RouteError kNoOutputError;
 void serve_media_or_error(httplib::Response& res, const std::string& mime_type,
                           const std::function<void(httplib::DataSink&)>& generate);
 
+// The streaming plumbing reports a backend failure as a payload in the sink rather than
+// throwing: an SSE-style "data: {\"error\":...}" event or the backend's own JSON error body.
+// Returns null when the buffer is not such a payload.
+nlohmann::json extract_error_payload(const std::string& buf);
+
 // Writes one named server-sent event. Returns false when the client has disconnected.
 bool write_sse_event(httplib::DataSink& sink, const std::string& event,
                      const nlohmann::json& data);
