@@ -7006,6 +7006,33 @@ input, textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.composer__model-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.composer__model-mode--chat { color: var(--success); }
+.composer__model-mode--image { color: var(--info); }
+.composer__model-mode--audio,
+.composer__model-mode--tts,
+.composer__model-mode--omni { color: var(--accent-fg); }
+.composer__model-mode--audio-gen { color: #7dd3c7; }
+.composer__model-mode--model3d { color: #a5b4fc; }
+.composer__model-mode--embed,
+.composer__model-mode--rank,
+.composer__model-mode--model { color: var(--text-tertiary); }
+
+.composer__model-mode svg {
+  color: currentColor;
 }
 
 .composer__model-button-caret {

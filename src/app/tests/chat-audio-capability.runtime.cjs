@@ -166,6 +166,14 @@ assert.match(chatViewSource, /<CapabilityIcon capability="audio"/,
   'paired mode icons must include the Audio glyph');
 assert.match(chatViewSource, /const showAudio = audioInput && capability === 'chat'/,
   'the paired Audio icon must only decorate Chat mode, not Omni collections');
+assert.match(chatViewSource, /currentLoadedModel \? \([\s\S]*composer__model-mode--\$\{capabilityBadge\(currentCapability\)\}[\s\S]*modelModeLabel\(currentCapability, supportsChatAudioInput\)/,
+  'the active model pill must include the colored mode label only for the currently loaded model');
+assert.doesNotMatch(chatViewSource, /composer__mode-badge--interactive/,
+  'the redundant standalone mode pill must not remain in the chat composer');
+assert.match(stylesSource, /\.composer__model-mode--chat \{ color: var\(--success\); \}/,
+  'the merged Chat status must retain its capability color');
+assert.match(stylesSource, /\.composer__model-button-name[\s\S]*color: var\(--text-primary\)/,
+  'the model name must keep the normal text color beside the colored status');
 assert.match(chatViewSource, /Omni collection mode/,
   'the UI must describe Omni as collection orchestration');
 assert.match(chatViewSource, /Chat \+ audio mode/,

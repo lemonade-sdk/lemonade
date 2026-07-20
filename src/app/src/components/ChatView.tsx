@@ -3161,13 +3161,25 @@ ${finalText}`
                 aria-haspopup="listbox"
                 aria-expanded={modelPickerOpen}
               >
-                <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={14} />
-                {currentDefaultModel && (
+                {currentLoadedModel ? (
+                  <span className={`composer__model-mode composer__model-mode--${capabilityBadge(currentCapability)}`}>
+                    <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={14} />
+                    <span>{modelModeLabel(currentCapability, supportsChatAudioInput)}</span>
+                  </span>
+                ) : (
+                  <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={14} />
+                )}
+                {!currentLoadedModel && currentDefaultModel && (
                   <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
                     <Icon name={currentDefaultModel.icon} size={13} />
                   </span>
                 )}
                 <span className="composer__model-button-name">{currentModel}</span>
+                {currentLoadedModel && currentDefaultModel && (
+                  <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
+                    <Icon name={currentDefaultModel.icon} size={13} />
+                  </span>
+                )}
                 {selectableModels.length > 0 && (
                   <span className="composer__model-button-badge">({selectableModels.length})</span>
                 )}
@@ -3230,14 +3242,6 @@ ${finalText}`
               )}
             </div>
           )}
-          <button
-            type="button"
-            className={`composer__mode-badge composer__mode-badge--${capabilityBadge(currentCapability)} composer__mode-badge--interactive`}
-            onClick={() => { setModelPickerOpen(true); setPresetPickerOpen(false); }}
-            title="Mode follows the selected model. Open model search to change it."
-          >
-            <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={13} /> {modelModeLabel(currentCapability, supportsChatAudioInput)} mode
-          </button>
           {currentPreset && currentModel && currentCapability !== 'image' && (
             <div className="composer__preset-picker" ref={presetPickerRef}>
               <button
