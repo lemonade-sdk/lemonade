@@ -165,6 +165,18 @@ class RouterTests(ServerTestBase):
         ), f"register failed: {resp.status_code} {resp.text}"
         cls._setup_done = True
 
+    @classmethod
+    def tearDownClass(cls):
+        # Remove the shared collection so no router is left registered on
+        # persistent (self-hosted) runners after the suite.
+        if cls._setup_done:
+            requests.post(
+                f"http://localhost:{PORT}/api/v1/delete",
+                json={"model_name": COLLECTION_NAME},
+                timeout=TIMEOUT_DEFAULT,
+            )
+        super().tearDownClass()
+
     def setUp(self):
         super().setUp()
         self._ensure_setup()
@@ -189,6 +201,22 @@ class RouterTests(ServerTestBase):
         header = resp.headers.get("x-lemonade-route", "<missing>")
         decision = resp.json().get("x_lemonade_route", {})
         return header, decision, resp.json()
+
+    def _delete_collection(self, collection):
+        """Remove a registered router collection. `/delete` is a POST endpoint
+        keyed on `model_name`; assert it actually deleted so a stale router
+        isn't left behind on persistent runners (esp. before a cloud provider
+        it references is uninstalled)."""
+        resp = requests.post(
+            f"{self.base_url}/delete",
+            json={"model_name": collection},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code,
+            200,
+            f"cleanup delete failed: {resp.status_code} {resp.text}",
+        )
 
     def _trace_map(self, decision):
         return {t["condition"]: t["result"] for t in decision.get("trace", [])}
@@ -373,11 +401,7 @@ class RouterTests(ServerTestBase):
             self.assertTrue(decision.get("default_used"))
             print(f"[OK] casual -> {DEFAULT_MODEL} (local default)")
         finally:
-            requests.delete(
-                f"{self.base_url}/delete",
-                json={"model": collection},
-                timeout=TIMEOUT_DEFAULT,
-            )
+            self._delete_collection(collection)
             requests.delete(
                 f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
             )
@@ -473,11 +497,7 @@ class RouterTests(ServerTestBase):
             self.assertLess(other_score, 0.6)
             print(f"[OK] semantic non-coding ({other_score:.3f}) -> {DEFAULT_MODEL}")
         finally:
-            requests.post(
-                f"{self.base_url}/delete",
-                json={"model": collection},
-                timeout=TIMEOUT_DEFAULT,
-            )
+            self._delete_collection(collection)
 
     def test_621_semantic_similarity_cloud_candidate(self):
         """A `semantic_similarity` match routes to a *cloud* candidate.
@@ -595,11 +615,7 @@ class RouterTests(ServerTestBase):
             self.assertTrue(decision.get("default_used"))
             print(f"[OK] semantic non-coding -> {DEFAULT_MODEL} (local default)")
         finally:
-            requests.post(
-                f"{self.base_url}/delete",
-                json={"model": collection},
-                timeout=TIMEOUT_DEFAULT,
-            )
+            self._delete_collection(collection)
             requests.delete(
                 f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
             )
@@ -696,11 +712,7 @@ class RouterTests(ServerTestBase):
             self.assertLess(lo, 0.5)
             print(f"[OK] classifier benign ({lo:.3f}) -> {DEFAULT_MODEL}")
         finally:
-            requests.post(
-                f"{self.base_url}/delete",
-                json={"model": collection},
-                timeout=TIMEOUT_DEFAULT,
-            )
+            self._delete_collection(collection)
 
 
 if __name__ == "__main__":

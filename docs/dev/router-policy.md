@@ -51,8 +51,8 @@ on top via each rule's `outputs` pass-through bag and the request `metadata`.
 | `components` | yes | Registered model names this policy may use. Each must already be pulled/registered (or a cloud model that has been discovered — see below). |
 | `routing.candidates` | yes | The models the router may pick. Each is a `components` member. |
 | `routing.default_model` | yes | Fallback when no rule matches. Must be one of `candidates`. |
-| `routing.rules` | yes* | Ordered; first match wins. (*`routing.rules` **or** the reserved `routing.router` block is required.) |
-| `routing.classifiers` | no | Model-backed classifiers referenced by `classifier` conditions. |
+| `routing.rules` | yes* | Ordered; first match wins. (*a policy provides **either** `routing.rules` **or** a `routing.router` block — see [LLM-as-router](#llm-as-router-routingrouter).) |
+| `routing.classifiers` | no | Model-backed classifier definitions referenced by `classifier` / `semantic_similarity` conditions. |
 
 A **rule** is `{ id, match, route_to, outputs? }`. `route_to` must be one of
 `candidates`. `outputs` is an arbitrary object copied verbatim into the decision
@@ -83,6 +83,41 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 A classifier condition is a band test: `{ "classifier": "<id>", "label": "<name>",
 "min_score": 0.5, "max_score": 1.0 }` (omitting both bounds defaults to
 `min_score: 0.5`).
+
+Both model-backed conditions reference an entry defined in `routing.classifiers`,
+and each entry's `model` must be one of `components`:
+
+```json
+"routing": {
+  "classifiers": [
+    {
+      "id": "topic",
+      "type": "semantic_similarity",
+      "model": "nomic-embed-text-v1-GGUF",
+      "reference_phrases": {
+        "coding": ["write a function", "fix this bug", "refactor this code"]
+      }
+    },
+    {
+      "id": "phishing",
+      "type": "classifier",
+      "model": "Phishing-Email-Detection-ONNX",
+      "labels": ["LABEL_0", "LABEL_1", "LABEL_2", "LABEL_3"],
+      "default_label": "LABEL_1"
+    }
+  ],
+  "rules": [
+    { "id": "coding-to-big",  "match": { "classifier": "topic",    "label": "coding",  "min_score": 0.6 }, "route_to": "Big-GGUF" },
+    { "id": "phishing-local", "match": { "classifier": "phishing", "label": "LABEL_1", "min_score": 0.5 }, "route_to": "Small-GGUF" }
+  ]
+}
+```
+
+- `semantic_similarity` scores each concept as the max cosine similarity of the
+  input against that concept's `reference_phrases` (needs an embedding model).
+- `classifier` uses the model's `{label: score}` output; declare its `labels`
+  (an onnxruntime encoder serves `/v1/classify`, else it runs as an
+  LLM-as-classifier via chat).
 
 ## Registering and invoking
 
@@ -151,7 +186,24 @@ directly; any other model backing a `classifier` is used as an LLM-as-classifier
 via chat. The classifier's model must be able to serve one of those paths, and
 that capability is checked when the collection is registered.
 
-## Not yet implemented
+## LLM-as-router (`routing.router`)
 
-- The `routing.router` sugar and the `type: "llm"` classifier (LLM-as-router) are
-  reserved but not implemented; the parser rejects them.
+Instead of authoring rules, you can hand the decision to a small LLM. Provide a
+`routing.router` block **in place of** `routing.rules` / `routing.classifiers`:
+
+```json
+"routing": {
+  "candidates": ["Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"],
+  "default_model": "Qwen3-8B-GGUF",
+  "router": {
+    "type": "llm",
+    "model": "Qwen3-1.7B-GGUF",
+    "prompt": "Route the request. Use Qwen3-8B-GGUF for everyday questions; use Qwen3.5-35B-A3B-GGUF for hard reasoning, coding, or long context."
+  }
+}
+```
+
+The router `model` must be one of `components`. At request time the engine asks it
+to pick a candidate, and that desugars into the same first-match engine and
+`Decision`/trace as the rule form. `routing.router.type` must be `"llm"`, and the
+block is **mutually exclusive** with `routing.rules` and `routing.classifiers`.
