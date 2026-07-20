@@ -2301,6 +2301,8 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
         response["telemetry"] = telemetry_info;
     }
 
+    response["high_security"] = !admin_api_key_.empty();
+
     // Add model loaded information like Python implementation
     std::string loaded_model = router_->get_loaded_model();
 

@@ -11226,6 +11226,7 @@ button.detail-presets__explanation-step {
 .inspect-layout {
   display: grid;
   grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  grid-template-rows: 100%;
   height: 100%;
   width: 100%;
   background: var(--surface-0);
@@ -14452,7 +14453,9 @@ button.detail-presets__explanation-step {
 .mcp-panel__admin-auth > div:first-child { display: grid; gap: 3px; }
 .mcp-panel__admin-auth label { color: var(--text-primary); font-weight: 600; }
 .mcp-panel__admin-auth p { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.45; }
-.mcp-panel__admin-auth-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--space-2); align-items: center; }
+.mcp-panel__admin-auth-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; }
+.mcp-panel__host-unavailable { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.mcp-panel__host-unavailable p { margin: 0; }
 .mcp-panel__admin-auth-controls input { width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-1); color: var(--text-primary); font: inherit; }
 .mcp-panel__status-dot.is-connected { background: var(--color-success, #3fb950); }
 .mcp-server-list { display: grid; gap: var(--space-2); }
@@ -15141,4 +15144,37 @@ button.detail-presets__explanation-step {
   margin: var(--space-2) 0 0;
   color: var(--text-secondary);
   font-size: var(--text-sm);
+}
+
+/* message-card toggler cleanroom styles */
+.message-card__toggle-segmented {
+  display: inline-flex !important;
+  padding: 1px !important;
+  background: var(--surface-3) !important;
+  border: 1px solid var(--border-subtle) !important;
+  margin-right: 8px !important;
+}
+
+.message-card__toggle-segmented button {
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+  font-weight: var(--weight-semibold) !important;
+}
+
+/* Lemonade chat defaults: the icon carries the Tiny/Quality definition via
+   its native hover title while keeping the model name itself uncluttered. */
+.composer__model-default-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.composer__model-option-row .composer__model-default-icon {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
 }
