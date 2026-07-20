@@ -1,0 +1,39 @@
+{
+  "version": "1",
+  "model_name": "user.Conditions-Vocab",
+  "recipe": "collection.router",
+  "components": ["local", "cloud"],
+  "routing": {
+    "candidates": ["local", "cloud"],
+    "default_model": "local",
+    "rules": [
+      { "id": "keywords_any-rule",
+        "match": { "keywords_any": ["alpha"] },
+        "route_to": "cloud" },
+      { "id": "keywords_all-rule",
+        "match": { "keywords_all": ["charlie", "delta"] },
+        "route_to": "cloud" },
+      { "id": "regex-rule",
+        "match": { "regex": "echo-[0-9]+" },
+        "route_to": "cloud" },
+      { "id": "any-rule",
+        "match": { "any": [
+          { "keywords_any": ["foxtrot"] },
+          { "keywords_any": ["golf"] } ] },
+        "route_to": "cloud" },
+      { "id": "all-rule",
+        "match": { "all": [
+          { "keywords_any": ["hotel"] },
+          { "keywords_any": ["india"] } ] },
+        "route_to": "cloud" },
+      { "id": "not-rule",
+        "match": { "all": [
+          { "keywords_any": ["juliett"] },
+          { "not": { "keywords_any": ["kilo"] } } ] },
+        "route_to": "cloud" },
+      { "id": "implicit-all-rule",
+        "match": { "keywords_any": ["lima"], "max_chars": 1000 },
+        "route_to": "cloud" }
+    ]
+  }
+}
