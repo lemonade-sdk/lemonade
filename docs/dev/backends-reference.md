@@ -66,6 +66,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `whispercpp` | metal | macos | metal |
 <!-- END GENERATED: backends-matrix -->
 
+> **Note:** The `llamacpp` `rocm` row lists `linux, windows` for the family as a
+> whole, but MI350X (`gfx950`) is currently gated to **Linux + stable channel
+> only** — the Windows TheRock distribution and the ROCm nightly build for
+> gfx950 are not yet published, so `gfx950` installs are rejected on Windows and
+> on the nightly channel. The OS column reflects the row's overall reach; the
+> per-architecture restriction is enforced by the backend's install gate.
+
 ## Recipe options
 
 <!-- BEGIN GENERATED: backend-options -->
