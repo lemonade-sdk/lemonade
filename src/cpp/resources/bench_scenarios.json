@@ -168,7 +168,7 @@
       "measurement_runs": 3
     },
     {
-      "name": "image-text1",
+      "name": "image-text0",
       "category": "imagegen",
       "prompt": "text that reads \"Lemonade Local AI Server\"",
       "size": "512x512",
