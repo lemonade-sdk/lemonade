@@ -26,6 +26,7 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     pull_model_with_retry,
+    get_config,
 )
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
@@ -107,6 +108,8 @@ DEFAULT_MODEL = "Tiny-Test-Model-GGUF"
 CAPABLE_MODEL = "Qwen3-0.6B-GGUF"
 # Small embedding model that backs the semantic_similarity classifier.
 EMBED_MODEL = "nomic-embed-text-v1-GGUF"
+# Real encoder classifier (onnxruntime backend) for the `classifier` condition.
+CLASSIFIER_MODEL = "Phishing-Email-Detection-ONNX"
 
 COLLECTION_NAME = "user.Test-Router-Local"
 
@@ -606,6 +609,98 @@ class RouterTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
             stop_provider()
+
+    def test_630_classifier_condition_routing(self):
+        """A `classifier` condition routes via a real onnxruntime classifier.
+
+        This exercises the model-backed classifier path end-to-end: the engine
+        calls `Router::classify` on an encoder model served by the onnxruntime
+        backend (`/v1/classify`), not a chat LLM. Requires that backend, so it
+        runs under `--wrapped-server onnxruntime` and is skipped otherwise.
+
+        Scores are deterministic; the two probes separate cleanly on LABEL_1
+        (~0.9999 vs ~0.25), so the 0.5 threshold is stable.
+        """
+        if get_config().get("wrapped_server") != "onnxruntime":
+            self.skipTest(
+                "classifier-condition e2e needs the onnxruntime backend; "
+                "run with --wrapped-server onnxruntime"
+            )
+        pull_model_with_retry(CLASSIFIER_MODEL)
+        collection = "user.Test-Router-Classifier"
+        policy = {
+            "version": "1",
+            "model_name": collection,
+            "recipe": "collection.router",
+            "components": [DEFAULT_MODEL, CAPABLE_MODEL, CLASSIFIER_MODEL],
+            "routing": {
+                "candidates": [DEFAULT_MODEL, CAPABLE_MODEL],
+                "default_model": DEFAULT_MODEL,
+                "classifiers": [
+                    {
+                        "id": "phishing",
+                        "type": "classifier",
+                        "model": CLASSIFIER_MODEL,
+                        "labels": ["LABEL_0", "LABEL_1", "LABEL_2", "LABEL_3"],
+                        "default_label": "LABEL_1",
+                        "on_error": "match_false",
+                    }
+                ],
+                "rules": [
+                    {
+                        "id": "phishing-to-restricted",
+                        "match": {
+                            "classifier": "phishing",
+                            "label": "LABEL_1",
+                            "min_score": 0.5,
+                        },
+                        "route_to": CAPABLE_MODEL,
+                    }
+                ],
+            },
+        }
+        resp = requests.post(
+            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=120
+        )
+        self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
+
+        try:
+
+            def clf_score(decision):
+                for t in decision.get("trace", []):
+                    if t["condition"] == "classifier:phishing":
+                        return t.get("score")
+                return None
+
+            # High-confidence phishing text -> classifier fires -> restricted.
+            _, decision, _ = self._route(
+                "Please verify your account at http://secure-login.example now.",
+                collection=collection,
+            )
+            self.assertEqual(decision.get("route_to"), CAPABLE_MODEL)
+            self.assertEqual(decision.get("matched_rule"), "phishing-to-restricted")
+            hi = clf_score(decision)
+            self.assertIsNotNone(hi)
+            self.assertGreaterEqual(hi, 0.5)
+            print(f"[OK] classifier phishing ({hi:.3f}) -> {CAPABLE_MODEL}")
+
+            # Benign text scores below threshold on LABEL_1 -> default.
+            _, decision, _ = self._route(
+                "Account notice: sign in to review recent activity.",
+                collection=collection,
+            )
+            self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+            self.assertTrue(decision.get("default_used"))
+            lo = clf_score(decision)
+            self.assertIsNotNone(lo)
+            self.assertLess(lo, 0.5)
+            print(f"[OK] classifier benign ({lo:.3f}) -> {DEFAULT_MODEL}")
+        finally:
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model": collection},
+                timeout=TIMEOUT_DEFAULT,
+            )
 
 
 if __name__ == "__main__":

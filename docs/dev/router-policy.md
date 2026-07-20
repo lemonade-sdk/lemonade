@@ -78,7 +78,7 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 | Type | Meaning |
 |------|---------|
 | `semantic_similarity` | Cosine similarity of the input against labelled `reference_phrases`, via an embedding model. |
-| `classifier` | A `{label: score}` classifier. See status note below. |
+| `classifier` | A `{label: score}` classifier — an encoder model via the `onnxruntime` backend (`/v1/classify`), or any model as an LLM-as-classifier via chat. |
 
 A classifier condition is a band test: `{ "classifier": "<id>", "label": "<name>",
 "min_score": 0.5, "max_score": 1.0 }` (omitting both bounds defaults to
@@ -145,11 +145,13 @@ routes to the cloud one — the split is entirely policy-driven.
 See `examples/router/` for runnable local and local+cloud demos, and
 `test/server_router.py` for the end-to-end tests.
 
+The `classifier` condition runs a real encoder classifier: a model of type
+`ModelType::CLASSIFICATION` (the `onnxruntime` backend, `/v1/classify`) is called
+directly; any other model backing a `classifier` is used as an LLM-as-classifier
+via chat. The classifier's model must be able to serve one of those paths, and
+that capability is checked when the collection is registered.
+
 ## Not yet implemented
 
 - The `routing.router` sugar and the `type: "llm"` classifier (LLM-as-router) are
   reserved but not implemented; the parser rejects them.
-- The `classifier` condition type resolves and validates, but the engine's
-  `run_classifier` currently answers via a chat LLM rather than a dedicated
-  classification backend. The `onnxruntime` classification backend exists
-  (`/v1/classify`); wiring the router to call it is tracked separately.

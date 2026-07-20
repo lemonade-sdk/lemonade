@@ -1183,6 +1183,11 @@ jobs:
             extra_args: "--wrapped-server onnxruntime"
             backends: "cpu"
             runner: [self-hosted, Windows, lemon-prod]
+          - name: router-onnxruntime
+            script: server_router.py
+            extra_args: "--wrapped-server onnxruntime"
+            backends: "cpu"
+            runner: [self-hosted, Windows, lemon-prod]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
