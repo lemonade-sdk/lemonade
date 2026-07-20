@@ -15,6 +15,31 @@ interface PromptDebuggerPanelProps {
   showWarning: (message: string) => void;
 }
 
+/**
+ * Parses a `key: value` per-line textarea into a metadata object.
+ * Splits on the first colon only, so values may contain colons; blank lines
+ * are skipped; a line with no colon or an empty key is a format error.
+ */
+function parseMetadataText(text: string): { metadata: Record<string, string>; error: string | null } {
+  const metadata: Record<string, string> = {};
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line === '') continue;
+    const colonIndex = line.indexOf(':');
+    if (colonIndex === -1) {
+      return { metadata: {}, error: `Metadata line ${i + 1} is missing a ':' (expected "key: value")` };
+    }
+    const key = line.slice(0, colonIndex).trim();
+    const value = line.slice(colonIndex + 1).trim();
+    if (key === '') {
+      return { metadata: {}, error: `Metadata line ${i + 1} has an empty key` };
+    }
+    metadata[key] = value;
+  }
+  return { metadata, error: null };
+}
+
 const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError }) => {
   const [prompt, setPrompt] = useState('');
   const [policyJson, setPolicyJson] = useState<RoutingPolicyDoc | null>(null);
@@ -22,6 +47,9 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError }) 
   const [imageFilename, setImageFilename] = useState<string | null>(null);
   const [imageThumbnailUrl, setImageThumbnailUrl] = useState<string | null>(null);
   const [hasImages, setHasImages] = useState(false);
+  const [hasTools, setHasTools] = useState(false);
+  const [metadataText, setMetadataText] = useState('');
+  const [metadataError, setMetadataError] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [decision, setDecision] = useState<DecisionResult | null>(null);
@@ -40,6 +68,10 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError }) 
       }
     };
   }, []);
+
+  useEffect(() => {
+    setMetadataError(parseMetadataText(metadataText).error);
+  }, [metadataText]);
 
   useEffect(() => {
     if (!showTreeModal) return;
@@ -100,10 +132,17 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError }) 
     setIsValidating(true);
     setValidationError(null);
     try {
+      const { metadata } = parseMetadataText(metadataText);
       const response = await serverFetch('/routing/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ policy: policyJson, prompt, has_images: hasImages }),
+        body: JSON.stringify({
+          policy: policyJson,
+          prompt,
+          has_images: hasImages,
+          has_tools: hasTools,
+          ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -200,9 +239,43 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError }) 
       </div>
 
       <div className="form-section">
+        <label className="settings-checkbox-label">
+          <input
+            type="checkbox"
+            className="settings-checkbox"
+            checked={hasTools}
+            onChange={(e) => setHasTools(e.target.checked)}
+          />
+          <div className="settings-checkbox-content">
+            <span className="settings-label-text">Tools attached</span>
+            <span className="settings-description">
+              Simulates a request that included a non-empty tools[] array.
+            </span>
+          </div>
+        </label>
+      </div>
+
+      <div className="form-section">
+        <label className="form-label">Metadata (optional)</label>
+        <textarea
+          className="form-input prompt-debugger-textarea"
+          placeholder={'key: value\none-per-line'}
+          value={metadataText}
+          onChange={(e) => {
+            setMetadataText(e.target.value);
+            adjustTextareaHeight(e.target);
+          }}
+        />
+        <span className="settings-description">
+          One key:value pair per line. Sent to the policy as the metadata map.
+        </span>
+        {metadataError && <div className="prompt-debugger-error">{metadataError}</div>}
+      </div>
+
+      <div className="form-section">
         <button
           className="settings-save-button"
-          disabled={!policyJson || isValidating}
+          disabled={!policyJson || isValidating || !!metadataError}
           onClick={handleValidate}
         >
           {isValidating ? 'Validating…' : 'Validate routing policy'}

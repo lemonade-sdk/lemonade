@@ -3400,6 +3400,119 @@ class EndpointTests(ServerTestBase):
         self.assertFalse(decision["default_used"])
         print("[OK] /routing/validate honored the has_images flag")
 
+    def test_021zo_routing_validate_has_tools_flag(self):
+        """The has_tools request flag flows through to a has_tools match
+        condition."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "tools-to-big",
+                        "match": {"has_tools": True},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response_without_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "call a function", "has_tools": False},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_without_tools.status_code, 200)
+        self.assertTrue(response_without_tools.json()["decision"]["default_used"])
+
+        response_with_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "call a function", "has_tools": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_with_tools.status_code, 200)
+        decision = response_with_tools.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "tools-to-big")
+        self.assertFalse(decision["default_used"])
+        print("[OK] /routing/validate honored the has_tools flag")
+
+    def test_021zp_routing_validate_metadata_flag(self):
+        """Arbitrary caller-supplied metadata key/value pairs flow through to
+        a metadata match condition."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "tenant-to-big",
+                        "match": {"metadata": {"key": "tenant", "equals": "acme"}},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response_without_metadata = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_without_metadata.status_code, 200)
+        self.assertTrue(response_without_metadata.json()["decision"]["default_used"])
+
+        response_other_tenant = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": {"tenant": "other"}},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_other_tenant.status_code, 200)
+        self.assertTrue(response_other_tenant.json()["decision"]["default_used"])
+
+        response_matching_tenant = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": {"tenant": "acme"}},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_matching_tenant.status_code, 200)
+        decision = response_matching_tenant.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "tenant-to-big")
+        self.assertFalse(decision["default_used"])
+        print("[OK] /routing/validate honored the metadata flag")
+
+    def test_021zq_routing_validate_bad_metadata_returns_400(self):
+        """A malformed 'metadata' field (not an object, or a non-string
+        value) is rejected with a 400 and a clear error message."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+            },
+        }
+        response_not_object = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": "not-an-object"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_not_object.status_code, 400)
+        self.assertIn("error", response_not_object.json())
+
+        response_bad_value = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": {"tenant": 123}},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_value.status_code, 400)
+        self.assertIn("tenant", response_bad_value.json()["error"])
+        print("[OK] /routing/validate rejected malformed metadata with 400")
+
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is
         ENDPOINT_TEST_MODEL. `overrides` is merged into the top-level pull

@@ -2707,6 +2707,28 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
     }
     const std::string prompt = request_json.value("prompt", std::string());
     const bool has_images = request_json.value("has_images", false);
+    const bool has_tools = request_json.value("has_tools", false);
+
+    std::map<std::string, std::string> metadata;
+    if (request_json.contains("metadata")) {
+        const nlohmann::json& metadata_json = request_json["metadata"];
+        if (!metadata_json.is_object()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "'metadata' must be a JSON object of string values"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        for (auto it = metadata_json.begin(); it != metadata_json.end(); ++it) {
+            if (!it.value().is_string()) {
+                res.status = 400;
+                nlohmann::json error = {{"error",
+                    "'metadata' value for key '" + it.key() + "' must be a string"}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            metadata[it.key()] = it.value().get<std::string>();
+        }
+    }
 
     try {
         // Ad-hoc validation: the policy isn't attached to a registered model,
@@ -2727,6 +2749,8 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
         ctx.input = prompt;
         ctx.params.chars = prompt.size();
         ctx.params.has_images = has_images;
+        ctx.params.has_tools = has_tools;
+        ctx.metadata = std::move(metadata);
 
         Decision decision = engine.route(ctx, /*want_trace=*/true);
         nlohmann::json response = {{"decision", route_decision_to_json(decision)}};
