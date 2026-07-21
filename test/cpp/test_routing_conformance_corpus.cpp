@@ -88,7 +88,14 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
         if (line.find_first_not_of(" \t\r\n") == std::string::npos) {
             continue;
         }
-        json row = json::parse(line);
+        json row;
+        try {
+            row = json::parse(line);
+        } catch (const std::exception& e) {
+            check(rel + ": cases.jsonl line " + std::to_string(line_no) + " parses", false);
+            std::printf("  %s\n", e.what());
+            continue;
+        }
         const std::string name =
             rel + "/" + row.value("name", "line-" + std::to_string(line_no));
 
