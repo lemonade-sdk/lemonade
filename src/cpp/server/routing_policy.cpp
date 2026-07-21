@@ -1,4 +1,5 @@
 #include "lemon/routing_policy.h"
+#include "lemon/error_types.h"
 
 #include <algorithm>
 #include <cmath>
@@ -295,6 +296,10 @@ public:
         try {
             reply = ctx.services.chat(model_, effective_prompt(),
                                       build_context_payload(ctx.request));
+        } catch (const RouterResidencyConflictException&) {
+            // A hardware coexistence conflict is not a classifier-quality
+            // failure and must reach the HTTP layer as a deterministic 409.
+            throw;
         } catch (...) {
             return failed_score();
         }

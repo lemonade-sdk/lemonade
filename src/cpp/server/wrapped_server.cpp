@@ -273,6 +273,7 @@ void WrappedServer::end_backend_request(BackendRequestKind kind) {
         previous = active_streaming_requests_.fetch_sub(1, std::memory_order_acq_rel);
         if (previous <= 1) {
             active_streaming_requests_.store(0, std::memory_order_release);
+            set_streaming(false);
         }
     } else {
         previous = active_non_streaming_requests_.fetch_sub(1, std::memory_order_acq_rel);
@@ -778,6 +779,9 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
     std::string url = get_base_url() + endpoint;
     bool streamed_any_bytes = false;
     auto mark_stream_progress = [this, &streamed_any_bytes]() {
+        if (!streamed_any_bytes) {
+            set_streaming(true);
+        }
         streamed_any_bytes = true;
         note_backend_activity();
     };
