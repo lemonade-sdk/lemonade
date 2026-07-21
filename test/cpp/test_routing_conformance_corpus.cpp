@@ -61,7 +61,7 @@ static std::vector<fs::path> find_case_dirs(const fs::path& root) {
     return dirs;
 }
 
-static void run_case_dir(const fs::path& case_dir, const fs::path& root) {
+static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
     const std::string rel = fs::relative(case_dir, root).generic_string();
 
     RoutePolicy policy;
@@ -70,16 +70,17 @@ static void run_case_dir(const fs::path& case_dir, const fs::path& root) {
     } catch (const std::exception& e) {
         check(rel + ": policy.json parses", false);
         std::printf("  %s\n", e.what());
-        return;
+        return 0;
     }
     RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{});
 
     std::ifstream cases(case_dir / "cases.jsonl");
     if (!cases) {
         check(rel + ": cases.jsonl opens", false);
-        return;
+        return 0;
     }
 
+    int executed = 0;
     std::string line;
     int line_no = 0;
     while (std::getline(cases, line)) {
@@ -104,7 +105,11 @@ static void run_case_dir(const fs::path& case_dir, const fs::path& root) {
             std::printf("  expected: %s\n", expected.dump().c_str());
             std::printf("  produced: %s\n", produced.dump().c_str());
         }
+        ++executed;
     }
+
+    check(rel + ": cases.jsonl has at least one case", executed > 0);
+    return executed;
 }
 
 int main() {
@@ -119,9 +124,13 @@ int main() {
         std::printf("[FAIL] no cases.jsonl found under %s\n", root.string().c_str());
         return 1;
     }
+    int total_cases = 0;
     for (const auto& case_dir : case_dirs) {
-        run_case_dir(case_dir, root);
+        total_cases += run_case_dir(case_dir, root);
     }
+    check("corpus has at least one case", total_cases > 0);
+    std::printf("\n%d case(s) executed across %zu case dir(s)\n", total_cases,
+                case_dirs.size());
 
     std::printf("\n%s\n", g_failures == 0 ? "ALL CONFORMANCE CASES PASSED"
                                           : "CONFORMANCE CASES FAILED");
