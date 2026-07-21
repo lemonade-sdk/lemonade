@@ -2226,6 +2226,33 @@ sys.exit(0)
         )
         print("[OK] After deleting B: all repo directories cleaned up")
 
+    def test_models_sync_command(self):
+        """Test the 'update-models' CLI subcommand dry-run check and execution."""
+        # 1. Run update-models dry-run check (using --check)
+        result = self.assertCommandSucceeds(
+            ["update-models", ENDPOINT_TEST_MODEL, "--check"]
+        )
+        self.assertIn("Checked", result.stdout)
+        self.assertIn("update(s) available", result.stdout)
+
+        # 3. Run update-models with --check --json option
+        result = self.assertCommandSucceeds(
+            ["update-models", ENDPOINT_TEST_MODEL, "--check", "--json"]
+        )
+        self.assertIn("checked_count", result.stdout)
+
+        # 4. Run update-models on nonexistent model with --check --json, expecting exit code 1
+        result = run_cli_command(
+            ["update-models", "nonexistent-model-test-xyz", "--check", "--json"],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            result.returncode,
+            1,
+            f"update-models nonexistent model with --json should fail, got returncode {result.returncode}",
+        )
+        self.assertIn("failed_models", result.stdout)
+
 
 class CLIHelpDocsConsistencyTests(unittest.TestCase):
     """Lightweight checks that compare CLI help semantics with docs text."""
