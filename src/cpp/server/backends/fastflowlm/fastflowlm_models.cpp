@@ -140,6 +140,16 @@ std::string find_flm_binary() {
     }
 }
 
+// flm >= 0.9.45 prints an "[FLM]  Fetching models from: ..." banner on stdout
+// before the JSON payload, even with --quiet, so parse from the first '{'.
+static json parse_flm_cli_json(const std::string& output) {
+    const size_t brace = output.find('{');
+    if (brace == std::string::npos) {
+        throw std::runtime_error("no JSON object in flm list output: " + output.substr(0, 200));
+    }
+    return lemon::utils::JsonUtils::parse(output.substr(brace));
+}
+
 std::vector<std::string> flm_installed_checkpoints() {
     std::vector<std::string> installed_models;
 
@@ -167,7 +177,7 @@ std::vector<std::string> flm_installed_checkpoints() {
 
     // Parse output: { "models": [ { "name": "modelname:tag", ... }, ... ] }
     try {
-        json j = lemon::utils::JsonUtils::parse(output);
+        json j = parse_flm_cli_json(output);
         if (j.contains("models") && j["models"].is_array()) {
             for (const auto& model : j["models"]) {
                 if (model.contains("name") && model["name"].is_string()) {
@@ -247,7 +257,7 @@ std::vector<ModelInfo> flm_discover_models() {
 
     // Parse output: { "models": [ { "name": "modelname:tag", "footprint": 1.23, ... }, ... ] }
     try {
-        json j = lemon::utils::JsonUtils::parse(output);
+        json j = parse_flm_cli_json(output);
         if (j.contains("models") && j["models"].is_array()) {
             for (const auto& m : j["models"]) {
                 if (m.contains("name") && m["name"].is_string()) {
@@ -551,7 +561,7 @@ std::string flm_version() {
 
     // Parse JSON output: { "version": "0.9.34" }
     try {
-        json j = lemon::utils::JsonUtils::parse(output);
+        json j = parse_flm_cli_json(output);
         if (j.contains("version") && j["version"].is_string()) {
             std::string version = j["version"].get<std::string>();
             // If the version doesn't start with 'v', prepend it
@@ -670,7 +680,7 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
 
     try {
         if (!output.empty()) {
-            json j = lemon::utils::JsonUtils::parse(output);
+            json j = parse_flm_cli_json(output);
             if (j.is_object()) {
                 bool validation_ok = false;
                 if (j.contains("ready")) {
