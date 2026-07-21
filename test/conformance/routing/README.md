@@ -24,6 +24,7 @@ corpus reads as a checklist against the frozen-v1 semantics table in
   l1_conditions_char_bounds/  # min_chars / max_chars (own policy: length rules are greedy)
   l1_conditions_metadata/     # metadata equals / any / exists / token-set semantics
   l1_conditions_vocab/        # keyword / regex ops + any / all / not / implicit-all
+  l1_outputs/                 # matched rule's nested outputs bag copied verbatim into Decision
   l1_resolution/              # rule-list resolution: first-match-wins, fail-open default
   # l2_semantic/              # stubbed semantic_similarity — to be added
   # l3_classifier/            # stubbed classifier             — to be added
@@ -79,6 +80,7 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | `metadata` `exists: false` — key absent | `l1_conditions_metadata/metadata-exists-false` |
 | `metadata` — whitespace-only value counts as absent | `l1_conditions_metadata/metadata-whitespace-counts-absent` |
 | `metadata` `any` — comma-separated value, one token listed | `l1_conditions_metadata/metadata-any-comma-separated` |
+| matched rule's non-empty nested `outputs` copied verbatim into `Decision` | `l1_outputs/nested-outputs-verbatim` |
 | first-match-wins (earlier rule beats a later match) | `l1_resolution/first-match-wins` |
 | later rule fires when earlier misses | `l1_resolution/later-rule-when-earlier-misses` |
 | fail-open to `default_model` | `l1_resolution/fail-open-to-default` |
