@@ -89,6 +89,7 @@ nav:
     - Desktop App: dev/app.md
     - Web UI: dev/web-ui.md
     - Lemonade Omni Models: dev/lemonade-omni.md
+    - Router Policies: dev/router-policy.md
     - Infrastructure: dev/self-hosted-runners.md
     - Release Process: dev/release.md
   - App Integrations:

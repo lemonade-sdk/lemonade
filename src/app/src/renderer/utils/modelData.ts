@@ -324,6 +324,9 @@ const EXPORT_KNOWN_KEYS = new Set([
   'registry_source',
   'size',
   'system_prompt',
+  // Router collections carry a root schema version the /pull parser requires;
+  // dropping it would make the exported file un-importable.
+  'version',
 ]);
 
 const toExportEntry = (raw: Record<string, unknown>): Record<string, unknown> => {
@@ -425,9 +428,8 @@ export const buildModelExportFile = async (
   return normalizeModelExportPayload(raw, modelId);
 };
 
-/** Trigger a browser download of an exported model/collection JSON. */
-export const downloadModelExportFile = async (modelId: string): Promise<void> => {
-  const { filename, payload } = await buildModelExportFile(modelId);
+/** Trigger a browser download of a JSON payload as a file. */
+export const downloadJsonFile = (filename: string, payload: unknown): void => {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -437,4 +439,10 @@ export const downloadModelExportFile = async (modelId: string): Promise<void> =>
   link.click();
   link.remove();
   window.URL.revokeObjectURL(url);
+};
+
+/** Trigger a browser download of an exported model/collection JSON. */
+export const downloadModelExportFile = async (modelId: string): Promise<void> => {
+  const { filename, payload } = await buildModelExportFile(modelId);
+  downloadJsonFile(filename, payload);
 };

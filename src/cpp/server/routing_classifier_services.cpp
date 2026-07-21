@@ -1,5 +1,7 @@
 #include "lemon/routing_classifier_services.h"
 
+#include "lemon/thinking_controls.h"
+
 #include <cmath>
 #include <memory>
 #include <optional>
@@ -8,6 +10,16 @@
 
 namespace lemon {
 namespace {
+
+// Output cap for internal classifier chat calls (the `llm` router). The reply
+// contract is a single small JSON object ({"model": ..., "rationale": ...});
+// this bound keeps a misbehaving router model from streaming an essay.
+constexpr int kClassifierChatMaxTokens = 256;
+
+json llm_router_response_format() {
+    // Use the portable JSON object contract; Lemonade validates the fields.
+    return {{"type", "json_object"}};
+}
 
 void throw_if_error_response(const json& response, const std::string& context) {
     if (!response.is_object() || !response.contains("error")) {
@@ -321,15 +333,25 @@ ClassifierServices make_classifier_services_from_router_calls(
             throw std::runtime_error("Router chat_completion call is not configured");
         }
         ensure_model(ensure_loaded, model);
+        // A deliberately constrained classifier invocation: deterministic
+        // (temperature 0), non-streaming, thinking disabled through the same
+        // cross-backend normalization as normal Lemonade requests (so e.g. a
+        // Qwen3-style router doesn't emit <think> blocks or burn seconds
+        // reasoning), and output tightly bounded — the reply contract is one
+        // small JSON object, never long-form text.
         json request = {
             {"model", model},
             {"stream", false},
             {"temperature", 0.0},
+            {"max_tokens", kClassifierChatMaxTokens},
+            {"enable_thinking", false},
+            {"response_format", llm_router_response_format()},
             {"messages", json::array({
                 {{"role", "system"}, {"content", prompt}},
                 {{"role", "user"}, {"content", input}},
             })},
         };
+        normalize_thinking_controls(request);
         return extract_chat_text((*chat_completion_call)(request));
     };
 

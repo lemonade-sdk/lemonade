@@ -179,9 +179,63 @@ static void test_validation_errors_are_clear() {
     check("unsafe rule id rejected",
           throws_with(unsafe_rule_id, "must match [A-Za-z0-9._-]"));
 
-    json router_sugar = fixture("l0a_llm_router.json");
-    check("routing.router is recognized but deferred to #2405",
-          throws_with(router_sugar, "routing.router desugaring"));
+    json router_plus_rules = fixture("l0a_llm_router.json");
+    router_plus_rules["routing"]["rules"] = json::array({json{
+        {"id", "r0"},
+        {"match", {{"keywords_any", {"x"}}}},
+        {"route_to", "Qwen3-8B-GGUF"}}});
+    check("routing.router combined with explicit rules rejected",
+          throws_with(router_plus_rules, "cannot be combined"));
+}
+
+// #2405: routing.router desugars at load time into one `llm` classifier plus
+// identity rules. Uses a NON-identity resolver to pin the canonicalization
+// contract: classifier labels stay the AUTHORED candidate names (that is the
+// vocabulary the router LLM replies with), while route_to is resolved to
+// canonical component IDs like any hand-written rule.
+static void test_router_sugar_desugars_and_canonicalizes() {
+    json doc = fixture("l0a_llm_router.json");
+    RoutingPolicyParseOptions options;
+    options.resolve_component = [](const std::string& name) -> std::optional<std::string> {
+        return "builtin." + name;
+    };
+
+    RoutePolicy policy = lemon::parse_route_policy_collection(doc, options);
+    check("router sugar parses successfully", policy.classifiers.size() == 1);
+    check("router sugar synthesizes the __router llm classifier",
+          policy.classifiers.count("__router") == 1 &&
+              policy.classifiers.at("__router")->type() == "llm");
+
+    const auto& labels = policy.classifiers.at("__router")->labels();
+    check("classifier labels keep authored candidate names",
+          labels.size() == 2 && labels[0] == "Qwen3-8B-GGUF" &&
+              labels[1] == "Qwen3.5-35B-A3B-GGUF");
+
+    check("one identity rule per candidate, route_to canonicalized",
+          policy.rules.size() == 2 &&
+              policy.rules[0].route_to == "builtin.Qwen3-8B-GGUF" &&
+              policy.rules[1].route_to == "builtin.Qwen3.5-35B-A3B-GGUF");
+
+    // End to end through the engine: the LLM replies with the AUTHORED name,
+    // the decision routes to the CANONICAL id, and the trace identifies the
+    // tested label. This is the regression the review called out: canonical
+    // labels would make this reply unmatchable and silently fall to default.
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_chat_reply("builtin.Qwen3-1.7B-GGUF",
+        "{\"model\": \"Qwen3.5-35B-A3B-GGUF\", \"rationale\": \"Hard reasoning\"}");
+    RoutingPolicyEngine engine(std::move(policy), fake.make());
+    Decision decision = engine.route(request("prove this theorem"), true);
+    check("authored reply routes to canonical candidate",
+          decision.route_to == "builtin.Qwen3.5-35B-A3B-GGUF" && !decision.default_used);
+
+    bool winning_label_traced = false;
+    for (const auto& entry : decision.trace) {
+        if (entry.condition == "classifier:__router" && entry.result &&
+            entry.label == "Qwen3.5-35B-A3B-GGUF") {
+            winning_label_traced = true;
+        }
+    }
+    check("trace identifies the tested label for the winning rule", winning_label_traced);
 }
 
 static void test_classifier_capability_validation() {
@@ -301,6 +355,7 @@ int main() {
     test_parse_keywords_fixture_and_route();
     test_component_resolver_canonicalizes_policy();
     test_validation_errors_are_clear();
+    test_router_sugar_desugars_and_canonicalizes();
     test_classifier_capability_validation();
     test_inline_component_type_regression_pair();
     test_schema_parser_key_parity();
