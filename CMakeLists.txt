@@ -1899,6 +1899,18 @@ if(EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_ARG_RESOLVER_SRC}")
     add_test(NAME FlmArgResolverTest COMMAND test_flm_arg_resolver)
 endif()
 
+# Custom arg parsing helpers (header-only utility shared by all arg resolvers).
+set(_CUSTOM_ARGS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_custom_args.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CUSTOM_ARGS_TEST_SRC}")
+    add_executable(test_custom_args ${_CUSTOM_ARGS_TEST_SRC})
+    target_include_directories(test_custom_args PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    add_test(NAME CustomArgsTest COMMAND test_custom_args)
+endif()
+
 set(_DIR_WATCHER_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_directory_watcher.cpp"
 )
