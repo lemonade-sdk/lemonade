@@ -2270,6 +2270,8 @@ if(EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
     add_executable(test_routing_conformance_corpus
         test/cpp/test_routing_conformance_corpus.cpp
         src/cpp/server/route_decision_response.cpp
+        src/cpp/server/routing_classifier_services.cpp
+        src/cpp/server/thinking_controls.cpp
         src/cpp/server/routing_policy.cpp
         src/cpp/server/routing_policy_parser.cpp
     )

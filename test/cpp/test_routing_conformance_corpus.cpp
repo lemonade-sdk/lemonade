@@ -10,6 +10,7 @@
 // backend, so an empty ClassifierServices is sufficient.
 
 #include "lemon/route_decision_response.h"
+#include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
 #include "lemon/routing_policy_parser.h"
 
@@ -28,7 +29,6 @@
 namespace fs = std::filesystem;
 
 using lemon::Decision;
-using lemon::RouteContext;
 using lemon::RoutePolicy;
 using lemon::RoutingPolicyEngine;
 using lemon::json;
@@ -48,34 +48,6 @@ static json load_json_file(const fs::path& path) {
     std::stringstream ss;
     ss << in.rdbuf();
     return json::parse(ss.str());
-}
-
-static std::string last_user_input(const json& request) {
-    std::string input;
-    if (request.contains("messages") && request["messages"].is_array()) {
-        for (const auto& msg : request["messages"]) {
-            if (msg.value("role", "") == "user" && msg.contains("content") &&
-                msg["content"].is_string()) {
-                input = msg["content"].get<std::string>();
-            }
-        }
-    }
-    return input;
-}
-
-static RouteContext to_context(const json& request) {
-    RouteContext ctx;
-    ctx.input = last_user_input(request);
-    ctx.params.model = request.value("model", "");
-    ctx.params.chars = ctx.input.size();
-    if (request.contains("metadata") && request["metadata"].is_object()) {
-        for (const auto& [key, value] : request["metadata"].items()) {
-            if (value.is_string()) {
-                ctx.metadata[key] = value.get<std::string>();
-            }
-        }
-    }
-    return ctx;
 }
 
 static std::vector<fs::path> find_case_dirs(const fs::path& root) {
@@ -119,8 +91,10 @@ static void run_case_dir(const fs::path& case_dir, const fs::path& root) {
         const std::string name =
             rel + "/" + row.value("name", "line-" + std::to_string(line_no));
 
-        const bool want_trace = row["request"].value("route_trace", false);
-        Decision decision = engine.route(to_context(row["request"]), want_trace);
+        const json& request = row["request"];
+        const bool want_trace = request.value("route_trace", false);
+        Decision decision = engine.route(
+            lemon::build_route_context(request, request.value("model", "")), want_trace);
         const json produced = lemon::route_decision_to_json(decision);
         const json& expected = row.at("decision");
 
