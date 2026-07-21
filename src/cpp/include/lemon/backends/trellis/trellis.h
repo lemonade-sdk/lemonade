@@ -21,9 +21,13 @@ inline const BackendDescriptor descriptor = {
          "Trellis backend to use", "3D Generation Options"},
     },
     /*support*/ {
-        {"rocm", {"linux", "windows"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)"},
+        // vulkan is listed before rocm so it wins default-backend selection on
+        // AMD GPUs: trellis-server's ROCm build dies silently at the first HIP
+        // compute on Windows/gfx1151 (reproduced on both v0.1.5 and v0.4.3),
+        // while vulkan generates correctly on the same hardware.
         {"cuda", {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
         {"vulkan", {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
+        {"rocm", {"linux", "windows"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)"},
     },
     /*default_labels*/  {"3d"},
     /*required_checkpoints*/ {"main"},

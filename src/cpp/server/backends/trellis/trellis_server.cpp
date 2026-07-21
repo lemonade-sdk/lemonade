@@ -105,7 +105,7 @@ void TrellisServer::load(const std::string& model_name,
         env_vars.push_back({"LD_LIBRARY_PATH", ld});
 #endif
     };
-    if (backend == "rocm") {
+    if (backend.rfind("rocm", 0) == 0) {
         const std::string arch = SystemInfo::get_rocm_arch();
         const std::string therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
         std::string dirs;
