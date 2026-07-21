@@ -66,6 +66,7 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | `keywords_all` — one token missing ⇒ no match | `l1_conditions_vocab/keywords_all-one-missing-no-match` |
 | `regex` — ECMAScript dialect | `l1_conditions_vocab/regex-ecmascript` |
 | `regex` — non-matching input ⇒ no match | `l1_conditions_vocab/regex-no-match` |
+| `regex` — case-sensitive (uppercase input misses lowercase pattern) | `l1_conditions_vocab/regex-case-sensitive-no-match` |
 | `any` — matches if at least one child matches | `l1_conditions_vocab/any-one-child-matches` |
 | `all` — matches only if every child matches | `l1_conditions_vocab/all-both-children-match` |
 | `all` — one child fails ⇒ no match | `l1_conditions_vocab/all-one-child-no-match` |
@@ -88,7 +89,9 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | `metadata` `any` — value equals one of the listed | `l1_conditions_metadata/metadata-any` |
 | `metadata` `equals` — value matches exactly | `l1_conditions_metadata/metadata-equals` |
 | `metadata` `equals` — near-miss value fails (exact, not substring) | `l1_conditions_metadata/metadata-equals-no-match` |
+| `metadata` `equals` — case-sensitive (`DENIED` ≠ `denied`) | `l1_conditions_metadata/metadata-equals-case-sensitive` |
 | `metadata` `exists: false` — key absent | `l1_conditions_metadata/metadata-exists-false` |
+| `metadata` `exists: true` — key present ⇒ match | `l1_conditions_metadata/metadata-exists-true` |
 | `metadata` — whitespace-only value counts as absent | `l1_conditions_metadata/metadata-whitespace-counts-absent` |
 | `metadata` `any` — comma-separated value, one token listed | `l1_conditions_metadata/metadata-any-comma-separated` |
 | matched rule's non-empty nested `outputs` copied verbatim into `Decision` | `l1_outputs/nested-outputs-verbatim` |

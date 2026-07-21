@@ -14,6 +14,9 @@
         "route_to": "local" },
       { "id": "no-consent-recorded-stays-local",
         "match": { "metadata": { "key": "consent", "exists": false } },
+        "route_to": "local" },
+      { "id": "region-recorded-stays-local",
+        "match": { "metadata": { "key": "region", "exists": true } },
         "route_to": "local" }
     ]
   }
