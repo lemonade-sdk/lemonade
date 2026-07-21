@@ -107,6 +107,7 @@ private:
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
+    void handle_models_sync(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
     // Server-side tool-calling orchestration for Omni "collection" models.
@@ -309,6 +310,12 @@ private:
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
     std::thread model_cache_warmup_thread_;
+    struct SyncTaskThread {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> finished;
+    };
+    std::vector<SyncTaskThread> background_sync_threads_;
+    std::mutex background_sync_mutex_;
 
 
     // Routed servers (all routes/handlers; never listen) and the main-port

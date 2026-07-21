@@ -82,6 +82,7 @@ public:
     // Model management commands
     int list_models(bool show_all, const std::string& name_filter = "") const;
     int check_model_updates() const;
+    int sync_models(const std::vector<std::string>& models = {}, bool check_only = false, bool json_output = false, bool wait_for_completion = false) const;
     // Pulls/registers a model. By default the pull is cache-first
     // (do_not_upgrade=true): an already-downloaded model is reused without
     // contacting Hugging Face. Only the explicit `lemonade pull` update flow

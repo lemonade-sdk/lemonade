@@ -163,6 +163,8 @@ struct CliConfig {
     std::string output_file;
     bool downloaded = false;
     bool dry_run = false;
+    bool sync_wait = false;
+    std::vector<std::string> sync_target_models;
     std::string agent;
     std::string repo_dir;
     std::string recipe_file;
@@ -1257,6 +1259,8 @@ int main(int argc, char* argv[]) {
     CLI::App* list_cmd = app.add_subcommand("list", "List available models. Use --downloaded to show only local models.")->group("Model management");
     CLI::App* check_updates_cmd = app.add_subcommand(
         "check-updates", "Check downloaded models for upstream updates")->group("Model management");
+    CLI::App* sync_cmd = app.add_subcommand(
+        "sync", "Sync/update downloaded models to latest version")->group("Model management");
     CLI::App* pull_cmd = app.add_subcommand("pull",
         "Pull/download a model by registered name or remote registry checkpoint")->group("Model management");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
@@ -1273,6 +1277,11 @@ int main(int argc, char* argv[]) {
     list_cmd->add_option("name_filter", config.list_filter,
         "Optional case-insensitive model-name filter; supports * wildcards")
         ->type_name("NAME_FILTER");
+
+    // Sync options
+    sync_cmd->add_option("models", config.sync_target_models, "Optional model name(s) to sync. If omitted, syncs all outdated models.")->type_name("MODEL");
+    sync_cmd->add_flag("--check,--dry-run", config.dry_run, "Check for model updates without downloading files");
+    sync_cmd->add_flag("-w,--wait", config.sync_wait, "Wait for model synchronization to complete with live progress output");
 
     // Backend management options
     backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
@@ -1523,6 +1532,8 @@ int main(int argc, char* argv[]) {
         return client.list_models(!config.downloaded, config.list_filter);
     } else if (check_updates_cmd->count() > 0) {
         return client.check_model_updates();
+    } else if (sync_cmd->count() > 0) {
+        return client.sync_models(config.sync_target_models, config.dry_run, config.json_output, config.sync_wait);
     } else if (pull_cmd->count() > 0) {
         if (config.model.empty()) {
             std::cerr << "Error: 'lemonade pull' requires a model name or remote registry checkpoint." << std::endl;

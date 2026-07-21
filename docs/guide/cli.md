@@ -53,6 +53,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | `unload [MODEL_NAME]` | Unload a model. If no model name is provided, unload all loaded models. |
 | `pin MODEL_NAME`    | Pin a loaded model to prevent auto-eviction. See options [below](#options-for-pin-and-unpin). |
 | `unpin MODEL_NAME`  | Unpin a loaded model to allow auto-eviction. See options [below](#options-for-pin-and-unpin). |
+| `sync [MODEL_NAME ...]` | Sync/update downloaded models to the latest version. Use `--check` to preview updates without downloading. |
 | `export MODEL_NAME` | Export model information to JSON format. See command options [below](#options-for-export). |
 
 ### Benchmarking
@@ -502,6 +503,37 @@ lemonade export Qwen3-0.6B-GGUF --output my-model.json
 
 # Export and view the JSON output
 lemonade export Qwen3-0.6B-GGUF --output model.json && cat model.json
+```
+
+## Options for sync
+
+The `sync` command checks and updates downloaded models against upstream repositories. By default, model synchronization runs in the background.
+
+```bash
+lemonade sync [MODEL_NAME ...] [-w|--wait] [--check] [--json]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `MODEL_NAME ...` | Optional model name(s), recipe names (`user.*`), or HF checkpoints to sync | Sync all downloaded models |
+| `-w, --wait` | Wait for server model synchronization task to complete | `false` |
+| `--check` | Dry-run mode: check for available updates without downloading | `false` |
+| `--json` | Output sync results in JSON format | `false` |
+
+**Examples:**
+
+```bash
+# Dispatch model synchronization in the background (default)
+lemonade sync
+
+# Check for available model updates without downloading (dry run)
+lemonade sync --check
+
+# Synchronize models and wait for completion
+lemonade sync --wait
+
+# Wait for a specific model update to complete
+lemonade sync Gemma-4-E4B-it -w
 ```
 
 ## Options for backends

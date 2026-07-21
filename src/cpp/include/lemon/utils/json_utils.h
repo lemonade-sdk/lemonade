@@ -36,8 +36,12 @@ public:
     // Get value with default
     template<typename T>
     static T get_or_default(const json& j, const std::string& key, const T& default_value) {
-        if (j.contains(key) && !j[key].is_null()) {
-            return j[key].get<T>();
+        try {
+            if (j.contains(key) && !j[key].is_null()) {
+                return j[key].get<T>();
+            }
+        } catch (...) {
+            // Ignore type conversion errors and return default
         }
         return default_value;
     }

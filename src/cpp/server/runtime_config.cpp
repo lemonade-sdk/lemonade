@@ -271,24 +271,34 @@ double RuntimeConfig::auto_evict_threshold_pct() const {
 }
 
 bool RuntimeConfig::offline() const {
-
     std::shared_lock lock(mutex_);
-    return config_["offline"].get<bool>();
+    return config_.contains("offline") && config_["offline"].is_boolean() && config_["offline"].get<bool>();
 }
 
 bool RuntimeConfig::auto_check_model_updates() const {
     std::shared_lock lock(mutex_);
-    return config_.value("auto_check_model_updates", true);
+    if (config_.contains("auto_check_model_updates") && config_["auto_check_model_updates"].is_boolean()) {
+        return config_["auto_check_model_updates"].get<bool>();
+    }
+    return true;
+}
+
+bool RuntimeConfig::auto_update_models() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("auto_update_models") && config_["auto_update_models"].is_boolean()) {
+        return config_["auto_update_models"].get<bool>();
+    }
+    return false;
 }
 
 bool RuntimeConfig::no_fetch_executables() const {
     std::shared_lock lock(mutex_);
-    return config_["no_fetch_executables"].get<bool>();
+    return config_.contains("no_fetch_executables") && config_["no_fetch_executables"].is_boolean() && config_["no_fetch_executables"].get<bool>();
 }
 
 bool RuntimeConfig::disable_model_filtering() const {
     std::shared_lock lock(mutex_);
-    return config_["disable_model_filtering"].get<bool>();
+    return config_.contains("disable_model_filtering") && config_["disable_model_filtering"].is_boolean() && config_["disable_model_filtering"].get<bool>();
 }
 
 bool RuntimeConfig::enable_dgpu_gtt() const {
@@ -543,6 +553,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
     } else if (key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||
+               key == "auto_update_models" ||
                key == "no_fetch_executables" ||
                key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {
