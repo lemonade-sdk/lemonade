@@ -69,6 +69,7 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | `not` — matches when the child does not match | `l1_conditions_vocab/not-child-absent-matches` |
 | `not` — child matches ⇒ no match | `l1_conditions_vocab/not-child-present-no-match` |
 | multi-key leaf ⇒ implicit `all` | `l1_conditions_vocab/implicit-all-both-keys` |
+| multi-key leaf ⇒ implicit `all` — one key fails ⇒ no match | `l1_conditions_vocab/implicit-all-one-key-no-match` |
 | `min_chars` — inclusive (`>=`), UTF-8 bytes | `l1_conditions_char_bounds/min_chars-inclusive-boundary` |
 | `max_chars` — inclusive (`<=`), UTF-8 bytes | `l1_conditions_char_bounds/max_chars-inclusive-boundary` |
 | `min_chars`/`max_chars` count bytes, not code points | `l1_conditions_char_bounds/max_chars-utf8-byte-count` |
