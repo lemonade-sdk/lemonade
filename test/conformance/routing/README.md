@@ -22,6 +22,8 @@ corpus reads as a checklist against the frozen-v1 semantics table in
 ```
 1/
   l1_conditions_char_bounds/  # min_chars / max_chars (own policy: length rules are greedy)
+  l1_conditions_features/     # boolean request-feature ops: has_tools / has_images
+  l1_conditions_features_negated/  # authored has_tools:false — equality, matches when absent
   l1_conditions_metadata/     # metadata equals / any / exists / token-set semantics
   l1_conditions_vocab/        # keyword / regex ops + any / all / not / implicit-all
   l1_outputs/                 # matched rule's nested outputs bag copied verbatim into Decision
@@ -71,6 +73,15 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | `not` — child matches ⇒ no match | `l1_conditions_vocab/not-child-present-no-match` |
 | multi-key leaf ⇒ implicit `all` | `l1_conditions_vocab/implicit-all-both-keys` |
 | multi-key leaf ⇒ implicit `all` — one key fails ⇒ no match | `l1_conditions_vocab/implicit-all-one-key-no-match` |
+| `has_tools` — non-empty `tools[]` ⇒ match | `l1_conditions_features/has_tools-present-matches` |
+| `has_tools` — no `tools[]` ⇒ no match | `l1_conditions_features/has_tools-absent-no-match` |
+| `has_tools` — empty `tools[]` counts as absent ⇒ no match | `l1_conditions_features/has_tools-empty-array-no-match` |
+| `has_images` — image content part ⇒ match | `l1_conditions_features/has_images-present-matches` |
+| `has_images` — no image ⇒ no match | `l1_conditions_features/has_images-absent-no-match` |
+| `has_images` — Responses API `input_image` part ⇒ match | `l1_conditions_features/has_images-input-image-responses-form` |
+| `has_images` — scans every message, not just the routing turn | `l1_conditions_features/has_images-earlier-turn-still-counts` |
+| `has_tools: false` — equality, matches when tools absent | `l1_conditions_features_negated/has_tools-false-matches-absent` |
+| `has_tools: false` — no match when tools present (not a catch-all) | `l1_conditions_features_negated/has_tools-false-no-match-when-present` |
 | `min_chars` — inclusive (`>=`), UTF-8 bytes | `l1_conditions_char_bounds/min_chars-inclusive-boundary` |
 | `max_chars` — inclusive (`<=`), UTF-8 bytes | `l1_conditions_char_bounds/max_chars-inclusive-boundary` |
 | `min_chars`/`max_chars` count bytes, not code points | `l1_conditions_char_bounds/max_chars-utf8-byte-count` |
