@@ -8,6 +8,7 @@ import {
   TraceRequestInputs,
   downloadTraceFile,
   findMatchedRuleIndex,
+  formatTraceEntry,
   renderDecisionTree,
 } from './utils/decisionTree';
 
@@ -355,12 +356,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
             <pre className="trace-log">
               {result.decision.trace.length === 0
                 ? '(no trace entries)'
-                : result.decision.trace
-                    .map((entry, i) => {
-                      const scorePart = entry.score !== undefined ? ` score=${entry.score.toFixed(2)}` : '';
-                      return `${i + 1}. ${entry.condition}:${scorePart} result=${entry.result}`;
-                    })
-                    .join('\n')}
+                : result.decision.trace.map((entry, i) => formatTraceEntry(entry, i)).join('\n')}
             </pre>
           </div>
 

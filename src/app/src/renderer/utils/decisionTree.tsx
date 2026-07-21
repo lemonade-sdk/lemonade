@@ -17,6 +17,8 @@ export interface TraceEntry {
   condition: string;
   score?: number;
   result: boolean;
+  label?: string;
+  rationale?: string;
 }
 
 export interface DecisionResult {
@@ -101,6 +103,17 @@ const formatMetadataSummary = (metadata: Record<string, string>): string => {
   return entries.length === 0 ? '(none)' : entries.map(([key, value]) => `${key}=${value}`).join(', ');
 };
 
+/** Formats one trace entry as a single line, shared by the visible trace log
+ * and the downloaded trace file so neither can drift from the other. */
+export const formatTraceEntry = (entry: TraceEntry, index: number): string => {
+  const parts = [`${index + 1}. ${entry.condition}:`];
+  if (entry.score !== undefined) parts.push(`score=${entry.score.toFixed(2)}`);
+  if (entry.label) parts.push(`label=${entry.label}`);
+  if (entry.rationale) parts.push(`rationale="${entry.rationale}"`);
+  parts.push(`result=${entry.result}`);
+  return parts.join(' ');
+};
+
 /** Plain-text trace export for the "Download trace" button. */
 export const formatTraceAsText = (decision: DecisionResult, request: TraceRequestInputs): string => {
   const lines: string[] = [];
@@ -116,8 +129,7 @@ export const formatTraceAsText = (decision: DecisionResult, request: TraceReques
   lines.push('');
   lines.push('Trace:');
   decision.trace.forEach((entry, i) => {
-    const scorePart = entry.score !== undefined ? `score=${entry.score.toFixed(2)} ` : '';
-    lines.push(`${i + 1}. ${entry.condition}: ${scorePart}result=${entry.result}`);
+    lines.push(formatTraceEntry(entry, i));
   });
   return lines.join('\n');
 };
