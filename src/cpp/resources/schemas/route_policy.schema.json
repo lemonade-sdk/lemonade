@@ -48,9 +48,10 @@
           "items": { "$ref": "#/$defs/rule" }
         }
       },
-      "anyOf": [
-        { "required": ["router"] },
-        { "required": ["rules"] }
+      "allOf": [
+        { "anyOf": [{ "required": ["router"] }, { "required": ["rules"] }] },
+        { "if":   { "required": ["router"] },
+          "then": { "not": { "anyOf": [{ "required": ["rules"] }, { "required": ["classifiers"] }] } } }
       ],
       "additionalProperties": false
     },
@@ -60,8 +61,8 @@
       "required": ["type", "model", "prompt"],
       "properties": {
         "type": { "const": "llm" },
-        "model": { "type": "string" },
-        "prompt": { "type": "string" }
+        "model": { "type": "string", "minLength": 1 },
+        "prompt": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },
@@ -89,7 +90,7 @@
         "labels": {
           "description": "classifier output labels; dangling condition `label` refs are rejected.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": { "type": "string", "minLength": 1 }
         },
         "default_label": {
           "description": "Used when a condition omits `label`.",
@@ -118,7 +119,8 @@
         { "if":   { "required": ["type"], "properties": { "type": { "const": "classifier" } } },
           "then": { "required": ["model"] } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "llm" } } },
-          "then": { "required": ["model", "prompt"] } }
+          "then": { "required": ["model", "prompt", "labels"],
+                    "properties": { "labels": { "minItems": 1 } } } }
       ]
     },
     "rule": {

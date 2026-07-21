@@ -1,0 +1,29 @@
+{
+  "version": "1",
+  "model_name": "user.Demo-Router-Local",
+  "recipe": "collection.router",
+  "components": ["Qwen3-0.6B-GGUF", "Qwen3-4B-GGUF"],
+  "routing": {
+    "candidates": ["Qwen3-0.6B-GGUF", "Qwen3-4B-GGUF"],
+    "default_model": "Qwen3-0.6B-GGUF",
+    "rules": [
+      {
+        "id": "sensitive-stays-local",
+        "match": { "metadata": { "key": "consent", "equals": "denied" } },
+        "route_to": "Qwen3-0.6B-GGUF",
+        "outputs": { "reason": "privacy" }
+      },
+      {
+        "id": "coding-or-long-to-capable",
+        "match": {
+          "any": [
+            { "keywords_any": ["def ", "function", "stack trace", "compile", "```"] },
+            { "min_chars": 4000 }
+          ]
+        },
+        "route_to": "Qwen3-4B-GGUF",
+        "outputs": { "reason": "complex-or-long" }
+      }
+    ]
+  }
+}

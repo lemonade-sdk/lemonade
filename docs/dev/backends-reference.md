@@ -39,7 +39,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp` | metal | macos | metal |
 | `llamacpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
-| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx942) |
+| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx942, gfx950) |
 | `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
@@ -69,6 +69,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `whispercpp` | cpu | linux, windows | cpu (x86_64) |
 | `whispercpp` | metal | macos | metal |
 <!-- END GENERATED: backends-matrix -->
+
+> **Note:** The `llamacpp` `rocm` row lists `linux, windows` for the family as a
+> whole, but MI350X (`gfx950`) is currently gated to **Linux + stable channel
+> only** — the Windows TheRock distribution and the ROCm nightly build for
+> gfx950 are not yet published, so `gfx950` installs are rejected on Windows and
+> on the nightly channel. The OS column reflects the row's overall reach; the
+> per-architecture restriction is enforced by the backend's install gate.
 
 ## Recipe options
 
