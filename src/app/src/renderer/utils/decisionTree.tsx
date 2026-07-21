@@ -84,28 +84,32 @@ export const summarizeMatchExpr = (expr: unknown): string => {
 };
 
 /** The request inputs that determined a decision — carried alongside the
- * decision itself so the trace export can reproduce exactly what was sent,
- * not just the prompt. */
+ * decision itself so the trace export and decision tree can reproduce
+ * exactly what was sent, not just the prompt. */
 export interface TraceRequestInputs {
   prompt: string;
   hasImages: boolean;
   hasTools: boolean;
   metadata: Record<string, string>;
+  policyFilename: string | null;
 }
+
+/** `"key=value, key2=value2"`, or `"(none)"` for an empty map. Shared by the
+ * text trace export and the decision-tree header so the two never drift. */
+const formatMetadataSummary = (metadata: Record<string, string>): string => {
+  const entries = Object.entries(metadata);
+  return entries.length === 0 ? '(none)' : entries.map(([key, value]) => `${key}=${value}`).join(', ');
+};
 
 /** Plain-text trace export for the "Download trace" button. */
 export const formatTraceAsText = (decision: DecisionResult, request: TraceRequestInputs): string => {
   const lines: string[] = [];
   lines.push('Lemonade Prompt Debugger — Trace Export');
+  lines.push(`Policy: ${request.policyFilename ?? '(unsaved policy)'}`);
   lines.push(`Prompt: ${request.prompt.replace(/\r?\n/g, '\\n')}`);
   lines.push(`has_images: ${request.hasImages}`);
   lines.push(`has_tools: ${request.hasTools}`);
-  const metadataEntries = Object.entries(request.metadata);
-  lines.push(
-    metadataEntries.length === 0
-      ? 'metadata: (none)'
-      : `metadata: ${metadataEntries.map(([key, value]) => `${key}=${value}`).join(', ')}`
-  );
+  lines.push(`metadata: ${formatMetadataSummary(request.metadata)}`);
   lines.push(`route_to: ${decision.route_to}`);
   lines.push(`matched_rule: ${decision.matched_rule || '(none)'}`);
   lines.push(`default_used: ${decision.default_used}`);
@@ -140,6 +144,8 @@ const CANDIDATE_GAP = 70;
 const CANDIDATE_BOX_WIDTH = 150;
 const CANDIDATE_BOX_HEIGHT = 30;
 const MARGIN = 20;
+const HEADER_LINE_HEIGHT = 16;
+const HEADER_LINE_MAX_CHARS = 90;
 
 const RED = 'var(--toast-error-text)';
 const GRAY = 'var(--border-6)';
@@ -162,14 +168,37 @@ export const findMatchedRuleIndex = (policy: RoutingPolicyDoc, decision: Decisio
  * color the taken path red and dim every rule after it, with no need to
  * attribute individual trace entries back to specific rules.
  */
-export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionResult): JSX.Element => {
+export const renderDecisionTree = (
+  policy: RoutingPolicyDoc,
+  decision: DecisionResult,
+  request: TraceRequestInputs
+): JSX.Element => {
   const rules = policy.routing?.rules ?? [];
   const defaultModel = policy.routing?.default_model ?? '(none)';
   const matchedIndex = findMatchedRuleIndex(policy, decision);
 
+  // Header block: the request context that produced this tree, so the image
+  // is self-contained (policy filename, prompt, and flags/metadata) without
+  // needing the surrounding panel or a separately-downloaded trace file.
+  const headerLines = [
+    `Policy: ${truncate(request.policyFilename ?? '(unsaved policy)', HEADER_LINE_MAX_CHARS)}`,
+    `Prompt: ${truncate(request.prompt.replace(/\r?\n/g, ' '), HEADER_LINE_MAX_CHARS)}`,
+    `has_images: ${request.hasImages}    has_tools: ${request.hasTools}`,
+    `metadata: ${truncate(formatMetadataSummary(request.metadata), HEADER_LINE_MAX_CHARS)}`,
+  ];
+  const headerTexts = headerLines.map((line, i) => (
+    <text key={`header-${i}`} x={MARGIN} y={MARGIN + i * HEADER_LINE_HEIGHT + 10} fontSize={11} fill="var(--text-secondary)">
+      {line}
+    </text>
+  ));
+  // Rule rows start below the header block, offset by its height plus a gap;
+  // every row/edge/default-node `y` and `svgHeight` below is measured from
+  // this instead of the bare MARGIN they used before the header existed.
+  const headerOffset = MARGIN + headerLines.length * HEADER_LINE_HEIGHT + MARGIN;
+
   const rowHeight = RULE_BOX_HEIGHT + ROW_GAP;
   const svgWidth = MARGIN + RULE_BOX_WIDTH + CANDIDATE_GAP + CANDIDATE_BOX_WIDTH + MARGIN;
-  const svgHeight = MARGIN + (rules.length + 1) * rowHeight;
+  const svgHeight = headerOffset + (rules.length + 1) * rowHeight;
 
   // A transition out of rule i ("no match, fall through") only actually
   // happened if rule i was evaluated and failed, i.e. i < matchedIndex.
@@ -181,7 +210,7 @@ export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionR
   const edges: JSX.Element[] = [];
 
   rules.forEach((rule, i) => {
-    const y = MARGIN + i * rowHeight;
+    const y = headerOffset + i * rowHeight;
     const isWinner = matchedIndex === i;
     const isUnreached = matchedIndex !== -1 && i > matchedIndex;
     const nodeOpacity = isUnreached ? 0.35 : 1;
@@ -237,7 +266,7 @@ export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionR
       </g>
     );
 
-    const nextY = MARGIN + (i + 1) * rowHeight;
+    const nextY = headerOffset + (i + 1) * rowHeight;
     const isFinalToDefault = i === rules.length - 1;
     const noMatchIsSelected = decision.default_used && isFinalToDefault;
     const noMatchColor = noMatchIsSelected ? RED : GRAY;
@@ -259,7 +288,7 @@ export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionR
     );
   });
 
-  const defaultY = MARGIN + rules.length * rowHeight;
+  const defaultY = headerOffset + rules.length * rowHeight;
   const defaultIsWinner = matchedIndex === rules.length;
   const defaultLabel = `Default fallback: routes to "${defaultModel}"${defaultIsWinner ? ' (used — no rule matched)' : ''}`;
   nodes.push(
@@ -280,11 +309,16 @@ export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionR
   );
 
   const rulesCount = rules.length;
-  const decisionSummary = decision.default_used
-    ? `Routing decision tree: ${rulesCount} rule${rulesCount === 1 ? '' : 's'} evaluated, none matched; fell through to the default model "${defaultModel}".`
-    : matchedIndex === -1
-    ? `Routing decision tree: matched rule "${decision.matched_rule}" was not found among the ${rulesCount} rule${rulesCount === 1 ? '' : 's'} in this policy.`
-    : `Routing decision tree: rule "${decision.matched_rule}" matched and routed to "${decision.route_to}".`;
+  const contextSummary =
+    `Policy "${request.policyFilename ?? '(unsaved policy)'}", prompt "${truncate(request.prompt.replace(/\r?\n/g, ' '), HEADER_LINE_MAX_CHARS)}", ` +
+    `has_images=${request.hasImages}, has_tools=${request.hasTools}, metadata: ${formatMetadataSummary(request.metadata)}. `;
+  const decisionSummary =
+    contextSummary +
+    (decision.default_used
+      ? `Routing decision tree: ${rulesCount} rule${rulesCount === 1 ? '' : 's'} evaluated, none matched; fell through to the default model "${defaultModel}".`
+      : matchedIndex === -1
+      ? `Routing decision tree: matched rule "${decision.matched_rule}" was not found among the ${rulesCount} rule${rulesCount === 1 ? '' : 's'} in this policy.`
+      : `Routing decision tree: rule "${decision.matched_rule}" matched and routed to "${decision.route_to}".`);
 
   return (
     <svg
@@ -305,6 +339,7 @@ export const renderDecisionTree = (policy: RoutingPolicyDoc, decision: DecisionR
           <path d="M0,0 L10,5 L0,10 z" fill="var(--toast-error-text)" />
         </marker>
       </defs>
+      {headerTexts}
       {edges}
       {nodes}
     </svg>

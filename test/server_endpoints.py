@@ -3513,6 +3513,44 @@ class EndpointTests(ServerTestBase):
         self.assertIn("tenant", response_bad_value.json()["error"])
         print("[OK] /routing/validate rejected malformed metadata with 400")
 
+    def test_021zr_routing_validate_bad_field_types_return_400(self):
+        """A malformed 'prompt', 'has_images', or 'has_tools' field (wrong
+        JSON type) is rejected with a 400 and a clear error message, not a
+        generic server error from an uncaught nlohmann::json type_error."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+            },
+        }
+        response_bad_prompt = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": 12345},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_prompt.status_code, 400)
+        self.assertIn("prompt", response_bad_prompt.json()["error"])
+
+        response_bad_has_images = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "has_images": "yes"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_has_images.status_code, 400)
+        self.assertIn("has_images", response_bad_has_images.json()["error"])
+
+        response_bad_has_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "has_tools": "yes"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_has_tools.status_code, 400)
+        self.assertIn("has_tools", response_bad_has_tools.json()["error"])
+        print("[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400")
+
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is
         ENDPOINT_TEST_MODEL. `overrides` is merged into the top-level pull

@@ -2705,8 +2705,28 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
         res.set_content(error.dump(), "application/json");
         return;
     }
+    if (request_json.contains("prompt") && !request_json["prompt"].is_string()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'prompt' must be a string"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
     const std::string prompt = request_json.value("prompt", std::string());
+
+    if (request_json.contains("has_images") && !request_json["has_images"].is_boolean()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'has_images' must be a boolean"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
     const bool has_images = request_json.value("has_images", false);
+
+    if (request_json.contains("has_tools") && !request_json["has_tools"].is_boolean()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'has_tools' must be a boolean"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
     const bool has_tools = request_json.value("has_tools", false);
 
     std::map<std::string, std::string> metadata;

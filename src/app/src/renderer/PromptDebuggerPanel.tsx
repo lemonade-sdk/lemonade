@@ -162,6 +162,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
     const submittedPolicy = policyJson;
     const submittedHasImages = hasImages;
     const submittedHasTools = hasTools;
+    const submittedPolicyFilename = policyFilename;
     setIsValidating(true);
     setValidationError(null);
     try {
@@ -192,6 +193,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
         hasImages: submittedHasImages,
         hasTools: submittedHasTools,
         metadata,
+        policyFilename: submittedPolicyFilename,
       });
       showSuccess(
         newDecision.default_used
@@ -386,7 +388,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
             </div>
             <div className="settings-content">
               <div className="decision-tree-scroll">
-                {renderDecisionTree(result.policy, result.decision)}
+                {renderDecisionTree(result.policy, result.decision, result)}
               </div>
             </div>
           </div>
