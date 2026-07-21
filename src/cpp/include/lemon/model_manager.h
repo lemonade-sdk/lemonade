@@ -8,6 +8,7 @@
 #include <set>
 #include <vector>
 #include <mutex>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -85,6 +86,7 @@ struct ModelInfo {
     std::string registry_source = "huggingface";  // Remote registry: huggingface/modelscope
     bool downloaded = false;     // Whether model is downloaded and available
     bool update_available = false; // Whether a newer remote-registry version exists
+    std::optional<bool> auto_update = std::nullopt; // Optional per-model auto-update override
     double size = 0.0;   // Model size in GB
     int64_t max_context_window = 0;  // Static model-supported text context, when known
 
@@ -244,14 +246,47 @@ public:
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
 
-    // Check all downloaded models for updates in their configured remote registry.
+struct UpdateCheckResult {
+    std::vector<std::string> updated_models;
+    std::vector<std::string> up_to_date_models;
+    std::map<std::string, std::string> failed_models;
+};
+
+    // Check downloaded models for updates in their configured remote registry.
     // Fetches the latest commit SHA for each model's repo and compares it
-    // with the cached commit (refs/main). Sets update_available on models
-    // whose upstream repo has changed and clears stale flags for repos that
-    // were successfully verified as current. Returns public model names with
-    // updates available.
+    // with the cached commit. Sets update_available on models whose upstream
+    // repo has changed and clears stale flags for repos that were successfully
+    // verified as current. If targets is non-empty, restricts check to specified targets.
     // Safe to call from a background thread — locks are internal.
-    std::vector<std::string> check_for_model_updates();
+    UpdateCheckResult check_for_model_updates(const std::vector<std::string>& targets = {});
+
+
+    // Check if model should be automatically updated when updates are detected
+    bool should_auto_update(const ModelInfo& info) const;
+
+    // Register a callback triggered when a model's files are updated on disk (e.g. to evict loaded router backends).
+    void set_model_updated_callback(std::function<void(const std::string&)> cb) {
+        on_model_updated_cb_ = std::move(cb);
+    }
+
+    // Cancel active model synchronization.
+    void cancel_sync();
+
+
+    // Query current model sync status (running state, active/pending targets, completed count)
+    json get_sync_status() const;
+
+    // Synchronously queue targets for sync. Returns true if sync was already in progress.
+    bool enqueue_sync(const std::vector<std::string>& target_models = {});
+
+    // Execute background queue processing until empty.
+    json execute_sync();
+
+    // Trigger sync/update of specified or all outdated models.
+    // When target_models is empty, targets all downloaded outdated models.
+    // If dry_run is true, returns update status without downloading files.
+    json sync_models(const std::vector<std::string>& target_models = {}, bool dry_run = false);
+
 
     // True if the model's backend pulls its own models on demand (e.g. flm) and
     // so should be skipped by the router's load-time auto-download path.
@@ -378,6 +413,32 @@ private:
 
     // Prevent startup and manual update checks from running concurrently.
     std::mutex update_check_mutex_;
+
+    // Server sync state and queue management
+    struct ModelSyncState {
+        mutable std::mutex mutex;
+        bool is_sync_running = false;
+        bool is_full_sync = false;
+        bool cancel_requested = false;
+        std::set<std::string> active_targets;
+        std::set<std::string> pending_targets;
+        std::vector<std::string> completed_targets;
+        std::vector<std::string> models_up_to_date;
+        std::map<std::string, std::string> failed_models;
+        int checked_count = 0;
+        std::string terminal_error;
+
+        // Progress metrics for active model download
+        std::string current_model;
+        std::string current_file;
+        int file_index = 0;
+        int total_files = 0;
+        size_t bytes_downloaded = 0;
+        size_t bytes_total = 0;
+        int percent = 0;
+    };
+    mutable ModelSyncState sync_state_;
+    std::function<void(const std::string&)> on_model_updated_cb_;
 
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
