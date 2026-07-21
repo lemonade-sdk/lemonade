@@ -174,7 +174,6 @@
       "size": "512x512",
       "seed": 42,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
     {
@@ -184,7 +183,6 @@
       "size": "512x512",
       "seed": 42,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
     {
@@ -194,7 +192,6 @@
       "size": "512x512",
       "seed": 42,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
     {
@@ -204,7 +201,6 @@
       "size": "512x512",
       "seed": 42,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
     {
@@ -214,7 +210,6 @@
       "size": "512x512",
       "seed": 42,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
     {
@@ -224,7 +219,6 @@
       "size": "512x512",
       "seed": 42,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
     {
@@ -234,7 +228,6 @@
       "size": "512x512",
       "seed": 42,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
     {
@@ -244,7 +237,6 @@
       "size": "256x256",
       "seed": 2046020449,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
 	{
@@ -254,7 +246,6 @@
       "size": "1024x1024",
       "seed": 2046020449,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
     {
@@ -264,7 +255,6 @@
       "size": "256x256",
       "seed": 2046020449,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
 	{
@@ -274,7 +264,6 @@
       "size": "1024x1024",
       "seed": 2046020449,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
     {
@@ -284,7 +273,6 @@
       "size": "256x256",
       "seed": 2046020449,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     },
 	{
@@ -294,7 +282,6 @@
       "size": "1024x1024",
       "seed": 2046020449,
       "response_format": "b64_json",
-      "warmup_runs": 0,
       "measurement_runs": 1
     }
   ]
