@@ -237,6 +237,23 @@ static lemon::ModelType get_required_model_type_for_scenario(const std::string& 
     return lemon::ModelType::LLM;
 }
 
+// Check if a model has the embeddings label (for llamacpp recipe filtering)
+static bool model_has_embeddings_label(const json& model_info) {
+    if (!model_info.contains("labels") || !model_info["labels"].is_array()) {
+        return false;
+    }
+    const auto& labels = model_info["labels"];
+    for (const auto& label : labels) {
+        if (label.is_string()) {
+            std::string label_str = label.get<std::string>();
+            if (label_str == "embed" || label_str == "embedding" || label_str == "embeddings") {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 std::string expand_context(const json& context_block, const std::vector<json>& messages) {
     std::string filler = context_block.value("filler", "");
     int target_tokens = context_block.value("target_tokens", 2000);
@@ -1675,25 +1692,23 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                         std::cout << "  Scenario: " << scenario.name << " (" << scenario.category << ")" << std::endl;
 
                         // Filter backends based on scenario category and backend capabilities
-                        // This ensures embed scenarios only run on embedding models,
-                        // imagegen scenarios only run on image models, etc.
                         bool backend_suitable = false;
                         const auto required_type = get_required_model_type_for_scenario(scenario.category);
 
                         if (scenario.category == "embed") {
-                            backend_suitable = backend_supports_capability(recipe, backend, lemon::ModelType::EMBEDDING);
+                            backend_suitable = model_has_embeddings_label(model_info);
                         } else if (scenario.category == "imagegen") {
                             backend_suitable = backend_supports_capability(recipe, backend, lemon::ModelType::IMAGE);
                         } else {
-                            // For text generation and other scenarios, ensure we don't run on incompatible backends
-                            // Text generation, for example, should NOT run on image or embedding models
-                            if (!backend_supports_capability(recipe, backend, lemon::ModelType::IMAGE)) {
-                                backend_suitable = backend_supports_capability(recipe, backend, required_type);
+                            backend_suitable = backend_supports_capability(recipe, backend, required_type);
+                            if (model_has_embeddings_label(model_info)) {
+                                // don't send text-gen scenarios to embedding-only models, even if the backend supports it
+                                backend_suitable = false;
                             }
                         }
 
                         if (!backend_suitable) {
-                            std::cout << "    Skipping backend - not suitable for " << scenario.category << " scenario" << std::endl;
+                            std::cout << "    Skipping backend/model - not suitable for " << scenario.category << " scenario" << std::endl;
                             continue;
                         }
 
