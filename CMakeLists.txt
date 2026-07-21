@@ -3128,3 +3128,13 @@ if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
     target_link_libraries(test_launch_command PRIVATE lemonade-server-core)
     add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
 endif()
+
+set(_MODEL_SYNC_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_sync_and_auto_update.cpp")
+if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
+    add_executable(test_model_sync_and_auto_update test/cpp/test_model_sync_and_auto_update.cpp)
+    target_link_libraries(test_model_sync_and_auto_update PRIVATE lemonade-server-core)
+    add_dependencies(test_model_sync_and_auto_update copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelSyncAndAutoUpdateTest CI ON COMMAND test_model_sync_and_auto_update)
+endif()

@@ -7788,6 +7788,96 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] /models/check-updates ignores stale provenance snapshots")
 
+    def test_056_models_sync_internal_security_boundary(self):
+        """Verify that model sync routes are exclusively administrative internal routes and public routes return 404."""
+        # 1. Verify GET /internal/models/sync/status returns the status JSON
+        status_url = f"http://localhost:{PORT}/internal/models/sync/status"
+        resp = requests.get(status_url, timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(
+            resp.status_code, 200, f"/internal/models/sync/status failed: {resp.text}"
+        )
+        status_json = resp.json()
+        self.assertIn("status", status_json)
+        self.assertIn("checked_count", status_json)
+        self.assertIn("models_updated", status_json)
+        self.assertIn("terminal_error", status_json)
+
+        # 2. Verify POST /internal/models/sync dry_run returns dry_run: true
+        sync_url = f"http://localhost:{PORT}/internal/models/sync"
+        resp = requests.post(
+            sync_url,
+            json={"dry_run": True, "models": [ENDPOINT_TEST_MODEL]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code, 200, f"/internal/models/sync dry run failed: {resp.text}"
+        )
+        sync_json = resp.json()
+        self.assertTrue(sync_json.get("dry_run"))
+        self.assertIn("checked_count", sync_json)
+
+        # 3. Verify POST /internal/models/sync async returns 202 Accepted
+        resp = requests.post(
+            sync_url,
+            json={"async": True, "models": [ENDPOINT_TEST_MODEL]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code,
+            202,
+            f"/internal/models/sync async dispatch failed: {resp.text}",
+        )
+        async_json = resp.json()
+        self.assertTrue(async_json.get("async"))
+
+        # 4. Verify public quad-prefix route /api/v1/models/sync returns 404
+        public_url = f"{self.base_url}/models/sync"
+        resp = requests.post(
+            public_url, json={"dry_run": True}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            404,
+            f"public /api/v1/models/sync should not exist, got {resp.status_code}",
+        )
+
+        # 5. Verify invalid payload types return 400 Bad Request
+        resp = requests.post(
+            sync_url, json={"models": "invalid_not_array"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-array models, got {resp.status_code}",
+        )
+
+        resp = requests.post(sync_url, json={"models": [123]}, timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-string model item, got {resp.status_code}",
+        )
+
+        resp = requests.post(
+            sync_url, json={"dry_run": "invalid_not_bool"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-bool dry_run, got {resp.status_code}",
+        )
+
+        resp = requests.post(
+            sync_url, json={"async": "invalid_not_bool"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-bool async, got {resp.status_code}",
+        )
+
+        print("[OK] /internal/models/sync security boundary is secure")
+
 
 if __name__ == "__main__":
     run_server_tests(EndpointTests, "ENDPOINT TESTS")

@@ -44,6 +44,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_bin": "builtin"
   },
   "auto_check_model_updates": true,
+  "auto_update_models": false,
   "broadcast": true,
   "cloud_providers": [],
   "config_version": 2,
@@ -195,6 +196,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
 | `offline` | bool | false | Skip model downloads |
 | `auto_check_model_updates` | bool | true | Check downloaded Hugging Face-backed models for updates during server startup. Set to `false` to check only with `lemonade check-updates` or `POST /v1/models/check-updates`. Manual downloads and updates remain enabled. |
+| `auto_update_models` | bool | false | Automatically download model updates when available. Can be overridden per model via `auto_update` in model options. |
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `inhibit_suspend` | bool | true | Prevent the OS from suspending while inference is active. Linux only (uses systemd-logind); no-op on Windows/macOS/non-systemd environments. |
@@ -479,6 +481,29 @@ The `LEMONADE_ALLOWED_ORIGINS` environment variable controls which remote web or
   > [!WARNING]
   > Using `LEMONADE_ALLOWED_ORIGINS=*` permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
 - **Local/Loopback & Desktop Access**: Loopback addresses (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`) and custom desktop application schemes (`file://`, `app://.`, `vscode-webview://`, `jan://`, etc.) are permitted for local client connections. Opaque `null` origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in `LEMONADE_ALLOWED_ORIGINS` to prevent CSWSH attacks.
+
+## Model Synchronization & Auto-Updates
+
+Lemonade supports manual model synchronization via `lemonade update-models` as well as automatic background updates.
+
+
+### Configuration
+- **Global Config**: Set `auto_update_models: true` in server configuration or via `lemonade config set auto_update_models=true`.
+- **Per-Model Override**: Include `"auto_update": true` or `"auto_update": false` in custom model recipes (`user.*`) to override the global default on a per-model basis.
+- **Administrative Authorization**: Because model synchronization endpoints are administrative (`/internal/*`), manual synchronization via the CLI or direct API requests requires the appropriate admin credentials (`LEMONADE_ADMIN_API_KEY`, falling back to `LEMONADE_API_KEY` if the admin key is not explicitly configured) when server-side authentication is enabled.
+
+### Risks of Automatic Model Updates
+
+> [!WARNING]
+> Enabling automatic updates (`auto_update_models: true` or per-model `"auto_update": true`) introduces operational risks that should be carefully considered:
+>
+> 1. **Output & Behavioral Drift**: Upstream Hugging Face or ModelScope repositories can release updated weights, revised tokenizers, or altered chat templates. These changes can alter model responses, reasoning characteristics, and prompt compatibility.
+> 2. **High Bandwidth & Disk Consumption**: Model updates involve downloading multi-gigabyte file revisions (e.g. GGUF quantizations). Unattended updates can unexpectedly consume substantial network bandwidth and disk space.
+> 3. **Startup & Inference Delays**: Automatic update downloads trigger on server startup when upstream revisions are detected, delaying server readiness and inference availability.
+> 4. **Quantization & Recipe Shifts**: Remote repository changes may alter file naming or tensor layouts, requiring updated recipe configurations.
+>
+> **Recommendation**: Leave `auto_update_models` set to `false` (default) in production environments. Use manual sync (`lemonade update-models --check` followed by `lemonade update-models`) to inspect and control model updates.
+
 
 ## Remote Server Connection
 
