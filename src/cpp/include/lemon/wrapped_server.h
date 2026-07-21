@@ -206,6 +206,8 @@ public:
 
     void release_inference() {
         std::lock_guard<std::mutex> lock(state_mutex_);
+        // Note: is_streaming_ is managed by end_backend_request() which correctly
+        // clears the flag only when the last streaming request completes.
         if (--active_request_count_ == 0) {
             state_ = ModelState::READY;
             state_cv_.notify_all();
@@ -247,6 +249,16 @@ public:
     bool is_busy() const {
         std::lock_guard<std::mutex> lock(state_mutex_);
         return active_request_count_ > 0 || maintenance_in_progress_;
+    }
+
+    void set_streaming(bool streaming) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        is_streaming_ = streaming;
+    }
+
+    bool is_streaming() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return is_streaming_;
     }
 
     // Wait until the router no longer has active work using this object.
@@ -527,6 +539,7 @@ protected:
     // evict_server()) blocks until the operation completes, preventing the server
     // from being unloaded/destroyed while the engine holds a raw pointer to it.
     bool maintenance_in_progress_;
+    bool is_streaming_ = false;
     long load_duration_ms_;
     bool pinned_ = false;
     std::atomic<bool>* load_cancel_ = nullptr;

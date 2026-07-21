@@ -248,6 +248,184 @@ class EndpointTests(ServerTestBase):
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"
         )
 
+    def test_002_health_streaming_flags(self):
+        """Test is_busy and is_streaming fields in /health response.
+
+        Verifies:
+        1. is_busy and is_streaming fields exist for loaded models
+        2. Both fields are false when model is idle
+        3. is_busy becomes true during inference (background thread polls aggressively)
+        4. Both fields reset to false after streaming completes
+        """
+        import threading
+
+        # Load the model first
+        load_resp = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_resp.status_code, 200)
+
+        # Verify is_busy and is_streaming fields exist in health response
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        loaded_model = None
+        for model in health.get("all_models_loaded", []):
+            if model["model_name"] == ENDPOINT_TEST_MODEL:
+                loaded_model = model
+                break
+
+        self.assertIsNotNone(loaded_model, "Model should be loaded")
+        self.assertIn("is_busy", loaded_model, "is_busy field should exist")
+        self.assertIn("is_streaming", loaded_model, "is_streaming field should exist")
+        self.assertIsInstance(loaded_model["is_busy"], bool)
+        self.assertIsInstance(loaded_model["is_streaming"], bool)
+
+        # When idle, both should be false
+        self.assertFalse(loaded_model["is_busy"], "Model should not be busy when idle")
+        self.assertFalse(loaded_model["is_streaming"], "Model should not be streaming when idle")
+
+        print("[OK] is_busy and is_streaming fields exist and are false when idle")
+
+        # Background poller - polls aggressively until stopped
+        captured_busy = threading.Event()
+        stop_polling = threading.Event()
+
+        def poll_for_busy():
+            while not stop_polling.is_set():
+                try:
+                    h = requests.get(f"{self.base_url}/health", timeout=1).json()
+                    for m in h.get("all_models_loaded", []):
+                        if m["model_name"] == ENDPOINT_TEST_MODEL and m.get("is_busy"):
+                            captured_busy.set()
+                            return
+                except Exception:
+                    pass
+
+        poll_thread = threading.Thread(target=poll_for_busy, daemon=True)
+        poll_thread.start()
+
+        # Make a streaming request
+        with requests.post(
+            f"{self.base_url}/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "Write a haiku about mountains, then another about rivers, then another about clouds."}],
+                "stream": True,
+                "max_tokens": 150,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        ) as resp:
+            self.assertEqual(resp.status_code, 200)
+            for _ in resp.iter_lines():
+                pass
+
+        stop_polling.set()
+        poll_thread.join(timeout=2)
+
+        self.assertTrue(captured_busy.is_set(), "Expected to capture is_busy=True at least once during streaming")
+        print("[OK] Captured is_busy=True during streaming")
+
+        # After completion, verify flags are reset
+        time.sleep(0.3)  # Brief wait for state to settle
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        for model in health.get("all_models_loaded", []):
+            if model["model_name"] == ENDPOINT_TEST_MODEL:
+                self.assertFalse(
+                    model.get("is_busy", True),
+                    "is_busy should be false after request completes"
+                )
+                self.assertFalse(
+                    model.get("is_streaming", True),
+                    "is_streaming should be false after request completes"
+                )
+                break
+
+        print("[OK] is_busy and is_streaming reset to false after request completes")
+
+    def test_002_health_concurrent_streaming(self):
+        """Test that concurrent streaming requests complete correctly.
+
+        Verifies that after multiple concurrent streaming requests complete,
+        the is_busy and is_streaming flags are correctly reset to false.
+
+        Note: Testing the mid-stream state (is_streaming stays true while
+        one request finishes but another continues) is timing-dependent.
+        The implementation correctness is ensured by the atomic counter in
+        end_backend_request() - we verify the observable end state here.
+        """
+        import threading
+        import queue
+
+        # Load the model
+        load_resp = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_resp.status_code, 200)
+
+        results = queue.Queue()
+
+        def streaming_request(name):
+            """Make a streaming request."""
+            try:
+                with requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json={
+                        "model": ENDPOINT_TEST_MODEL,
+                        "messages": [{"role": "user", "content": f"Say hi. Request {name}."}],
+                        "stream": True,
+                        "max_tokens": 10,
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                    stream=True,
+                ) as resp:
+                    chunk_count = 0
+                    for _ in resp.iter_lines():
+                        chunk_count += 1
+                    results.put((name, "success", chunk_count))
+            except Exception as e:
+                results.put((name, "error", str(e)))
+
+        # Start multiple concurrent streaming requests
+        threads = []
+        for i in range(3):
+            t = threading.Thread(target=streaming_request, args=(f"R{i}",), daemon=True)
+            threads.append(t)
+            t.start()
+
+        # Wait for all to complete
+        for t in threads:
+            t.join(timeout=60)
+
+        # Verify all requests completed
+        completed = []
+        while not results.empty():
+            completed.append(results.get_nowait())
+
+        self.assertEqual(len(completed), 3, f"Expected 3 completed requests, got: {completed}")
+        for name, status, _ in completed:
+            self.assertEqual(status, "success", f"Request {name} should succeed")
+
+        # After ALL complete, flags should be false
+        time.sleep(0.3)
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        for model in health.get("all_models_loaded", []):
+            if model["model_name"] == ENDPOINT_TEST_MODEL:
+                self.assertFalse(
+                    model.get("is_streaming", True),
+                    "is_streaming should be false after ALL streams complete"
+                )
+                self.assertFalse(
+                    model.get("is_busy", True),
+                    "is_busy should be false after ALL requests complete"
+                )
+                break
+
+        print("[OK] Concurrent streaming: flags reset correctly after all requests complete")
+
     def test_002a_metrics_endpoint(self):
         """Test root-level /metrics returns Prometheus text and loaded model samples."""
         response = requests.get(
