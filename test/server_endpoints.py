@@ -43,6 +43,8 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    SECOND_TEST_MODEL_EVICTION,
+    MULTI_MODEL_TERTIARY,
     get_default_lemond_binary,
     SHARED_REPO_MODEL_A_NAME,
     SHARED_REPO_MODEL_A_CHECKPOINT,
@@ -917,7 +919,7 @@ class EndpointTests(ServerTestBase):
         /v1/chat/completions. When `sse_chunks` is provided, the chat
         endpoint emits each chunk as an SSE `data:` line (the caller is
         responsible for shaping each chunk as OpenAI-compat JSON) and
-        terminates with `data: [DONE]\\n\\n`. Otherwise it falls back to
+        terminates with `data: [DONE]\n\n`. Otherwise it falls back to
         the non-streaming chat_handler(body) -> dict shape. Returns
         (base_url, stop_fn). The base URL ends with /v1.
         """
@@ -3427,6 +3429,524 @@ class EndpointTests(ServerTestBase):
                 pass
             stop_provider()
 
+    def test_021zk_router_llm_residency_live(self):
+        """Regression coverage for #2725 and direct-use demotion.
+
+        The router and candidate must coexist at max_loaded_models=1. Promotion
+        and demotion reuse live processes, pool-local pinning remains valid, and
+        a later third standard model must not leave two user-facing LLMs resident.
+        """
+        router_model = MULTI_MODEL_TERTIARY
+        candidate_model = ENDPOINT_TEST_MODEL
+        third_model = SECOND_TEST_MODEL_EVICTION
+        for model in (router_model, candidate_model, third_model):
+            pull_model_with_retry(model)
+
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterL0a-{suffix}"
+        public_name = canonical_name[5:]
+
+        try:
+            unload_all = requests.post(
+                f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(unload_all.status_code, 200, unload_all.text)
+
+            warm_router = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": router_model,
+                    "messages": [{"role": "user", "content": "Reply briefly."}],
+                    "max_tokens": 1,
+                    "enable_thinking": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(warm_router.status_code, 200, warm_router.text)
+            warm_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            warm_loaded = {
+                item.get("model_name"): item
+                for item in warm_health.get("all_models_loaded", [])
+            }
+            self.assertEqual(
+                warm_loaded[router_model].get("slot_pool"), "standard/llm"
+            )
+            warm_router_pid = int(warm_loaded[router_model]["pid"])
+
+            routing = {
+                "candidates": [candidate_model],
+                "default_model": candidate_model,
+                "router": {
+                    "type": "llm",
+                    "model": router_model,
+                    "prompt": (
+                        "You are a model router. Always choose "
+                        f"{candidate_model} for every request."
+                    ),
+                },
+            }
+            pull_response = self._pull_router_collection(
+                canonical_name,
+                routing=routing,
+                overrides={"components": [router_model, candidate_model]},
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            def routed_request(message):
+                response = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json={
+                        "model": public_name,
+                        "messages": [{"role": "user", "content": message}],
+                        "max_tokens": 1,
+                        "route_trace": True,
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                body = response.json()
+                self.assertNotIn("error", body, body)
+                self.assertEqual(
+                    body.get("x_lemonade_route", {}).get("route_to"),
+                    candidate_model,
+                )
+                return body
+
+            routed_request("Explain gradient descent.")
+            health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(health.get("max_models", {}).get("llm"), 1)
+            loaded = {
+                item.get("model_name"): item
+                for item in health.get("all_models_loaded", [])
+            }
+            self.assertEqual(
+                loaded[router_model].get("slot_pool"), "routing_helper/llm"
+            )
+            self.assertEqual(
+                loaded[candidate_model].get("slot_pool"), "standard/llm"
+            )
+            first_pids = {
+                router_model: int(loaded[router_model]["pid"]),
+                candidate_model: int(loaded[candidate_model]["pid"]),
+            }
+            self.assertEqual(
+                first_pids[router_model],
+                warm_router_pid,
+                "promotion must reuse the existing router process",
+            )
+
+            routed_request("Explain gradient descent again.")
+            health_after = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            loaded_after = {
+                item.get("model_name"): item
+                for item in health_after.get("all_models_loaded", [])
+            }
+            self.assertEqual(
+                int(loaded_after[router_model]["pid"]), first_pids[router_model]
+            )
+            self.assertEqual(
+                int(loaded_after[candidate_model]["pid"]),
+                first_pids[candidate_model],
+            )
+
+            pin_candidate = requests.post(
+                f"{self.base_url.replace('/api/v1', '')}/internal/pin",
+                json={"model_name": candidate_model, "pinned": True},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(pin_candidate.status_code, 200, pin_candidate.text)
+            unload_router = requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": router_model},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(unload_router.status_code, 200, unload_router.text)
+
+            routed_request("Explain gradient descent briefly.")
+            pinned_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            pinned_loaded = {
+                item.get("model_name"): item
+                for item in pinned_health.get("all_models_loaded", [])
+            }
+            self.assertTrue(pinned_loaded[candidate_model].get("pinned"))
+            self.assertEqual(
+                pinned_health.get("pinned_models", {}).get("llm"), 1
+            )
+            self.assertEqual(
+                int(pinned_loaded[candidate_model]["pid"]),
+                first_pids[candidate_model],
+            )
+            helper_pid_before_demotion = int(pinned_loaded[router_model]["pid"])
+
+            pin_helper = requests.post(
+                f"{self.base_url.replace('/api/v1', '')}/internal/pin",
+                json={"model_name": router_model, "pinned": True},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(pin_helper.status_code, 200, pin_helper.text)
+            helper_pin_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(
+                helper_pin_health.get("pinned_helper_models", {}).get("llm"), 1
+            )
+            unpin_helper = requests.post(
+                f"{self.base_url.replace('/api/v1', '')}/internal/pin",
+                json={"model_name": router_model, "pinned": False},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(unpin_helper.status_code, 200, unpin_helper.text)
+            unpin_candidate = requests.post(
+                f"{self.base_url.replace('/api/v1', '')}/internal/pin",
+                json={"model_name": candidate_model, "pinned": False},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                unpin_candidate.status_code, 200, unpin_candidate.text
+            )
+
+            direct_router = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": router_model,
+                    "messages": [
+                        {"role": "user", "content": "Reply directly and briefly."}
+                    ],
+                    "max_tokens": 1,
+                    "enable_thinking": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(direct_router.status_code, 200, direct_router.text)
+            demoted_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            demoted_loaded = {
+                item.get("model_name"): item
+                for item in demoted_health.get("all_models_loaded", [])
+            }
+            self.assertNotIn(candidate_model, demoted_loaded)
+            self.assertEqual(
+                demoted_loaded[router_model].get("slot_pool"), "standard/llm"
+            )
+            self.assertEqual(
+                int(demoted_loaded[router_model]["pid"]),
+                helper_pid_before_demotion,
+                "demotion must reuse the live process",
+            )
+
+            third_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": third_model,
+                    "messages": [{"role": "user", "content": "Say hello."}],
+                    "max_tokens": 1,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(third_response.status_code, 200, third_response.text)
+            final_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            final_loaded = {
+                item.get("model_name"): item
+                for item in final_health.get("all_models_loaded", [])
+            }
+            self.assertIn(third_model, final_loaded, final_loaded)
+            self.assertNotIn(router_model, final_loaded, final_loaded)
+            self.assertNotIn(candidate_model, final_loaded, final_loaded)
+            standard_llms = [
+                item
+                for item in final_loaded.values()
+                if item.get("slot_pool") == "standard/llm"
+            ]
+            self.assertEqual(
+                len(standard_llms),
+                1,
+                "three-model sequence must preserve max_loaded_models=1",
+            )
+
+            print(
+                "[OK] residency promotion/demotion, pool-local pinning, and "
+                "three-model standard capacity"
+            )
+        finally:
+            for model in (router_model, candidate_model, third_model):
+                try:
+                    requests.post(
+                        f"{self.base_url}/unload",
+                        json={"model_name": model},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021zl_router_multiple_same_type_helpers_stay_warm(self):
+        """Two distinct local LLM helpers must not share one helper slot."""
+        helper_a = ENDPOINT_TEST_MODEL
+        helper_b = MULTI_MODEL_TERTIARY
+        for model in (helper_a, helper_b):
+            pull_model_with_retry(model)
+
+        provider = "helperpoolcloud"
+        upstream_id = "mock/helper-candidate"
+        candidate_model = f"{provider}.{upstream_id}"
+
+        def chat_response(req):
+            return {
+                "id": "cmpl-helper-pool",
+                "object": "chat.completion",
+                "created": 1,
+                "model": req.get("model", upstream_id),
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+
+        base_url, stop_provider = self._start_mock_cloud_provider(
+            [upstream_id], chat_handler=chat_response
+        )
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterHelpers-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            install = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(install.status_code, 200, install.text)
+            auth = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(auth.status_code, 200, auth.text)
+            requests.post(
+                f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
+            )
+
+            routing = {
+                "candidates": [candidate_model],
+                "default_model": candidate_model,
+                "classifiers": [
+                    {
+                        "id": "helper-a",
+                        "type": "llm",
+                        "model": helper_a,
+                        "prompt": "Choose the configured candidate.",
+                        "labels": [candidate_model],
+                        "on_error": "match_false",
+                    },
+                    {
+                        "id": "helper-b",
+                        "type": "llm",
+                        "model": helper_b,
+                        "prompt": "Choose the configured candidate.",
+                        "labels": [candidate_model],
+                        "on_error": "match_false",
+                    },
+                ],
+                "rules": [
+                    {
+                        "id": "probe-helper-a",
+                        "match": {
+                            "classifier": "helper-a",
+                            "label": candidate_model,
+                            "min_score": 0.5,
+                            "max_score": 0.5,
+                        },
+                        "route_to": candidate_model,
+                    },
+                    {
+                        "id": "probe-helper-b",
+                        "match": {
+                            "classifier": "helper-b",
+                            "label": candidate_model,
+                            "min_score": 0.5,
+                            "max_score": 0.5,
+                        },
+                        "route_to": candidate_model,
+                    },
+                ],
+            }
+            pull = self._pull_router_collection(
+                canonical_name,
+                routing=routing,
+                overrides={
+                    "components": [helper_a, helper_b, candidate_model]
+                },
+            )
+            self.assertEqual(pull.status_code, 200, pull.text)
+
+            def request_once(text):
+                response = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json={
+                        "model": public_name,
+                        "messages": [{"role": "user", "content": text}],
+                        "max_tokens": 4,
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+
+            request_once("First helper-pool request")
+            first_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            first_loaded = {
+                item.get("model_name"): item
+                for item in first_health.get("all_models_loaded", [])
+            }
+            for helper in (helper_a, helper_b):
+                self.assertIn(helper, first_loaded, first_loaded)
+                self.assertEqual(
+                    first_loaded[helper].get("slot_pool"), "routing_helper/llm"
+                )
+            first_pids = {
+                helper_a: int(first_loaded[helper_a]["pid"]),
+                helper_b: int(first_loaded[helper_b]["pid"]),
+            }
+
+            request_once("Second helper-pool request")
+            second_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            second_loaded = {
+                item.get("model_name"): item
+                for item in second_health.get("all_models_loaded", [])
+            }
+            for helper in (helper_a, helper_b):
+                self.assertEqual(
+                    int(second_loaded[helper]["pid"]),
+                    first_pids[helper],
+                    f"{helper} must stay warm across policy evaluations",
+                )
+            print("[OK] two same-type routing helpers retained stable PIDs")
+        finally:
+            for model in (helper_a, helper_b):
+                try:
+                    requests.post(
+                        f"{self.base_url}/unload",
+                        json={"model_name": model},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/uninstall",
+                    json={"backend": "cloud", "provider": provider},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            stop_provider()
+
+    def test_021zm_router_same_model_candidate_demotes_in_request(self):
+        """router.model == candidate must end as one Standard process."""
+        model = ENDPOINT_TEST_MODEL
+        pull_model_with_retry(model)
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterSameModel-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            requests.post(
+                f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
+            )
+            routing = {
+                "candidates": [model],
+                "default_model": model,
+                "router": {
+                    "type": "llm",
+                    "model": model,
+                    "prompt": f"Always choose {model}.",
+                },
+            }
+            pull = self._pull_router_collection(
+                canonical_name,
+                routing=routing,
+                overrides={"components": [model]},
+            )
+            self.assertEqual(pull.status_code, 200, pull.text)
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [{"role": "user", "content": "Say hello."}],
+                    "max_tokens": 4,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            loaded = [
+                item
+                for item in health.get("all_models_loaded", [])
+                if item.get("model_name") == model
+            ]
+            self.assertEqual(len(loaded), 1, loaded)
+            self.assertEqual(loaded[0].get("slot_pool"), "standard/llm")
+            print("[OK] router.model == candidate demoted in the same request")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/unload",
+                    json={"model_name": model},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is
         ENDPOINT_TEST_MODEL. `overrides` is merged into the top-level pull
