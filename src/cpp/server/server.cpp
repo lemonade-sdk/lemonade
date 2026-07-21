@@ -1696,7 +1696,7 @@ void Server::setup_cors(httplib::Server &web_server) {
     // Set CORS headers for all responses
     web_server.set_default_headers({
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, mcp-protocol-version, traceparent"}
+        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, mcp-protocol-version, traceparent, Mcp-Session-Id"}
     });
 
     // Handle preflight OPTIONS requests
