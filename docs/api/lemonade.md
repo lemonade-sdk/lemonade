@@ -85,6 +85,25 @@ Label names come from the model's `id2label` — from `config.json`, or from `ma
 
 Malformed requests (invalid JSON, missing `input`/`text`, non-string fields, non-positive `top_k`) return `400` with an `error` object before any model is loaded.
 
+## Routing (`collection.router`)
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Naming a registered `collection.router` model in the `model` field of a
+`chat/completions` or `completions` request triggers the routing engine: the
+server picks a candidate by the policy's first-matching rule (fail-open to
+`default_model`) and forwards the request to it. No dedicated endpoint or `"auto"`
+model is involved.
+
+The decision is reported on the response:
+
+- Header **`x-lemonade-route`** — the matched rule id, or `default`.
+- Request field **`route_trace: true`** adds an **`x_lemonade_route`** object to the
+  response body: `{ route_to, matched_rule, default_used, outputs, trace[] }`
+  (`route_to` is the candidate that answered). For streaming responses it is
+  attached to the first SSE event.
+
+See [Router Policies](../dev/router-policy.md) for authoring the policy.
+
 ## `POST /v1/models/check-updates`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -980,6 +999,8 @@ curl http://localhost:13305/v1/health
   - `type` - Model type: `"llm"`, `"embedding"`, `"reranking"`, `"transcription"`, `"image"`, or `"tts"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `pinned` - Boolean indicating if the model is currently pinned to prevent auto-eviction
+  - `is_busy` - Boolean indicating if the model has active requests or maintenance in progress
+  - `is_streaming` - Boolean indicating if the model is actively generating output tokens (true after first chunk arrives, false when all streaming requests complete)
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `pid` - The Process ID (PID) of the backend engine handling this model
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
