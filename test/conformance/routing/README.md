@@ -49,7 +49,7 @@ Each line is one JSON object:
 | Field | Meaning |
 |-------|---------|
 | `name` | Unique, human-readable case id within the file. One case locks one behavior. |
-| `request` | An OpenAI chat-completions body (`model`, `messages`, optional `metadata`). The engine input is the last user message; `min_chars`/`max_chars` count its UTF-8 bytes. |
+| `request` | A request body in any form `build_route_context` accepts: chat-completions (`messages`), legacy completions (`prompt`), or Responses (`input`), plus optional `model`, `metadata`, `tools`, and `route_trace`. The engine input is the last user message (or the `prompt`/`input` text); `min_chars`/`max_chars` count its UTF-8 bytes. |
 | `decision` | The exact `Decision` the engine must emit: `version`, `route_to`, `matched_rule` (empty on fall-through), `default_used`, `outputs`. |
 | `note` | Optional. Free-text annotation for a non-obvious case; ignored by the runner. |
 
@@ -91,6 +91,7 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | `min_chars` — inclusive (`>=`), UTF-8 bytes | `l1_conditions_char_bounds/min_chars-inclusive-boundary` |
 | `max_chars` — inclusive (`<=`), UTF-8 bytes | `l1_conditions_char_bounds/max_chars-inclusive-boundary` |
 | `min_chars`/`max_chars` count bytes, not code points | `l1_conditions_char_bounds/max_chars-utf8-byte-count` |
+| length between the bounds satisfies neither rule ⇒ fall through to default | `l1_conditions_char_bounds/between-bounds-default` |
 | `metadata` `any` — value equals one of the listed | `l1_conditions_metadata/metadata-any` |
 | `metadata` `equals` — value matches exactly | `l1_conditions_metadata/metadata-equals` |
 | `metadata` `equals` — near-miss value fails (exact, not substring) | `l1_conditions_metadata/metadata-equals-no-match` |
@@ -111,6 +112,7 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | `input` array of role-tagged messages ⇒ last user message's text | `l1_input_forms/input-array-role-tagged` |
 | `input` array with no user role ⇒ role-less parts concatenated (fallback) | `l1_input_forms/input-roleless-fallback` |
 | `route_trace` unset ⇒ Decision carries no `trace` | `l1_trace/trace-omitted-when-not-requested` |
+| `route_trace: false` ⇒ behaves like unset, no `trace` | `l1_trace/trace-omitted-when-explicitly-false` |
 | `route_trace: true` ⇒ one trace entry per evaluated leaf; `any` short-circuits on first true | `l1_trace/trace-any-short-circuits-on-first-true` |
 | trace accumulates across evaluated rules; `not` records the child leaf's raw result | `l1_trace/trace-accumulates-across-missed-rule` |
 | `all` short-circuits on first false; fail-open default still carries the accumulated trace | `l1_trace/trace-all-short-circuits-and-default-carries-trace` |
