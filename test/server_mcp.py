@@ -74,6 +74,64 @@ class McpGatewayTests(ServerTestBase):
     # JSON-RPC envelope
     # ---------------------------------------------------------------------
 
+    def test_000_cors_preflight(self):
+        """OPTIONS /mcp preflight must return 204, reflect concrete allowed origin, and allow required headers."""
+        headers = {
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "MCP-Protocol-Version, Mcp-Session-Id",
+        }
+        response = requests.options(
+            MCP_URL,
+            headers={**_auth_headers(), **headers},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 204)
+        allow_origin = response.headers.get("Access-Control-Allow-Origin")
+        self.assertEqual(allow_origin, "http://localhost:3000")
+        allow_headers = response.headers.get("Access-Control-Allow-Headers", "").lower()
+        self.assertIn("mcp-protocol-version", allow_headers)
+        self.assertIn("mcp-session-id", allow_headers)
+
+    def test_000_cors_headers_on_post(self):
+        """POST /mcp must reflect the allowed origin in CORS headers."""
+        response = requests.post(
+            MCP_URL,
+            json={"jsonrpc": "2.0", "id": 1, "method": "ping"},
+            headers={
+                **_auth_headers(),
+                "Origin": "http://localhost:3000",
+                "MCP-Protocol-Version": "2025-06-18",
+                "Mcp-Session-Id": "test-session-123",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers.get("Access-Control-Allow-Origin"), "http://localhost:3000"
+        )
+
+    def test_000_cors_disallowed_origin(self):
+        """OPTIONS and POST /mcp from disallowed origin must return 403."""
+        headers = {
+            "Origin": "http://evil.com",
+            "Access-Control-Request-Method": "POST",
+        }
+        response = requests.options(
+            MCP_URL,
+            headers={**_auth_headers(), **headers},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 403)
+
+        response = requests.post(
+            MCP_URL,
+            json={"jsonrpc": "2.0", "id": 1, "method": "ping"},
+            headers={**_auth_headers(), "Origin": "http://evil.com"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 403)
+
     def test_001_get_returns_405(self):
         """GET /mcp must return 405 with Allow: POST."""
         response = requests.get(
