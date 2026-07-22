@@ -1027,6 +1027,8 @@ json Router::get_all_loaded_models() const {
         RecipeOptions recipe_options =  server->get_recipe_options();
         model_info["recipe"] = recipe_options.get_recipe();
         model_info["recipe_options"] = recipe_options.to_json();
+        model_info["is_busy"] = server->is_busy();
+        model_info["is_streaming"] = server->is_streaming();
 
         // Static metadata from the registry entry. Cloud models carry the
         // provider-reported context window + per-million-token cost (recorded
