@@ -32,6 +32,30 @@ Users can specify one or both formats. When both are enabled, Lemonade packs att
 
 ---
 
+## Distributed Tracing (W3C Trace Context)
+
+By default, each inference request starts its own root trace. When a caller is itself an instrumented application (e.g. a multi-agent orchestrator), you can have Lemonade's spans join the caller's trace instead, so an entire multi-step workflow appears as one connected tree.
+
+Set `telemetry.trust_incoming_trace_context=true` to opt in. Lemonade then reads the standard [W3C `traceparent`](https://www.w3.org/TR/trace-context/) header on incoming requests: the request's span adopts the header's trace id and is parented to the header's span id. Requests without a valid `traceparent`, or received while the setting is `false`, keep the default root-span behavior.
+
+```bash
+lemonade config set telemetry.enabled=true \
+                    telemetry.trust_incoming_trace_context=true
+```
+
+The caller supplies the header on each request, for example:
+
+```bash
+curl http://localhost:13305/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01" \
+  -d '{"model": "...", "messages": [{"role": "user", "content": "Hello"}]}'
+```
+
+The setting is opt-in because it makes span parentage depend on client-supplied input; leave it disabled unless you trust the callers on your network.
+
+---
+
 ## Configuration
 
 Telemetry is configured under the `telemetry` block in your `config.json` or managed dynamically via the Lemonade CLI/API.
@@ -44,6 +68,7 @@ Telemetry is configured under the `telemetry` block in your `config.json` or man
 | `telemetry.hide_inputs` | boolean | `false` | Redacts raw prompt inputs from trace attributes to protect privacy. |
 | `telemetry.hide_outputs` | boolean | `false` | Redacts assistant output text from trace attributes. |
 | `telemetry.hide_thinking` | boolean | `false` | Redacts internal reasoning/thinking blocks from trace attributes. |
+| `telemetry.trust_incoming_trace_context` | boolean | `false` | When `true`, honor a caller-supplied W3C `traceparent` header so inference spans join the caller's distributed trace. See [Distributed Tracing](#distributed-tracing-w3c-trace-context). |
 | `telemetry.max_queue_capacity` | int | `1000` | Target memory buffer capacity for queued spans. When exceeded, the oldest spans are evicted first (FIFO). |
 | `telemetry.otlp.endpoint` | string | `"http://localhost:4318/v1/traces"` | OTLP HTTP receiver endpoint URL. |
 | `telemetry.otlp.protocol` | string | `"http/protobuf"` | Encoding protocol: `"http/protobuf"` or `"http/json"`. |

@@ -14,6 +14,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
 | `moonshine` | Moonshine | no | no | cpu |
+| `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
@@ -38,11 +39,14 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp` | metal | macos | metal |
 | `llamacpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
-| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx942) |
+| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx942, gfx950) |
 | `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | macos | cpu (arm64) |
+| `onnxruntime` | cpu | windows | cpu (x86_64) |
+| `onnxruntime` | cpu | linux | cpu (arm64, x86_64) |
+| `onnxruntime` | cpu | macos | cpu (arm64) |
 | `openmoss` | rocm | linux, windows | amd_gpu |
 | `openmoss` | cuda | linux, windows | nvidia_gpu |
 | `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
@@ -65,6 +69,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `whispercpp` | cpu | linux, windows | cpu (x86_64) |
 | `whispercpp` | metal | macos | metal |
 <!-- END GENERATED: backends-matrix -->
+
+> **Note:** The `llamacpp` `rocm` row lists `linux, windows` for the family as a
+> whole, but MI350X (`gfx950`) is currently gated to **Linux + stable channel
+> only** — the Windows TheRock distribution and the ROCm nightly build for
+> gfx950 are not yet published, so `gfx950` installs are rejected on Windows and
+> on the nightly channel. The OS column reflects the row's overall reach; the
+> per-architecture restriction is enforced by the backend's install gate.
 
 ## Recipe options
 
@@ -96,6 +107,12 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `moonshine_args` | `--moonshine-args` | ARGS | "" | Custom arguments to pass to moonshine-server |
+
+#### `onnxruntime` — ONNX Runtime
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `onnxruntime_args` | `--onnxruntime-args` | ARGS | "" | Custom arguments to pass to ort-server |
 
 #### `openmoss` — OpenMOSS TTS
 
@@ -258,6 +275,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Moonshine-Medium-Streaming` | 1.08 | transcription, realtime-transcription, hot |
 | `Moonshine-Small-Streaming` | 0.431 | transcription, realtime-transcription |
 | `Moonshine-Tiny-Streaming` | 0.202 | transcription, realtime-transcription |
+
+#### `onnxruntime` — ONNX Runtime (2 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `Bert-Phishing-ONNX` | 1.34 | classification |
+| `Phishing-Email-Detection-ONNX` | 0.27 | classification |
 
 #### `openmoss` — OpenMOSS TTS (2 models)
 

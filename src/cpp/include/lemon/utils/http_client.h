@@ -52,9 +52,9 @@ struct DownloadResult {
 using ProgressCallback = std::function<bool(size_t downloaded, size_t total)>;
 using StreamCallback = std::function<bool(const char* data, size_t length)>;
 
-// Trust boundary for HTTP requests that may follow redirects. Selects which URL
-// schemes are allowed for the initial request and for redirect targets, and
-// whether redirects are followed at all.
+// Trust boundary for outgoing HTTP requests. Selects which URL schemes are
+// allowed for the initial request and, for request types that follow redirects,
+// which schemes are allowed for redirect targets.
 enum class HttpSecurityPolicy {
     // External hosts (Hugging Face, GitHub, release CDNs). Require https for the
     // initial request and every redirect hop; bound the redirect chain. This is
@@ -65,7 +65,8 @@ enum class HttpSecurityPolicy {
     // http and never follow redirects.
     TrustedLoopback,
     // User-configured plaintext endpoints that explicitly opted in via
-    // allow_insecure_http. Permit http and https; bound the redirect chain.
+    // allow_insecure_http. Permit http and https; when redirects are enabled,
+    // bound the redirect chain.
     AllowInsecureHttp,
 };
 
@@ -107,26 +108,34 @@ public:
                            long timeout_seconds = 0,
                            HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
-    // Simple POST request
-    static HttpResponse post(const std::string& url,
-                            const std::string& body,
-                            const std::map<std::string, std::string>& headers = {},
-                            long timeout_seconds = 300);
+    // Simple POST request. Redirects are never followed.
+    static HttpResponse post(
+        const std::string& url,
+        const std::string& body,
+        const std::map<std::string, std::string>& headers = {},
+        long timeout_seconds = 300,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        std::atomic<bool>* cancel_flag = nullptr);
 
-    // Multipart form data POST request
-    static HttpResponse post_multipart(const std::string& url,
-                                       const std::vector<MultipartField>& fields,
-                                       long timeout_seconds = 300);
+    // Multipart form data POST request. Redirects are never followed.
+    static HttpResponse post_multipart(
+        const std::string& url,
+        const std::vector<MultipartField>& fields,
+        long timeout_seconds = 300,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
     // Streaming POST request (calls callback for each chunk as it arrives).
     // on_status fires once, before the first chunk is delivered, so callers can
-    // divert an error body instead of forwarding it as payload bytes.
-    static HttpResponse post_stream(const std::string& url,
-                                   const std::string& body,
-                                   StreamCallback stream_callback,
-                                   const std::map<std::string, std::string>& headers = {},
-                                   long timeout_seconds = 300,
-                                   std::function<void(int status_code)> on_status = nullptr);
+    // divert an error body instead of forwarding it as payload bytes. Redirects
+    // are never followed.
+    static HttpResponse post_stream(
+        const std::string& url,
+        const std::string& body,
+        StreamCallback stream_callback,
+        const std::map<std::string, std::string>& headers = {},
+        long timeout_seconds = 300,
+        std::function<void(int status_code)> on_status = nullptr,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,
@@ -136,8 +145,11 @@ public:
                                         const DownloadOptions& options = DownloadOptions(),
                                         HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
-    // Check if URL is reachable
-    static bool is_reachable(const std::string& url, int timeout_seconds = 5);
+    // Check if URL is reachable. Redirects are never followed.
+    static bool is_reachable(
+        const std::string& url,
+        int timeout_seconds = 5,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
 private:
     static std::atomic<long> default_timeout_seconds_;

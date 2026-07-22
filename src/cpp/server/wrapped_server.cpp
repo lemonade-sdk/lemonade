@@ -14,6 +14,12 @@
 
 namespace lemon {
 
+static thread_local std::atomic<bool>* t_request_cancel = nullptr;
+
+void WrappedServer::set_request_cancel_flag(std::atomic<bool>* f) { t_request_cancel = f; }
+
+std::atomic<bool>* WrappedServer::current_request_cancel() { return t_request_cancel; }
+
 namespace {
 
 std::string lower_copy(std::string value) {
@@ -267,6 +273,7 @@ void WrappedServer::end_backend_request(BackendRequestKind kind) {
         previous = active_streaming_requests_.fetch_sub(1, std::memory_order_acq_rel);
         if (previous <= 1) {
             active_streaming_requests_.store(0, std::memory_order_release);
+            set_streaming(false);
         }
     } else {
         previous = active_non_streaming_requests_.fetch_sub(1, std::memory_order_acq_rel);
@@ -477,7 +484,10 @@ void WrappedServer::backend_watchdog_loop() {
             break;
         }
 
-        const bool reachable = utils::HttpClient::is_reachable(health_url, probe_timeout_seconds);
+        const bool reachable = utils::HttpClient::is_reachable(
+            health_url,
+            probe_timeout_seconds,
+            utils::HttpSecurityPolicy::TrustedLoopback);
         if (reachable) {
             consecutive_failures = 0;
             note_backend_activity();
@@ -529,6 +539,13 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
     const int max_attempts = (timeout_seconds * 1000) / poll_interval_ms;
 
     for (int i = 0; i < max_attempts; i++) {
+        if (load_cancel_ && load_cancel_->load()) {
+            const ProcessHandle h = consume_process_handle_for_cleanup();
+            if (has_process_handle(h)) utils::ProcessManager::stop_process(h);
+            LOG(WARNING, "WrappedServer") << server_name_ << " load cancelled" << std::endl;
+            return false;
+        }
+
         // Check if process is still running. If it already exited, consume and
         // reap the owned handle here so the caller cannot later signal a stale
         // PID while cleaning up a failed startup.
@@ -548,7 +565,8 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
         }
 
         // Try health endpoint
-        if (utils::HttpClient::is_reachable(health_url, 1)) {
+        if (utils::HttpClient::is_reachable(
+                health_url, 1, utils::HttpSecurityPolicy::TrustedLoopback)) {
             LOG(INFO, "WrappedServer") << server_name_ + " is ready!" << std::endl;
             start_backend_watchdog(normalized_endpoint);
             return true;
@@ -635,8 +653,13 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
 
     try {
-        auto response = utils::HttpClient::post(url, request.dump(), headers,
-                                               timeout_seconds);
+        auto response = utils::HttpClient::post(
+            url,
+            request.dump(),
+            headers,
+            timeout_seconds,
+            utils::HttpSecurityPolicy::TrustedLoopback,
+            current_request_cancel());
         note_backend_activity();
 
         if (response.status_code == 200) {
@@ -688,8 +711,11 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
     std::string url = get_base_url() + endpoint;
 
     try {
-        auto response = utils::HttpClient::post_multipart(url, fields,
-                                                         timeout_seconds);
+        auto response = utils::HttpClient::post_multipart(
+            url,
+            fields,
+            timeout_seconds,
+            utils::HttpSecurityPolicy::TrustedLoopback);
         note_backend_activity();
 
         if (response.status_code == 200) {
@@ -753,6 +779,9 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
     std::string url = get_base_url() + endpoint;
     bool streamed_any_bytes = false;
     auto mark_stream_progress = [this, &streamed_any_bytes]() {
+        if (!streamed_any_bytes) {
+            set_streaming(true);
+        }
         streamed_any_bytes = true;
         note_backend_activity();
     };

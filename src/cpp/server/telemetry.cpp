@@ -259,6 +259,10 @@ static std::string serialize_protobuf_batch(const std::vector<nlohmann::json>& s
         std::string span_id_hex = span_details["spanId"].get<std::string>();
         span_msg.write_bytes(2, hex_to_bytes(span_id_hex));
 
+        if (span_details.contains("parentSpanId")) {
+            span_msg.write_bytes(4, hex_to_bytes(span_details["parentSpanId"].get<std::string>()));
+        }
+
         span_msg.write_string(5, span_details["name"].get<std::string>());
 
         span_msg.write_uint32(6, span_details["kind"].get<uint32_t>());
@@ -617,7 +621,15 @@ private:
                 bool retryable = true;
                 std::string error_detail;
                 try {
-                    auto response = utils::HttpClient::post(batch_endpoint, payload, batch_headers, 3);
+                    const auto policy = batch_endpoint.rfind("http://", 0) == 0
+                        ? utils::HttpSecurityPolicy::AllowInsecureHttp
+                        : utils::HttpSecurityPolicy::ExternalHttpsOnly;
+                    auto response = utils::HttpClient::post(
+                        batch_endpoint,
+                        payload,
+                        batch_headers,
+                        3,
+                        policy);
                     if (response.status_code >= 200 && response.status_code < 300) {
                         success = true;
                         LOG(DEBUG, "Telemetry") << "Successfully sent telemetry batch." << std::endl;
@@ -809,7 +821,16 @@ static std::string truncate_string(const std::string& str, size_t max_len) {
 
 InferenceSpan::InferenceSpan(const std::string& span_kind, const std::string& name, const std::string& model_name, const nlohmann::json& request_json)
     : span_kind_(span_kind), name_(name), model_name_(model_name), start_time_(std::chrono::steady_clock::now()) {
-    trace_id_ = generate_hex_id(16);
+    // When the caller supplies a valid W3C trace context (gated behind
+    // telemetry.trust_incoming_trace_context in server.cpp), adopt its trace id
+    // and treat its span id as this span's parent so the request joins the
+    // caller's distributed trace. Otherwise start a fresh root trace.
+    if (!g_incoming_trace_id.empty()) {
+        trace_id_ = g_incoming_trace_id;
+        parent_span_id_ = g_incoming_parent_span_id;
+    } else {
+        trace_id_ = generate_hex_id(16);
+    }
     span_id_ = generate_hex_id(8);
 
     size_t max_len = 4096;
@@ -858,6 +879,18 @@ InferenceSpan::InferenceSpan(const std::string& span_kind, const std::string& na
         } else {
             request_dump_ = truncate_string(request_json.dump(), max_len);
         }
+    } else if (span_kind_ == "CLASSIFIER") {
+        // Classifier inputs are the payloads being screened (PII, phishing,
+        // prompt injection) — never capture the raw text, only length + a
+        // salted hash for correlating repeated inputs.
+        std::string text;
+        if (request_json.contains("text") && request_json["text"].is_string()) {
+            text = request_json["text"].get<std::string>();
+        } else if (request_json.contains("input") && request_json["input"].is_string()) {
+            text = request_json["input"].get<std::string>();
+        }
+        request_dump_ = "[classifier input: " + std::to_string(text.size()) +
+                        " chars, sha256=" + hash_token(text) + "]";
     } else {
         request_dump_ = truncate_string(request_json.dump(), max_len);
     }
@@ -1078,6 +1111,9 @@ void InferenceSpan::end_with_success(const nlohmann::json& usage_or_timings, con
         {"attributes", attributes},
         {"status", {{"code", 1}}}
     };
+    if (!parent_span_id_.empty()) {
+        span_json["parentSpanId"] = parent_span_id_;
+    }
 
     submit_span(span_json);
 }
@@ -1111,6 +1147,9 @@ void InferenceSpan::end_with_error(const std::string& error_message) {
         {"attributes", attributes},
         {"status", {{"code", 2}, {"message", error_message}}}
     };
+    if (!parent_span_id_.empty()) {
+        span_json["parentSpanId"] = parent_span_id_;
+    }
 
     submit_span(span_json);
 }
@@ -1328,5 +1367,7 @@ std::string hash_token(const std::string& token) {
 thread_local std::string g_current_auth_token;
 thread_local std::chrono::steady_clock::time_point g_request_start_time;
 thread_local std::string g_current_client_session_id;
+thread_local std::string g_incoming_trace_id;
+thread_local std::string g_incoming_parent_span_id;
 
 } // namespace lemon::telemetry

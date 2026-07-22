@@ -15,6 +15,7 @@
 #include "utils/http_client.h"
 #include "server_capabilities.h"
 #include "model_manager.h"
+#include "model_residency.h"
 #include "backend_manager.h"
 #include "recipe_options.h"
 #include "backends/backend_descriptor.h"
@@ -120,7 +121,12 @@ public:
 
     // Pinned status for eviction prevention
     bool is_pinned() const { return pinned_; }
-    void set_pinned(bool pinned) { pinned_ = pinned; }
+    void set_pinned(bool pinned) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        pinned_ = pinned;
+        if (pinned) recipe_options_.set_option("pinned", true);
+        else recipe_options_.remove_option("pinned");
+    }
 
     // Acquire model for inference, safely recovering from DOWNSIZING/EVICTING if necessary.
     // Blocks if LOADING.
@@ -190,8 +196,18 @@ public:
         return false;
     }
 
+    void rescue_from_eviction() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (state_ == ModelState::EVICTING) {
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
+        }
+    }
+
     void release_inference() {
         std::lock_guard<std::mutex> lock(state_mutex_);
+        // Note: is_streaming_ is managed by end_backend_request() which correctly
+        // clears the flag only when the last streaming request completes.
         if (--active_request_count_ == 0) {
             state_ = ModelState::READY;
             state_cv_.notify_all();
@@ -235,6 +251,16 @@ public:
         return active_request_count_ > 0 || maintenance_in_progress_;
     }
 
+    void set_streaming(bool streaming) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        is_streaming_ = streaming;
+    }
+
+    bool is_streaming() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return is_streaming_;
+    }
+
     // Wait until the router no longer has active work using this object.
     // Returns true when the server is idle. Returns false if a bounded wait
     // timed out; callers must not destroy the WrappedServer in that case.
@@ -259,6 +285,7 @@ public:
     // Multi-model support: Model metadata
     void set_model_metadata(const std::string& model_name, const std::string& checkpoint,
                            ModelType type, DeviceType device, const RecipeOptions& recipe_options) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         model_name_ = model_name;
         checkpoint_ = checkpoint;
         model_type_ = type;
@@ -269,8 +296,13 @@ public:
     std::string get_model_name() const { return model_name_; }
     std::string get_checkpoint() const { return checkpoint_; }
     ModelType get_model_type() const { return model_type_; }
+    ResidencyClass get_residency_class() const { return residency_class_; }
+    void set_residency_class(ResidencyClass residency_class) { residency_class_ = residency_class; }
     DeviceType get_device_type() const { return device_type_; }
-    RecipeOptions get_recipe_options() const { return recipe_options_; }
+    RecipeOptions get_recipe_options() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return recipe_options_;
+    }
     int get_process_id() const { return get_process_handle_snapshot().pid; }
     int get_backend_port() const;
 
@@ -293,6 +325,11 @@ public:
 
     // Unload the model and stop the server
     virtual void unload() = 0;
+
+    void set_load_cancel_flag(std::atomic<bool>* f) { load_cancel_ = f; }
+
+    static void set_request_cancel_flag(std::atomic<bool>* f);
+    static std::atomic<bool>* current_request_cancel();
 
     // Downsize the model on soft idle (e.g., clear KV cache). Returns true if the
     // downsize succeeded (or was a no-op), false if the backend operation failed.
@@ -486,6 +523,7 @@ protected:
     std::string model_name_;
     std::string checkpoint_;
     ModelType model_type_ = ModelType::LLM;
+    ResidencyClass residency_class_ = ResidencyClass::Standard;
     DeviceType device_type_ = DEVICE_NONE;
     std::chrono::steady_clock::time_point last_access_time_;
     RecipeOptions recipe_options_;
@@ -501,8 +539,10 @@ protected:
     // evict_server()) blocks until the operation completes, preventing the server
     // from being unloaded/destroyed while the engine holds a raw pointer to it.
     bool maintenance_in_progress_;
+    bool is_streaming_ = false;
     long load_duration_ms_;
     bool pinned_ = false;
+    std::atomic<bool>* load_cancel_ = nullptr;
 
 private:
     void begin_backend_request(BackendRequestKind kind);

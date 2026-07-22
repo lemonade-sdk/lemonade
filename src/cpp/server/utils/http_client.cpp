@@ -253,6 +253,12 @@ static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* st
     return written;
 }
 
+static int cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t, curl_off_t,
+                                    curl_off_t) {
+    auto* flag = static_cast<std::atomic<bool>*>(clientp);
+    return (flag && flag->load()) ? 1 : 0;
+}
+
 struct ProgressData {
     ProgressCallback callback;
     bool cancelled = false;
@@ -359,28 +365,42 @@ static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow
 }
 
 namespace {
-// Applies the scheme and redirect restrictions for a trust boundary. Returns
-// false if any security-relevant option fails to apply so callers can fail
-// closed instead of issuing an unrestricted request.
-bool apply_http_security_policy(CURL* curl, HttpSecurityPolicy policy) {
-    auto set = [curl](CURLoption opt, auto value) {
-        return curl_easy_setopt(curl, opt, value) == CURLE_OK;
+// Applies scheme and redirect restrictions for a trust boundary. Redirect
+// behavior is supplied separately so extending policy enforcement to POST
+// paths does not silently change their existing no-redirect semantics.
+// Returns false if any security-relevant option fails to apply, allowing each
+// caller to fail closed instead of issuing an unrestricted request.
+bool apply_http_security_policy(
+    CURL* curl,
+    HttpSecurityPolicy policy,
+    bool follow_redirects) {
+    auto set = [curl](CURLoption option, auto value) {
+        return curl_easy_setopt(curl, option, value) == CURLE_OK;
     };
+
+    const auto apply_protocols = [&](const char* protocols,
+                                     const char* redirect_protocols) {
+        if (!set(CURLOPT_FOLLOWLOCATION, follow_redirects ? 1L : 0L) ||
+            !set(CURLOPT_PROTOCOLS_STR, protocols)) {
+            return false;
+        }
+        if (!follow_redirects) {
+            return true;
+        }
+        return set(CURLOPT_MAXREDIRS, 5L) &&
+               set(CURLOPT_REDIR_PROTOCOLS_STR, redirect_protocols);
+    };
+
     switch (policy) {
         case HttpSecurityPolicy::TrustedLoopback:
+            // Managed loopback backends are plain HTTP and must never redirect.
             return set(CURLOPT_FOLLOWLOCATION, 0L) &&
                    set(CURLOPT_PROTOCOLS_STR, "http");
         case HttpSecurityPolicy::AllowInsecureHttp:
-            return set(CURLOPT_FOLLOWLOCATION, 1L) &&
-                   set(CURLOPT_MAXREDIRS, 5L) &&
-                   set(CURLOPT_PROTOCOLS_STR, "http,https") &&
-                   set(CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
+            return apply_protocols("http,https", "http,https");
         case HttpSecurityPolicy::ExternalHttpsOnly:
         default:
-            return set(CURLOPT_FOLLOWLOCATION, 1L) &&
-                   set(CURLOPT_MAXREDIRS, 5L) &&
-                   set(CURLOPT_PROTOCOLS_STR, "https") &&
-                   set(CURLOPT_REDIR_PROTOCOLS_STR, "https");
+            return apply_protocols("https", "https");
     }
 }
 } // namespace
@@ -400,7 +420,7 @@ HttpResponse HttpClient::get(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-    if (!apply_http_security_policy(curl, policy)) {
+    if (!apply_http_security_policy(curl, policy, true)) {
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
@@ -441,7 +461,9 @@ HttpResponse HttpClient::get(const std::string& url,
 HttpResponse HttpClient::post(const std::string& url,
                               const std::string& body,
                               const std::map<std::string, std::string>& headers,
-                              long timeout_seconds) {
+                              long timeout_seconds,
+                              HttpSecurityPolicy policy,
+                              std::atomic<bool>* cancel_flag) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -455,10 +477,20 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    if (!apply_http_security_policy(curl, policy, false)) {
+        curl_easy_cleanup(curl);
+        throw std::runtime_error("Failed to apply HTTP security policy");
+    }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
-     // Add custom headers
+    if (cancel_flag) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel_flag);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
+
+    // Add custom headers
     bool has_content_type = false;
     for (const auto& header : headers) {
         std::string key = header.first;
@@ -501,7 +533,8 @@ HttpResponse HttpClient::post(const std::string& url,
 
 HttpResponse HttpClient::post_multipart(const std::string& url,
                                          const std::vector<MultipartField>& fields,
-                                         long timeout_seconds) {
+                                         long timeout_seconds,
+                                         HttpSecurityPolicy policy) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -528,6 +561,11 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    if (!apply_http_security_policy(curl, policy, false)) {
+        curl_mime_free(mime);
+        curl_easy_cleanup(curl);
+        throw std::runtime_error("Failed to apply HTTP security policy");
+    }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
@@ -597,7 +635,8 @@ HttpResponse HttpClient::post_stream(const std::string& url,
                                      StreamCallback stream_callback,
                                      const std::map<std::string, std::string>& headers,
                                      long timeout_seconds,
-                                     std::function<void(int)> on_status) {
+                                     std::function<void(int)> on_status,
+                                     HttpSecurityPolicy policy) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -617,6 +656,10 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
+    if (!apply_http_security_policy(curl, policy, false)) {
+        curl_easy_cleanup(curl);
+        throw std::runtime_error("Failed to apply HTTP security policy");
+    }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
@@ -709,7 +752,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_file_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
-    if (!apply_http_security_policy(curl, policy)) {
+    if (!apply_http_security_policy(curl, policy, true)) {
         result.error_message = "Failed to apply HTTP security policy";
         fclose(fp);
         curl_easy_cleanup(curl);
@@ -879,7 +922,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
             if (head_curl) {
                 curl_easy_setopt(head_curl, CURLOPT_URL, url.c_str());
                 curl_easy_setopt(head_curl, CURLOPT_NOBODY, 1L);  // HEAD request
-                if (!apply_http_security_policy(head_curl, policy)) {
+                if (!apply_http_security_policy(head_curl, policy, true)) {
                     curl_easy_cleanup(head_curl);
                     result.error_message = "Resume failed (HTTP 416) - could not apply security policy";
                     result.can_resume = false;
@@ -1184,7 +1227,9 @@ DownloadResult HttpClient::download_file(const std::string& url,
     return final_result;
 }
 
-bool HttpClient::is_reachable(const std::string& url, int timeout_seconds) {
+bool HttpClient::is_reachable(const std::string& url,
+                              int timeout_seconds,
+                              HttpSecurityPolicy policy) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         return false;
@@ -1197,6 +1242,10 @@ bool HttpClient::is_reachable(const std::string& url, int timeout_seconds) {
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    if (!apply_http_security_policy(curl, policy, false)) {
+        curl_easy_cleanup(curl);
+        return false;
+    }
 
     CURLcode res = curl_easy_perform(curl);
 

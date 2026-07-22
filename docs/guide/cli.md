@@ -391,6 +391,12 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--acestep BACKEND` | ACE-Step backend to use | Auto-detected |
 
+#### ONNX Runtime (`onnxruntime` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--onnxruntime-args ARGS` | Custom arguments to pass to ort-server | `""` |
+
 #### TRELLIS.2 (`trellis` recipe)
 
 | Option | Description | Default |

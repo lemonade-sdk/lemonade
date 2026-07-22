@@ -46,6 +46,11 @@
   "no_broadcast": false,
   "no_fetch_executables": false,
   "offline": false,
+  "onnxruntime": {
+    "args": "",
+    "cpu_args": "",
+    "cpu_bin": "builtin"
+  },
   "openmoss": {
     "backend": "auto",
     "cuda_bin": "builtin",
@@ -91,7 +96,8 @@
         "otel_genai"
       ],
       "send_batch_size": 100
-    }
+    },
+    "trust_incoming_trace_context": false
   },
   "thinksound": {
     "backend": "auto",

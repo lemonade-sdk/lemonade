@@ -479,7 +479,8 @@ static const std::vector<RecipeBackendDef>& recipe_defs() {
         std::vector<RecipeBackendDef> v;
         for (const auto* desc : lemon::backends::all_descriptors()) {
             for (const auto& row : desc->support) {
-                v.push_back({desc->recipe, row.backend, row.supported_os, row.devices, row.device_summary});
+                v.push_back({desc->recipe, row.backend, row.supported_os, row.devices,
+                             row.device_summary, row.arch_gates});
             }
         }
         return v;
@@ -506,6 +507,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
     {"gfx942", "AMD Instinct MI300X / MI300A (CDNA3)"},
+    {"gfx950", "AMD Instinct MI350X / MI355X (CDNA4)"},
 
     // NVIDIA GPU compute capabilities (CUDA)
     {"sm_75",  "GeForce RTX 20 / GTX 16 series (Turing)"},
@@ -628,18 +630,57 @@ static bool device_matches_constraint(const std::string& device_family,
     return false;
 }
 
+// Find the install gate that applies to `arch` in a support row, honoring the
+// same trailing-X wildcard the device matrix uses. Returns nullptr when the arch
+// has no extra gate (inherits the row's full OS/channel reach).
+static const ArchInstallGate* find_arch_gate(const ArchInstallGates& gates,
+                                             const std::string& arch) {
+    auto exact = gates.find(arch);
+    if (exact != gates.end()) {
+        return &exact->second;
+    }
+    for (const auto& [token, gate] : gates) {
+        if (device_matches_constraint(arch, {token})) {
+            return &gate;
+        }
+    }
+    return nullptr;
+}
+
+// True if `arch` clears a support row's per-arch gate for the given OS/channel.
+// An empty channel means "channel-agnostic" (e.g. the availability matrix asks
+// about the bare "rocm" backend) and only the OS half of the gate is enforced.
+static bool arch_gate_allows(const ArchInstallGates& gates, const std::string& arch,
+                             const std::string& os, const std::string& channel) {
+    const ArchInstallGate* gate = find_arch_gate(gates, arch);
+    if (!gate) {
+        return true;
+    }
+    if (!gate->os.empty() && gate->os.count(os) == 0) {
+        return false;
+    }
+    if (!channel.empty() && !gate->channels.empty() && gate->channels.count(channel) == 0) {
+        return false;
+    }
+    return true;
+}
+
 // True if (recipe, backend) is published for the given ROCm family/ISA, per the
 // support matrix assembled from backend descriptors. The matrix keys ROCm rows
 // under "rocm", so a channel-qualified backend (rocm-stable/rocm-nightly) is
-// normalized before lookup. `arch` may be a concrete ISA or a family token; the
-// trailing-X wildcard in the matrix handles ISA-to-family matching.
+// normalized before lookup — the channel it carries is still honored against any
+// per-arch gate. `arch` may be a concrete ISA or a family token; the trailing-X
+// wildcard in the matrix handles ISA-to-family matching.
 bool SystemInfo::backend_supports_arch(const std::string& recipe,
                                        const std::string& backend,
                                        const std::string& arch) {
     std::string matrix_backend = backend;
+    std::string channel;
     if (matrix_backend.rfind("rocm-", 0) == 0) {
+        channel = matrix_backend.substr(std::string("rocm-").size());
         matrix_backend = "rocm";
     }
+    const std::string current_os = get_current_os();
     for (const auto& def : recipe_defs()) {
         if (def.recipe != recipe || def.backend != matrix_backend) {
             continue;
@@ -648,7 +689,10 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
         if (it == def.devices.end()) {
             return false;
         }
-        return device_matches_constraint(arch, it->second);
+        if (!device_matches_constraint(arch, it->second)) {
+            return false;
+        }
+        return arch_gate_allows(def.arch_gates, arch, current_os, channel);
     }
     return false;
 }
@@ -1296,6 +1340,17 @@ json SystemInfo::build_recipes_info(const json& devices) {
         std::vector<std::pair<std::string, std::set<std::string>>> missing_devices;  // Device types not present
         std::vector<std::pair<std::string, std::set<std::string>>> wrong_family;     // Device present but wrong family
 
+        // Resolve the ROCm channel this recipe is configured for, so per-arch gates
+        // (e.g. gfx950 is stable-only) can be enforced against the active channel.
+        std::string row_channel;
+        if (!def.arch_gates.empty() && def.backend == "rocm" &&
+            backends::recipe_has_rocm_channels(def.recipe)) {
+            row_channel = "stable";
+            if (auto* cfg = RuntimeConfig::global()) {
+                row_channel = cfg->rocm_channel_for_recipe(def.recipe);
+            }
+        }
+
         for (const auto& [required_device_type, required_families] : def.devices) {
             bool device_type_found = false;
             bool family_matched = false;
@@ -1303,7 +1358,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
             for (const auto& detected : detected_devices) {
                 if (detected.type == required_device_type) {
                     device_type_found = true;
-                    if (device_matches_constraint(detected.family, required_families)) {
+                    if (device_matches_constraint(detected.family, required_families) &&
+                        arch_gate_allows(def.arch_gates, detected.family, current_os, row_channel)) {
                         matching_devices.push_back(detected.type);
                         family_matched = true;
                     }
@@ -1883,7 +1939,13 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx120X";
     }
 
-    if (device_lower.find("7700") != std::string::npos ||
+    // "7600" alone is not product-specific enough: it also matches names like
+    // "AMD Radeon HD 7600M Series" (a GCN1 card from 2012, not RDNA3). Match
+    // the actual product family instead.
+    if (device_lower.find("rx 7600") != std::string::npos ||
+        device_lower.find("rx7600") != std::string::npos ||
+        device_lower.find("pro w7600") != std::string::npos ||
+        device_lower.find("7700") != std::string::npos ||
         device_lower.find("7800") != std::string::npos ||
         device_lower.find("7900") != std::string::npos ||
         device_lower.find("v710") != std::string::npos) {
