@@ -172,6 +172,25 @@ struct CostInfo {
     std::optional<double> cost_input_per_million;      // USD per 1M input tokens
     std::optional<double> cost_output_per_million;     // USD per 1M output tokens
     std::optional<double> latency_ms_hint;             // local/compute proxy
+
+    // Serialize recognized fields for Decision::outputs["estimated_cost"].
+    // Returns {} when every field is empty so callers can skip attachment.
+    json to_json() const {
+        json estimated = json::object();
+        if (cost_tier) {
+            estimated["cost_tier"] = *cost_tier;
+        }
+        if (cost_input_per_million) {
+            estimated["cost_input_per_million"] = *cost_input_per_million;
+        }
+        if (cost_output_per_million) {
+            estimated["cost_output_per_million"] = *cost_output_per_million;
+        }
+        if (latency_ms_hint) {
+            estimated["latency_ms_hint"] = *latency_ms_hint;
+        }
+        return estimated;
+    }
 };
 
 struct CostServices {

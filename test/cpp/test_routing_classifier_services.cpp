@@ -629,32 +629,71 @@ static void test_estimated_cost_preserves_author_set_value() {
 }
 
 static void test_resolve_cost_info_typed_and_extras() {
-    // Typed fields (cloud discovery path from PR #1785) win when >= 0.
-    lemon::CostInfo from_typed = lemon::resolve_cost_info(1.25, 10.0, {});
-    check("typed cost_input_per_million is used when >= 0",
+    // Typed fields (cloud discovery path from PR #1785) win when present.
+    lemon::CostInfo from_typed =
+        lemon::resolve_cost_info(std::optional<double>{1.25},
+                                 std::optional<double>{10.0}, {});
+    check("typed cost_input_per_million is used when present",
           from_typed.cost_input_per_million.has_value() &&
           near(*from_typed.cost_input_per_million, 1.25));
-    check("typed cost_output_per_million is used when >= 0",
+    check("typed cost_output_per_million is used when present",
           from_typed.cost_output_per_million.has_value() &&
           near(*from_typed.cost_output_per_million, 10.0));
 
-    // Hand-authored extras path when typed fields are unknown (< 0).
+    // Hand-authored extras path when typed fields are absent.
     std::map<std::string, json> extras = {
         {"cost_tier", "free"},
         {"cost_input_per_million", 0.0},
         {"latency_ms_hint", 8.5},
     };
-    lemon::CostInfo from_extras = lemon::resolve_cost_info(-1.0, -1.0, extras);
+    lemon::CostInfo from_extras =
+        lemon::resolve_cost_info(std::nullopt, std::nullopt, extras);
     check("extras cost_tier is read",
           from_extras.cost_tier.has_value() && *from_extras.cost_tier == "free");
-    check("extras cost_input_per_million is read when typed is unknown",
+    check("extras cost_input_per_million is read when typed is absent",
           from_extras.cost_input_per_million.has_value() &&
           near(*from_extras.cost_input_per_million, 0.0));
     check("extras latency_ms_hint is read",
           from_extras.latency_ms_hint.has_value() &&
           near(*from_extras.latency_ms_hint, 8.5));
-    check("unknown typed prices stay nullopt without extras",
-          !lemon::resolve_cost_info(-1.0, -1.0, {}).cost_input_per_million.has_value());
+    check("absent typed prices stay nullopt without extras",
+          !lemon::resolve_cost_info(std::nullopt, std::nullopt, {})
+               .cost_input_per_million.has_value());
+
+    // Precedence: typed wins when both typed and extras are set.
+    std::map<std::string, json> both = {{"cost_input_per_million", 99.0},
+                                        {"cost_output_per_million", 88.0}};
+    lemon::CostInfo from_both =
+        lemon::resolve_cost_info(std::optional<double>{1.25},
+                                 std::optional<double>{10.0}, both);
+    check("typed price wins over extras when both present",
+          from_both.cost_input_per_million.has_value() &&
+          near(*from_both.cost_input_per_million, 1.25));
+    check("typed output price wins over extras when both present",
+          from_both.cost_output_per_million.has_value() &&
+          near(*from_both.cost_output_per_million, 10.0));
+}
+
+static void test_resolve_cost_info_rejects_unknown_cost_tier() {
+    std::map<std::string, json> extras = {{"cost_tier", "cheap"}};
+    lemon::CostInfo info =
+        lemon::resolve_cost_info(std::nullopt, std::nullopt, extras);
+    check("unrecognized cost_tier is dropped", !info.cost_tier.has_value());
+}
+
+static void test_cost_info_to_json() {
+    lemon::CostInfo empty;
+    check("empty CostInfo serializes to empty object", empty.to_json().empty());
+
+    lemon::CostInfo info;
+    info.cost_tier = "low";
+    info.cost_input_per_million = 2.5;
+    json out = info.to_json();
+    check("to_json emits cost_tier", out.value("cost_tier", "") == "low");
+    check("to_json emits cost_input_per_million",
+          near(out.value("cost_input_per_million", -1.0), 2.5));
+    check("to_json omits unset fields",
+          !out.contains("cost_output_per_million") && !out.contains("latency_ms_hint"));
 }
 
 int main() {
@@ -683,6 +722,8 @@ int main() {
     test_estimated_cost_swallows_cost_of_exception();
     test_estimated_cost_preserves_author_set_value();
     test_resolve_cost_info_typed_and_extras();
+    test_resolve_cost_info_rejects_unknown_cost_tier();
+    test_cost_info_to_json();
 
     if (g_failures == 0) {
         std::printf("All routing classifier service tests passed.\n");

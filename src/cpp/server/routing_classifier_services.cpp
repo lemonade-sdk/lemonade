@@ -7,6 +7,7 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 namespace {
@@ -478,40 +479,58 @@ T extras_get(const std::map<std::string, json>& extras, const std::string& key,
     }
 }
 
+// Non-negative numeric extras only; missing / null / negative / wrong-type →
+// nullopt so callers don't lean on a "<0 means unknown" sentinel.
+std::optional<double> extras_get_nonneg(const std::map<std::string, json>& extras,
+                                        const std::string& key) {
+    auto it = extras.find(key);
+    if (it == extras.end() || it->second.is_null()) {
+        return std::nullopt;
+    }
+    try {
+        const double value = it->second.get<double>();
+        if (value >= 0.0) {
+            return value;
+        }
+    } catch (...) {
+    }
+    return std::nullopt;
+}
+
+bool is_allowed_cost_tier(const std::string& tier) {
+    return tier == "free" || tier == "low" || tier == "medium" || tier == "high";
+}
+
 } // namespace
 
-CostInfo resolve_cost_info(double cost_input_per_million,
-                           double cost_output_per_million,
+CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
+                           std::optional<double> cost_output_per_million,
                            const std::map<std::string, json>& extras) {
     CostInfo out;
 
-    if (cost_input_per_million >= 0.0) {
+    if (cost_input_per_million) {
         out.cost_input_per_million = cost_input_per_million;
     } else {
-        const double from_extras = extras_get<double>(extras, "cost_input_per_million", -1.0);
-        if (from_extras >= 0.0) {
-            out.cost_input_per_million = from_extras;
-        }
+        out.cost_input_per_million = extras_get_nonneg(extras, "cost_input_per_million");
     }
 
-    if (cost_output_per_million >= 0.0) {
+    if (cost_output_per_million) {
         out.cost_output_per_million = cost_output_per_million;
     } else {
-        const double from_extras = extras_get<double>(extras, "cost_output_per_million", -1.0);
-        if (from_extras >= 0.0) {
-            out.cost_output_per_million = from_extras;
-        }
+        out.cost_output_per_million = extras_get_nonneg(extras, "cost_output_per_million");
     }
 
     const std::string tier = extras_get<std::string>(extras, "cost_tier", "");
     if (!tier.empty()) {
-        out.cost_tier = tier;
+        if (is_allowed_cost_tier(tier)) {
+            out.cost_tier = tier;
+        } else {
+            LOG(DEBUG, "Routing") << "Ignoring unrecognized cost_tier '" << tier
+                                  << "' (expected free|low|medium|high)" << std::endl;
+        }
     }
 
-    const double latency = extras_get<double>(extras, "latency_ms_hint", -1.0);
-    if (latency >= 0.0) {
-        out.latency_ms_hint = latency;
-    }
+    out.latency_ms_hint = extras_get_nonneg(extras, "latency_ms_hint");
 
     return out;
 }

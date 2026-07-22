@@ -36,12 +36,14 @@ ClassifierServices make_classifier_services_from_router_calls(
     RouterJsonCall classify = {},
     RouterModelTypeCall get_model_type = {});
 
-// Resolve CostInfo from typed per-million fields (<0 = unknown) plus recognized
-// extras keys (cost_tier, cost_*_per_million, latency_ms_hint). Used by the
-// Router CostServices wiring and unit tests — keeps ModelInfo out of this
-// header's include graph.
-CostInfo resolve_cost_info(double cost_input_per_million,
-                           double cost_output_per_million,
+// Resolve CostInfo from optional typed per-million fields plus recognized
+// extras keys (cost_tier, cost_*_per_million, latency_ms_hint). Typed values
+// win when present; extras fill gaps. cost_tier must be one of
+// free|low|medium|high — other values are dropped. Used by the Router
+// CostServices wiring and unit tests — keeps ModelInfo out of this header's
+// include graph.
+CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
+                           std::optional<double> cost_output_per_million,
                            const std::map<std::string, json>& extras);
 
 CostServices make_router_cost_services(Router& router);

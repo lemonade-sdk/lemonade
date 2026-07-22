@@ -1286,9 +1286,28 @@ NamedLeafFactories make_deterministic_leaf_factories() {
 
 namespace {
 
+void log_cost_of_failure_once(const std::string& candidate, const char* detail) {
+    static std::mutex logged_mu;
+    static std::set<std::string> logged_candidates;
+    bool should_log = false;
+    {
+        std::lock_guard<std::mutex> lock(logged_mu);
+        should_log = logged_candidates.insert(candidate).second;
+    }
+    if (!should_log) {
+        return;
+    }
+    LOG(WARNING, "Routing") << "CostServices::cost_of threw for candidate '"
+                            << candidate << "': " << detail
+                            << " (further throws for this candidate suppressed)"
+                            << std::endl;
+}
+
 // Best-effort: cost_of is caller-injected and must never make route() throw,
 // so any exception here is logged and swallowed rather than propagated. Also
 // leaves an author-set outputs["estimated_cost"] alone rather than clobbering it.
+// WARNING for a throwing candidate is emitted at most once per process to avoid
+// hot-path log spam when one model persistently fails cost lookup.
 void attach_estimated_cost(Decision& decision, const CostServices& cost_services) {
     if (!cost_services.cost_of || decision.outputs.contains("estimated_cost")) {
         return;
@@ -1297,27 +1316,13 @@ void attach_estimated_cost(Decision& decision, const CostServices& cost_services
     try {
         info = cost_services.cost_of(decision.route_to);
     } catch (const std::exception& e) {
-        LOG(WARNING, "Routing") << "CostServices::cost_of threw for candidate '"
-                                << decision.route_to << "': " << e.what() << std::endl;
+        log_cost_of_failure_once(decision.route_to, e.what());
         return;
     } catch (...) {
-        LOG(WARNING, "Routing") << "CostServices::cost_of threw an unknown exception for "
-                                << "candidate '" << decision.route_to << "'" << std::endl;
+        log_cost_of_failure_once(decision.route_to, "unknown exception");
         return;
     }
-    json estimated = json::object();
-    if (info.cost_tier) {
-        estimated["cost_tier"] = *info.cost_tier;
-    }
-    if (info.cost_input_per_million) {
-        estimated["cost_input_per_million"] = *info.cost_input_per_million;
-    }
-    if (info.cost_output_per_million) {
-        estimated["cost_output_per_million"] = *info.cost_output_per_million;
-    }
-    if (info.latency_ms_hint) {
-        estimated["latency_ms_hint"] = *info.latency_ms_hint;
-    }
+    json estimated = info.to_json();
     if (!estimated.empty()) {
         decision.outputs["estimated_cost"] = std::move(estimated);
     }
