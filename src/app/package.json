@@ -8,6 +8,7 @@
     "build:renderer": "webpack --mode development",
     "build:renderer:prod": "webpack --mode production",
     "watch:renderer": "webpack --watch --mode development",
+    "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "npm run build:renderer:prod",
