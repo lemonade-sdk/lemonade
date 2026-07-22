@@ -1,7 +1,7 @@
 option(LEMONADE_BUNDLE_NEXUS "Build and package the Lemonade Nexus sidecar" OFF)
 set(LEMONADE_NEXUS_SOURCE_DIR "" CACHE PATH "Use a local lemonade-nexus checkout instead of fetching it")
 set(LEMONADE_NEXUS_GIT_TAG
-    "f1b44e1585578d43c2f108135705019569ee84dc"
+    "427dc33841f4a2a21fbdc5b6d57325b682a66673"
     CACHE STRING "Pinned lemonade-nexus commit")
 
 if(NOT LEMONADE_BUNDLE_NEXUS)
@@ -18,15 +18,15 @@ include(FetchContent)
 if(LEMONADE_NEXUS_SOURCE_DIR)
     get_filename_component(_lemonade_nexus_source_dir
         "${LEMONADE_NEXUS_SOURCE_DIR}" ABSOLUTE)
-    if(NOT EXISTS "${_lemonade_nexus_source_dir}/CMakeLists.txt")
+    if(NOT EXISTS "${_lemonade_nexus_source_dir}/projects/LemonadeNexusSidecar/CMakeLists.txt")
         message(FATAL_ERROR
-            "LEMONADE_NEXUS_SOURCE_DIR does not contain a CMakeLists.txt: "
+            "LEMONADE_NEXUS_SOURCE_DIR is not a bundling-capable lemonade-nexus checkout: "
             "${_lemonade_nexus_source_dir}")
     endif()
 else()
     FetchContent_Declare(lemonade_nexus_source
         GIT_REPOSITORY https://github.com/lemonade-sdk/lemonade-nexus.git
-        GIT_TAG ${LEMONADE_NEXUS_GIT_TAG}
+        GIT_TAG "${LEMONADE_NEXUS_GIT_TAG}"
         GIT_SHALLOW FALSE
         GIT_PROGRESS TRUE
         SOURCE_SUBDIR cmake/fetch-only
@@ -38,58 +38,6 @@ endif()
 
 set(_lemonade_nexus_binary_dir
     "${CMAKE_BINARY_DIR}/_deps/lemonade-nexus-build")
-set(_lemonade_nexus_cmake_args
-    "-DBUILD_TESTING=OFF"
-    "-DLEMONADE_NEXUS_MINIMAL_DEPS=ON"
-)
-
-if(NOT LEMONADE_NEXUS_SOURCE_DIR)
-    list(APPEND _lemonade_nexus_cmake_args
-        "-DNEXUS_GIT_COMMIT_OVERRIDE=${LEMONADE_NEXUS_GIT_TAG}")
-endif()
-if(CMAKE_BUILD_TYPE)
-    list(APPEND _lemonade_nexus_cmake_args
-        "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
-endif()
-if(CMAKE_TOOLCHAIN_FILE)
-    list(APPEND _lemonade_nexus_cmake_args
-        "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
-endif()
-if(VCPKG_TARGET_TRIPLET)
-    list(APPEND _lemonade_nexus_cmake_args
-        "-DVCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}")
-endif()
-if(OPENSSL_ROOT_DIR)
-    list(APPEND _lemonade_nexus_cmake_args
-        "-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}"
-        "-DOPENSSL_USE_STATIC_LIBS=ON")
-endif()
-if(CMAKE_OSX_ARCHITECTURES)
-    list(APPEND _lemonade_nexus_cmake_args
-        "-DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}")
-endif()
-if(APPLE)
-    list(APPEND _lemonade_nexus_cmake_args
-        "-DOPENSSL_FORCE_BUNDLED=ON")
-endif()
-
-# Keep Nexus in an isolated CMake build because both projects currently declare
-# overlapping third-party targets and cache variables.
-ExternalProject_Add(lemonade_nexus_external
-    SOURCE_DIR "${_lemonade_nexus_source_dir}"
-    BINARY_DIR "${_lemonade_nexus_binary_dir}"
-    DOWNLOAD_COMMAND ""
-    UPDATE_COMMAND ""
-    INSTALL_COMMAND ""
-    CMAKE_ARGS ${_lemonade_nexus_cmake_args}
-    BUILD_COMMAND
-        ${CMAKE_COMMAND} --build <BINARY_DIR>
-        --config $<CONFIG>
-        --target LemonadeNexusSidecar
-        --parallel
-    USES_TERMINAL_CONFIGURE TRUE
-    USES_TERMINAL_BUILD TRUE
-)
 
 if(WIN32)
     set(_lemonade_nexus_executable_suffix ".exe")
@@ -105,12 +53,82 @@ else()
         "${_lemonade_nexus_binary_dir}/projects/LemonadeNexusSidecar/lemonade-nexus-sidecar${_lemonade_nexus_executable_suffix}")
 endif()
 
+set(_lemonade_nexus_cmake_args
+    "-DBUILD_TESTING:BOOL=OFF"
+    "-DLEMONADE_NEXUS_MINIMAL_DEPS:BOOL=ON"
+)
+
+if(NOT LEMONADE_NEXUS_SOURCE_DIR)
+    list(APPEND _lemonade_nexus_cmake_args
+        "-DNEXUS_GIT_COMMIT_OVERRIDE:STRING=${LEMONADE_NEXUS_GIT_TAG}")
+endif()
+if(CMAKE_BUILD_TYPE)
+    list(APPEND _lemonade_nexus_cmake_args
+        "-DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}")
+endif()
+if(CMAKE_TOOLCHAIN_FILE)
+    list(APPEND _lemonade_nexus_cmake_args
+        "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${CMAKE_TOOLCHAIN_FILE}")
+endif()
+if(VCPKG_TARGET_TRIPLET)
+    list(APPEND _lemonade_nexus_cmake_args
+        "-DVCPKG_TARGET_TRIPLET:STRING=${VCPKG_TARGET_TRIPLET}")
+endif()
+if(OPENSSL_ROOT_DIR)
+    list(APPEND _lemonade_nexus_cmake_args
+        "-DOPENSSL_ROOT_DIR:PATH=${OPENSSL_ROOT_DIR}"
+        "-DOPENSSL_USE_STATIC_LIBS:BOOL=ON")
+endif()
+if(CMAKE_OSX_ARCHITECTURES)
+    string(REPLACE ";" "|" _lemonade_nexus_osx_architectures
+        "${CMAKE_OSX_ARCHITECTURES}")
+    list(APPEND _lemonade_nexus_cmake_args
+        "-DCMAKE_OSX_ARCHITECTURES:STRING=${_lemonade_nexus_osx_architectures}")
+endif()
+if(CMAKE_OSX_DEPLOYMENT_TARGET)
+    list(APPEND _lemonade_nexus_cmake_args
+        "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+endif()
+if(CMAKE_OSX_SYSROOT)
+    list(APPEND _lemonade_nexus_cmake_args
+        "-DCMAKE_OSX_SYSROOT:PATH=${CMAKE_OSX_SYSROOT}")
+endif()
+if(APPLE)
+    list(APPEND _lemonade_nexus_cmake_args
+        "-DOPENSSL_FORCE_BUNDLED:BOOL=ON")
+endif()
+
+# Keep Nexus in an isolated CMake build because both projects currently declare
+# overlapping third-party targets and cache variables.
+ExternalProject_Add(lemonade_nexus_external
+    SOURCE_DIR "${_lemonade_nexus_source_dir}"
+    BINARY_DIR "${_lemonade_nexus_binary_dir}"
+    DOWNLOAD_COMMAND ""
+    UPDATE_COMMAND ""
+    INSTALL_COMMAND ""
+    LIST_SEPARATOR "|"
+    CMAKE_ARGS ${_lemonade_nexus_cmake_args}
+    BUILD_COMMAND
+        ${CMAKE_COMMAND} --build <BINARY_DIR>
+        --config $<CONFIG>
+        --target LemonadeNexusSidecar
+        --parallel
+    BUILD_BYPRODUCTS "${_lemonade_nexus_sidecar}"
+    USES_TERMINAL_CONFIGURE TRUE
+    USES_TERMINAL_BUILD TRUE
+)
+
 install(PROGRAMS "${_lemonade_nexus_sidecar}"
     DESTINATION bin
     COMPONENT Runtime)
 
 function(_lemonade_nexus_finalize_targets)
-    foreach(_package_target wix_installer_minimal wix_installer_full package-macos)
+    foreach(_package_target
+            package
+            wix_installers
+            wix_installer_minimal
+            wix_installer_full
+            package-macos)
         if(TARGET ${_package_target})
             add_dependencies(${_package_target} lemonade_nexus_external)
         endif()
