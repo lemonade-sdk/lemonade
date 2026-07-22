@@ -102,6 +102,7 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
     std::string line;
     int line_no = 0;
     std::set<std::string> seen_names;
+    static const std::set<std::string> kAllowedRowKeys = {"name", "note", "request", "decision"};
     while (std::getline(cases, line)) {
         ++line_no;
         if (line.find_first_not_of(" \t\r\n") == std::string::npos) {
@@ -121,6 +122,14 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
                   false);
             continue;
         }
+        for (auto it = row.begin(); it != row.end(); ++it) {
+            if (kAllowedRowKeys.count(it.key()) == 0) {
+                check(rel + ": cases.jsonl line " + std::to_string(line_no) +
+                          " unknown key '" + it.key() + "'",
+                      false);
+            }
+        }
+
         const std::string case_name = row.value("name", "");
         if (case_name.empty()) {
             check(rel + ": cases.jsonl line " + std::to_string(line_no) + " has a name", false);
