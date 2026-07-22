@@ -8,7 +8,7 @@
       "name": "lemonade-base",
       "hidden": true,
       "cacheVariables": {
-        "CMAKE_PROJECT_TOP_LEVEL_INCLUDES": "${sourceDir}/cmake/LemonadeNexus.cmake"
+        "CMAKE_PROJECT_lemon_cpp_INCLUDE": "${sourceDir}/cmake/LemonadeNexus.cmake"
       }
     },
     {
