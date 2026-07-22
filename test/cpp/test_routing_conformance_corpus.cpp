@@ -18,8 +18,10 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #ifndef CONFORMANCE_CORPUS_DIR
@@ -52,7 +54,15 @@ static json load_json_file(const fs::path& path) {
 
 static std::vector<fs::path> find_case_dirs(const fs::path& root) {
     std::vector<fs::path> dirs;
-    for (const auto& entry : fs::recursive_directory_iterator(root)) {
+    std::error_code ec;
+    auto it = fs::recursive_directory_iterator(
+        root, fs::directory_options::skip_permission_denied, ec);
+    if (ec) {
+        std::printf("[FAIL] cannot walk %s: %s\n", root.string().c_str(),
+                    ec.message().c_str());
+        return dirs;
+    }
+    for (const auto& entry : it) {
         if (entry.is_regular_file() && entry.path().filename() == "cases.jsonl") {
             dirs.push_back(entry.path().parent_path());
         }
@@ -72,7 +82,14 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
         std::printf("  %s\n", e.what());
         return 0;
     }
-    RoutingPolicyEngine engine(std::move(policy), lemon::ClassifierServices{});
+    std::optional<RoutingPolicyEngine> engine;
+    try {
+        engine.emplace(std::move(policy), lemon::ClassifierServices{});
+    } catch (const std::exception& e) {
+        check(rel + ": policy compiles", false);
+        std::printf("  %s\n", e.what());
+        return 0;
+    }
 
     std::ifstream cases(case_dir / "cases.jsonl");
     if (!cases) {
@@ -96,12 +113,18 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
             std::printf("  %s\n", e.what());
             continue;
         }
+        if (!row.is_object() || !row.contains("request") || !row.contains("decision")) {
+            check(rel + ": cases.jsonl line " + std::to_string(line_no) +
+                      " has request+decision",
+                  false);
+            continue;
+        }
         const std::string name =
             rel + "/" + row.value("name", "line-" + std::to_string(line_no));
 
-        const json& request = row["request"];
+        const json& request = row.at("request");
         const bool want_trace = request.value("route_trace", false);
-        Decision decision = engine.route(
+        Decision decision = engine->route(
             lemon::build_route_context(request, request.value("model", "")), want_trace);
         const json produced = lemon::route_decision_to_json(decision);
         const json& expected = row.at("decision");
