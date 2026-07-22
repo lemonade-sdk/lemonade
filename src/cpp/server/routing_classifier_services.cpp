@@ -1,5 +1,7 @@
 #include "lemon/routing_classifier_services.h"
 
+#include "lemon/thinking_controls.h"
+
 #include <cmath>
 #include <memory>
 #include <optional>
@@ -8,6 +10,16 @@
 
 namespace lemon {
 namespace {
+
+// Output cap for internal classifier chat calls (the `llm` router). The reply
+// contract is a single small JSON object ({"model": ..., "rationale": ...});
+// this bound keeps a misbehaving router model from streaming an essay.
+constexpr int kClassifierChatMaxTokens = 256;
+
+json llm_router_response_format() {
+    // Use the portable JSON object contract; Lemonade validates the fields.
+    return {{"type", "json_object"}};
+}
 
 void throw_if_error_response(const json& response, const std::string& context) {
     if (!response.is_object() || !response.contains("error")) {
@@ -237,11 +249,14 @@ std::map<std::string, double> parse_classifier_scores(const json& response) {
 ClassifierServices make_classifier_services_from_router_calls(
     RouterJsonCall embeddings,
     RouterJsonCall chat_completion,
-    EnsureClassifierModelLoaded ensure_loaded) {
+    EnsureClassifierModelLoaded ensure_loaded,
+    RouterJsonCall classify,
+    RouterModelTypeCall get_model_type) {
     ClassifierServices services;
     auto embeddings_call = std::make_shared<RouterJsonCall>(std::move(embeddings));
     auto chat_completion_call =
         std::make_shared<RouterJsonCall>(std::move(chat_completion));
+    auto classify_call = std::make_shared<RouterJsonCall>(std::move(classify));
 
     services.embed = [embeddings_call,
                       ensure_loaded](const std::string& model,
@@ -257,14 +272,41 @@ ClassifierServices make_classifier_services_from_router_calls(
         return parse_embedding_vector((*embeddings_call)(request));
     };
 
-    services.run_classifier = [chat_completion_call,
+    services.run_classifier = [chat_completion_call, classify_call, get_model_type,
                                ensure_loaded](const std::string& model,
                                               const std::string& input)
         -> std::map<std::string, double> {
+        // Load the model BEFORE resolving its runtime type. The production
+        // resolver (Router::get_model_type) reports ModelType::LLM until the
+        // backend is loaded and alive, so resolving first would make a cold-start
+        // request — the first after startup, eviction, or a backend restart —
+        // pick the chat path for a model that only speaks /v1/classify,
+        // recreating the unsupported-capability failure this routing exists to
+        // avoid.
+        ensure_model(ensure_loaded, model);
+
+        // Models registered under ModelType::CLASSIFICATION (the onnxruntime
+        // backend) speak /v1/classify natively — a real encoder classification
+        // head, not an LLM asked to emit JSON. Route to it directly instead of
+        // going through chat_completion, which such a model can't serve at all
+        // (WrappedServer's default chat_completion() is an unsupported-capability
+        // error for any backend that doesn't implement it).
+        const bool use_classify_endpoint =
+            classify_call && *classify_call && get_model_type &&
+            get_model_type(model) == ModelType::CLASSIFICATION;
+
+        if (use_classify_endpoint) {
+            json request = {
+                {"model", model},
+                {"input", input},
+            };
+            return parse_classifier_scores((*classify_call)(request));
+        }
+
         if (!*chat_completion_call) {
             throw std::runtime_error("Router chat_completion call is not configured");
         }
-        ensure_model(ensure_loaded, model);
+
         json request = {
             {"model", model},
             {"stream", false},
@@ -291,15 +333,25 @@ ClassifierServices make_classifier_services_from_router_calls(
             throw std::runtime_error("Router chat_completion call is not configured");
         }
         ensure_model(ensure_loaded, model);
+        // A deliberately constrained classifier invocation: deterministic
+        // (temperature 0), non-streaming, thinking disabled through the same
+        // cross-backend normalization as normal Lemonade requests (so e.g. a
+        // Qwen3-style router doesn't emit <think> blocks or burn seconds
+        // reasoning), and output tightly bounded — the reply contract is one
+        // small JSON object, never long-form text.
         json request = {
             {"model", model},
             {"stream", false},
             {"temperature", 0.0},
+            {"max_tokens", kClassifierChatMaxTokens},
+            {"enable_thinking", false},
+            {"response_format", llm_router_response_format()},
             {"messages", json::array({
                 {{"role", "system"}, {"content", prompt}},
                 {{"role", "user"}, {"content", input}},
             })},
         };
+        normalize_thinking_controls(request);
         return extract_chat_text((*chat_completion_call)(request));
     };
 

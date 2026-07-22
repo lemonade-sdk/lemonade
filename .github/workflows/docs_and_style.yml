@@ -21,6 +21,14 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: src/app/package-lock.json
+      - name: Install app dependencies
+        working-directory: src/app
+        run: npm ci
+      - name: Type-check application (same strictness as the production Webpack build)
+        working-directory: src/app
+        run: npm run typecheck
       - name: Run app regression tests
         run: node test/app/run-app-regression-tests.cjs
 

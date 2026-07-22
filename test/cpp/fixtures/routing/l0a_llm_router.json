@@ -9,7 +9,7 @@
     "router": {
       "type": "llm",
       "model": "Qwen3-1.7B-GGUF",
-      "prompt": "You route requests. Reply with ONLY a model name. Use Qwen3-8B-GGUF for everyday questions; use Qwen3.5-35B-A3B-GGUF for hard reasoning, coding, or long context."
+      "prompt": "You route requests. Use Qwen3-8B-GGUF for everyday questions; use Qwen3.5-35B-A3B-GGUF for hard reasoning, coding, or long context."
     }
   }
 }

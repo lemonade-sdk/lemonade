@@ -52,6 +52,7 @@ enum class ModelType {
     IMAGE,
     TTS,
     AUDIO_GENERATION,  // text -> audio clip (music, sound effects)
+    CLASSIFICATION,    // text -> {label: score} (router classifier models)
     MESH               // image -> 3D mesh (glTF-binary)
 };
 
@@ -85,6 +86,7 @@ inline std::string model_type_to_string(ModelType type) {
         case ModelType::IMAGE: return "image";
         case ModelType::TTS: return "tts";
         case ModelType::AUDIO_GENERATION: return "audio-generation";
+        case ModelType::CLASSIFICATION: return "classification";
         case ModelType::MESH: return "mesh";
         default: return "unknown";
     }
@@ -150,6 +152,9 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
         }
         if (label == "audio-generation") {
             return ModelType::AUDIO_GENERATION;
+        }
+        if (label == "classification" || label == "classifier") {
+            return ModelType::CLASSIFICATION;
         }
         if (label == "3d") {
             return ModelType::MESH;

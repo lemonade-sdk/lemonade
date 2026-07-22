@@ -26,6 +26,7 @@ export interface ModelInfo {
   cost_output_per_million?: number;
   mmproj?: string;
   source?: string;
+  registry_source?: 'huggingface' | 'modelscope';
   model_name?: string;
   reasoning?: boolean;
   vision?: boolean;
@@ -124,6 +125,11 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
     normalized.source = source;
   }
 
+  const registrySource = info['registry_source'];
+  if (registrySource === 'huggingface' || registrySource === 'modelscope') {
+    normalized.registry_source = registrySource;
+  }
+
   const modelName = info['model_name'];
   if (typeof modelName === 'string' && modelName) {
     normalized.model_name = modelName;
@@ -214,6 +220,10 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 
       if (typeof model.source === 'string' && model.source) {
         modelInfo.source = model.source;
+      }
+
+      if (model.registry_source === 'huggingface' || model.registry_source === 'modelscope') {
+        modelInfo.registry_source = model.registry_source;
       }
 
       if (typeof model.model_name === 'string' && model.model_name) {
@@ -310,8 +320,13 @@ const EXPORT_KNOWN_KEYS = new Set([
   'recipe',
   'recipe_options',
   'routing',
+  'source',
+  'registry_source',
   'size',
   'system_prompt',
+  // Router collections carry a root schema version the /pull parser requires;
+  // dropping it would make the exported file un-importable.
+  'version',
 ]);
 
 const toExportEntry = (raw: Record<string, unknown>): Record<string, unknown> => {
@@ -323,6 +338,33 @@ const toExportEntry = (raw: Record<string, unknown>): Record<string, unknown> =>
   }
   if (isRecord(entry.checkpoints) && 'checkpoint' in entry) {
     delete entry.checkpoint;
+  }
+
+  // Preserve only portable remote provenance. Local origins refer to paths on
+  // the exporting machine and must not be replayed on import.
+  const publicSource = typeof raw.source === 'string' ? raw.source.toLowerCase() : '';
+  const explicitRegistry = typeof raw.registry_source === 'string'
+    ? raw.registry_source.toLowerCase()
+    : '';
+  const isRemoteSource = (value: string): value is 'huggingface' | 'modelscope' =>
+    value === 'huggingface' || value === 'modelscope';
+
+  if (publicSource && !isRemoteSource(publicSource)) {
+    delete entry.source;
+    delete entry.registry_source;
+  } else {
+    const registrySource = isRemoteSource(publicSource)
+      ? publicSource
+      : isRemoteSource(explicitRegistry)
+        ? explicitRegistry
+        : '';
+    if (registrySource) {
+      entry.source = registrySource;
+      entry.registry_source = registrySource;
+    } else {
+      delete entry.source;
+      delete entry.registry_source;
+    }
   }
   return entry;
 };
@@ -386,9 +428,8 @@ export const buildModelExportFile = async (
   return normalizeModelExportPayload(raw, modelId);
 };
 
-/** Trigger a browser download of an exported model/collection JSON. */
-export const downloadModelExportFile = async (modelId: string): Promise<void> => {
-  const { filename, payload } = await buildModelExportFile(modelId);
+/** Trigger a browser download of a JSON payload as a file. */
+export const downloadJsonFile = (filename: string, payload: unknown): void => {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -398,4 +439,10 @@ export const downloadModelExportFile = async (modelId: string): Promise<void> =>
   link.click();
   link.remove();
   window.URL.revokeObjectURL(url);
+};
+
+/** Trigger a browser download of an exported model/collection JSON. */
+export const downloadModelExportFile = async (modelId: string): Promise<void> => {
+  const { filename, payload } = await buildModelExportFile(modelId);
+  downloadJsonFile(filename, payload);
 };

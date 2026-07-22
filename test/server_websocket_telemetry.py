@@ -113,7 +113,11 @@ class TelemetrySecurityTestBase(unittest.TestCase):
         env = os.environ.copy()
 
         # Clean all relevant env vars by default so tests are isolated
-        for k in ["LEMONADE_API_KEY", "LEMONADE_ADMIN_API_KEY"]:
+        for k in [
+            "LEMONADE_API_KEY",
+            "LEMONADE_ADMIN_API_KEY",
+            "LEMONADE_ALLOWED_ORIGINS",
+        ]:
             env.pop(k, None)
 
         if env_overrides:
@@ -345,6 +349,156 @@ class TelemetryGuestSecurityTests(TelemetrySecurityTestBase):
 
         asyncio.run(run_test())
 
+    def test_011_http_preflight_cors_and_pna(self):
+        """Verify HTTP CORS and PNA preflight responses: allow loopback, reject malicious, Vary: Origin."""
+        # 1. Allowed loopback origin (OPTIONS)
+        headers = {
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Private-Network": "true",
+            "Access-Control-Request-Method": "POST",
+        }
+        res = requests.options(
+            f"http://localhost:{self.port}/api/v1/chat/completions",
+            headers=headers,
+            timeout=5,
+        )
+        self.assertEqual(res.status_code, 204)
+        self.assertEqual(
+            res.headers.get("Access-Control-Allow-Origin"), "http://localhost:3000"
+        )
+        self.assertEqual(
+            res.headers.get("Access-Control-Allow-Private-Network"), "true"
+        )
+        self.assertEqual(res.headers.get("Vary"), "Origin")
+
+        # 2. Rejected malicious origin (OPTIONS returns 403)
+        headers = {
+            "Origin": "http://malicious.com",
+            "Access-Control-Request-Private-Network": "true",
+            "Access-Control-Request-Method": "POST",
+        }
+        res = requests.options(
+            f"http://localhost:{self.port}/api/v1/chat/completions",
+            headers=headers,
+            timeout=5,
+        )
+        self.assertEqual(res.status_code, 403)
+        self.assertNotIn("Access-Control-Allow-Origin", res.headers)
+        self.assertNotIn("Access-Control-Allow-Private-Network", res.headers)
+        self.assertEqual(res.headers.get("Vary"), "Origin")
+
+        # 3. Rejected malicious origin (POST returns 403, not dispatched)
+        headers = {
+            "Origin": "http://malicious.com",
+        }
+        res = requests.post(
+            f"http://localhost:{self.port}/api/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+            headers=headers,
+            timeout=5,
+        )
+        self.assertEqual(res.status_code, 403)
+
+        # 3b. Rejected malicious origin (text/plain POST to /mcp returns 403, not dispatched)
+        headers = {
+            "Origin": "http://malicious.com",
+            "Content-Type": "text/plain",
+        }
+        res = requests.post(
+            f"http://localhost:{self.port}/mcp",
+            data='{"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}',
+            headers=headers,
+            timeout=5,
+        )
+        self.assertEqual(res.status_code, 403)
+
+        # 4. Clients without Origin header continue to work (e.g. CLI/API scripts)
+        res = requests.post(
+            f"http://localhost:{self.port}/api/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+            headers={"Authorization": "Bearer admin_key"},
+            timeout=5,
+        )
+        # Should not be 403 (it should proceed to route lookup/auth and return 400 or 404 since model is not loaded)
+        self.assertNotEqual(res.status_code, 403)
+
+        # 5. Explicitly configured remote origin succeeds, loopback still succeeds, other fails
+        remote_port, _ = self.start_server(
+            {
+                "LEMONADE_ALLOWED_ORIGINS": "https://app.example.com",
+                "LEMONADE_ADMIN_API_KEY": "admin_key",
+            }
+        )
+
+        # Configured remote origin OPTIONS preflight
+        res = requests.options(
+            f"http://localhost:{remote_port}/api/v1/chat/completions",
+            headers={
+                "Origin": "https://app.example.com",
+                "Access-Control-Request-Method": "POST",
+            },
+            timeout=5,
+        )
+        self.assertEqual(res.status_code, 204)
+        self.assertEqual(
+            res.headers.get("Access-Control-Allow-Origin"), "https://app.example.com"
+        )
+
+        # Configured remote origin POST actual request
+        res = requests.post(
+            f"http://localhost:{remote_port}/api/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+            headers={
+                "Origin": "https://app.example.com",
+                "Authorization": "Bearer admin_key",
+            },
+            timeout=5,
+        )
+        self.assertNotEqual(res.status_code, 403)
+
+        # Loopback origin OPTIONS preflight still succeeds
+        res = requests.options(
+            f"http://localhost:{remote_port}/api/v1/chat/completions",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+            },
+            timeout=5,
+        )
+        self.assertEqual(res.status_code, 204)
+
+        # Unconfigured remote origin OPTIONS preflight returns 403
+        res = requests.options(
+            f"http://localhost:{remote_port}/api/v1/chat/completions",
+            headers={
+                "Origin": "https://unconfigured.com",
+                "Access-Control-Request-Method": "POST",
+            },
+            timeout=5,
+        )
+        self.assertEqual(res.status_code, 403)
+
+        # 6. Regression test: Request without Origin header still returns Vary: Origin
+        res = requests.post(
+            f"http://localhost:{self.port}/api/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+            headers={"Authorization": "Bearer admin_key"},
+            timeout=5,
+        )
+        self.assertEqual(res.headers.get("Vary"), "Origin")
+
 
 class TelemetryFallbackSecurityTests(TelemetrySecurityTestBase):
     """Telemetry Security tests in Fallback Mode (Config C)."""
@@ -540,6 +694,64 @@ class TelemetryOTLPSecurityTests(TelemetrySecurityTestBase):
             async with websockets.connect(
                 f"ws://localhost:{ws_port}/spans/stream"
             ) as ws:
+                pass
+
+        asyncio.run(run_test())
+
+    def test_012_websocket_origin_security(self):
+        """Verify WebSocket origin validation: configured non-local origin succeeds, mismatch fails."""
+        port, ws_port = self.start_server(
+            {
+                "LEMONADE_ALLOWED_ORIGINS": "https://app.example.com",
+                "LEMONADE_ADMIN_API_KEY": "admin_key",
+            }
+        )
+
+        async def run_test():
+            # 1. Configured non-local origin succeeds
+            async with websockets.connect(
+                f"ws://localhost:{ws_port}/spans/stream?api_key=admin_key",
+                additional_headers={"Origin": "https://app.example.com"},
+            ) as ws:
+                pass
+
+            # 2. Scheme mismatch fails
+            try:
+                async with websockets.connect(
+                    f"ws://localhost:{ws_port}/spans/stream?api_key=admin_key",
+                    additional_headers={"Origin": "http://app.example.com"},
+                ):
+                    self.fail("Expected WebSocket to fail due to scheme mismatch")
+            except (
+                websockets.exceptions.InvalidStatus,
+                websockets.exceptions.InvalidHandshake,
+            ):
+                pass
+
+            # 3. Port mismatch fails
+            try:
+                async with websockets.connect(
+                    f"ws://localhost:{ws_port}/spans/stream?api_key=admin_key",
+                    additional_headers={"Origin": "https://app.example.com:8443"},
+                ):
+                    self.fail("Expected WebSocket to fail due to port mismatch")
+            except (
+                websockets.exceptions.InvalidStatus,
+                websockets.exceptions.InvalidHandshake,
+            ):
+                pass
+
+            # 4. Unconfigured origin fails
+            try:
+                async with websockets.connect(
+                    f"ws://localhost:{ws_port}/spans/stream?api_key=admin_key",
+                    additional_headers={"Origin": "https://unconfigured.com"},
+                ):
+                    self.fail("Expected WebSocket to fail due to unconfigured origin")
+            except (
+                websockets.exceptions.InvalidStatus,
+                websockets.exceptions.InvalidHandshake,
+            ):
                 pass
 
         asyncio.run(run_test())

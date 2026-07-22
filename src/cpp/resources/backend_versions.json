@@ -1,5 +1,50 @@
 {
   "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
+  "checksums": {
+    "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
+    "github": {
+      "pwilkin/openmoss": {
+        "v0.1.3": {
+          "moss-tts-vulkan-linux-x64.tar.gz": "sha256:15e64803ed7f93e0459f4e3132346a83123e1de0b973702c2c0631ae32f55feb",
+          "moss-tts-vulkan-windows-x64.zip": "sha256:6cafdc45c53cc614427696bd369f44602e7881d3879f5acb48b5f92b339149b6",
+          "moss-tts-rocm-linux-x64.tar.gz": "sha256:6bf1dac5fc8511e6bc6d11ec55623e1d364db814242a5af7346f5b6feb6b0dad",
+          "moss-tts-rocm-windows-x64.zip": "sha256:c9178dfad4ddf51fc8d8df8d1412e65237ff364ca9ca8fc997c9c71f55d60827",
+          "moss-tts-cuda-linux-x64.tar.gz": "sha256:8662251a854bda4993a5f99e90ba02c176797bf22b1c5b3e89a0061b0a4b102a",
+          "moss-tts-cuda-windows-x64.zip": "sha256:2b2f5f4b6757d99acf621b43426483ab0bc4a70f1f13904c17deed09cac70969"
+        }
+      },
+      "pwilkin/acestep.cpp": {
+        "v0.1.1": {
+          "acestep-vulkan-linux-x64.tar.gz": "sha256:398520b322058c1a6d7303849354b9d0afffc99b33870a94b50680932e6b2e41",
+          "acestep-vulkan-windows-x64.zip": "sha256:a20f11af4d0eca8c906019c62db5074d30132860735404d84cec3cecddc00d4c",
+          "acestep-rocm-linux-x64.tar.gz": "sha256:476ac942746b49edf50c5d57e705618fa8d242aca1e88c14e4ce6c791b0a5d0a",
+          "acestep-rocm-windows-x64.zip": "sha256:2bf8e02b337d760bc538df2d5118ded7f068a9adccd3c5b48ede30a3a26149dd",
+          "acestep-cuda-linux-x64.tar.gz": "sha256:1b94e862a09b76583ba314a6f49c7cb599a234d6fbf3950adf67c3965af5e1a8",
+          "acestep-cuda-windows-x64.zip": "sha256:f278b148eaff7f3fc3fee9a2f4503dbc94759356e0c48074310538026c3fc059"
+        }
+      },
+      "pwilkin/thinksound.cpp": {
+        "v0.1.2": {
+          "thinksound-vulkan-linux-x64.tar.gz": "sha256:913cb141ff0bcde488474fbba9e911437e2cbf58dd12a0a41251dbe4fa69e61f",
+          "thinksound-vulkan-windows-x64.zip": "sha256:e0af57c3cd2f4605cd0062939e8134f2ac60e197f95bbab347ed274002ffbfd2",
+          "thinksound-rocm-linux-x64.tar.gz": "sha256:46379f969b4c097a357a0717077c41272eb3290494bd2acec08ce6591a2d778a",
+          "thinksound-rocm-windows-x64.zip": "sha256:3e27483cc88c4e10c68f485a9b1bae02381dd3a16a64cf5c44bae53f4fbb0d68",
+          "thinksound-cuda-linux-x64.tar.gz": "sha256:ac3875c6bba8cf0753708e749bdb606006ac6e001f7d78649ede78c5e96bd36a",
+          "thinksound-cuda-windows-x64.zip": "sha256:1261c1eadd91b8a4a62dd20e9e8d7e5320db671896337ea84ac23251df54b0d9"
+        }
+      },
+      "pwilkin/trellis.cpp": {
+        "v0.4.3": {
+          "trellis-vulkan-linux-x64.tar.gz": "sha256:a614549056da47950d7506d73ba923298a85859024b6a2ca782a0f7c9604f602",
+          "trellis-vulkan-windows-x64.zip": "sha256:a9566a1eed92c3ced893bb6e65b8a6d6d1b3a68c11724b8b1a2d8d6b5a0f8525",
+          "trellis-rocm-linux-x64.tar.gz": "sha256:e8c2fb16cd3ac5e620af1e07a3c002f845c189485dc988b316f469734fbfbc17",
+          "trellis-rocm-windows-x64.zip": "sha256:147e2713b328f342afd959147f6e0b4d2fc87cbcd18a5ef5d28edd9a80233d5a",
+          "trellis-cuda-linux-x64.tar.gz": "sha256:454c161b2179551db5e80786bba16ae81eaf28ab8fdb685d371b30d58769fbaa",
+          "trellis-cuda-windows-x64.zip": "sha256:47b87271f8b644a8e50767f6d58d5baf597e1aa6bb46b809a5e5d5b0ac741b29"
+        }
+      }
+    }
+  },
   "llamacpp": {
     "vulkan": "b9747",
     "rocm-stable": "b9752",
@@ -28,6 +73,7 @@
       "gfx908",
       "gfx90a",
       "gfx942",
+      "gfx950",
       "gfx1100",
       "gfx1101",
       "gfx1102",
@@ -55,6 +101,7 @@
       "gfx908": "gfx90X-dcgpu",
       "gfx90a": "gfx90X-dcgpu",
       "gfx942": "gfx94X-dcgpu",
+      "gfx950": "gfx950-dcgpu",
       "gfx103X": "gfx103X-all",
       "gfx110X": "gfx110X-all",
       "gfx120X": "gfx120X-all",
@@ -83,14 +130,19 @@
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v0.9.44"
+    "npu": "v0.9.45"
   },
   "kokoro": {
     "cpu": "b17",
     "metal": "b17"
   },
   "vllm": {
-    "rocm": "vllm0.20.1-rocm7.12.0"
+    "comment": "'rocm' is the default (RDNA) pin. 'rocm_arch_overrides' pins per detected asset family (rocm_asset_family output) where AMD's vLLM/ROCm wheel cadence diverges: CDNA-dcgpu (gfx942, gfx950) shares no release tag with the RDNA line, so it pins its own version. gfx950 (CDNA4) rides the same CDNA vLLM/ROCm line as gfx942 (CDNA3). Review each override at release time - feature/fix parity across arch lines lags until bumped.",
+    "rocm": "vllm0.20.1-rocm7.12.0",
+    "rocm_arch_overrides": {
+      "gfx942": "vllm0.19.1-rocm7.13.0",
+      "gfx950": "vllm0.19.1-rocm7.13.0"
+    }
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",
@@ -111,6 +163,9 @@
   "moonshine": {
     "cpu": "moonshine0.0.62"
   },
+  "onnxruntime": {
+    "cpu": "0.3.7"
+  },
   "thinksound": {
     "vulkan": "v0.1.2",
     "rocm-stable": "v0.1.2",
@@ -122,14 +177,14 @@
     "cuda": "v0.1.1"
   },
   "trellis": {
-    "vulkan": "v0.1.5",
-    "rocm-stable": "v0.1.5",
-    "cuda": "v0.1.5"
+    "vulkan": "v0.4.3",
+    "rocm-stable": "v0.4.3",
+    "cuda": "v0.4.3"
   },
   "openmoss": {
-    "vulkan": "v0.1.2",
-    "rocm-stable": "v0.1.2",
-    "cuda": "v0.1.2"
+    "vulkan": "v0.1.3",
+    "rocm-stable": "v0.1.3",
+    "cuda": "v0.1.3"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

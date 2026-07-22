@@ -41,6 +41,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "auto_check_model_updates": true,
   "cloud_providers": [],
   "config_version": 2,
   "ctx_size": -1,
@@ -80,6 +81,11 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "no_broadcast": false,
   "no_fetch_executables": false,
   "offline": false,
+  "onnxruntime": {
+    "args": "",
+    "cpu_args": "",
+    "cpu_bin": "builtin"
+  },
   "openmoss": {
     "backend": "auto",
     "cuda_bin": "builtin",
@@ -125,7 +131,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
         "otel_genai"
       ],
       "send_batch_size": 100
-    }
+    },
+    "trust_incoming_trace_context": false
   },
   "thinksound": {
     "backend": "auto",
@@ -170,6 +177,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `offline` | bool | false | Skip model downloads |
+| `auto_check_model_updates` | bool | true | Check downloaded Hugging Face-backed models for updates during server startup. Set to `false` to check only with `lemonade check-updates` or `POST /v1/models/check-updates`. Manual downloads and updates remain enabled. |
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `inhibit_suspend` | bool | true | Prevent the OS from suspending while inference is active. Linux only (uses systemd-logind); no-op on Windows/macOS/non-systemd environments. |
@@ -243,6 +251,7 @@ API keys for these providers are **not** stored in `config.json` — they live i
 | `hide_inputs` | bool | false | Redact prompt message content from spans. |
 | `hide_outputs` | bool | false | Redact generated assistant message content from spans. |
 | `hide_thinking` | bool | false | Redact reasoning/thought content from spans. |
+| `trust_incoming_trace_context` | bool | false | Honor a caller-supplied W3C `traceparent` header so inference spans join the caller's distributed trace instead of starting a fresh root. Opt-in because span parentage then depends on client-supplied input. |
 | `max_queue_capacity` | int | 1000 | The maximum capacity of the in-memory telemetry queue buffer. Oldest spans are dropped when full. Must be `> 0`. |
 | `otlp` | object | (nested object) | Sub-block grouping OTLP transport details (see below). |
 
@@ -423,6 +432,19 @@ The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to bo
 | Both keys different | "regular" | "admin" | Requires admin key | Either key accepted |
 
 **Client Behavior:** Clients (CLI, tray app) automatically prefer `LEMONADE_ADMIN_API_KEY` if set, otherwise fall back to `LEMONADE_API_KEY`.
+
+### Allowed Origins
+
+The `LEMONADE_ALLOWED_ORIGINS` environment variable controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).
+
+- **Format**: A comma-separated list of complete origins including the scheme and optional port (e.g., `https://app.lemonade.dev,http://localhost:3000`).
+  > [!WARNING]
+  > Allowing a non-local plain-HTTP origin (e.g., `http://app.example.com`) is vulnerable to on-path modification (man-in-the-middle) and interception. It is highly recommended to use HTTPS (`https://`) for all remote/non-local allowed origins.
+- **Wildcard (`*`)**: Setting the variable to `*` allows any origin to connect.
+- **Security Implications of `*`**:
+  > [!WARNING]
+  > Using `LEMONADE_ALLOWED_ORIGINS=*` permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
+- **Local/Loopback Access**: Loopback origins (`localhost`, `127.0.0.1`, `[::1]`, and `tauri.localhost`) are always allowed and do not need to be explicitly listed.
 
 ## Remote Server Connection
 

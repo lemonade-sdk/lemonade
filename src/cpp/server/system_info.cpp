@@ -32,7 +32,10 @@
 #include <Wbemidl.h>
 #include <intrin.h>
 #include "utils/wmi_helper.h"
+#include <dxgi1_4.h>
+#include <wrl/client.h>
 #pragma comment(lib, "wbemuuid.lib")
+#pragma comment(lib, "dxgi.lib")
 #endif
 
 #ifdef __APPLE__
@@ -476,7 +479,8 @@ static const std::vector<RecipeBackendDef>& recipe_defs() {
         std::vector<RecipeBackendDef> v;
         for (const auto* desc : lemon::backends::all_descriptors()) {
             for (const auto& row : desc->support) {
-                v.push_back({desc->recipe, row.backend, row.supported_os, row.devices, row.device_summary});
+                v.push_back({desc->recipe, row.backend, row.supported_os, row.devices,
+                             row.device_summary, row.arch_gates});
             }
         }
         return v;
@@ -503,6 +507,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
     {"gfx942", "AMD Instinct MI300X / MI300A (CDNA3)"},
+    {"gfx950", "AMD Instinct MI350X / MI355X (CDNA4)"},
 
     // NVIDIA GPU compute capabilities (CUDA)
     {"sm_75",  "GeForce RTX 20 / GTX 16 series (Turing)"},
@@ -625,18 +630,57 @@ static bool device_matches_constraint(const std::string& device_family,
     return false;
 }
 
+// Find the install gate that applies to `arch` in a support row, honoring the
+// same trailing-X wildcard the device matrix uses. Returns nullptr when the arch
+// has no extra gate (inherits the row's full OS/channel reach).
+static const ArchInstallGate* find_arch_gate(const ArchInstallGates& gates,
+                                             const std::string& arch) {
+    auto exact = gates.find(arch);
+    if (exact != gates.end()) {
+        return &exact->second;
+    }
+    for (const auto& [token, gate] : gates) {
+        if (device_matches_constraint(arch, {token})) {
+            return &gate;
+        }
+    }
+    return nullptr;
+}
+
+// True if `arch` clears a support row's per-arch gate for the given OS/channel.
+// An empty channel means "channel-agnostic" (e.g. the availability matrix asks
+// about the bare "rocm" backend) and only the OS half of the gate is enforced.
+static bool arch_gate_allows(const ArchInstallGates& gates, const std::string& arch,
+                             const std::string& os, const std::string& channel) {
+    const ArchInstallGate* gate = find_arch_gate(gates, arch);
+    if (!gate) {
+        return true;
+    }
+    if (!gate->os.empty() && gate->os.count(os) == 0) {
+        return false;
+    }
+    if (!channel.empty() && !gate->channels.empty() && gate->channels.count(channel) == 0) {
+        return false;
+    }
+    return true;
+}
+
 // True if (recipe, backend) is published for the given ROCm family/ISA, per the
 // support matrix assembled from backend descriptors. The matrix keys ROCm rows
 // under "rocm", so a channel-qualified backend (rocm-stable/rocm-nightly) is
-// normalized before lookup. `arch` may be a concrete ISA or a family token; the
-// trailing-X wildcard in the matrix handles ISA-to-family matching.
+// normalized before lookup — the channel it carries is still honored against any
+// per-arch gate. `arch` may be a concrete ISA or a family token; the trailing-X
+// wildcard in the matrix handles ISA-to-family matching.
 bool SystemInfo::backend_supports_arch(const std::string& recipe,
                                        const std::string& backend,
                                        const std::string& arch) {
     std::string matrix_backend = backend;
+    std::string channel;
     if (matrix_backend.rfind("rocm-", 0) == 0) {
+        channel = matrix_backend.substr(std::string("rocm-").size());
         matrix_backend = "rocm";
     }
+    const std::string current_os = get_current_os();
     for (const auto& def : recipe_defs()) {
         if (def.recipe != recipe || def.backend != matrix_backend) {
             continue;
@@ -645,7 +689,10 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
         if (it == def.devices.end()) {
             return false;
         }
-        return device_matches_constraint(arch, it->second);
+        if (!device_matches_constraint(arch, it->second)) {
+            return false;
+        }
+        return arch_gate_allows(def.arch_gates, arch, current_os, channel);
     }
     return false;
 }
@@ -791,7 +838,21 @@ static std::string get_expected_backend_version(const std::string& recipe, const
     if (!recipe_config.contains(resolved_backend) || !recipe_config[resolved_backend].is_string()) {
         return "";
     }
-    return recipe_config[resolved_backend].get<std::string>();
+    std::string base_version = recipe_config[resolved_backend].get<std::string>();
+
+    // The expected version must resolve the SAME per-arch override that install used,
+    // or these GPUs report update_required forever: versions_match tolerates the
+    // "-{family}" suffix but not a different base.
+    if (recipe == "vllm" && resolved_backend == "rocm") {
+        std::string asset_family = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
+        if (!asset_family.empty()) {
+            std::string override_version = SystemInfo::vllm_rocm_version_override(asset_family);
+            if (!override_version.empty()) {
+                return override_version;
+            }
+        }
+    }
+    return base_version;
 }
 
 // ============================================================================
@@ -856,7 +917,8 @@ json SystemInfo::get_device_dict() {
         if (amd_igpu.available) {
             json gpu_json = {
                 {"name", amd_igpu.name},
-                {"available", amd_igpu.available}
+                {"available", amd_igpu.available},
+                {"integrated", true}
             };
             if (amd_igpu.vram_gb > 0) {
                 gpu_json["vram_gb"] = amd_igpu.vram_gb;
@@ -876,7 +938,8 @@ json SystemInfo::get_device_dict() {
             if (gpu.available) {
                 json gpu_json = {
                     {"name", gpu.name},
-                    {"available", gpu.available}
+                    {"available", gpu.available},
+                    {"integrated", false}
                 };
                 if (gpu.vram_gb > 0) {
                     gpu_json["vram_gb"] = gpu.vram_gb;
@@ -1277,6 +1340,17 @@ json SystemInfo::build_recipes_info(const json& devices) {
         std::vector<std::pair<std::string, std::set<std::string>>> missing_devices;  // Device types not present
         std::vector<std::pair<std::string, std::set<std::string>>> wrong_family;     // Device present but wrong family
 
+        // Resolve the ROCm channel this recipe is configured for, so per-arch gates
+        // (e.g. gfx950 is stable-only) can be enforced against the active channel.
+        std::string row_channel;
+        if (!def.arch_gates.empty() && def.backend == "rocm" &&
+            backends::recipe_has_rocm_channels(def.recipe)) {
+            row_channel = "stable";
+            if (auto* cfg = RuntimeConfig::global()) {
+                row_channel = cfg->rocm_channel_for_recipe(def.recipe);
+            }
+        }
+
         for (const auto& [required_device_type, required_families] : def.devices) {
             bool device_type_found = false;
             bool family_matched = false;
@@ -1284,7 +1358,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
             for (const auto& detected : detected_devices) {
                 if (detected.type == required_device_type) {
                     device_type_found = true;
-                    if (device_matches_constraint(detected.family, required_families)) {
+                    if (device_matches_constraint(detected.family, required_families) &&
+                        arch_gate_allows(def.arch_gates, detected.family, current_os, row_channel)) {
                         matching_devices.push_back(detected.type);
                         family_matched = true;
                     }
@@ -1864,7 +1939,13 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx120X";
     }
 
-    if (device_lower.find("7700") != std::string::npos ||
+    // "7600" alone is not product-specific enough: it also matches names like
+    // "AMD Radeon HD 7600M Series" (a GCN1 card from 2012, not RDNA3). Match
+    // the actual product family instead.
+    if (device_lower.find("rx 7600") != std::string::npos ||
+        device_lower.find("rx7600") != std::string::npos ||
+        device_lower.find("pro w7600") != std::string::npos ||
+        device_lower.find("7700") != std::string::npos ||
         device_lower.find("7800") != std::string::npos ||
         device_lower.find("7900") != std::string::npos ||
         device_lower.find("v710") != std::string::npos) {
@@ -2093,9 +2174,59 @@ std::string SystemInfo::rocm_asset_family(const std::string& arch) {
     return arch;
 }
 
+std::string SystemInfo::vllm_rocm_version_override(const std::string& asset_family) {
+    static const json overrides = []() -> json {
+        try {
+            std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+            std::ifstream file(config_path);
+            if (!file.is_open()) {
+                return json::object();
+            }
+            json vllm = json::parse(file).value("vllm", json::object());
+            return vllm.value("rocm_arch_overrides", json::object());
+        } catch (...) {
+            return json::object();
+        }
+    }();
+
+    if (auto it = overrides.find(asset_family); it != overrides.end() && it->is_string()) {
+        return it->get<std::string>();
+    }
+    return "";
+}
+
+std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices) {
+    if (!amd_gpu_devices.is_array()) {
+        return "";
+    }
+    // The device array is iGPU-first, so taking the first supported match would pick the
+    // APU on a hybrid host. Prefer a discrete GPU; fall back to integrated.
+    std::string integrated_fallback;
+    for (const auto& gpu : amd_gpu_devices) {
+        if (!gpu.value("available", false)) {
+            continue;
+        }
+        // The "family" field is identify_rocm_arch_from_name(name) captured at
+        // detection time; fall back to re-deriving from the name if it is absent.
+        std::string arch = gpu.value("family", "");
+        if (arch.empty()) {
+            arch = identify_rocm_arch_from_name(gpu.value("name", ""));
+        }
+        if (arch.empty()) {
+            continue;
+        }
+        if (gpu.value("integrated", false)) {
+            if (integrated_fallback.empty()) {
+                integrated_fallback = arch;
+            }
+            continue;
+        }
+        return arch;  // discrete GPU wins
+    }
+    return integrated_fallback;  // empty if no supported AMD GPU found
+}
+
 std::string SystemInfo::get_rocm_arch() {
-    // Returns the ROCm architecture for the best available AMD GPU on this system
-    // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
     if (!g_rocm_arch_override.empty()) {
         return g_rocm_arch_override;
     }
@@ -2108,20 +2239,8 @@ std::string SystemInfo::get_rocm_arch() {
         }
 
         const auto& devices = system_info["devices"];
-
-        // Check AMD GPUs
-        if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
-            for (const auto& gpu : devices["amd_gpu"]) {
-                if (gpu.value("available", false)) {
-                    std::string name = gpu.value("name", "");
-                    if (!name.empty()) {
-                        std::string arch = identify_rocm_arch_from_name(name);
-                        if (!arch.empty()) {
-                            return arch;
-                        }
-                    }
-                }
-            }
+        if (devices.contains("amd_gpu")) {
+            return select_rocm_arch(devices["amd_gpu"]);
         }
     } catch (...) {
         // Detection failed
@@ -4029,6 +4148,77 @@ bool SystemInfo::is_running_under_systemd() {
 #endif
 }
 
+#ifdef _WIN32
+double get_windows_dxgi_vram_usage() {
+    using Microsoft::WRL::ComPtr;
+    ComPtr<IDXGIFactory4> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+        return -1.0;
+    }
+
+    ComPtr<IDXGIAdapter1> adapter;
+    double highest_ratio = -1.0;
+    bool found_discrete = false;
+    std::vector<std::pair<DXGI_ADAPTER_DESC1, DXGI_QUERY_VIDEO_MEMORY_INFO>> candidates;
+
+    for (UINT adapterIndex = 0;
+         factory->EnumAdapters1(adapterIndex, &adapter) != DXGI_ERROR_NOT_FOUND;
+         ++adapterIndex) {
+        DXGI_ADAPTER_DESC1 desc{};
+        if (FAILED(adapter->GetDesc1(&desc))) {
+            continue;
+        }
+
+        if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+            continue;
+        }
+
+        ComPtr<IDXGIAdapter3> adapter3;
+        if (SUCCEEDED(adapter.As(&adapter3))) {
+            DXGI_QUERY_VIDEO_MEMORY_INFO memInfo{};
+
+            if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(
+                    0,
+                    DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+                    &memInfo))) {
+                candidates.push_back({desc, memInfo});
+
+                if (desc.DedicatedVideoMemory > 0) {
+                    found_discrete = true;
+                }
+            }
+        }
+    }
+
+    for (const auto& pair : candidates) {
+        const auto& desc = pair.first;
+        const auto& memInfo = pair.second;
+
+        bool is_discrete = desc.DedicatedVideoMemory > 0;
+        if (found_discrete && !is_discrete) {
+            continue;
+        }
+
+        double total_mem = is_discrete
+            ? static_cast<double>(desc.DedicatedVideoMemory)
+            : static_cast<double>(desc.SharedSystemMemory);
+
+        if (total_mem > 0.0 && memInfo.Budget > 0) {
+            double ratio = std::clamp(
+                1.0 - static_cast<double>(memInfo.Budget) / total_mem,
+                0.0,
+                1.0);
+
+            if (ratio > highest_ratio) {
+                highest_ratio = ratio;
+            }
+        }
+    }
+
+    return highest_ratio;
+}
+#endif
+
 double SystemInfo::get_global_vram_usage_pct() {
     auto usage_ratio = [](uint64_t used, uint64_t total) {
         if (total == 0) {
@@ -4137,6 +4327,12 @@ double SystemInfo::get_global_vram_usage_pct() {
             }
         }
     } catch (...) {}
+#endif
+
+#ifdef _WIN32
+    if (highest_ratio < 0.0) {
+        highest_ratio = get_windows_dxgi_vram_usage();
+    }
 #endif
 
     return highest_ratio;

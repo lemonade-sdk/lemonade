@@ -1,4 +1,6 @@
 #include "lemon/router.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/origin_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/websocket_server.h"
 #include "telemetry.h"
@@ -70,57 +72,10 @@ int WebSocketServer::ws_callback(struct lws* wsi,
             auto origin_opt = get_header(wsi, WSI_TOKEN_ORIGIN);
             if (origin_opt && !origin_opt->empty()) {
                 std::string origin = *origin_opt;
-                std::string origin_host = origin;
-                size_t scheme_end = origin.find("://");
-                if (scheme_end != std::string::npos) {
-                    origin_host = origin.substr(scheme_end + 3);
-                }
-                size_t port_pos = std::string::npos;
-                if (!origin_host.empty() && origin_host[0] == '[') {
-                    size_t bracket_end = origin_host.find(']');
-                    if (bracket_end != std::string::npos) {
-                        port_pos = origin_host.find(':', bracket_end);
-                    }
-                } else {
-                    port_pos = origin_host.find(':');
-                }
-                if (port_pos != std::string::npos) {
-                    origin_host = origin_host.substr(0, port_pos);
-                }
-                size_t path_pos = origin_host.find('/');
-                if (path_pos != std::string::npos) {
-                    origin_host = origin_host.substr(0, path_pos);
-                }
+                const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
+                std::string allowed_origins = env_origins ? std::string(env_origins) : "";
 
-                std::string host_header_val;
-                auto host_opt = get_header(wsi, WSI_TOKEN_HOST);
-                if (host_opt && !host_opt->empty()) {
-                    host_header_val = *host_opt;
-                }
-                std::string request_host = host_header_val;
-                size_t r_port_pos = std::string::npos;
-                if (!request_host.empty() && request_host[0] == '[') {
-                    size_t bracket_end = request_host.find(']');
-                    if (bracket_end != std::string::npos) {
-                        r_port_pos = request_host.find(':', bracket_end);
-                    }
-                } else {
-                    r_port_pos = request_host.find(':');
-                }
-                if (r_port_pos != std::string::npos) {
-                    request_host = request_host.substr(0, r_port_pos);
-                }
-                size_t r_path_pos = request_host.find('/');
-                if (r_path_pos != std::string::npos) {
-                    request_host = request_host.substr(0, r_path_pos);
-                }
-
-                bool is_allowed = (origin_host == "localhost" || origin_host == "127.0.0.1" || origin_host == "[::1]" || origin_host == "::1");
-                if (!is_allowed && !request_host.empty() && origin_host == request_host) {
-                    is_allowed = true;
-                }
-
-                if (!is_allowed) {
+                if (!utils::is_websocket_origin_allowed(origin, allowed_origins)) {
                     LOG(WARNING, "WebSocket") << "Rejected connection from unauthorized origin: " << origin << std::endl;
                     return 1;
                 }
@@ -384,6 +339,9 @@ std::string WebSocketServer::extract_token_from_wsi(struct lws* wsi) const {
     if (!token) {
         token = get_url_arg(wsi, "api_key");
     }
+    if (!token) {
+        token = get_protocol_credential(wsi);
+    }
     return token ? strip_bearer_prefix(*token) : "";
 }
 
@@ -395,6 +353,9 @@ bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
     auto token = get_header(wsi, WSI_TOKEN_HTTP_AUTHORIZATION);
     if (!token) {
         token = get_url_arg(wsi, "api_key");
+    }
+    if (!token) {
+        token = get_protocol_credential(wsi);
     }
 
     if (!token) {
@@ -705,6 +666,38 @@ std::optional<std::string> WebSocketServer::get_header(struct lws* wsi, enum lws
     }
 
     return std::string(buffer, static_cast<size_t>(copied));
+}
+
+std::optional<std::string> WebSocketServer::get_protocol_credential(struct lws* wsi) {
+    static constexpr char credential_prefix[] = "bearer.";
+    static constexpr size_t prefix_len = sizeof(credential_prefix) - 1;
+
+    auto header = get_header(wsi, WSI_TOKEN_PROTOCOL);
+    if (!header) {
+        return std::nullopt;
+    }
+
+    // The credential rides in Sec-WebSocket-Protocol alongside the registered
+    // application protocol. The encoding is base64url, so the value contains
+    // only token characters and ends at the next list separator.
+    const std::string& value = *header;
+    size_t pos = value.find(credential_prefix);
+    if (pos == std::string::npos) {
+        return std::nullopt;
+    }
+    size_t begin = pos + prefix_len;
+    size_t end = value.find_first_of(", \t", begin);
+    std::string encoded = value.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+
+    // Translate base64url back to standard base64 before decoding.
+    for (char& c : encoded) {
+        if (c == '-') {
+            c = '+';
+        } else if (c == '_') {
+            c = '/';
+        }
+    }
+    return utils::JsonUtils::base64_decode(encoded);
 }
 
 std::optional<std::string> WebSocketServer::get_url_arg(struct lws* wsi, const char* name) {
