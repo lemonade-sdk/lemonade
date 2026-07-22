@@ -1342,6 +1342,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#onnxruntime-onnx-runtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>onnxruntime</code> — ONNX Runtime
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#openmoss-openmoss-tts" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1473,6 +1484,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code>moonshine</code> — Moonshine (3 models)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#onnxruntime-onnx-runtime-2-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>onnxruntime</code> — ONNX Runtime (2 models)
       </span>
     </span>
   </a>
@@ -1680,6 +1702,34 @@
     
   
     Lemonade Omni Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../router-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Router Policies
   
 
     
@@ -2681,6 +2731,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#onnxruntime-onnx-runtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>onnxruntime</code> — ONNX Runtime
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#openmoss-openmoss-tts" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2812,6 +2873,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code>moonshine</code> — Moonshine (3 models)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#onnxruntime-onnx-runtime-2-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>onnxruntime</code> — ONNX Runtime (2 models)
       </span>
     </span>
   </a>
@@ -3011,6 +3083,13 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>cpu</td>
 </tr>
 <tr>
+<td><code>onnxruntime</code></td>
+<td>ONNX Runtime</td>
+<td>no</td>
+<td>no</td>
+<td>cpu</td>
+</tr>
+<tr>
 <td><code>openmoss</code></td>
 <td>OpenMOSS TTS</td>
 <td>yes</td>
@@ -3139,7 +3218,7 @@ the generator instead. Prose outside the markers is preserved. -->
 <td><code>llamacpp</code></td>
 <td>rocm</td>
 <td>linux, windows</td>
-<td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx942)</td>
+<td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx942, gfx950)</td>
 </tr>
 <tr>
 <td><code>llamacpp</code></td>
@@ -3161,6 +3240,24 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>moonshine</code></td>
+<td>cpu</td>
+<td>macos</td>
+<td>cpu (arm64)</td>
+</tr>
+<tr>
+<td><code>onnxruntime</code></td>
+<td>cpu</td>
+<td>windows</td>
+<td>cpu (x86_64)</td>
+</tr>
+<tr>
+<td><code>onnxruntime</code></td>
+<td>cpu</td>
+<td>linux</td>
+<td>cpu (arm64, x86_64)</td>
+</tr>
+<tr>
+<td><code>onnxruntime</code></td>
 <td>cpu</td>
 <td>macos</td>
 <td>cpu (arm64)</td>
@@ -3295,6 +3392,14 @@ the generator instead. Prose outside the markers is preserved. -->
 </table>
 <!-- END GENERATED: backends-matrix -->
 
+<blockquote>
+<p><strong>Note:</strong> The <code>llamacpp</code> <code>rocm</code> row lists <code>linux, windows</code> for the family as a
+whole, but MI350X (<code>gfx950</code>) is currently gated to <strong>Linux + stable channel
+only</strong> — the Windows TheRock distribution and the ROCm nightly build for
+gfx950 are not yet published, so <code>gfx950</code> installs are rejected on Windows and
+on the nightly channel. The OS column reflects the row's overall reach; the
+per-architecture restriction is enforced by the backend's install gate.</p>
+</blockquote>
 <h2 id="recipe-options">Recipe options</h2>
 <!-- BEGIN GENERATED: backend-options -->
 <h4 id="acestep-ace-step"><code>acestep</code> — ACE-Step</h4>
@@ -3406,6 +3511,27 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>ARGS</td>
 <td>""</td>
 <td>Custom arguments to pass to moonshine-server</td>
+</tr>
+</tbody>
+</table>
+<h4 id="onnxruntime-onnx-runtime"><code>onnxruntime</code> — ONNX Runtime</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>CLI flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>onnxruntime_args</code></td>
+<td><code>--onnxruntime-args</code></td>
+<td>ARGS</td>
+<td>""</td>
+<td>Custom arguments to pass to ort-server</td>
 </tr>
 </tbody>
 </table>
@@ -4101,6 +4227,28 @@ the generator instead. Prose outside the markers is preserved. -->
 <td><code>Moonshine-Tiny-Streaming</code></td>
 <td>0.202</td>
 <td>transcription, realtime-transcription</td>
+</tr>
+</tbody>
+</table>
+<h4 id="onnxruntime-onnx-runtime-2-models"><code>onnxruntime</code> — ONNX Runtime (2 models)</h4>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Size (GB)</th>
+<th>Labels</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Bert-Phishing-ONNX</code></td>
+<td>1.34</td>
+<td>classification</td>
+</tr>
+<tr>
+<td><code>Phishing-Email-Detection-ONNX</code></td>
+<td>0.27</td>
+<td>classification</td>
 </tr>
 </tbody>
 </table>

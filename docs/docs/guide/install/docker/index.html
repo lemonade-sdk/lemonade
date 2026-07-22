@@ -1465,6 +1465,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../dev/router-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Router Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../dev/self-hosted-runners/" class="md-nav__link">
         
   
@@ -2567,8 +2595,7 @@ docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </
 <span class="w">  </span>ghcr.io/lemonade-sdk/lemonade-server:latest
 </code></pre></div>
 <blockquote>
-<p>This will run the server using the ROCm backend as the default for llama.cpp.
-</p>
+<p>This will run the server using the ROCm backend as the default for llama.cpp.</p>
 </blockquote>
 <h3 id="docker-run-with-amd-gpu-passthrough-using-rocm-on-wsl">Docker Run with AMD GPU Passthrough using ROCm on WSL</h3>
 <p>Make sure you follow install steps described in <a href="https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html">ROCm for WSL</a></p>
@@ -2728,8 +2755,9 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
 <span class="c"># # ============================================================</span>
 <span class="k">FROM</span><span class="w"> </span><span class="s">ubuntu:24.04</span>
 
-<span class="c"># Install runtime dependencies only</span>
+<span class="c"># vLLM/Triton JIT-compiles native launcher modules at runtime.</span>
 <span class="k">RUN</span><span class="w"> </span>apt-get<span class="w"> </span>update<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>build-essential<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>libcurl4<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>curl<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>libssl3<span class="w"> </span><span class="se">\</span>

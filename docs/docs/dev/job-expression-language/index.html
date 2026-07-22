@@ -10,36 +10,32 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/guide/install/arch/">
+        <link rel="canonical" href="https://lemonade-server.ai/dev/job-expression-language/">
       
       
-        <link rel="prev" href="../ubuntu/">
-      
-      
-        <link rel="next" href="../fedora/">
       
       
         
       
       
-      <link rel="icon" href="../../../assets/favicon.ico">
+      <link rel="icon" href="../../assets/favicon.ico">
       <meta name="generator" content="zensical-0.0.39">
     
     
       
-        <title>Arch Installation - Lemonade Server Documentation</title>
+        <title>Job recipe expression language - Lemonade Server Documentation</title>
       
     
     
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.1e981d71.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.1e981d71.min.css">
       
         
           
         
-        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.dfe2e883.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.dfe2e883.min.css">
       
       
 
@@ -53,11 +49,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;450;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
 
     
-      <link rel="stylesheet" href="../../../assets/website-styles.css">
+      <link rel="stylesheet" href="../../assets/website-styles.css">
     
-      <link rel="stylesheet" href="../../../assets/zest-theme.css">
+      <link rel="stylesheet" href="../../assets/zest-theme.css">
     
-    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
     
       
 
@@ -82,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#arch-installation" class="md-skip">
+        <a href="#job-recipe-expression-language" class="md-skip">
           Skip to content
         </a>
       
@@ -100,7 +96,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-header__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
+  <img src="../../assets/favicon.ico" alt="Lemonade Server Documentation">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
@@ -117,7 +113,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Arch Installation
+              Job recipe expression language
             
           </span>
         </div>
@@ -208,7 +204,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-nav__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
+  <img src="../../assets/favicon.ico" alt="Lemonade Server Documentation">
 
     </a>
     Lemonade Server Documentation
@@ -235,7 +231,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../.." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -259,20 +255,18 @@
       
   
   
-    
   
   
-  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
@@ -293,7 +287,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -311,7 +305,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../" class="md-nav__link">
+      <a href="../../guide/" class="md-nav__link">
         
   
   
@@ -336,20 +330,18 @@
                 
   
   
-    
   
   
-  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
         
           
           <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
@@ -370,7 +362,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -388,7 +380,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../" class="md-nav__link">
+      <a href="../../guide/install/" class="md-nav__link">
         
   
   
@@ -416,7 +408,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../ubuntu/" class="md-nav__link">
+      <a href="../../guide/install/ubuntu/" class="md-nav__link">
         
   
   
@@ -441,37 +433,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Arch
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="././" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../guide/install/arch/" class="md-nav__link">
         
   
   
@@ -487,49 +452,6 @@
   
 
       </a>
-      
-        
-
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#step-1-install-lemonade-server" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Step 1: Install lemonade-server
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-2-choose-your-frontend" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Step 2: Choose your frontend
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -542,7 +464,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../fedora/" class="md-nav__link">
+      <a href="../../guide/install/fedora/" class="md-nav__link">
         
   
   
@@ -570,7 +492,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../debian/" class="md-nav__link">
+      <a href="../../guide/install/debian/" class="md-nav__link">
         
   
   
@@ -598,7 +520,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../docker/" class="md-nav__link">
+      <a href="../../guide/install/docker/" class="md-nav__link">
         
   
   
@@ -634,7 +556,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../concepts/" class="md-nav__link">
+      <a href="../../guide/concepts/" class="md-nav__link">
         
   
   
@@ -662,7 +584,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/" class="md-nav__link">
+      <a href="../../guide/cli/" class="md-nav__link">
         
   
   
@@ -690,7 +612,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli-chat/" class="md-nav__link">
+      <a href="../../guide/cli-chat/" class="md-nav__link">
         
   
   
@@ -765,7 +687,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/" class="md-nav__link">
+      <a href="../../guide/configuration/" class="md-nav__link">
         
   
   
@@ -793,7 +715,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/custom-models/" class="md-nav__link">
+      <a href="../../guide/configuration/custom-models/" class="md-nav__link">
         
   
   
@@ -821,7 +743,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/multi-model/" class="md-nav__link">
+      <a href="../../guide/configuration/multi-model/" class="md-nav__link">
         
   
   
@@ -849,7 +771,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/llamacpp/" class="md-nav__link">
+      <a href="../../guide/configuration/llamacpp/" class="md-nav__link">
         
   
   
@@ -877,7 +799,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/vllm/" class="md-nav__link">
+      <a href="../../guide/configuration/vllm/" class="md-nav__link">
         
   
   
@@ -905,7 +827,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/moonshine/" class="md-nav__link">
+      <a href="../../guide/configuration/moonshine/" class="md-nav__link">
         
   
   
@@ -933,7 +855,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/cloud/" class="md-nav__link">
+      <a href="../../guide/configuration/cloud/" class="md-nav__link">
         
   
   
@@ -969,7 +891,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../telemetry/" class="md-nav__link">
+      <a href="../../guide/telemetry/" class="md-nav__link">
         
   
   
@@ -997,7 +919,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../faq/" class="md-nav__link">
+      <a href="../../guide/faq/" class="md-nav__link">
         
   
   
@@ -1079,7 +1001,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -1107,7 +1029,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/philosophy/" class="md-nav__link">
+      <a href="../philosophy/" class="md-nav__link">
         
   
   
@@ -1135,7 +1057,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/working-groups/" class="md-nav__link">
+      <a href="../working-groups/" class="md-nav__link">
         
   
   
@@ -1163,7 +1085,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/contribute/" class="md-nav__link">
+      <a href="../contribute/" class="md-nav__link">
         
   
   
@@ -1191,7 +1113,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/documentation/" class="md-nav__link">
+      <a href="../documentation/" class="md-nav__link">
         
   
   
@@ -1219,7 +1141,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/getting-started/" class="md-nav__link">
+      <a href="../getting-started/" class="md-nav__link">
         
   
   
@@ -1247,7 +1169,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/adding-a-backend/" class="md-nav__link">
+      <a href="../adding-a-backend/" class="md-nav__link">
         
   
   
@@ -1275,7 +1197,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/backends-reference/" class="md-nav__link">
+      <a href="../backends-reference/" class="md-nav__link">
         
   
   
@@ -1303,7 +1225,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/app/" class="md-nav__link">
+      <a href="../app/" class="md-nav__link">
         
   
   
@@ -1331,7 +1253,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/web-ui/" class="md-nav__link">
+      <a href="../web-ui/" class="md-nav__link">
         
   
   
@@ -1359,7 +1281,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/lemonade-omni/" class="md-nav__link">
+      <a href="../lemonade-omni/" class="md-nav__link">
         
   
   
@@ -1387,7 +1309,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/router-policy/" class="md-nav__link">
+      <a href="../router-policy/" class="md-nav__link">
         
   
   
@@ -1415,7 +1337,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/self-hosted-runners/" class="md-nav__link">
+      <a href="../self-hosted-runners/" class="md-nav__link">
         
   
   
@@ -1443,7 +1365,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/release/" class="md-nav__link">
+      <a href="../release/" class="md-nav__link">
         
   
   
@@ -1525,7 +1447,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/" class="md-nav__link">
+      <a href="../../integrations/" class="md-nav__link">
         
   
   
@@ -1553,7 +1475,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/ai-toolkit/" class="md-nav__link">
+      <a href="../../integrations/ai-toolkit/" class="md-nav__link">
         
   
   
@@ -1581,7 +1503,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/anythingLLM/" class="md-nav__link">
+      <a href="../../integrations/anythingLLM/" class="md-nav__link">
         
   
   
@@ -1609,7 +1531,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/claude-code/" class="md-nav__link">
+      <a href="../../integrations/claude-code/" class="md-nav__link">
         
   
   
@@ -1637,7 +1559,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/codeGPT/" class="md-nav__link">
+      <a href="../../integrations/codeGPT/" class="md-nav__link">
         
   
   
@@ -1665,7 +1587,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/continue/" class="md-nav__link">
+      <a href="../../integrations/continue/" class="md-nav__link">
         
   
   
@@ -1693,7 +1615,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/langchain/" class="md-nav__link">
+      <a href="../../integrations/langchain/" class="md-nav__link">
         
   
   
@@ -1721,7 +1643,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/lemon-zest/" class="md-nav__link">
+      <a href="../../integrations/lemon-zest/" class="md-nav__link">
         
   
   
@@ -1749,7 +1671,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/mindcraft/" class="md-nav__link">
+      <a href="../../integrations/mindcraft/" class="md-nav__link">
         
   
   
@@ -1777,7 +1699,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/open-hands/" class="md-nav__link">
+      <a href="../../integrations/open-hands/" class="md-nav__link">
         
   
   
@@ -1805,7 +1727,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/open-webui/" class="md-nav__link">
+      <a href="../../integrations/open-webui/" class="md-nav__link">
         
   
   
@@ -1833,7 +1755,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/wut/" class="md-nav__link">
+      <a href="../../integrations/wut/" class="md-nav__link">
         
   
   
@@ -1915,7 +1837,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/" class="md-nav__link">
+      <a href="../../api/" class="md-nav__link">
         
   
   
@@ -1943,7 +1865,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/openai/" class="md-nav__link">
+      <a href="../../api/openai/" class="md-nav__link">
         
   
   
@@ -1971,7 +1893,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/ollama/" class="md-nav__link">
+      <a href="../../api/ollama/" class="md-nav__link">
         
   
   
@@ -1999,7 +1921,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/anthropic/" class="md-nav__link">
+      <a href="../../api/anthropic/" class="md-nav__link">
         
   
   
@@ -2027,7 +1949,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/llamacpp/" class="md-nav__link">
+      <a href="../../api/llamacpp/" class="md-nav__link">
         
   
   
@@ -2055,7 +1977,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/lemonade/" class="md-nav__link">
+      <a href="../../api/lemonade/" class="md-nav__link">
         
   
   
@@ -2137,7 +2059,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/" class="md-nav__link">
+      <a href="../../embeddable/" class="md-nav__link">
         
   
   
@@ -2165,7 +2087,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/runtime/" class="md-nav__link">
+      <a href="../../embeddable/runtime/" class="md-nav__link">
         
   
   
@@ -2193,7 +2115,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/backends/" class="md-nav__link">
+      <a href="../../embeddable/backends/" class="md-nav__link">
         
   
   
@@ -2221,7 +2143,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/models/" class="md-nav__link">
+      <a href="../../embeddable/models/" class="md-nav__link">
         
   
   
@@ -2249,7 +2171,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/building/" class="md-nav__link">
+      <a href="../../embeddable/building/" class="md-nav__link">
         
   
   
@@ -2318,10 +2240,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#step-1-install-lemonade-server" class="md-nav__link">
+  <a href="#the-context" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Step 1: Install lemonade-server
+        The context
       </span>
     </span>
   </a>
@@ -2329,10 +2251,143 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-2-choose-your-frontend" class="md-nav__link">
+  <a href="#references-path" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Step 2: Choose your frontend
+        References — <code>${path}</code>
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="References — ${path}">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#use-in-params-type-preserving-vs-interpolating" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Use in <code>params</code>: type-preserving vs. interpolating
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#conditions-when-and-branchwhen" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Conditions — <code>when</code> and <code>branch[].when</code>
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Conditions — when and branch[].when">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#literals" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Literals
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#operators-highest-binding-last" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Operators (highest-binding last)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#truthiness" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Truthiness
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#comparison-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Comparison semantics
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arithmetic" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Arithmetic
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#grammar-ebnf" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Grammar (EBNF)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Errors
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#caveat-conditions-are-not-short-circuit" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Caveat: conditions are not short-circuit
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Examples
       </span>
     </span>
   </a>
@@ -2357,25 +2412,215 @@
   
 
 
-<h1 id="arch-installation">Arch Installation</h1>
-<h2 id="step-1-install-lemonade-server">Step 1: Install lemonade-server</h2>
-<div class="highlight"><pre><span></span><code>pacman -S lemonade-server
+<h1 id="job-recipe-expression-language">Job recipe expression language</h1>
+<p>Job recipes (the step list posted to <code>POST /v1/jobs</code>) contain two kinds of
+expressions, both evaluated server-side against the job's shared <strong>context</strong>
+(the accumulating bag of step outputs and job <code>inputs</code>):</p>
+<ul>
+<li><strong>References / interpolation</strong> in a step's <code>params</code> — resolved by
+  <code>resolve_refs</code> (<code>lemon/jobs/job_expr.h</code>).</li>
+<li><strong>Boolean conditions</strong> in a step's <code>when</code> and in each <code>branch[].when</code> —
+  evaluated by <code>eval_condition</code>.</li>
+</ul>
+<p>The language is intentionally tiny: references, literals, comparisons, boolean
+logic, and basic arithmetic. It is <strong>not</strong> a general scripting language — there
+are no variables, assignments, function calls, or loops, and nothing outside
+the grammar below can execute.</p>
+<h2 id="the-context">The context</h2>
+<p>The context is a JSON object. After each step runs, its raw result is stored
+under <code>context[&lt;step id&gt;]</code>, and any <code>extract</code> mappings copy fields to top-level
+keys. Job <code>inputs</code> are available under <code>context.inputs</code>. So a later step can
+read <code>${run_v.timings.prompt_ms}</code> (the <code>run_v</code> step's output),
+<code>${vulkan_tps}</code> (an extracted key), or <code>${inputs.model}</code>.</p>
+<h2 id="references-path">References — <code>${path}</code></h2>
+<p>A reference is <code>${</code> followed by a dotted <strong>path</strong> followed by <code>}</code>.</p>
+<div class="highlight"><pre><span></span><code>${model}
+${run_v.timings.predicted_per_second}
+${inputs.ctx}
+${list.0}
 </code></pre></div>
-<p>For package details, see <a href="https://archlinux.org/packages/extra/x86_64/lemonade-server">lemonade-server</a>.</p>
-<h2 id="step-2-choose-your-frontend">Step 2: Choose your frontend</h2>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Web UI</label><label for="__tabbed_1_2">Lemonade Desktop package</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<p>Always available at <a href="http://localhost:13305">http://localhost:13305</a>.</p>
-<p>The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</p>
-</div>
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>pacman -S lemonade-desktop
+<ul>
+<li>Each path segment selects an <strong>object key</strong>, or, when the current value is an
+  array, a <strong>numeric index</strong> (<code>${list.0}</code> = first element).</li>
+<li>A path that does not resolve is an <strong>error</strong> (the job fails with a clear
+  message). There is no "undefined" value.</li>
+</ul>
+<h3 id="use-in-params-type-preserving-vs-interpolating">Use in <code>params</code>: type-preserving vs. interpolating</h3>
+<ul>
+<li><strong>Whole-string reference</strong> — when a params string is <em>exactly</em> one reference,
+  the resolved value keeps its JSON type:</li>
+</ul>
+<div class="highlight"><pre><span></span><code>{ &quot;ctx_size&quot;: &quot;${inputs.ctx}&quot; }      // -&gt; a number, not the string &quot;32768&quot;
+{ &quot;messages&quot;: &quot;${inputs.prompt}&quot; }   // -&gt; an array
 </code></pre></div>
-<p>For package details, see <a href="https://archlinux.org/packages/extra/x86_64/lemonade-desktop">lemonade-desktop</a>.</p>
-</div>
-</div>
-</div>
+<ul>
+<li><strong>Embedded reference(s)</strong> — when a reference appears inside surrounding text
+  (or more than one reference appears), each is stringified and interpolated,
+  and the result is always a string:</li>
+</ul>
+<div class="highlight"><pre><span></span><code>{ &quot;label&quot;: &quot;vulkan @ ${inputs.ctx} tok&quot; }   // -&gt; &quot;vulkan @ 32768 tok&quot;
+</code></pre></div>
+<p>Stringification: strings pass through; numbers/booleans use their literal
+  form; <code>null</code> becomes empty; arrays/objects use compact JSON.</p>
+<p>References inside <code>when</code>/<code>branch</code> conditions always resolve to the <strong>typed</strong>
+value (they are expression operands, not text).</p>
+<h2 id="conditions-when-and-branchwhen">Conditions — <code>when</code> and <code>branch[].when</code></h2>
+<p>A condition is a boolean expression. An <strong>empty</strong> condition is <code>true</code> (an
+omitted <code>when</code> never skips). The result is taken by <strong>truthiness</strong> (below).</p>
+<h3 id="literals">Literals</h3>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Examples</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Number</td>
+<td><code>42</code>, <code>3.14</code>, <code>.5</code></td>
+</tr>
+<tr>
+<td>String</td>
+<td><code>'vulkan'</code>, <code>"q8_0"</code> (single or double quotes; <code>\</code> escapes the next char)</td>
+</tr>
+<tr>
+<td>Boolean</td>
+<td><code>true</code>, <code>false</code></td>
+</tr>
+<tr>
+<td>Null</td>
+<td><code>null</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="operators-highest-binding-last">Operators (highest-binding last)</h3>
+<table>
+<thead>
+<tr>
+<th>Precedence</th>
+<th>Operators</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 (lowest)</td>
+<td><code>\|\|</code></td>
+<td>logical or</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>&amp;&amp;</code></td>
+<td>logical and</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>!</code></td>
+<td>logical not (unary)</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>==</code> <code>!=</code> <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code></td>
+<td>comparison; <strong>does not chain</strong> (<code>1 &lt; 2 &lt; 3</code> is an error)</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>+</code> <code>-</code></td>
+<td>additive (numbers only)</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>*</code> <code>/</code></td>
+<td>multiplicative (numbers only)</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>-</code></td>
+<td>unary minus (numbers only)</td>
+</tr>
+<tr>
+<td>8 (highest)</td>
+<td><code>( … )</code>, literals, <code>${ref}</code></td>
+<td>grouping / primaries</td>
+</tr>
+</tbody>
+</table>
+<h3 id="truthiness">Truthiness</h3>
+<p>A value used as a boolean (the whole condition, or an operand of <code>&amp;&amp;</code>/<code>||</code>/<code>!</code>)
+is truthy when it is:</p>
+<ul>
+<li>boolean <code>true</code>,</li>
+<li>a non-zero number,</li>
+<li>a non-empty string,</li>
+<li>a non-empty array or object.</li>
+</ul>
+<p><code>false</code>, <code>0</code>, <code>""</code>, <code>null</code>, <code>[]</code>, and <code>{}</code> are falsy.</p>
+<h3 id="comparison-semantics">Comparison semantics</h3>
+<ul>
+<li><code>==</code> / <code>!=</code> compare by <strong>value and type</strong> (deep JSON equality): <code>2 == 2.0</code>
+  is true (numeric), <code>1 == '1'</code> is false (number vs string).</li>
+<li><code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code> compare <strong>two numbers</strong> numerically or <strong>two strings</strong>
+  lexicographically. Ordering operands of mismatched types (e.g. a string vs a
+  number) is an <strong>error</strong>.</li>
+</ul>
+<h3 id="arithmetic">Arithmetic</h3>
+<p><code>+ - * /</code> and unary <code>-</code> operate on <strong>numbers only</strong>; a non-numeric operand is an
+error. Division by zero is an error. Division is floating-point
+(<code>10 / 4 == 2.5</code>).</p>
+<h2 id="grammar-ebnf">Grammar (EBNF)</h2>
+<div class="highlight"><pre><span></span><code>condition  = [ or ] ;                         (* empty = true *)
+or         = and { &quot;||&quot; and } ;
+and        = not { &quot;&amp;&amp;&quot; not } ;
+not        = &quot;!&quot; not | comparison ;
+comparison = additive [ ( &quot;==&quot; | &quot;!=&quot; | &quot;&lt;&quot; | &quot;&lt;=&quot; | &quot;&gt;&quot; | &quot;&gt;=&quot; ) additive ] ;
+additive   = multiplicative { ( &quot;+&quot; | &quot;-&quot; ) multiplicative } ;
+multiplicative = unary { ( &quot;*&quot; | &quot;/&quot; ) unary } ;
+unary      = &quot;-&quot; unary | primary ;
+primary    = number | string | &quot;true&quot; | &quot;false&quot; | &quot;null&quot;
+           | reference | &quot;(&quot; or &quot;)&quot; ;
+reference  = &quot;${&quot; path &quot;}&quot; ;
+path       = segment { &quot;.&quot; segment } ;
+</code></pre></div>
+<h2 id="errors">Errors</h2>
+<p>Evaluation raises a client-facing error (HTTP 400 at job creation for <code>when</code>
+syntax; job failure at run time for bad references) on:</p>
+<ul>
+<li>an unknown reference path (<code>${no.such.key}</code>),</li>
+<li>ordering-comparison of mismatched types,</li>
+<li>arithmetic on a non-number, or division by zero,</li>
+<li>an unterminated <code>${…}</code> or string literal,</li>
+<li>an unknown identifier (only <code>true</code>/<code>false</code>/<code>null</code> are keywords),</li>
+<li>an unexpected character or trailing tokens.</li>
+</ul>
+<p>At <strong>job creation</strong>, <code>when</code>/<code>branch</code> expressions are syntax-checked (tokenized)
+and rejected early; reference <em>paths</em> are only checked at run time, since the
+context they read is built as the job runs.</p>
+<h2 id="caveat-conditions-are-not-short-circuit">Caveat: conditions are not short-circuit</h2>
+<p><code>&amp;&amp;</code> and <code>||</code> evaluate <strong>both</strong> sides. A guard like
+<code>${a} != null &amp;&amp; ${a.b} &gt; 0</code> will still evaluate <code>${a.b}</code> when <code>a</code> is null and
+fail on the unknown reference. Structure recipes so a condition only references
+context that is guaranteed to exist at that point (e.g. gate on an extracted
+scalar you set earlier, not on a possibly-absent nested path).</p>
+<h2 id="examples">Examples</h2>
+<div class="highlight"><pre><span></span><code>// Skip a step unless the vulkan run beat the rocm run.
+{ &quot;when&quot;: &quot;${vulkan_tps} &gt; ${rocm_tps}&quot; }
+
+// Batch-ladder gate: only adopt a larger batch if it improves prefill &gt;5%.
+{ &quot;when&quot;: &quot;${baseline.ttft_ms} / ${best.ttft_ms} &gt; 1.05&quot; }
+
+// Branch to a deeper sweep on the winning backend.
+{ &quot;branch&quot;: [
+    { &quot;when&quot;: &quot;${winner} == &#39;vulkan&#39;&quot;, &quot;goto&quot;: &quot;deep_vulkan&quot; },
+    { &quot;when&quot;: &quot;${winner} == &#39;rocm&#39;&quot;,   &quot;goto&quot;: &quot;deep_rocm&quot; }
+] }
+
+// Interpolated params vs. type-preserving params.
+{ &quot;params&quot;: {
+    &quot;ctx_size&quot;: &quot;${inputs.ctx}&quot;,                 // number
+    &quot;summary&quot;:  &quot;won: ${winner} @ ${best.tps} tps&quot;  // string
+} }
+</code></pre></div>
 
 
 
@@ -2408,44 +2653,6 @@
       
         <footer class="md-footer">
   
-    
-      
-      <nav class="md-footer__inner md-grid" aria-label="Footer" >
-        
-          
-          <a href="../ubuntu/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Ubuntu">
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
-            </div>
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              <div class="md-ellipsis">
-                Ubuntu
-              </div>
-            </div>
-          </a>
-        
-        
-          
-          <a href="../fedora/" class="md-footer__link md-footer__link--next" aria-label="Next: Fedora">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                Fedora
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            </div>
-          </a>
-        
-      </nav>
     
   
   <div class="md-footer-meta md-typeset">
@@ -2515,12 +2722,12 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.footer","navigation.tracking","navigation.top","content.code.annotate","content.code.copy"],"search":"../../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.footer","navigation.tracking","navigation.top","content.code.annotate","content.code.copy"],"search":"../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.dbc0afdc.min.js"></script>
+      <script src="../../assets/javascripts/bundle.dbc0afdc.min.js"></script>
       
-        <script src="../../../assets/carousel.js"></script>
+        <script src="../../assets/carousel.js"></script>
       
     
   </body>

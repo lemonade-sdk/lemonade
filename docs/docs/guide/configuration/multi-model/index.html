@@ -834,6 +834,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#router-and-classifier-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Router and Classifier Dependencies
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#device-constraints" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1456,6 +1467,34 @@
     
   
     Lemonade Omni Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/router-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Router Policies
   
 
     
@@ -2401,6 +2440,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#router-and-classifier-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Router and Classifier Dependencies
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#device-constraints" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2522,6 +2572,44 @@
 <li><strong>Image</strong> - Models for image generation (identified by the <code>image</code> label)</li>
 </ul>
 <p>Each type has its own independent LRU cache, all sharing the same slot limit set by <code>max_loaded_models</code>.</p>
+<h2 id="router-and-classifier-dependencies">Router and Classifier Dependencies</h2>
+<p>Models loaded internally to choose a candidate use a separate <strong>routing-helper</strong>
+residency pool. This is intentionally independent from both <code>ModelType</code> and the
+backend's hardware slot policy:</p>
+<ul>
+<li>A router LLM remains an <strong>LLM</strong>; it is not reclassified as a classification model.</li>
+<li>Standard pools continue to use <code>max_loaded_models</code> per <code>ModelType</code>.</li>
+<li>Routing-helper capacity is keyed by the distinct helper model rather than by
+  <code>ModelType</code>. Multiple classifier or router models of the same type required by
+  one or more policies can therefore remain warm together without consuming or
+  evicting standard user-facing slots. A second process for the same helper model
+  is never created.</li>
+<li>With the default <code>max_loaded_models=1</code>, a router LLM and one selected standard
+  LLM candidate can stay warm together; additional distinct helper models can
+  also remain resident until explicit or pressure-based eviction removes them.</li>
+<li>Residency follows the current use of the live process. A standard model used
+  as a routing dependency is promoted in place; a routing helper called directly
+  by the user is demoted into the counted standard pool in place. Destination-pool
+  admission and pinning rules apply before either transition. The
+  <code>router.model == candidate</code> case therefore promotes for routing and demotes for
+  candidate inference within the same request without creating a second process.</li>
+<li>Pinning is pool-local for count-based LRU: a pinned normal candidate does not
+  block the routing-helper slot, and a pinned helper does not block normal slots.</li>
+<li>Cloud (<code>Unmetered</code>) models consume neither pool and report <code>slot_pool: unmetered</code>.</li>
+<li>Implicit model selection prefers a normal <code>standard</code> model, so a warm internal
+  helper never makes an otherwise unique candidate ambiguous.</li>
+<li>Explicit idle/VRAM-pressure eviction remains independent; an unpinned routing
+  helper can still be evicted when dynamic eviction is enabled.</li>
+<li>Backend/device constraints remain authoritative. Internal routing work never
+  evicts an already-resident model to acquire an exclusive hardware slot; that
+  attempt fails with HTTP <code>409</code> and code <code>router_residency_conflict</code>. This also
+  prevents two incompatible NPU/FLM helpers from repeatedly evicting one another.
+  A direct user request has precedence and may evict a resident routing helper
+  through the backend's normal exclusivity policy.</li>
+</ul>
+<p><code>GET /api/v1/health</code> exposes <code>residency_class</code> and <code>slot_pool</code> for every live model.
+<code>pinned_models</code> remains the standard-pool summary used with <code>max_models</code>, while
+<code>pinned_helper_models</code> separately reports pinned routing helpers by <code>ModelType</code>.</p>
 <h2 id="device-constraints">Device Constraints</h2>
 <!-- BEGIN GENERATED: npu-exclusivity -->
 <ul>
@@ -2617,7 +2705,7 @@ lemonade<span class="w"> </span>unpin<span class="w"> </span>Qwen3-0.6B-GGUF
 </code></pre></div>
   Or via a POST request to <code>/internal/pin</code>.</li>
 <li><strong>Pre-emptive Warnings:</strong> The CLI checks <code>/api/v1/health</code> before loading a new model. If all slots for that model type are occupied by pinned models, the CLI will output a pre-emptive warning alerting you that loading will fail.</li>
-<li><strong>Capacity Failures:</strong> If all loaded models of a type are pinned and a request to load another model of that type is received, the load request fails with a <code>409 Conflict</code> HTTP status containing a <code>slots_pinned_error</code> code. You must unpin or unload at least one model of that type to free up a slot.</li>
+<li><strong>Capacity Failures:</strong> If every model in the target <code>(residency class, model type)</code> pool is pinned and another model needs that pool, the load request fails with a <code>409 Conflict</code> HTTP status containing a <code>slots_pinned_error</code> code. You must unpin or unload a model from that pool to free its slot.</li>
 </ul>
 <h2 id="per-model-settings">Per-Model Settings</h2>
 <p>Each model can be loaded with custom settings (context size, llamacpp backend, llamacpp args) via the <code>/api/v1/load</code> endpoint. These per-model settings override the default values set via CLI arguments or environment variables. See the <a href="../../../api/lemonade/#post-v1load"><code>/api/v1/load</code> endpoint documentation</a> for details.</p>

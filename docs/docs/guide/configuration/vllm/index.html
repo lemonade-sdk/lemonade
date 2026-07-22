@@ -1498,6 +1498,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../dev/router-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Router Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../dev/self-hosted-runners/" class="md-nav__link">
         
   
@@ -2665,6 +2693,9 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <p>The flat form (<code>vllm_args=...</code>) is also accepted and maps to the same setting.</p>
 <h2 id="known-gotchas">Known gotchas</h2>
 <ul>
+<li><strong>Docker runtime needs <code>build-essential</code>.</strong> vLLM/Triton JIT-compiles native launcher
+  modules on first load. The published image includes it in the runtime stage; keep it
+  if you build your own image.</li>
 <li><strong>Cold first-load JIT.</strong> Loading a new model size triggers a Triton kernel compile. Expect 20 s – several minutes the first time you hit a given model+shape; subsequent loads of the same shape are faster as kernels cache to disk.</li>
 <li><strong>FP8 first-load is slow on gfx1151.</strong> Cold-loading <code>Qwen/Qwen3-4B-FP8</code> took ~12 minutes in our test, exceeding Lemonade's default <code>wait_for_ready</code> timeout. The engine selects <code>TritonFp8BlockScaledMMKernel</code> and emits <em>"Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal."</em> warnings — i.e. no AMD-tuned kernel configs are shipped for this GPU's exact shapes, so vLLM autotunes from defaults. FP16 is the most polished path today; FP8 should improve once AMD ships tuned configs.</li>
 <li><strong><code>huggingface-hub</code> shadowing.</strong> Lemonade launches <code>vllm-server</code> with <code>PYTHONNOUSERSITE=1</code> so the bundled <code>huggingface_hub</code> is used. If a module-not-found error still appears, ensure <code>~/.local/lib/python3.12/site-packages/huggingface_hub</code> isn't being injected via <code>PYTHONPATH</code>.</li>

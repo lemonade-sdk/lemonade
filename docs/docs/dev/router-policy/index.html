@@ -10,9 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/server/server_spec/">
+        <link rel="canonical" href="https://lemonade-server.ai/dev/router-policy/">
       
       
+        <link rel="prev" href="../lemonade-omni/">
+      
+      
+        <link rel="next" href="../self-hosted-runners/">
       
       
         
@@ -23,7 +27,7 @@
     
     
       
-        <title>Lemonade Server Spec - Lemonade Server Documentation</title>
+        <title>Router Policies (collection.router) - Lemonade Server Documentation</title>
       
     
     
@@ -78,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#lemonade-server-spec" class="md-skip">
+        <a href="#router-policies-collectionrouter" class="md-skip">
           Skip to content
         </a>
       
@@ -113,7 +117,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Lemonade Server Spec
+              Router Policies (collection.router)
             
           </span>
         </div>
@@ -951,18 +955,20 @@
       
   
   
+    
   
   
+  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
@@ -983,7 +989,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1001,7 +1007,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -1029,7 +1035,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/philosophy/" class="md-nav__link">
+      <a href="../philosophy/" class="md-nav__link">
         
   
   
@@ -1057,7 +1063,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/working-groups/" class="md-nav__link">
+      <a href="../working-groups/" class="md-nav__link">
         
   
   
@@ -1085,7 +1091,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/contribute/" class="md-nav__link">
+      <a href="../contribute/" class="md-nav__link">
         
   
   
@@ -1113,7 +1119,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/documentation/" class="md-nav__link">
+      <a href="../documentation/" class="md-nav__link">
         
   
   
@@ -1141,7 +1147,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/getting-started/" class="md-nav__link">
+      <a href="../getting-started/" class="md-nav__link">
         
   
   
@@ -1169,7 +1175,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/adding-a-backend/" class="md-nav__link">
+      <a href="../adding-a-backend/" class="md-nav__link">
         
   
   
@@ -1197,7 +1203,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/backends-reference/" class="md-nav__link">
+      <a href="../backends-reference/" class="md-nav__link">
         
   
   
@@ -1225,7 +1231,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/app/" class="md-nav__link">
+      <a href="../app/" class="md-nav__link">
         
   
   
@@ -1253,7 +1259,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/web-ui/" class="md-nav__link">
+      <a href="../web-ui/" class="md-nav__link">
         
   
   
@@ -1281,7 +1287,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/lemonade-omni/" class="md-nav__link">
+      <a href="../lemonade-omni/" class="md-nav__link">
         
   
   
@@ -1306,10 +1312,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../dev/router-policy/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Router Policies
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1325,6 +1358,93 @@
   
 
       </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#policy-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Policy shape
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Conditions
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registering-and-invoking" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registering and invoking
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-decision-on-the-response" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The decision on the response
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cloud-candidates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cloud candidates
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#llm-as-router-routingrouter" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        LLM-as-router (<code>routing.router</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1337,7 +1457,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/self-hosted-runners/" class="md-nav__link">
+      <a href="../self-hosted-runners/" class="md-nav__link">
         
   
   
@@ -1365,7 +1485,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/release/" class="md-nav__link">
+      <a href="../release/" class="md-nav__link">
         
   
   
@@ -2216,6 +2336,11 @@
                       
                     
                     
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
                   
                   <div class="md-sidebar__inner">
                     
@@ -2227,6 +2352,80 @@
   
     
   
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#policy-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Policy shape
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Conditions
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registering-and-invoking" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registering and invoking
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-decision-on-the-response" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The decision on the response
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cloud-candidates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cloud candidates
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#llm-as-router-routingrouter" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        LLM-as-router (<code>routing.router</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -2244,10 +2443,286 @@
   
 
 
-<h1 id="lemonade-server-spec">Lemonade Server Spec</h1>
-<p>This document has moved <a href="../../api/">here</a>.</p>
-<!--This file was originally licensed under Apache 2.0. It has been modified.
-Modifications Copyright (c) 2025 AMD-->
+<h1 id="router-policies-collectionrouter">Router Policies (<code>collection.router</code>)</h1>
+<p>The Lemonade <strong>Router</strong> selects a model per request from a policy you author. The
+policy is a <code>collection.router</code> collection (a sibling of <code>collection.omni</code>).
+Pointing the OpenAI <code>model</code> field at the collection's name triggers the routing
+engine — there is no <code>/v1/route</code> endpoint and no <code>"auto"</code> model. Rules are
+evaluated top-to-bottom, <strong>first match wins</strong>, and any request that matches
+nothing <strong>falls open</strong> to <code>default_model</code>.</p>
+<p>The engine does pure model selection and emits a decision trace. It contains no
+policy-domain logic (no "PII", no "block"); anything domain-specific is expressed
+on top via each rule's <code>outputs</code> pass-through bag and the request <code>metadata</code>.</p>
+<h2 id="policy-shape">Policy shape</h2>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;model_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user.My-Router&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;collection.router&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;components&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Small-GGUF&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Big-GGUF&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;routing&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;candidates&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Small-GGUF&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Big-GGUF&quot;</span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;default_model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Small-GGUF&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;rules&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sensitive-stays-local&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;match&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;key&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;consent&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;equals&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;denied&quot;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">},</span>
+<span class="w">        </span><span class="nt">&quot;route_to&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Small-GGUF&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;outputs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;privacy&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;coding-or-long-to-big&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;match&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;any&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;keywords_any&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;def &quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;function&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;stack trace&quot;</span><span class="p">]</span><span class="w"> </span><span class="p">},</span>
+<span class="w">            </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;min_chars&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4000</span><span class="w"> </span><span class="p">}</span>
+<span class="w">          </span><span class="p">]</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="nt">&quot;route_to&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Big-GGUF&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>version</code></td>
+<td>yes</td>
+<td>Must be <code>"1"</code>.</td>
+</tr>
+<tr>
+<td><code>recipe</code></td>
+<td>yes</td>
+<td>Must be <code>"collection.router"</code>.</td>
+</tr>
+<tr>
+<td><code>components</code></td>
+<td>yes</td>
+<td>Registered model names this policy may use. Each must already be pulled/registered (or a cloud model that has been discovered — see below).</td>
+</tr>
+<tr>
+<td><code>routing.candidates</code></td>
+<td>yes</td>
+<td>The models the router may pick. Each is a <code>components</code> member.</td>
+</tr>
+<tr>
+<td><code>routing.default_model</code></td>
+<td>yes</td>
+<td>Fallback when no rule matches. Must be one of <code>candidates</code>.</td>
+</tr>
+<tr>
+<td><code>routing.rules</code></td>
+<td>yes*</td>
+<td>Ordered; first match wins. (<em>a policy provides </em><em>either</em><em> <code>routing.rules</code> </em><em>or</em>* a <code>routing.router</code> block — see <a href="#llm-as-router-routingrouter">LLM-as-router</a>.)</td>
+</tr>
+<tr>
+<td><code>routing.classifiers</code></td>
+<td>no</td>
+<td>Model-backed classifier definitions referenced by <code>classifier</code> / <code>semantic_similarity</code> conditions.</td>
+</tr>
+</tbody>
+</table>
+<p>A <strong>rule</strong> is <code>{ id, match, route_to, outputs? }</code>. <code>route_to</code> must be one of
+<code>candidates</code>. <code>outputs</code> is an arbitrary object copied verbatim into the decision
+(the engine never interprets it).</p>
+<h2 id="conditions">Conditions</h2>
+<p>A <code>match</code> is a match-expression. Combine with the logical operators <code>any</code> (OR),
+<code>all</code> (AND), and <code>not</code>; a leaf object with several keys is an implicit <code>all</code>.</p>
+<p><strong>Deterministic (no model needed):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>keywords_any</code> / <code>keywords_all</code></td>
+<td>Case-insensitive substring match over the input.</td>
+</tr>
+<tr>
+<td><code>regex</code></td>
+<td>ECMAScript regex over the input.</td>
+</tr>
+<tr>
+<td><code>min_chars</code> / <code>max_chars</code></td>
+<td>Input length in UTF-8 bytes.</td>
+</tr>
+<tr>
+<td><code>has_tools</code> / <code>has_images</code></td>
+<td>Boolean — request carries tools / images.</td>
+</tr>
+<tr>
+<td><code>metadata</code></td>
+<td><code>{ key, equals \| any \| exists }</code> over the request's OpenAI <code>metadata</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Model-backed:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>semantic_similarity</code></td>
+<td>Cosine similarity of the input against labelled <code>reference_phrases</code>, via an embedding model.</td>
+</tr>
+<tr>
+<td><code>classifier</code></td>
+<td>A <code>{label: score}</code> classifier — an encoder model via the <code>onnxruntime</code> backend (<code>/v1/classify</code>), or any model as an LLM-as-classifier via chat.</td>
+</tr>
+<tr>
+<td><code>llm</code></td>
+<td>An LLM picks exactly one of the declared <code>labels</code> for the request (with a rationale); the chosen label scores <code>1.0</code>, the rest <code>0</code>. You supply the <code>model</code> and a <code>prompt</code> describing when to choose each label.</td>
+</tr>
+</tbody>
+</table>
+<p>A classifier condition is a band test: <code>{ "classifier": "&lt;id&gt;", "label": "&lt;name&gt;",
+"min_score": 0.5, "max_score": 1.0 }</code> (omitting both bounds defaults to
+<code>min_score: 0.5</code>).</p>
+<p>Each model-backed condition references an entry defined in <code>routing.classifiers</code>,
+and every entry's <code>model</code> must be one of <code>components</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">&quot;routing&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;classifiers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;topic&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;semantic_similarity&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nomic-embed-text-v1-GGUF&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;reference_phrases&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;coding&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;write a function&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;fix this bug&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;refactor this code&quot;</span><span class="p">]</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;phishing&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;classifier&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Phishing-Email-Detection-ONNX&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;LABEL_0&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;LABEL_1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;LABEL_2&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;LABEL_3&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;default_label&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;LABEL_1&quot;</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;risk&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-1.7B-GGUF&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Classify the request&#39;s risk for tool execution. Reply with exactly one label: SAFE or RISKY.&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;SAFE&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;RISKY&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;default_label&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;SAFE&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;on_error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;match_false&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;rules&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;coding-to-big&quot;</span><span class="p">,</span><span class="w">  </span><span class="nt">&quot;match&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;classifier&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;topic&quot;</span><span class="p">,</span><span class="w">    </span><span class="nt">&quot;label&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;coding&quot;</span><span class="p">,</span><span class="w">  </span><span class="nt">&quot;min_score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.6</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;route_to&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Big-GGUF&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;phishing-local&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;match&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;classifier&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;phishing&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;label&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;LABEL_1&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;min_score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;route_to&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Small-GGUF&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;risky-tool-calls-stay-local&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;match&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;all&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">          </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;classifier&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;risk&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;label&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;RISKY&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;min_score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="w"> </span><span class="p">},</span>
+<span class="w">          </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;has_tools&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">}</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;route_to&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Small-GGUF&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;outputs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm-judged-risky&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>semantic_similarity</code> scores each concept as the max cosine similarity of the
+  input against that concept's <code>reference_phrases</code> (needs an embedding model).</li>
+<li><code>classifier</code> uses the model's <code>{label: score}</code> output; declare its <code>labels</code>
+  (an onnxruntime encoder serves <code>/v1/classify</code>, else it runs as an
+  LLM-as-classifier via chat).</li>
+<li><code>llm</code> shows the request to an LLM and asks it to choose one of <code>labels</code> (the
+  chosen label scores <code>1.0</code>). Because it produces a plain label, it's a
+  <strong>composable signal</strong> — combine it with any other condition, as in
+  <code>risky-tool-calls-stay-local</code> above. The engine wraps your <code>prompt</code> with the
+  request context and the label set, so the prompt just needs to say when to pick
+  each label; a malformed reply fails open to <code>default_model</code>.</li>
+</ul>
+<blockquote>
+<p>A <code>type: "llm"</code> classifier and the <a href="#llm-as-router-routingrouter"><code>routing.router</code></a>
+block are the two LLM forms. <code>routing.router</code> picks the final candidate itself
+and replaces rules entirely (it's shorthand for a single <code>llm</code> classifier whose
+labels are the candidate models); a <code>type: "llm"</code> classifier only produces a
+label that rules combine with any other condition.</p>
+</blockquote>
+<h2 id="registering-and-invoking">Registering and invoking</h2>
+<p>Register the policy like any collection — <code>POST /v1/pull</code> with the policy JSON:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/api/v1/pull<span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>--data-binary<span class="w"> </span>@my-router.json
+</code></pre></div>
+<p>Then call it by name with a normal client:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+<span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;lemonade&quot;</span><span class="p">)</span>
+<span class="n">client</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;user.My-Router&quot;</span><span class="p">,</span> <span class="n">messages</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">])</span>
+</code></pre></div>
+<h2 id="the-decision-on-the-response">The decision on the response</h2>
+<p>Every routed response carries the header <strong><code>x-lemonade-route</code></strong> — the matched rule
+id, or <code>default</code>. Add <code>"route_trace": true</code> to the request body and the response
+also carries an <strong><code>x_lemonade_route</code></strong> object:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;route_to&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Big-GGUF&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;matched_rule&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;coding-or-long-to-big&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;default_used&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;outputs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">  </span><span class="nt">&quot;trace&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;condition&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;metadata&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;result&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;condition&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;keywords_any&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;result&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><code>route_to</code> is the candidate that actually answered. For streaming responses the
+same object is attached to the first SSE event as <code>x_lemonade_route</code>.</p>
+<h2 id="cloud-candidates">Cloud candidates</h2>
+<p>A candidate may be a cloud model — the router derives the route category from the
+candidate's recipe, so a <code>recipe: "cloud"</code> component is dispatched to its
+provider. Because cloud models are only discovered after a provider is installed
+and authenticated, <strong>install/auth the provider before registering the
+collection</strong>, or the component won't resolve:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_FIREWORKS_API_KEY</span><span class="o">=</span>fw-XXXX
+lemonade<span class="w"> </span>cloud<span class="w"> </span>install<span class="w"> </span>fireworks<span class="w"> </span>--base-url<span class="w"> </span>https://api.fireworks.ai/inference/v1
+lemonade<span class="w"> </span>list<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>fireworks<span class="w">     </span><span class="c1"># e.g. fireworks.kimi-k2p5</span>
+</code></pre></div>
+<p>Then list <code>fireworks.&lt;id&gt;</code> in <code>components</code>/<code>candidates</code> next to a local model. A
+<code>consent: denied</code> request can be kept on the local candidate while heavy work
+routes to the cloud one — the split is entirely policy-driven.</p>
+<p>See <code>examples/router/</code> for runnable local and local+cloud demos, and
+<code>test/server_router.py</code> for the end-to-end tests.</p>
+<p>The <code>classifier</code> condition runs a real encoder classifier: a model of type
+<code>ModelType::CLASSIFICATION</code> (the <code>onnxruntime</code> backend, <code>/v1/classify</code>) is called
+directly; any other model backing a <code>classifier</code> is used as an LLM-as-classifier
+via chat. The classifier's model must be able to serve one of those paths, and
+that capability is checked when the collection is registered.</p>
+<h2 id="llm-as-router-routingrouter">LLM-as-router (<code>routing.router</code>)</h2>
+<p>Instead of authoring rules, you can hand the decision to a small LLM. Provide a
+<code>routing.router</code> block <strong>in place of</strong> <code>routing.rules</code> / <code>routing.classifiers</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">&quot;routing&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;candidates&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Qwen3-8B-GGUF&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Qwen3.5-35B-A3B-GGUF&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;default_model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-8B-GGUF&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;router&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-1.7B-GGUF&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Route the request. Use Qwen3-8B-GGUF for everyday questions; use Qwen3.5-35B-A3B-GGUF for hard reasoning, coding, or long context.&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The router <code>model</code> must be one of <code>components</code>. At request time the engine asks it
+to pick a candidate, and that desugars into the same first-match engine and
+<code>Decision</code>/trace as the rule form. <code>routing.router.type</code> must be <code>"llm"</code>, and the
+block is <strong>mutually exclusive</strong> with <code>routing.rules</code> and <code>routing.classifiers</code>.</p>
 
 
 
@@ -2280,6 +2755,44 @@ Modifications Copyright (c) 2025 AMD-->
       
         <footer class="md-footer">
   
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../lemonade-omni/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Lemonade Omni Models">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Lemonade Omni Models
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../self-hosted-runners/" class="md-footer__link md-footer__link--next" aria-label="Next: Infrastructure">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Infrastructure
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
     
   
   <div class="md-footer-meta md-typeset">

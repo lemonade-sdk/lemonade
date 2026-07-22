@@ -986,6 +986,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#distributed-tracing-w3c-trace-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Distributed Tracing (W3C Trace Context)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#configuration" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1533,6 +1544,34 @@
     
   
     Lemonade Omni Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/router-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Router Policies
   
 
     
@@ -2484,6 +2523,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#distributed-tracing-w3c-trace-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Distributed Tracing (W3C Trace Context)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#configuration" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2687,6 +2737,20 @@
 </ol>
 <p>Users can specify one or both formats. When both are enabled, Lemonade packs attributes for both conventions into a <strong>single pass</strong> and exports them in a <strong>single network payload</strong> to eliminate network overhead.</p>
 <hr />
+<h2 id="distributed-tracing-w3c-trace-context">Distributed Tracing (W3C Trace Context)</h2>
+<p>By default, each inference request starts its own root trace. When a caller is itself an instrumented application (e.g. a multi-agent orchestrator), you can have Lemonade's spans join the caller's trace instead, so an entire multi-step workflow appears as one connected tree.</p>
+<p>Set <code>telemetry.trust_incoming_trace_context=true</code> to opt in. Lemonade then reads the standard <a href="https://www.w3.org/TR/trace-context/">W3C <code>traceparent</code></a> header on incoming requests: the request's span adopts the header's trace id and is parented to the header's span id. Requests without a valid <code>traceparent</code>, or received while the setting is <code>false</code>, keep the default root-span behavior.</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.enabled<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+<span class="w">                    </span>telemetry.trust_incoming_trace_context<span class="o">=</span><span class="nb">true</span>
+</code></pre></div>
+<p>The caller supplies the header on each request, for example:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/api/v1/chat/completions<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model&quot;: &quot;...&quot;, &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello&quot;}]}&#39;</span>
+</code></pre></div>
+<p>The setting is opt-in because it makes span parentage depend on client-supplied input; leave it disabled unless you trust the callers on your network.</p>
+<hr />
 <h2 id="configuration">Configuration</h2>
 <p>Telemetry is configured under the <code>telemetry</code> block in your <code>config.json</code> or managed dynamically via the Lemonade CLI/API.</p>
 <h3 id="settings-reference">Settings Reference</h3>
@@ -2723,6 +2787,12 @@
 <td>boolean</td>
 <td><code>false</code></td>
 <td>Redacts internal reasoning/thinking blocks from trace attributes.</td>
+</tr>
+<tr>
+<td><code>telemetry.trust_incoming_trace_context</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td>When <code>true</code>, honor a caller-supplied W3C <code>traceparent</code> header so inference spans join the caller's distributed trace. See <a href="#distributed-tracing-w3c-trace-context">Distributed Tracing</a>.</td>
 </tr>
 <tr>
 <td><code>telemetry.max_queue_capacity</code></td>

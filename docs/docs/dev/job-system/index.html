@@ -10,36 +10,32 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/guide/install/arch/">
+        <link rel="canonical" href="https://lemonade-server.ai/dev/job-system/">
       
       
-        <link rel="prev" href="../ubuntu/">
-      
-      
-        <link rel="next" href="../fedora/">
       
       
         
       
       
-      <link rel="icon" href="../../../assets/favicon.ico">
+      <link rel="icon" href="../../assets/favicon.ico">
       <meta name="generator" content="zensical-0.0.39">
     
     
       
-        <title>Arch Installation - Lemonade Server Documentation</title>
+        <title>Server-side job system - Lemonade Server Documentation</title>
       
     
     
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.1e981d71.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.1e981d71.min.css">
       
         
           
         
-        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.dfe2e883.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.dfe2e883.min.css">
       
       
 
@@ -53,11 +49,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;450;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
 
     
-      <link rel="stylesheet" href="../../../assets/website-styles.css">
+      <link rel="stylesheet" href="../../assets/website-styles.css">
     
-      <link rel="stylesheet" href="../../../assets/zest-theme.css">
+      <link rel="stylesheet" href="../../assets/zest-theme.css">
     
-    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
     
       
 
@@ -82,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#arch-installation" class="md-skip">
+        <a href="#server-side-job-system" class="md-skip">
           Skip to content
         </a>
       
@@ -100,7 +96,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-header__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
+  <img src="../../assets/favicon.ico" alt="Lemonade Server Documentation">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
@@ -117,7 +113,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Arch Installation
+              Server-side job system
             
           </span>
         </div>
@@ -208,7 +204,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-nav__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
+  <img src="../../assets/favicon.ico" alt="Lemonade Server Documentation">
 
     </a>
     Lemonade Server Documentation
@@ -235,7 +231,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../.." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -259,20 +255,18 @@
       
   
   
-    
   
   
-  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
@@ -293,7 +287,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -311,7 +305,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../" class="md-nav__link">
+      <a href="../../guide/" class="md-nav__link">
         
   
   
@@ -336,20 +330,18 @@
                 
   
   
-    
   
   
-  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
         
           
           <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
@@ -370,7 +362,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -388,7 +380,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../" class="md-nav__link">
+      <a href="../../guide/install/" class="md-nav__link">
         
   
   
@@ -416,7 +408,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../ubuntu/" class="md-nav__link">
+      <a href="../../guide/install/ubuntu/" class="md-nav__link">
         
   
   
@@ -441,37 +433,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Arch
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="././" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../guide/install/arch/" class="md-nav__link">
         
   
   
@@ -487,49 +452,6 @@
   
 
       </a>
-      
-        
-
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#step-1-install-lemonade-server" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Step 1: Install lemonade-server
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-2-choose-your-frontend" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Step 2: Choose your frontend
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -542,7 +464,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../fedora/" class="md-nav__link">
+      <a href="../../guide/install/fedora/" class="md-nav__link">
         
   
   
@@ -570,7 +492,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../debian/" class="md-nav__link">
+      <a href="../../guide/install/debian/" class="md-nav__link">
         
   
   
@@ -598,7 +520,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../docker/" class="md-nav__link">
+      <a href="../../guide/install/docker/" class="md-nav__link">
         
   
   
@@ -634,7 +556,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../concepts/" class="md-nav__link">
+      <a href="../../guide/concepts/" class="md-nav__link">
         
   
   
@@ -662,7 +584,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/" class="md-nav__link">
+      <a href="../../guide/cli/" class="md-nav__link">
         
   
   
@@ -690,7 +612,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli-chat/" class="md-nav__link">
+      <a href="../../guide/cli-chat/" class="md-nav__link">
         
   
   
@@ -765,7 +687,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/" class="md-nav__link">
+      <a href="../../guide/configuration/" class="md-nav__link">
         
   
   
@@ -793,7 +715,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/custom-models/" class="md-nav__link">
+      <a href="../../guide/configuration/custom-models/" class="md-nav__link">
         
   
   
@@ -821,7 +743,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/multi-model/" class="md-nav__link">
+      <a href="../../guide/configuration/multi-model/" class="md-nav__link">
         
   
   
@@ -849,7 +771,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/llamacpp/" class="md-nav__link">
+      <a href="../../guide/configuration/llamacpp/" class="md-nav__link">
         
   
   
@@ -877,7 +799,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/vllm/" class="md-nav__link">
+      <a href="../../guide/configuration/vllm/" class="md-nav__link">
         
   
   
@@ -905,7 +827,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/moonshine/" class="md-nav__link">
+      <a href="../../guide/configuration/moonshine/" class="md-nav__link">
         
   
   
@@ -933,7 +855,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/cloud/" class="md-nav__link">
+      <a href="../../guide/configuration/cloud/" class="md-nav__link">
         
   
   
@@ -969,7 +891,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../telemetry/" class="md-nav__link">
+      <a href="../../guide/telemetry/" class="md-nav__link">
         
   
   
@@ -997,7 +919,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../faq/" class="md-nav__link">
+      <a href="../../guide/faq/" class="md-nav__link">
         
   
   
@@ -1079,7 +1001,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -1107,7 +1029,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/philosophy/" class="md-nav__link">
+      <a href="../philosophy/" class="md-nav__link">
         
   
   
@@ -1135,7 +1057,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/working-groups/" class="md-nav__link">
+      <a href="../working-groups/" class="md-nav__link">
         
   
   
@@ -1163,7 +1085,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/contribute/" class="md-nav__link">
+      <a href="../contribute/" class="md-nav__link">
         
   
   
@@ -1191,7 +1113,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/documentation/" class="md-nav__link">
+      <a href="../documentation/" class="md-nav__link">
         
   
   
@@ -1219,7 +1141,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/getting-started/" class="md-nav__link">
+      <a href="../getting-started/" class="md-nav__link">
         
   
   
@@ -1247,7 +1169,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/adding-a-backend/" class="md-nav__link">
+      <a href="../adding-a-backend/" class="md-nav__link">
         
   
   
@@ -1275,7 +1197,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/backends-reference/" class="md-nav__link">
+      <a href="../backends-reference/" class="md-nav__link">
         
   
   
@@ -1303,7 +1225,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/app/" class="md-nav__link">
+      <a href="../app/" class="md-nav__link">
         
   
   
@@ -1331,7 +1253,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/web-ui/" class="md-nav__link">
+      <a href="../web-ui/" class="md-nav__link">
         
   
   
@@ -1359,7 +1281,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/lemonade-omni/" class="md-nav__link">
+      <a href="../lemonade-omni/" class="md-nav__link">
         
   
   
@@ -1387,7 +1309,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/router-policy/" class="md-nav__link">
+      <a href="../router-policy/" class="md-nav__link">
         
   
   
@@ -1415,7 +1337,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/self-hosted-runners/" class="md-nav__link">
+      <a href="../self-hosted-runners/" class="md-nav__link">
         
   
   
@@ -1443,7 +1365,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/release/" class="md-nav__link">
+      <a href="../release/" class="md-nav__link">
         
   
   
@@ -1525,7 +1447,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/" class="md-nav__link">
+      <a href="../../integrations/" class="md-nav__link">
         
   
   
@@ -1553,7 +1475,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/ai-toolkit/" class="md-nav__link">
+      <a href="../../integrations/ai-toolkit/" class="md-nav__link">
         
   
   
@@ -1581,7 +1503,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/anythingLLM/" class="md-nav__link">
+      <a href="../../integrations/anythingLLM/" class="md-nav__link">
         
   
   
@@ -1609,7 +1531,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/claude-code/" class="md-nav__link">
+      <a href="../../integrations/claude-code/" class="md-nav__link">
         
   
   
@@ -1637,7 +1559,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/codeGPT/" class="md-nav__link">
+      <a href="../../integrations/codeGPT/" class="md-nav__link">
         
   
   
@@ -1665,7 +1587,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/continue/" class="md-nav__link">
+      <a href="../../integrations/continue/" class="md-nav__link">
         
   
   
@@ -1693,7 +1615,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/langchain/" class="md-nav__link">
+      <a href="../../integrations/langchain/" class="md-nav__link">
         
   
   
@@ -1721,7 +1643,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/lemon-zest/" class="md-nav__link">
+      <a href="../../integrations/lemon-zest/" class="md-nav__link">
         
   
   
@@ -1749,7 +1671,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/mindcraft/" class="md-nav__link">
+      <a href="../../integrations/mindcraft/" class="md-nav__link">
         
   
   
@@ -1777,7 +1699,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/open-hands/" class="md-nav__link">
+      <a href="../../integrations/open-hands/" class="md-nav__link">
         
   
   
@@ -1805,7 +1727,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/open-webui/" class="md-nav__link">
+      <a href="../../integrations/open-webui/" class="md-nav__link">
         
   
   
@@ -1833,7 +1755,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/wut/" class="md-nav__link">
+      <a href="../../integrations/wut/" class="md-nav__link">
         
   
   
@@ -1915,7 +1837,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/" class="md-nav__link">
+      <a href="../../api/" class="md-nav__link">
         
   
   
@@ -1943,7 +1865,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/openai/" class="md-nav__link">
+      <a href="../../api/openai/" class="md-nav__link">
         
   
   
@@ -1971,7 +1893,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/ollama/" class="md-nav__link">
+      <a href="../../api/ollama/" class="md-nav__link">
         
   
   
@@ -1999,7 +1921,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/anthropic/" class="md-nav__link">
+      <a href="../../api/anthropic/" class="md-nav__link">
         
   
   
@@ -2027,7 +1949,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/llamacpp/" class="md-nav__link">
+      <a href="../../api/llamacpp/" class="md-nav__link">
         
   
   
@@ -2055,7 +1977,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/lemonade/" class="md-nav__link">
+      <a href="../../api/lemonade/" class="md-nav__link">
         
   
   
@@ -2137,7 +2059,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/" class="md-nav__link">
+      <a href="../../embeddable/" class="md-nav__link">
         
   
   
@@ -2165,7 +2087,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/runtime/" class="md-nav__link">
+      <a href="../../embeddable/runtime/" class="md-nav__link">
         
   
   
@@ -2193,7 +2115,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/backends/" class="md-nav__link">
+      <a href="../../embeddable/backends/" class="md-nav__link">
         
   
   
@@ -2221,7 +2143,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/models/" class="md-nav__link">
+      <a href="../../embeddable/models/" class="md-nav__link">
         
   
   
@@ -2249,7 +2171,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/building/" class="md-nav__link">
+      <a href="../../embeddable/building/" class="md-nav__link">
         
   
   
@@ -2318,10 +2240,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#step-1-install-lemonade-server" class="md-nav__link">
+  <a href="#concepts" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Step 1: Install lemonade-server
+        Concepts
       </span>
     </span>
   </a>
@@ -2329,10 +2251,104 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-2-choose-your-frontend" class="md-nav__link">
+  <a href="#operations" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Step 2: Choose your frontend
+        Operations
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recipe: steps
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recipe: steps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#control-flow-forward-only-no-loops" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Control flow (forward-only, no loops)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Lifecycle
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exclusivity-and-queuing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Exclusivity and queuing
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Persistence
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        API
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-a-bench-sweep" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Example: a bench sweep
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-with-new-ops-any-modality" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extending with new ops (any modality)
       </span>
     </span>
   </a>
@@ -2357,25 +2373,309 @@
   
 
 
-<h1 id="arch-installation">Arch Installation</h1>
-<h2 id="step-1-install-lemonade-server">Step 1: Install lemonade-server</h2>
-<div class="highlight"><pre><span></span><code>pacman -S lemonade-server
+<h1 id="server-side-job-system">Server-side job system</h1>
+<p>The job engine runs <strong>client-posted sequences of server operations</strong> on lemond:
+each job is an ordered list of steps that pass data forward through a shared
+context, branch on results, and have a pause / interrupt / resume / delete /
+query lifecycle that survives client disconnect and server restart.</p>
+<p>It exists so multi-step server work — the motivating case is the AutoOpt
+benchmark methodology (repeatedly load a model with a config, time a
+completion, unload) — runs <strong>on the server</strong>, coordinated with model
+management, instead of being driven from a browser that a page reload would
+kill. The engine is generic and domain-agnostic: the client owns the recipe and
+any synthesis of the results; the server just executes the recipe durably.</p>
+<h2 id="concepts">Concepts</h2>
+<ul>
+<li><strong>Job</strong> — a named list of steps plus an <code>inputs</code> object, an accumulating
+  <code>context</code>, a <code>status</code>, and a <code>cursor</code> (the id of the current/next step).</li>
+<li><strong>Step</strong> — one operation (<code>op</code>) with <code>params</code>, an optional <code>when</code> guard,
+  optional <code>extract</code> mappings, and optional forward branches. Steps have their
+  own status (<code>pending</code>/<code>running</code>/<code>completed</code>/<code>failed</code>/<code>skipped</code>).</li>
+<li><strong>Context</strong> — a JSON object, the data bus. After a step runs, its raw output
+  is stored under <code>context[&lt;step id&gt;]</code>, and any <code>extract</code> mappings copy fields
+  to top-level keys. Job <code>inputs</code> are available under <code>context.inputs</code>.</li>
+<li><strong>Op</strong> — a named server operation. <code>params</code> are reference-resolved against the
+  context before the op runs.</li>
+</ul>
+<h2 id="operations">Operations</h2>
+<table>
+<thead>
+<tr>
+<th>op</th>
+<th>exclusive</th>
+<th>output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>system_info</code></td>
+<td>no</td>
+<td>the <code>system-info</code> snapshot</td>
+</tr>
+<tr>
+<td><code>system_stats</code></td>
+<td>no</td>
+<td>cpu/gpu/vram/npu/memory sample</td>
+</tr>
+<tr>
+<td><code>models</code></td>
+<td>no</td>
+<td>model list, or <code>{id}</code> metadata when <code>params.id</code> is set</td>
+</tr>
+<tr>
+<td><code>sleep</code></td>
+<td>no</td>
+<td><code>{}</code> after <code>params.ms</code> (cancellable)</td>
+</tr>
+<tr>
+<td><code>load</code></td>
+<td>yes</td>
+<td><code>{loaded, model, backend, ctx_size}</code>; loads with <code>params</code> = <code>{model, llamacpp_backend, ctx_size, llamacpp_args, merge_args, save_options, pinned}</code> (same shape as <code>POST /load</code>)</td>
+</tr>
+<tr>
+<td><code>unload</code></td>
+<td>yes</td>
+<td><code>{}</code>; unloads <code>params.model</code> if set and loaded, else all</td>
+</tr>
+<tr>
+<td><code>chat</code></td>
+<td>yes</td>
+<td>the backend chat response verbatim (<code>timings</code>/<code>usage</code> included); <code>params</code> is a chat/completions request</td>
+</tr>
+</tbody>
+</table>
+<p>"Exclusive" ops require the model slot — see <a href="#exclusivity-and-queuing">Exclusivity</a>.
+This is the current set, not a fixed one; ops for other modalities are additive —
+see <a href="#extending-with-new-ops-any-modality">Extending with new ops</a>.</p>
+<h2 id="recipe-steps">Recipe: steps</h2>
+<div class="highlight"><pre><span></span><code>{
+  &quot;id&quot;: &quot;run_a&quot;,                 // unique within the job
+  &quot;op&quot;: &quot;chat&quot;,
+  &quot;params&quot;: { &quot;...&quot;: &quot;${refs allowed}&quot; },
+  &quot;when&quot;: &quot;boolean expression&quot;,  // optional; skip the step if false
+  &quot;extract&quot;: { &quot;a_tps&quot;: &quot;timings.predicted_per_second&quot; },  // output path -&gt; context key
+  &quot;branch&quot;: [ { &quot;when&quot;: &quot;expr&quot;, &quot;goto&quot;: &quot;later_step_id&quot; } ],
+  &quot;on_done&quot;: &quot;later_step_id&quot;,    // where to go on success (default: next in list)
+  &quot;on_fail&quot;: &quot;abort&quot;             // abort (default) | continue | &lt;later step id&gt;
+}
 </code></pre></div>
-<p>For package details, see <a href="https://archlinux.org/packages/extra/x86_64/lemonade-server">lemonade-server</a>.</p>
-<h2 id="step-2-choose-your-frontend">Step 2: Choose your frontend</h2>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Web UI</label><label for="__tabbed_1_2">Lemonade Desktop package</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<p>Always available at <a href="http://localhost:13305">http://localhost:13305</a>.</p>
-<p>The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</p>
-</div>
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>pacman -S lemonade-desktop
+<p>References (<code>${path}</code>) and the <code>when</code>/<code>branch</code> expression grammar are documented
+in <a href="../job-expression-language/">job-expression-language.md</a>.</p>
+<h3 id="control-flow-forward-only-no-loops">Control flow (forward-only, no loops)</h3>
+<p>On success the next step is: the first <code>branch</code> case whose <code>when</code> is true, else
+<code>on_done</code>, else the next step in list order (end when none). On failure <code>on_fail</code>
+decides: <code>abort</code> fails the job, <code>continue</code> proceeds to the next step, or a step
+id jumps there — <strong>failure is a first-class branch</strong>, which is how a <code>load</code> that
+OOMs can jump to a smaller-config <code>load</code> (test-by-failure). Every branch /
+<code>on_done</code> / <code>on_fail</code> target must reference a <strong>later</strong> step; the graph is
+validated at creation, so execution is acyclic and always terminates.</p>
+<h2 id="lifecycle">Lifecycle</h2>
+<p>States: <code>queued → running → { paused | interrupted | completed | failed }</code>.
+A single worker runs one job at a time.</p>
+<ul>
+<li><strong>pause</strong> — stop <em>after the current step</em>; the job goes <code>paused</code> at the next
+  step boundary and (if exclusive) releases the slot. Pausing a still-<code>queued</code>
+  job takes effect immediately: it is removed from the queue and persisted as
+  <code>paused</code> before the call returns. Pause does <strong>not</strong> commit the job's model
+  side-effects: models the job loaded stay resident for the resume, and the
+  job keeps owning them (see below).</li>
+<li><strong>interrupt</strong> — cancel the <em>current step now</em> (kills an in-flight <code>load</code>, and
+  aborts an in-flight <code>chat</code> at the HTTP layer rather than waiting for the
+  backend to reply); the step returns to <code>pending</code>, the job goes <code>interrupted</code>.
+  Interrupting a still-<code>queued</code> job likewise dequeues and persists it as
+  <code>interrupted</code> immediately. An interrupted exclusive job unloads only the
+  model(s) it <strong>owns</strong>: ownership is tracked explicitly per job and is scoped
+  to the <em>specific residency</em> the job created (the backend instance its own
+  <code>load</code> op produced), not to the model name — a model the job's <code>unload</code> op
+  released, or one whose job-created instance was replaced by an external
+  client's later load of the same name, is no longer job-owned. Pre-job
+  residents are protected separately: the first slot acquisition snapshots
+  them with their pin state, and a pause/resume cycle re-baselines neither
+  ownership nor the snapshot. Models loaded by external clients — including
+  while the job is paused or interrupted and the gate is open — are never
+  touched by the job's cleanup. One caveat: an external <code>load</code> that merely
+  re-confirms the job's own still-resident instance (same model, matching
+  options — the router deduplicates instead of creating a new instance) does
+  not transfer ownership; that instance remains job-owned and is still cleaned
+  up. Clients that need a model to outlive a job should load it before the job
+  starts or after it ends. Reconcile unloads the owned instances
+  (recording their configuration for resume, see below), unpins any the job
+  pinned, and restores the recorded pin state of surviving pre-job models. A
+  job that ends <code>completed</code> or <code>failed</code> commits its model side-effects instead
+  (ownership and snapshot are discarded, resident models stay).
+  <strong>Guarantee scope:</strong> a model that was resident before the job is preserved
+  only if it is <em>still resident</em> at reconcile time. If a job <code>load</code> evicted it
+  (loaded-model cap) or replaced it with different options, the reconcile does
+  not reload it or restore its previous options — clients that need the exact
+  prior state must reload it themselves.</li>
+<li><strong>resume</strong> — <code>paused</code> continues at the next step; <code>interrupted</code> re-runs the
+  pending step. Steps must be idempotent on re-run. Before an interrupted
+  exclusive job re-runs, the engine <strong>restores the job-owned models</strong> that the
+  interrupt cleanup unloaded (reloading each with its recorded options and pin
+  state), so a step that depends on an earlier completed <code>load</code> — e.g. a chat
+  interrupted mid-generation — finds its model again instead of failing. If an
+  external client loaded the same model while the job was interrupted, the
+  restore <em>adopts</em> that residency instead of replacing it: the external
+  instance is left untouched (options and pin included) and stops being
+  job-owned. Restore also survives a server restart: the in-memory captured
+  state is gone after a crash, so the engine reconstructs the job's model
+  state from its persisted record — the completed <code>load</code>/<code>unload</code> steps
+  (parameters resolved against the persisted context, in execution order)
+  describe exactly what should be resident, and resuming a recovered job
+  reloads that before re-running the pending step. If a restore fails, the job
+  still resumes and the dependent step fails with its normal <code>on_fail</code>
+  semantics.</li>
+<li><strong>delete</strong> — removes the job. Deleting an active job persists a deletion
+  tombstone <em>before</em> the call returns, then interrupts it and defers the actual
+  removal until the worker has finished cleanup (reconcile unload), so a deleted
+  exclusive job never leaks a resident model. Deleting a <code>paused</code> or
+  <code>interrupted</code> job takes the same tombstone-then-worker-cleanup path, so a
+  model introduced before a pause is still unloaded. The tombstone makes the
+  deletion durable: a crash between the acknowledgement and the final removal
+  does not resurrect the job on restart, and a tombstoned job is already
+  invisible to <code>GET</code>/list.</li>
+<li><strong>query</strong> — the full job record (status, per-step state, context).</li>
+</ul>
+<p>Chat interrupts are genuine aborts: the chat op passes its cancel flag through
+<code>Router::chat_completion</code> to the backend <code>WrappedServer</code>, and <code>forward_request</code>
+hands it to the HTTP client, which tears down the in-flight connection (curl
+<code>XFERINFO</code> abort, fired at least once per second even when no bytes move). The
+exclusive slot is therefore released promptly instead of being held until a slow
+or stuck backend responds.</p>
+<p>There is no rollback: an op commits only on completion, so an interrupted step
+never took effect and "before the step" is automatic.</p>
+<h2 id="exclusivity-and-queuing">Exclusivity and queuing</h2>
+<p><code>load</code> / <code>unload</code> / <code>chat</code> require the <strong>model slot</strong>. While a job containing any
+exclusive step runs, it holds a Router-level exclusive gate: all normal
+inference and load traffic <strong>queues</strong> behind it until the job finishes or is
+paused (pause is the escape hatch — it releases the slot so queued traffic
+drains, and resume re-acquires). Acquiring the gate first <em>drains</em> in-flight
+work: it waits for any active load and for every in-flight request on loaded
+backends to finish, so an external chat that started just before the job cannot
+overlap the exclusive session. The drain is cancellable — interrupting or
+deleting the job while it waits behind a long-running request aborts the
+acquisition and marks the job <code>interrupted</code> instead of blocking indefinitely.
+Every model-touching Router path — inference, streaming, tokenize, slots,
+pinning, load/unload — checks the same gate, and the idle-eviction/downsize
+engine suspends itself (and abandons any already-marked eviction) while an
+exclusive session is active, so background eviction cannot pull a model out
+from under a job step. The gate is keyed by the worker thread, so the job's
+own ops pass through while every other request waits. A job with only
+read-only ops (e.g. <code>system_info</code>, <code>sleep</code>) never takes the gate. Read-only
+status queries (model list, health, telemetry) are not gated.</p>
+<h2 id="persistence">Persistence</h2>
+<p>Jobs persist to <code>&lt;cache_dir&gt;/jobs.json</code> (atomic write, cap 50, oldest terminal
+evicted first). The cap is enforced at creation: when all 50 retained jobs are
+still active or resumable (nothing <code>completed</code>/<code>failed</code> to evict), <code>POST jobs</code>
+is rejected with <code>429</code> until a job is deleted or finishes. On startup a job left
+<code>running</code>/<code>queued</code> by a crash is marked <code>interrupted</code> ("server restarted while
+the job was active") but keeps its cursor, so it can be resumed from where it
+stopped; tombstoned (deleted-while-active) jobs are dropped.</p>
+<p>A job summary's <code>progress.completed</code> counts steps that no longer need work:
+<code>completed</code>, <code>skipped</code>, and failed steps whose failure was <em>handled</em> by
+<code>on_fail: continue</code> or a recovery branch — so a recovery job that completes
+reports full progress even though one of its steps is marked <code>failed</code>.</p>
+<h2 id="api">API</h2>
+<p>Registered under all four prefixes (<code>/api/v0</code>, <code>/api/v1</code>, <code>/v0</code>, <code>/v1</code>).</p>
+<table>
+<thead>
+<tr>
+<th>method</th>
+<th>path</th>
+<th>purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>jobs</code></td>
+<td>create <code>{name, definition:{steps} \| steps, inputs}</code> → <code>202 {id}</code>; <code>400</code> on an invalid graph; <code>429</code> when the job store is full of non-evictable jobs</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jobs</code></td>
+<td><code>{jobs:[summaries]}</code></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jobs/{id}</code></td>
+<td>full record, or <code>404</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>jobs/{id}/pause</code></td>
+<td><code>200</code> / <code>404</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>jobs/{id}/interrupt</code></td>
+<td><code>200</code> / <code>404</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>jobs/{id}/resume</code></td>
+<td><code>200</code> / <code>404</code></td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>jobs/{id}</code></td>
+<td><code>200</code> / <code>404</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="example-a-bench-sweep">Example: a bench sweep</h2>
+<p>Two configs, each timed, then a branch on the measured throughput — the shape a
+benchmark/AutoOpt client posts (it reads <code>context</code> afterward and synthesizes the
+recommendation itself):</p>
+<div class="highlight"><pre><span></span><code>{ &quot;name&quot;: &quot;bench&quot;,
+  &quot;inputs&quot;: { &quot;model&quot;: &quot;Qwen3-0.6B&quot;, &quot;backend&quot;: &quot;vulkan&quot; },
+  &quot;steps&quot;: [
+    { &quot;id&quot;: &quot;u0&quot;, &quot;op&quot;: &quot;unload&quot; },
+    { &quot;id&quot;: &quot;load_a&quot;, &quot;op&quot;: &quot;load&quot;,
+      &quot;params&quot;: { &quot;model&quot;: &quot;${inputs.model}&quot;, &quot;llamacpp_backend&quot;: &quot;${inputs.backend}&quot;,
+                  &quot;ctx_size&quot;: 4096, &quot;llamacpp_args&quot;: &quot;&quot; },
+      &quot;on_fail&quot;: &quot;load_a_lo&quot; },
+    { &quot;id&quot;: &quot;run_a&quot;, &quot;op&quot;: &quot;chat&quot;,
+      &quot;params&quot;: { &quot;model&quot;: &quot;${inputs.model}&quot;, &quot;messages&quot;: [{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;hi&quot;}],
+                  &quot;temperature&quot;: 0, &quot;max_completion_tokens&quot;: 32 },
+      &quot;extract&quot;: { &quot;a_tps&quot;: &quot;timings.predicted_per_second&quot; } },
+    { &quot;id&quot;: &quot;u_a&quot;, &quot;op&quot;: &quot;unload&quot; },
+    { &quot;id&quot;: &quot;load_a_lo&quot;, &quot;op&quot;: &quot;load&quot;,
+      &quot;params&quot;: { &quot;model&quot;: &quot;${inputs.model}&quot;, &quot;llamacpp_backend&quot;: &quot;${inputs.backend}&quot;,
+                  &quot;ctx_size&quot;: 2048 }, &quot;on_fail&quot;: &quot;abort&quot; },
+    /* …second config, then a `decide` step branching on ${a_tps} &gt;= ${b_tps}… */
+  ] }
 </code></pre></div>
-<p>For package details, see <a href="https://archlinux.org/packages/extra/x86_64/lemonade-desktop">lemonade-desktop</a>.</p>
-</div>
-</div>
-</div>
+<h2 id="extending-with-new-ops-any-modality">Extending with new ops (any modality)</h2>
+<p>The engine is modality-agnostic — <code>chat</code> is only the first <em>inference</em> op wired
+up. Ops are a pluggable registry, not a fixed set, so image generation, TTS,
+transcription, or a 3D-mesh op are additive: no changes to the engine, graph,
+context, or expression language.</p>
+<p>An op is a handler in the op registry (<code>OpRegistry</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="nc">OpHandler</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">function</span><span class="o">&lt;</span><span class="n">json</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">json</span><span class="o">&amp;</span><span class="w"> </span><span class="n">params</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">json</span><span class="o">&amp;</span><span class="w"> </span><span class="n">context</span><span class="p">,</span><span class="w"> </span><span class="n">CancelFlag</span><span class="o">&amp;</span><span class="w"> </span><span class="n">cancel</span><span class="p">)</span><span class="o">&gt;</span><span class="w"> </span><span class="n">run</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="n">exclusive</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span><span class="w">   </span><span class="c1">// true if it holds the model slot (see Exclusivity)</span>
+<span class="p">};</span>
+</code></pre></div>
+<p>The signature assumes nothing about text or LLMs: <code>params</code> and the return value
+are arbitrary JSON, and any op that loads a model sets <code>exclusive = true</code> (like
+<code>load</code>/<code>unload</code>/<code>chat</code>). Because every step's output lands in the shared context,
+later steps consume it via <code>${step_id.field}</code> references — that is the data-flow
+a pipeline needs.</p>
+<p>To add one, register a provider in <code>OpProviders</code> that forwards to the relevant
+already-existing Router backend (<code>SdServer</code>, <code>KokoroServer</code>, <code>WhisperServer</code>, …)
+and <code>register_op</code> it. A <code>text → LLM enhancer → image → 3D</code> pipeline is then just
+three registered ops passing data through the context:</p>
+<div class="highlight"><pre><span></span><code>{ &quot;steps&quot;: [
+    { &quot;id&quot;: &quot;enhance&quot;, &quot;op&quot;: &quot;chat&quot;, &quot;params&quot;: { &quot;...&quot;: &quot;...&quot; },
+      &quot;extract&quot;: { &quot;prompt&quot;: &quot;choices.0.message.content&quot; } },
+    { &quot;id&quot;: &quot;image&quot;,   &quot;op&quot;: &quot;generate_image&quot;,
+      &quot;params&quot;: { &quot;prompt&quot;: &quot;${enhance.prompt}&quot; },
+      &quot;extract&quot;: { &quot;path&quot;: &quot;data.0.path&quot; } },
+    { &quot;id&quot;: &quot;model3d&quot;, &quot;op&quot;: &quot;generate_3d&quot;,
+      &quot;params&quot;: { &quot;image&quot;: &quot;${image.path}&quot; } }
+  ] }
+</code></pre></div>
 
 
 
@@ -2408,44 +2708,6 @@
       
         <footer class="md-footer">
   
-    
-      
-      <nav class="md-footer__inner md-grid" aria-label="Footer" >
-        
-          
-          <a href="../ubuntu/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Ubuntu">
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
-            </div>
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              <div class="md-ellipsis">
-                Ubuntu
-              </div>
-            </div>
-          </a>
-        
-        
-          
-          <a href="../fedora/" class="md-footer__link md-footer__link--next" aria-label="Next: Fedora">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                Fedora
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            </div>
-          </a>
-        
-      </nav>
     
   
   <div class="md-footer-meta md-typeset">
@@ -2515,12 +2777,12 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.footer","navigation.tracking","navigation.top","content.code.annotate","content.code.copy"],"search":"../../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.footer","navigation.tracking","navigation.top","content.code.annotate","content.code.copy"],"search":"../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.dbc0afdc.min.js"></script>
+      <script src="../../assets/javascripts/bundle.dbc0afdc.min.js"></script>
       
-        <script src="../../../assets/carousel.js"></script>
+        <script src="../../assets/carousel.js"></script>
       
     
   </body>
