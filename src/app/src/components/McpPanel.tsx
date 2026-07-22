@@ -372,7 +372,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
               <label className="mcp-server-form__wide"><span>Environment references · one <code>{'KEY=${KEY}'}</code> per line</span><textarea value={draft.env} onChange={event => setDraft(current => ({ ...current, env: event.target.value }))} placeholder="GITHUB_TOKEN=${GITHUB_TOKEN}" rows={3} /></label>
               <p className="mcp-server-form__note">Secrets are never persisted as raw values. The referenced variable must exist in the lemond process environment.</p>
               {formError && <div className="connect__error mcp-server-form__wide" role="alert">{formError}</div>}
-              <div className="mcp-server-form__actions mcp-server-form__wide"><button className="btn btn--primary" type="submit" disabled={busyId === '__new__' || busyId === draft.id}>{busyId ? 'Saving…' : 'Save and connect'}</button></div>
+              <div className="mcp-server-form__actions mcp-server-form__wide"><button className="btn btn--primary" type="submit" disabled={busyId === (draft.id || '__new__')}>{busyId ? 'Saving…' : 'Save and connect'}</button></div>
             </form>
           )}
 
