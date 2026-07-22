@@ -26,6 +26,7 @@ corpus reads as a checklist against the frozen-v1 semantics table in
   l1_conditions_features_negated/  # authored has_tools:false — equality, matches when absent
   l1_conditions_metadata/     # metadata equals / any / exists / token-set semantics
   l1_conditions_vocab/        # keyword / regex ops + any / all / not / implicit-all
+  l1_input_forms/             # routing-input extraction from the `prompt` and `input` request fields
   l1_outputs/                 # matched rule's nested outputs bag copied verbatim into Decision
   l1_resolution/              # rule-list resolution: first-match-wins, fail-open default
   l1_trace/                   # route_trace=true: per-leaf trace, accumulation, short-circuit, default
@@ -80,7 +81,7 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | `has_tools` — empty `tools[]` counts as absent ⇒ no match | `l1_conditions_features/has_tools-empty-array-no-match` |
 | `has_images` — image content part ⇒ match | `l1_conditions_features/has_images-present-matches` |
 | `has_images` — no image ⇒ no match | `l1_conditions_features/has_images-absent-no-match` |
-| `has_images` — Responses API `input_image` part ⇒ match | `l1_conditions_features/has_images-input-image-responses-form` |
+| `has_images` — Responses API `input_image` part ⇒ match | `l1_conditions_features/has_images-input-image-part` |
 | `has_images` — scans every message, not just the routing turn | `l1_conditions_features/has_images-earlier-turn-still-counts` |
 | `has_tools: false` — equality, matches when tools absent | `l1_conditions_features_negated/has_tools-false-matches-absent` |
 | `has_tools: false` — no match when tools present (not a catch-all) | `l1_conditions_features_negated/has_tools-false-no-match-when-present` |
@@ -99,6 +100,12 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | first-match-wins (earlier rule beats a later match) | `l1_resolution/first-match-wins` |
 | later rule fires when earlier misses | `l1_resolution/later-rule-when-earlier-misses` |
 | fail-open to `default_model` | `l1_resolution/fail-open-to-default` |
+| legacy completions string `prompt` ⇒ routing input | `l1_input_forms/prompt-string-form` |
+| legacy completions array-of-strings `prompt` ⇒ parts joined into routing input | `l1_input_forms/prompt-array-form` |
+| array `prompt` ⇒ non-string parts skipped, not stringified | `l1_input_forms/prompt-array-skips-non-string-parts` |
+| `input` bare string ⇒ routing input | `l1_input_forms/input-string-form` |
+| `input` array of role-tagged messages ⇒ last user message's text | `l1_input_forms/input-array-role-tagged` |
+| `input` array with no user role ⇒ role-less parts concatenated (fallback) | `l1_input_forms/input-roleless-fallback` |
 | `route_trace` unset ⇒ Decision carries no `trace` | `l1_trace/trace-omitted-when-not-requested` |
 | `route_trace: true` ⇒ one trace entry per evaluated leaf; `any` short-circuits on first true | `l1_trace/trace-any-short-circuits-on-first-true` |
 | trace accumulates across evaluated rules; `not` records the child leaf's raw result | `l1_trace/trace-accumulates-across-missed-rule` |
