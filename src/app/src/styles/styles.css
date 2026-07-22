@@ -1209,24 +1209,6 @@ input, textarea {
 }
 
 
-.manager__title {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.manager__title h1 {
-  font-size: var(--text-2xl);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-tight);
-  margin: 0;
-}
-
-
-
-
-
 /* Toolbar: search + filter chips */
 
 
@@ -1930,24 +1912,6 @@ input, textarea {
 
 /* ========== Presets (Recipes) ========== */
 
-.recipes {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  height: 100%;
-  overflow: hidden;
-  position: relative;
-}
-
-
-
-
-
-.recipes__actions {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-}
-
 .recipes__body {
   overflow-y: auto;
   display: flex;
@@ -2298,11 +2262,6 @@ input, textarea {
   border-color: var(--accent-fg);
 }
 
-
-.btn--saved {
-  background: var(--success);
-  color: var(--accent-on);
-}
 
 .slideover__close {
   width: 32px;
@@ -2888,9 +2847,8 @@ input, textarea {
 }
 .preset-cap-button:disabled { cursor: default; }
 
-/* ---------- Context rails: Models / Presets / Backends ---------- */
+/* ---------- Context rails: Models / Backends ---------- */
 .manager--with-rail,
-.recipes--with-rail,
 .backends--with-rail {
   display: grid;
   grid-template-columns: 284px minmax(0, 1fr);
@@ -2900,13 +2858,11 @@ input, textarea {
 }
 
 .manager--with-rail.context-rail-collapsed,
-.recipes--with-rail.context-rail-collapsed,
 .backends--with-rail.context-rail-collapsed {
   grid-template-columns: 56px minmax(0, 1fr);
 }
 
 .manager__main,
-.recipes__main,
 .backends__main {
   min-width: 0;
   min-height: 0;
@@ -2914,8 +2870,7 @@ input, textarea {
   overflow: hidden;
 }
 
-.manager__main,
-.recipes__main {
+.manager__main {
   display: grid;
   grid-template-rows: auto 1fr;
 }
@@ -3111,7 +3066,6 @@ input, textarea {
   flex: 0 0 auto;
 }
 
-.preset-icon--lg { width: 36px; height: 36px; font-size: var(--text-xl); }
 
 /* ---------- AutoOpt: rail cards, wizard, run detail ---------- */
 
@@ -3555,9 +3509,9 @@ input, textarea {
       "composer";
   }
   .rail { display: none; }
-  .manager--with-rail, .recipes--with-rail, .backends--with-rail { grid-template-columns: 1fr; }
+  .manager--with-rail, .backends--with-rail { grid-template-columns: 1fr; }
   .context-rail { display: none; }
-  .manager__main, .recipes__main, .backends__main { height: 100%; }
+  .manager__main, .backends__main { height: 100%; }
   .chat__inner { padding: var(--space-5) var(--space-4); overflow-x: hidden; }
   .composer { padding: var(--space-3) var(--space-4); }
   .manager__custom-actions .btn { flex: 1; justify-content: center; }
@@ -6651,62 +6605,6 @@ input, textarea {
 
 /* ── Layout shell ─────────────────────────────────────────────── */
 
-.manager--detail {
-  --model-nav-width: var(--workspace-rail);
-  display: grid;
-  grid-template-columns: var(--model-nav-width) var(--model-list-panel-width, 360px) minmax(0, 1fr);
-  /* Override the `auto 1fr` rows inherited from `.manager` so the panes are
-     constrained to the viewport height. Without this, the panes land in the
-     `auto` row and grow to content height — making the left rail (categories,
-     backends, tags, storage) overflow and clip the bottom of the screen with
-     no way to scroll. A single bounded row lets each pane's own
-     `overflow-y: auto` take over. */
-  grid-template-rows: minmax(0, 1fr);
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-  position: relative;
-}
-
-.manager__model-list-resizer {
-  position: absolute;
-  left: calc(var(--model-nav-width) + var(--model-list-panel-width, 360px) - 5px);
-  top: 0;
-  bottom: 0;
-  width: 10px;
-  cursor: col-resize;
-  z-index: 6;
-  touch-action: none;
-}
-
-.manager__model-list-resizer::after {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: var(--space-3);
-  bottom: var(--space-3);
-  width: 2px;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  transition: background var(--duration-fast) var(--ease-out);
-}
-
-.manager__model-list-resizer:hover::after,
-.manager__model-list-resizer:focus-visible::after,
-.is-resizing-model-list .manager__model-list-resizer::after {
-  background: var(--accent-fg);
-}
-
-.manager__model-list-resizer:focus-visible {
-  outline: 2px solid var(--accent-focus);
-  outline-offset: -2px;
-}
-
-.is-resizing-model-list {
-  cursor: col-resize;
-  user-select: none;
-}
-
 /* Responsive nav-rail toggle — hidden on wide viewports (rail always shown) */
 
 
@@ -7531,17 +7429,6 @@ input, textarea {
   outline: none;
 }
 
-.model-detail-panel__name:focus-visible::after {
-  content: "";
-  width: 2px;
-  position: absolute;
-  top: 0.1em;
-  bottom: 0.1em;
-  left: calc(-1 * var(--space-2));
-  border-radius: var(--radius-pill);
-  background: var(--accent-focus);
-}
-
 .model-detail-panel__error {
   font-size: var(--text-xs);
   color: var(--status-error);
@@ -8248,8 +8135,6 @@ button.detail-presets__explanation-step {
 
 /* ── Responsive: list-first → tap-to-detail on narrow viewports ── */
 @media (max-width: 760px) {
-  .manager__model-list-resizer { display: none; }
-
   /* Remove grid; each panel takes full width/height */
 .manager--detail {
     position: relative;
@@ -11536,7 +11421,6 @@ button.detail-presets__explanation-step {
   grid-template-columns: var(--rail-collapsed) minmax(0, 1fr);
 }
 
-.manager--detail.workspace--rail-collapsed { --model-nav-width: var(--rail-collapsed); }
 .inspect-layout.workspace--rail-collapsed { grid-template-columns: var(--rail-collapsed) minmax(0, 1fr); }
 
 .connect__main {
@@ -11855,7 +11739,6 @@ button.detail-presets__explanation-step {
 
 /* Presets */
 .recipes__head.workspace-pane__header { padding: var(--space-3) var(--space-5); }
-.recipes--with-rail { grid-template-columns: var(--workspace-rail) minmax(0, 1fr); }
 .recipes__head.workspace-pane__header .recipes__title { display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
 .recipes__head.workspace-pane__header .recipes__title h1 { margin: 0; font-size: var(--type-pane-title-size); font-weight: var(--weight-semibold); }
 .context-rail--autoopt .context-rail__body { padding: 0 var(--space-2) var(--space-3); gap: var(--space-3); }
@@ -12188,18 +12071,6 @@ button.detail-presets__explanation-step {
     white-space: nowrap;
   }
 
-  .recipes__actions {
-    flex: 0 0 auto;
-    gap: var(--space-1);
-  }
-
-  .recipes__actions .btn {
-    min-height: 34px;
-    height: 34px;
-    padding-inline: 10px;
-    font-size: var(--text-xs);
-  }
-
   .recipes__body {
     gap: var(--space-4);
   }
@@ -12339,16 +12210,13 @@ button.detail-presets__explanation-step {
 
   .connect--workspace,
   .monitor-workspace,
-  .backends--workspace,
-  .recipes--with-rail,
-  .manager--detail {
+  .backends--workspace {
     position: relative;
   }
 
   .connect--workspace,
   .monitor-workspace,
-  .backends--workspace,
-  .recipes--with-rail {
+  .backends--workspace {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
   }
@@ -12398,31 +12266,6 @@ button.detail-presets__explanation-step {
 }
 
 /* ── Simplified custom model management ─────────────────────── */
-.model-list-panel__custom-menu-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
-}
-
-.model-list-panel__custom-menu-btn:hover,
-.model-list-panel__custom-menu-btn:focus-visible {
-  border-color: var(--border-subtle);
-  background: var(--surface-2);
-  color: var(--accent-fg);
-  outline: none;
-}
-
-
-
 .custom-model-form__mode-switch {
   display: inline-flex;
   padding: 3px;
@@ -13245,16 +13088,6 @@ button.detail-presets__explanation-step {
 @media (max-width: 720px) { .preset-mcp-options, .mcp-server-form, .mcp-panel__admin-auth-controls { grid-template-columns: 1fr; } .mcp-server-form__wide { grid-column: auto; } .mcp-panel__card-header { flex-direction: column; } }
 
 /* ── GUI3 model router editor ───────────────────────────────── */
-.model-list-panel__title-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-0-5);
-}
-.model-list-panel__custom-menu-btn--router:hover,
-.model-list-panel__custom-menu-btn--router:focus-visible {
-  color: var(--accent-fg);
-  background: color-mix(in srgb, var(--accent-fg) 10%, var(--surface-2));
-}
 .manager__detail-form-panel--router { overflow: hidden; }
 .router-editor {
   width: 100%;
@@ -13419,11 +13252,6 @@ button.detail-presets__explanation-step {
 .router-node__wrap-actions button:hover { border-color: color-mix(in srgb, var(--accent-fg) 40%, var(--border-subtle)); color: var(--accent-fg); }
 
 /* ── Global model settings ─────────────────────────────────── */
-.model-list-panel__custom-menu-btn--settings:hover,
-.model-list-panel__custom-menu-btn--settings:focus-visible {
-  border-color: color-mix(in srgb, var(--accent-fg) 34%, var(--border-subtle));
-}
-
 .manager__detail-form-panel--global-settings { overflow: hidden; }
 .global-model-settings {
   width: 100%;
@@ -13573,6 +13401,71 @@ button.detail-presets__explanation-step {
 }
 
 /* Shared list and detail panes */
+.workspace-three-panel {
+  --workspace-rail-width: var(--workspace-rail);
+  --detail-chip-gap: 6px;
+  --detail-title-metadata-gap: 8px;
+  --detail-title-row-gap: 14px;
+  --detail-metadata-actions-gap: 19px;
+  --detail-section-space: 25px;
+  --detail-gutter: 33px;
+  --detail-type-metadata: 10.5px;
+  --detail-type-action: 14px;
+  --detail-type-title: 25px;
+  display: grid;
+  grid-template-columns: var(--workspace-rail-width) var(--workspace-list-panel-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.workspace-three-panel.workspace--rail-collapsed,
+.workspace-three-panel.context-rail-collapsed {
+  --workspace-rail-width: var(--rail-collapsed);
+}
+
+.workspace-panel-resizer {
+  position: absolute;
+  left: calc(var(--workspace-rail-width) + var(--workspace-list-panel-width) - 5px);
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  z-index: 6;
+  touch-action: none;
+}
+
+.workspace-panel-resizer::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: var(--space-3);
+  bottom: var(--space-3);
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.workspace-panel-resizer:hover::after,
+.workspace-panel-resizer:focus-visible::after,
+.is-resizing-workspace-panel .workspace-panel-resizer::after {
+  background: var(--accent-fg);
+}
+
+.workspace-panel-resizer:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: -2px;
+}
+
+.is-resizing-workspace-panel {
+  cursor: col-resize;
+  user-select: none;
+}
+
 .workspace-list-panel {
   min-width: 0;
   min-height: 0;
@@ -13586,9 +13479,9 @@ button.detail-presets__explanation-step {
 
 .workspace-list-panel__header {
   min-height: var(--workspace-header);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--detail-section-space) var(--detail-gutter);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
   flex: 0 0 auto;
@@ -13599,14 +13492,15 @@ button.detail-presets__explanation-step {
 .workspace-list-panel__heading {
   min-width: 0;
   display: grid;
-  gap: var(--space-0-5);
+  gap: var(--detail-title-metadata-gap);
 }
 
 .workspace-list-panel__heading h1 {
   margin: 0;
   color: var(--text-primary);
-  font-size: var(--type-pane-title-size);
+  font-size: var(--detail-type-title);
   font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
   letter-spacing: var(--tracking-tight);
 }
 
@@ -13616,8 +13510,7 @@ button.detail-presets__explanation-step {
   line-height: 1.2;
 }
 
-.workspace-list-panel__actions,
-.model-list-panel__title-actions {
+.workspace-list-panel__actions {
   display: flex;
   align-items: center;
   gap: var(--space-1-5);
@@ -13625,7 +13518,23 @@ button.detail-presets__explanation-step {
 }
 
 .workspace-list-panel__actions .workspace-action-group {
-  gap: var(--space-1-5);
+  gap: var(--space-0-5);
+}
+
+.workspace-list-panel__actions .workspace-action-button {
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.workspace-list-panel__actions .workspace-action-button:hover:not(:disabled),
+.workspace-list-panel__actions .workspace-action-button:focus-visible {
+  border-color: var(--border-subtle);
+  background: var(--surface-2);
+  color: var(--accent-fg);
 }
 
 .workspace-detail-panel {
@@ -13640,11 +13549,12 @@ button.detail-presets__explanation-step {
 }
 
 .workspace-detail-panel__header {
-  padding: var(--space-5) var(--space-6);
+  padding: var(--detail-section-space) var(--detail-gutter);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--detail-metadata-actions-gap);
   flex: 0 0 auto;
+  border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-base);
 }
 
@@ -13652,7 +13562,7 @@ button.detail-presets__explanation-step {
   min-width: 0;
   display: flex;
   align-items: flex-start;
-  gap: var(--space-3);
+  gap: var(--detail-title-row-gap);
 }
 
 .workspace-detail-panel__leading {
@@ -13672,13 +13582,13 @@ button.detail-presets__explanation-step {
   min-width: 0;
   flex: 1 1 auto;
   display: grid;
-  gap: var(--space-3);
+  gap: var(--detail-title-metadata-gap);
 }
 
 .workspace-detail-panel__title {
   margin: 0;
   color: var(--text-primary);
-  font-size: var(--type-detail-title-size);
+  font-size: var(--detail-type-title);
   font-weight: var(--weight-semibold);
   line-height: var(--leading-tight);
   letter-spacing: var(--tracking-tight);
@@ -13688,25 +13598,33 @@ button.detail-presets__explanation-step {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-1-5);
+  gap: var(--detail-chip-gap);
 }
 
 .workspace-detail-panel__description {
   max-width: 62rem;
+  padding: var(--detail-metadata-actions-gap) var(--detail-gutter) 0;
+  flex: 0 0 auto;
   color: var(--text-secondary);
   font-size: var(--text-sm);
   line-height: var(--leading-relaxed);
 }
 
+.workspace-detail-panel__description > :first-child { margin-top: 0; }
+.workspace-detail-panel__description > :last-child { margin-bottom: 0; }
+
 .workspace-detail-panel__action-bar {
-  min-height: calc(var(--control-height-sm) + var(--space-5));
-  padding: var(--space-3) var(--space-6);
   display: flex;
   align-items: center;
   flex: 0 0 auto;
-  border-top: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-1);
+  background: transparent;
+}
+
+.workspace-detail-panel__action-bar .workspace-action-button:not(.workspace-action-button--icon-only) {
+  height: var(--detail-gutter);
+  padding-inline: var(--detail-title-row-gap);
+  gap: var(--detail-title-metadata-gap);
+  font-size: var(--detail-type-action);
 }
 
 .workspace-action-group {
@@ -13714,7 +13632,7 @@ button.detail-presets__explanation-step {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--detail-title-metadata-gap, var(--space-2));
   flex-wrap: wrap;
 }
 
@@ -13814,15 +13732,15 @@ button.detail-presets__explanation-step {
 
 .workspace-metadata-chip {
   min-width: 0;
-  min-height: 24px;
-  padding: 3px 8px;
+  min-height: var(--detail-section-space);
+  padding: 3px var(--detail-title-metadata-gap);
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--detail-chip-gap);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-size: var(--type-caption-size);
+  font-size: var(--detail-type-metadata);
   font-weight: var(--weight-medium);
   line-height: 1.2;
   text-decoration: none;
@@ -13834,39 +13752,35 @@ button.workspace-metadata-chip { font-family: inherit; cursor: pointer; }
 .workspace-metadata-chip strong { color: var(--text-primary); font-weight: var(--weight-semibold); }
 
 .workspace-metadata-chip--low {
-  border-color: color-mix(in srgb, var(--border-subtle) 70%, transparent);
-  background: color-mix(in srgb, var(--surface-1) 70%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 52%, transparent);
   color: var(--text-tertiary);
 }
 
 .workspace-metadata-chip--medium {
-  border-color: var(--border-subtle);
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-2) 74%, transparent);
   color: var(--text-secondary);
 }
 
 .workspace-metadata-chip--high {
-  border-color: color-mix(in srgb, var(--accent-fg) 34%, transparent);
-  background: color-mix(in srgb, var(--accent-fg) 12%, transparent);
+  background: color-mix(in srgb, var(--accent-fg) 14%, transparent);
   color: var(--accent-fg);
   font-weight: var(--weight-semibold);
 }
 
 .workspace-metadata-chip--success.workspace-metadata-chip--high {
-  border-color: color-mix(in srgb, var(--status-ok) 36%, transparent);
-  background: color-mix(in srgb, var(--status-ok) 11%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 13%, transparent);
   color: var(--status-ok);
 }
 
 .workspace-metadata-chip--warning.workspace-metadata-chip--high {
-  border-color: color-mix(in srgb, var(--warning) 38%, transparent);
-  background: color-mix(in srgb, var(--warning) 11%, transparent);
+  background: color-mix(in srgb, var(--warning) 13%, transparent);
   color: var(--warning);
 }
 
 a.workspace-metadata-chip:hover,
 button.workspace-metadata-chip:hover {
-  border-color: var(--border-strong);
+  border-color: transparent;
+  background: var(--surface-3);
   color: var(--text-primary);
 }
 
@@ -13939,6 +13853,17 @@ button.workspace-metadata-chip:hover {
   line-height: var(--leading-relaxed);
 }
 
+@media (max-width: 768px) {
+  .workspace-panel-resizer { display: none; }
+}
+
+@media (max-width: 760px) {
+  .workspace-three-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+}
+
 /* Models master-detail */
 .model-list-panel__count.sr-only { padding: 0; }
 
@@ -13946,19 +13871,10 @@ button.workspace-metadata-chip:hover {
 .model-detail-panel__actions .model-detail-panel__fav-btn,
 .model-detail-panel__actions .workspace-action-button--danger {
   width: auto;
-  padding-inline: 11px;
+  padding-inline: var(--detail-title-row-gap);
 }
 
 /* Presets master-detail */
-.recipes--with-rail,
-.recipes--with-rail.context-rail-collapsed {
-  grid-template-columns: var(--workspace-rail) 360px minmax(0, 1fr);
-}
-
-.recipes--with-rail.context-rail-collapsed {
-  grid-template-columns: 56px 360px minmax(0, 1fr);
-}
-
 .preset-list-panel .recipes__body {
   min-height: 0;
   padding: 0 var(--space-2) var(--space-3);
@@ -13998,27 +13914,14 @@ button.workspace-metadata-chip:hover {
 
 .recipes > .scrim { display: none; }
 .preset-detail-panel { width: 100%; }
-.preset-detail-panel .slideover__head.workspace-detail-panel__header { padding: var(--space-5) var(--space-6) var(--space-4); }
-.preset-detail-panel .slideover__title { font-size: var(--type-detail-title-size); line-height: 1.15; }
-.preset-detail-panel .slideover__title-input { font-size: var(--type-detail-title-size); line-height: 1.15; }
+.preset-detail-panel .slideover__title { font-size: var(--detail-type-title); line-height: 1.15; }
+.preset-detail-panel .slideover__title-input { font-size: var(--detail-type-title); line-height: 1.15; }
 .preset-detail-panel .slideover__meta-row { margin-top: var(--space-1); }
-.preset-detail-panel .slideover__body { padding: var(--space-5) var(--space-6); }
-.preset-detail-panel .slideover__foot.workspace-detail-panel__action-bar {
-  min-height: 64px;
-  padding: var(--space-3) var(--space-6);
-  border-width: 1px 0 0;
-  border-radius: 0;
-  background: var(--surface-1);
-}
-
+.preset-detail-panel .slideover__body { padding: var(--detail-section-space) var(--detail-gutter); }
 /* Shared creation-editor grammar */
-.custom-model-editor .workspace-detail-panel__header {
-  padding: var(--space-5) var(--space-6) var(--space-4);
-}
-
 .custom-model-editor__title {
   margin: 0;
-  font-size: var(--type-detail-title-size);
+  font-size: var(--detail-type-title);
   line-height: 1.15;
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-tight);
@@ -14028,16 +13931,6 @@ button.workspace-metadata-chip:hover {
   margin: 0;
 }
 
-.custom-model-editor .workspace-detail-panel__action-bar {
-  min-height: 64px;
-  padding: var(--space-3) var(--space-6);
-  border-width: 1px 0 0;
-}
-
-.custom-model-editor__actions {
-  justify-content: flex-end;
-}
-
 .custom-model-form__body {
   min-height: 0;
   flex: 1 1 auto;
@@ -14045,7 +13938,7 @@ button.workspace-metadata-chip:hover {
   flex-direction: column;
   gap: var(--space-4);
   overflow-y: auto;
-  padding: var(--space-5) var(--space-6);
+  padding: var(--detail-section-space) var(--detail-gutter);
   scrollbar-gutter: stable;
 }
 
@@ -14059,33 +13952,16 @@ button.workspace-metadata-chip:hover {
   padding: 0;
 }
 
-@container (max-width: 620px) {
-  .model-detail-panel__actions .workspace-action-button__label {
-    display: none;
-  }
-
-  .model-detail-panel__actions .workspace-action-button,
-  .model-detail-panel__actions .model-detail-panel__fav-btn,
-  .model-detail-panel__actions .workspace-action-button--danger {
-    width: 34px;
-    padding-inline: 0;
-  }
-}
-
 @media (max-width: 1100px) {
-  .recipes--with-rail,
-  .recipes--with-rail.context-rail-collapsed { grid-template-columns: var(--workspace-rail) 320px minmax(0, 1fr); }
-  .recipes--with-rail.context-rail-collapsed { grid-template-columns: 56px 320px minmax(0, 1fr); }
-  .workspace-detail-panel__header,
-  .preset-detail-panel .slideover__head.workspace-detail-panel__header,
-  .custom-model-editor .workspace-detail-panel__header { padding-left: var(--space-4); padding-right: var(--space-4); }
+  .workspace-list-panel__header,
+  .workspace-detail-panel__header { padding-left: var(--detail-section-space); padding-right: var(--detail-section-space); }
+  .workspace-detail-panel__description { padding-left: var(--detail-section-space); padding-right: var(--detail-section-space); }
   .preset-detail-panel .slideover__body,
-  .custom-model-form__body { padding-left: var(--space-4); padding-right: var(--space-4); }
+  .custom-model-form__body { padding-left: var(--detail-section-space); padding-right: var(--detail-section-space); }
 }
 
 @media (max-width: 768px) {
-  .recipes--with-rail,
-  .recipes--with-rail.context-rail-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .recipes--with-rail { grid-template-columns: minmax(0, 1fr); }
   .recipes > .slideover--recipe {
     position: fixed;
     top: 0;
@@ -14104,8 +13980,6 @@ button.workspace-metadata-chip:hover {
   .recipes > .scrim { display: block; }
   .workspace-list-panel__header { padding-inline: var(--space-3); }
   .workspace-list-panel__actions .btn { padding-inline: var(--space-2); }
-  .workspace-detail-panel__action-bar { padding-inline: var(--space-3); }
-  .custom-model-editor .workspace-detail-panel__action-bar { padding-inline: var(--space-3); }
 }
 
 @media (max-width: 360px) {

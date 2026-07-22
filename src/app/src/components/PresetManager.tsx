@@ -38,6 +38,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import AutoOptRail, { openAutoOptRun, type PresetLibraryFilter } from '../features/autoOpt/AutoOptRail';
 import { autoOptStore, type AutoOptState } from '../features/autoOpt/autoOptStore';
 import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
+import { useWorkspacePanelResize } from '../hooks/useWorkspacePanelResize';
 import { LEMONADE_MCP_SERVER, listMcpServerOptions, type McpServerOption } from '../tools/mcpRuntime';
 import { DEFAULT_TTS_VOICE, OPENMOSS_VOICE_PRESETS, TTS_VOICES } from '../features/audio/ttsSettings';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
@@ -48,6 +49,7 @@ import {
   WorkspaceDetailPanel,
   WorkspaceListPanel,
   WorkspaceMetadataChip,
+  WorkspacePanelResizer,
   WorkspaceResourceRow,
 } from './WorkspacePanels';
 
@@ -164,6 +166,10 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const [applyTarget, setApplyTarget] = useState('');
   const [applySuccess, setApplySuccess] = useState<string | null>(null);
   const [autoRailCollapsed, setAutoRailCollapsed] = useState(false);
+  const panelResize = useWorkspacePanelResize<HTMLElement>({
+    storageKey: 'lemonade_workspace_presets_list_width_v1',
+    railCollapsed: autoRailCollapsed,
+  });
   const [libraryFilter, setLibraryFilter] = useState<PresetLibraryFilter>('all');
   const mobileRail = useWorkspaceMobileRail();
   const [highlightPresetId, setHighlightPresetId] = useState<string | null>(null);
@@ -400,7 +406,12 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
 
   return (
     <>
-      <section className={`recipes recipes--with-rail${autoRailCollapsed ? ' context-rail-collapsed' : ''}`} data-view="presets">
+      <section
+        ref={panelResize.containerRef}
+        className={`recipes recipes--with-rail workspace-three-panel${autoRailCollapsed ? ' context-rail-collapsed' : ''}`}
+        style={panelResize.style}
+        data-view="presets"
+      >
         {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
         <AutoOptRail
           loadedModels={loadedModels}
@@ -423,11 +434,11 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
           triggerRef={mobileRail.triggerRef}
         />
         <WorkspaceListPanel
-          className="recipes__main preset-list-panel"
+          className="preset-list-panel"
           title="Presets"
           subtitle={<span data-recipes-count>{visiblePresetCount} {visiblePresetCount === 1 ? 'item' : 'items'}</span>}
           actions={(
-            <WorkspaceActionGroup className="recipes__actions" label="Preset list actions">
+            <WorkspaceActionGroup label="Preset list actions">
             <WorkspaceActionButton
               appearance="primary"
               size="toolbar"
@@ -554,6 +565,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
 
         </div>
         </WorkspaceListPanel>
+
+      <WorkspacePanelResizer label="Resize preset list panel" {...panelResize.resizerProps} />
 
       <div className={`scrim${selectedPreset ? ' is-open' : ''}`} onClick={closeSlideover} />
       <aside
@@ -871,7 +884,6 @@ const SlideoverContent: React.FC<{
     <WorkspaceDetailPanel
       className="preset-detail-panel"
       ariaLabel={`Preset details: ${preset.name}`}
-      leading={<PresetIcon preset={preset} size={22} className="preset-icon preset-icon--lg" />}
       title={isReadOnly ? (
         <h2 className="workspace-detail-panel__title slideover__title" data-recipe-name>{preset.name}</h2>
       ) : (
@@ -932,18 +944,15 @@ const SlideoverContent: React.FC<{
       headerExtras={missingRunNote && <p className="preset-help" data-preset-autoopt-missing>Run no longer exists on this machine.</p>}
       actions={(
         <WorkspaceActionGroup className="preset-detail-actions" label={`Actions for ${preset.name}`}>
-          <WorkspaceActionButton appearance="quiet" icon="download" onClick={() => onExport(currentPreset)}>Export</WorkspaceActionButton>
           {preset.starter ? (
-            <>
-              <WorkspaceActionButton appearance="secondary" icon="copy" onClick={() => onClone(preset)} data-recipe-clone>Clone</WorkspaceActionButton>
-              <WorkspaceActionButton appearance="primary" icon="edit" onClick={() => onCustomize(preset)} data-recipe-customize>Customize</WorkspaceActionButton>
-            </>
+            <WorkspaceActionButton appearance="primary" icon="edit" onClick={() => onCustomize(preset)} data-recipe-customize>Customize</WorkspaceActionButton>
           ) : (
-            <>
-              <WorkspaceActionButton appearance="secondary" icon="copy" onClick={() => onClone(currentPreset)} data-recipe-clone>Clone</WorkspaceActionButton>
-              <WorkspaceActionButton appearance="danger" icon="trash" onClick={() => onDelete(preset)} data-recipe-delete>Delete</WorkspaceActionButton>
-              <WorkspaceActionButton appearance="primary" icon={saved ? 'check' : undefined} className={saved ? 'btn--saved' : ''} onClick={handleSave}>{saved ? 'Saved' : 'Save'}</WorkspaceActionButton>
-            </>
+            <WorkspaceActionButton appearance="primary" icon={saved ? 'check' : undefined} onClick={handleSave}>{saved ? 'Saved' : 'Save'}</WorkspaceActionButton>
+          )}
+          <WorkspaceActionButton appearance="secondary" icon="copy" onClick={() => onClone(preset.starter ? preset : currentPreset)} data-recipe-clone>Clone</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="quiet" icon="download" onClick={() => onExport(currentPreset)}>Export</WorkspaceActionButton>
+          {!preset.starter && (
+            <WorkspaceActionButton appearance="danger" icon="trash" onClick={() => onDelete(preset)} data-recipe-delete>Delete</WorkspaceActionButton>
           )}
         </WorkspaceActionGroup>
       )}

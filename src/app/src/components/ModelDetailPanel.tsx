@@ -2701,19 +2701,6 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   const detailActions = (
     <WorkspaceActionGroup className="model-detail-panel__actions" label={`Actions for ${name}`}>
-      {onToggleFavorite && (
-        <WorkspaceActionButton
-          className={`model-detail-panel__fav-btn${isFavorite ? ' model-detail-panel__fav-btn--on' : ''}`}
-          appearance={isFavorite ? 'primary' : 'quiet'}
-          icon="star"
-          onClick={() => onToggleFavorite(name)}
-          aria-pressed={isFavorite}
-          aria-label={isFavorite ? `Remove ${name} from favorites` : `Add ${name} to favorites`}
-          title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-        >
-          {isFavorite ? 'Favorited' : 'Favorite'}
-        </WorkspaceActionButton>
-      )}
       {isPulling ? (
         <>
           <div className="row__progress">
@@ -2728,11 +2715,21 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         </>
       ) : isLoaded ? (
         <>
+          <WorkspaceActionButton
+            ref={unloadBtnRef}
+            appearance="primary"
+            icon="stop"
+            onClick={() => onUnload(loadedModel!)}
+            disabled={isLoadingThis || isUpdatingPreset}
+            aria-label={isLoadingThis ? `Working on ${name}…` : `Unload ${name}`}
+          >
+            {isLoadingThis ? 'Working…' : 'Unload'}
+          </WorkspaceActionButton>
           {(canUpdatePreset || isUpdatingPreset) && (
             <WorkspaceActionButton
               ref={updateBtnRef}
               className="model-detail-panel__update-preset-btn"
-              appearance="primary"
+              appearance="secondary"
               icon="rotate-ccw"
               onClick={handleUpdatePreset}
               disabled={isUpdatingPreset || !canUpdatePreset}
@@ -2746,16 +2743,6 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
                 : (presetChangeKind === 'reload' ? 'Reload to apply preset' : 'Apply preset')}
             </WorkspaceActionButton>
           )}
-          <WorkspaceActionButton
-            ref={unloadBtnRef}
-            appearance="secondary"
-            icon="stop"
-            onClick={() => onUnload(loadedModel!)}
-            disabled={isLoadingThis || isUpdatingPreset}
-            aria-label={isLoadingThis ? `Working on ${name}…` : `Unload ${name}`}
-          >
-            {isLoadingThis ? 'Working…' : 'Unload'}
-          </WorkspaceActionButton>
         </>
       ) : isDownloaded ? (
         <WorkspaceActionButton
@@ -2769,13 +2756,26 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         </WorkspaceActionButton>
       ) : (
         <>
-          <WorkspaceActionButton appearance="secondary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
-            Download
-          </WorkspaceActionButton>
           <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPullAndLoad(model)} aria-label={`Get and load ${name}`}>
             Get & Load
           </WorkspaceActionButton>
+          <WorkspaceActionButton appearance="secondary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
+            Download
+          </WorkspaceActionButton>
         </>
+      )}
+      {onToggleFavorite && (
+        <WorkspaceActionButton
+          className={`model-detail-panel__fav-btn${isFavorite ? ' model-detail-panel__fav-btn--on' : ''}`}
+          appearance="quiet"
+          icon="star"
+          onClick={() => onToggleFavorite(name)}
+          aria-pressed={isFavorite}
+          aria-label={isFavorite ? `Remove ${name} from favorites` : `Add ${name} to favorites`}
+          title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        >
+          {isFavorite ? 'Favorited' : 'Favorite'}
+        </WorkspaceActionButton>
       )}
       {(isDownloaded || isLoaded) && (
         <WorkspaceActionButton

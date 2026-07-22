@@ -51,12 +51,14 @@ const METADATA_EMPHASIS_RANK: Record<WorkspaceMetadataEmphasis, number> = {
   low: 2,
 };
 
-function flattenedMetadataChildren(children: React.ReactNode): React.ReactNode[] {
-  return React.Children.toArray(children).flatMap(child => {
+function flattenedMetadataChildren(children: React.ReactNode, parentKey = 'metadata'): React.ReactNode[] {
+  return React.Children.toArray(children).flatMap((child, index) => {
+    const childKey = React.isValidElement(child) && child.key !== null ? String(child.key) : String(index);
+    const key = `${parentKey}/${childKey}`;
     if (React.isValidElement<{ children?: React.ReactNode }>(child) && child.type === React.Fragment) {
-      return flattenedMetadataChildren(child.props.children);
+      return flattenedMetadataChildren(child.props.children, key);
     }
-    return [child];
+    return [React.isValidElement(child) ? React.cloneElement(child, { key }) : child];
   });
 }
 
@@ -155,6 +157,37 @@ export const WorkspaceActionGroup: React.FC<WorkspaceActionGroupProps> = ({ chil
   <div className={`workspace-action-group${className ? ` ${className}` : ''}`} role="group" aria-label={label}>
     {children}
   </div>
+);
+
+interface WorkspacePanelResizerProps {
+  label: string;
+  minWidth: number;
+  maxWidth: number;
+  value: number;
+  onPointerDown: React.PointerEventHandler<HTMLDivElement>;
+  onKeyDown: React.KeyboardEventHandler<HTMLDivElement>;
+}
+
+export const WorkspacePanelResizer: React.FC<WorkspacePanelResizerProps> = ({
+  label,
+  minWidth,
+  maxWidth,
+  value,
+  onPointerDown,
+  onKeyDown,
+}) => (
+  <div
+    className="workspace-panel-resizer"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label={label}
+    aria-valuemin={minWidth}
+    aria-valuemax={maxWidth}
+    aria-valuenow={value}
+    tabIndex={0}
+    onPointerDown={onPointerDown}
+    onKeyDown={onKeyDown}
+  />
 );
 
 interface WorkspaceResourceListProps {
@@ -320,23 +353,25 @@ export const WorkspaceDetailPanel = React.forwardRef<HTMLElement, WorkspaceDetai
         <Icon name="chevron-right" size={14} className="workspace-detail-panel__back-icon" aria-hidden="true" /> {backLabel}
       </button>
     )}
-    {title !== undefined && <header className="workspace-detail-panel__header">
-      <div className="workspace-detail-panel__title-row">
-        {leading && <div className="workspace-detail-panel__leading">{leading}</div>}
-        <div className="workspace-detail-panel__identity">
-          {title}
-          {metadata && <WorkspaceMetadataGroup>{metadata}</WorkspaceMetadataGroup>}
+    {(title !== undefined || actions || headerExtras) && <header className="workspace-detail-panel__header">
+      {title !== undefined && (
+        <div className="workspace-detail-panel__title-row">
+          {leading && <div className="workspace-detail-panel__leading">{leading}</div>}
+          <div className="workspace-detail-panel__identity">
+            {title}
+            {metadata && <WorkspaceMetadataGroup>{metadata}</WorkspaceMetadataGroup>}
+          </div>
+          {onClose && (
+            <button type="button" className={closeClassName} onClick={onClose} aria-label={closeLabel}>
+              <Icon name={closeIcon} size={16} aria-hidden="true" />
+            </button>
+          )}
         </div>
-        {onClose && (
-          <button type="button" className={closeClassName} onClick={onClose} aria-label={closeLabel}>
-            <Icon name={closeIcon} size={16} aria-hidden="true" />
-          </button>
-        )}
-      </div>
-      {description && <div className="workspace-detail-panel__description">{description}</div>}
+      )}
+      {actions && <div className="workspace-detail-panel__action-bar">{actions}</div>}
       {headerExtras}
     </header>}
-    {actions && <div className="workspace-detail-panel__action-bar">{actions}</div>}
+    {description && <div className="workspace-detail-panel__description">{description}</div>}
     {children}
   </section>
 ));

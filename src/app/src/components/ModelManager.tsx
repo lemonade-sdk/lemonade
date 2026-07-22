@@ -14,11 +14,12 @@ import { ModelNavRail } from './ModelNavRail';
 import { ModelDetailPanel } from './ModelDetailPanel';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
+import { useWorkspacePanelResize } from '../hooks/useWorkspacePanelResize';
 import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
 import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
 import RouterEditorPanel from './RouterEditorPanel';
 import GlobalModelSettingsPanel, { type UpdateAllModelsResult } from './GlobalModelSettingsPanel';
-import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, WorkspaceMetadataChip } from './WorkspacePanels';
+import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, WorkspaceMetadataChip, WorkspacePanelResizer } from './WorkspacePanels';
 import { ROUTER_RECIPE, type RouterPullRequest } from '../features/router/routerTypes';
 import { deleteRouterRecord, loadRouterRecords, routerRecordToModelInfo } from '../features/router/routerStore';
 import {
@@ -818,34 +819,6 @@ const OMNI_COMPONENT_ROLE_CONFIG: Record<OmniComponentRole, { label: string; pla
 
 const NON_PLANNER_LABELS = new Set(['image', 'image-generation', 'edit', 'upscaling', 'speech', 'tts', 'text-to-speech', 'transcription', 'audio-generation', 'music', 'music-generation', 'sound-generation', 'sfx', '3d', 'model3d', '3d-generation', 'image-to-3d', 'mesh', 'mesh-generation', 'embeddings', 'embedding', 'reranking', 'reranker']);
 
-const MODEL_LIST_WIDTH_KEY = 'model_list_panel_width';
-const MODEL_LIST_DEFAULT_WIDTH = 360;
-const MODEL_LIST_MIN_WIDTH = 300;
-const MODEL_LIST_MAX_WIDTH = 620;
-const MODEL_NAV_RAIL_WIDTH = 232;
-const MODEL_DETAIL_MIN_WIDTH = 420;
-
-function maxModelListWidthForViewport(viewportWidth?: number): number {
-  const width = viewportWidth
-    ?? (typeof window !== 'undefined' ? window.innerWidth : MODEL_NAV_RAIL_WIDTH + MODEL_LIST_MAX_WIDTH + MODEL_DETAIL_MIN_WIDTH);
-  const viewportMax = width - MODEL_NAV_RAIL_WIDTH - MODEL_DETAIL_MIN_WIDTH;
-  return Math.max(MODEL_LIST_MIN_WIDTH, Math.min(MODEL_LIST_MAX_WIDTH, viewportMax));
-}
-
-function clampModelListWidth(width: number, viewportWidth?: number): number {
-  return Math.max(MODEL_LIST_MIN_WIDTH, Math.min(maxModelListWidthForViewport(viewportWidth), Math.round(width)));
-}
-
-function loadModelListWidth(): number {
-  if (typeof window === 'undefined') return MODEL_LIST_DEFAULT_WIDTH;
-  try {
-    const stored = Number(window.localStorage.getItem(MODEL_LIST_WIDTH_KEY));
-    return clampModelListWidth(Number.isFinite(stored) ? stored : MODEL_LIST_DEFAULT_WIDTH, window.innerWidth);
-  } catch {
-    return clampModelListWidth(MODEL_LIST_DEFAULT_WIDTH, window.innerWidth);
-  }
-}
-
 function lowerLabels(m: ModelInfo): string[] {
   return (m.labels || []).map(label => label.toLowerCase().trim()).filter(Boolean);
 }
@@ -1095,7 +1068,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const mobileRail = useWorkspaceMobileRail();
   const [navRailCollapsed, setNavRailCollapsed] = useState(false);
-  const [modelListWidth, setModelListWidth] = useState(loadModelListWidth);
+  const panelResize = useWorkspacePanelResize<HTMLDivElement>({
+    storageKey: 'lemonade_workspace_models_list_width_v2',
+    railCollapsed: navRailCollapsed,
+  });
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Remote registry search state. Provider switches are intentionally separate
@@ -1144,73 +1120,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
   const hasVisibleModelsRef = useRef(false);
   const modelsSnapshotRef = useRef<string>('');
   const loadedSnapshotRef = useRef<string>('');
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(MODEL_LIST_WIDTH_KEY, String(modelListWidth));
-    } catch {
-      // Non-critical: width persistence is best-effort only.
-    }
-  }, [modelListWidth]);
-
-  useEffect(() => {
-    const clampToViewport = () => {
-      setModelListWidth(width => clampModelListWidth(width, window.innerWidth));
-    };
-    clampToViewport();
-    window.addEventListener('resize', clampToViewport);
-    return () => window.removeEventListener('resize', clampToViewport);
-  }, []);
-
-  const modelDetailLayoutStyle = useMemo(() => ({
-    '--model-list-panel-width': `${modelListWidth}px`,
-  } as React.CSSProperties), [modelListWidth]);
-
-  const handleModelListResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (window.innerWidth <= 700) return;
-    event.preventDefault();
-
-    const startX = event.clientX;
-    const startWidth = modelListWidth;
-    const handle = event.currentTarget;
-    try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const nextWidth = clampModelListWidth(startWidth + moveEvent.clientX - startX, window.innerWidth);
-      setModelListWidth(nextWidth);
-    };
-
-    const stopResize = () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', stopResize);
-      window.removeEventListener('pointercancel', stopResize);
-      document.body.classList.remove('is-resizing-model-list');
-      try { handle.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
-    };
-
-    document.body.classList.add('is-resizing-model-list');
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', stopResize, { once: true });
-    window.addEventListener('pointercancel', stopResize, { once: true });
-  }, [modelListWidth]);
-
-  const handleModelListResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    const largeStep = event.shiftKey ? 40 : 16;
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      setModelListWidth(width => clampModelListWidth(width - largeStep, window.innerWidth));
-    } else if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      setModelListWidth(width => clampModelListWidth(width + largeStep, window.innerWidth));
-    } else if (event.key === 'Home') {
-      event.preventDefault();
-      setModelListWidth(MODEL_LIST_MIN_WIDTH);
-    } else if (event.key === 'End') {
-      event.preventDefault();
-      setModelListWidth(maxModelListWidthForViewport(window.innerWidth));
-    }
-  }, []);
-
 
   useEffect(() => {
     hasVisibleModelsRef.current = models.length > 0 || loadedModels.length > 0 || customModels.length > 0 || routerModels.length > 0;
@@ -2811,8 +2720,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
   );
   return (
     <div
-      className={`manager manager--detail${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}${mobileRail.isOpen ? ' manager--nav-open' : ''}${navRailCollapsed ? ' workspace--rail-collapsed' : ''}`}
-      style={modelDetailLayoutStyle}
+      ref={panelResize.containerRef}
+      className={`manager manager--detail workspace-three-panel${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}${mobileRail.isOpen ? ' manager--nav-open' : ''}${navRailCollapsed ? ' workspace--rail-collapsed' : ''}`}
+      style={panelResize.style}
     >
       {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
       <WorkspaceMobileMenuButton
@@ -2884,18 +2794,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
         registryResultCount={remoteResultCount}
       />
 
-      <div
-        className="manager__model-list-resizer"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize model list panel"
-        aria-valuemin={MODEL_LIST_MIN_WIDTH}
-        aria-valuemax={MODEL_LIST_MAX_WIDTH}
-        aria-valuenow={modelListWidth}
-        tabIndex={0}
-        onPointerDown={handleModelListResizeStart}
-        onKeyDown={handleModelListResizeKeyDown}
-      />
+      <WorkspacePanelResizer label="Resize model list panel" {...panelResize.resizerProps} />
 
       {/* Right panel: global settings, router editor, custom form, or model detail */}
       {showGlobalSettings ? (
@@ -2940,9 +2839,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
             description={<p>Register a model or collection that is not included in the Lemonade catalog.</p>}
             actions={(
               <WorkspaceActionGroup className="custom-model-editor__actions" label={`${customFormTitle} actions`}>
-                <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>Export</WorkspaceActionButton>
-                <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>Import</WorkspaceActionButton>
-                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Cancel</WorkspaceActionButton>
                 <WorkspaceActionButton
                   appearance="primary"
                   icon="check"
@@ -2952,6 +2848,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
                 >
                   Save
                 </WorkspaceActionButton>
+                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Cancel</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>Export</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>Import</WorkspaceActionButton>
               </WorkspaceActionGroup>
             )}
             onClose={closeCustomForm}

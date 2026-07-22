@@ -567,10 +567,9 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       title="Models"
       subtitle={`${flatList.length} ${flatList.length === 1 ? 'model' : 'models'}`}
       actions={(
-        <WorkspaceActionGroup className="model-list-panel__title-actions" label="Model list actions">
+        <WorkspaceActionGroup label="Model list actions">
           {onOpenCustomModels && (
             <WorkspaceActionButton
-              className="model-list-panel__custom-menu-btn"
               appearance="primary"
               size="toolbar"
               icon="compose"
@@ -582,7 +581,6 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           )}
           {onOpenRouter && (
             <WorkspaceActionButton
-              className="model-list-panel__custom-menu-btn model-list-panel__custom-menu-btn--router"
               size="toolbar"
               icon="router"
               iconOnly
@@ -593,7 +591,6 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           )}
           {onOpenGlobalSettings && (
             <WorkspaceActionButton
-              className="model-list-panel__custom-menu-btn model-list-panel__custom-menu-btn--settings"
               size="toolbar"
               icon="settings"
               iconOnly

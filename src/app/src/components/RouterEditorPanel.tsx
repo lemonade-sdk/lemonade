@@ -333,14 +333,14 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       description={<p>Build and register a virtual model that routes requests across compatible candidates.</p>}
       actions={(
         <WorkspaceActionGroup label="Router editor actions">
+          <WorkspaceActionButton appearance="primary" icon="check" disabled={saving || validationErrors.length > 0} onClick={() => { void save(); }}>
+            {saving ? 'Registering…' : 'Save & register'}
+          </WorkspaceActionButton>
           {draft.modelName && (
             <WorkspaceActionButton appearance="danger" icon="trash" onClick={() => { void deleteCurrent(); }}>Delete</WorkspaceActionButton>
           )}
           <span className="workspace-action-group__spacer" />
           <WorkspaceActionButton appearance="secondary" icon="x" onClick={onClose}>Close</WorkspaceActionButton>
-          <WorkspaceActionButton appearance="primary" icon="check" disabled={saving || validationErrors.length > 0} onClick={() => { void save(); }}>
-            {saving ? 'Registering…' : 'Save & register'}
-          </WorkspaceActionButton>
         </WorkspaceActionGroup>
       )}
       onClose={onClose}

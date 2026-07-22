@@ -160,12 +160,12 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
       description={<p>Defaults for model memory, loading, chat reasoning, speech, and updates.</p>}
       actions={(
         <WorkspaceActionGroup label="Global model settings actions">
+          <WorkspaceActionButton appearance="primary" icon="check" onClick={handleSave}>
+            {saved ? 'Saved' : 'Save settings'}
+          </WorkspaceActionButton>
           <WorkspaceActionButton appearance="quiet" icon="rotate-ccw" onClick={handleReset}>Reset defaults</WorkspaceActionButton>
           <span className="workspace-action-group__spacer" />
           <WorkspaceActionButton appearance="secondary" icon="x" onClick={onClose}>Cancel</WorkspaceActionButton>
-          <WorkspaceActionButton appearance="primary" icon="check" className={saved ? 'btn--saved' : ''} onClick={handleSave}>
-            {saved ? 'Saved' : 'Save settings'}
-          </WorkspaceActionButton>
         </WorkspaceActionGroup>
       )}
       onClose={onClose}
