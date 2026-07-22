@@ -72,6 +72,20 @@ static std::vector<fs::path> find_case_dirs(const fs::path& root) {
     return dirs;
 }
 
+static void report_mismatch(const json& expected, const json& produced) {
+    std::printf("  expected: %s\n", expected.dump().c_str());
+    std::printf("  produced: %s\n", produced.dump().c_str());
+    const json patch = json::diff(expected, produced);
+    std::printf("  %zu field(s) differ:\n", patch.size());
+    for (const auto& op : patch) {
+        const auto ptr = json::json_pointer(op.value("path", ""));
+        const std::string exp = expected.contains(ptr) ? expected.at(ptr).dump() : "<absent>";
+        const std::string prod = produced.contains(ptr) ? produced.at(ptr).dump() : "<absent>";
+        std::printf("    %s: expected: %s, produced: %s\n", op.value("path", "").c_str(),
+                    exp.c_str(), prod.c_str());
+    }
+}
+
 static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
     const std::string rel = fs::relative(case_dir, root).generic_string();
 
@@ -153,9 +167,7 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
         const bool ok = produced == expected;
         check(name, ok);
         if (!ok) {
-            std::printf("  expected: %s\n", expected.dump().c_str());
-            std::printf("  produced: %s\n", produced.dump().c_str());
-            std::printf("  diff:     %s\n", json::diff(expected, produced).dump().c_str());
+            report_mismatch(expected, produced);
         }
         ++executed;
     }
