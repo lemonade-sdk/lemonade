@@ -68,8 +68,9 @@ static std::vector<fs::path> list_subdirs(const fs::path& dir, std::error_code& 
 }
 
 // Corpus layout is exactly routing/<version>/<case>/{policy.json,cases.jsonl}. A case
-// dir missing either file is a hard failure (silent coverage loss otherwise), except
-// under a _debug version or case dir, where it degrades to a warning.
+// dir missing either file, or holding a nested subdirectory, is a hard failure (silent
+// coverage loss / drifted layout otherwise), except under a _debug version or case dir,
+// where it degrades to a warning.
 static std::vector<fs::path> find_case_dirs(const fs::path& root) {
     std::vector<fs::path> dirs;
     std::error_code ec;
@@ -88,22 +89,37 @@ static std::vector<fs::path> find_case_dirs(const fs::path& root) {
             continue;
         }
         for (const auto& case_dir : case_dirs) {
+            const bool debug = version_debug || is_debug_name(case_dir);
+            const std::string rel = fs::relative(case_dir, root).generic_string();
+            auto report = [&](const std::string& warn_detail, const std::string& fail_assertion) {
+                if (debug) {
+                    std::printf("[WARN] %s: %s (ignored: _debug)\n", rel.c_str(),
+                                warn_detail.c_str());
+                } else {
+                    check(rel + ": " + fail_assertion, false);
+                }
+            };
+
             std::error_code fec;
             const bool has_policy = fs::exists(case_dir / "policy.json", fec);
             const bool has_cases = fs::exists(case_dir / "cases.jsonl", fec);
-            if (has_policy && has_cases) {
-                dirs.push_back(case_dir);
-                continue;
+            std::error_code sec;
+            const bool has_subdir = !list_subdirs(case_dir, sec).empty();
+
+            bool ok = true;
+            if (!has_policy || !has_cases) {
+                const std::string missing = (!has_policy && !has_cases)
+                                                ? "policy.json and cases.jsonl"
+                                                : (!has_policy ? "policy.json" : "cases.jsonl");
+                report("missing " + missing, "has policy.json + cases.jsonl");
+                ok = false;
             }
-            const std::string rel = fs::relative(case_dir, root).generic_string();
-            const std::string missing = (!has_policy && !has_cases)
-                                            ? "policy.json and cases.jsonl"
-                                            : (!has_policy ? "policy.json" : "cases.jsonl");
-            if (version_debug || is_debug_name(case_dir)) {
-                std::printf("[WARN] %s: missing %s (ignored: _debug)\n", rel.c_str(),
-                            missing.c_str());
-            } else {
-                check(rel + ": has policy.json + cases.jsonl", false);
+            if (has_subdir) {
+                report("has unexpected subdirectory", "is a leaf (no subdirectories)");
+                ok = false;
+            }
+            if (ok) {
+                dirs.push_back(case_dir);
             }
         }
     }
