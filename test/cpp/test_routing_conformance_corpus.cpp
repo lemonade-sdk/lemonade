@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <system_error>
@@ -100,6 +101,7 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
     int executed = 0;
     std::string line;
     int line_no = 0;
+    std::set<std::string> seen_names;
     while (std::getline(cases, line)) {
         ++line_no;
         if (line.find_first_not_of(" \t\r\n") == std::string::npos) {
@@ -119,8 +121,18 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
                   false);
             continue;
         }
-        const std::string name =
-            rel + "/" + row.value("name", "line-" + std::to_string(line_no));
+        const std::string case_name = row.value("name", "");
+        if (case_name.empty()) {
+            check(rel + ": cases.jsonl line " + std::to_string(line_no) + " has a name", false);
+            continue;
+        }
+        if (!seen_names.insert(case_name).second) {
+            check(rel + ": cases.jsonl line " + std::to_string(line_no) +
+                      " duplicate case name '" + case_name + "'",
+                  false);
+            continue;
+        }
+        const std::string name = rel + "/" + case_name;
 
         const json& request = row.at("request");
         const bool want_trace = request.value("route_trace", false);
