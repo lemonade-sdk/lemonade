@@ -95,6 +95,7 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | `metadata` `equals` — value matches exactly | `l1_conditions_metadata/metadata-equals` |
 | `metadata` `equals` — near-miss value fails (exact, not substring) | `l1_conditions_metadata/metadata-equals-no-match` |
 | `metadata` `equals` — case-sensitive (`DENIED` ≠ `denied`) | `l1_conditions_metadata/metadata-equals-case-sensitive` |
+| `metadata` `equals: ""` — blank value counts as absent, so it can never match | `l1_conditions_metadata/metadata-equals-blank-never-matches` |
 | `metadata` `exists: false` — key absent | `l1_conditions_metadata/metadata-exists-false` |
 | `metadata` `exists: true` — key present ⇒ match | `l1_conditions_metadata/metadata-exists-true` |
 | `metadata` — whitespace-only value counts as absent | `l1_conditions_metadata/metadata-whitespace-counts-absent` |
