@@ -70,6 +70,7 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | `regex` — non-matching input ⇒ no match | `l1_conditions_vocab/regex-no-match` |
 | `regex` — case-sensitive (uppercase input misses lowercase pattern) | `l1_conditions_vocab/regex-case-sensitive-no-match` |
 | `any` — matches if at least one child matches | `l1_conditions_vocab/any-one-child-matches` |
+| `any` — no child matches ⇒ no match | `l1_conditions_vocab/any-no-child-matches` |
 | `all` — matches only if every child matches | `l1_conditions_vocab/all-both-children-match` |
 | `all` — one child fails ⇒ no match | `l1_conditions_vocab/all-one-child-no-match` |
 | `not` — matches when the child does not match | `l1_conditions_vocab/not-child-absent-matches` |
