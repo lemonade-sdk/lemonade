@@ -28,6 +28,7 @@ corpus reads as a checklist against the frozen-v1 semantics table in
   l1_conditions_vocab/        # keyword / regex ops + any / all / not / implicit-all
   l1_outputs/                 # matched rule's nested outputs bag copied verbatim into Decision
   l1_resolution/              # rule-list resolution: first-match-wins, fail-open default
+  l1_trace/                   # route_trace=true: per-leaf trace, accumulation, short-circuit, default
   # l2_semantic/              # stubbed semantic_similarity — to be added
   # l3_classifier/            # stubbed classifier             — to be added
   # l0a_router/               # stubbed llm router + desugaring — to be added
@@ -98,6 +99,22 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 | first-match-wins (earlier rule beats a later match) | `l1_resolution/first-match-wins` |
 | later rule fires when earlier misses | `l1_resolution/later-rule-when-earlier-misses` |
 | fail-open to `default_model` | `l1_resolution/fail-open-to-default` |
+| `route_trace` unset ⇒ Decision carries no `trace` | `l1_trace/trace-omitted-when-not-requested` |
+| `route_trace: true` ⇒ one trace entry per evaluated leaf; `any` short-circuits on first true | `l1_trace/trace-any-short-circuits-on-first-true` |
+| trace accumulates across evaluated rules; `not` records the child leaf's raw result | `l1_trace/trace-accumulates-across-missed-rule` |
+| `all` short-circuits on first false; fail-open default still carries the accumulated trace | `l1_trace/trace-all-short-circuits-and-default-carries-trace` |
+| trace emits condition `keywords_any` | `l1_conditions_vocab/keywords_any-trace` |
+| trace emits condition `keywords_all` | `l1_conditions_vocab/keywords_all-trace` |
+| trace emits condition `regex` | `l1_conditions_vocab/regex-trace` |
+| trace emits condition `min_chars` | `l1_conditions_char_bounds/min_chars-trace` |
+| trace emits condition `max_chars` | `l1_conditions_char_bounds/max_chars-trace` |
+| trace emits condition `has_tools` | `l1_conditions_features/has_tools-trace` |
+| trace emits condition `has_images` | `l1_conditions_features/has_images-trace` |
+| trace emits condition `metadata` | `l1_conditions_metadata/metadata-trace` |
+
+The one trace-emitting family not locked above is the classifier band (`classifier:<id>`),
+which is model-backed and non-deterministic — it arrives with the stubbed `l2`/`l3`/`l0a`
+groups below.
 
 Stubbed model-backed semantics (`min_score`/`max_score` band, `semantic_similarity`
 max-cosine, `classifier` label resolution, `llm` router desugaring, `on_error`
