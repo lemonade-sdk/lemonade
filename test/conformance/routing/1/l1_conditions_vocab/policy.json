@@ -33,6 +33,9 @@
         "route_to": "cloud" },
       { "id": "implicit-all-rule",
         "match": { "keywords_any": ["lima"], "max_chars": 1000 },
+        "route_to": "cloud" },
+      { "id": "unicode-keyword-rule",
+        "match": { "keywords_any": ["café"] },
         "route_to": "cloud" }
     ]
   }

@@ -64,6 +64,8 @@ freezes for v1 has exactly one lock, and combinators/resolution are tested once
 |-----------------|------|
 | `keywords_any` — substring match | `l1_conditions_vocab/keywords_any-substring` |
 | `keywords_any` — ASCII case-fold | `l1_conditions_vocab/keywords_any-case-fold` |
+| `keywords_any` — non-ASCII letter matches when case already agrees | `l1_conditions_vocab/keywords_any-non-ascii-match` |
+| `keywords_any` — case-fold is ASCII-only (`É` not folded to `é` ⇒ no match) | `l1_conditions_vocab/keywords_any-non-ascii-no-case-fold` |
 | `keywords_all` — all tokens present | `l1_conditions_vocab/keywords_all-both-present` |
 | `keywords_all` — one token missing ⇒ no match | `l1_conditions_vocab/keywords_all-one-missing-no-match` |
 | `regex` — ECMAScript dialect | `l1_conditions_vocab/regex-ecmascript` |
