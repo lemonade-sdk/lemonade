@@ -155,6 +155,7 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
         if (!ok) {
             std::printf("  expected: %s\n", expected.dump().c_str());
             std::printf("  produced: %s\n", produced.dump().c_str());
+            std::printf("  diff:     %s\n", json::diff(expected, produced).dump().c_str());
         }
         ++executed;
     }
