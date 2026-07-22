@@ -53,22 +53,60 @@ static json load_json_file(const fs::path& path) {
     return json::parse(ss.str());
 }
 
+static bool is_debug_name(const fs::path& dir) {
+    return dir.filename().generic_string().rfind("_debug", 0) == 0;
+}
+
+static std::vector<fs::path> list_subdirs(const fs::path& dir, std::error_code& ec) {
+    std::vector<fs::path> subdirs;
+    for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
+         !ec && it != end; it.increment(ec)) {
+        if (it->is_directory()) subdirs.push_back(it->path());
+    }
+    std::sort(subdirs.begin(), subdirs.end());
+    return subdirs;
+}
+
+// Corpus layout is exactly routing/<version>/<case>/{policy.json,cases.jsonl}. A case
+// dir missing either file is a hard failure (silent coverage loss otherwise), except
+// under a _debug version or case dir, where it degrades to a warning.
 static std::vector<fs::path> find_case_dirs(const fs::path& root) {
     std::vector<fs::path> dirs;
     std::error_code ec;
-    auto it = fs::recursive_directory_iterator(
-        root, fs::directory_options::skip_permission_denied, ec);
+    const std::vector<fs::path> versions = list_subdirs(root, ec);
     if (ec) {
-        std::printf("[FAIL] cannot walk %s: %s\n", root.string().c_str(),
-                    ec.message().c_str());
+        std::printf("[FAIL] cannot walk %s: %s\n", root.string().c_str(), ec.message().c_str());
         return dirs;
     }
-    for (const auto& entry : it) {
-        if (entry.is_regular_file() && entry.path().filename() == "cases.jsonl") {
-            dirs.push_back(entry.path().parent_path());
+    for (const auto& version : versions) {
+        const bool version_debug = is_debug_name(version);
+        std::error_code vec;
+        const std::vector<fs::path> case_dirs = list_subdirs(version, vec);
+        if (vec) {
+            std::printf("[FAIL] cannot walk %s: %s\n", version.string().c_str(),
+                        vec.message().c_str());
+            continue;
+        }
+        for (const auto& case_dir : case_dirs) {
+            std::error_code fec;
+            const bool has_policy = fs::exists(case_dir / "policy.json", fec);
+            const bool has_cases = fs::exists(case_dir / "cases.jsonl", fec);
+            if (has_policy && has_cases) {
+                dirs.push_back(case_dir);
+                continue;
+            }
+            const std::string rel = fs::relative(case_dir, root).generic_string();
+            const std::string missing = (!has_policy && !has_cases)
+                                            ? "policy.json and cases.jsonl"
+                                            : (!has_policy ? "policy.json" : "cases.jsonl");
+            if (version_debug || is_debug_name(case_dir)) {
+                std::printf("[WARN] %s: missing %s (ignored: _debug)\n", rel.c_str(),
+                            missing.c_str());
+            } else {
+                check(rel + ": has policy.json + cases.jsonl", false);
+            }
         }
     }
-    std::sort(dirs.begin(), dirs.end());
     return dirs;
 }
 
