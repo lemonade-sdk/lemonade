@@ -184,9 +184,10 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
             std::printf("  %s\n", e.what());
             continue;
         }
-        if (!row.is_object() || !row.contains("request") || !row.contains("decision")) {
+        if (!row.is_object() || !row.contains("request") || !row.contains("decision") ||
+            !row["request"].is_object() || !row["decision"].is_object()) {
             check(rel + ": cases.jsonl line " + std::to_string(line_no) +
-                      " has request+decision",
+                      " has object request+decision",
                   false);
             continue;
         }
