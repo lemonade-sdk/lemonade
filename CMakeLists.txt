@@ -1529,10 +1529,6 @@ if(UNIX AND NOT APPLE)
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
     set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends including llama.cpp, FastFlowLM, and RyzenAI.")
 
-    # Backends such as llama-server are OpenMP-linked and require libgomp1 at
-    # runtime. It's not always present on minimal Debian/Ubuntu installs.
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libgomp1")
-
     # Only install our executables (not curl/development files)
     install(TARGETS ${EXECUTABLE_NAME}
         RUNTIME DESTINATION bin
