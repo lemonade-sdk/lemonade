@@ -3512,23 +3512,92 @@ class EndpointTests(ServerTestBase):
         self.assertIn("error", response.json())
         print("[OK] /routing/validate rejected a malformed policy with 400")
 
-    def test_021zm_routing_validate_unimplemented_classifier_returns_400(self):
-        """An 'llm' router policy (not yet implemented by the engine) is
-        surfaced as a clean 400, not a 500 or crash."""
+    def test_021zv_routing_validate_undeclared_component_returns_400(self):
+        """/routing/validate only relaxes live-registry resolution (an
+        identity resolve_component), not internal consistency — a candidate,
+        default_model, rule route_to, or classifier model that isn't listed
+        in collection.components is rejected with a 400, same as the normal
+        collection-registration path would reject it."""
+        policy_undeclared_candidate = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],  # "vllm.qwen3-32b" is not declared
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "code-to-big",
+                        "match": {"keywords_any": ["def "]},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy_undeclared_candidate, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("vllm.qwen3-32b", response.json()["error"])
+
+        policy_undeclared_classifier_model = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "classifiers": [
+                    {
+                        "id": "pii",
+                        "type": "classifier",
+                        # not listed in collection.components
+                        "model": "undeclared-classifier-model",
+                        "labels": ["safe", "unsafe"],
+                    }
+                ],
+                "rules": [
+                    {
+                        "id": "flag-to-big",
+                        "match": {"classifier": "pii", "label": "unsafe"},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy_undeclared_classifier_model, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("undeclared-classifier-model", response.json()["error"])
+        print("[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400")
+
+    def test_021zm_routing_validate_llm_router_fails_open_returns_200(self):
+        """The 'llm' router type is fully implemented: the parser desugars
+        routing.router into one llm classifier plus an identity rule per
+        candidate (__route_0, __route_1, ...), and the engine runs that live.
+        If the router's own model can't run, the classifier fails and its
+        identity rules simply don't match, so the engine fails open to
+        default_model like any other rule miss — this returns 200 with a
+        decision, never a 400."""
         policy = {
             "version": "1",
             "recipe": "collection.router",
             "components": [
-                "Qwen3-1.7B-GGUF",
                 "Qwen3-8B-GGUF",
                 "Qwen3.5-35B-A3B-GGUF",
+                "nonexistent-router-model-021zm",
             ],
             "routing": {
                 "candidates": ["Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"],
                 "default_model": "Qwen3-8B-GGUF",
                 "router": {
                     "type": "llm",
-                    "model": "Qwen3-1.7B-GGUF",
+                    "model": "nonexistent-router-model-021zm",
                     "prompt": "Reply with ONLY a model name.",
                 },
             },
@@ -3538,9 +3607,25 @@ class EndpointTests(ServerTestBase):
             json={"policy": policy, "prompt": "hello"},
             timeout=TIMEOUT_DEFAULT,
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("error", response.json())
-        print("[OK] /routing/validate rejected an unimplemented classifier type with 400")
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        decision = body["decision"]
+        self.assertTrue(decision["default_used"])
+        self.assertEqual(decision["route_to"], "Qwen3-8B-GGUF")
+
+        # The as-authored policy has routing.router and no routing.rules, so a
+        # client can't resolve a synthesized matched_rule id (e.g. __route_0)
+        # against it. normalized_policy is what the engine actually ran.
+        normalized_routing = body["normalized_policy"]["routing"]
+        self.assertNotIn("router", normalized_routing)
+        self.assertEqual(len(normalized_routing["classifiers"]), 1)
+        self.assertEqual(normalized_routing["classifiers"][0]["id"], "__router")
+        self.assertEqual(normalized_routing["classifiers"][0]["type"], "llm")
+        self.assertEqual(
+            [rule["id"] for rule in normalized_routing["rules"]],
+            ["__route_0", "__route_1"],
+        )
+        print("[OK] /routing/validate ran an llm router live and failed open to the default model")
 
     def test_021zn_routing_validate_has_images_flag(self):
         """The has_images request flag flows through to a has_images match

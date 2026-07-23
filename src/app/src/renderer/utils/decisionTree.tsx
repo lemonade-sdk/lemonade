@@ -77,12 +77,21 @@ export const summarizeMatchExpr = (expr: unknown): string => {
     return parts.join(', ');
   }
 
-  const [key, value] = Object.entries(obj)[0] ?? [undefined, undefined];
-  if (key === undefined) return '(empty)';
-  if (value === undefined) return key;
-  if (Array.isArray(value)) return `${key}: ${value.join(', ')}`;
-  if (typeof value === 'object') return `${key}: ${JSON.stringify(value)}`;
-  return `${key}: ${value}`;
+  // A leaf may carry more than one deterministic condition (e.g.
+  // `{"min_chars": 4000, "has_tools": true}`), which the engine compiles as
+  // an implicit `all` — every key must hold for the leaf to match. Render
+  // every entry, not just the first, joined with an explicit AND so the tree/
+  // tooltip/accessible label don't silently drop conditions that co-decide
+  // the match.
+  const entries = Object.entries(obj);
+  if (entries.length === 0) return '(empty)';
+  const formatEntry = ([key, value]: [string, unknown]): string => {
+    if (value === undefined) return key;
+    if (Array.isArray(value)) return `${key}: ${value.join(', ')}`;
+    if (typeof value === 'object') return `${key}: ${JSON.stringify(value)}`;
+    return `${key}: ${value}`;
+  };
+  return entries.map(formatEntry).join(' AND ');
 };
 
 /** The request inputs that determined a decision — carried alongside the
@@ -266,7 +275,7 @@ export const renderDecisionTree = (
           x1={MARGIN + RULE_BOX_WIDTH} y1={y + RULE_BOX_HEIGHT / 2}
           x2={candX} y2={candY + CANDIDATE_BOX_HEIGHT / 2}
           stroke={matchColor} strokeWidth={matchOccurred ? 2.5 : 1.5}
-          markerEnd={matchOccurred ? 'url(#prompt-debugger-arrow-red)' : 'url(#prompt-debugger-arrow-gray)'}
+          markerEnd={matchOccurred ? 'url(#decision-tree-arrow-red)' : 'url(#decision-tree-arrow-gray)'}
         />
         <rect
           x={candX} y={candY} width={CANDIDATE_BOX_WIDTH} height={CANDIDATE_BOX_HEIGHT} rx={5}
@@ -288,7 +297,7 @@ export const renderDecisionTree = (
           x1={MARGIN + RULE_BOX_WIDTH / 2} y1={y + RULE_BOX_HEIGHT}
           x2={MARGIN + RULE_BOX_WIDTH / 2} y2={nextY}
           stroke={noMatchColor} strokeWidth={noMatchIsSelected ? 2.5 : 1.5}
-          markerEnd={noMatchIsSelected ? 'url(#prompt-debugger-arrow-red)' : 'url(#prompt-debugger-arrow-gray)'}
+          markerEnd={noMatchIsSelected ? 'url(#decision-tree-arrow-red)' : 'url(#decision-tree-arrow-gray)'}
         />
         <text
           x={MARGIN + RULE_BOX_WIDTH / 2 + 6} y={y + RULE_BOX_HEIGHT + ROW_GAP / 2 + 3}
@@ -344,10 +353,10 @@ export const renderDecisionTree = (
     >
       <title>{decisionSummary}</title>
       <defs>
-        <marker id="prompt-debugger-arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="decision-tree-arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="var(--border-6)" />
         </marker>
-        <marker id="prompt-debugger-arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker id="decision-tree-arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="var(--toast-error-text)" />
         </marker>
       </defs>

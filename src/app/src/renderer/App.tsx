@@ -73,7 +73,7 @@ const AppContent: React.FC = () => {
   const [routerCollectionModal, setRouterCollectionModal] = useState<{ mode: 'create' | 'edit'; collectionId?: string } | null>(null);
   const importRouterFileRef = useRef<HTMLInputElement>(null);
   const { modelsData, selectedModel, setSelectedModel, setUserHasSelectedModel, refresh: refreshModels } = useModels();
-  const { toasts, removeToast, showError, showSuccess, showInfo } = useToast();
+  const { toasts, removeToast, showError, showSuccess, showWarning, showInfo } = useToast();
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -95,7 +95,7 @@ const AppContent: React.FC = () => {
             setIsChatVisible(settings.layout.isChatVisible ?? DEFAULT_LAYOUT_SETTINGS.isChatVisible);
             setIsModelManagerVisible(settings.layout.isModelManagerVisible ?? DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
             const savedView = settings.layout.leftPanelView;
-            if (savedView === 'models' || savedView === 'marketplace' || savedView === 'backends' || savedView === 'prompt-debugger' || savedView === 'settings') {
+            if (savedView === 'models' || savedView === 'marketplace' || savedView === 'backends' || savedView === 'settings') {
               setLeftPanelView(savedView);
             }
             setIsLogsVisible(settings.layout.isLogsVisible ?? DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
@@ -629,15 +629,6 @@ const AppContent: React.FC = () => {
         onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
         isDownloadManagerVisible={isDownloadManagerVisible}
         onToggleDownloadManager={handleToggleDownloadManager}
-        isPromptDebuggerActive={isModelManagerVisible && leftPanelView === 'prompt-debugger'}
-        onOpenPromptDebugger={() => {
-          if (leftPanelView === 'prompt-debugger' && isModelManagerVisible) {
-            setIsModelManagerVisible(false);
-          } else {
-            setLeftPanelView('prompt-debugger');
-            setIsModelManagerVisible(true);
-          }
-        }}
       />
       <DownloadManager
         isVisible={isDownloadManagerVisible}
@@ -725,6 +716,9 @@ const AppContent: React.FC = () => {
               onClose={() => setRouterCollectionModal(null)}
               onSave={handleSaveRouterCollection}
               onExport={handleExportRouterCollection}
+              showError={showError}
+              showSuccess={showSuccess}
+              showWarning={showWarning}
             />
           </div>
         </div>,

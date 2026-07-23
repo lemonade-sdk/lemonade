@@ -49,8 +49,17 @@ const std::set<std::string>& routing_metadata_match_keys();
 
 // Parse a full collection.router document into engine-ready policy state.
 // Throws std::invalid_argument with a user-facing message on validation errors.
+//
+// When `out_normalized_routing` is non-null, it receives the core-form
+// `routing` object actually parsed downstream — i.e. with `router` desugared
+// into `classifiers` + `rules` when that sugar was used, or the
+// as-authored `routing` object unchanged otherwise. Callers that need to show
+// a caller-facing representation of what actually ran (e.g. matching a
+// synthesized `__route_N` rule id back to a rule) can use this instead of the
+// raw input, which may still contain `routing.router` and no `routing.rules`.
 RoutePolicy parse_route_policy_collection(
     const json& collection_json,
-    const RoutingPolicyParseOptions& options = RoutingPolicyParseOptions{});
+    const RoutingPolicyParseOptions& options = RoutingPolicyParseOptions{},
+    json* out_normalized_routing = nullptr);
 
 } // namespace lemon

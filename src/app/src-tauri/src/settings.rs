@@ -52,7 +52,7 @@ fn default_left_panel_view() -> String {
 }
 
 fn is_valid_left_panel_view(v: &str) -> bool {
-    matches!(v, "models" | "marketplace" | "backends" | "settings" | "prompt-debugger")
+    matches!(v, "models" | "marketplace" | "backends" | "settings")
 }
 
 fn default_tts() -> TtsSettings {
@@ -513,12 +513,15 @@ mod tests {
     }
 
     #[test]
-    fn left_panel_view_accepts_prompt_debugger() {
+    fn left_panel_view_rejects_removed_prompt_debugger_value() {
+        // Prompt Debugger was removed as a standalone view (folded into the
+        // Router Builder's Test Prompt tab instead) - a stale settings file
+        // still naming it must fall back to the default, not crash or persist it.
         let incoming = json!({
             "layout": { "leftPanelView": "prompt-debugger" }
         });
         let sanitized = sanitize_app_settings(&incoming);
-        assert_eq!(sanitized.layout.left_panel_view, "prompt-debugger", "accepted prompt-debugger");
+        assert_eq!(sanitized.layout.left_panel_view, "models", "prompt-debugger view no longer exists");
     }
 
     #[test]

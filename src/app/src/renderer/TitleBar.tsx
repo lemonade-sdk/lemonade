@@ -15,8 +15,6 @@ interface TitleBarProps {
   onToggleLogs: () => void;
   isDownloadManagerVisible: boolean;
   onToggleDownloadManager: () => void;
-  isPromptDebuggerActive: boolean;
-  onOpenPromptDebugger: () => void;
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({
@@ -29,9 +27,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
   isLogsVisible,
   onToggleLogs,
   isDownloadManagerVisible,
-  onToggleDownloadManager,
-  isPromptDebuggerActive,
-  onOpenPromptDebugger
+  onToggleDownloadManager
 }) => {
   const [activeMenu, setActiveMenu] = useState<MenuType>(null);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
@@ -214,9 +210,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
                   <div className="menu-option" onClick={() => { onToggleLogs(); setActiveMenu(null); }}>
                     <span>{isLogsVisible ? '✓ ' : ''}Logs</span>
                     <span className="menu-shortcut">Ctrl+Shift+L</span>
-                  </div>
-                  <div className="menu-option" onClick={() => { onOpenPromptDebugger(); setActiveMenu(null); }}>
-                    <span>{isPromptDebuggerActive ? '✓ ' : ''}Routing: Prompt Debugger</span>
                   </div>
                   <div className="menu-option has-submenu">
                     <span>Theme</span>

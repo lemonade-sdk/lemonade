@@ -1154,8 +1154,8 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
 
     // Runs a routing policy engine against an ad-hoc policy JSON + prompt
-    // (Prompt Debugger UI), without requiring the policy to be attached to a
-    // registered model.
+    // (the Router Builder's Test Prompt tab), without requiring the policy to
+    // be attached to a registered model.
     register_post("routing/validate", [this](const httplib::Request& req, httplib::Response& res) {
         handle_routing_validate(req, res);
     });
@@ -2822,13 +2822,19 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
     try {
         // Ad-hoc validation: the policy isn't attached to a registered model,
         // so accept any candidate/component name as-is rather than requiring
-        // it to resolve against the model registry.
+        // it to resolve against the live model registry. This identity
+        // resolver is the only relaxation from the normal registration path —
+        // require_declared_components stays at its default (true) so the
+        // document must still be internally consistent (every candidate,
+        // default_model, rule route_to, and classifier model must be listed
+        // in collection.components), matching what registration would accept.
         RoutingPolicyParseOptions options;
-        options.require_declared_components = false;
         options.resolve_component = [](const std::string& name) -> std::optional<std::string> {
             return name;
         };
-        RoutePolicy policy = parse_route_policy_collection(request_json["policy"], options);
+        nlohmann::json normalized_routing;
+        RoutePolicy policy = parse_route_policy_collection(
+            request_json["policy"], options, &normalized_routing);
 
         ClassifierServices services = make_router_classifier_services(
             *router_, [this](const std::string& m) { auto_load_model_if_needed(m); });
@@ -2842,7 +2848,19 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
         ctx.metadata = std::move(metadata);
 
         Decision decision = engine.route(ctx, /*want_trace=*/true);
-        nlohmann::json response = {{"decision", route_decision_to_json(decision)}};
+
+        // Echo back the policy actually evaluated (`routing.router` desugared
+        // into explicit `classifiers`/`rules`, e.g. `__route_0`) so a caller
+        // can match `decision.matched_rule` against a rule that exists —
+        // the as-authored policy may only have `routing.router` and no
+        // `routing.rules` at all.
+        nlohmann::json normalized_policy = request_json["policy"];
+        normalized_policy["routing"] = std::move(normalized_routing);
+
+        nlohmann::json response = {
+            {"decision", route_decision_to_json(decision)},
+            {"normalized_policy", std::move(normalized_policy)},
+        };
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
         res.status = 400;

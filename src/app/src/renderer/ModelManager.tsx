@@ -17,7 +17,6 @@ import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
-import PromptDebuggerPanel from './PromptDebuggerPanel';
 import { COLLECTION_ROUTER_MODEL_RECIPE, RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon, PinIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
@@ -380,7 +379,7 @@ interface ModelJSON {
   image_defaults?: []
 }
 
-export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings' | 'prompt-debugger';
+export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
 
 
 const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange }) => {
@@ -1850,9 +1849,7 @@ const [searchQuery, setSearchQuery] = useState('');
       ? 'Backend Manager'
       : currentView === 'marketplace'
         ? 'Marketplace'
-        : currentView === 'prompt-debugger'
-          ? 'Prompt Debugger'
-          : 'Settings';
+        : 'Settings';
 
   const searchPlaceholder = currentView === 'models'
     ? 'Search models...'
@@ -1862,7 +1859,6 @@ const [searchQuery, setSearchQuery] = useState('');
         ? 'Filter marketplace...'
         : 'Filter settings...';
   const showInlineFilterButton = currentView === 'models' || currentView === 'marketplace';
-  const showSearchBox = currentView !== 'prompt-debugger';
 
   const getModelStatus = (modelName: string) => {
     const info = modelsData[modelName];
@@ -2303,7 +2299,7 @@ const [searchQuery, setSearchQuery] = useState('');
             <div className="left-panel-header-top">
               <h3>{viewTitle}</h3>
             </div>
-            {showSearchBox && <div ref={filterAnchorRef} className={`model-search ${showInlineFilterButton ? 'with-inline-filter' : ''}`}>
+            <div ref={filterAnchorRef} className={`model-search ${showInlineFilterButton ? 'with-inline-filter' : ''}`}>
               <input
                 type="text"
                 className="model-search-input"
@@ -2387,7 +2383,7 @@ const [searchQuery, setSearchQuery] = useState('');
                   </label>
                 </div>
               )}
-            </div>}
+            </div>
           </div>
 
           {currentView === 'models' && (
@@ -2656,9 +2652,6 @@ const [searchQuery, setSearchQuery] = useState('');
                 showSuccess={showSuccess}
                 showWarning={showWarning}
               />
-            )}
-            {currentView === 'prompt-debugger' && (
-              <PromptDebuggerPanel showError={showError} showSuccess={showSuccess} showWarning={showWarning} />
             )}
             {currentView === 'settings' && <SettingsPanel isVisible={true} searchQuery={searchQuery} />}
           </div>

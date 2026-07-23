@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { XIcon } from './components/Icons';
-import { serverFetch } from './utils/serverConfig';
-import { adjustTextareaHeight } from './utils/textareaUtils';
+import { createPortal } from 'react-dom';
+import { XIcon } from './Icons';
+import { serverFetch } from '../utils/serverConfig';
+import { adjustTextareaHeight } from '../utils/textareaUtils';
 import {
   DecisionResult,
   RoutingPolicyDoc,
@@ -10,9 +11,17 @@ import {
   findMatchedRuleIndex,
   formatTraceEntry,
   renderDecisionTree,
-} from './utils/decisionTree';
+} from '../utils/decisionTree';
 
-interface PromptDebuggerPanelProps {
+interface RouterTestPromptPanelProps {
+  /** The live policy built from the in-progress Router Builder draft, or
+   * null when the draft isn't yet complete enough to build one - see
+   * policyUnavailableReason for why. */
+  policy: RoutingPolicyDoc | null;
+  policyUnavailableReason: string | null;
+  /** Used to label the policy in trace/tree exports - there's no uploaded
+   * filename here, since the policy comes from the live draft. */
+  routerName: string;
   showError: (message: string) => void;
   showSuccess: (message: string) => void;
   showWarning: (message: string) => void;
@@ -20,8 +29,8 @@ interface PromptDebuggerPanelProps {
 
 /** A decision bundled with the exact request inputs that produced it, so the
  * decision tree and trace export never drift from the request they describe
- * even if the user edits the prompt/policy/flags/metadata again before the
- * response lands. */
+ * even if the user edits the prompt/flags/metadata again before the response
+ * lands. */
 interface ValidationResult extends TraceRequestInputs {
   decision: DecisionResult;
   policy: RoutingPolicyDoc;
@@ -52,10 +61,10 @@ function parseMetadataText(text: string): { metadata: Record<string, string>; er
   return { metadata, error: null };
 }
 
-const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, showSuccess, showWarning }) => {
+const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
+  policy, policyUnavailableReason, routerName, showError, showSuccess, showWarning,
+}) => {
   const [prompt, setPrompt] = useState('');
-  const [policyJson, setPolicyJson] = useState<RoutingPolicyDoc | null>(null);
-  const [policyFilename, setPolicyFilename] = useState<string | null>(null);
   const [imageFilename, setImageFilename] = useState<string | null>(null);
   const [imageThumbnailUrl, setImageThumbnailUrl] = useState<string | null>(null);
   const [hasImages, setHasImages] = useState(false);
@@ -67,13 +76,11 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
   const [result, setResult] = useState<ValidationResult | null>(null);
   const [showTreeModal, setShowTreeModal] = useState(false);
 
-  const policyInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const imageThumbnailUrlRef = useRef<string | null>(null);
   imageThumbnailUrlRef.current = imageThumbnailUrl;
-  // Bumped on every submit (and whenever the policy is swapped/cleared) so a
-  // response that arrives after being superseded is dropped instead of
-  // resurrecting a stale result.
+  // Bumped on every submit so a response that arrives after being superseded
+  // is dropped instead of resurrecting a stale result.
   const latestRequestIdRef = useRef(0);
 
   useEffect(() => {
@@ -99,34 +106,6 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [showTreeModal]);
-
-  const handlePolicyFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const json = JSON.parse(ev.target?.result as string);
-        setPolicyJson(json);
-        setPolicyFilename(file.name);
-        setValidationError(null);
-        latestRequestIdRef.current++;
-        setResult(null);
-      } catch {
-        showError(`"${file.name}" is not valid JSON.`);
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const clearPolicy = () => {
-    setPolicyJson(null);
-    setPolicyFilename(null);
-    latestRequestIdRef.current++;
-    setResult(null);
-    setValidationError(null);
-  };
 
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -157,13 +136,12 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
   };
 
   const handleValidate = async () => {
-    if (!policyJson) return;
+    if (!policy) return;
     const requestId = ++latestRequestIdRef.current;
     const submittedPrompt = prompt;
-    const submittedPolicy = policyJson;
+    const submittedPolicy = policy;
     const submittedHasImages = hasImages;
     const submittedHasTools = hasTools;
-    const submittedPolicyFilename = policyFilename;
     setIsValidating(true);
     setValidationError(null);
     try {
@@ -187,14 +165,20 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
         return;
       }
       const newDecision = data.decision as DecisionResult;
+      // The submitted policy may only have routing.router (no routing.rules),
+      // so decision.matched_rule (a synthesized __route_N id) can't be
+      // resolved against it. normalized_policy is what the server actually
+      // evaluated — prefer it, falling back for an older server that
+      // predates this field.
+      const evaluatedPolicy = (data.normalized_policy as RoutingPolicyDoc | undefined) ?? submittedPolicy;
       setResult({
         decision: newDecision,
-        policy: submittedPolicy,
+        policy: evaluatedPolicy,
         prompt: submittedPrompt,
         hasImages: submittedHasImages,
         hasTools: submittedHasTools,
         metadata,
-        policyFilename: submittedPolicyFilename,
+        policyFilename: routerName,
       });
       showSuccess(
         newDecision.default_used
@@ -211,47 +195,18 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
   };
 
   return (
-    <div className="prompt-debugger-panel">
+    <div className="router-test-prompt-panel">
       <div className="form-section">
         <label className="form-label">Prompt</label>
         <textarea
-          className="form-input prompt-debugger-textarea"
-          placeholder="Enter a prompt to test against the routing policy..."
+          className="form-input router-test-prompt-textarea"
+          placeholder="Enter a prompt to test against the router..."
           value={prompt}
           onChange={(e) => {
             setPrompt(e.target.value);
             adjustTextareaHeight(e.target);
           }}
         />
-      </div>
-
-      <div className="form-section">
-        <label className="form-label">Routing Policy</label>
-        <input
-          ref={policyInputRef}
-          type="file"
-          accept=".json"
-          style={{ display: 'none' }}
-          onChange={handlePolicyFileChange}
-        />
-        <div className="prompt-debugger-file-row">
-          <button className="settings-reset-button" onClick={() => policyInputRef.current?.click()}>
-            Select routing policy JSON
-          </button>
-          {policyFilename && (
-            <span className="prompt-debugger-file-name" title={policyFilename}>
-              {policyFilename}
-              <button
-                className="prompt-debugger-clear-btn"
-                onClick={clearPolicy}
-                title="Clear selected policy"
-                aria-label="Clear selected policy"
-              >
-                <XIcon size={11} strokeWidth={2} />
-              </button>
-            </span>
-          )}
-        </div>
       </div>
 
       <div className="form-section">
@@ -263,18 +218,18 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
           style={{ display: 'none' }}
           onChange={handleImageFileChange}
         />
-        <div className="prompt-debugger-file-row">
+        <div className="router-test-prompt-file-row">
           <button className="settings-reset-button" onClick={() => imageInputRef.current?.click()}>
             Select image
           </button>
           {imageFilename && (
-            <span className="prompt-debugger-file-name" title={imageFilename}>
+            <span className="router-test-prompt-file-name" title={imageFilename}>
               {imageThumbnailUrl && (
-                <img className="prompt-debugger-thumbnail" src={imageThumbnailUrl} alt="" />
+                <img className="router-test-prompt-thumbnail" src={imageThumbnailUrl} alt="" />
               )}
               {imageFilename}
               <button
-                className="prompt-debugger-clear-btn"
+                className="router-test-prompt-clear-btn"
                 onClick={clearImage}
                 title="Clear selected image"
                 aria-label="Clear selected image"
@@ -309,7 +264,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
       <div className="form-section">
         <label className="form-label">Metadata (optional)</label>
         <textarea
-          className="form-input prompt-debugger-textarea"
+          className="form-input router-test-prompt-textarea"
           placeholder={'key: value\none-per-line'}
           value={metadataText}
           onChange={(e) => {
@@ -320,26 +275,29 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
         <span className="settings-description">
           One key:value pair per line. Sent to the policy as the metadata map.
         </span>
-        {metadataError && <div className="prompt-debugger-error">{metadataError}</div>}
+        {metadataError && <div className="router-test-prompt-error">{metadataError}</div>}
       </div>
 
       <div className="form-section">
+        {policyUnavailableReason && (
+          <div className="router-test-prompt-unavailable">{policyUnavailableReason}</div>
+        )}
         <button
           className="settings-save-button"
-          disabled={!policyJson || isValidating || !!metadataError}
+          disabled={!policy || isValidating || !!metadataError}
           onClick={handleValidate}
         >
-          {isValidating ? 'Validating…' : 'Validate routing policy'}
+          {isValidating ? 'Validating…' : 'Test prompt'}
         </button>
       </div>
 
       {validationError && (
-        <div className="prompt-debugger-error">{validationError}</div>
+        <div className="router-test-prompt-error">{validationError}</div>
       )}
 
       {result && (
-        <div className="prompt-debugger-results">
-          <div className="prompt-debugger-summary">
+        <div className="router-test-prompt-results">
+          <div className="router-test-prompt-summary">
             {result.decision.default_used
               ? <>Routed to <b>{result.decision.route_to}</b> (default fallback — no rule matched)</>
               : <>Routed to <b>{result.decision.route_to}</b> via rule "{result.decision.matched_rule}"</>}
@@ -371,7 +329,7 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
         </div>
       )}
 
-      {showTreeModal && result && (
+      {showTreeModal && result && createPortal(
         <div className="settings-overlay" onMouseDown={() => setShowTreeModal(false)}>
           <div className="settings-modal decision-tree-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="settings-header">
@@ -388,10 +346,11 @@ const PromptDebuggerPanel: React.FC<PromptDebuggerPanelProps> = ({ showError, sh
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
 };
 
-export default PromptDebuggerPanel;
+export default RouterTestPromptPanel;
