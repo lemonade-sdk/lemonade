@@ -4,6 +4,8 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/backends/ryzenaiserver.h"
+#include "lemon/backends/amdgpuserver.h"
+#include "lemon/backends/whisper_amdgpu_server.h"
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/moonshine_server.h"
 #include "lemon/backends/kokoro_server.h"
@@ -333,6 +335,19 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
                                                   log_level == "debug", model_manager_, backend_manager_);
         ryzenai_server->set_model_path(model_path);
         new_server.reset(ryzenai_server);
+    } else if (model_info.recipe == "amdgpu-llm") {
+        LOG(DEBUG, "Router") << "Creating AMDGPU-Server backend" << std::endl;
+
+        std::string model_path = model_info.resolved_path();
+        LOG(DEBUG, "Router") << "Using model path: " << model_path << std::endl;
+
+        auto* amdgpu_server = new AMDGPUServer(model_info.model_name,
+                                               log_level == "debug", model_manager_, backend_manager_);
+        amdgpu_server->set_model_path(model_path);
+        new_server.reset(amdgpu_server);
+    } else if (model_info.recipe == "amdgpu-whisper") {
+        LOG(DEBUG, "Router") << "Creating AMDGPU-Whisper backend" << std::endl;
+        new_server = std::make_unique<backends::WhisperAMDGPUServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "vllm") {
         LOG(DEBUG, "Router") << "Creating vLLM backend" << std::endl;
         new_server = std::make_unique<backends::VLLMServer>(log_level, model_manager_, backend_manager_);

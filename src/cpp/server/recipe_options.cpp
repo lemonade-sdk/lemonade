@@ -80,6 +80,10 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         return {"ctx_size", "merge_args"};
     } else if (recipe == "ryzenai-llm") {
         keys = {"ctx_size"};
+    } else if (recipe == "amdgpu-llm") {
+        keys = {"ctx_size"};
+    } else if (recipe == "amdgpu-whisper") {
+        keys = {"merge_args"};
     } else if (recipe == "sd-cpp") {
         keys = {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift", "merge_args"};
     } else if (recipe == "vllm") {

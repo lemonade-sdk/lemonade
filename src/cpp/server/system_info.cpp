@@ -513,6 +513,16 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_npu", {"XDNA2"}},
     }},
 
+    // AMD GPU LLM - Windows GPU (OGA + hipep/AMDGPU EP)
+    {"amdgpu-llm", "gpu", {"windows"}, {
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152"}},
+    }},
+
+    // AMD GPU Whisper - Windows GPU transcription (ORT + AMDGPU EP, Python)
+    {"amdgpu-whisper", "gpu", {"windows"}, {
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152"}},
+    }},
+
     // vLLM - ROCm backend for AMD GPUs (Linux only)
     {"vllm", "rocm", {"linux"}, {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},

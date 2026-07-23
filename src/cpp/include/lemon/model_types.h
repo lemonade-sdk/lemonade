@@ -144,6 +144,10 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
         return DEVICE_GPU;
+    } else if (recipe == "amdgpu-llm") {
+        return DEVICE_GPU;
+    } else if (recipe == "amdgpu-whisper") {
+        return DEVICE_GPU;
     } else if (recipe == "ryzenai-llm") {
         return DEVICE_NPU;
     } else if (recipe == "flm") {

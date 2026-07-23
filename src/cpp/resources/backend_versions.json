@@ -82,6 +82,12 @@
   "ryzenai-llm": {
     "npu": "v1.7.0"
   },
+  "amdgpu-llm": {
+    "gpu": "v0.2.0"
+  },
+  "amdgpu-whisper": {
+    "gpu": "v0.2.0"
+  },
   "flm": {
     "npu": "v0.9.43"
   },

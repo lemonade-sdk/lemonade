@@ -611,6 +611,8 @@ set(SOURCES_CORE
     src/cpp/server/backends/llamacpp_server.cpp
     src/cpp/server/backends/fastflowlm_server.cpp
     src/cpp/server/backends/ryzenaiserver.cpp
+    src/cpp/server/backends/amdgpuserver.cpp
+    src/cpp/server/backends/whisper_amdgpu_server.cpp
     src/cpp/server/backends/whisper_server.cpp
     src/cpp/server/backends/moonshine_server.cpp
     src/cpp/server/backends/kokoro_server.cpp

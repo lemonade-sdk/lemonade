@@ -4149,8 +4149,8 @@ void Server::resolve_and_register_local_model(
     std::string resolved_checkpoint;
     std::string resolved_mmproj;
 
-    // For RyzenAI LLM models, find genai_config.json
-    if (recipe == "ryzenai-llm") {
+    // For RyzenAI LLM and AMD GPU LLM models, find genai_config.json
+    if (recipe == "ryzenai-llm" || recipe == "amdgpu-llm") {
         for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
             if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
                 resolved_checkpoint = entry.path().parent_path().string();

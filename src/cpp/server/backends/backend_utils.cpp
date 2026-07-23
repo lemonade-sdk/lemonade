@@ -7,6 +7,8 @@
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/ryzenaiserver.h"
+#include "lemon/backends/amdgpuserver.h"
+#include "lemon/backends/whisper_amdgpu_server.h"
 #include "lemon/backends/vllm_server.h"
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/backends/moonshine_server.h"
@@ -46,6 +48,8 @@ namespace lemon::backends {
         if (recipe == "sd-cpp") return &SDServer::SPEC;
         if (recipe == "kokoro") return &KokoroServer::SPEC;
         if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
+        if (recipe == "amdgpu-llm") return &::lemon::AMDGPUServer::SPEC;
+        if (recipe == "amdgpu-whisper") return &WhisperAMDGPUServer::SPEC;
         if (recipe == "vllm") return &VLLMServer::SPEC;
         if (recipe == "flm") return &FastFlowLMServer::SPEC;
         if (recipe == "moonshine") return &MoonshineServer::SPEC;
