@@ -159,7 +159,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     </tr>
     <tr>
       <td><code>rocm</code></td>
-      <td>Supported AMD ROCm iGPU/dGPU families, incl. AMD Instinct MI300X (gfx942)*</td>
+      <td>Supported AMD ROCm iGPU/dGPU families, incl. AMD Instinct MI300X (gfx942) and MI350X (gfx950, Linux + stable only)*</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
@@ -323,6 +323,23 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Vulkan-capable GPUs</td>
       <td>Windows, Linux</td>
     </tr>
+    <tr>
+      <td rowspan="3"><strong>Text classification</strong></td>
+      <td rowspan="3"><code>onnxruntime</code> (experimental)</td>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code> CPU</td>
+      <td>Windows</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code>/<code>arm64</code> CPU</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>arm64</code> CPU</td>
+      <td>macOS</td>
+    </tr>
   </tbody>
 </table>
 <!-- END GENERATED: backends-matrix -->
@@ -413,7 +430,7 @@ lemonade backends
 
 Lemonade's roadmap is defined by a set of working groups. Visit the landing page [here](./docs/dev/working-groups/README.md) to learn each group's goal and roadmap.
 
-## Integrate Embeddable Lemonade in You Application
+## Integrate Embeddable Lemonade in Your Application
 
 Embeddable Lemonade is a binary version of Lemonade that you can bundle into your own app to give it a portable, auto-optimizing, multi-modal local AI stack. This lets users focus on your app, with zero Lemonade installers, branding, or telemetry.
 

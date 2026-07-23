@@ -57,6 +57,15 @@ public:
     virtual std::vector<std::string> supported_audio_formats() const { return {}; }
 };
 
+// Text-classification capability (encoder classifiers: PII, prompt-safety,
+// domain, etc.). Input text -> {label: score}. Serves the router's `classifier`
+// condition type (issue #2592).
+class IClassificationServer : public virtual ICapability {
+public:
+    virtual ~IClassificationServer() = default;
+    virtual json classify(const json& request) = 0;
+};
+
 class IImageServer : public virtual ICapability {
 public:
     virtual ~IImageServer() = default;

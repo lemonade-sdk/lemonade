@@ -41,6 +41,7 @@ public:
     bool telemetry_hide_inputs() const;
     bool telemetry_hide_outputs() const;
     bool telemetry_hide_thinking() const;
+    bool telemetry_trust_incoming_trace_context() const;
     int telemetry_max_queue_capacity() const;
     int telemetry_max_attribute_length() const;
     std::string telemetry_otlp_endpoint() const;

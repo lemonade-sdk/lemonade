@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <httplib.h>
 #include <curl/curl.h>
@@ -18,6 +19,7 @@
 
 using lemon::utils::HttpClient;
 using lemon::utils::HttpSecurityPolicy;
+using lemon::utils::MultipartField;
 
 struct TestResult {
     int passed = 0;
@@ -59,6 +61,12 @@ int main() {
     });
     svr.Get("/to-file", [](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("file:///etc/passwd");
+    });
+    svr.Post("/post-ok", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content("post-ok", "text/plain");
+    });
+    svr.Post("/post-redirect", [](const httplib::Request&, httplib::Response& res) {
+        res.set_redirect("/post-ok");
     });
 
     std::thread server_thread([&svr]() { svr.listen_after_bind(); });
@@ -134,6 +142,129 @@ int main() {
         }
         r.check(rejected, "insecure: redirect to file:// is rejected");
     }
+
+    // Trusted loopback: JSON POST succeeds over plain HTTP.
+    try {
+        auto resp = HttpClient::post(
+            base + "/post-ok",
+            "{}",
+            {},
+            5,
+            HttpSecurityPolicy::TrustedLoopback);
+        r.check(resp.status_code == 200 && resp.body == "post-ok",
+                "loopback: http POST returns 200");
+    } catch (const std::exception& e) {
+        r.check(false, std::string("loopback: http POST returns 200 (threw: ") +
+                           e.what() + ")");
+    }
+
+    // The default policy is external HTTPS-only, so an initial plain HTTP URL
+    // is rejected without requiring callers to opt into the secure behavior.
+    {
+        bool rejected = false;
+        try {
+            HttpClient::post(base + "/post-ok", "{}", {}, 5);
+        } catch (const std::exception&) {
+            rejected = true;
+        }
+        r.check(rejected, "default: initial http:// POST is rejected");
+    }
+
+    // Explicit insecure POST remains supported, but POST redirects remain
+    // disabled exactly as they were before policy enforcement was added.
+    try {
+        auto resp = HttpClient::post(
+            base + "/post-redirect",
+            "{}",
+            {},
+            5,
+            HttpSecurityPolicy::AllowInsecureHttp);
+        r.check(resp.status_code == 302 && resp.body != "post-ok",
+                "insecure: POST redirect is not followed");
+    } catch (const std::exception& e) {
+        r.check(false, std::string("insecure: POST redirect is not followed (threw: ") +
+                           e.what() + ")");
+    }
+
+    // Trusted loopback: multipart POST succeeds over plain HTTP.
+    const std::vector<MultipartField> fields = {
+        {"file", "test", "test.txt", "text/plain"},
+    };
+    try {
+        auto resp = HttpClient::post_multipart(
+            base + "/post-ok",
+            fields,
+            5,
+            HttpSecurityPolicy::TrustedLoopback);
+        r.check(resp.status_code == 200 && resp.body == "post-ok",
+                "loopback: multipart POST returns 200");
+    } catch (const std::exception& e) {
+        r.check(false, std::string("loopback: multipart POST returns 200 (threw: ") +
+                           e.what() + ")");
+    }
+
+    // External policy: multipart POST rejects an initial plain HTTP URL.
+    {
+        bool rejected = false;
+        try {
+            HttpClient::post_multipart(
+                base + "/post-ok",
+                fields,
+                5,
+                HttpSecurityPolicy::ExternalHttpsOnly);
+        } catch (const std::exception&) {
+            rejected = true;
+        }
+        r.check(rejected, "external: initial http:// multipart POST is rejected");
+    }
+
+    // Trusted loopback: streaming POST succeeds over plain HTTP.
+    try {
+        std::string streamed_body;
+        auto resp = HttpClient::post_stream(
+            base + "/post-ok",
+            "{}",
+            [&streamed_body](const char* data, size_t length) {
+                streamed_body.append(data, length);
+                return true;
+            },
+            {},
+            5,
+            nullptr,
+            HttpSecurityPolicy::TrustedLoopback);
+        r.check(resp.status_code == 200 && streamed_body == "post-ok",
+                "loopback: streaming POST returns 200");
+    } catch (const std::exception& e) {
+        r.check(false, std::string("loopback: streaming POST returns 200 (threw: ") +
+                           e.what() + ")");
+    }
+
+    // External policy: streaming POST rejects an initial plain HTTP URL.
+    {
+        bool rejected = false;
+        try {
+            HttpClient::post_stream(
+                base + "/post-ok",
+                "{}",
+                [](const char*, size_t) { return true; },
+                {},
+                5,
+                nullptr,
+                HttpSecurityPolicy::ExternalHttpsOnly);
+        } catch (const std::exception&) {
+            rejected = true;
+        }
+        r.check(rejected, "external: initial http:// streaming POST is rejected");
+    }
+
+    r.check(
+        HttpClient::is_reachable(
+            base + "/ok", 5, HttpSecurityPolicy::TrustedLoopback),
+        "loopback: reachability probe succeeds");
+    r.check(
+        !HttpClient::is_reachable(
+            base + "/ok", 5, HttpSecurityPolicy::ExternalHttpsOnly),
+        "external: http:// reachability probe is rejected");
 
     // Note: An HTTPS→HTTP protocol-downgrade test (client connects to https://
     // and is redirected to http://) is not exercised here. Running a curl

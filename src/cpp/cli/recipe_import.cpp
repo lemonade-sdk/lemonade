@@ -35,7 +35,10 @@ const std::vector<std::string> kKnownKeys = {
     "source",
     "registry_source",
     "size",
-    "system_prompt"
+    "system_prompt",
+    // Router collections carry a root schema version the /pull parser
+    // requires; dropping it would make the exported file un-importable.
+    "version"
 };
 
 bool is_json_recipe_file(const nlohmann::json& entry) {

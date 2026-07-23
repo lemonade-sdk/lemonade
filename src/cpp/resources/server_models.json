@@ -1814,5 +1814,21 @@
             "tool-calling"
         ],
         "size": 62.47
+    },
+    "Bert-Phishing-ONNX": {
+        "checkpoint": "lemonade-sdk/bert-finetuned-phishing-ONNX",
+        "recipe": "onnxruntime",
+        "labels": [
+            "classification"
+        ],
+        "size": 1.34
+    },
+    "Phishing-Email-Detection-ONNX": {
+        "checkpoint": "lemonade-sdk/phishing-email-detection-distilbert-ONNX",
+        "recipe": "onnxruntime",
+        "labels": [
+            "classification"
+        ],
+        "size": 0.27
     }
 }

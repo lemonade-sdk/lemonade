@@ -34,13 +34,13 @@
         }
       },
       "pwilkin/trellis.cpp": {
-        "v0.1.5": {
-          "trellis-vulkan-linux-x64.tar.gz": "sha256:1c6c1137ea0dafd103ffd19f4db17e9b55cf63ed30807262896dc2c8912d29b0",
-          "trellis-vulkan-windows-x64.zip": "sha256:5953c34d325f6a34cf2a7b69e739b3a0ca7a0952d918b73edb251d5054f320ac",
-          "trellis-rocm-linux-x64.tar.gz": "sha256:fcc8abadea186c45ac8403e8cd67567d6ae61ec3db2a09eade9d4865c30c00fc",
-          "trellis-rocm-windows-x64.zip": "sha256:49edd81b826e01827710a5f3ab7550e4bed2812c15e1ac9b4c27407b362585f2",
-          "trellis-cuda-linux-x64.tar.gz": "sha256:4d3bcc732e88cfa0e89448bd46a501a5d352ce1ca08a2839bb5194663f7c1404",
-          "trellis-cuda-windows-x64.zip": "sha256:d1e1cce20892c2f22c185d6f22b042d41f87424adf0a40eda9d1194e87899c98"
+        "v0.4.3": {
+          "trellis-vulkan-linux-x64.tar.gz": "sha256:a614549056da47950d7506d73ba923298a85859024b6a2ca782a0f7c9604f602",
+          "trellis-vulkan-windows-x64.zip": "sha256:a9566a1eed92c3ced893bb6e65b8a6d6d1b3a68c11724b8b1a2d8d6b5a0f8525",
+          "trellis-rocm-linux-x64.tar.gz": "sha256:e8c2fb16cd3ac5e620af1e07a3c002f845c189485dc988b316f469734fbfbc17",
+          "trellis-rocm-windows-x64.zip": "sha256:147e2713b328f342afd959147f6e0b4d2fc87cbcd18a5ef5d28edd9a80233d5a",
+          "trellis-cuda-linux-x64.tar.gz": "sha256:454c161b2179551db5e80786bba16ae81eaf28ab8fdb685d371b30d58769fbaa",
+          "trellis-cuda-windows-x64.zip": "sha256:47b87271f8b644a8e50767f6d58d5baf597e1aa6bb46b809a5e5d5b0ac741b29"
         }
       }
     }
@@ -73,6 +73,7 @@
       "gfx908",
       "gfx90a",
       "gfx942",
+      "gfx950",
       "gfx1100",
       "gfx1101",
       "gfx1102",
@@ -100,6 +101,7 @@
       "gfx908": "gfx90X-dcgpu",
       "gfx90a": "gfx90X-dcgpu",
       "gfx942": "gfx94X-dcgpu",
+      "gfx950": "gfx950-dcgpu",
       "gfx103X": "gfx103X-all",
       "gfx110X": "gfx110X-all",
       "gfx120X": "gfx120X-all",
@@ -135,10 +137,11 @@
     "metal": "b17"
   },
   "vllm": {
-    "comment": "'rocm' is the default (RDNA) pin. 'rocm_arch_overrides' pins per detected asset family (rocm_asset_family output) where AMD's vLLM/ROCm wheel cadence diverges: CDNA-dcgpu (gfx942) shares no release tag with the RDNA line, so it pins its own version. Review each override at release time - feature/fix parity across arch lines lags until bumped.",
+    "comment": "'rocm' is the default (RDNA) pin. 'rocm_arch_overrides' pins per detected asset family (rocm_asset_family output) where AMD's vLLM/ROCm wheel cadence diverges: CDNA-dcgpu (gfx942, gfx950) shares no release tag with the RDNA line, so it pins its own version. gfx950 (CDNA4) rides the same CDNA vLLM/ROCm line as gfx942 (CDNA3). Review each override at release time - feature/fix parity across arch lines lags until bumped.",
     "rocm": "vllm0.20.1-rocm7.12.0",
     "rocm_arch_overrides": {
-      "gfx942": "vllm0.19.1-rocm7.13.0"
+      "gfx942": "vllm0.19.1-rocm7.13.0",
+      "gfx950": "vllm0.19.1-rocm7.13.0"
     }
   },
   "rocm_asset_families": {
@@ -160,6 +163,9 @@
   "moonshine": {
     "cpu": "moonshine0.0.62"
   },
+  "onnxruntime": {
+    "cpu": "0.3.7"
+  },
   "thinksound": {
     "vulkan": "v0.1.2",
     "rocm-stable": "v0.1.2",
@@ -171,9 +177,9 @@
     "cuda": "v0.1.1"
   },
   "trellis": {
-    "vulkan": "v0.1.5",
-    "rocm-stable": "v0.1.5",
-    "cuda": "v0.1.5"
+    "vulkan": "v0.4.3",
+    "rocm-stable": "v0.4.3",
+    "cuda": "v0.4.3"
   },
   "openmoss": {
     "vulkan": "v0.1.3",

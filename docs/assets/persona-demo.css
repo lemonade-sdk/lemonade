@@ -184,7 +184,10 @@ html:not([data-persona="developers"]) [data-cta-persona="developers"] {
    padding-top above separates it from the promise, while its short margin-bottom
    ties it to the buttons it sets up. */
 .hp-cta-lead {
-  max-width: 42rem;
+  /* Cap must fit the line at the largest clamped font size below; too small and a
+     wide viewport (where the font hits its 1.075rem max) wraps while a narrower
+     one — with a smaller font — stays on one line. */
+  max-width: 48rem;
   margin: 0 auto 1.7rem;
   color: var(--text-muted);
   font-family: var(--font-body);
