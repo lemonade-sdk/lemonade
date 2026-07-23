@@ -54,10 +54,10 @@ test('download manager keeps creation order while concurrent progress updates ar
     },
   ];
 
-  await page.route('/api/v1/health', route =>
+  await page.route('**/api/v1/health**', route =>
     route.fulfill({ json: { status: 'ok', all_models_loaded: [] } }),
   );
-  await page.route('/api/v1/downloads**', route => route.fulfill({ json: { downloads: serverDownloads } }));
+  await page.route('**/api/v1/downloads**', route => route.fulfill({ json: { downloads: serverDownloads } }));
 
   await page.goto('/');
   await page.locator('.titlebar__download-toggle').click();
@@ -154,10 +154,10 @@ test('authoritative server snapshot removes stale paused renderer state', async 
     updatedAt: timestamp,
   });
 
-  await page.route('/api/v1/health', route =>
+  await page.route('**/api/v1/health**', route =>
     route.fulfill({ json: { status: 'ok', all_models_loaded: [] } }),
   );
-  await page.route('/api/v1/downloads**', route => route.fulfill({ json: { downloads: [] } }));
+  await page.route('**/api/v1/downloads**', route => route.fulfill({ json: { downloads: [] } }));
 
   await page.goto('/');
   await page.locator('.titlebar__download-toggle').click();
