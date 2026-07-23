@@ -42,7 +42,22 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
+      name: 'a11y',
+      testMatch: '**/a11y.spec.ts',
+      fullyParallel: true,
+      outputDir: './test-results/a11y',
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 1280, height: 800 },
+        ...(launchOptions ? { launchOptions } : {}),
+      },
+    },
+    {
+      name: 'functional',
+      testIgnore: '**/a11y.spec.ts',
+      fullyParallel: false,
+      workers: 1,
+      outputDir: './test-results/functional',
       use: {
         browserName: 'chromium',
         viewport: { width: 1280, height: 800 },
