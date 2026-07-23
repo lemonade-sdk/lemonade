@@ -319,6 +319,7 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
             if (scenario.category == "embed" && item.contains("input"))
                 scenario.input = item["input"].get<json>();
         } else if (scenario.category == "imagegen"){
+            scenario.warmup_runs = 0;
             if (scenario.category == "imagegen" && item.contains("prompt"))
                 scenario.imgconfig = item.get<json>();
         } else {
