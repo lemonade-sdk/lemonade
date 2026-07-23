@@ -138,7 +138,8 @@ int BenchScenarioResult::output_tokens() const {
 
 std::string BenchBackendResult::label() const {
     std::string s = recipe + "/" + backend;
-    if (ctx_size > 0) s += " (ctx=" + std::to_string(ctx_size) + ")";
+    if (recipe != "sd-cpp")
+        if (ctx_size > 0) s += " (ctx=" + std::to_string(ctx_size) + ")";
     if (!backend_args.empty()) s += " args=[" + backend_args + "]";
     return s;
 }
@@ -153,6 +154,80 @@ static std::string extract_user_content(const std::vector<json>& messages) {
         }
     }
     return "Answer the question.";
+}
+
+// Check if a backend supports a specific capability based on its descriptor
+// Uses the BackendDescriptor's modality field and model_type
+static bool backend_supports_capability(const std::string& recipe,
+                                        const std::string& backend_name,
+                                        const lemon::ModelType required_type) {
+    const auto* desc = lemon::backends::descriptor_for(recipe);
+    if (!desc) return false;
+
+    // Get the model type from the descriptor's modality field
+    // This is a simplified mapping - in practice we might need more sophisticated logic
+    std::string modality = desc->modality;
+
+    // Map modality to ModelType
+    if (modality == "Text generation" || modality == "Completion") {
+        return required_type == lemon::ModelType::LLM;
+    }
+    if (modality == "Embeddings" || modality == "Embedding") {
+        return required_type == lemon::ModelType::EMBEDDING;
+    }
+    if (modality == "Image generation") {
+        return required_type == lemon::ModelType::IMAGE;
+    }
+    if (modality == "Speech-to-text" || modality == "Transcription") {
+        return required_type == lemon::ModelType::TRANSCRIPTION;
+    }
+    if (modality == "Text-to-speech") {
+        return required_type == lemon::ModelType::TTS;
+    }
+    if (modality == "Generative audio" || modality == "Audio generation") {
+        return required_type == lemon::ModelType::AUDIO_GENERATION;
+    }
+
+    // Default to LLM for unknown modalities
+    return required_type == lemon::ModelType::LLM;
+}
+
+// Get the required ModelType for a scenario category
+static lemon::ModelType get_required_model_type_for_scenario(const std::string& category) {
+    if (category == "embed") {
+        return lemon::ModelType::EMBEDDING;
+    }
+    if (category == "imagegen") {
+        return lemon::ModelType::IMAGE;
+    }
+    if (category == "transcription") {
+        return lemon::ModelType::TRANSCRIPTION;
+    }
+    if (category == "tts") {
+        return lemon::ModelType::TTS;
+    }
+    if (category == "audio-generation") {
+        return lemon::ModelType::AUDIO_GENERATION;
+    }
+    // Default: text generation
+    return lemon::ModelType::LLM;
+}
+
+// Check if a model has the embeddings label (for llamacpp recipe filtering)
+static bool model_has_embeddings_label(const json& model_info) {
+    if (!model_info.contains("labels") || !model_info["labels"].is_array()) {
+        return false;
+    }
+    const auto& labels = model_info["labels"];
+    for (const auto& label : labels) {
+        if (label.is_string()) {
+            std::string label_str = label.get<std::string>();
+            if (label_str == "embed" || label_str == "embedding" || label_str == "embeddings") {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 std::string expand_context(const json& context_block, const std::vector<json>& messages) {
@@ -219,6 +294,10 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
         if (scenario.category == "embed"){
             if (scenario.category == "embed" && item.contains("input"))
                 scenario.input = item["input"].get<json>();
+        } else if (scenario.category == "imagegen"){
+            scenario.warmup_runs = 0;
+            if (scenario.category == "imagegen" && item.contains("prompt"))
+                scenario.imgconfig = item.get<json>();
         } else {
             if (item.contains("messages") && item["messages"].is_array()) {
                 scenario.messages = item["messages"].get<std::vector<json>>();
@@ -529,18 +608,22 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response) {
+                                bool capture_response,
+                                int timeout) {
     if (scenario.category == "embed")
-        return run_single_bench_embed(client, model, scenario, memory_tracking, capture_response);
+        return run_single_bench_embed(client, model, scenario, memory_tracking, capture_response, timeout);
+    if (scenario.category == "imagegen")
+        return run_single_bench_imagegen(client, model, scenario, memory_tracking, capture_response, timeout);
     // default mode is text generation
-    return run_single_bench_textgen(client, model, scenario, memory_tracking, capture_response);
+    return run_single_bench_textgen(client, model, scenario, memory_tracking, capture_response, timeout);
 }
 
 BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response) {
+                                bool capture_response,
+                                int timeout) {
     BenchRunResult result;
     result.success = false;  // assume failure until proven otherwise
 
@@ -561,7 +644,7 @@ BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
 
     try {
         std::string response = client.make_request("/api/v1/chat/completions", "POST", body, "application/json",
-                                                   300000, 300000);
+                                                   timeout, timeout);
         auto resp_json = json::parse(response);
 
         if (capture_response) {
@@ -624,7 +707,8 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response) {
+                                bool capture_response,
+                                int timeout) {
     BenchRunResult result;
     result.success = false;
 
@@ -645,7 +729,7 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
     try {
         std::string response = client.make_request(
             "/api/v1/embeddings", "POST", body, "application/json",
-            300000, 300000);
+            timeout, timeout);
 
         auto resp_json = json::parse(response);
 
@@ -689,6 +773,94 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
     return result;
 }
 
+BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
+                                const std::string& model,
+                                const BenchScenario& scenario,
+                                bool memory_tracking,
+                                bool capture_response,
+                                int timeout) {
+    BenchRunResult result;
+    result.success = false;
+
+    if (memory_tracking) {
+        double _vram, _mem;
+        query_system_stats(client, _vram, _mem);
+    }
+
+    json request_body;
+    request_body["model"] = model;
+    if (!(scenario.imgconfig.contains("prompt") && scenario.imgconfig["prompt"].is_string())) {
+        std::cerr << "    Image generation scenario missing 'prompt' field." << std::endl;
+        return result;
+    }
+    request_body["prompt"] = scenario.imgconfig.value("prompt", "");
+    // Request base64-encoded JSON response if we want to capture the image data. This makes
+    // the response log file easily readable.
+    if (capture_response)
+        request_body["response_format"] = "b64_json";
+    // Optional fields, if unspecified let the model use its defaults.
+    // default values won't actaully be used, they're just here to satisfy the type system
+    if (scenario.imgconfig.contains("size") && scenario.imgconfig["size"].is_string()) {
+        request_body["size"] = scenario.imgconfig.value("size", "256x256");
+    }
+    if (scenario.imgconfig.contains("steps") && scenario.imgconfig["steps"].is_number_integer()) {
+        request_body["steps"] = scenario.imgconfig.value("steps", 1);
+    }
+    if (scenario.imgconfig.contains("cfg_scale") && scenario.imgconfig["cfg_scale"].is_number()) {
+        request_body["cfg_scale"] = scenario.imgconfig.value("cfg_scale", 1.0);
+    }
+    if (scenario.imgconfig.contains("seed") && scenario.imgconfig["seed"].is_number_integer()) {
+        request_body["seed"] = scenario.imgconfig.value("seed", 42);
+    } else
+        request_body["seed"] = 42;  // default seed for reproducibility
+
+    std::string body = request_body.dump();
+
+    // Timing setup
+    auto start = steady_clock::now();
+
+    try {
+        std::string response = client.make_request(
+            "/api/v1/images/generations", "POST", body, "application/json",
+            timeout, timeout);
+
+        auto resp_json = json::parse(response);
+
+        result.response_text = "null";
+        if (capture_response) {
+            if (resp_json.contains("data") && !resp_json["data"].empty()) {
+                const auto& data = resp_json["data"];
+                if (data.is_array() && !data.empty()) {
+                    const auto& first_item = data[0];
+                    if (first_item.contains("b64_json"))
+                        result.response_text = first_item["b64_json"].get<std::string>();
+                }
+            }
+        }
+
+        if (resp_json.contains("timings") && resp_json["timings"].is_object()) {
+            extract_timings_into_result(resp_json["timings"], result);
+        }
+
+        // Populate timing fields
+        auto end = steady_clock::now();
+        result.ttft_ms = duration<double, std::milli>(end - start).count();
+        result.total_time_ms += result.ttft_ms;
+
+    } catch (const std::exception& e) {
+        std::cerr << "    Image generation benchmark run failed: " << e.what() << std::endl;
+        return result;  // success stays false
+    }
+
+    // Query memory after
+    if (memory_tracking)
+        extract_mem_use_into_result(client, result);
+
+
+    result.success = true;
+    return result;
+}
+
 BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                                  const std::string& model,
                                  const BenchScenario& scenario,
@@ -699,6 +871,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                                  const std::string& recipe,
                                  const std::string& backend,
                                  int ctx_size,
+                                 int timeout,
                                  const std::string& backend_args,
                                  const std::string& response_log_path,
                                  const std::string& response_timestamp) {
@@ -727,7 +900,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
             }
         }
         std::cout << "    Warmup " << (i + 1) << "/" << warmup << "..." << std::flush;
-        run_single_bench(client, model, scenario, false, false);
+        run_single_bench(client, model, scenario, false, false, timeout);
         std::cout << " done" << std::endl;
     }
 
@@ -743,7 +916,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
         }
 
         std::cout << "    Run " << (i + 1) << "/" << runs << "..." << std::flush;
-        auto run_result = run_single_bench(client, model, scenario, memory_tracking, !response_log_path.empty());
+        auto run_result = run_single_bench(client, model, scenario, memory_tracking, !response_log_path.empty(), timeout);
         if (!run_result.success) {
             result.failed_runs++;
             std::cout << " FAILED (excluded from stats)" << std::endl;
@@ -824,41 +997,98 @@ static std::string fmt_vram_change(std::optional<double> val) {
     return fmt_double(*val) + " GB";
 }
 
-static void print_scenario_row(const BenchScenarioResult& scenario, bool use_percentiles) {
+static size_t calculate_number_width(double value, int precision = 1) {
+    if (value < 0) {
+        value = -value;
+    }
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(precision) << value;
+    return oss.str().length();
+}
+
+static size_t calculate_vram_width(double value) {
+    if (value < 0) return 1;
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(1) << value;
+    return oss.str().length();
+}
+
+FieldWidths calculate_field_widths(const std::vector<BenchBackendResult>& results) {
+    FieldWidths widths;
+
+    for (const auto& backend_result : results) {
+        for (const auto& scenario : backend_result.scenarios) {
+            size_t scenario_len = scenario.scenario_name.length();
+            if (scenario_len > 0) {
+                if (scenario.failed_runs > 0) {
+                    scenario_len += 2 + std::to_string(scenario.failed_runs).length() + 1;
+                }
+                if (scenario_len > widths.scenario_name) {
+                    widths.scenario_name = std::min<size_t>(scenario_len, 36)+3;
+                }
+            }
+        }
+    }
+
+    for (const auto& backend_result : results) {
+        for (const auto& scenario : backend_result.scenarios) {
+            if (scenario.runs.empty()) {
+                widths.ttft = std::max(widths.ttft, size_t{8});
+                widths.tps  = std::max(widths.tps,  size_t{8});
+            } else {
+                double max_ttft = scenario.ttft_max_ms();
+                widths.ttft = std::max(widths.ttft, calculate_number_width(max_ttft, 1));
+
+                double max_tps = scenario.tps_max();
+                widths.tps = std::max(widths.tps, calculate_number_width(max_tps, 1));
+            }
+
+            double vram_peak = scenario.vram_peak_gb();
+            if (vram_peak >= 0) {
+                widths.vram = std::max(widths.vram, calculate_vram_width(vram_peak));
+            }
+        }
+    }
+
+    return widths;
+}
+
+static void print_scenario_row(const BenchScenarioResult& scenario, bool use_percentiles, const FieldWidths& widths) {
     double ttft_1 = use_percentiles ? scenario.ttft_p50_ms() : scenario.ttft_min_ms();
     double ttft_2 = use_percentiles ? scenario.ttft_p95_ms() : scenario.ttft_max_ms();
     double tps_1 = use_percentiles ? scenario.tps_p50() : scenario.tps_min();
     double tps_2 = use_percentiles ? scenario.tps_p95() : scenario.tps_max();
     std::string name = scenario.scenario_name;
     if (scenario.failed_runs > 0) {
-        name += " *" + std::to_string(scenario.failed_runs) + "f";
+        name += " *" + std::to_string(scenario.failed_runs) + "f ";
     }
     if (scenario.runs.empty()) {
         // All runs failed — show dashes
-        std::cout << std::left << std::setw(20) << name
-                  << std::setw(8) << "-"
-                  << std::setw(8) << "-"
-                  << std::setw(8) << "-"
-                  << std::setw(8) << "-"
-                  << std::setw(8) << "-"
-                  << std::setw(8) << "-"
-                  << std::setw(8) << "-"
+        std::cout << std::left << std::setw(widths.scenario_name) << name
+                  << std::setw(widths.ttft) << "-"
+                  << std::setw(widths.ttft) << "-"
+                  << std::setw(widths.ttft) << "-"
+                  << std::setw(widths.tps) << "-"
+                  << std::setw(widths.tps) << "-"
+                  << std::setw(widths.tps) << "-"
+                  << std::setw(widths.vram) << "-"
                   << std::endl;
     } else {
-        std::cout << std::left << std::setw(20) << name
-                  << std::setw(8) << fmt_double(scenario.ttft_mean_ms())
-                  << std::setw(8) << fmt_double(ttft_1)
-                  << std::setw(8) << fmt_double(ttft_2)
-                  << std::setw(8) << fmt_double(scenario.tps_mean())
-                  << std::setw(8) << fmt_double(tps_1)
-                  << std::setw(8) << fmt_double(tps_2)
-                  << std::setw(8) << fmt_vram(scenario.vram_peak_gb())
+        std::cout << std::left << std::setw(widths.scenario_name) << name
+                  << std::setw(widths.ttft) << fmt_double(scenario.ttft_mean_ms())
+                  << " " << std::setw(widths.ttft) << fmt_double(ttft_1)
+                  << " " << std::setw(widths.ttft) << fmt_double(ttft_2)
+                  << " " << std::setw(widths.tps) << fmt_double(scenario.tps_mean())
+                  << " " << std::setw(widths.tps) << fmt_double(tps_1)
+                  << " " << std::setw(widths.tps) << fmt_double(tps_2)
+                  << " " << std::setw(widths.vram) << fmt_vram(scenario.vram_peak_gb())
                   << std::endl;
     }
 }
 
 void print_table(const std::vector<BenchBackendResult>& results, const std::string& model,
                  bool use_percentiles) {
+    FieldWidths widths = calculate_field_widths(results);
     std::cout << std::endl;
     std::cout << "Benchmark: " << model << std::endl;
     std::cout << std::string(100, '=') << std::endl;
@@ -869,18 +1099,18 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
         std::cout << std::string(100, '-') << std::endl;
 
         // Header — show min/max by default, switch to p50/p95 when runs >= 10
-        std::cout << std::left << std::setw(20) << "Scenario"
-                  << std::setw(8) << "TTFT"
-                  << std::setw(8) << (use_percentiles ? "p50" : "min")
-                  << std::setw(8) << (use_percentiles ? "p95" : "max")
-                  << std::setw(8) << "TPS"
-                  << std::setw(8) << (use_percentiles ? "p50" : "min")
-                  << std::setw(8) << (use_percentiles ? "p95" : "max")
-                  << std::setw(8) << "VRAM (GB)" << std::endl;
+        std::cout << std::left << std::setw(widths.scenario_name) << "Scenario"
+                  << std::setw(widths.ttft) << "TTFT"
+                  << " " << std::setw(widths.ttft) << (use_percentiles ? "p50" : "min")
+                  << " " << std::setw(widths.ttft) << (use_percentiles ? "p95" : "max")
+                  << " " << std::setw(widths.tps) << "TPS"
+                  << " " << std::setw(widths.tps) << (use_percentiles ? "p50" : "min")
+                  << " " << std::setw(widths.tps) << (use_percentiles ? "p95" : "max")
+                  << " " << std::setw(widths.vram) << "VRAM (GB)" << std::endl;
         std::cout << std::string(100, '-') << std::endl;
 
         for (const auto& scenario : backend_result.scenarios) {
-            print_scenario_row(scenario, use_percentiles);
+            print_scenario_row(scenario, use_percentiles, widths);
         }
     }
 
@@ -1438,6 +1668,27 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                     for (const auto& scenario : scenarios) {
                         std::cout << "  Scenario: " << scenario.name << " (" << scenario.category << ")" << std::endl;
 
+                        // Filter backends based on scenario category and backend capabilities
+                        bool backend_suitable = false;
+                        const auto required_type = get_required_model_type_for_scenario(scenario.category);
+
+                        if (scenario.category == "embed") {
+                            backend_suitable = model_has_embeddings_label(model_info);
+                        } else if (scenario.category == "imagegen") {
+                            backend_suitable = backend_supports_capability(recipe, backend, lemon::ModelType::IMAGE);
+                        } else {
+                            backend_suitable = backend_supports_capability(recipe, backend, required_type);
+                            if (model_has_embeddings_label(model_info)) {
+                                // don't send text-gen scenarios to embedding-only models, even if the backend supports it
+                                backend_suitable = false;
+                            }
+                        }
+
+                        if (!backend_suitable) {
+                            std::cout << "    Skipping backend/model - not suitable for " << scenario.category << " scenario" << std::endl;
+                            continue;
+                        }
+
                         int warmup = scenario.warmup_runs;
                         int runs = scenario.measurement_runs;
 
@@ -1446,7 +1697,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                         if (config.measurement_runs > 0) runs = config.measurement_runs;
 
                         auto scenario_result = run_scenario(client, model, scenario, warmup, runs,
-                                                            config.memory_tracking, config.reload, recipe, backend, ctx_size, recipe_args,
+                                                            config.memory_tracking, config.reload,
+                                                            recipe, backend, ctx_size, config.timeout, recipe_args,
                                                             config.response_log,
                                                             command_timestamp);
                         backend_result.scenarios.push_back(scenario_result);
@@ -1633,7 +1885,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 CLI::App* register_bench_command(CLI::App& parent,
                                  std::string& output_file,
                                  BenchCliOptions& opts) {
-    CLI::App* cmd = parent.add_subcommand("bench", "Benchmark a model's chat completion performance")->group("Model management");
+    CLI::App* cmd = parent.add_subcommand("bench", "Benchmark model performance for different model types")->group("Model management");
     cmd->add_option("models", opts.models, "One or more model names to benchmark")
         ->required()
         ->type_name("MODEL")
@@ -1676,6 +1928,8 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--whispercpp-args", opts.whispercpp_args, "Custom args for whisper-server. Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    cmd->add_option("--timeout", opts.timeout, "Timeout in seconds for individual requests (default: 300)")
+        ->type_name("SECONDS");
     return cmd;
 }
 
@@ -1703,6 +1957,7 @@ BenchConfig build_bench_config(const std::string& output_file,
     if (!cli.vllm_args.empty()) config.backend_args["vllm"] = cli.vllm_args;
     if (!cli.sdcpp_args.empty()) config.backend_args["sd-cpp"] = cli.sdcpp_args;
     if (!cli.whispercpp_args.empty()) config.backend_args["whispercpp"] = cli.whispercpp_args;
+    config.timeout = cli.timeout * 1000;
     return config;
 }
 
