@@ -16,3 +16,13 @@ repos:
     hooks:
       - id: black
         language_version: python3
+
+  - repo: local
+    hooks:
+      - id: comment-slop
+        name: comment slop (repeated explanations, oversized blocks)
+        entry: tools/check_comment_slop.py
+        language: script
+        pass_filenames: false
+        require_serial: true
+        types_or: [c, c++, python]
