@@ -5168,7 +5168,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
-        // Persist request options to model info if requested
+        // A save *replaces* the stored options, so omitting a key clears it.
         if (save_options) {
             info.recipe_options = options;
             model_manager_->save_model_options(info);
@@ -5187,10 +5187,13 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         if (is_omni_collection_recipe(info.recipe) && !info.components.empty()) {
             ensure_collection_loaded(info);
 
+            // Echoed here too so the response shape does not vary by recipe type. Per-model
+            // options are not forwarded to components, so this set is typically empty.
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
-                {"recipe", info.recipe}
+                {"recipe", info.recipe},
+                {"recipe_options", info.recipe_options.to_json()}
             };
             res.set_content(response.dump(), "application/json");
         } else if (is_router_collection_recipe(info.recipe)) {
@@ -5212,12 +5215,14 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
                                 /*allow_reload_on_option_change=*/true,
                                 pinned_opt);
 
-            // Return success response
+            // recipe_options is the persisted set a future option-free load will recall,
+            // matching what model_info_to_json() already serializes for /models.
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
                 {"checkpoint", info.checkpoint()},
-                {"recipe", info.recipe}
+                {"recipe", info.recipe},
+                {"recipe_options", info.recipe_options.to_json()}
             };
             res.set_content(response.dump(), "application/json");
         }
