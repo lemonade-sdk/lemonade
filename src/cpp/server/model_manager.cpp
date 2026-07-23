@@ -111,7 +111,7 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source", "auto_update"};
 
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
@@ -1526,6 +1526,247 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
     return public_updated_models;
 }
 
+bool ModelManager::should_auto_update(const ModelInfo& info) const {
+    if (info.auto_update.has_value()) {
+        return *info.auto_update;
+    }
+    auto* cfg = RuntimeConfig::global();
+    return cfg ? cfg->auto_update_models() : false;
+}
+
+json ModelManager::get_sync_status() const {
+    std::lock_guard<std::mutex> lock(sync_state_.mutex);
+    json j = json{
+        {"status", sync_state_.is_sync_running ? "in_progress" : "idle"},
+        {"already_in_progress", sync_state_.is_sync_running},
+        {"is_full_sync", sync_state_.is_full_sync},
+        {"active_targets", sync_state_.active_targets},
+        {"pending_targets", sync_state_.pending_targets},
+        {"completed_targets", sync_state_.completed_targets},
+        {"failed_models", sync_state_.failed_models}
+    };
+    if (sync_state_.is_sync_running) {
+        j["progress"] = json{
+            {"current_model", sync_state_.current_model},
+            {"file", sync_state_.current_file},
+            {"file_index", sync_state_.file_index},
+            {"total_files", sync_state_.total_files},
+            {"bytes_downloaded", sync_state_.bytes_downloaded},
+            {"bytes_total", sync_state_.bytes_total},
+            {"percent", sync_state_.percent}
+        };
+    }
+    return j;
+}
+
+json ModelManager::sync_models(const std::vector<std::string>& target_models, bool dry_run) {
+    if (!dry_run) {
+        std::lock_guard<std::mutex> lock(sync_state_.mutex);
+        if (sync_state_.is_sync_running) {
+            LOG(INFO, "ModelManager") << "Sync requested while a model synchronization is already in progress. Enqueueing targets." << std::endl;
+            if (target_models.empty()) {
+                sync_state_.is_full_sync = true;
+            } else {
+                for (const auto& t : target_models) {
+                    sync_state_.pending_targets.insert(t);
+                }
+            }
+            return json{
+                {"status", "in_progress"},
+                {"message", "Model synchronization is already in progress"},
+                {"dry_run", false},
+                {"already_in_progress", true},
+                {"is_full_sync", sync_state_.is_full_sync},
+                {"active_targets", sync_state_.active_targets},
+                {"pending_targets", sync_state_.pending_targets},
+                {"completed_targets", sync_state_.completed_targets},
+                {"failed_models", sync_state_.failed_models}
+            };
+        }
+        sync_state_.is_sync_running = true;
+        sync_state_.is_full_sync = target_models.empty();
+        sync_state_.active_targets.clear();
+        sync_state_.pending_targets.clear();
+        sync_state_.completed_targets.clear();
+        sync_state_.failed_models.clear();
+        for (const auto& t : target_models) {
+            sync_state_.pending_targets.insert(t);
+        }
+    }
+
+    struct SyncStateGuard {
+        ModelSyncState& state;
+        bool active;
+        ~SyncStateGuard() {
+            if (active) {
+                std::lock_guard<std::mutex> lock(state.mutex);
+                state.is_sync_running = false;
+                state.active_targets.clear();
+                state.pending_targets.clear();
+                state.current_model.clear();
+                state.current_file.clear();
+                state.file_index = 0;
+                state.total_files = 0;
+                state.bytes_downloaded = 0;
+                state.bytes_total = 0;
+                state.percent = 0;
+            }
+        }
+    } guard{sync_state_, !dry_run};
+
+    LOG(INFO, "ModelManager") << "Checking models for sync/update..." << std::endl;
+    check_for_model_updates();
+
+    std::vector<std::string> models_to_update;
+    std::vector<std::string> models_up_to_date;
+    std::map<std::string, std::string> failed_models;
+    int checked_count = 0;
+
+    if (!target_models.empty()) {
+        for (const auto& input_name : target_models) {
+            std::string canonical_name = resolve_model_name(input_name);
+            ModelInfo info;
+            bool found = false;
+            {
+                std::lock_guard<std::mutex> lock(models_cache_mutex_);
+                auto it = models_cache_.find(canonical_name);
+                if (it != models_cache_.end()) {
+                    info = it->second;
+                    found = true;
+                }
+            }
+
+            if (!found) {
+                failed_models[input_name] = "Model not found or registered";
+                continue;
+            }
+
+            if (!info.downloaded) {
+                failed_models[input_name] = "Model is not downloaded";
+                continue;
+            }
+
+            checked_count++;
+            std::string public_name = get_public_model_name(canonical_name);
+
+            if (info.update_available) {
+                models_to_update.push_back(public_name);
+            } else {
+                models_up_to_date.push_back(public_name);
+            }
+        }
+    } else {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        for (const auto& [name, info] : models_cache_) {
+            if (!info.downloaded) continue;
+            checked_count++;
+            std::string public_name = get_public_model_name(name);
+            if (info.update_available) {
+                models_to_update.push_back(public_name);
+            } else {
+                models_up_to_date.push_back(public_name);
+            }
+        }
+    }
+
+    if (dry_run) {
+        json status_info = get_sync_status();
+        bool running = status_info.value("already_in_progress", false);
+        return json{
+            {"status", running ? "in_progress" : "success"},
+            {"dry_run", true},
+            {"already_in_progress", running},
+            {"checked_count", checked_count},
+            {"updated_count", models_to_update.size()},
+            {"models_updated", models_to_update},
+            {"models_up_to_date", models_up_to_date},
+            {"failed_models", failed_models}
+        };
+    }
+
+    std::vector<std::string> actually_updated;
+
+    while (true) {
+        std::vector<std::string> current_batch;
+        {
+            std::lock_guard<std::mutex> lock(sync_state_.mutex);
+            if (!models_to_update.empty()) {
+                current_batch = std::move(models_to_update);
+                models_to_update.clear();
+            } else if (!sync_state_.pending_targets.empty()) {
+                std::vector<std::string> pending(sync_state_.pending_targets.begin(), sync_state_.pending_targets.end());
+                sync_state_.pending_targets.clear();
+                for (const auto& t : pending) {
+                    try {
+                        std::string canonical_name = resolve_model_name(t);
+                        std::string public_name = get_public_model_name(canonical_name);
+                        ModelInfo info = get_model_info(canonical_name);
+                        if (info.downloaded && info.update_available) {
+                            current_batch.push_back(public_name);
+                        }
+                    } catch (const std::exception& e) {
+                        failed_models[t] = e.what();
+                        sync_state_.failed_models[t] = e.what();
+                    }
+                }
+            }
+        }
+
+        if (current_batch.empty()) {
+            break;
+        }
+
+        for (const auto& model_name : current_batch) {
+            {
+                std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                sync_state_.pending_targets.erase(model_name);
+                sync_state_.active_targets.insert(model_name);
+            }
+
+            LOG(INFO, "ModelManager") << "Syncing model: " << model_name << std::endl;
+            try {
+                auto progress_cb = [this, model_name](const DownloadProgress& prog) -> bool {
+                    std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                    sync_state_.current_model = model_name;
+                    sync_state_.current_file = prog.file;
+                    sync_state_.file_index = prog.file_index;
+                    sync_state_.total_files = prog.total_files;
+                    sync_state_.bytes_downloaded = prog.bytes_downloaded;
+                    sync_state_.bytes_total = prog.bytes_total;
+                    sync_state_.percent = prog.percent;
+                    return true;
+                };
+                download_model(model_name, json::object(), /*do_not_upgrade=*/false, progress_cb);
+                actually_updated.push_back(model_name);
+
+                if (on_model_updated_cb_) {
+                    on_model_updated_cb_(model_name);
+                }
+
+                std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                sync_state_.active_targets.erase(model_name);
+                sync_state_.completed_targets.push_back(model_name);
+            } catch (const std::exception& e) {
+                LOG(ERROR, "ModelManager") << "Failed to sync model " << model_name << ": " << e.what() << std::endl;
+                failed_models[model_name] = e.what();
+                std::lock_guard<std::mutex> lock(sync_state_.mutex);
+                sync_state_.active_targets.erase(model_name);
+                sync_state_.failed_models[model_name] = e.what();
+            }
+        }
+    }
+
+    return json{
+        {"status", "success"},
+        {"dry_run", false},
+        {"checked_count", checked_count},
+        {"updated_count", actually_updated.size()},
+        {"models_updated", actually_updated},
+        {"models_up_to_date", models_up_to_date},
+        {"failed_models", failed_models}
+    };
+}
+
 static void load_checkpoints(ModelInfo& info, json& model_json) {
     if (model_json.contains("checkpoints") && model_json["checkpoints"].is_object()) {
         for (auto& [key, value] : model_json["checkpoints"].items()) {
@@ -1756,6 +1997,9 @@ void ModelManager::build_cache() {
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
+        if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
+            info.auto_update = value["auto_update"].get<bool>();
+        }
 
         // Registry-backed collections store their components remotely — the
         // cached manifest is the single source of truth. Rebuild the component
@@ -1817,6 +2061,9 @@ void ModelManager::build_cache() {
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
+        if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
+            info.auto_update = value["auto_update"].get<bool>();
+        }
 
         // Registry-backed user collections (created by `lemonade pull <org>/<repo>` or `--source`)
         // keep only a repo pointer in user_models.json; their components live in
@@ -1910,6 +2157,10 @@ void ModelManager::build_cache() {
     for (auto& [name, info] : all_models) {
         json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);
         info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(name), recipe_options_);
+        if (info.recipe_options.to_json().contains("auto_update") &&
+            info.recipe_options.to_json()["auto_update"].is_boolean()) {
+            info.auto_update = info.recipe_options.to_json()["auto_update"].get<bool>();
+        }
     }
 
     // Step 2: Filter by backend availability
@@ -2728,7 +2979,7 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     std::shared_ptr<std::mutex> repo_lock;
     {
         std::lock_guard<std::mutex> guard(download_locks_mutex_);
-        auto& slot = download_locks_[effective_registry_source(info) + ":" + info.checkpoint()];
+        auto& slot = download_locks_[effective_registry_source(info) + ":" + checkpoint_to_repo_id(info.checkpoint())];
         if (!slot) slot = std::make_shared<std::mutex>();
         repo_lock = slot;
     }
@@ -3337,7 +3588,7 @@ void ModelManager::download_model(const std::string& model_name,
                 continue;
             }
             auto comp_info = get_model_info(component);
-            if (comp_info.downloaded) {
+            if (comp_info.downloaded && do_not_upgrade) {
                 LOG(INFO, "ModelManager") << "Component already downloaded: " << component << std::endl;
                 continue;
             }

@@ -171,7 +171,7 @@ static void assert_http_ok(const httplib::Result& res) {
             "Make sure the server is running and try again.");
     } else if (res->status == 401) {
         throw std::runtime_error("Forbidden by the server. Did you set the API key?");
-    } else if (res->status != 200) {
+    } else if (res->status != 200 && res->status != 202) {
         throw HttpError(res->status, res->body,
                         "Request failed: " + std::to_string(res->status));
     }
@@ -350,6 +350,192 @@ int LemonadeClient::check_model_updates() const {
         return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error checking model updates: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::sync_models(const std::vector<std::string>& models, bool check_only, bool json_output, bool wait_for_completion) const {
+    try {
+        // Mode 1: Dry run / Check only
+        if (check_only) {
+            json body = {
+                {"models", models},
+                {"dry_run", true}
+            };
+
+            std::string response = make_request(
+                "/api/v1/models/sync",
+                "POST",
+                body.dump(),
+                "application/json",
+                DEFAULT_CONNECTION_TIMEOUT_MS,
+                LONG_TIMEOUT_MS);
+            auto result = json::parse(response);
+
+            if (json_output) {
+                std::cout << result.dump(2) << std::endl;
+                return 0;
+            }
+
+            int updated_count = result.value("updated_count", 0);
+            int checked_count = result.value("checked_count", 0);
+            std::cout << "Checked " << checked_count << " model(s). " << updated_count << " update(s) available." << std::endl;
+
+            if (result.contains("models_updated") && result["models_updated"].is_array() && !result["models_updated"].empty()) {
+                std::cout << "Updates available:" << std::endl;
+                for (const auto& m : result["models_updated"]) {
+                    std::cout << "  - " << m.get<std::string>() << std::endl;
+                }
+            }
+
+            if (result.contains("models_up_to_date") && result["models_up_to_date"].is_array() && !result["models_up_to_date"].empty()) {
+                std::cout << "Up to date:" << std::endl;
+                for (const auto& m : result["models_up_to_date"]) {
+                    std::cout << "  - " << m.get<std::string>() << std::endl;
+                }
+            }
+
+            if (result.contains("failed_models") && result["failed_models"].is_object() && !result["failed_models"].empty()) {
+                std::cerr << "Failed:" << std::endl;
+                for (const auto& [name, err] : result["failed_models"].items()) {
+                    std::cerr << "  - " << name << ": " << err.get<std::string>() << std::endl;
+                }
+                return 1;
+            }
+            return 0;
+        }
+
+        // Mode 2: Default background async dispatch (when --wait is NOT passed)
+        if (!wait_for_completion) {
+            json body = {
+                {"models", models},
+                {"async", true}
+            };
+
+            std::string response = make_request(
+                "/api/v1/models/sync",
+                "POST",
+                body.dump(),
+                "application/json",
+                DEFAULT_CONNECTION_TIMEOUT_MS,
+                LONG_TIMEOUT_MS);
+            auto result = json::parse(response);
+
+            if (json_output) {
+                std::cout << result.dump(2) << std::endl;
+                return 0;
+            }
+
+            if (result.value("already_in_progress", false) || result.value("status", "") == "in_progress") {
+                std::cout << "Model synchronization is already in progress." << std::endl;
+                return 0;
+            }
+
+            std::cout << "Model synchronization dispatched in background." << std::endl;
+            std::cout << "Use 'lemonade sync --wait' to monitor progress." << std::endl;
+            return 0;
+        }
+
+        // Mode 3: Server-owned sync execution with status polling (--wait)
+        json dispatch_body = {
+            {"models", models},
+            {"async", true}
+        };
+
+        std::string dispatch_resp = make_request(
+            "/api/v1/models/sync",
+            "POST",
+            dispatch_body.dump(),
+            "application/json",
+            DEFAULT_CONNECTION_TIMEOUT_MS,
+            LONG_TIMEOUT_MS);
+        auto dispatch_result = json::parse(dispatch_resp);
+
+        bool in_progress = dispatch_result.value("already_in_progress", false);
+        if (!json_output) {
+            if (in_progress) {
+                std::cout << "Model synchronization is currently running in background. Waiting for completion..." << std::endl;
+            } else {
+                std::cout << "Starting model synchronization on server... Waiting for completion..." << std::endl;
+            }
+        }
+
+        json check_body = {
+            {"models", models},
+            {"dry_run", true}
+        };
+
+        json final_result;
+        std::string last_reported_model;
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::string check_resp = make_request(
+                "/api/v1/models/sync",
+                "POST",
+                check_body.dump(),
+                "application/json",
+                DEFAULT_CONNECTION_TIMEOUT_MS,
+                LONG_TIMEOUT_MS);
+            final_result = json::parse(check_resp);
+            if (!final_result.value("already_in_progress", false) && final_result.value("status", "") != "in_progress") {
+                break;
+            }
+
+            if (!json_output && final_result.contains("progress") && final_result["progress"].is_object()) {
+                const auto& prog = final_result["progress"];
+                std::string cur_model = prog.value("current_model", "");
+                int percent = prog.value("percent", 0);
+                size_t bytes = prog.value("bytes_downloaded", (size_t)0);
+                size_t total = prog.value("bytes_total", (size_t)0);
+                if (!cur_model.empty()) {
+                    last_reported_model = cur_model;
+                    std::cout << "\r\033[K[sync] " << cur_model;
+                    if (total > 0) {
+                        double mb_dl = static_cast<double>(bytes) / (1024.0 * 1024.0);
+                        double mb_total = static_cast<double>(total) / (1024.0 * 1024.0);
+                        std::cout << " (" << percent << "% - " << std::fixed << std::setprecision(1) << mb_dl << " MB / " << mb_total << " MB)";
+                    }
+                    std::cout << std::flush;
+                }
+            }
+        }
+
+        if (!json_output && !last_reported_model.empty()) {
+            std::cout << std::endl;
+        }
+
+        if (json_output) {
+            std::cout << final_result.dump(2) << std::endl;
+            return 0;
+        }
+
+        int checked_count = final_result.value("checked_count", 0);
+        int updated_count = final_result.value("updated_count", 0);
+        std::cout << "Model synchronization completed." << std::endl;
+        std::cout << "Checked " << checked_count << " model(s). " << updated_count << " update(s) applied." << std::endl;
+
+        if (final_result.contains("models_updated") && final_result["models_updated"].is_array() && !final_result["models_updated"].empty()) {
+            std::cout << "Updated models:" << std::endl;
+            for (const auto& m : final_result["models_updated"]) {
+                std::cout << "  - " << m.get<std::string>() << std::endl;
+            }
+        }
+
+        if (final_result.contains("failed_models") && final_result["failed_models"].is_object() && !final_result["failed_models"].empty()) {
+            std::cerr << "Failed:" << std::endl;
+            for (const auto& [name, err] : final_result["failed_models"].items()) {
+                std::cerr << "  - " << name << ": " << err.get<std::string>() << std::endl;
+            }
+            return 1;
+        }
+
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error syncing models: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error syncing models: " << e.what() << std::endl;
         return 1;
     }
 }

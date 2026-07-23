@@ -8,6 +8,7 @@
 #include <set>
 #include <vector>
 #include <mutex>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -85,6 +86,7 @@ struct ModelInfo {
     std::string registry_source = "huggingface";  // Remote registry: huggingface/modelscope
     bool downloaded = false;     // Whether model is downloaded and available
     bool update_available = false; // Whether a newer remote-registry version exists
+    std::optional<bool> auto_update = std::nullopt; // Optional per-model auto-update override
     double size = 0.0;   // Model size in GB
     int64_t max_context_window = 0;  // Static model-supported text context, when known
 
@@ -253,6 +255,22 @@ public:
     // Safe to call from a background thread — locks are internal.
     std::vector<std::string> check_for_model_updates();
 
+    // Check if model should be automatically updated when updates are detected
+    bool should_auto_update(const ModelInfo& info) const;
+
+    // Register a callback triggered when a model's files are updated on disk (e.g. to evict loaded router backends).
+    void set_model_updated_callback(std::function<void(const std::string&)> cb) {
+        on_model_updated_cb_ = std::move(cb);
+    }
+
+    // Query current model sync status (running state, active/pending targets, completed count)
+    json get_sync_status() const;
+
+    // Trigger sync/update of specified or all outdated models.
+    // When target_models is empty, targets all downloaded outdated models.
+    // If dry_run is true, returns update status without downloading files.
+    json sync_models(const std::vector<std::string>& target_models = {}, bool dry_run = false);
+
     // True if the model's backend pulls its own models on demand (e.g. flm) and
     // so should be skipped by the router's load-time auto-download path.
     bool backend_self_manages_downloads(const std::string& recipe) const;
@@ -378,6 +396,28 @@ private:
 
     // Prevent startup and manual update checks from running concurrently.
     std::mutex update_check_mutex_;
+
+    // Server sync state and queue management
+    struct ModelSyncState {
+        mutable std::mutex mutex;
+        bool is_sync_running = false;
+        bool is_full_sync = false;
+        std::set<std::string> active_targets;
+        std::set<std::string> pending_targets;
+        std::vector<std::string> completed_targets;
+        std::map<std::string, std::string> failed_models;
+
+        // Progress metrics for active model download
+        std::string current_model;
+        std::string current_file;
+        int file_index = 0;
+        int total_files = 0;
+        size_t bytes_downloaded = 0;
+        size_t bytes_total = 0;
+        int percent = 0;
+    };
+    mutable ModelSyncState sync_state_;
+    std::function<void(const std::string&)> on_model_updated_cb_;
 
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name

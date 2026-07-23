@@ -216,7 +216,10 @@ bool is_quiet_polling_path(const std::string& path) {
            path == "/api/v0/system-stats" || path == "/api/v1/system-stats" ||
            path == "/v0/system-stats" || path == "/v1/system-stats" ||
            path == "/api/v0/stats" || path == "/api/v1/stats" ||
-           path == "/v0/stats" || path == "/v1/stats";
+           path == "/v0/stats" || path == "/v1/stats" ||
+           path == "/api/v0/models/sync" || path == "/api/v1/models/sync" ||
+           path == "/v0/models/sync" || path == "/v1/models/sync" ||
+           path == "/internal/models/sync";
 }
 
 std::string join_warnings(const std::vector<std::string>& warnings) {
@@ -371,6 +374,13 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                                        model_manager_.get(),
                                        backend_manager_.get());
     router_->set_cloud_registry(cloud_registry_.get());
+
+    model_manager_->set_model_updated_callback([this](const std::string& model_name) {
+        if (router_ && router_->is_model_loaded(model_name)) {
+            LOG(INFO, "Server") << "Evicting updated model from memory: " << model_name << std::endl;
+            router_->unload_model(model_name);
+        }
+    });
 
     {
         lemon::jobs::OpProviders providers;
@@ -642,8 +652,23 @@ void Server::start_model_cache_warmup() {
         if (config_->auto_check_model_updates()) {
             try {
                 LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
-                (void)model_manager_->check_for_model_updates();
+                auto updated_models = model_manager_->check_for_model_updates();
                 LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
+
+                std::vector<std::string> auto_update_targets;
+                auto info_map = model_manager_->get_downloaded_models();
+                for (const auto& public_name : updated_models) {
+                    std::string canonical_name = model_manager_->resolve_model_name(public_name);
+                    auto it = info_map.find(canonical_name);
+                    if (it != info_map.end() && model_manager_->should_auto_update(it->second)) {
+                        auto_update_targets.push_back(public_name);
+                    }
+                }
+
+                if (!auto_update_targets.empty()) {
+                    LOG(INFO, "Server") << "Auto-updating " << auto_update_targets.size() << " model(s)..." << std::endl;
+                    (void)model_manager_->sync_models(auto_update_targets, /*dry_run=*/false);
+                }
             } catch (const std::exception& e) {
                 LOG(WARNING, "Server") << "Model update check failed: " << e.what() << std::endl;
             } catch (...) {
@@ -1274,6 +1299,12 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
         handle_simulate_vram_pressure(req, res);
+    });
+    register_post("models/sync", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_models_sync(req, res);
+    });
+    web_server.Post("/internal/models/sync", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_models_sync(req, res);
     });
 
     // Server-side MCP client host foundation (admin-gated through the existing
@@ -2102,6 +2133,16 @@ void Server::stop() {
     if (model_cache_warmup_thread_.joinable()) {
         model_cache_warmup_thread_.join();
     }
+
+    {
+        std::lock_guard<std::mutex> lock(background_sync_mutex_);
+        for (auto& task : background_sync_threads_) {
+            if (task.thread.joinable()) {
+                task.thread.join();
+            }
+        }
+        background_sync_threads_.clear();
+    }
 }
 
 // Generates an actionable error message for model loading failures.
@@ -2458,6 +2499,112 @@ void Server::handle_model_update_check(const httplib::Request& req, httplib::Res
         res.status = 500;
         res.set_content(
             nlohmann::json{{"error", std::string("Model update check failed: ") + e.what()}}.dump(),
+            "application/json");
+    }
+}
+
+void Server::handle_models_sync(const httplib::Request& req, httplib::Response& res) {
+    if (config_->offline()) {
+        res.status = 409;
+        res.set_content(
+            nlohmann::json{{"error", "Cannot sync model updates while offline=true"}}.dump(),
+            "application/json");
+        return;
+    }
+
+    std::vector<std::string> target_models;
+    bool dry_run = false;
+    bool async_dispatch = true;
+    bool async_specified = false;
+
+    if (!req.body.empty()) {
+        try {
+            auto body_json = nlohmann::json::parse(req.body);
+            if (body_json.contains("models") && body_json["models"].is_array()) {
+                for (const auto& item : body_json["models"]) {
+                    if (item.is_string()) {
+                        target_models.push_back(item.get<std::string>());
+                    }
+                }
+            }
+            if (body_json.contains("dry_run") && body_json["dry_run"].is_boolean()) {
+                dry_run = body_json["dry_run"].get<bool>();
+            }
+            if (body_json.contains("async") && body_json["async"].is_boolean()) {
+                async_dispatch = body_json["async"].get<bool>();
+                async_specified = true;
+            }
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(
+                nlohmann::json{{"error", std::string("Invalid JSON body: ") + e.what()}}.dump(),
+                "application/json");
+            return;
+        }
+    }
+
+    if (dry_run) {
+        try {
+            nlohmann::json sync_result = model_manager_->sync_models(target_models, true);
+            res.set_content(sync_result.dump(), "application/json");
+            res.status = 200;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Model sync dry-run failed: " << e.what() << std::endl;
+            res.status = 500;
+            res.set_content(
+                nlohmann::json{{"error", std::string("Model sync dry-run failed: ") + e.what()}}.dump(),
+                "application/json");
+        }
+        return;
+    }
+
+    if (!async_specified || async_dispatch) {
+        std::lock_guard<std::mutex> lock(background_sync_mutex_);
+
+        for (auto it = background_sync_threads_.begin(); it != background_sync_threads_.end(); ) {
+            if (it->finished->load() && it->thread.joinable()) {
+                it->thread.join();
+                it = background_sync_threads_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        auto finished_flag = std::make_shared<std::atomic<bool>>(false);
+        std::thread worker([this, target_models, finished_flag]() {
+            try {
+                LOG(INFO, "Server") << "Background model sync thread started" << std::endl;
+                model_manager_->sync_models(target_models, false);
+                LOG(INFO, "Server") << "Background model sync thread completed successfully" << std::endl;
+            } catch (const std::exception& e) {
+                LOG(WARNING, "Server") << "Background model sync failed: " << e.what() << std::endl;
+            }
+            finished_flag->store(true);
+        });
+
+        background_sync_threads_.push_back({std::move(worker), finished_flag});
+
+        nlohmann::json dispatched_result = {
+            {"status", "dispatched"},
+            {"message", "Model synchronization dispatched in background"},
+            {"dry_run", false},
+            {"async", true},
+            {"target_models", target_models}
+        };
+        res.set_content(dispatched_result.dump(), "application/json");
+        res.status = 202;
+        return;
+    }
+
+    try {
+        nlohmann::json sync_result = model_manager_->sync_models(target_models, false);
+        res.set_content(sync_result.dump(), "application/json");
+        res.status = 200;
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Model sync failed: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(
+            nlohmann::json{{"error", std::string("Model sync failed: ") + e.what()}}.dump(),
             "application/json");
     }
 }
