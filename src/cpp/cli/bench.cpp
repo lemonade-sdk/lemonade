@@ -156,30 +156,6 @@ static std::string extract_user_content(const std::vector<json>& messages) {
     return "Answer the question.";
 }
 
-// Map benchmark scenario categories to required model capabilities
-// Used to filter which backends a scenario can run on
-static bool scenario_requires_capability(const std::string& category, lemon::ModelType required_type) {
-    if (category == "embed") {
-        return required_type == lemon::ModelType::EMBEDDING;
-    }
-    if (category == "imagegen") {
-        return required_type == lemon::ModelType::IMAGE;
-    }
-    if (category == "transcription") {
-        return required_type == lemon::ModelType::TRANSCRIPTION;
-    }
-    if (category == "tts") {
-        return required_type == lemon::ModelType::TTS;
-    }
-    if (category == "audio-generation") {
-        return required_type == lemon::ModelType::AUDIO_GENERATION;
-    }
-    // Default: text generation scenarios require LLM capability
-    // but can also run on embedding models (for embeddings benchmarks)
-    // They should NOT run on image or other specialized models
-    return required_type == lemon::ModelType::LLM || required_type == lemon::ModelType::EMBEDDING;
-}
-
 // Check if a backend supports a specific capability based on its descriptor
 // Uses the BackendDescriptor's modality field and model_type
 static bool backend_supports_capability(const std::string& recipe,
