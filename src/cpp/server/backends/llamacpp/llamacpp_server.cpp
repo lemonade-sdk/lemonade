@@ -608,14 +608,25 @@ bool LlamaCppServer::downsize() {
     }
 }
 
+json LlamaCppServer::normalize_response_model(json response, const json& request) const {
+    if (response.is_object() && response.contains("model")) {
+        response["model"] = request.value("model", get_model_name());
+    }
+    return response;
+}
+
 json LlamaCppServer::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions",
-                           JsonUtils::with_legacy_max_tokens_alias(request));
+    return normalize_response_model(
+        forward_request("/v1/chat/completions",
+                        JsonUtils::with_legacy_max_tokens_alias(request)),
+        request);
 }
 
 json LlamaCppServer::completion(const json& request) {
-    return forward_request("/v1/completions",
-                           JsonUtils::with_legacy_max_tokens_alias(request));
+    return normalize_response_model(
+        forward_request("/v1/completions",
+                        JsonUtils::with_legacy_max_tokens_alias(request)),
+        request);
 }
 
 json LlamaCppServer::embeddings(const json& request) {
@@ -639,7 +650,7 @@ json LlamaCppServer::tokenize(const json& request_body) {
 }
 
 json LlamaCppServer::responses(const json& request) {
-    return forward_request("/v1/responses", request);
+    return normalize_response_model(forward_request("/v1/responses", request), request);
 }
 
 } // namespace backends
