@@ -575,6 +575,17 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
     }
   }, [draft, structuralError]);
 
+  // Only the models /routing/validate actually exercises to produce a
+  // decision - the llm router model, or the classifier models in rules/quick
+  // mode. Candidates are never invoked by a validate call (it only reports
+  // which one would be chosen), so they're deliberately excluded here.
+  const requiredTestModels = useMemo<string[]>(() => {
+    const models = draft.routingMode === 'llm'
+      ? (draft.routerModel ? [draft.routerModel] : [])
+      : (draft.classifiers ?? []).map(c => c.model).filter((m): m is string => !!m);
+    return Array.from(new Set(models));
+  }, [draft]);
+
   useEffect(() => {
     setError(null);
     setPreviewJson(null);
@@ -961,6 +972,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             <RouterTestPromptPanel
               policy={testPolicy}
               policyUnavailableReason={structuralError}
+              requiredModels={requiredTestModels}
               routerName={draft.name.trim() || 'Untitled Router'}
               showError={showError}
               showSuccess={showSuccess}

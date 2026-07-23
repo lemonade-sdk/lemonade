@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { XIcon } from './Icons';
+import { useModels } from '../hooks/useModels';
+import { DownloadAbortError, ensureModelReady } from '../utils/backendInstaller';
 import { serverFetch } from '../utils/serverConfig';
 import { adjustTextareaHeight } from '../utils/textareaUtils';
 import {
@@ -19,6 +21,10 @@ interface RouterTestPromptPanelProps {
    * policyUnavailableReason for why. */
   policy: RoutingPolicyDoc | null;
   policyUnavailableReason: string | null;
+  /** Models /routing/validate will actually exercise to reach a decision
+   * (the llm router model, or classifier models) - ensured downloaded and
+   * loaded before each test, same as any other inference pre-flight. */
+  requiredModels: string[];
   /** Used to label the policy in trace/tree exports - there's no uploaded
    * filename here, since the policy comes from the live draft. */
   routerName: string;
@@ -62,8 +68,9 @@ function parseMetadataText(text: string): { metadata: Record<string, string>; er
 }
 
 const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
-  policy, policyUnavailableReason, routerName, showError, showSuccess, showWarning,
+  policy, policyUnavailableReason, requiredModels, routerName, showError, showSuccess, showWarning,
 }) => {
+  const { modelsData } = useModels();
   const [prompt, setPrompt] = useState('');
   const [imageFilename, setImageFilename] = useState<string | null>(null);
   const [imageThumbnailUrl, setImageThumbnailUrl] = useState<string | null>(null);
@@ -95,6 +102,18 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
   useEffect(() => {
     setMetadataError(parseMetadataText(metadataText).error);
   }, [metadataText]);
+
+  // `policy` is rebuilt from the Builder tab's draft on every edit (see
+  // RouterCollectionPanel's testPolicy memo) - if the user edits a rule while
+  // a validation is in flight, that request is now testing a policy that no
+  // longer matches what's on screen. Stop waiting on it: bump the request id
+  // so its eventual response is dropped as stale, and flip the button back to
+  // "Test prompt" immediately instead of leaving it stuck on "Validating…".
+  useEffect(() => {
+    if (!isValidating) return;
+    latestRequestIdRef.current++;
+    setIsValidating(false);
+  }, [policy]);
 
   useEffect(() => {
     if (!showTreeModal) return;
@@ -145,6 +164,17 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
     setIsValidating(true);
     setValidationError(null);
     try {
+      // Ensure every model this test will actually exercise (the llm router,
+      // or classifier models) is downloaded and loaded first - otherwise the
+      // classifier just fails open to the default model instead of testing
+      // the real decision. Reuses the same download pipeline (and Download
+      // Manager popup) as creating a router policy.
+      for (const modelName of requiredModels) {
+        if (requestId !== latestRequestIdRef.current) return;
+        await ensureModelReady(modelName, modelsData);
+      }
+      if (requestId !== latestRequestIdRef.current) return;
+
       const { metadata } = parseMetadataText(metadataText);
       const response = await serverFetch('/routing/validate', {
         method: 'POST',
@@ -187,6 +217,7 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
       );
     } catch (error) {
       if (requestId !== latestRequestIdRef.current) return;
+      if (error instanceof DownloadAbortError) return; // user paused/cancelled the download - not an error
       setValidationError(error instanceof Error ? error.message : 'Unknown error');
       setResult(null);
     } finally {
