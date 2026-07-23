@@ -294,6 +294,24 @@ static void test_is_websocket_origin_allowed(TestResult& r) {
     } else {
         r.fail("websocket allow non-local same origin if in allowlist");
     }
+
+    if (is_origin_allowed("file://", "") && is_origin_allowed("app://.", "") && is_origin_allowed("jan://app", "")) {
+        r.ok("allow desktop app origins (file, app, jan)");
+    } else {
+        r.fail("allow desktop app origins (file, app, jan)");
+    }
+
+    if (!is_origin_allowed("null", "")) {
+        r.ok("reject opaque null origin without explicit allowlist");
+    } else {
+        r.fail("reject opaque null origin without explicit allowlist");
+    }
+
+    if (is_origin_allowed("random-client://ui", "") && is_origin_allowed("http://foo.bar.localhost:3000", "")) {
+        r.ok("allow unknown custom app scheme and *.localhost subdomains");
+    } else {
+        r.fail("allow unknown custom app scheme and *.localhost subdomains");
+    }
 }
 
 int main() {
