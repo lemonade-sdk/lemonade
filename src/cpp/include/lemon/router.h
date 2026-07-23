@@ -87,6 +87,13 @@ public:
         const std::string& model_name,
         LoadPurpose load_purpose);
 
+    // Evict every live routing helper whose model is not in `needed_helper_models`
+    // (the union of routing-helper models across all active policies, as
+    // policy-authored names — resolved internally). Called on rare policy-change
+    // events (e.g. a router collection is deleted) to reclaim helpers no active
+    // policy still references. Pinned and busy helpers are left untouched.
+    void reconcile_routing_helpers(const std::set<std::string>& needed_helper_models);
+
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
     std::string get_loaded_model() const;

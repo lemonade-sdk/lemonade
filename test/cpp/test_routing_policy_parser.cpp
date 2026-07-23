@@ -351,6 +351,46 @@ static void test_schema_parser_key_parity() {
                schema_property_keys(schema["$defs"]["metadata_match"]["properties"]));
 }
 
+// collect_policy_helper_models is the residency seam: it must return exactly the
+// backend models a policy's classifiers keep resident (the routing-helper set),
+// as the sorted, de-duplicated union across classifiers — and must exclude the
+// user-facing candidates, which load as Standard residency when selected.
+static void test_collect_policy_helper_models() {
+    // Two same-type classifiers (pii + jailbreak): both models are helpers, and
+    // the candidates (Qwen3-8B-GGUF, vllm.qwen3-32b) must NOT appear.
+    {
+        RoutePolicy policy = lemon::parse_route_policy_collection(fixture("l3_classifier.json"));
+        std::vector<std::string> helpers = lemon::collect_policy_helper_models(policy);
+        check("classifier policy helpers are the sorted classifier-model union",
+              helpers == std::vector<std::string>{"jailbreak-detector-small",
+                                                  "pii-detector-small"});
+    }
+
+    // semantic_similarity: the embedding model is the sole helper.
+    {
+        RoutePolicy policy = lemon::parse_route_policy_collection(fixture("l2_semantic.json"));
+        std::vector<std::string> helpers = lemon::collect_policy_helper_models(policy);
+        check("semantic policy helper is the embedding model",
+              helpers == std::vector<std::string>{"nomic-embed-text-v1.5-GGUF"});
+    }
+
+    // routing.router sugar: the router LLM is the helper; the identity-rule
+    // candidates it can select are not.
+    {
+        RoutePolicy policy = lemon::parse_route_policy_collection(fixture("l0a_llm_router.json"));
+        std::vector<std::string> helpers = lemon::collect_policy_helper_models(policy);
+        check("llm-router policy helper is the router model only",
+              helpers == std::vector<std::string>{"Qwen3-1.7B-GGUF"});
+    }
+
+    // Deterministic-only policy: no classifiers, so no helpers to keep resident.
+    {
+        RoutePolicy policy = lemon::parse_route_policy_collection(fixture("l1_keywords.json"));
+        check("deterministic policy needs no helpers",
+              lemon::collect_policy_helper_models(policy).empty());
+    }
+}
+
 int main() {
     test_parse_keywords_fixture_and_route();
     test_component_resolver_canonicalizes_policy();
@@ -359,6 +399,7 @@ int main() {
     test_classifier_capability_validation();
     test_inline_component_type_regression_pair();
     test_schema_parser_key_parity();
+    test_collect_policy_helper_models();
 
     if (g_failures == 0) {
         std::printf("All routing policy parser tests passed.\n");

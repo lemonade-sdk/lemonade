@@ -331,6 +331,44 @@ bool Router::ensure_loaded_model_residency(
     return true;
 }
 
+void Router::reconcile_routing_helpers(const std::set<std::string>& needed_helper_models) {
+    // Canonicalize the policy-authored names outside the lock so they match the
+    // (already-canonical) live WrappedServer::get_model_name() during eviction.
+    std::set<std::string> needed;
+    for (const auto& model : needed_helper_models) {
+        needed.insert(resolve_model_name(model));
+    }
+
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    load_cv_.wait(lock, [&] {
+        return !is_loading_ &&
+               (!exclusive_active_ ||
+                exclusive_owner_ == std::this_thread::get_id());
+    });
+
+    // Collect first; evict_server mutates loaded_servers_.
+    std::vector<WrappedServer*> stale;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive() ||
+            server->get_residency_class() != ResidencyClass::RoutingHelper) {
+            continue;
+        }
+        // A user pin is an explicit "keep" and outranks policy-churn reclamation.
+        if (server->is_pinned()) {
+            continue;
+        }
+        if (needed.count(server->get_model_name()) == 0) {
+            stale.push_back(server.get());
+        }
+    }
+
+    for (auto* server : stale) {
+        LOG(INFO, "Router") << "Routing helper " << server->get_model_name()
+                            << " referenced by no active policy, evicting" << std::endl;
+        evict_server(server);
+    }
+}
+
 bool Router::has_npu_server() const {
     for (const auto& server : loaded_servers_) {
         if (server->is_backend_alive() && (server->get_device_type() & DEVICE_NPU)) {

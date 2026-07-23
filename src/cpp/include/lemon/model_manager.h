@@ -176,6 +176,13 @@ public:
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
 
+    // Register a callback fired after a router collection's policy changes (it
+    // is added, edited, or removed — via the API or an on-disk edit picked up by
+    // the directory watcher). Used to reconcile router-collection policy state,
+    // e.g. evicting routing helpers no active policy still references. Invoked
+    // outside all ModelManager locks. Set once during startup.
+    void set_models_changed_callback(std::function<void()> cb);
+
     // Get all supported models from server_models.json
     std::map<std::string, ModelInfo> get_supported_models();
 
@@ -339,6 +346,11 @@ private:
     // Caller must hold models_cache_mutex_ (reads server_models_/user_models_).
     void populate_collection_components_from_cache_locked(ModelInfo& info);
 
+    // Fire the models-changed callback (if set) outside all locks. Guarded
+    // against same-thread reentrancy so a callback that reads the registry
+    // cannot recursively re-fire.
+    void notify_models_changed();
+
     // Cache management
     void build_cache();
     void add_model_to_cache(const std::string& model_name);
@@ -367,6 +379,11 @@ private:
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
     std::unique_ptr<DirectoryWatcher> directory_watcher_;
+
+    // Fired after the model registry changes (add/edit/remove). Guarded by its
+    // own mutex; invoked outside all other ModelManager locks.
+    std::mutex models_changed_callback_mutex_;
+    std::function<void()> models_changed_callback_;
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
