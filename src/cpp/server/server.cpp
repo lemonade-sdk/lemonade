@@ -341,6 +341,8 @@ static const json MIME_TYPES = {
     {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
 };
 
+static nlohmann::json extract_error_payload(const std::string& buf);
+
 Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir)
     : config_(config),
       cache_dir_(cache_dir),
@@ -495,6 +497,138 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                 throw lemon::jobs::JobError(424, msg);
             }
             return lemon::jobs::json::parse(response.dump());
+        };
+        providers.image_generations_op = [this](const lemon::jobs::json& params,
+                                                lemon::jobs::CancelFlag&) -> lemon::jobs::json {
+            nlohmann::json request = nlohmann::json::parse(params.dump());
+            nlohmann::json response = router_->image_generations(request);
+            if (response.contains("error")) {
+                std::string msg = "image_generations failed";
+                const auto& err = response["error"];
+                if (err.is_object() && err.contains("message") && err["message"].is_string())
+                    msg = err["message"].get<std::string>();
+                else if (err.is_string())
+                    msg = err.get<std::string>();
+                throw lemon::jobs::JobError(424, msg);
+            }
+            return lemon::jobs::json::parse(response.dump());
+        };
+        providers.image_edits_op = [this](const lemon::jobs::json& params,
+                                          lemon::jobs::CancelFlag&) -> lemon::jobs::json {
+            nlohmann::json request = nlohmann::json::parse(params.dump());
+            nlohmann::json response = router_->image_edits(request);
+            if (response.contains("error")) {
+                std::string msg = "image_edits failed";
+                const auto& err = response["error"];
+                if (err.is_object() && err.contains("message") && err["message"].is_string())
+                    msg = err["message"].get<std::string>();
+                else if (err.is_string())
+                    msg = err.get<std::string>();
+                throw lemon::jobs::JobError(424, msg);
+            }
+            return lemon::jobs::json::parse(response.dump());
+        };
+        providers.image_variations_op = [this](const lemon::jobs::json& params,
+                                               lemon::jobs::CancelFlag&) -> lemon::jobs::json {
+            nlohmann::json request = nlohmann::json::parse(params.dump());
+            nlohmann::json response = router_->image_variations(request);
+            if (response.contains("error")) {
+                std::string msg = "image_variations failed";
+                const auto& err = response["error"];
+                if (err.is_object() && err.contains("message") && err["message"].is_string())
+                    msg = err["message"].get<std::string>();
+                else if (err.is_string())
+                    msg = err.get<std::string>();
+                throw lemon::jobs::JobError(424, msg);
+            }
+            return lemon::jobs::json::parse(response.dump());
+        };
+        providers.audio_speech_op = [this](const lemon::jobs::json& params,
+                                           lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            nlohmann::json request = nlohmann::json::parse(params.dump());
+            std::string response_format = "mp3";
+            if (request.contains("response_format") && request["response_format"].is_string())
+                response_format = request["response_format"].get<std::string>();
+            std::string buf;
+            httplib::DataSink sink;
+            sink.write = [&buf](const char* data, size_t len) { buf.append(data, len); return true; };
+            sink.is_writable = []() { return true; };
+            sink.done = []() {};
+            router_->audio_speech(request, sink);
+            if (buf.empty())
+                throw lemon::jobs::JobError(502, "audio_speech produced no output");
+            if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
+                std::string msg = "audio_speech failed";
+                const auto& err = error_payload["error"];
+                if (err.is_object() && err.contains("message") && err["message"].is_string())
+                    msg = err["message"].get<std::string>();
+                else if (err.is_string())
+                    msg = err.get<std::string>();
+                throw lemon::jobs::JobError(424, msg);
+            }
+            lemon::jobs::json out;
+            out["data"] = lemon::utils::JsonUtils::base64_encode(buf);
+            out["mime_type"] = MIME_TYPES.value(response_format, "application/octet-stream");
+            out["size"] = buf.size();
+            out["response_format"] = response_format;
+            return out;
+        };
+        providers.audio_generations_op = [this](const lemon::jobs::json& params,
+                                                lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            nlohmann::json request = nlohmann::json::parse(params.dump());
+            std::string response_format = "wav";
+            if (request.contains("response_format") && request["response_format"].is_string())
+                response_format = request["response_format"].get<std::string>();
+            std::string buf;
+            httplib::DataSink sink;
+            sink.write = [&buf](const char* data, size_t len) { buf.append(data, len); return true; };
+            sink.is_writable = []() { return true; };
+            sink.done = []() {};
+            router_->audio_generations(request, sink);
+            if (buf.empty())
+                throw lemon::jobs::JobError(502, "audio_generations produced no output");
+            if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
+                std::string msg = "audio_generations failed";
+                const auto& err = error_payload["error"];
+                if (err.is_object() && err.contains("message") && err["message"].is_string())
+                    msg = err["message"].get<std::string>();
+                else if (err.is_string())
+                    msg = err.get<std::string>();
+                throw lemon::jobs::JobError(424, msg);
+            }
+            lemon::jobs::json out;
+            out["data"] = lemon::utils::JsonUtils::base64_encode(buf);
+            out["mime_type"] = MIME_TYPES.value(response_format, "application/octet-stream");
+            out["size"] = buf.size();
+            out["response_format"] = response_format;
+            return out;
+        };
+        providers.model_3d_generations_op = [this](const lemon::jobs::json& params,
+                                                   lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            nlohmann::json request = nlohmann::json::parse(params.dump());
+            std::string buf;
+            httplib::DataSink sink;
+            sink.write = [&buf](const char* data, size_t len) { buf.append(data, len); return true; };
+            sink.is_writable = []() { return true; };
+            sink.done = []() {};
+            router_->model_3d_generations(request, sink);
+            if (buf.empty())
+                throw lemon::jobs::JobError(502, "model_3d_generations produced no output");
+            if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
+                std::string msg = "model_3d_generations failed";
+                const auto& err = error_payload["error"];
+                if (err.is_object() && err.contains("message") && err["message"].is_string())
+                    msg = err["message"].get<std::string>();
+                else if (err.is_string())
+                    msg = err.get<std::string>();
+                throw lemon::jobs::JobError(424, msg);
+            }
+            lemon::jobs::json out;
+            out["data"] = lemon::utils::JsonUtils::base64_encode(buf);
+            out["mime_type"] = "model/gltf-binary";
+            out["size"] = buf.size();
+            out["response_format"] = "glb";
+            return out;
         };
         providers.begin_exclusive = [this, job_states, current_job, state_mutex](
                                         const std::string& job_id,
