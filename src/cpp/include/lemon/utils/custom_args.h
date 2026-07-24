@@ -49,8 +49,17 @@ inline std::map<std::string, std::vector<std::string>> build_custom_args_map(con
     std::map<std::string, std::vector<std::string>> result;
     std::string last_flag;  // Track the most recently seen flag independently of map ordering
 
+    // Distinguish flags from negative numeric values.
+    auto is_flag = [](const std::string& token) {
+        if (token.size() < 2 || token[0] != '-') {
+            return false;
+        }
+        char c = token[1];
+        return !(c >= '0' && c <= '9') && c != '.';
+    };
+
     for (const auto& token : tokens) {
-        if (!token.empty() && token[0] == '-') {
+        if (is_flag(token)) {
             // This is a flag; start a new entry
             result[token] = {};
             last_flag = token;
