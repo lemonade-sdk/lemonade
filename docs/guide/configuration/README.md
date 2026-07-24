@@ -58,6 +58,13 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "kokoro": {
     "cpu_bin": "builtin"
   },
+  "lemon-mlx": {
+    "args": "",
+    "backend": "auto",
+    "cpu_bin": "builtin",
+    "metal_bin": "builtin",
+    "rocm_bin": "builtin"
+  },
   "llamacpp": {
     "args": "",
     "backend": "auto",
