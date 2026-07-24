@@ -13,6 +13,7 @@
 #include "lemon/server_capabilities.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/error_types.h"
+#include "lemon/smart_thinking.h"
 #include "lemon/recipe_options.h"
 #include "lemon/auto_tune.h"
 #include "telemetry.h"
@@ -1357,6 +1358,14 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
 
+    json config_error;
+    auto parsed_config = SmartThinkingConfig::from_request(request, &config_error);
+    if (!parsed_config.has_value()) {
+        if (span) span->end_with_error("invalid smart_thinking configuration");
+        return config_error;
+    }
+    const SmartThinkingConfig config = *parsed_config;
+
     struct RequestCancelScope {
         WrappedServer* server = nullptr;
         ~RequestCancelScope() {
@@ -1383,7 +1392,16 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                 if (request.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request["max_tokens"]);
                 if (request.contains("max_completion_tokens")) span->set_attribute("llm.config.max_completion_tokens", request["max_completion_tokens"]);
             }
-            return server->chat_completion(request);
+            if (!config.enabled_for_request(request)) {
+                return server->chat_completion(
+                    config.native_passthrough_request(request));
+            }
+
+            SmartThinkingOrchestrator orchestrator(
+                [server](const json& smart_request) {
+                    return server->chat_completion(smart_request);
+                });
+            return orchestrator.run(request, config);
         });
 
         if (span) {

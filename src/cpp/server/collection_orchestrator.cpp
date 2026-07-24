@@ -700,6 +700,9 @@ CollectionOrchestrator::LoopResult CollectionOrchestrator::run_loop(
     // (stripped) is substituted each iteration.
     json req = request;
     req.erase("messages");
+    // Omni already owns a private multi-step tool loop. Never recursively
+    // apply Smart Thinking to its internal chat turns.
+    req.erase("smart_thinking");
     req.erase("stream_options");
     req["model"] = toolset.chat_model;
     req["tools"] = toolset.tools;
