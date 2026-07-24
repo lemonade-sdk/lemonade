@@ -105,6 +105,7 @@ static void test_directory_watcher_reload() {
     // Delete first to trigger a directory entry change. macOS's kqueue-based
     // DirectoryWatcher monitors the directory fd and does not detect inline writes.
     fs::remove(policy_path);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
     write_json(policy_path, doc);
 
     std::shared_ptr<const lemon::RoutingPolicyEngine> next_engine;
