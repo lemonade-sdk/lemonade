@@ -4919,7 +4919,18 @@ void ModelManager::rebuild_public_model_aliases_locked() {
 
         const Entry& winner = entries.front();
         public_model_aliases_[bare] = winner.cache_key;
-        canonical_public_names_[winner.cache_key] = bare;
+
+        // Collections registered under a prefixed namespace (user.* / extra.*)
+        // must list with their prefix so the id emitted by /v1/models matches the
+        // id used for registration, fetch, and chat. The bare name still resolves
+        // via the alias above, preserving dual-id (bare + prefixed) invocation.
+        const auto winner_it = models_cache_.find(winner.cache_key);
+        const bool winner_is_prefixed_collection =
+            winner.source != ModelSource::Builtin &&
+            winner_it != models_cache_.end() &&
+            is_model_collection_recipe(winner_it->second.recipe);
+        canonical_public_names_[winner.cache_key] =
+            winner_is_prefixed_collection ? canonical_id(winner.source, bare) : bare;
 
         for (size_t i = 1; i < entries.size(); ++i) {
             const Entry& shadowed = entries[i];
