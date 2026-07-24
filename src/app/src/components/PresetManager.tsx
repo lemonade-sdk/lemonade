@@ -889,14 +889,8 @@ const SlideoverContent: React.FC<{
       ) : (
         <input className="slideover__title-input" value={name} onChange={event => setName(event.target.value)} placeholder="Preset name" data-recipe-name aria-label="Preset name" />
       )}
-      metadata={(
+      metadata={(preset.starter || preset.auto_opt_run_id || linkedModels.length > 0) ? (
         <>
-          {normalizedAppliesTo.map(cap => (
-            <WorkspaceMetadataChip key={cap} emphasis="medium">
-              <CapabilityIcon capability={cap} size={12} aria-hidden="true" />
-              {CAPABILITY_LABELS[cap] || cap}
-            </WorkspaceMetadataChip>
-          ))}
           {preset.starter && (
             <WorkspaceMetadataChip emphasis="high" tone="accent" dataAttributes={{ 'data-recipe-starter-badge': true }}>
               Starter
@@ -935,12 +929,7 @@ const SlideoverContent: React.FC<{
             </WorkspaceMetadataChip>
           )}
         </>
-      )}
-      description={isReadOnly ? (
-        <p className="slideover__desc" data-recipe-desc>{preset.description}</p>
-      ) : (
-        <textarea className="slideover__desc-input" value={description} onChange={event => setDescription(event.target.value)} placeholder="Description (optional)" rows={2} data-recipe-desc aria-label="Description" />
-      )}
+      ) : undefined}
       headerExtras={missingRunNote && <p className="preset-help" data-preset-autoopt-missing>Run no longer exists on this machine.</p>}
       actions={(
         <WorkspaceActionGroup className="preset-detail-actions" label={`Actions for ${preset.name}`}>
@@ -950,7 +939,7 @@ const SlideoverContent: React.FC<{
             <WorkspaceActionButton appearance="primary" icon={saved ? 'check' : undefined} onClick={handleSave}>{saved ? 'Saved' : 'Save'}</WorkspaceActionButton>
           )}
           <WorkspaceActionButton appearance="secondary" icon="copy" onClick={() => onClone(preset.starter ? preset : currentPreset)} data-recipe-clone>Clone</WorkspaceActionButton>
-          <WorkspaceActionButton appearance="quiet" icon="download" onClick={() => onExport(currentPreset)}>Export</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="secondary" icon="download" onClick={() => onExport(currentPreset)}>Export</WorkspaceActionButton>
           {!preset.starter && (
             <WorkspaceActionButton appearance="danger" icon="trash" onClick={() => onDelete(preset)} data-recipe-delete>Delete</WorkspaceActionButton>
           )}
@@ -962,6 +951,11 @@ const SlideoverContent: React.FC<{
     >
       <div className="slideover__body">
         <p className="preset-intent-explainer">Presets describe how you want to use a model. Lemonade resolves concrete runtime settings through Model Tuning for each model.</p>
+        {isReadOnly ? (
+          <p className="slideover__desc" data-recipe-desc>{preset.description}</p>
+        ) : (
+          <textarea className="slideover__desc-input" value={description} onChange={event => setDescription(event.target.value)} placeholder="Notes (optional)" rows={2} data-recipe-desc aria-label="Notes" />
+        )}
 
         <div className="slideover__section">
           <h3>Applies to</h3>

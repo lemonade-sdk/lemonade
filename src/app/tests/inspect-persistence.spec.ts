@@ -75,7 +75,7 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
   });
 
   // 1. Navigate to the inspect view directly
-  await page.goto('/#/inspect');
+  await page.goto('/#/dashboard/telemetry');
   await page.waitForTimeout(1000);
 
   // 2. Verify that capturing is off by default
@@ -99,8 +99,8 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
   const isCapturingReloaded = await captureSwitchReloaded.getAttribute('aria-checked');
   expect(isCapturingReloaded).toBe('true');
 
-  // 5. Generate a dummy trace by opening "+ Create" composer modal and submitting
-  await page.click('button:has-text("+ Create")');
+  // 5. Generate a dummy trace by opening the Create composer modal and submitting
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
   await page.waitForTimeout(500);
 
   // Click the model search box inside the modal

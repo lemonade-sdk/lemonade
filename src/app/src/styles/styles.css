@@ -14223,6 +14223,7 @@ button.workspace-metadata-chip:hover {
 .preset-detail-panel .slideover__title-input { font-size: var(--detail-type-title); line-height: 1.15; }
 .preset-detail-panel .slideover__meta-row { margin-top: var(--space-1); }
 .preset-detail-panel .slideover__body { padding: var(--detail-section-space) var(--detail-gutter); }
+.preset-detail-panel .slideover__desc-input { flex: 0 0 auto; margin-top: 0; }
 /* Shared creation-editor grammar */
 .custom-model-editor__title {
   margin: 0;

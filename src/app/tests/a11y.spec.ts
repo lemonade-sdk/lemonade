@@ -35,7 +35,7 @@ async function navigateToView(page: Page, label: string): Promise<void> {
 
 async function navigateToMonitorSection(page: Page, label: 'Performance' | 'Telemetry' | 'Logs'): Promise<void> {
   await navigateToView(page, 'Dashboard');
-  await page.waitForSelector('[data-view="monitor"]');
+  await page.waitForSelector('[data-view="dashboard"]');
   if (label !== 'Performance') {
     await page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: label, exact: true }).click();
     await page.waitForTimeout(300);
