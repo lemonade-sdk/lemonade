@@ -294,24 +294,25 @@ void LlamaCppServer::load(const std::string& model_name,
     // Install llama-server if needed (use per-model backend)
     backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
 
-    // For the rocm-stable channel, look up which ROCm/TheRock version this
-    // specific install actually resolved to (may differ from the static pin —
-    // see BackendManager::InstallParams::discovered_therock_version) so the
-    // runtime library path below is resolved against the version that's
-    // actually installed for THIS launch, not whichever TheRock version
-    // happens to already exist on disk (which could be a stale pinned one
-    // left over from an earlier default install). Cached from the
-    // install_backend() call above, so this doesn't re-hit the network.
+    // Which ROCm/TheRock version this install actually resolved to (may differ
+    // from the static pin), so the runtime library path below doesn't pick up
+    // a stale version left on disk from an earlier default install. Prefer the
+    // marker install_backend() persists (survives a restart, works offline);
+    // fall back to live re-resolution only for pre-marker installs.
     std::string rocm_stable_therock_version;
     if (llamacpp_backend == "rocm-stable") {
-        try {
-            rocm_stable_therock_version =
-                backend_manager_->get_install_params(llamacpp::spec()->recipe, llamacpp_backend)
-                    .discovered_therock_version;
-        } catch (const std::exception& e) {
-            LOG(WARNING, "LlamaCpp") << "Could not re-resolve TheRock runtime version after "
-                                        "install; falling back to the static pin for runtime "
-                                        "library path selection: " << e.what() << std::endl;
+        rocm_stable_therock_version =
+            BackendUtils::read_therock_version_marker(llamacpp::spec()->recipe, llamacpp_backend);
+        if (rocm_stable_therock_version.empty()) {
+            try {
+                rocm_stable_therock_version =
+                    backend_manager_->get_install_params(llamacpp::spec()->recipe, llamacpp_backend)
+                        .discovered_therock_version;
+            } catch (const std::exception& e) {
+                LOG(WARNING, "LlamaCpp") << "Could not resolve TheRock runtime version after "
+                                            "install; falling back to the static pin for runtime "
+                                            "library path selection: " << e.what() << std::endl;
+            }
         }
     }
 

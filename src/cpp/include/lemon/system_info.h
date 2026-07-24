@@ -131,23 +131,13 @@ public:
     static void set_rocm_arch_override(const std::string& arch);
 
     // When set non-empty on the calling thread, llamacpp's rocm-stable install
-    // path uses this ROCm major.minor version (e.g. "7.14") — discovered from
-    // the resolved release's own asset filename — instead of
-    // backend_versions.json's static therock.version pin, when building the
-    // llama-server download filename. Set by BackendManager::get_install_params
-    // for every llamacpp rocm-stable install (not only when the resolved tag
-    // diverges from the static pin), so it also self-heals if the pin itself
-    // ever drifts out of sync with the pinned llama.cpp build tag.
-    //
-    // This only covers the llama-server download filename. The matching
-    // TheRock runtime package version is derived from the same discovery and
-    // threaded separately as an explicit parameter — see
-    // BackendManager::InstallParams::discovered_therock_version — rather than
-    // through this override, since that path doesn't go through llamacpp's
-    // install_params_fn callback.
-    //
-    // Per-thread so it cannot affect concurrent requests; cleared immediately
-    // after use.
+    // path uses this discovered ROCm major.minor version (e.g. "7.14") instead
+    // of the static therock.version pin when building the llama-server
+    // download filename. Set by BackendManager::get_install_params. The
+    // matching TheRock runtime package is handled separately via
+    // InstallParams::discovered_therock_version, since that path doesn't go
+    // through llamacpp's install_params_fn callback. Per-thread; cleared
+    // immediately after use.
     static void set_rocm_therock_version_override(const std::string& version);
     static std::string get_rocm_therock_version_override();
 

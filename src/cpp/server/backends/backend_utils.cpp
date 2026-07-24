@@ -1265,6 +1265,49 @@ namespace lemon::backends {
         return "";
 #endif
     }
+
+    namespace {
+        fs::path therock_version_marker_path(const std::string& recipe, const std::string& backend) {
+            return fs::path(BackendUtils::get_install_directory(recipe, backend)) / "therock_version.txt";
+        }
+    }
+
+    void BackendUtils::write_therock_version_marker(const std::string& recipe, const std::string& backend,
+                                                     const std::string& therock_version) {
+        if (therock_version.empty()) {
+            return;
+        }
+        std::error_code ec;
+        fs::path marker_path = therock_version_marker_path(recipe, backend);
+        fs::create_directories(marker_path.parent_path(), ec);
+        if (ec) {
+            LOG(WARNING, "BackendUtils") << "Could not create directory for TheRock version marker "
+                                        << marker_path << ": " << ec.message() << std::endl;
+            return;
+        }
+        std::ofstream f(marker_path);
+        if (!f.is_open()) {
+            LOG(WARNING, "BackendUtils") << "Could not write TheRock version marker "
+                                        << marker_path << std::endl;
+            return;
+        }
+        f << therock_version;
+    }
+
+    std::string BackendUtils::read_therock_version_marker(const std::string& recipe, const std::string& backend) {
+        fs::path marker_path = therock_version_marker_path(recipe, backend);
+        if (!fs::exists(marker_path)) {
+            return "";
+        }
+        std::ifstream f(marker_path);
+        if (!f.is_open()) {
+            return "";
+        }
+        std::string version;
+        std::getline(f, version);
+        return version;
+    }
+
     void BackendUtils::apply_cuda_env_vars(
             std::vector<std::pair<std::string, std::string>>& env_vars,
             const std::string& log_tag,

@@ -611,20 +611,13 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string resolved_version = resolve_user_version(
         recipe, resolved_backend, pinned, pinned_params.repo);
 
-    // llamacpp's rocm-stable filename embeds a ROCm/TheRock version (see
-    // get_therock_version() in llamacpp_server.cpp), with exactly one
-    // candidate asset per release, so the discovered value is unambiguous.
-    //
-    // sd-cpp does the same, but is deliberately NOT included here: its
-    // releases can ship more than one ROCm-versioned asset at once (observed:
-    // both "-rocm-7.1.1-" and "-rocm-7.13.0-" in the same release, presumably
-    // targeting different GPU generations), and picking "whichever asset name
-    // matched first" could silently select the wrong one for the current
-    // arch — worse than the pre-existing gap. Fixing sd-cpp needs arch-aware
-    // disambiguation first; left as a follow-up.
-    //
-    // Other rocm-stable recipes (acestep, thinksound, trellis, openmoss)
-    // don't read therock.version at all, so they're skipped too.
+    // Only llamacpp's rocm-stable filename embeds a ROCm/TheRock version with
+    // exactly one candidate asset per release (unambiguous to discover). Not
+    // sd-cpp: its releases can ship more than one ROCm-versioned asset at once
+    // (observed "-rocm-7.1.1-" and "-rocm-7.13.0-" in the same release,
+    // presumably per GPU generation), so picking the first match could
+    // silently pick the wrong one — left as a follow-up needing arch-aware
+    // disambiguation. Other rocm-stable recipes don't read therock.version.
     const bool uses_therock_version =
         resolved_backend == "rocm-stable" && recipe == "llamacpp";
 
@@ -635,21 +628,16 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
 
     std::string discovered_major_minor;
     if (uses_therock_version) {
-        // The static therock.version pin only describes what the *pinned*
-        // release was built against. Always verify against the resolved
-        // release's own asset names rather than trusting the pin — this also
-        // self-heals if the pin itself drifts out of sync with the pinned
-        // llama.cpp/sd.cpp tag (e.g. a maintainer bumps one without the
-        // other), not just when rocm_bin diverges from it.
+        // Always verify against the resolved release's own asset names rather
+        // than trusting the static pin — self-heals if the pin ever drifts out
+        // of sync with the pinned llama.cpp tag, not just on rocm_bin divergence.
         discovered_major_minor = resolve_rocm_asset_version(pinned_params.repo, resolved_version);
         if (!discovered_major_minor.empty()) {
             SystemInfo::set_rocm_therock_version_override(discovered_major_minor);
         } else if (resolved_version != pinned) {
-            // We can't verify what ROCm version this non-pinned release
-            // actually needs. Silently falling back to the static pin here
-            // would risk reconstructing the exact stale-version 404 this
-            // lookup exists to prevent, so only tolerate the gap when there's
-            // a legitimate reason we didn't even try to look it up.
+            // Can't verify what ROCm version this non-pinned release needs;
+            // falling back to the static pin here would risk reconstructing
+            // the exact stale-version 404 this lookup prevents.
             auto* rt_cfg = RuntimeConfig::global();
             const bool excused = rt_cfg && (rt_cfg->offline() || rt_cfg->no_fetch_executables());
             if (!excused) {
@@ -925,6 +913,13 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             fs::remove_all(backend_install_dir, cleanup_ec);
         }
         throw;
+    }
+
+    if (recipe == "llamacpp" && resolved_backend == "rocm-stable") {
+        // Persist the resolved version — the discovery behind it lives in an
+        // in-memory cache that won't survive a restart. See LlamaCppServer::load().
+        backends::BackendUtils::write_therock_version_marker(
+            recipe, resolved_backend, resolve_therock_runtime_version(backend_versions_, therock_override));
     }
 }
 
