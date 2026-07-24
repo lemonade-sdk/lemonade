@@ -1,5 +1,3 @@
-import React from 'react';
-
 export interface PolicyRule {
   id: string;
   match?: unknown;
