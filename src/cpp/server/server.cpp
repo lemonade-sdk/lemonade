@@ -7,6 +7,7 @@
 #include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
+#include "lemon/routing_policy_parser.h"
 #include "lemon/config_file.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/mcp_server.h"
@@ -1150,6 +1151,13 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_get("pull/variants", [this](const httplib::Request& req, httplib::Response& res) {
         handle_pull_variants(req, res);
+    });
+
+    // Runs a routing policy engine against an ad-hoc policy JSON + prompt
+    // (the Router Builder's Test Prompt tab), without requiring the policy to
+    // be attached to a registered model.
+    register_post("routing/validate", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_routing_validate(req, res);
     });
 
     register_get("downloads", [this](const httplib::Request& req, httplib::Response& res) {
@@ -2754,6 +2762,111 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
     result.selected_model = decision.route_to;
     result.decision = std::move(decision);
     return result;
+}
+
+void Server::handle_routing_validate(const httplib::Request& req, httplib::Response& res) {
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
+    if (!request_json.contains("policy") || !request_json["policy"].is_object()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'policy' must be a JSON object"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+    if (request_json.contains("prompt") && !request_json["prompt"].is_string()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'prompt' must be a string"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+    const std::string prompt = request_json.value("prompt", std::string());
+
+    if (request_json.contains("has_images") && !request_json["has_images"].is_boolean()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'has_images' must be a boolean"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+    const bool has_images = request_json.value("has_images", false);
+
+    if (request_json.contains("has_tools") && !request_json["has_tools"].is_boolean()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'has_tools' must be a boolean"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+    const bool has_tools = request_json.value("has_tools", false);
+
+    std::map<std::string, std::string> metadata;
+    if (request_json.contains("metadata")) {
+        const nlohmann::json& metadata_json = request_json["metadata"];
+        if (!metadata_json.is_object()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "'metadata' must be a JSON object of string values"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        for (auto it = metadata_json.begin(); it != metadata_json.end(); ++it) {
+            if (!it.value().is_string()) {
+                res.status = 400;
+                nlohmann::json error = {{"error",
+                    "'metadata' value for key '" + it.key() + "' must be a string"}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            metadata[it.key()] = it.value().get<std::string>();
+        }
+    }
+
+    try {
+        // Ad-hoc validation: the policy isn't attached to a registered model,
+        // so accept any candidate/component name as-is rather than requiring
+        // it to resolve against the live model registry. This identity
+        // resolver is the only relaxation from the normal registration path —
+        // require_declared_components stays at its default (true) so the
+        // document must still be internally consistent (every candidate,
+        // default_model, rule route_to, and classifier model must be listed
+        // in collection.components), matching what registration would accept.
+        RoutingPolicyParseOptions options;
+        options.resolve_component = [](const std::string& name) -> std::optional<std::string> {
+            return name;
+        };
+        nlohmann::json normalized_routing;
+        RoutePolicy policy = parse_route_policy_collection(
+            request_json["policy"], options, &normalized_routing);
+
+        ClassifierServices services = make_router_classifier_services(
+            *router_, [this](const std::string& m) { auto_load_model_if_needed(m); });
+        RoutingPolicyEngine engine(std::move(policy), std::move(services));
+
+        RouteContext ctx;
+        ctx.input = prompt;
+        ctx.params.chars = prompt.size();
+        ctx.params.has_images = has_images;
+        ctx.params.has_tools = has_tools;
+        ctx.metadata = std::move(metadata);
+
+        Decision decision = engine.route(ctx, /*want_trace=*/true);
+
+        // Echo back the policy actually evaluated (`routing.router` desugared
+        // into explicit `classifiers`/`rules`, e.g. `__route_0`) so a caller
+        // can match `decision.matched_rule` against a rule that exists —
+        // the as-authored policy may only have `routing.router` and no
+        // `routing.rules` at all.
+        nlohmann::json normalized_policy = request_json["policy"];
+        normalized_policy["routing"] = std::move(normalized_routing);
+
+        nlohmann::json response = {
+            {"decision", route_decision_to_json(decision)},
+            {"normalized_policy", std::move(normalized_policy)},
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", std::string("Invalid routing policy: ") + e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
 }
 
 std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(

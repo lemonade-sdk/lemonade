@@ -9,6 +9,7 @@ import {
   matchExprToRuleNode,
   ruleNodeToMatchExpr,
   stableStringify,
+  validateRuleNode,
 } from './routerTree';
 
 export const CUSTOM_COLLECTION_PREFIX = USER_MODEL_PREFIX;
@@ -252,6 +253,86 @@ export interface RouterCollectionPullRequest {
   recipe: typeof COLLECTION_ROUTER_MODEL_RECIPE;
   components: string[];
   routing: Record<string, unknown>;
+}
+
+// Structural validation shared by RouterCollectionPanel's save/preview/export
+// path and its Test Prompt tab (which needs a live, testable policy without
+// requiring the draft to also pass the save-time-only lossyRuleIds/
+// lossyAcknowledged gate). Returns the first error message, or null when the
+// draft is structurally valid - buildRouterCollectionPullRequest's own guard
+// checks are a strict subset of these, so a null result here guarantees it
+// won't throw.
+export function validateRouterDraftStructure(draft: RouterCollectionDraft): string | null {
+  const name = draft.name.trim();
+  if (!name) return 'Router name is required.';
+  if (draft.candidates.length === 0) return 'Select at least one candidate model.';
+  if (!draft.defaultModel) return 'Select a default model from the candidates.';
+  if (!draft.candidates.includes(draft.defaultModel)) {
+    return 'Default model must be one of the selected candidates.';
+  }
+  if (draft.routingMode === 'llm') {
+    if (!draft.routerModel) return 'Select a router LLM.';
+    if (!draft.routerPrompt?.trim()) return 'Enter a routing prompt.';
+  } else if (draft.routingMode === 'quick') {
+    if (!draft.rules?.length) return 'Add at least one rule.';
+    for (let ri = 0; ri < draft.rules.length; ri++) {
+      const r = draft.rules[ri];
+      const label = `Rule #${ri + 1}`;
+      if (!r.conditionTree) return `${label} needs at least one condition.`;
+      if (!r.routeTo) return `${label} needs a target model.`;
+      const errs = validateRuleNode(r.conditionTree, new Set(), []);
+      if (errs.length) return `${label}: ${errs[0]}`;
+    }
+  } else {
+    // Duplicate classifier ID check
+    const clfIds = (draft.classifiers ?? []).map(c => c.id.trim()).filter(Boolean);
+    const dupClf = clfIds.find((id, i) => clfIds.indexOf(id) !== i);
+    if (dupClf) return `Duplicate classifier ID: "${dupClf}"`;
+    // Duplicate rule ID check
+    const ruleIds = (draft.rules ?? []).map(r => r.id.trim()).filter(Boolean);
+    const dupRule = ruleIds.find((id, i) => ruleIds.indexOf(id) !== i);
+    if (dupRule) return `Duplicate rule ID: "${dupRule}"`;
+    for (const c of draft.classifiers ?? []) {
+      if (!c.id.trim()) return 'Each classifier needs an id.';
+      if (!c.model) return `Classifier "${c.id}": select a model.`;
+      if (c.type === 'llm') {
+        if (!c.prompt?.trim()) {
+          return `Classifier "${c.id}": enter a routing prompt.`;
+        }
+        if (!c.labels?.length) {
+          return `Classifier "${c.id}": LLM classifiers need at least one label.`;
+        }
+      }
+      if (c.type === 'semantic_similarity') {
+        const concepts = Object.keys(c.referencePhrases ?? {});
+        if (!concepts.length) return `Classifier "${c.id}": add at least one concept.`;
+        for (const k of concepts) {
+          if (!(c.referencePhrases![k]?.length)) {
+            return `Classifier "${c.id}" concept "${k}": add at least one phrase.`;
+          }
+        }
+        if (c.defaultLabel && !concepts.includes(c.defaultLabel)) {
+          return `Classifier "${c.id}": default label "${c.defaultLabel}" is not one of the concepts.`;
+        }
+      } else if (c.defaultLabel && !(c.labels ?? []).includes(c.defaultLabel)) {
+        return `Classifier "${c.id}": default label "${c.defaultLabel}" is not in the labels list.`;
+      }
+    }
+    if (!draft.rules?.length) return 'Add at least one rule.';
+    const classifierIds = new Set((draft.classifiers ?? []).map(c => c.id));
+    for (let ri = 0; ri < draft.rules.length; ri++) {
+      const r = draft.rules[ri];
+      const label = `Rule #${ri + 1}`;
+      if (!r.routeTo) return `${label}: select a target model.`;
+      if (!draft.candidates.includes(r.routeTo)) {
+        return `${label}: target model must be a candidate.`;
+      }
+      if (!r.conditionTree) return `${label}: add at least one condition.`;
+      const treeErrors = validateRuleNode(r.conditionTree, classifierIds, draft.classifiers ?? []);
+      if (treeErrors.length) return `${label}: ${treeErrors[0]}`;
+    }
+  }
+  return null;
 }
 
 export const buildRouterCollectionPullRequest = (draft: RouterCollectionDraft): RouterCollectionPullRequest => {

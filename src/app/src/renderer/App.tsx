@@ -73,7 +73,7 @@ const AppContent: React.FC = () => {
   const [routerCollectionModal, setRouterCollectionModal] = useState<{ mode: 'create' | 'edit'; collectionId?: string } | null>(null);
   const importRouterFileRef = useRef<HTMLInputElement>(null);
   const { modelsData, selectedModel, setSelectedModel, setUserHasSelectedModel, refresh: refreshModels } = useModels();
-  const { toasts, removeToast, showError, showSuccess, showInfo } = useToast();
+  const { toasts, removeToast, showError, showSuccess, showWarning, showInfo } = useToast();
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -716,6 +716,9 @@ const AppContent: React.FC = () => {
               onClose={() => setRouterCollectionModal(null)}
               onSave={handleSaveRouterCollection}
               onExport={handleExportRouterCollection}
+              showError={showError}
+              showSuccess={showSuccess}
+              showWarning={showWarning}
             />
           </div>
         </div>,

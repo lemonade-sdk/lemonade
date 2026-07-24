@@ -11,11 +11,16 @@ import {
   getRouterCandidateOptions,
   makeCollectionId,
   routingToRouterCollectionDraft,
+  validateRouterDraftStructure,
 } from '../utils/customCollections';
 import { isCollectionRecipe } from '../utils/recipeNames';
-import { isLeaf, isOperatorNode, makeDefaultLeaf, SIGNAL_COLORS, validateRuleNode, type ConditionSignalType } from '../utils/routerTree';
+import { isLeaf, isOperatorNode, makeDefaultLeaf, SIGNAL_COLORS, type ConditionSignalType } from '../utils/routerTree';
+import type { RoutingPolicyDoc } from '../utils/decisionTree';
 import RouterPipelineCanvas from './RouterPipelineCanvas';
+import RouterTestPromptPanel from './RouterTestPromptPanel';
 import { ModelCheckboxList, ModelSelect, type ModelOption } from './ModelSearchPicker';
+import Tabs from '../Tabs';
+import { useTabsContext } from '../TabsContext';
 
 interface RouterCollectionPanelProps {
   mode: 'create' | 'edit';
@@ -23,7 +28,23 @@ interface RouterCollectionPanelProps {
   onClose: () => void;
   onSave: (collection: RouterCollectionDraft) => void | Promise<void>;
   onExport: (collection: RouterCollectionDraft) => void;
+  showError: (message: string) => void;
+  showSuccess: (message: string) => void;
+  showWarning: (message: string) => void;
 }
+
+/** Always-mounted tab content switcher (unlike Tabs.Contents, which unmounts
+ * the inactive tab) - so the Test Prompt tab's typed prompt/results survive
+ * flipping back to Builder to tweak a rule and returning. */
+const TabPanels: React.FC<{ builder: React.ReactNode; testPrompt: React.ReactNode }> = ({ builder, testPrompt }) => {
+  const { currentIndex } = useTabsContext();
+  return (
+    <>
+      <div className="settings-tab-content" style={{ display: currentIndex === 0 ? undefined : 'none' }}>{builder}</div>
+      <div className="settings-tab-content" style={{ display: currentIndex === 1 ? undefined : 'none' }}>{testPrompt}</div>
+    </>
+  );
+};
 
 const DEFAULT_ROUTER_NAME = 'MyHybridRouter';
 const DEFAULT_ROUTER_PROMPT =
@@ -492,7 +513,7 @@ const PromptTextarea: React.FC<PromptTextareaProps> = ({ value, onChange, candid
 // ── Panel ─────────────────────────────────────────────────────────────────
 
 const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
-  mode, collectionId, onClose, onSave, onExport,
+  mode, collectionId, onClose, onSave, onExport, showError, showSuccess, showWarning,
 }) => {
   const { modelsData } = useModels();
   const [draft, setDraft] = useState<RouterCollectionDraft>(() => emptyDraft());
@@ -540,6 +561,30 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         return dl !== 0 ? dl : (a.info.model_name ?? a.id).localeCompare(b.info.model_name ?? b.id);
       }),
   [modelsData]);
+
+  // Live structural validity + a testable policy for the Test Prompt tab,
+  // recomputed from the draft as the user edits - no explicit "build" step,
+  // and no dependency on the save-time-only lossyAcknowledged gate.
+  const structuralError = useMemo(() => validateRouterDraftStructure(draft), [draft]);
+  const testPolicy = useMemo<RoutingPolicyDoc | null>(() => {
+    if (structuralError) return null;
+    try {
+      return buildRouterCollectionPullRequest(draft) as unknown as RoutingPolicyDoc;
+    } catch {
+      return null;
+    }
+  }, [draft, structuralError]);
+
+  // Only the models /routing/validate actually exercises to produce a
+  // decision - the llm router model, or the classifier models in rules/quick
+  // mode. Candidates are never invoked by a validate call (it only reports
+  // which one would be chosen), so they're deliberately excluded here.
+  const requiredTestModels = useMemo<string[]>(() => {
+    const models = draft.routingMode === 'llm'
+      ? (draft.routerModel ? [draft.routerModel] : [])
+      : (draft.classifiers ?? []).map(c => c.model).filter((m): m is string => !!m);
+    return Array.from(new Set(models));
+  }, [draft]);
 
   useEffect(() => {
     setError(null);
@@ -683,74 +728,8 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
 
   const validate = (): RouterCollectionDraft | null => {
     const name = draft.name.trim();
-    if (!name) { setError('Router name is required.'); return null; }
-    if (draft.candidates.length === 0) { setError('Select at least one candidate model.'); return null; }
-    if (!draft.defaultModel) { setError('Select a default model from the candidates.'); return null; }
-    if (!draft.candidates.includes(draft.defaultModel)) {
-      setError('Default model must be one of the selected candidates.'); return null;
-    }
-    if (draft.routingMode === 'llm') {
-      if (!draft.routerModel) { setError('Select a router LLM.'); return null; }
-      if (!draft.routerPrompt?.trim()) { setError('Enter a routing prompt.'); return null; }
-    } else if (draft.routingMode === 'quick') {
-      if (!draft.rules?.length) { setError('Add at least one rule.'); return null; }
-      for (let ri = 0; ri < draft.rules.length; ri++) {
-        const r = draft.rules[ri];
-        const label = `Rule #${ri + 1}`;
-        if (!r.conditionTree) { setError(`${label} needs at least one condition.`); return null; }
-        if (!r.routeTo) { setError(`${label} needs a target model.`); return null; }
-        const errs = validateRuleNode(r.conditionTree, new Set(), []);
-        if (errs.length) { setError(`${label}: ${errs[0]}`); return null; }
-      }
-    } else {
-      // Duplicate classifier ID check
-      const clfIds = (draft.classifiers ?? []).map(c => c.id.trim()).filter(Boolean);
-      const dupClf = clfIds.find((id, i) => clfIds.indexOf(id) !== i);
-      if (dupClf) { setError(`Duplicate classifier ID: "${dupClf}"`); return null; }
-      // Duplicate rule ID check
-      const ruleIds = (draft.rules ?? []).map(r => r.id.trim()).filter(Boolean);
-      const dupRule = ruleIds.find((id, i) => ruleIds.indexOf(id) !== i);
-      if (dupRule) { setError(`Duplicate rule ID: "${dupRule}"`); return null; }
-      for (const c of draft.classifiers ?? []) {
-        if (!c.id.trim()) { setError('Each classifier needs an id.'); return null; }
-        if (!c.model) { setError(`Classifier "${c.id}": select a model.`); return null; }
-        if (c.type === 'llm') {
-          if (!c.prompt?.trim()) {
-            setError(`Classifier "${c.id}": enter a routing prompt.`); return null;
-          }
-          if (!c.labels?.length) {
-            setError(`Classifier "${c.id}": LLM classifiers need at least one label.`); return null;
-          }
-        }
-        if (c.type === 'semantic_similarity') {
-          const concepts = Object.keys(c.referencePhrases ?? {});
-          if (!concepts.length) { setError(`Classifier "${c.id}": add at least one concept.`); return null; }
-          for (const k of concepts) {
-            if (!(c.referencePhrases![k]?.length)) {
-              setError(`Classifier "${c.id}" concept "${k}": add at least one phrase.`); return null;
-            }
-          }
-          if (c.defaultLabel && !concepts.includes(c.defaultLabel)) {
-            setError(`Classifier "${c.id}": default label "${c.defaultLabel}" is not one of the concepts.`); return null;
-          }
-        } else if (c.defaultLabel && !(c.labels ?? []).includes(c.defaultLabel)) {
-          setError(`Classifier "${c.id}": default label "${c.defaultLabel}" is not in the labels list.`); return null;
-        }
-      }
-      if (!draft.rules?.length) { setError('Add at least one rule.'); return null; }
-      const classifierIds = new Set((draft.classifiers ?? []).map(c => c.id));
-      for (let ri = 0; ri < draft.rules.length; ri++) {
-        const r = draft.rules[ri];
-        const label = `Rule #${ri + 1}`;
-        if (!r.routeTo) { setError(`${label}: select a target model.`); return null; }
-        if (!draft.candidates.includes(r.routeTo)) {
-          setError(`${label}: target model must be a candidate.`); return null;
-        }
-        if (!r.conditionTree) { setError(`${label}: add at least one condition.`); return null; }
-        const treeErrors = validateRuleNode(r.conditionTree, classifierIds, draft.classifiers ?? []);
-        if (treeErrors.length) { setError(`${label}: ${treeErrors[0]}`); return null; }
-      }
-    }
+    const structuralError = validateRouterDraftStructure(draft);
+    if (structuralError) { setError(structuralError); return null; }
     // Block save when the policy loaded from the server had conditions this editor
     // cannot represent (e.g. metadata leaves). The user must acknowledge before
     // those conditions are permanently dropped.
@@ -805,6 +784,10 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         </button>
       </div>
 
+      <Tabs>
+        <Tabs.Labels items={[{ id: 'builder', label: 'Builder' }, { id: 'test-prompt', label: 'Test Prompt' }]} />
+        <TabPanels
+          builder={<>
       <div className="settings-content custom-collection-content">
 
         <div className="form-section">
@@ -984,6 +967,20 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           </label>
         </div>
       )}
+          </>}
+          testPrompt={
+            <RouterTestPromptPanel
+              policy={testPolicy}
+              policyUnavailableReason={structuralError}
+              requiredModels={requiredTestModels}
+              routerName={draft.name.trim() || 'Untitled Router'}
+              showError={showError}
+              showSuccess={showSuccess}
+              showWarning={showWarning}
+            />
+          }
+        />
+      </Tabs>
 
       {confirmQuick && createPortal(
         <div className="confirm-overlay" onClick={() => setConfirmQuick(false)}>
