@@ -1197,6 +1197,16 @@ namespace lemon::backends {
 #if !defined(__linux__) && !defined(_WIN32)
         return "";
 #else
+        auto runtime_dir_for = [](const std::string& install_dir) -> std::string {
+#ifdef _WIN32
+            // On Windows, DLLs are in bin/ (lib/ contains only import .lib files)
+            return (fs::path(install_dir) / "bin").string();
+#else
+            // On Linux, shared libraries are in lib/
+            return (fs::path(install_dir) / "lib").string();
+#endif
+        };
+
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
         json config = utils::JsonUtils::load_from_file(config_path);
 
@@ -1206,17 +1216,50 @@ namespace lemon::backends {
 
         std::string version = config["therock"]["version"].get<std::string>();
 
-        // Only return the path if TheRock is already installed
+        // Fast path: the statically pinned version is what's on disk (true
+        // whenever the pinned llama.cpp/sd.cpp tag and therock.version agree).
         std::string install_dir = get_therock_install_dir(rocm_arch, version);
         if (fs::exists(install_dir)) {
-#ifdef _WIN32
-            // On Windows, DLLs are in bin/ (lib/ contains only import .lib files)
-            std::string lib_path = (fs::path(install_dir) / "bin").string();
-#else
-            // On Linux, shared libraries are in lib/
-            std::string lib_path = (fs::path(install_dir) / "lib").string();
-#endif
+            std::string lib_path = runtime_dir_for(install_dir);
             LOG(DEBUG, "BackendUtils") << "Returning TheRock runtime path: " << lib_path << std::endl;
+            return lib_path;
+        }
+
+        // The pin can diverge from what's actually installed on disk — e.g. a
+        // rocm_bin="latest" install discovered and installed a different
+        // ROCm/TheRock version than the static pin describes (see
+        // BackendManager::InstallParams::discovered_therock_version). Rather
+        // than assume a version here, use whatever's actually present for
+        // this arch. Picks the most recently modified match if more than one
+        // exists (only possible on Windows, which — unlike Linux — doesn't
+        // prune stale TheRock versions after a re-pin).
+        fs::path therock_base = fs::path(utils::get_downloaded_bin_dir()) / "therock";
+        std::string best_match;
+        fs::file_time_type best_mtime{};
+        std::error_code ec;
+        if (fs::exists(therock_base, ec)) {
+            for (const auto& entry : fs::directory_iterator(therock_base, ec)) {
+                if (ec || !entry.is_directory()) {
+                    continue;
+                }
+                const std::string dir_name = entry.path().filename().string();
+                if (dir_name.rfind(rocm_arch + "-", 0) != 0) {
+                    continue;
+                }
+                auto mtime = entry.last_write_time(ec);
+                if (ec) {
+                    continue;
+                }
+                if (best_match.empty() || mtime > best_mtime) {
+                    best_match = entry.path().string();
+                    best_mtime = mtime;
+                }
+            }
+        }
+        if (!best_match.empty()) {
+            std::string lib_path = runtime_dir_for(best_match);
+            LOG(DEBUG, "BackendUtils") << "Pinned TheRock version not found on disk; using installed "
+                                       << best_match << " -> " << lib_path << std::endl;
             return lib_path;
         }
 

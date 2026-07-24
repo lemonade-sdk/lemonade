@@ -48,6 +48,15 @@ public:
         std::string repo;
         std::string filename;
         std::string version;
+        // Full ROCm/TheRock version (e.g. "7.14.0") discovered from the
+        // resolved release's own asset name, currently only for
+        // recipe=="llamacpp" (see resolve_rocm_asset_version for why sd-cpp
+        // isn't covered). Empty when not applicable, or when discovery wasn't
+        // needed because the static backend_versions.json therock.version pin
+        // already applies. Callers installing a rocm-stable backend should
+        // prefer this over the static pin when non-empty — it's what the
+        // resolved release was actually verified to need.
+        std::string discovered_therock_version;
     };
 
     // Unlike the enrichment helpers above, this returns the repo and lets

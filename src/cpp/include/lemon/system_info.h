@@ -134,19 +134,17 @@ public:
     // path uses this ROCm major.minor version (e.g. "7.14") — discovered from
     // the resolved release's own asset filename — instead of
     // backend_versions.json's static therock.version pin, when building the
-    // llama-server download filename. Set by BackendManager when the resolved
-    // llama.cpp release tag diverges from the statically pinned one
-    // (rocm_bin="latest" or an explicit custom tag), since the static pin can
-    // no longer be assumed to describe that release.
+    // llama-server download filename. Set by BackendManager::get_install_params
+    // for every llamacpp rocm-stable install (not only when the resolved tag
+    // diverges from the static pin), so it also self-heals if the pin itself
+    // ever drifts out of sync with the pinned llama.cpp build tag.
     //
-    // Does NOT affect which TheRock runtime package gets installed — that
-    // still uses the static therock.version pin, because AMD's TheRock
-    // tarball repo (repo.amd.com) needs a full patch version (e.g. "7.14.0")
-    // to build its own download URL, and a release asset filename only ever
-    // embeds major.minor. A rocm_bin="latest" install can therefore still end
-    // up with a llama-server build paired with a TheRock runtime one patch
-    // version off; fixing that needs a way to discover TheRock's own patch
-    // version for a given major.minor, which is a separate follow-up.
+    // This only covers the llama-server download filename. The matching
+    // TheRock runtime package version is derived from the same discovery and
+    // threaded separately as an explicit parameter — see
+    // BackendManager::InstallParams::discovered_therock_version — rather than
+    // through this override, since that path doesn't go through llamacpp's
+    // install_params_fn callback.
     //
     // Per-thread so it cannot affect concurrent requests; cleared immediately
     // after use.
