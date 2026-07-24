@@ -1701,17 +1701,89 @@ static std::string describe_registration_conflict(const ModelInfo& existing,
     return join_conflict_parts(diffs);
 }
 
+static std::string resolve_collection_component_cache_key(
+        const std::string& name,
+        const std::map<std::string, ModelInfo>& model_map) {
+    if (auto canon = parse_canonical_id(name)) {
+        // Builtins are keyed bare in models_cache_; strip the canonical prefix.
+        return (canon->source == ModelSource::Builtin) ? canon->bare_name : name;
+    }
+
+    std::optional<std::pair<std::string, int>> winner;
+    for (const auto& entry : model_map) {
+        const std::string& cache_key = entry.first;
+        ModelSource source = ModelSource::Builtin;
+        std::string bare = cache_key;
+        if (auto canon = parse_canonical_id(cache_key)) {
+            source = canon->source;
+            bare = canon->bare_name;
+        }
+        if (bare != name) continue;
+        int rank = precedence_rank(source);
+        if (!winner || rank < winner->second) {
+            winner = std::make_pair(cache_key, rank);
+        }
+    }
+    return winner ? winner->first : name;
+}
+
 // Check if all components of a collection model are downloaded.
 static bool check_component_downloaded(const ModelInfo& info,
-                                        const std::map<std::string, ModelInfo>& model_map) {
+                                       const std::map<std::string, ModelInfo>& model_map) {
     if (info.components.empty()) return false;
     for (const auto& component_name : info.components) {
-        auto it = model_map.find(component_name);
+        auto it = model_map.find(resolve_collection_component_cache_key(component_name, model_map));
         if (it == model_map.end() || !it->second.downloaded) {
             return false;
         }
     }
     return true;
+}
+
+// A collection's usable context is bounded by the smallest model a request can
+// be dispatched to: the routing policy's resolved candidates for
+// collection.router (classifier components never serve the final completion),
+// every component otherwise. Components with unknown context (0, e.g. not yet
+// downloaded) are skipped rather than zeroing the aggregate.
+static int64_t aggregate_collection_context_window(
+        const ModelInfo& info,
+        const std::map<std::string, ModelInfo>& model_map) {
+    const bool use_candidates =
+        info.route_policy && !info.route_policy->candidates.empty();
+    // For collection.router, candidates are the only valid dispatch targets.
+    // If the policy is missing or empty (parse failure), the context window is
+    // unknown rather than incorrectly aggregated over classifier components.
+    if (is_router_collection_recipe(info.recipe) && !use_candidates) {
+        return 0;
+    }
+    const std::vector<std::string>& names =
+        use_candidates ? info.route_policy->candidates : info.components;
+    int64_t min_ctx = 0;
+    for (const auto& name : names) {
+        // route_policy->candidates are already resolved cache keys; only
+        // info.components may contain bare alias names that need resolution.
+        const std::string cache_key =
+            use_candidates ? name
+                           : resolve_collection_component_cache_key(name, model_map);
+        auto it = model_map.find(cache_key);
+        if (it == model_map.end()) continue;
+        const int64_t ctx = it->second.max_context_window;
+        if (ctx > 0 && (min_ctx == 0 || ctx < min_ctx)) {
+            min_ctx = ctx;
+        }
+    }
+    return min_ctx;
+}
+
+static bool collection_depends_on_model(const ModelInfo& info,
+                                        const std::string& model_name,
+                                        const std::map<std::string, ModelInfo>& model_map) {
+    for (const auto& component_name : info.components) {
+        if (resolve_collection_component_cache_key(component_name, model_map) == model_name) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static bool has_partial_files(const fs::path& dir) {
@@ -2066,6 +2138,14 @@ void ModelManager::build_cache() {
         }
     }
 
+    // Runs after the metadata pass and routing-policy parsing above, so every
+    // component's own max_context_window (and each router's resolved candidate
+    // list) is already in place.
+    for (auto& [name, info] : models_cache_) {
+        if (!is_model_collection_recipe(info.recipe)) continue;
+        info.max_context_window = aggregate_collection_context_window(info, models_cache_);
+    }
+
     LOG(INFO, "ModelManager") << "Cache built: " << models_cache_.size()
               << " total, " << downloaded_count << " downloaded" << std::endl;
 }
@@ -2149,6 +2229,9 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     populate_model_metadata(info);
+    if (is_model_collection_recipe(info.recipe)) {
+        info.max_context_window = aggregate_collection_context_window(info, models_cache_);
+    }
     models_cache_[model_name] = info;
     rebuild_public_model_aliases_locked();
     LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
@@ -2211,8 +2294,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         // without requiring a full cache rebuild.
         for (auto& [name, entry] : models_cache_) {
             if (!is_model_collection_recipe(entry.recipe)) continue;
-            if (std::find(entry.components.begin(), entry.components.end(),
-                          model_name) == entry.components.end()) {
+            if (!collection_depends_on_model(entry, model_name, models_cache_)) {
                 continue;
             }
             bool new_state = check_component_downloaded(entry, models_cache_);
@@ -2221,6 +2303,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
                 LOG(INFO, "ModelManager") << "Collection '" << name
                           << "' downloaded=" << new_state << " (dependent on " << model_name << ")" << std::endl;
             }
+            entry.max_context_window = aggregate_collection_context_window(entry, models_cache_);
         }
     } else {
         LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
