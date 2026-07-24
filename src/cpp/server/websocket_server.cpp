@@ -85,8 +85,16 @@ int WebSocketServer::ws_callback(struct lws* wsi,
             if (classify_path(path) == ConnectionKind::invalid) {
                 return 1;
             }
-            if (!server->authenticate_connection(wsi)) {
+            std::string authenticated_token;
+            if (!server->authenticate_connection(wsi, authenticated_token)) {
                 return 1;
+            }
+            if (pss) {
+                pss->authenticated = true;
+            }
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                server->pending_authenticated_tokens_[wsi] = authenticated_token;
             }
             break;
         }
@@ -105,13 +113,28 @@ int WebSocketServer::ws_callback(struct lws* wsi,
                                        << " (id: " << pss->connection_id << ")" << std::endl;
             }
 
-            server->handle_connection(pss->connection_id, wsi);
+            std::string token;
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                auto it = server->pending_authenticated_tokens_.find(wsi);
+                if (it != server->pending_authenticated_tokens_.end()) {
+                    token = std::move(it->second);
+                    server->pending_authenticated_tokens_.erase(it);
+                }
+            }
+
+            server->handle_connection(pss->connection_id, wsi, token, pss->authenticated);
             break;
         }
 
-        case LWS_CALLBACK_CLOSED:
+        case LWS_CALLBACK_CLOSED: {
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                server->pending_authenticated_tokens_.erase(wsi);
+            }
             server->handle_close(pss->connection_id);
             break;
+        }
 
         case LWS_CALLBACK_RECEIVE: {
             if (!in || len == 0) {
@@ -345,7 +368,8 @@ std::string WebSocketServer::extract_token_from_wsi(struct lws* wsi) const {
     return token ? strip_bearer_prefix(*token) : "";
 }
 
-bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
+bool WebSocketServer::authenticate_connection(struct lws* wsi, std::string& out_token) const {
+    out_token.clear();
     if (api_key_.empty()) {
         return true;
     }
@@ -376,14 +400,15 @@ bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
         return false;
     }
 
+    out_token = token_str;
     return true;
 }
 
-void WebSocketServer::handle_connection(const std::string& connection_id, struct lws* wsi) {
+void WebSocketServer::handle_connection(const std::string& connection_id, struct lws* wsi, const std::string& initial_token, bool initial_authenticated) {
     const std::string path = get_request_path(wsi);
     const auto kind = classify_path(path);
 
-    std::string token_str = extract_token_from_wsi(wsi);
+    std::string token_str = initial_token.empty() ? extract_token_from_wsi(wsi) : initial_token;
     auto client_session_id_opt = get_url_arg(wsi, "client_session_id");
     std::string client_session_id = client_session_id_opt ? *client_session_id_opt : "";
 
@@ -395,7 +420,7 @@ void WebSocketServer::handle_connection(const std::string& connection_id, struct
         state.authenticated_token = token_str;
         state.authenticated_token_hash = telemetry::hash_token(token_str);
         state.client_session_id = client_session_id;
-        state.authenticated = api_key_.empty() || (!token_str.empty() && (token_str == api_key_ || token_str == admin_api_key_));
+        state.authenticated = initial_authenticated || api_key_.empty() || (!token_str.empty() && (token_str == api_key_ || token_str == admin_api_key_));
         connection_states_[connection_id] = state;
     }
 

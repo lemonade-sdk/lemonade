@@ -29,6 +29,7 @@ class Router;
  */
 struct PerSessionData {
     char connection_id[32];
+    bool authenticated;
 };
 
 /**
@@ -127,6 +128,8 @@ private:
     std::queue<intptr_t> pending_adoptions_;
     std::mutex adoption_mutex_;
 
+    // Pending authenticated tokens captured during handshake prior to session establishment
+    std::unordered_map<struct lws*, std::string> pending_authenticated_tokens_;
     std::unordered_map<std::string, ConnectionState> connection_states_;
     // Map connection IDs to lws wsi pointers for sending
     std::unordered_map<std::string, struct lws*> connection_websockets_;
@@ -138,7 +141,7 @@ private:
     bool telemetry_listener_registered_{false};
 
     // Handle new WebSocket connection
-    void handle_connection(const std::string& connection_id, struct lws* wsi);
+    void handle_connection(const std::string& connection_id, struct lws* wsi, const std::string& initial_token = "", bool initial_authenticated = false);
 
     // Handle incoming WebSocket message
     void handle_message(const std::string& connection_id, const std::string& msg);
@@ -149,7 +152,7 @@ private:
     // Handle writable callback — flush message queue
     void handle_writable(const std::string& connection_id, struct lws* wsi);
 
-    bool authenticate_connection(struct lws* wsi) const;
+    bool authenticate_connection(struct lws* wsi, std::string& out_token) const;
     static std::optional<std::string> get_header(struct lws* wsi, enum lws_token_indexes token);
     static std::optional<std::string> get_protocol_credential(struct lws* wsi);
     static std::optional<std::string> get_url_arg(struct lws* wsi, const char* name);

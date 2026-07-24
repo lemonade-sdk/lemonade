@@ -277,6 +277,39 @@ class WebSocketAuthTests(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_011_desktop_app_origins_accepted(self):
+        """Desktop app webview origins (file://, app://., jan://) upgrade and subscribe."""
+
+        async def run():
+            uri = f"ws://localhost:{self.port}/logs/stream"
+            for test_origin in ["file://", "app://.", "jan://app"]:
+                async with websockets.connect(
+                    uri,
+                    subprotocols=auth_subprotocols(API_KEY),
+                    origin=test_origin,
+                ) as ws:
+                    await ws.send(
+                        json.dumps({"type": "logs.subscribe", "after_seq": None})
+                    )
+                    msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
+                    self.assertEqual(msg.get("type"), "logs.snapshot")
+
+            # Verify sandboxed iframe 'null' origin is rejected for security (CSWSH prevention)
+            with self.assertRaises(
+                (
+                    websockets.exceptions.InvalidStatus,
+                    websockets.exceptions.InvalidHandshake,
+                )
+            ):
+                async with websockets.connect(
+                    uri,
+                    subprotocols=auth_subprotocols(API_KEY),
+                    origin="null",
+                ):
+                    pass
+
+        asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()
