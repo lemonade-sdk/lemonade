@@ -88,6 +88,13 @@ bool is_backend_connection_failure(const std::string& message) {
            lowered.find("stream before done") != std::string::npos;
 }
 
+bool is_gpu_hang_or_compute_error(const std::string& message) {
+    const std::string lowered = lower_copy(message);
+    return (lowered.find("compute error.") != std::string::npos ||
+            lowered.find("gpu hang") != std::string::npos) &&
+           lowered.find("server_error") != std::string::npos;
+}
+
 bool is_context_window_error(const std::string& message) {
     const std::string lowered = lower_copy(message);
     return lowered.find("exceeds the available context size") != std::string::npos ||
@@ -813,7 +820,9 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
         // Log the error but don't crash the server
         LOG(ERROR, "WrappedServer") << "Streaming request failed: " << e.what() << std::endl;
 
-        bool will_retry = (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) && !streamed_any_bytes;
+        bool will_retry = (was_watchdog_triggered() || has_backend_process_exited() ||
+                           is_backend_connection_failure(e.what()) ||
+                           is_gpu_hang_or_compute_error(e.what())) && !streamed_any_bytes;
 
         if (telemetry_callback && !will_retry) {
             telemetry_callback(0, 0, 0.0, 0.0, e.what());
@@ -822,11 +831,15 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
         // Try to send error to client if possible
         try {
             json error;
-            if (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) {
+            if (was_watchdog_triggered() || has_backend_process_exited() ||
+                is_backend_connection_failure(e.what()) ||
+                is_gpu_hang_or_compute_error(e.what())) {
                 if (!was_watchdog_triggered()) {
                     const std::string reset_reason = has_backend_process_exited()
                         ? "backend process exited during streaming request"
-                        : "backend connection failed during streaming request: " + std::string(e.what());
+                        : (is_gpu_hang_or_compute_error(e.what())
+                            ? "gpu hang or compute error during streaming request"
+                            : "backend connection failed during streaming request: " + std::string(e.what()));
                     request_backend_reset_from_watchdog(reset_reason);
                 }
 
