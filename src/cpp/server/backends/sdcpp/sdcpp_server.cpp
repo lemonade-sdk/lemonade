@@ -164,7 +164,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     } else {
         // CPU build (default)
     #ifdef _WIN32
-        params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
+        params.filename = "sd-" + short_version + "-bin-win-cpu-x64.zip";
 #elif defined(__linux__)
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
 #else
