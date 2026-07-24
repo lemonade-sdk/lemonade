@@ -2260,6 +2260,39 @@ if(EXISTS "${_ROUTE_DECISION_RESPONSE_TEST_SRC}")
     add_test(NAME RouteDecisionResponseTest COMMAND test_route_decision_response)
 endif()
 
+# Router back-compat conformance corpus (issue #2425): replays the frozen golden
+# policy -> Decision cases under test/conformance/routing/ through the real
+# engine and asserts each emitted Decision matches its frozen expectation.
+set(_ROUTING_CONFORMANCE_CORPUS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_conformance_corpus.cpp"
+)
+if(EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
+    add_executable(test_routing_conformance_corpus
+        test/cpp/test_routing_conformance_corpus.cpp
+        src/cpp/server/route_decision_response.cpp
+        src/cpp/server/routing_classifier_services.cpp
+        src/cpp/server/thinking_controls.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+    )
+    target_include_directories(test_routing_conformance_corpus PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_conformance_corpus PRIVATE nlohmann_json::nlohmann_json)
+    if(USE_SYSTEM_HTTPLIB)
+        target_link_libraries(test_routing_conformance_corpus PRIVATE lemonade-httplib)
+    else()
+        target_link_libraries(test_routing_conformance_corpus PRIVATE httplib::httplib)
+    endif()
+    target_compile_definitions(test_routing_conformance_corpus PRIVATE
+        CONFORMANCE_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/conformance/routing"
+    )
+
+    include(CTest)
+    add_test(NAME RoutingConformanceCorpusTest COMMAND test_routing_conformance_corpus)
+endif()
+
 # ModelManager collection validation for collection.router registration:
 # /pull-style validation rejects malformed routing and preserves the routing
 # block in ModelInfo::extras after user-model registration.

@@ -1,0 +1,134 @@
+# Router back-compat conformance corpus
+
+Frozen golden `policy → Decision` cases that enforce the hard back-compat rule:
+a future server must never break a policy authored against an earlier schema
+major. A runner replays each case through the routing engine and asserts the
+produced `Decision` matches the frozen expectation exactly; any drift is a
+back-compat violation.
+
+## Layout
+
+```
+routing/<schema_major>/<case>/
+  policy.json    # a collection.router policy authored at that schema major
+  cases.jsonl    # one request → expected Decision per line
+```
+
+`<schema_major>` is the policy's root `version`. Cases are
+grouped by the **engine behavior they lock**, so the
+corpus reads as a checklist against the frozen-v1 semantics table in
+`src/cpp/resources/schemas/README.md`.
+
+```
+1/
+  l1_conditions_char_bounds/  # min_chars / max_chars (own policy: length rules are greedy)
+  l1_conditions_features/     # boolean request-feature ops: has_tools / has_images
+  l1_conditions_features_negated/  # authored has_tools:false — equality, matches when absent
+  l1_conditions_metadata/     # metadata equals / any / exists / token-set semantics
+  l1_conditions_vocab/        # keyword / regex ops + any / all / not / implicit-all
+  l1_input_forms/             # routing-input extraction from the `prompt` and `input` request fields
+  l1_outputs/                 # matched rule's nested outputs bag copied verbatim into Decision
+  l1_resolution/              # rule-list resolution: first-match-wins, fail-open default
+  l1_trace/                   # route_trace=true: per-leaf trace, accumulation, short-circuit, default
+  # l2_semantic/              # stubbed semantic_similarity — to be added
+  # l3_classifier/            # stubbed classifier             — to be added
+  # l0a_router/               # stubbed llm router + desugaring — to be added
+2/ # coming with a following version
+  ...
+```
+
+The `l1_conditions_*` and `l1_resolution` groups are **deterministic** — they replay with an
+empty `ClassifierServices` (no model backend). The `l2` / `l3` / `l0a` groups are
+**stubbed model-backed** cases (pinned fake `ClassifierServices`); they are *to be
+added* and will carry per-case stub outputs.
+
+## `cases.jsonl` line schema
+
+Each line is one JSON object:
+
+| Field | Meaning |
+|-------|---------|
+| `name` | Unique, human-readable case id within the file. One case locks one behavior. |
+| `request` | A request body in any form `build_route_context` accepts: chat-completions (`messages`), legacy completions (`prompt`), or Responses (`input`), plus optional `model`, `metadata`, `tools`, and `route_trace`. The engine input is the last user message (or the `prompt`/`input` text); `min_chars`/`max_chars` count its UTF-8 bytes. |
+| `decision` | The exact `Decision` the engine must emit: `version`, `route_to`, `matched_rule` (empty on fall-through), `default_used`, `outputs`. |
+| `note` | Optional. Free-text annotation for a non-obvious case; ignored by the runner. |
+
+## Coverage matrix
+
+One frozen deterministic semantic per row → the single case that locks it. The
+matrix is the sufficiency argument: every deterministic behavior the engine
+freezes for v1 has exactly one lock, and combinators/resolution are tested once
+(they are op-agnostic) rather than across every leaf.
+
+| Frozen semantic | Case |
+|-----------------|------|
+| `keywords_any` — substring match | `l1_conditions_vocab/keywords_any-substring` |
+| `keywords_any` — ASCII case-fold | `l1_conditions_vocab/keywords_any-case-fold` |
+| `keywords_any` — non-ASCII letter matches when case already agrees | `l1_conditions_vocab/keywords_any-non-ascii-match` |
+| `keywords_any` — case-fold is ASCII-only (`É` not folded to `é` ⇒ no match) | `l1_conditions_vocab/keywords_any-non-ascii-no-case-fold` |
+| `keywords_all` — all tokens present | `l1_conditions_vocab/keywords_all-both-present` |
+| `keywords_all` — one token missing ⇒ no match | `l1_conditions_vocab/keywords_all-one-missing-no-match` |
+| `regex` — ECMAScript dialect | `l1_conditions_vocab/regex-ecmascript` |
+| `regex` — non-matching input ⇒ no match | `l1_conditions_vocab/regex-no-match` |
+| `regex` — case-sensitive (uppercase input misses lowercase pattern) | `l1_conditions_vocab/regex-case-sensitive-no-match` |
+| `any` — matches if at least one child matches | `l1_conditions_vocab/any-one-child-matches` |
+| `any` — no child matches ⇒ no match | `l1_conditions_vocab/any-no-child-matches` |
+| `all` — matches only if every child matches | `l1_conditions_vocab/all-both-children-match` |
+| `all` — one child fails ⇒ no match | `l1_conditions_vocab/all-one-child-no-match` |
+| `not` — matches when the child does not match | `l1_conditions_vocab/not-child-absent-matches` |
+| `not` — child matches ⇒ no match | `l1_conditions_vocab/not-child-present-no-match` |
+| multi-key leaf ⇒ implicit `all` | `l1_conditions_vocab/implicit-all-both-keys` |
+| multi-key leaf ⇒ implicit `all` — one key fails ⇒ no match | `l1_conditions_vocab/implicit-all-one-key-no-match` |
+| `has_tools` — non-empty `tools[]` ⇒ match | `l1_conditions_features/has_tools-present-matches` |
+| `has_tools` — no `tools[]` ⇒ no match | `l1_conditions_features/has_tools-absent-no-match` |
+| `has_tools` — empty `tools[]` counts as absent ⇒ no match | `l1_conditions_features/has_tools-empty-array-no-match` |
+| `has_images` — image content part ⇒ match | `l1_conditions_features/has_images-present-matches` |
+| `has_images` — no image ⇒ no match | `l1_conditions_features/has_images-absent-no-match` |
+| `has_images` — Responses API `input_image` part ⇒ match | `l1_conditions_features/has_images-input-image-part` |
+| `has_images` — scans every message, not just the routing turn | `l1_conditions_features/has_images-earlier-turn-still-counts` |
+| `has_tools: false` — equality, matches when tools absent | `l1_conditions_features_negated/has_tools-false-matches-absent` |
+| `has_tools: false` — no match when tools present (not a catch-all) | `l1_conditions_features_negated/has_tools-false-no-match-when-present` |
+| `min_chars` — inclusive (`>=`), UTF-8 bytes | `l1_conditions_char_bounds/min_chars-inclusive-boundary` |
+| `max_chars` — inclusive (`<=`), UTF-8 bytes | `l1_conditions_char_bounds/max_chars-inclusive-boundary` |
+| `min_chars`/`max_chars` count bytes, not code points | `l1_conditions_char_bounds/max_chars-utf8-byte-count` |
+| length between the bounds satisfies neither rule ⇒ fall through to default | `l1_conditions_char_bounds/between-bounds-default` |
+| `metadata` `any` — value equals one of the listed | `l1_conditions_metadata/metadata-any` |
+| `metadata` `equals` — value matches exactly | `l1_conditions_metadata/metadata-equals` |
+| `metadata` `equals` — near-miss value fails (exact, not substring) | `l1_conditions_metadata/metadata-equals-no-match` |
+| `metadata` `equals` — case-sensitive (`DENIED` ≠ `denied`) | `l1_conditions_metadata/metadata-equals-case-sensitive` |
+| `metadata` `equals: ""` — blank value counts as absent, so it can never match | `l1_conditions_metadata/metadata-equals-blank-never-matches` |
+| `metadata` `exists: false` — key absent | `l1_conditions_metadata/metadata-exists-false` |
+| `metadata` `exists: true` — key present ⇒ match | `l1_conditions_metadata/metadata-exists-true` |
+| `metadata` — whitespace-only value counts as absent | `l1_conditions_metadata/metadata-whitespace-counts-absent` |
+| `metadata` `any` — comma-separated value, one token listed | `l1_conditions_metadata/metadata-any-comma-separated` |
+| matched rule's non-empty nested `outputs` copied verbatim into `Decision` | `l1_outputs/nested-outputs-verbatim` |
+| first-match-wins (earlier rule beats a later match) | `l1_resolution/first-match-wins` |
+| later rule fires when earlier misses | `l1_resolution/later-rule-when-earlier-misses` |
+| fail-open to `default_model` | `l1_resolution/fail-open-to-default` |
+| legacy completions string `prompt` ⇒ routing input | `l1_input_forms/prompt-string-form` |
+| legacy completions array-of-strings `prompt` ⇒ parts joined into routing input | `l1_input_forms/prompt-array-form` |
+| array `prompt` ⇒ non-string parts skipped, not stringified | `l1_input_forms/prompt-array-skips-non-string-parts` |
+| `input` bare string ⇒ routing input | `l1_input_forms/input-string-form` |
+| `input` array of role-tagged messages ⇒ last user message's text | `l1_input_forms/input-array-role-tagged` |
+| `input` array with no user role ⇒ role-less parts concatenated (fallback) | `l1_input_forms/input-roleless-fallback` |
+| `route_trace` unset ⇒ Decision carries no `trace` | `l1_trace/trace-omitted-when-not-requested` |
+| `route_trace: false` ⇒ behaves like unset, no `trace` | `l1_trace/trace-omitted-when-explicitly-false` |
+| `route_trace: true` ⇒ one trace entry per evaluated leaf; `any` short-circuits on first true | `l1_trace/trace-any-short-circuits-on-first-true` |
+| trace accumulates across evaluated rules; `not` records the child leaf's raw result | `l1_trace/trace-accumulates-across-missed-rule` |
+| `all` short-circuits on first false; fail-open default still carries the accumulated trace | `l1_trace/trace-all-short-circuits-and-default-carries-trace` |
+| trace emits condition `keywords_any` | `l1_conditions_vocab/keywords_any-trace` |
+| trace emits condition `keywords_all` | `l1_conditions_vocab/keywords_all-trace` |
+| trace emits condition `regex` | `l1_conditions_vocab/regex-trace` |
+| trace emits condition `min_chars` | `l1_conditions_char_bounds/min_chars-trace` |
+| trace emits condition `max_chars` | `l1_conditions_char_bounds/max_chars-trace` |
+| trace emits condition `has_tools` | `l1_conditions_features/has_tools-trace` |
+| trace emits condition `has_images` | `l1_conditions_features/has_images-trace` |
+| trace emits condition `metadata` | `l1_conditions_metadata/metadata-trace` |
+
+The one trace-emitting family not locked above is the classifier band (`classifier:<id>`),
+which is model-backed and non-deterministic — it arrives with the stubbed `l2`/`l3`/`l0a`
+groups below.
+
+Stubbed model-backed semantics (`min_score`/`max_score` band, `semantic_similarity`
+max-cosine, `classifier` label resolution, `llm` router desugaring, `on_error`
+fail-open) — *to be added* with the `l2` / `l3` / `l0a` groups.
