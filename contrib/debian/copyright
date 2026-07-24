@@ -4,7 +4,7 @@ Upstream-Name: lemonade
 Upstream-Contact: lemonade@amd.com
 
 Files: *
-Copyright: 2024-2025 Advanced Micro Devices, Inc. (AMD)
+Copyright: 2024-2026 Advanced Micro Devices, Inc. (AMD)
            2023 Groq Inc.
 Comment: Portions derived from TurnkeyML/MLAgility
 License: Apache-2.0
@@ -17,20 +17,33 @@ Comment: Script from Microsoft's devcontainer templates
 Files: src/app/*
        src/cpp/installer/installer_banner_wix.bmp
        src/cpp/installer/top_banner.bmp
-Copyright: 2024-2025 Advanced Micro Devices, Inc. (AMD)
+Copyright: 2024-2026 Advanced Micro Devices, Inc. (AMD)
 License: Apache-2.0
 Comment: Tauri application and installer artwork with dependencies:
  - axios (MIT)
+ - DOMPurify (Apache-2.0)
  - highlight.js (BSD-3-Clause)
- - katex (MIT)
- - markdown-it (MIT)
- - markdown-it-texmath (MIT)
- - react and react-dom (MIT)
+ - katex (Expat/MIT)
+ - markdown-it (Expat/MIT)
+ - markdown-it-texmath (Expat/MIT)
+ - mermaid (Expat/MIT)
+ - react and react-dom (Expat/MIT)
+ - recharts (Expat/MIT)
+
+Files: src/web-app/system-stubs/*
+Copyright: 2026 Advanced Micro Devices, Inc. (AMD)
+License: Apache-2.0
+Comment: Original conservative fallback implementations used only by distro
+ system-node builds when selected npm packages are unavailable as system
+ packages. These files are not copied from DOMPurify, Mermaid, Recharts, or
+ highlight.js upstream source code.
 
 Files: docs/assets/favicon.ico
        docs/assets/logo.png
        docs/assets/logo_512.png
        docs/favicon.ico
+       src/app/assets/favicon.ico
+       src/app/assets/logo.svg
        src/app/src-tauri/icons/32x32.png
        src/app/src-tauri/icons/128x128.png
        src/app/src-tauri/icons/128x128@2x.png
@@ -45,7 +58,7 @@ Comment: Icons derived from Microsoft Fluent Emoji (lemon emoji)
 
 Files: src/cpp/server/backends/fastflowlm_server.cpp
        src/cpp/include/lemon/backends/fastflowlm_server.h
-Copyright: 2024-2025 Advanced Micro Devices, Inc. (AMD)
+Copyright: 2024-2026 Advanced Micro Devices, Inc. (AMD)
 License: Apache-2.0
 Comment: FastFlowLM integration code shipped in this source package is Apache-2.0.
  The FastFlowLM runtime itself is not shipped in Debian source and may be
