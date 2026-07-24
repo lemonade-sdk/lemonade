@@ -150,8 +150,16 @@ namespace lemon::backends {
         /** Clean up old TheRock versions, keeping only the specified version */
         static void cleanup_old_therock_versions(const std::string& current_version);
 
-        /** Get TheRock lib directory path if available, or empty string if not needed */
-        static std::string get_therock_lib_path(const std::string& rocm_arch);
+        /** Get TheRock lib directory path if available, or empty string if not needed.
+         * `expected_version` overrides the static backend_versions.json therock.version
+         * pin — pass the resolved install's actual version (see
+         * BackendManager::InstallParams::discovered_therock_version) when it's known,
+         * so a rocm_bin="latest" install that resolved to a different ROCm version than
+         * the pin doesn't have its runtime library path resolved against the wrong,
+         * possibly also-installed, pinned version. Empty (default) uses the static pin,
+         * unchanged for callers that don't track a per-install resolved version. */
+        static std::string get_therock_lib_path(const std::string& rocm_arch,
+                                                const std::string& expected_version = "");
 
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);

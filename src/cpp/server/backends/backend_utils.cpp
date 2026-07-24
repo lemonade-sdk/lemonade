@@ -1129,6 +1129,11 @@ namespace lemon::backends {
         );
 
         if (!download_result.success) {
+            // install_dir was created above (before the download) and is still
+            // empty at this point — remove it rather than leaving a directory
+            // behind with no version.txt, so a later scan/retry can't mistake
+            // it for a real (if outdated) install.
+            fs::remove_all(install_dir);
             throw std::runtime_error("Failed to download TheRock from: " + url +
                                     " - " + download_result.error_message);
         }
@@ -1193,76 +1198,70 @@ namespace lemon::backends {
 #endif
     }
 
-    std::string BackendUtils::get_therock_lib_path(const std::string& rocm_arch) {
+    namespace {
+        std::string read_therock_version_file(const fs::path& version_file) {
+            if (!fs::exists(version_file)) {
+                return "";
+            }
+            std::ifstream file(version_file);
+            if (!file.is_open()) {
+                return "";
+            }
+            std::string version;
+            std::getline(file, version);
+            return version;
+        }
+    }
+
+    std::string BackendUtils::get_therock_lib_path(const std::string& rocm_arch,
+                                                    const std::string& expected_version) {
 #if !defined(__linux__) && !defined(_WIN32)
         return "";
 #else
-        auto runtime_dir_for = [](const std::string& install_dir) -> std::string {
-#ifdef _WIN32
-            // On Windows, DLLs are in bin/ (lib/ contains only import .lib files)
-            return (fs::path(install_dir) / "bin").string();
-#else
-            // On Linux, shared libraries are in lib/
-            return (fs::path(install_dir) / "lib").string();
-#endif
-        };
+        std::string version = expected_version;
+        if (version.empty()) {
+            // No per-install resolved version was given (caller doesn't track
+            // one, or discovery wasn't applicable) — use the static pin, as
+            // before.
+            std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+            json config = utils::JsonUtils::load_from_file(config_path);
 
-        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-        json config = utils::JsonUtils::load_from_file(config_path);
-
-        if (!config.contains("therock") || !config["therock"].contains("version")) {
-            throw std::runtime_error("backend_versions.json is missing 'therock.version'");
+            if (!config.contains("therock") || !config["therock"].contains("version")) {
+                throw std::runtime_error("backend_versions.json is missing 'therock.version'");
+            }
+            version = config["therock"]["version"].get<std::string>();
         }
 
-        std::string version = config["therock"]["version"].get<std::string>();
-
-        // Fast path: the statically pinned version is what's on disk (true
-        // whenever the pinned llama.cpp/sd.cpp tag and therock.version agree).
+        // Only trust this install if it's actually complete: a version.txt
+        // matching `version` is written only after a successful download,
+        // extraction, and bin/lib verification (see install_therock). A
+        // directory that exists without one is either mid-install or was
+        // left behind by a failed download — never a usable runtime.
         std::string install_dir = get_therock_install_dir(rocm_arch, version);
-        if (fs::exists(install_dir)) {
-            std::string lib_path = runtime_dir_for(install_dir);
+        std::string installed_version =
+            read_therock_version_file(fs::path(install_dir) / "version.txt");
+        if (installed_version == version) {
+            std::string lib_path;
+#ifdef _WIN32
+            // On Windows, DLLs are in bin/ (lib/ contains only import .lib files)
+            lib_path = (fs::path(install_dir) / "bin").string();
+#else
+            // On Linux, shared libraries are in lib/
+            lib_path = (fs::path(install_dir) / "lib").string();
+#endif
             LOG(DEBUG, "BackendUtils") << "Returning TheRock runtime path: " << lib_path << std::endl;
             return lib_path;
         }
 
-        // The pin can diverge from what's actually installed on disk — e.g. a
-        // rocm_bin="latest" install discovered and installed a different
-        // ROCm/TheRock version than the static pin describes (see
-        // BackendManager::InstallParams::discovered_therock_version). Rather
-        // than assume a version here, use whatever's actually present for
-        // this arch. Picks the most recently modified match if more than one
-        // exists (only possible on Windows, which — unlike Linux — doesn't
-        // prune stale TheRock versions after a re-pin).
-        fs::path therock_base = fs::path(utils::get_downloaded_bin_dir()) / "therock";
-        std::string best_match;
-        fs::file_time_type best_mtime{};
-        std::error_code ec;
-        if (fs::exists(therock_base, ec)) {
-            for (const auto& entry : fs::directory_iterator(therock_base, ec)) {
-                if (ec || !entry.is_directory()) {
-                    continue;
-                }
-                const std::string dir_name = entry.path().filename().string();
-                if (dir_name.rfind(rocm_arch + "-", 0) != 0) {
-                    continue;
-                }
-                auto mtime = entry.last_write_time(ec);
-                if (ec) {
-                    continue;
-                }
-                if (best_match.empty() || mtime > best_mtime) {
-                    best_match = entry.path().string();
-                    best_mtime = mtime;
-                }
-            }
+        if (installed_version.empty()) {
+            LOG(DEBUG, "BackendUtils") << "TheRock " << rocm_arch << "-" << version
+                                       << " not installed" << std::endl;
+        } else {
+            LOG(WARNING, "BackendUtils") << "TheRock install at " << install_dir
+                                        << " has version.txt '" << installed_version
+                                        << "', expected '" << version
+                                        << "' — treating as not installed" << std::endl;
         }
-        if (!best_match.empty()) {
-            std::string lib_path = runtime_dir_for(best_match);
-            LOG(DEBUG, "BackendUtils") << "Pinned TheRock version not found on disk; using installed "
-                                       << best_match << " -> " << lib_path << std::endl;
-            return lib_path;
-        }
-
         return "";
 #endif
     }
