@@ -16,3 +16,11 @@ repos:
     hooks:
       - id: black
         language_version: python3
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.37.4
+    hooks:
+      - id: check-jsonschema
+        files: .*\.json$
+        args: ["--schemafile", "schemas/foo.json"]
+      - id: check-github-actions
+      - id: check-github-workflows
