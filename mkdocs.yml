@@ -94,6 +94,7 @@ nav:
     - Release Process: dev/release.md
   - App Integrations:
     - Overview: integrations/README.md
+    - Marketplace: https://lemonade-server.ai/marketplace.html
     - AI Toolkit: integrations/ai-toolkit.md
     - AnythingLLM: integrations/anythingLLM.md
     - Claude Code: integrations/claude-code.md
