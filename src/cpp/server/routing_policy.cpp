@@ -1284,8 +1284,57 @@ NamedLeafFactories make_deterministic_leaf_factories() {
     return factories;
 }
 
-RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services)
-    : policy_(std::move(policy)), services_(std::move(services)) {
+namespace {
+
+void log_cost_of_failure_once(const std::string& candidate, const char* detail) {
+    static std::mutex logged_mu;
+    static std::set<std::string> logged_candidates;
+    bool should_log = false;
+    {
+        std::lock_guard<std::mutex> lock(logged_mu);
+        should_log = logged_candidates.insert(candidate).second;
+    }
+    if (!should_log) {
+        return;
+    }
+    LOG(WARNING, "Routing") << "CostServices::cost_of threw for candidate '"
+                            << candidate << "': " << detail
+                            << " (further throws for this candidate suppressed)"
+                            << std::endl;
+}
+
+// Best-effort: cost_of is caller-injected and must never make route() throw,
+// so any exception here is logged and swallowed rather than propagated. Also
+// leaves an author-set outputs["estimated_cost"] alone rather than clobbering it.
+// WARNING for a throwing candidate is emitted at most once per process to avoid
+// hot-path log spam when one model persistently fails cost lookup.
+void attach_estimated_cost(Decision& decision, const CostServices& cost_services) {
+    if (!cost_services.cost_of || decision.outputs.contains("estimated_cost")) {
+        return;
+    }
+    CostInfo info;
+    try {
+        info = cost_services.cost_of(decision.route_to);
+    } catch (const std::exception& e) {
+        log_cost_of_failure_once(decision.route_to, e.what());
+        return;
+    } catch (...) {
+        log_cost_of_failure_once(decision.route_to, "unknown exception");
+        return;
+    }
+    json estimated = info.to_json();
+    if (!estimated.empty()) {
+        decision.outputs["estimated_cost"] = std::move(estimated);
+    }
+}
+
+} // namespace
+
+RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services,
+                                         CostServices cost_services)
+    : policy_(std::move(policy)),
+      services_(std::move(services)),
+      cost_services_(std::move(cost_services)) {
     // Compile every rule's match expression once, at construction, so route()
     // does pure tree-walking on immutable state. Classifier leaves resolve
     // against policy_.classifiers; deterministic leaf types (keywords/regex/
@@ -1309,7 +1358,9 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
     try {
         for (std::size_t i = 0; i < compiled_rules_.size(); ++i) {
             if (compiled_rules_[i]->evaluate(eval)) {
-                return Decision(policy_.rules[i], want_trace, std::move(eval.trace));
+                Decision decision(policy_.rules[i], want_trace, std::move(eval.trace));
+                attach_estimated_cost(decision, cost_services_);
+                return decision;
             }
         }
     } catch (const std::exception& e) {
@@ -1321,7 +1372,9 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
                                 << std::endl;
     }
 
-    return Decision(policy_.default_model, want_trace, std::move(eval.trace));
+    Decision decision(policy_.default_model, want_trace, std::move(eval.trace));
+    attach_estimated_cost(decision, cost_services_);
+    return decision;
 }
 
 } // namespace lemon

@@ -23,7 +23,7 @@
       "type": "boolean"
     },
     "outputs": {
-      "description": "Copied verbatim from the matched rule; the engine never interprets it.",
+      "description": "Pass-through bag from the matched rule, plus engine-attached illustrative fields. The engine never interprets trust vocabulary here. When CostServices is wired, non-empty cost metadata for the selected candidate is merged under `estimated_cost` (cost_tier, cost_input_per_million, cost_output_per_million, latency_ms_hint as available) — illustrative only, not a billing figure.",
       "type": "object"
     },
     "trace": {
