@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lemon/model_types.h"
 #include "lemon/routing_policy.h"
 
 #include <functional>
@@ -16,8 +17,22 @@ namespace lemon {
 using RoutingComponentResolver =
     std::function<std::optional<std::string>(const std::string& component)>;
 
+// Looks up a resolved component's deployment ModelType. Server integration
+// binds this to the model registry (ModelInfo::type); pure parser tests leave
+// it unset, which skips the capability check entirely (matching prior
+// behavior — this option is additive and opt-in).
+//
+// Returns nullopt when the type genuinely cannot be established (e.g. an
+// inline collection component with no matching `models[]` definition to fall
+// back on) — the parser treats that as a hard error rather than guessing a
+// type, since guessing wrong is worse than not checking at all: it can both
+// reject valid configs and silently accept invalid ones.
+using RoutingModelTypeResolver =
+    std::function<std::optional<ModelType>(const std::string& resolved_model)>;
+
 struct RoutingPolicyParseOptions {
     RoutingComponentResolver resolve_component;
+    RoutingModelTypeResolver get_model_type;
     bool require_declared_components = true;
 };
 

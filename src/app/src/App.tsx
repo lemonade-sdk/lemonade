@@ -85,6 +85,10 @@ type HostNavigateUnsubscribe = void | (() => void);
 type LemonadeHostApi = {
   onNavigate?: (callback: (payload: HostNavigationPayload) => void) => HostNavigateUnsubscribe;
   signalReady?: () => void;
+  minimizeWindow?: () => void;
+  maximizeWindow?: () => void;
+  closeWindow?: () => void;
+  isWebApp?: boolean;
 };
 
 declare global {
@@ -196,6 +200,17 @@ const App: React.FC = () => {
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
   const utilityMenuRef = useRef<HTMLDivElement>(null);
   const utilityMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    import('./tauriShim').then(({ tauriReady }) => {
+      tauriReady.then(() => {
+        if (window.api && window.api.isWebApp !== true) {
+          setIsDesktop(true);
+        }
+      });
+    });
+  }, []);
   const [activeDownloadCount, setActiveDownloadCount] = useState(
     () => downloadStore.snapshot().filter(isDownloadActive).length,
   );
@@ -427,9 +442,9 @@ const App: React.FC = () => {
     <>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <header className="titlebar">
-        <div className="titlebar__brand">
-          <span>lemonade</span>
+        <header className="titlebar" data-tauri-drag-region>
+        <div className="titlebar__brand" data-tauri-drag-region>
+          <span data-tauri-drag-region>lemonade</span>
           <span className={`titlebar__status-dot titlebar__status-dot--brand ${
             status === 'connected' ? 'titlebar__status-dot--connected' :
             status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
@@ -440,7 +455,7 @@ const App: React.FC = () => {
           />
         </div>
 
-        <nav className="titlebar__nav" aria-label="Primary">
+        <nav className="titlebar__nav" data-tauri-drag-region="false" aria-label="Primary">
           {([
             { id: 'chat',      label: 'Chat',      icon: 'chat'               },
             { id: 'models',    label: 'Models',    icon: 'hard-drive'         },
@@ -462,8 +477,12 @@ const App: React.FC = () => {
           ))}
         </nav>
 
-        <div className="titlebar__right">
-          <div ref={utilityMenuRef} className={`titlebar__utilities${utilityMenuOpen ? ' is-open' : ''}`}>
+        <div className="titlebar__right" data-tauri-drag-region>
+          <div
+            ref={utilityMenuRef}
+            className={`titlebar__utilities${utilityMenuOpen ? ' is-open' : ''}`}
+            data-tauri-drag-region="false"
+          >
             <button
               ref={utilityMenuTriggerRef}
               type="button"
@@ -518,6 +537,37 @@ const App: React.FC = () => {
               </button>
             </div>
           </div>
+          {isDesktop && (
+            <>
+              <button
+                className="titlebar__window-btn"
+                data-tauri-drag-region="false"
+                onClick={() => window.api?.minimizeWindow?.()}
+                aria-label="Minimize"
+                title="Minimize"
+              >
+                <Icon name="minimize-2" size={14} />
+              </button>
+              <button
+                className="titlebar__window-btn"
+                data-tauri-drag-region="false"
+                onClick={() => window.api?.maximizeWindow?.()}
+                aria-label="Maximize"
+                title="Maximize"
+              >
+                <Icon name="maximize-2" size={14} />
+              </button>
+              <button
+                className="titlebar__window-btn titlebar__window-btn--close"
+                data-tauri-drag-region="false"
+                onClick={() => window.api?.closeWindow?.()}
+                aria-label="Close"
+                title="Close"
+              >
+                <Icon name="x" size={14} />
+              </button>
+            </>
+          )}
         </div>
       </header>
 

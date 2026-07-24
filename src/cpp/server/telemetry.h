@@ -28,6 +28,7 @@ private:
     std::string request_dump_;
     std::string trace_id_;
     std::string span_id_;
+    std::string parent_span_id_;
     std::string user_id_;
     std::string session_id_;
     std::chrono::steady_clock::time_point start_time_;
@@ -69,5 +70,7 @@ std::string hash_token(const std::string& token);
 extern thread_local std::string g_current_auth_token;
 extern thread_local std::chrono::steady_clock::time_point g_request_start_time;
 extern thread_local std::string g_current_client_session_id;
+extern thread_local std::string g_incoming_trace_id;
+extern thread_local std::string g_incoming_parent_span_id;
 
 } // namespace lemon::telemetry

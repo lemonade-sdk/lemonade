@@ -159,7 +159,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     </tr>
     <tr>
       <td><code>rocm</code></td>
-      <td>Supported AMD ROCm iGPU/dGPU families, incl. AMD Instinct MI300X (gfx942)*</td>
+      <td>Supported AMD ROCm iGPU/dGPU families, incl. AMD Instinct MI300X (gfx942) and MI350X (gfx950, Linux + stable only)*</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>

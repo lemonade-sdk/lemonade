@@ -166,6 +166,14 @@ assert.match(chatViewSource, /<CapabilityIcon capability="audio"/,
   'paired mode icons must include the Audio glyph');
 assert.match(chatViewSource, /const showAudio = audioInput && capability === 'chat'/,
   'the paired Audio icon must only decorate Chat mode, not Omni collections');
+assert.match(chatViewSource, /currentLoadedModel \? \([\s\S]*composer__model-mode--\$\{capabilityBadge\(currentCapability\)\}[\s\S]*modelModeLabel\(currentCapability, supportsChatAudioInput\)/,
+  'the active model pill must include the colored mode label only for the currently loaded model');
+assert.doesNotMatch(chatViewSource, /composer__mode-badge--interactive/,
+  'the redundant standalone mode pill must not remain in the chat composer');
+assert.match(stylesSource, /\.composer__model-mode--chat \{ color: var\(--cap-chat\); \}/,
+  'the merged Chat status must use the formal chat capability color');
+assert.match(stylesSource, /\.composer__model-button-name[\s\S]*color: var\(--text-primary\)/,
+  'the model name must keep the normal text color beside the colored status');
 assert.match(chatViewSource, /Omni collection mode/,
   'the UI must describe Omni as collection orchestration');
 assert.match(chatViewSource, /Chat \+ audio mode/,
@@ -186,8 +194,8 @@ assert.match(chatViewSource, /if \(m\.images\?\.length && supportsChatImageInput
   'image-bearing conversation history must be stripped when switching to a text-only model');
 assert.match(chatViewSource, /const keepsAudioAttachments = currentCapability === 'audio'[\s\S]*modelSupportsChatAudioInput/,
   'switching to Chat + Audio must not immediately clear attached audio');
-assert.match(stylesSource, /\.capability-icon-pair[\s\S]*gap: 2px/,
-  'the Chat and Audio icons must render close together');
+assert.match(stylesSource, /\.capability-icon-pair[\s\S]*gap: var\(--space-0-5\)/,
+  'the Chat and Audio icons must use the compact formal spacing token');
 
 assert.doesNotMatch(capabilitiesSource, /Gemma-4-E2B-it-FLM/i,
   'the fix must be capability-driven rather than model-name-specific');

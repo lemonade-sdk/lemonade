@@ -251,6 +251,10 @@ struct TraceEntry {
     std::string condition;          // e.g. "classifier:pii", "keywords_any"
     std::optional<double> score;    // present for classifier conditions
     bool result = false;            // the leaf's boolean outcome
+    std::string label;              // optional; the label the band tested (which
+                                    // candidate this score belongs to)
+    std::string rationale;          // optional; the `llm` router records the
+                                    // model's short pick-reason here (empty otherwise)
 };
 
 // The engine's output for one request. Pure selection — no verdict /

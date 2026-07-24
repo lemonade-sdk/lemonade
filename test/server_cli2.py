@@ -2216,6 +2216,79 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertNotIn("--llamacpp", launch_section)
 
 
+class CLIUrlSchemeTests(unittest.TestCase):
+    """Tests URL scheme parsing, HTTPS/TLS connections, and port overrides in the C++ CLI client."""
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server
+        import threading
+        import socket
+
+        class MockHTTPHandler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass
+
+            def do_GET(self):
+                if self.path.startswith("/api/v1/models") or self.path.startswith(
+                    "/api/v0/models"
+                ):
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"data":[]}')
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+        # Find a free port
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(("127.0.0.1", 0))
+        cls.mock_port = s.getsockname()[1]
+        s.close()
+
+        cls.server = http.server.HTTPServer(
+            ("127.0.0.1", cls.mock_port), MockHTTPHandler
+        )
+        cls.thread = threading.Thread(target=cls.server.serve_forever)
+        cls.thread.daemon = True
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.thread.join()
+
+    def test_http_scheme_port_default(self):
+        """Should connect successfully and default port when http:// scheme is used."""
+        env = os.environ.copy()
+        env["LEMONADE_HOST"] = f"http://127.0.0.1:{self.mock_port}"
+        result = run_cli_command(["list"], env=env, timeout=10)
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("No models available", output)
+
+    def test_https_scheme_connection_attempt(self):
+        """Should attempt a secure TLS connection when https:// scheme is used."""
+        # Connecting https://127.0.0.1:mock_port will attempt a TLS handshake on our HTTP server.
+        # This will fail (since the server is HTTP), but it verifies that:
+        # 1. The hostname/port were parsed correctly to 127.0.0.1:mock_port.
+        # 2. It attempted a TLS handshake.
+        env = os.environ.copy()
+        env["LEMONADE_HOST"] = f"https://127.0.0.1:{self.mock_port}"
+        result = run_cli_command(["list"], env=env, timeout=10)
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0)
+        # Verify it either tried to establish connection/handshake or failed because HTTPS is compiled out
+        self.assertTrue(
+            "Could not connect to Lemonade server" in output
+            or "HTTPS support is not compiled" in output
+            or "'https' scheme is not supported" in output,
+            f"Expected connection error or HTTPS unsupported error, got: {output}",
+        )
+
+
 def run_cli_client_tests():
     """Run CLI client tests based on command line arguments."""
     args = parse_cli_args()
@@ -2230,6 +2303,7 @@ def run_cli_client_tests():
     suite = unittest.TestSuite()
     suite.addTests(loader.loadTestsFromTestCase(PersistentServerCLIClientTests))
     suite.addTests(loader.loadTestsFromTestCase(CLIHelpDocsConsistencyTests))
+    suite.addTests(loader.loadTestsFromTestCase(CLIUrlSchemeTests))
 
     runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
     result = runner.run(suite)

@@ -148,6 +148,7 @@ function normalizeHealth(data: unknown): HealthData {
     websocket_port: Number(obj.websocket_port || 0),
     all_models_loaded: loaded,
     max_models: isObject(obj.max_models) ? obj.max_models as Record<string, number> : {},
+    high_security: typeof obj.high_security === 'boolean' ? obj.high_security : undefined,
   };
 }
 
@@ -208,6 +209,7 @@ export interface HealthData {
   websocket_port: number;
   all_models_loaded: LoadedModel[];
   max_models: Record<string, number>;
+  high_security?: boolean;
 }
 
 export interface LoadedModel {
@@ -224,6 +226,15 @@ export interface LoadedModel {
   input_modalities?: string[];
   output_modalities?: string[];
   recipe_options?: Record<string, unknown>;
+}
+
+export interface EffectiveLoadCommand {
+  model_name: string;
+  recipe: string;
+  backend: string;
+  options: Record<string, unknown>;
+  args: string[];
+  ctx_size_auto_resolved?: boolean;
 }
 
 export interface ModelInfo {
@@ -909,6 +920,7 @@ class LemonadeAPI {
   get lastConnectionError(): string | null { return this._lastConnectionError; }
   get isConnected(): boolean { return this._status === 'connected'; }
   get healthData(): HealthData | null { return this._healthData; }
+  get highSecurity(): boolean | undefined { return this._healthData?.high_security; }
   get modelsData(): ModelsData | null { return this._modelsData; }
   get systemInfoData(): Record<string, unknown> | null { return this._systemInfoData; }
 
@@ -1297,6 +1309,14 @@ class LemonadeAPI {
     return result;
   }
 
+  async effectiveLoadCommand(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<EffectiveLoadCommand> {
+    const target = modelName.trim().toLowerCase();
+    const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
+    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
+    const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
+    return this._json<EffectiveLoadCommand>('/api/v1/load/command', { method: 'POST', body });
+  }
+
   async unloadModel(modelName?: string): Promise<unknown> {
     const body = modelName ? { model_name: modelName } : {};
     const result = await this._json('/api/v1/unload', { method: 'POST', body });
@@ -1439,6 +1459,18 @@ class LemonadeAPI {
       { auth: 'admin' },
     );
     return Array.isArray(data.servers) ? data.servers : [];
+  }
+
+  async probeMcpAccess(): Promise<{ ok: true; servers: McpServerState[] } | { ok: false; status: number }> {
+    try {
+      const data = await this._json<{ servers?: McpServerState[] }>(
+        '/internal/mcp/servers',
+        { auth: 'admin' },
+      );
+      return { ok: true, servers: Array.isArray(data.servers) ? data.servers : [] };
+    } catch (error) {
+      return { ok: false, status: (error as LemonadeRequestError).status ?? 0 };
+    }
   }
 
   async saveMcpServer(server: Omit<McpServerConfig, 'transport' | 'id'> & { id?: string; transport?: 'stdio' }): Promise<McpServerConfig> {

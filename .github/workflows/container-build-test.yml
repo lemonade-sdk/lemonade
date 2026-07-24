@@ -85,6 +85,20 @@ jobs:
             "lemonade-server:test-${{ matrix.arch }}" \
             lemonade --help
 
+      - name: Verify runtime C toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            "lemonade-server:test-${{ matrix.arch }}" \
+            bash -c 'set -euo pipefail
+              tmp="$(mktemp -d)"
+              printf "%s\n" "#include <stdlib.h>" "void launcher(void) {}" > "${tmp}/launcher.c"
+              gcc -O3 -shared -fPIC -o "${tmp}/launcher.so" "${tmp}/launcher.c"
+              test -f "${tmp}/launcher.so"
+              '
+
       - name: Start server
         run: |
           docker run --detach \

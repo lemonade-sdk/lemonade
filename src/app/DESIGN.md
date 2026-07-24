@@ -93,7 +93,7 @@ Do not reuse the same icon for unrelated commands in one context. Text labels ac
 
 - `.titlebar` is 52 px high. `.titlebar__nav` is centered independently of brand and utility widths and uses a rounded segmented-control treatment.
 - On compact/mobile layouts the Lemonade brand is hidden, the contextual `menu` control occupies the left slot, the tab selector remains centered, and account/theme/download/server controls live under the `settings` menu.
-- The top-level tabs are Chat, Models, Presets, Backends, Monitor, and Connect. Dashboard/Requests/Logs are Monitor views, not independent primary tabs.
+- The top-level tabs are Chat, Models, Presets, Backends, Dashboard, and Connect. Performance/Telemetry/Logs are Dashboard views, not independent primary tabs.
 - Active state is expressed with surface, text, and a restrained border; no active item should jump in size or position.
 
 ### Workspace layouts
@@ -110,7 +110,7 @@ Use two panels when selection does not require a distinct list, and three when f
 
 - Actions use `WorkspaceActionButton`, `WorkspaceActionLink`, and `WorkspaceActionGroup`. Appearances are `primary`, `secondary`, `quiet`, and `danger`; sizes are `small`, `medium`, and `toolbar`.
 - Metadata uses `WorkspaceMetadataChip` inside `WorkspaceMetadataGroup`. Chips are ordered `high`, `medium`, then `low`; operational state precedes identity/capability, which precedes technical metadata and links.
-- Standard forms use `.form-field`, `.form-field__label`, `.form-field__hint`, `.input`, `.select`, `.slider`, and the normal control tokens.
+- Standard forms use `.form-field`, `.form-field__label`, `.form-field__hint`, `.input`, `.select`, `.slider`, and the normal control tokens. Native selects use the theme-aware `--select-chevron` asset token.
 - Empty selection states use `WorkspaceDetailEmpty`. Empty states explain the next action; they do not decorate unused space.
 - Focus is always visible through `--accent-focus`. Hover must not be the only way to discover an essential action.
 - Motion uses `--duration-fast`, `--duration-normal`, `--duration-slow`, `--ease-out`, and `--ease-in-out`, and is disabled by the reduced-motion rule.
@@ -157,13 +157,13 @@ The labels below are normative boundaries, not backlog states. **Justified speci
 
 **Prohibited variation:** bespoke filter rows, page header, status controls, banners, or button geometry. They use workspace filters, pane headers, semantic state, and shared controls.
 
-### Monitor
+### Dashboard
 
-**Layout:** the first rail selects Overview, Requests, or Logs. Overview uses one content pane; Requests and Logs use a second functional filter/list subpanel plus a detail/output pane.
+**Layout:** the first rail selects Performance, Telemetry, or Logs. Performance uses one content pane; Telemetry and Logs use a second functional filter/list subpanel plus a detail/output pane.
 
-**Overview — justified specialization:** charts, gauges, metric cards, tabular numerals, and stable `--chart-*` series colors. Glow and ornamental gradients are prohibited.
+**Performance — justified specialization:** charts, gauges, metric cards, tabular numerals, and stable `--chart-*` series colors. Glow and ornamental gradients are prohibited.
 
-**Requests — justified specialization:** trace waterfall, metric strip, prompt diff, and replay/improvement workspaces. These are dense diagnostic artifacts. Their surrounding header, tabs, forms, buttons, cards, and modals still use system tokens.
+**Telemetry — justified specialization:** trace waterfall, metric strip, prompt diff, and replay/improvement workspaces. These are dense diagnostic artifacts. Their surrounding header, tabs, forms, buttons, cards, and modals still use system tokens.
 
 **Logs — justified specialization:** monospace virtualized output, severity markers, and compact fixed-height rows. The filter panel, search control, header, and actions are standard workspace UI.
 
@@ -182,11 +182,11 @@ The implementation was audited against every boundary above on 2026-07-20. The c
 | Area | Implemented boundary |
 | --- | --- |
 | App chrome | One centered rounded primary selector; one contextual mobile menu position; compact utilities live under the settings control; the decorative lemon icon is not rendered. |
-| Rails and mobile context | Chat, Models, Presets, Backends, Monitor, and Connect use `WorkspaceRailHeader` and `WorkspaceMobileMenuButton`. Mobile panels share the same dialog, backdrop, focus-return, Escape, and toggle behavior. |
+| Rails and mobile context | Chat, Models, Presets, Backends, Dashboard, and Connect use `WorkspaceRailHeader` and `WorkspaceMobileMenuButton`. Mobile panels share the same dialog, backdrop, focus-return, Escape, and toggle behavior. |
 | Lists and details | Models and Presets use `WorkspaceListPanel`, `WorkspaceResourceRow`, `WorkspaceDetailPanel`, ordered `WorkspaceMetadataChip` groups, and shared empty states. Both libraries are single-column scrolling lists. |
 | Editors | Preset creation, custom models, Router, and Global Model Settings use the shared detail header, metadata, action bar, button appearances, and form controls. Specialized editors retain only task-specific fields and content structures. |
 | Backends | The filter rail, pane header, status actions, and buttons use workspace components. Only the device × capability matrix and compact backend identity marks remain specialized. |
-| Monitor | Overview retains charts and gauges without ornamental glow. Requests and Logs retain diagnostic artifacts while their navigation, filters, forms, and actions use the workspace grammar. |
+| Dashboard | Performance retains charts and gauges without ornamental glow. Telemetry and Logs retain diagnostic artifacts while their navigation, filters, forms, and actions use the workspace grammar. |
 | Connect | Settings navigation, pane headers, fields, actions, provider/help/app rows, and bounded content use shared components and control sizing. |
 | CSS integrity | Component colors resolve through tokens, `styles.css` contains no literal product colors, and the audit contains no exact duplicate rule blocks in the same cascade context. Remaining `!important` declarations are limited to third-party SVG theming, reduced-motion enforcement, mobile browser input behavior, and measured/virtualized layout overrides. |
 
@@ -202,4 +202,4 @@ Before merging a GUI change:
 - Light and dark themes both preserve hierarchy and contrast.
 - The compact and mobile layouts expose every rail function through the same menu pattern.
 - Keyboard focus, accessible names, reduced motion, empty/loading/error states, and label truncation were verified.
-- Models and Presets were compared side by side; Monitor and Connect rails were compared side by side.
+- Models and Presets were compared side by side; Dashboard and Connect rails were compared side by side.
