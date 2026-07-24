@@ -750,6 +750,16 @@
         ],
         "size": 7.75
     },
+    "DiffusionGemma-26B-A4B-it-GGUF": {
+            "checkpoint": "unsloth/diffusiongemma-26B-A4B-it-GGUF:Q4_K_M",
+            "recipe": "llamacpp",
+            "suggested": true,
+            "labels": [
+                "tool-calling",
+                "llamacpp"
+            ],
+            "size": 16.8
+    },
     "Gemma-4-E4B-it-GGUF": {
         "checkpoint": "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
         "mmproj": "mmproj-F16.gguf",
