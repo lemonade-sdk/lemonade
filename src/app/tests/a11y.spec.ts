@@ -23,6 +23,8 @@
 import { test, expect, Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+test.describe.configure({ mode: 'parallel' });
+
 // ─── Constants & helpers ──────────────────────────────────────────────────────
 
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] as const;
