@@ -162,7 +162,7 @@ jobs:
 
           checks = {
               'cpu': [
-                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-win-avx2-x64\.zip$'),
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-win-cpu-x64\.zip$'),
                   (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-24\.04-x86_64\.zip$'),
               ],
               'vulkan': [
