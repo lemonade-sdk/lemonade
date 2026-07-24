@@ -166,6 +166,7 @@ class EndpointTests(ServerTestBase):
             "completions",
             "embeddings",
             "models",
+            "models/check-updates",
             "responses",
             "pull",
             "registry/search",
@@ -6108,6 +6109,110 @@ class EndpointTests(ServerTestBase):
                 json={"telemetry": {"trust_incoming_trace_context": bool(prior)}},
                 timeout=TIMEOUT_DEFAULT,
             )
+
+
+    def test_037_model_update_check_lifecycle(self):
+        """A successful re-pull clears a staged per-model update marker.
+
+        The production fix stores the processed upstream snapshot per model
+        selection in .lemonade_registry.json. Staging only that value as stale
+        exercises the regression without moving refs/main or model files that
+        may be shared by sibling variants in the same repository.
+        """
+        pull_response = requests.post(
+            f"{self.base_url}/pull",
+            json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+        model_response = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(model_response.status_code, 200, model_response.text)
+        model_info = model_response.json()
+        checkpoint = model_info.get("checkpoint") or model_info.get(
+            "checkpoints", {}
+        ).get("main", "")
+        self.assertTrue(checkpoint, "Test model must expose a main checkpoint")
+
+        repo_id = checkpoint.split(":", 1)[0]
+        repo_cache_dir = "models--" + repo_id.replace("/", "--")
+        cache_root = self._server_hf_cache_root(repo_cache_dir)
+        if cache_root is None:
+            self.skipTest(
+                "Cannot locate the server's Hugging Face cache from the test process"
+            )
+
+        provenance_path = os.path.join(
+            cache_root, repo_cache_dir, ".lemonade_registry.json"
+        )
+        self.assertTrue(
+            os.path.isfile(provenance_path),
+            "A successful pull must write per-model registry provenance",
+        )
+
+        with open(provenance_path, "r", encoding="utf-8") as provenance_file:
+            original_provenance = provenance_file.read()
+
+        staged_provenance = json.loads(original_provenance)
+        processed_models = staged_provenance.get("processed_models", {})
+        self.assertIn(
+            ENDPOINT_TEST_MODEL,
+            processed_models,
+            "Pulled model must have a processed snapshot entry",
+        )
+        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get(
+            "snapshot_id", ""
+        )
+        self.assertTrue(original_snapshot, "Processed snapshot must not be empty")
+
+        stale_snapshot = "0" * 40
+        if stale_snapshot == original_snapshot:
+            stale_snapshot = "1" * 40
+        processed_models[ENDPOINT_TEST_MODEL]["snapshot_id"] = stale_snapshot
+
+        try:
+            with open(provenance_path, "w", encoding="utf-8") as provenance_file:
+                json.dump(staged_provenance, provenance_file, indent=2)
+                provenance_file.write("\n")
+
+            stale_response = requests.post(
+                f"{self.base_url}/models/check-updates",
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(stale_response.status_code, 200, stale_response.text)
+            stale_result = stale_response.json()
+            self.assertEqual(stale_result.get("status"), "success")
+            self.assertIn(ENDPOINT_TEST_MODEL, stale_result.get("models", []))
+
+            repull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(repull_response.status_code, 200, repull_response.text)
+
+            fresh_response = requests.post(
+                f"{self.base_url}/models/check-updates",
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(fresh_response.status_code, 200, fresh_response.text)
+            fresh_result = fresh_response.json()
+            self.assertEqual(fresh_result.get("status"), "success")
+            self.assertNotIn(
+                ENDPOINT_TEST_MODEL,
+                fresh_result.get("models", []),
+                "Re-pulling the model must clear its update report",
+            )
+        finally:
+            # Keep the shared test cache exactly as it was before this test, even
+            # when an assertion or network request fails midway through.
+            with open(provenance_path, "w", encoding="utf-8") as provenance_file:
+                provenance_file.write(original_provenance)
+
+        print("[OK] /models/check-updates lifecycle clears after re-pull")
 
 
 if __name__ == "__main__":

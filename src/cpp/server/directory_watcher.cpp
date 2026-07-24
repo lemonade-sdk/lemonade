@@ -7,6 +7,7 @@
 #include <functional>
 #include <cstring>
 #include <set>
+#include <tuple>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -423,14 +424,24 @@ public:
     void set_callback(std::function<void()> cb) { callback_ = std::move(cb); }
 
 private:
-    // Take a snapshot of directory contents (set of "name+mtime" pairs).
-    static std::set<std::pair<std::string, long long>> take_snapshot(const std::string& dir) {
-        std::set<std::pair<std::string, long long>> snap;
+    // Take a snapshot of directory contents (set of "name+size+mtime" tuples).
+    // Size and a high-resolution mtime are both included so that a delete +
+    // rewrite of the same file within one wall-clock second is still detected:
+    // ::stat's st_mtime has only 1-second resolution, which on Windows makes
+    // such rewrites invisible to a name-and-second-only diff.
+    static std::set<std::tuple<std::string, long long, long long>> take_snapshot(const std::string& dir) {
+        std::set<std::tuple<std::string, long long, long long>> snap;
         for (const auto& entry : fs::recursive_directory_iterator(dir,
                      fs::directory_options::skip_permission_denied | fs::directory_options::follow_directory_symlink)) {
-            struct stat st;
-            if (::stat(entry.path().string().c_str(), &st) != 0) continue;
-            snap.emplace(entry.path().filename().string(), st.st_mtime);
+            std::error_code ec;
+            auto mtime = fs::last_write_time(entry.path(), ec).time_since_epoch().count();
+            if (ec) continue;
+            long long size = 0;
+            if (entry.is_regular_file(ec)) {
+                size = static_cast<long long>(entry.file_size(ec));
+                if (ec) size = 0;
+            }
+            snap.emplace(entry.path().filename().string(), size, static_cast<long long>(mtime));
         }
         return snap;
     }
@@ -448,7 +459,7 @@ private:
             if (!dir_exists) return;
         }
 
-        std::set<std::pair<std::string, long long>> prev = take_snapshot(dir_path_);
+        std::set<std::tuple<std::string, long long, long long>> prev = take_snapshot(dir_path_);
 
         while (!stop_flag_.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
