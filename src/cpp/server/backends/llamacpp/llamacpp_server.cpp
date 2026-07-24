@@ -147,6 +147,15 @@ static std::string trim_to_major_minor(const std::string& version) {
 }
 
 static std::string get_therock_version() {
+    // BackendManager sets this when the resolved llama.cpp release tag
+    // diverges from the statically pinned one (rocm_bin="latest" or an
+    // explicit custom tag) and it discovered the real ROCm version from that
+    // release's own asset names — the static pin can't be assumed to apply.
+    std::string override_version = SystemInfo::get_rocm_therock_version_override();
+    if (!override_version.empty()) {
+        return trim_to_major_minor(override_version);
+    }
+
     auto config = JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
     if (!config.contains("therock") || !config["therock"].is_object() ||
         !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
@@ -189,16 +198,6 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         params.filename = "llama-" + version + "-ubuntu-rocm-" + target_arch + "-x64.zip";
 #else
         throw std::runtime_error("ROCm nightly llamacpp only supported on Windows and Linux");
-#endif
-    } else if (resolved_backend == "rocm-stable") {
-        params.repo = "lemonade-sdk/llama.cpp";
-        std::string therock_ver = get_therock_version();
-#ifdef _WIN32
-        params.filename = "llama-" + version + "-bin-win-rocm-" + therock_ver + "-x64.zip";
-#elif defined(__linux__)
-        params.filename = "llama-" + version + "-bin-ubuntu-rocm-" + therock_ver + "-x64.tar.gz";
-#else
-        throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
 #endif
     } else if (resolved_backend == "cuda") {
         params.repo = "lemonade-sdk/llama.cpp";

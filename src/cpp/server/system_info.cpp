@@ -2146,10 +2146,21 @@ std::string identify_npu_arch() {
 namespace {
     // Per-thread arch override consumed by get_rocm_arch(). Empty = probe hardware.
     thread_local std::string g_rocm_arch_override;
+    // Per-thread ROCm/TheRock version override consumed by llamacpp's
+    // rocm-stable install path. Empty = use the static backend_versions.json pin.
+    thread_local std::string g_rocm_therock_version_override;
 }
 
 void SystemInfo::set_rocm_arch_override(const std::string& arch) {
     g_rocm_arch_override = arch;
+}
+
+void SystemInfo::set_rocm_therock_version_override(const std::string& version) {
+    g_rocm_therock_version_override = version;
+}
+
+std::string SystemInfo::get_rocm_therock_version_override() {
+    return g_rocm_therock_version_override;
 }
 
 std::string SystemInfo::rocm_asset_family(const std::string& arch) {

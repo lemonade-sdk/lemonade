@@ -15,6 +15,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <regex>
 #include <thread>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
@@ -427,6 +428,77 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
     return tag;
 }
 
+std::string BackendManager::resolve_rocm_asset_version(const std::string& repo,
+                                                        const std::string& tag) {
+    const std::string cache_key = repo + "@" + tag;
+    {
+        std::lock_guard<std::mutex> lock(rocm_asset_version_cache_mutex_);
+        auto it = rocm_asset_version_cache_.find(cache_key);
+        if (it != rocm_asset_version_cache_.end()) {
+            return it->second;
+        }
+    }
+
+    auto* cfg = RuntimeConfig::global();
+    if (cfg && (cfg->no_fetch_executables() || cfg->offline())) {
+        return "";
+    }
+
+    const std::string url = "https://api.github.com/repos/" + repo + "/releases/tags/" + tag;
+    std::map<std::string, std::string> headers = {
+        {"User-Agent", "lemonade"},
+        {"Accept", "application/vnd.github+json"},
+    };
+
+    LOG(DEBUG, "BackendManager") << "Resolving ROCm asset version for " << repo << "@" << tag
+                                 << " via " << url << std::endl;
+    utils::HttpResponse resp;
+    try {
+        resp = utils::HttpClient::get(url, headers);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "BackendManager") << "GitHub query for " << repo << "@" << tag
+                                       << " failed: " << e.what() << std::endl;
+        return "";
+    }
+    if (resp.status_code < 200 || resp.status_code >= 300) {
+        LOG(WARNING, "BackendManager") << "GitHub returned HTTP " << resp.status_code
+                                       << " for " << repo << "@" << tag << std::endl;
+        return "";
+    }
+
+    std::string discovered;
+    try {
+        auto body = json::parse(resp.body);
+        static const std::regex rocm_version_re(R"(-rocm-([0-9]+\.[0-9]+)-)");
+        for (const auto& asset : body.value("assets", json::array())) {
+            std::string name = asset.value("name", "");
+            std::smatch match;
+            if (std::regex_search(name, match, rocm_version_re)) {
+                discovered = match[1].str();
+                break;
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG(WARNING, "BackendManager") << "Failed to parse GitHub release response for "
+                                       << repo << "@" << tag << ": " << e.what() << std::endl;
+        return "";
+    }
+
+    if (discovered.empty()) {
+        LOG(WARNING, "BackendManager") << "No ROCm-versioned asset found for " << repo
+                                       << "@" << tag << std::endl;
+        return "";
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(rocm_asset_version_cache_mutex_);
+        rocm_asset_version_cache_[cache_key] = discovered;
+    }
+    LOG(INFO, "BackendManager") << "Resolved ROCm asset version for " << repo << "@" << tag
+                                << " -> " << discovered << std::endl;
+    return discovered;
+}
+
 std::string BackendManager::resolve_user_version(const std::string& recipe,
                                                   const std::string& resolved_backend,
                                                   const std::string& pinned_version,
@@ -522,6 +594,27 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     auto pinned_params = spec->install_params_fn(resolved_backend, pinned);
     std::string resolved_version = resolve_user_version(
         recipe, resolved_backend, pinned, pinned_params.repo);
+
+    // The rocm-stable filename embeds a ROCm version that must describe what
+    // this specific release was actually built against. That's normally the
+    // statically pinned therock.version — but when resolution landed on a
+    // different tag than the pin (rocm_bin="latest" or an explicit custom
+    // tag), the pin can no longer be assumed to apply to it. Discover the
+    // real one from the resolved release's own asset names in that case,
+    // falling back to the static pin if discovery fails (offline, network
+    // error, no match). Always cleared before returning so it can't leak to
+    // unrelated callers. See SystemInfo::set_rocm_therock_version_override
+    // for why this doesn't extend to the TheRock runtime package itself.
+    struct TherockOverrideGuard {
+        ~TherockOverrideGuard() { SystemInfo::set_rocm_therock_version_override(""); }
+    } therock_override_guard;
+    if (resolved_backend == "rocm-stable" && resolved_version != pinned) {
+        std::string discovered = resolve_rocm_asset_version(pinned_params.repo, resolved_version);
+        if (!discovered.empty()) {
+            SystemInfo::set_rocm_therock_version_override(discovered);
+        }
+    }
+
     auto final_params = spec->install_params_fn(resolved_backend, resolved_version);
     // Allow backends to override the release tag (e.g. per-GPU-target releases)
     std::string release_version = final_params.version_override.empty()
