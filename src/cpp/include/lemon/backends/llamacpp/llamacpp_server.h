@@ -47,6 +47,12 @@ public:
 
     // ITokenizerServer implementation
     json tokenize(const json& request) override;
+
+private:
+    // llama-server echoes the local .gguf path it was launched with (`-m <path>`)
+    // in the OpenAI `model` field. Rewrite it to the client-facing model id so
+    // responses don't leak absolute filesystem paths (and usernames).
+    json normalize_response_model(json response, const json& request) const;
 };
 
 namespace llamacpp {
