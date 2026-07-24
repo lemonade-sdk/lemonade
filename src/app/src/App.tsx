@@ -446,7 +446,7 @@ const App: React.FC = () => {
             { id: 'models',    label: 'Models',    icon: 'hard-drive'         },
             { id: 'presets',   label: 'Presets',   icon: 'sliders-horizontal' },
             { id: 'backends',  label: 'Backends',  icon: 'box'                },
-            { id: 'dashboard', label: 'Monitor',   icon: 'gauge'              },
+            { id: 'dashboard', label: 'Dashboard', icon: 'gauge'              },
             { id: 'connect',   label: 'Connect',   icon: 'plug'               },
           ] as { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[]).map(({ id, label, icon }) => (
             <button

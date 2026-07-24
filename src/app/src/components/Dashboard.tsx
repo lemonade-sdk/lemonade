@@ -232,7 +232,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         <WorkspacePaneHeader
           className="dashboard-header"
           headingLevel={1}
-          title="Overview"
+          title="Performance"
           subtitle="Throughput, capacity and resource utilization for this server session."
           actions={<div className="dashboard-header__actions">
             <div className="dashboard-header__server" data-connected={!!health}>

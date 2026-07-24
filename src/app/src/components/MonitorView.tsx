@@ -23,8 +23,8 @@ const sections: Array<{
   description: string;
   icon: Parameters<typeof Icon>[0]['name'];
 }> = [
-  { id: 'overview', label: 'Overview', description: 'Health and throughput', icon: 'gauge' },
-  { id: 'requests', label: 'Requests', description: 'Traces, replay and tuning', icon: 'search-check' },
+  { id: 'overview', label: 'Performance', description: 'Health and throughput', icon: 'gauge' },
+  { id: 'requests', label: 'Telemetry', description: 'Traces, replay and tuning', icon: 'search-check' },
   { id: 'logs', label: 'Logs', description: 'Live server output', icon: 'logs' },
 ];
 
@@ -47,20 +47,20 @@ export default function MonitorView({
         ref={mobileRail.panelRef}
         id="monitor-views-panel"
         className={`workspace-rail mobile-context-panel monitor-rail${railCollapsed && !mobileRail.isOpen ? ' is-collapsed' : ''}${mobileRail.isOpen ? ' is-mobile-open' : ''}`}
-        aria-label="Monitor navigation"
+        aria-label="Dashboard navigation"
         role={mobileRail.isOpen ? 'dialog' : undefined}
         aria-modal={mobileRail.isOpen ? true : undefined}
       >
         <WorkspaceRailHeader
           title="Views"
-          sidebarLabel="monitor navigation"
+          sidebarLabel="dashboard navigation"
           purpose="navigation"
           collapsed={railCollapsed && !mobileRail.isOpen}
           onToggle={() => setRailCollapsed(value => !value)}
           onMobileClose={mobileRail.isOpen ? mobileRail.close : undefined}
         />
 
-        <nav className="workspace-nav monitor-nav" aria-label="Monitor sections">
+        <nav className="workspace-nav monitor-nav" aria-label="Dashboard sections">
           {sections.map(({ id, label, description, icon }) => (
             <button
               key={id}
@@ -83,7 +83,7 @@ export default function MonitorView({
       </aside>
 
       <WorkspaceMobileMenuButton
-        menuLabel="Open monitor views"
+        menuLabel="Open dashboard views"
         panelId="monitor-views-panel"
         expanded={mobileRail.isOpen}
         onClick={mobileRail.toggle}

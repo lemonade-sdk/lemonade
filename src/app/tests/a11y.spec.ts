@@ -33,11 +33,11 @@ async function navigateToView(page: Page, label: string): Promise<void> {
   await page.waitForTimeout(300);
 }
 
-async function navigateToMonitorSection(page: Page, label: 'Overview' | 'Requests' | 'Logs'): Promise<void> {
-  await navigateToView(page, 'Monitor');
+async function navigateToMonitorSection(page: Page, label: 'Performance' | 'Telemetry' | 'Logs'): Promise<void> {
+  await navigateToView(page, 'Dashboard');
   await page.waitForSelector('[data-view="monitor"]');
-  if (label !== 'Overview') {
-    await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: label, exact: true }).click();
+  if (label !== 'Performance') {
+    await page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: label, exact: true }).click();
     await page.waitForTimeout(300);
   }
 }
@@ -162,10 +162,10 @@ test.describe('Accessibility — axe-core automated scans', () => {
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 
-  test('A05 — Monitor overview passes WCAG 2.1 AA', async ({ page }) => {
+  test('A05 — Dashboard performance passes WCAG 2.1 AA', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToMonitorSection(page, 'Overview');
+    await navigateToMonitorSection(page, 'Performance');
     await page.waitForTimeout(500); // allow async dashboard data fetch to settle
 
     const results = await new AxeBuilder({ page })
@@ -287,7 +287,7 @@ test.describe('Accessibility — keyboard navigation', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    const knownNavLabels = ['Chat', 'Models', 'Presets', 'Backends', 'Monitor', 'Connect'];
+    const knownNavLabels = ['Chat', 'Models', 'Presets', 'Backends', 'Dashboard', 'Connect'];
     const encountered: string[] = [];
 
     for (let i = 0; i < 12; i++) {
