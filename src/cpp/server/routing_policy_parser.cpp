@@ -662,6 +662,7 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
     const json classifier_configs = parse_classifier_configs(*routing_eff, declared, options);
     policy.classifiers = make_classifiers(classifier_configs);
     policy.rules = parse_rules(*routing_eff, policy.candidates, policy.classifiers, declared, options);
+    policy.helper_models = collect_policy_helper_models(policy);
     return policy;
 }
 

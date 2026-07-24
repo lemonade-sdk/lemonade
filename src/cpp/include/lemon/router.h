@@ -56,6 +56,9 @@ class SuspendInhibitor;
 class Router {
 public:
     friend class EvictionEngine;
+    // Test-only access to routing-helper reconciliation internals (inject stub
+    // servers, seed the needed set, drive prune). Defined in the test binary.
+    friend struct RoutingHelperTestHook;
     Router(RuntimeConfig* config,
 
            ModelManager* model_manager,
@@ -86,6 +89,15 @@ public:
     bool ensure_loaded_model_residency(
         const std::string& model_name,
         LoadPurpose load_purpose);
+
+    // Record the authoritative set of routing-helper models the active policies
+    // need resident (the union across all active policies, as policy-authored
+    // names — resolved internally), then reclaim any live helper no longer in
+    // it. The set is retained so a helper that finishes loading after this call
+    // can validate itself (see load_model), making reconciliation durable rather
+    // than a one-time snapshot. Pinned and busy helpers are left resident; a busy
+    // helper is reclaimed by a later prune once it goes idle.
+    void reconcile_routing_helpers(const std::set<std::string>& needed_helper_models);
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
@@ -193,6 +205,11 @@ private:
     bool is_loading_ = false;                    // True when a load operation is in progress
     std::condition_variable load_cv_;            // Signals when load completes
 
+    // Canonicalized routing-helper models the active policies need resident.
+    // Guarded by load_mutex_; the authoritative snapshot a freshly loaded helper
+    // validates itself against and a prune pass reclaims against.
+    std::set<std::string> needed_helper_models_;
+
     bool exclusive_active_ = false;
     std::thread::id exclusive_owner_;
     std::condition_variable exclusive_cv_;
@@ -226,6 +243,10 @@ private:
     void evict_all_npu_servers();
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
+    // Evict idle, unpinned routing helpers whose model is not in
+    // needed_helper_models_. Skips busy helpers (reclaimed on a later pass) so it
+    // never blocks a caller on an eviction timeout. Caller holds load_mutex_.
+    void prune_stale_routing_helpers_locked();
     // Eviction-engine entry point: physically unload a model previously marked
     // EVICTING, but only if it has not been rescued by an in-flight request
     // (see WrappedServer::try_commit_eviction). Safe against request races.

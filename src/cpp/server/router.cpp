@@ -331,6 +331,54 @@ bool Router::ensure_loaded_model_residency(
     return true;
 }
 
+void Router::reconcile_routing_helpers(const std::set<std::string>& needed_helper_models) {
+    // Canonicalize the policy-authored names outside the lock so they match the
+    // (already-canonical) live WrappedServer::get_model_name() during eviction.
+    std::set<std::string> needed;
+    for (const auto& model : needed_helper_models) {
+        needed.insert(resolve_model_name(model));
+    }
+
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    load_cv_.wait(lock, [&] {
+        return !is_loading_ &&
+               (!exclusive_active_ ||
+                exclusive_owner_ == std::this_thread::get_id());
+    });
+
+    // Retain the authoritative set: a helper still mid-load (its backend starts
+    // with load_mutex_ released) validates against this when it completes, and a
+    // helper busy during this pass is reclaimed by a later prune.
+    needed_helper_models_ = std::move(needed);
+    prune_stale_routing_helpers_locked();
+}
+
+void Router::prune_stale_routing_helpers_locked() {
+    // Collect first; evict_server mutates loaded_servers_.
+    std::vector<WrappedServer*> stale;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive() ||
+            server->get_residency_class() != ResidencyClass::RoutingHelper) {
+            continue;
+        }
+        // A user pin is an explicit "keep" and outranks policy-churn reclamation.
+        // A busy helper is skipped so this never blocks on an eviction timeout;
+        // the next prune reclaims it once idle.
+        if (server->is_pinned() || server->is_busy()) {
+            continue;
+        }
+        if (needed_helper_models_.count(server->get_model_name()) == 0) {
+            stale.push_back(server.get());
+        }
+    }
+
+    for (auto* server : stale) {
+        LOG(INFO, "Router") << "Routing helper " << server->get_model_name()
+                            << " referenced by no active policy, evicting" << std::endl;
+        evict_server(server);
+    }
+}
+
 bool Router::has_npu_server() const {
     for (const auto& server : loaded_servers_) {
         if (server->is_backend_alive() && (server->get_device_type() & DEVICE_NPU)) {
@@ -627,6 +675,11 @@ void Router::load_model(const std::string& model_name,
 
         prune_unavailable_servers_locked();
 
+        // Reclaim any idle routing helper a policy change already dropped from
+        // the needed set (e.g. one that was busy during the triggering
+        // reconcile). Cheap and non-blocking; runs before every load path.
+        prune_stale_routing_helpers_locked();
+
         // Check if model is already loaded. Watchdog-reset or otherwise dead
         // entries are evicted first so auto-load performs a real lazy restart.
         WrappedServer* existing = find_server_by_model_name(canonical_model_name);
@@ -801,6 +854,22 @@ void Router::load_model(const std::string& model_name,
         lock.lock();
 
         if (load_success) {
+            // A policy change may have dropped this helper while its backend was
+            // starting (the load ran with load_mutex_ released). Now that we hold
+            // the lock again, validate against the authoritative needed set so a
+            // helper no active policy references is never committed.
+            if (requested_residency_class == ResidencyClass::RoutingHelper &&
+                !new_server->is_pinned() &&
+                needed_helper_models_.count(canonical_model_name) == 0) {
+                LOG(INFO, "Router") << "Routing helper " << canonical_model_name
+                          << " no longer referenced by any active policy; "
+                          << "discarding freshly loaded backend" << std::endl;
+                new_server->unload();
+                is_loading_ = false;
+                load_cv_.notify_all();
+                return;
+            }
+
             // Success: Refresh access time so this model is returned by
             // get_most_recent_server() (the pre-load timestamp from line 316
             // may have been overtaken by other models serving requests while
