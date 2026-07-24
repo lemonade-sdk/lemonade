@@ -107,6 +107,7 @@ module.exports = (env, argv) => {
         // into them at runtime in pure-web mode (isTauri() is always false).
         '@tauri-apps/api/core$': path.resolve(__dirname, 'tauri-stub.js'),
         '@tauri-apps/api/event$': path.resolve(__dirname, 'tauri-stub.js'),
+        '@tauri-apps/api/app$': path.resolve(__dirname, 'tauri-stub.js'),
         '@tauri-apps/api/window$': path.resolve(__dirname, 'tauri-stub.js'),
         '@tauri-apps/plugin-opener$': path.resolve(__dirname, 'tauri-stub.js'),
         '@tauri-apps/plugin-clipboard-manager$': path.resolve(__dirname, 'tauri-stub.js'),

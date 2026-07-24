@@ -44,6 +44,7 @@ declare global {
       maximizeWindow: () => void;
       closeWindow: () => void;
       openExternal: (url: string) => void;
+      getAppVersion?: () => Promise<string>;
       onMaximizeChange: (callback: (isMaximized: boolean) => void) => void;
       updateMinWidth: (width: number) => void;
       zoomIn: () => void;

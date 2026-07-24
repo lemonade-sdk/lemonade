@@ -34,6 +34,7 @@ function isTauri(): boolean {
 async function installTauriApi(): Promise<void> {
   const { invoke } = await import('@tauri-apps/api/core');
   const { listen } = await import('@tauri-apps/api/event');
+  const { getVersion } = await import('@tauri-apps/api/app');
   const { getCurrentWindow } = await import('@tauri-apps/api/window');
   const { openUrl } = await import('@tauri-apps/plugin-opener');
   const { writeText } = await import('@tauri-apps/plugin-clipboard-manager');
@@ -112,6 +113,7 @@ async function installTauriApi(): Promise<void> {
     writeClipboard: async (text: string) => {
       await writeText(String(text));
     },
+    getAppVersion: () => getVersion(),
     openExternal: (url: string) => {
       try {
         const u = new URL(url);

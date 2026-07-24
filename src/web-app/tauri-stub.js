@@ -22,6 +22,9 @@ module.exports = {
   emit: asyncNoop,
   once: () => Promise.resolve(noop),
 
+  // @tauri-apps/api/app
+  getVersion: () => Promise.resolve(''),
+
   // @tauri-apps/api/window
   getCurrentWindow: () => ({
     isMaximized: () => Promise.resolve(false),
