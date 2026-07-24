@@ -378,6 +378,11 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         router_->reconcile_routing_helpers(active_policy_helper_models());
     });
 
+    // Seed the router's needed-helper set from policies already present at
+    // startup so a helper loaded before the first policy change still validates
+    // against an authoritative set (see Router::load_model).
+    router_->reconcile_routing_helpers(active_policy_helper_models());
+
     {
         lemon::jobs::OpProviders providers;
         struct JobModelState {

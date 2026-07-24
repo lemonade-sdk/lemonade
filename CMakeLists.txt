@@ -2415,3 +2415,12 @@ if(EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
     target_link_libraries(test_origin_utils PRIVATE lemonade-server-core)
     add_test(NAME OriginUtilsTest COMMAND test_origin_utils)
 endif()
+
+# Routing-helper reconciliation: durable needed-set + non-blocking prune that
+# skips busy/pinned helpers, plus a policy-update-vs-busy concurrency race.
+set(_ROUTING_HELPER_RECONCILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_helper_reconcile.cpp")
+if(EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
+    add_executable(test_routing_helper_reconcile test/cpp/test_routing_helper_reconcile.cpp)
+    target_link_libraries(test_routing_helper_reconcile PRIVATE lemonade-server-core)
+    add_test(NAME RoutingHelperReconcileTest COMMAND test_routing_helper_reconcile)
+endif()
