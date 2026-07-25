@@ -60,6 +60,7 @@
   },
   "port": 13305,
   "rocm_channel": "stable",
+  "rocm_install_method": "auto",
   "ryzenai": {
     "server_bin": "builtin"
   },

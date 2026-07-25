@@ -341,6 +341,10 @@ std::string RuntimeConfig::rocm_channel_for_recipe(const std::string& recipe) co
     return channel;
 }
 
+std::string RuntimeConfig::rocm_install_method() const {
+    return get_string_opt("LEMONADE_ROCM_INSTALL_METHOD", {"rocm_install_method"}, "auto");
+}
+
 bool RuntimeConfig::telemetry_enabled() const {
     return get_bool_opt(nullptr, {"telemetry", "enabled"}, false);
 }
@@ -634,6 +638,15 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         std::string channel = value.get<std::string>();
         if (channel != "stable" && channel != "nightly") {
             throw std::invalid_argument("'rocm_channel' must be either 'stable', or 'nightly'");
+        }
+    } else if (key == "rocm_install_method") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'rocm_install_method' must be a string");
+        }
+        std::string method = value.get<std::string>();
+        if (method != "auto" && method != "wheel" && method != "tarball") {
+            throw std::invalid_argument(
+                "'rocm_install_method' must be 'auto', 'wheel', or 'tarball'");
         }
     } else if (key == "telemetry") {
         if (!value.is_object()) {

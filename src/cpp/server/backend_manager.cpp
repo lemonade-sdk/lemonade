@@ -262,20 +262,32 @@ bool is_therock_installed_for_current_arch(const json& backend_versions) {
         return false;
     }
 
+    const std::string version = backend_versions["therock"]["version"].get<std::string>();
     const std::string rocm_arch = SystemInfo::get_rocm_arch();
     if (rocm_arch.empty()) {
         return false;
     }
 
-    const std::string version = backend_versions["therock"]["version"].get<std::string>();
-    const fs::path version_file =
+    const fs::path tarball_version_file =
         fs::path(backends::BackendUtils::get_therock_install_dir(rocm_arch, version)) / "version.txt";
+    if (read_version_file(tarball_version_file) == version) {
+        return true;
+    }
 
-    return read_version_file(version_file) == version;
+    // The pip-wheel install records its own version marker in a separate tree.
+    // Also require its recorded runtime dirs to still exist, so a deleted venv or
+    // moved cache reinstalls instead of leaving a dead LD_LIBRARY_PATH behind
+    // (get_therock_lib_path filters out non-existent dirs and returns empty).
+    const fs::path wheel_version_file =
+        fs::path(backends::BackendUtils::get_therock_wheel_dir(rocm_arch, version)) / "version.txt";
+    if (read_version_file(wheel_version_file) != version) {
+        return false;
+    }
+    return !backends::BackendUtils::get_therock_lib_path(rocm_arch).empty();
 }
 
 void install_therock_if_needed(const std::string& os, const json& backend_versions,
-                              DownloadProgressCallback progress_cb = nullptr) {
+                               DownloadProgressCallback progress_cb = nullptr) {
     if (!will_install_therock(os, backend_versions)) {
         return;
     }
@@ -283,8 +295,8 @@ void install_therock_if_needed(const std::string& os, const json& backend_versio
     std::string rocm_arch = SystemInfo::get_rocm_arch();
     std::string version = backend_versions["therock"]["version"].get<std::string>();
 
-    // Install TheRock for this architecture
-    backends::BackendUtils::install_therock(rocm_arch, version, progress_cb);
+    // Install the ROCm runtime (pip wheels preferred, TheRock tarball fallback)
+    backends::BackendUtils::install_rocm_runtime(rocm_arch, version, progress_cb);
 }
 
 } // namespace
