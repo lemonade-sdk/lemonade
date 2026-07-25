@@ -125,7 +125,9 @@ lemonade backends install llamacpp:rocm
 
 ### Reusing a System-Installed ROCm (Windows and Linux)
 
-On the stable channel Lemonade normally downloads its own ROCm runtime (TheRock). If you already have ROCm installed system-wide, Lemonade reuses it instead of downloading a second copy when it can find a matching version. It locates the install root in this order, using the first directory that contains the HIP runtime (`bin\amdhip64.dll` or `bin\amdhip64_<version>.dll` on Windows, `lib{,64}/libamdhip64.so` on Linux):
+On the stable channel Lemonade normally downloads its own ROCm runtime. By default it installs the ROCm runtime from AMD's pip wheels into a lemonade-managed virtual environment (under `therock-wheels/<arch>-<version>/` in the cache), and falls back to the TheRock tarball (under `therock/<arch>-<version>/`) when Python/venv/pip is unavailable or the wheel install can't serve your GPU. Because recipes can pin different ROCm versions (e.g. sd-cpp lags llama.cpp), more than one ROCm version may be installed concurrently. See [`rocm_install_method`](#choosing-the-rocm-install-method) to force one path.
+
+If you already have ROCm installed system-wide, Lemonade reuses it instead of downloading a second copy when it can find a matching version. It locates the install root in this order, using the first directory that contains the HIP runtime (`bin\amdhip64.dll` or `bin\amdhip64_<version>.dll` on Windows, `lib{,64}/libamdhip64.so` on Linux):
 
 1. The `ROCM_PATH` environment variable
 2. `rocm-sdk path --root`, when `rocm-sdk` is on your `PATH` (e.g. a ROCm installed from the TheRock pip wheels)
@@ -142,6 +144,22 @@ export ROCM_PATH=/path/to/rocm
 # Windows (PowerShell)
 $env:ROCM_PATH = "C:\path\to\rocm"
 ```
+
+### Choosing the ROCm Install Method
+
+`rocm_install_method` controls how Lemonade installs its bundled ROCm runtime:
+
+| Value | Behavior |
+|---|---|
+| `auto` *(default)* | Install from pip wheels; fall back to the TheRock tarball when Python/pip is unavailable or the wheels can't serve the GPU. |
+| `wheel` | Use pip wheels only; fail rather than fall back to the tarball. |
+| `tarball` | Use the TheRock tarball only; never invokes Python or pip. Use this for Python-averse, air-gapped, or pip-restricted environments. |
+
+```bash
+lemonade config set rocm_install_method=tarball
+```
+
+It can also be set with the `LEMONADE_ROCM_INSTALL_METHOD` environment variable.
 
 ### Pinning to a Specific Version Tag
 

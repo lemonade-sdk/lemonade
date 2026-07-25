@@ -67,6 +67,9 @@ public:
     std::string default_model_source() const;
     std::string rocm_channel() const;
     std::string rocm_channel_for_recipe(const std::string& recipe) const;
+    // How to install the bundled ROCm runtime: "auto" (pip wheels, tarball
+    // fallback), "wheel" (pip wheels only), or "tarball" (no Python/pip).
+    std::string rocm_install_method() const;
 
     // Backend settings (nested)
     json backend_config(const std::string& backend_name) const;
