@@ -1,6 +1,7 @@
 #include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
+#include "lemon/backends/llamacpp/llamacpp_request.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -11,6 +12,7 @@
 #include <filesystem>
 #include <regex>
 #include <system_error>
+#include <utility>
 #include "lemon/auto_tune.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
@@ -618,7 +620,8 @@ json LlamaCppServer::normalize_response_model(json response, const json& request
 json LlamaCppServer::chat_completion(const json& request) {
     return normalize_response_model(
         forward_request("/v1/chat/completions",
-                        JsonUtils::with_legacy_max_tokens_alias(request)),
+                        JsonUtils::with_legacy_max_tokens_alias(
+                            llamacpp::sanitize_tool_schema_limits(request))),
         request);
 }
 
@@ -650,7 +653,28 @@ json LlamaCppServer::tokenize(const json& request_body) {
 }
 
 json LlamaCppServer::responses(const json& request) {
-    return normalize_response_model(forward_request("/v1/responses", request), request);
+    return normalize_response_model(
+        forward_request("/v1/responses",
+                        llamacpp::sanitize_tool_schema_limits(request)),
+        request);
+}
+
+void LlamaCppServer::forward_streaming_request(const std::string& endpoint,
+                                               const std::string& request_body,
+                                               httplib::DataSink& sink,
+                                               bool sse,
+                                               long timeout_seconds,
+                                               TelemetryCallback telemetry_callback) {
+    std::string body = request_body;
+    if (endpoint == "/v1/chat/completions" || endpoint == "/v1/responses") {
+        json request = json::parse(request_body, nullptr, false);
+        if (!request.is_discarded()) {
+            body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();
+        }
+    }
+
+    WrappedServer::forward_streaming_request(
+        endpoint, body, sink, sse, timeout_seconds, telemetry_callback);
 }
 
 } // namespace backends

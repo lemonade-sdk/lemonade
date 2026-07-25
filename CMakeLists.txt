@@ -826,6 +826,16 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
     add_test(NAME vllm_arg_resolver COMMAND test_vllm_arg_resolver)
 endif()
 
+set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_request.cpp")
+if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
+    add_executable(test_llamacpp_request
+        ${LLAMACPP_REQUEST_TEST_SOURCE}
+        src/cpp/server/backends/llamacpp/llamacpp_request.cpp
+    )
+    target_link_libraries(test_llamacpp_request PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME llamacpp_request COMMAND test_llamacpp_request)
+endif()
+
 set(MCP_CLIENT_CONFIG_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mcp_client_config.cpp")
 if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
     find_package(Python3 COMPONENTS Interpreter QUIET)
