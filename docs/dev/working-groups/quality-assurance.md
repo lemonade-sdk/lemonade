@@ -37,6 +37,7 @@ Analyze all issues (including those that are already open) for:
 
 Improve test coverage while reducing unnecessary delays incurred during development.
 
+- Performance regression testing for engine upgrades.
 - Use Radeon emulation to increase CI coverage of AMD GPUs.
 - Add more physical Radeon and Nvidia GPUs to the self-hosted runners pool.
 - Increased filtering, so that fewer runners are invoked when narrow changes are introduced.
