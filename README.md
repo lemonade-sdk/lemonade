@@ -1,5 +1,7 @@
 ## 🍋 Lemonade: Refreshingly fast local AI
 
+[![MCP Toplist](https://mcptoplist.com/badge/mcp.so%2Flemonade%2Flemonade-sdk.svg)](https://mcptoplist.com/server/mcp.so%2Flemonade%2Flemonade-sdk)
+
 <p align="center">
   <a href="https://discord.gg/5xXzkMu8Zk">
     <img src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white" alt="Discord" /></a>
