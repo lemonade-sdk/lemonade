@@ -27,6 +27,7 @@
 #include "lemon/runtime_config.h"
 #include "telemetry.h"
 #include "lemon/system_info.h"
+#include "lemon/tts_response_format.h"
 #include "lemon/version.h"
 #include <cctype>
 #include <cstdint>
@@ -3957,14 +3958,8 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
 
         const auto supported_formats =
             router_->audio_speech_supported_formats(request_json["model"].get<std::string>());
-        std::string response_format = "mp3";
-        if (is_streaming) {
-            response_format = "pcm";
-        } else if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
-            response_format = request_json["response_format"].get<std::string>();
-        } else if (!supported_formats.empty()) {
-            response_format = supported_formats.front();
-        }
+        const std::string response_format =
+            select_tts_response_format(request_json, supported_formats);
         if (!MIME_TYPES.contains(response_format)) {
             res.status = 400;
             nlohmann::json error = {{"error", {
@@ -3993,6 +3988,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             return;
         }
         std::string mime_type = MIME_TYPES[response_format];
+        request_json["response_format"] = response_format;
 
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;

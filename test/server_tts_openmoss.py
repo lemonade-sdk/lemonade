@@ -264,6 +264,23 @@ class OpenMossTTSTests(ServerTestBase):
         self._assert_wav_response(response, "Voice design")
         print(f"[OK] Voice design produced a clip ({len(response.content)} bytes)")
 
+    def test_011_streaming_speech(self):
+        """Streaming uses the backend's native WAV format instead of forcing PCM."""
+        payload = {
+            "model": get_test_model("tts"),
+            "input": "Streaming speech in the backend's native format.",
+            "stream": True,
+        }
+
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        self._assert_wav_response(response, "Streaming speech synthesis")
+        print(f"[OK] Streamed WAV clip ({len(response.content)} bytes)")
+
 
 if __name__ == "__main__":
     run_server_tests(

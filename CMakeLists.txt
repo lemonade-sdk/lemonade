@@ -2447,6 +2447,17 @@ if(EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_test(NAME HttpClientSecurityTest COMMAND test_http_client_security)
 endif()
 
+set(_TTS_RESPONSE_FORMAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_tts_response_format.cpp")
+if(EXISTS "${_TTS_RESPONSE_FORMAT_TEST_SRC}")
+    add_executable(test_tts_response_format test/cpp/test_tts_response_format.cpp)
+    target_include_directories(test_tts_response_format PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_tts_response_format PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME TtsResponseFormatTest COMMAND test_tts_response_format)
+endif()
+
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")
 if(EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
