@@ -750,6 +750,9 @@ jobs:
           echo "Running WebSocket auth tests..."
           .venv/bin/python test/server_websocket_auth.py
           echo "WebSocket auth tests PASSED!"
+          echo "Running HTTPS tray smoke test..."
+          .venv/bin/python test/test_tray_https.py
+          echo "HTTPS tray smoke test PASSED!"
           echo "Running job engine tests..."
           .venv/bin/python test/server_jobs.py --lemond-binary ./build/lemond
           echo "Job engine tests PASSED!"
