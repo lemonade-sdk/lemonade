@@ -1020,7 +1020,146 @@ namespace lemon::backends {
         return (therock_base / (arch + "-" + version)).string();
     }
 
-    void BackendUtils::cleanup_old_therock_versions(const std::string& current_version) {
+    std::string BackendUtils::get_therock_wheel_dir(const std::string& arch, const std::string& version) {
+        fs::path base = fs::path(utils::get_downloaded_bin_dir()) / "therock-wheels";
+        return (base / (arch + "-" + version)).string();
+    }
+
+    namespace {
+        // backend_versions.json is a build resource. Parse once so the
+        // thermrock install path can look up the URL mapping. Thread-safe:
+        // C++11 guarantees a single, synchronized initialization of a
+        // function-local static.
+        const json& backend_versions_config() {
+            static const json config = utils::JsonUtils::load_from_file(
+                utils::get_resource_path("resources/backend_versions.json"));
+            return config;
+        }
+    }  // namespace
+
+    namespace {
+        // A concrete gfx target (e.g. gfx1151, gfx90a) maps to a rocm-sdk-device
+        // wheel; family placeholders like gfx110X do not, so those fall back to
+        // the tarball (whose url_mapping already resolves families).
+        bool is_concrete_gfx_arch(const std::string& arch) {
+            if (arch.rfind("gfx", 0) != 0 || arch.size() <= 3) {
+                return false;
+            }
+            for (size_t i = 3; i < arch.size(); ++i) {
+                if (!std::isxdigit(static_cast<unsigned char>(arch[i]))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Locate a Python interpreter that can create virtual environments.
+        std::string find_python_for_venv() {
+#ifdef _WIN32
+            const std::vector<std::string> names = {"python.exe", "python3.exe"};
+#else
+            const std::vector<std::string> names = {"python3", "python"};
+#endif
+            for (const auto& name : names) {
+                std::string path = utils::find_executable_in_path(name);
+                if (path.empty()) {
+                    continue;
+                }
+                // Confirm venv can actually build a working environment. On
+                // Debian/Ubuntu `import venv` succeeds without python3-venv, but
+                // `python -m venv` then fails on the missing ensurepip; probing
+                // both up front makes the tarball fallback immediate.
+                int rc = utils::ProcessManager::run_process_with_output(
+                    path, {"-c", "import venv, ensurepip"}, nullptr, /*working_dir=*/"",
+                    /*timeout_seconds=*/30);
+                if (rc == 0) {
+                    return path;
+                }
+            }
+            return "";
+        }
+
+        // Ask the managed venv's Python where the ROCm runtime libraries landed.
+        // The rocm-sdk-core/-libraries wheels expose them under
+        // _rocm_sdk_core/{bin,lib} and _rocm_sdk_libraries/{bin,lib}; we print
+        // every candidate and keep the directories that actually exist so the
+        // logic is correct on both Windows (bin) and Linux (lib).
+        std::vector<std::string> query_wheel_runtime_dirs(const std::string& venv_python) {
+            // Print candidate {bin,lib} dirs for each rocm-sdk runtime package.
+            // Keep it tolerant: a missing package or a namespace package (whose
+            // __file__ is None in kpack-split mode) must not abort the probe, so
+            // each import is guarded and __path__ is used as a fallback root.
+            static const char* probe =
+                "import importlib,os\n"
+                "for m in ('_rocm_sdk_core','_rocm_sdk_libraries'):\n"
+                "    try:\n"
+                "        mod=importlib.import_module(m)\n"
+                "    except Exception:\n"
+                "        continue\n"
+                "    root=os.path.dirname(mod.__file__) if getattr(mod,'__file__',None) "
+                "else (list(getattr(mod,'__path__',[]))[:1] or [''])[0]\n"
+                "    if not root:\n"
+                "        continue\n"
+                "    for s in ('bin','lib'):\n"
+                "        print(os.path.join(root,s))\n";
+
+            std::vector<std::string> lines;
+            auto on_line = [&lines](const std::string& line) {
+                lines.push_back(line);
+                return true;
+            };
+            int rc = utils::ProcessManager::run_process_with_output(
+                venv_python, {"-c", probe}, on_line, /*working_dir=*/"",
+                /*timeout_seconds=*/60);
+            if (rc != 0) {
+                return {};
+            }
+
+            std::vector<std::string> dirs;
+            for (auto& line : lines) {
+                std::string trimmed = line;
+                while (!trimmed.empty() &&
+                       (trimmed.back() == '\r' || trimmed.back() == '\n' ||
+                        trimmed.back() == ' ' || trimmed.back() == '\t')) {
+                    trimmed.pop_back();
+                }
+                std::error_code ec;
+                if (!trimmed.empty() && fs::is_directory(trimmed, ec)) {
+                    dirs.push_back(trimmed);
+                }
+            }
+            return dirs;
+        }
+
+        void cleanup_stale_version_dirs(const fs::path& base,
+                                        const std::string& keep) {
+            std::error_code ec;
+            if (!fs::exists(base, ec)) {
+                return;
+            }
+            for (fs::directory_iterator it(base, ec), end; it != end && !ec; it.increment(ec)) {
+                if (!it->is_directory(ec)) {
+                    continue;
+                }
+                if (it->path().filename().string() != keep) {
+                    LOG(DEBUG, "BackendUtils")
+                        << "Cleaning up old ROCm install: " << it->path().filename().string() << std::endl;
+                    fs::remove_all(it->path(), ec);
+                }
+            }
+        }
+    }  // namespace
+
+    void BackendUtils::cleanup_old_therock_versions() {
+        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+        json config = utils::JsonUtils::load_from_file(config_path);
+
+        if (!config.contains("therock") || !config["therock"].is_object() ||
+            !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
+            return;
+        }
+
+        std::string version = config["therock"]["version"].get<std::string>();
 #ifdef __linux__
         fs::path therock_base = fs::path(utils::get_downloaded_bin_dir()) / "therock";
 
@@ -1034,8 +1173,8 @@ namespace lemon::backends {
                     std::string dir_name = entry.path().filename().string();
                     size_t dash_pos = dir_name.rfind('-');
                     if (dash_pos != std::string::npos) {
-                        std::string version = dir_name.substr(dash_pos + 1);
-                        if (version != current_version) {
+                        std::string dir_version = dir_name.substr(dash_pos + 1);
+                        if (dir_version != version) {
                             LOG(DEBUG, "BackendUtils") << "Cleaning up old TheRock version: " << dir_name << std::endl;
                             fs::remove_all(entry.path());
                         }
@@ -1043,8 +1182,232 @@ namespace lemon::backends {
                 }
             }
         } catch (const std::exception& e) {
-            LOG(WARNING, "BackendUtils") << "Failed to cleanup old TheRock versions: " << e.what() << std::endl;
+            LOG(WARNING, "BackendUtils")
+                << "Failed to cleanup old TheRock versions: " << e.what() << std::endl;
         }
+#else
+        (void)version;
+#endif
+    }
+
+    void BackendUtils::install_rocm_runtime(const std::string& arch, const std::string& version,
+                                            DownloadProgressCallback progress_cb) {
+        // rocm_install_method lets Python-averse environments (ISV/OEM images,
+        // air-gapped or pip-restricted hosts) opt out of the wheel path:
+        //   auto    - pip wheels, TheRock tarball fallback (default)
+        //   wheel   - pip wheels only (no tarball)
+        //   tarball - TheRock tarball only (no Python/pip)
+        std::string method = "auto";
+        if (auto* cfg = RuntimeConfig::global()) {
+            method = cfg->rocm_install_method();
+        }
+
+        if (method != "tarball") {
+            if (install_therock_wheels(arch, version, progress_cb)) {
+                return;
+            }
+            if (method == "wheel") {
+                throw std::runtime_error(
+                    "ROCm wheel install failed and rocm_install_method=wheel "
+                    "disables the TheRock tarball fallback");
+            }
+        }
+        install_therock(arch, version, progress_cb);
+    }
+
+    bool BackendUtils::install_therock_wheels(const std::string& arch, const std::string& version,
+                                              DownloadProgressCallback progress_cb) {
+#if !defined(__linux__) && !defined(_WIN32)
+        (void)arch; (void)version; (void)progress_cb;
+        return false;
+#else
+        if (!is_concrete_gfx_arch(arch)) {
+            LOG(DEBUG, "BackendUtils")
+                << "No rocm-sdk device wheel for '" << arch
+                << "'; using TheRock tarball" << std::endl;
+            return false;
+        }
+
+        std::string python = find_python_for_venv();
+        if (python.empty()) {
+            LOG(INFO, "BackendUtils")
+                << "Python with venv support not found; using TheRock tarball" << std::endl;
+            return false;
+        }
+
+        const std::string wheel_dir = get_therock_wheel_dir(arch, version);
+        const fs::path venv_dir = fs::path(wheel_dir) / "venv";
+        const fs::path paths_file = fs::path(wheel_dir) / "runtime_paths.txt";
+        const fs::path version_file = fs::path(wheel_dir) / "version.txt";
+
+        // Idempotent: skip when the same version is already installed.
+        if (fs::exists(version_file) && fs::exists(paths_file)) {
+            std::ifstream vf(version_file);
+            std::string installed;
+            std::getline(vf, installed);
+            if (installed == version) {
+                LOG(DEBUG, "BackendUtils")
+                    << "ROCm wheels " << arch << "-" << version
+                    << " already installed" << std::endl;
+                return true;
+            }
+        }
+
+        LOG(INFO, "BackendUtils") << "Installing ROCm " << version
+            << " via pip wheels for " << arch << " (this may take several minutes)" << std::endl;
+
+        std::error_code ec;
+        fs::remove_all(wheel_dir, ec);
+        fs::create_directories(wheel_dir, ec);
+
+        int downloads_seen = 0;
+        auto log_line = [&progress_cb, &downloads_seen](const std::string& line) {
+            LOG(INFO, "BackendUtils") << "(pip) " << line << std::endl;
+            if (!progress_cb) {
+                return true;
+            }
+            // pip (non-interactive) prints one "Downloading <name> (<size>)" line
+            // per wheel. Surface it so the UI shows movement across the ~730 MB
+            // install instead of sitting at 0% until completion, and honor the
+            // callback's cancellation return by killing pip.
+            static const std::string marker = "Downloading ";
+            const size_t pos = line.find(marker);
+            if (pos == std::string::npos) {
+                return true;
+            }
+            std::string rest = line.substr(pos + marker.size());
+            const size_t sp = rest.find_first_of(" \t");
+            std::string token = sp == std::string::npos ? rest : rest.substr(0, sp);
+            const size_t slash = token.find_last_of("/\\");
+            DownloadProgress p;
+            p.file = slash == std::string::npos ? token : token.substr(slash + 1);
+            if (p.file.empty()) {
+                p.file = "ROCm runtime";
+            }
+            p.file_index = ++downloads_seen;
+            p.complete = false;
+            return progress_cb(p);
+        };
+
+        int rc = utils::ProcessManager::run_process_with_output(
+            python, {"-m", "venv", utils::path_to_utf8(venv_dir)}, log_line,
+            /*working_dir=*/"", /*timeout_seconds=*/300);
+        if (rc != 0) {
+            LOG(WARNING, "BackendUtils")
+                << "Failed to create venv (exit " << rc
+                << "); using TheRock tarball" << std::endl;
+            fs::remove_all(wheel_dir, ec);
+            return false;
+        }
+
+#ifdef _WIN32
+        const std::string venv_python =
+            utils::path_to_utf8(venv_dir / "Scripts" / "python.exe");
+#else
+        const std::string venv_python =
+            utils::path_to_utf8(venv_dir / "bin" / "python");
+#endif
+
+        const std::string index_url = "https://repo.amd.com/rocm/whl-multi-arch/";
+        const std::string spec =
+            "rocm[libraries,device-" + arch + "]==" + version;
+
+        rc = utils::ProcessManager::run_process_with_output(
+            venv_python,
+            // --isolated ignores user/host pip config and PIP_EXTRA_INDEX_URL so a
+            // machine-level extra index can't shadow rocm-sdk-*. Note: `rocm` is an
+            // sdist, so pip build-isolates it and fetches setuptools from this same
+            // index — an implicit dependency on AMD's index contents.
+            {"-m", "pip", "install", "--isolated", "--no-input", "--index-url", index_url, spec},
+            log_line, /*working_dir=*/"", /*timeout_seconds=*/1800);
+        if (rc != 0) {
+            LOG(WARNING, "BackendUtils")
+                << "pip install of ROCm wheels failed (exit " << rc
+                << "); using TheRock tarball" << std::endl;
+            fs::remove_all(wheel_dir, ec);
+            return false;
+        }
+
+        // pip treats an unknown "device-<arch>" extra as a warning and still exits
+        // 0, installing rocm-sdk-libraries (which provides libamdhip64) but NO
+        // device code objects. Confirm the device package actually resolved;
+        // otherwise fall back to the tarball rather than caching a runtime that
+        // can't run kernels for this GPU.
+        {
+            const std::string device_pkg = "rocm-sdk-device-" + arch;
+            int show_rc = utils::ProcessManager::run_process_with_output(
+                venv_python, {"-m", "pip", "show", device_pkg}, nullptr,
+                /*working_dir=*/"", /*timeout_seconds=*/60);
+            if (show_rc != 0) {
+                LOG(WARNING, "BackendUtils")
+                    << "ROCm device wheel '" << device_pkg << "' did not resolve (no "
+                    << "code objects for " << arch << "); using TheRock tarball" << std::endl;
+                fs::remove_all(wheel_dir, ec);
+                return false;
+            }
+        }
+
+        std::vector<std::string> runtime_dirs = query_wheel_runtime_dirs(venv_python);
+        bool has_hip_runtime = false;
+        for (const auto& dir : runtime_dirs) {
+            for (fs::directory_iterator it(dir, ec), end; it != end && !ec; it.increment(ec)) {
+                const std::string name = it->path().filename().string();
+#ifdef _WIN32
+                if (name.rfind("amdhip64", 0) == 0) {
+#else
+                if (name == "libamdhip64.so") {
+#endif
+                    has_hip_runtime = true;
+                    break;
+                }
+            }
+            if (has_hip_runtime) {
+                break;
+            }
+        }
+        if (runtime_dirs.empty() || !has_hip_runtime) {
+            LOG(WARNING, "BackendUtils")
+                << "ROCm wheels installed but the HIP runtime could not be located; "
+                << "using TheRock tarball" << std::endl;
+            fs::remove_all(wheel_dir, ec);
+            return false;
+        }
+
+        {
+            std::ofstream pf(paths_file);
+            for (const auto& dir : runtime_dirs) {
+                pf << dir << "\n";
+            }
+        }
+        {
+            std::ofstream vf(version_file);
+            vf << version;
+        }
+
+        // Drop other wheel versions for this base dir to bound disk usage.
+        fs::path wheels_base = fs::path(utils::get_downloaded_bin_dir()) / "therock-wheels";
+        const std::string keep = fs::path(wheel_dir).filename().string();
+        for (fs::directory_iterator it(wheels_base, ec), end; it != end && !ec; it.increment(ec)) {
+            if (it->is_directory(ec) && it->path().filename().string() != keep) {
+                LOG(DEBUG, "BackendUtils")
+                    << "Cleaning up old ROCm wheel install: "
+                    << it->path().filename().string() << std::endl;
+                fs::remove_all(it->path(), ec);
+            }
+        }
+
+        if (progress_cb) {
+            DownloadProgress p;
+            p.file = spec;
+            p.file_index = 1;
+            p.total_files = 1;
+            p.percent = 100;
+            p.complete = true;
+            progress_cb(p);
+        }
+
+        LOG(INFO, "BackendUtils") << "ROCm wheel installation complete" << std::endl;
+        return true;
 #endif
     }
 
@@ -1072,8 +1435,7 @@ namespace lemon::backends {
 
         fs::create_directories(install_dir);
 
-        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-        json config = utils::JsonUtils::load_from_file(config_path);
+        const json& config = backend_versions_config();
 
         std::string url_variant = arch;
         if (config.contains("therock") && config["therock"].contains("url_mapping") &&
@@ -1174,7 +1536,7 @@ namespace lemon::backends {
         vf.close();
 
         fs::remove(tarball_path);
-        cleanup_old_therock_versions(version);
+        cleanup_old_therock_versions();
 
         // Send completion notification
         if (progress_cb) {
@@ -1194,9 +1556,6 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_therock_lib_path(const std::string& rocm_arch) {
-#if !defined(__linux__) && !defined(_WIN32)
-        return "";
-#else
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
         json config = utils::JsonUtils::load_from_file(config_path);
 
@@ -1206,9 +1565,45 @@ namespace lemon::backends {
 
         std::string version = config["therock"]["version"].get<std::string>();
 
-        // Only return the path if TheRock is already installed
+        // Prefer the lemonade-managed pip-wheel install when present. Its ROCm
+        // runtime is split across two directories (_rocm_sdk_core/bin and
+        // _rocm_sdk_libraries/bin), recorded in runtime_paths.txt at install time.
+        {
+            fs::path paths_file =
+                fs::path(get_therock_wheel_dir(rocm_arch, version)) / "runtime_paths.txt";
+            std::error_code ec;
+            if (fs::exists(paths_file, ec)) {
+                std::ifstream pf(paths_file);
+                std::string line;
+                bool first = true;
+                std::string lib_path;
+                while (std::getline(pf, line)) {
+                    if (!line.empty() && line.back() == '\r') {
+                        line.pop_back();
+                    }
+                    if (!line.empty()) {
+                        if (!first) {
+                            break;
+                        }
+                        std::error_code dir_ec;
+                        if (fs::is_directory(line, dir_ec)) {
+                            lib_path = line;
+                            first = false;
+                        }
+                    }
+                }
+                if (!lib_path.empty()) {
+                    LOG(DEBUG, "BackendUtils")
+                        << "Returning ROCm wheel runtime path: " << lib_path << std::endl;
+                    return lib_path;
+                }
+            }
+        }
+
+        // Tarball layout: a single runtime directory.
         std::string install_dir = get_therock_install_dir(rocm_arch, version);
-        if (fs::exists(install_dir)) {
+        std::error_code ec;
+        if (fs::exists(install_dir, ec)) {
 #ifdef _WIN32
             // On Windows, DLLs are in bin/ (lib/ contains only import .lib files)
             std::string lib_path = (fs::path(install_dir) / "bin").string();
@@ -1221,6 +1616,51 @@ namespace lemon::backends {
         }
 
         return "";
+    }
+
+    std::string BackendUtils::join_runtime_dirs(const std::vector<std::string>& dirs,
+                                                bool include_llvm) {
+#if !defined(__linux__) && !defined(_WIN32)
+        (void)dirs; (void)include_llvm;
+        return "";
+#else
+#ifdef _WIN32
+        const char sep = ';';
+#else
+        const char sep = ':';
+#endif
+        std::string out;
+        auto add = [&](const fs::path& p) {
+            if (p.empty()) {
+                return;
+            }
+            std::error_code ec;
+            std::string abs = utils::path_to_utf8(fs::absolute(p, ec));
+            if (ec || abs.empty()) {
+                return;
+            }
+            if (!out.empty()) {
+                out += sep;
+            }
+            out += abs;
+        };
+        for (const auto& d : dirs) {
+            if (d.empty()) {
+                continue;
+            }
+            fs::path dir = utils::path_from_utf8(d);
+            add(dir);
+            if (include_llvm) {
+#ifdef _WIN32
+                // Tarball layout keeps LLVM under <root>/lib/llvm/bin; <dir> is
+                // <root>/bin here, so step up before descending.
+                add(dir.parent_path() / "lib" / "llvm" / "bin");
+#else
+                add(dir / "llvm" / "lib");
+#endif
+            }
+        }
+        return out;
 #endif
     }
     void BackendUtils::apply_cuda_env_vars(

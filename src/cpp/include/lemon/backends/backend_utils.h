@@ -143,15 +143,39 @@ namespace lemon::backends {
         /** Get TheRock installation directory for a specific architecture and version */
         static std::string get_therock_install_dir(const std::string& arch, const std::string& version);
 
+        /** Install the ROCm runtime for the given architecture, preferring pip
+         *  wheels (into a lemonade-managed venv) and falling back to the TheRock
+         *  tarball when Python/venv/pip is unavailable or the wheel install fails. */
+        static void install_rocm_runtime(const std::string& arch, const std::string& version,
+                                         DownloadProgressCallback progress_cb = nullptr);
+
+        /** Attempt to install the ROCm runtime via pip wheels into a managed venv.
+         *  Returns true on success; false (leaving nothing behind) when Python is
+         *  missing, the arch has no device wheel, or any step fails, so the caller
+         *  can fall back to the tarball. */
+        static bool install_therock_wheels(const std::string& arch, const std::string& version,
+                                           DownloadProgressCallback progress_cb = nullptr);
+
+        /** Directory holding the lemonade-managed ROCm wheel venv for arch/version. */
+        static std::string get_therock_wheel_dir(const std::string& arch, const std::string& version);
+
         /** Download and install TheRock ROCm tarball for the specified architecture (Linux only) */
         static void install_therock(const std::string& arch, const std::string& version,
                                    DownloadProgressCallback progress_cb = nullptr);
 
-        /** Clean up old TheRock versions, keeping only the specified version */
-        static void cleanup_old_therock_versions(const std::string& current_version);
+        /** Clean up stale TheRock versions, keeping only the pinned ones */
+        static void cleanup_old_therock_versions();
 
         /** Get TheRock lib directory path if available, or empty string if not needed */
         static std::string get_therock_lib_path(const std::string& rocm_arch);
+
+        /** Join runtime library directories into a single loader-path string
+         *  (';' on Windows, ':' elsewhere), converting each to an absolute path.
+         *  When include_llvm is true, each directory's sibling LLVM runtime dir is
+         *  appended too (backends that dlopen the bundled LLVM runtime need it).
+         *  Returns "" for empty input. */
+        static std::string join_runtime_dirs(const std::vector<std::string>& dirs,
+                                             bool include_llvm);
 
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);

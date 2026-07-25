@@ -328,7 +328,7 @@ void SDServer::load(const std::string& model_name,
             if (!rocm_arch.empty()) {
                 std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
                 if (!therock_bin.empty()) {
-                    new_path = path_to_utf8(fs::absolute(path_from_utf8(therock_bin))) + ";" + new_path;
+                    new_path = therock_bin + ";" + new_path;
                 }
             }
         }
