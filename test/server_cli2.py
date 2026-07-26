@@ -681,6 +681,7 @@ sys.exit(0)
                 "set",
                 "telemetry.otlp.endpoint=http://127.0.0.1:4444/v1/traces",
                 "telemetry.otlp.protocol=http/json",
+                'telemetry.otlp.semantics=["openinference"]',
             ]
         )
         print(f"Config set output: {result.stdout}")
@@ -697,6 +698,7 @@ sys.exit(0)
             telemetry.get("otlp", {}).get("endpoint"), "http://127.0.0.1:4444/v1/traces"
         )
         self.assertEqual(telemetry.get("otlp", {}).get("protocol"), "http/json")
+        self.assertEqual(telemetry.get("otlp", {}).get("semantics"), ["openinference"])
 
     # =============================================================================
     # Pull Tests

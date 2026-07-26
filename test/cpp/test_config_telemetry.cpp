@@ -32,6 +32,12 @@ static json parse_cli_args(const std::vector<std::string>& args) {
         return s;
     };
     auto parse_typed_value = [](const std::string& val) -> json {
+        if (!val.empty() && (val.front() == '[' || val.front() == '{')) {
+            auto parsed = json::parse(val, nullptr, false);
+            if (!parsed.is_discarded()) {
+                return parsed;
+            }
+        }
         if (val == "true") return true;
         if (val == "false") return false;
         try {
@@ -173,16 +179,21 @@ int main() {
     }
     check(threw_unknown_otlp, "rejects unknown telemetry.otlp subkey");
 
-    // 4. Test CLI dotted key config path parsing logic
     std::vector<std::string> cli_args = {
         "telemetry.otlp.endpoint=http://127.0.0.1:5555/v1/traces",
         "telemetry.otlp.protocol=http/json",
+        "telemetry.otlp.semantics=[\"openinference\"]",
+        "telemetry.otlp.headers={\"Authorization\":\"Bearer test-key\"}",
         "port=9090"
     };
     json cli_updates = parse_cli_args(cli_args);
     check(cli_updates["port"] == 9090, "CLI parses top-level key");
     check(cli_updates["telemetry"]["otlp"]["endpoint"] == "http://127.0.0.1:5555/v1/traces", "CLI parses 3-level dotted path endpoint");
     check(cli_updates["telemetry"]["otlp"]["protocol"] == "http/json", "CLI parses 3-level dotted path protocol");
+    check(cli_updates["telemetry"]["otlp"]["semantics"].is_array(), "CLI parses JSON array for semantics");
+    check(cli_updates["telemetry"]["otlp"]["semantics"][0] == "openinference", "CLI parsed array value matches");
+    check(cli_updates["telemetry"]["otlp"]["headers"].is_object(), "CLI parses JSON object for headers");
+    check(cli_updates["telemetry"]["otlp"]["headers"]["Authorization"] == "Bearer test-key", "CLI parsed object field matches");
 
     std::printf("================================================\n");
     if (failures > 0) {
