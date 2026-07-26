@@ -58,6 +58,9 @@ RUN apt-get update && apt-get install -y \
 
 # Run as an unprivileged user; lemond never needs root at runtime.
 RUN useradd -r -u 10001 -s /usr/sbin/nologin lemonade
+# Add missing group render for GPU access.
+# Add the user to the video and render groups so it can access GPU devices (e.g. /dev/dri/renderD128).
+RUN groupadd -r -g 148 render && usermod -aG video,render lemonade
 
 # The application directory doubles as the user's HOME so the HuggingFace and
 # lemonade caches (both derived from $HOME) resolve to writable, owned paths.
