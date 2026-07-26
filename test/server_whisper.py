@@ -512,8 +512,19 @@ class WhisperTests(ServerTestBase):
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(event.type, "session.created")
 
-            # Configure model
-            await conn.session.update(session={"model": model})
+            # The shared fixture contains several phrases separated by enough silence
+            # for the default VAD to create multiple final jobs. This test exits after
+            # the first completion, so those jobs used to leak into test_008. Keep the
+            # fixture in one VAD speech window and force exactly one final via commit.
+            await conn.session.update(
+                session={
+                    "model": model,
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "silence_duration_ms": 6000,
+                    },
+                }
+            )
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(event.type, "session.updated")
 
