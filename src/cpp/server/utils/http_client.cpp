@@ -390,10 +390,14 @@ bool apply_http_security_policy(
                                      const char* redirect_protocols) {
         std::string_view p(protocols);
         std::string_view r(redirect_protocols);
-        bool p_has_https = (p.find("HTTPS") != std::string_view::npos || p.find("https") != std::string_view::npos);
-        bool p_has_http = (p.find("HTTP") != std::string_view::npos || p.find("http") != std::string_view::npos);
-        bool r_has_https = (r.find("HTTPS") != std::string_view::npos || r.find("https") != std::string_view::npos);
-        bool r_has_http = (r.find("HTTP") != std::string_view::npos || r.find("http") != std::string_view::npos);
+        bool p_has_https = (p.find("https") != std::string_view::npos || p.find("HTTPS") != std::string_view::npos);
+        bool p_has_http = (p.find("http,") != std::string_view::npos || p.find("HTTP,") != std::string_view::npos ||
+                           p.find(",http") != std::string_view::npos || p.find(",HTTP") != std::string_view::npos ||
+                           p == "http" || p == "HTTP");
+        bool r_has_https = (r.find("https") != std::string_view::npos || r.find("HTTPS") != std::string_view::npos);
+        bool r_has_http = (r.find("http,") != std::string_view::npos || r.find("HTTP,") != std::string_view::npos ||
+                           r.find(",http") != std::string_view::npos || r.find(",HTTP") != std::string_view::npos ||
+                           r == "http" || r == "HTTP");
 
         long proto_mask = (p_has_https ? 2L : 0L) | (p_has_http ? 1L : 0L);
         long redir_mask = (r_has_https ? 2L : 0L) | (r_has_http ? 1L : 0L);
@@ -413,12 +417,12 @@ bool apply_http_security_policy(
         case HttpSecurityPolicy::TrustedLoopback:
             // Managed loopback backends are plain HTTP and must never redirect.
             return set(CURLOPT_FOLLOWLOCATION, 0L) &&
-                   set_proto(CURLOPT_PROTOCOLS_STR, CURLOPT_PROTOCOLS, "HTTP", 1L /* CURLPROTO_HTTP */);
+                   set_proto(CURLOPT_PROTOCOLS_STR, CURLOPT_PROTOCOLS, "http", 1L /* CURLPROTO_HTTP */);
         case HttpSecurityPolicy::AllowInsecureHttp:
-            return apply_protocols("HTTP,HTTPS", "HTTP,HTTPS");
+            return apply_protocols("http,https", "http,https");
         case HttpSecurityPolicy::ExternalHttpsOnly:
         default:
-            return apply_protocols("HTTPS", "HTTPS");
+            return apply_protocols("https", "https");
     }
 }
 } // namespace
