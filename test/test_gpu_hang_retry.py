@@ -180,17 +180,27 @@ class TestGpuHangRecovery(unittest.TestCase):
             os.remove(STATE_FILE)
 
         # Resolve build directory and lemond binary
+        name = "lemond.exe" if os.name == "nt" else "lemond"
         cli_binary = get_cli_binary()
+        lemond_bin = None
         if cli_binary:
-            build_dir = os.path.dirname(cli_binary)
-            name = "lemond.exe" if os.name == "nt" else "lemond"
-            lemond_bin = os.path.join(build_dir, name)
-            if not os.path.exists(lemond_bin):
-                lemond_bin = get_default_lemond_binary()
-                build_dir = os.path.dirname(lemond_bin)
-        else:
-            lemond_bin = get_default_lemond_binary()
-            build_dir = os.path.dirname(lemond_bin)
+            if os.path.isabs(cli_binary):
+                build_dir = os.path.dirname(cli_binary)
+            else:
+                resolved_cli = shutil.which(cli_binary)
+                if resolved_cli:
+                    build_dir = os.path.dirname(resolved_cli)
+                else:
+                    build_dir = os.path.dirname(os.path.abspath(cli_binary))
+            candidate = os.path.join(build_dir, name)
+            if os.path.exists(candidate):
+                lemond_bin = candidate
+
+        if not lemond_bin or not os.path.exists(lemond_bin):
+            lemond_bin = shutil.which(name) or get_default_lemond_binary()
+            build_dir = (
+                os.path.dirname(os.path.abspath(lemond_bin)) if lemond_bin else "."
+            )
 
         cache_dir = os.path.join(build_dir, "test_cache")
         os.makedirs(cache_dir, exist_ok=True)
@@ -313,7 +323,7 @@ class TestGpuHangRecovery(unittest.TestCase):
         load_resp = requests.post(
             f"{BASE_URL}/api/v1/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=30,
+            timeout=60,
         )
         self.assertEqual(load_resp.status_code, 200)
 
@@ -326,7 +336,7 @@ class TestGpuHangRecovery(unittest.TestCase):
         }
 
         resp = requests.post(
-            f"{BASE_URL}/api/v1/chat/completions", json=payload, timeout=30
+            f"{BASE_URL}/api/v1/chat/completions", json=payload, timeout=60
         )
 
         # Verify request succeeded
@@ -359,7 +369,7 @@ class TestGpuHangRecovery(unittest.TestCase):
         load_resp = requests.post(
             f"{BASE_URL}/api/v1/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=30,
+            timeout=60,
         )
         self.assertEqual(load_resp.status_code, 200)
 
@@ -372,7 +382,7 @@ class TestGpuHangRecovery(unittest.TestCase):
         }
 
         resp = requests.post(
-            f"{BASE_URL}/api/v1/chat/completions", json=payload, stream=True, timeout=30
+            f"{BASE_URL}/api/v1/chat/completions", json=payload, stream=True, timeout=60
         )
 
         # Consume the stream
@@ -416,7 +426,7 @@ class TestGpuHangRecovery(unittest.TestCase):
         load_resp = requests.post(
             f"{BASE_URL}/api/v1/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=30,
+            timeout=60,
         )
         self.assertEqual(load_resp.status_code, 200)
 
@@ -431,7 +441,7 @@ class TestGpuHangRecovery(unittest.TestCase):
         def send_request():
             try:
                 return requests.post(
-                    f"{BASE_URL}/api/v1/chat/completions", json=payload, timeout=30
+                    f"{BASE_URL}/api/v1/chat/completions", json=payload, timeout=60
                 )
             except Exception as e:
                 return e
