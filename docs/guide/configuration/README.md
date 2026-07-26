@@ -370,6 +370,10 @@ lemonade config set llamacpp.backend=rocm
 
 # Set multiple values at once
 lemonade config set port=9000 llamacpp.backend=rocm sdcpp.steps=30
+
+# Set complex types like JSON arrays and objects (use single quotes to prevent shell expansion)
+lemonade config set telemetry.otlp.semantics='["openinference"]'
+lemonade config set telemetry.otlp.headers='{"Authorization":"Bearer key"}'
 ```
 
 ### lemond CLI arguments (fallback)

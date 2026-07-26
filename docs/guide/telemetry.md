@@ -98,6 +98,9 @@ lemonade telemetry off
 lemonade config
 ```
 
+> [!NOTE]
+> When configuring options that require JSON arrays (such as `telemetry.otlp.semantics`) or JSON objects (such as `telemetry.otlp.headers`) via the CLI, wrap the values in single quotes (e.g. `'["openinference"]'`) so your shell does not interpret or expand the bracket `[]` or brace `{}` characters.
+
 ### Via Configuration API
 
 Internal configuration is updated via the `/internal/set` endpoint:
