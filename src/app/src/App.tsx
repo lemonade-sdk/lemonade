@@ -613,7 +613,6 @@ const App: React.FC = () => {
           <ViewErrorBoundary view="models">
             <ModelManager
               onModelSelect={handleModelSelect}
-              selectedModel={currentModel}
               accountSession={accountSession}
             />
           </ViewErrorBoundary>

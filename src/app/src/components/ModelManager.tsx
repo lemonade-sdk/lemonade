@@ -1044,7 +1044,6 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
 
 interface ModelManagerProps {
   onModelSelect: (model: string) => void;
-  selectedModel: string | null;
   accountSession: AccountSession;
 }
 
