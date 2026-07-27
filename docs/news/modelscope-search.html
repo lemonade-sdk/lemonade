@@ -42,7 +42,7 @@
           </div>
 
           <p>There's nothing to set up &mdash; no accounts, no extra configuration. Type a name, browse the GGUF variants, and hit download.</p>
-          <p>And you won't waste a download on a repo that can't run. Before a result earns a download button, Lemonade inspects the repository's actual file tree and only offers models with GGUF files it can serve. What you see is what will run.</p>
+          <p>And you won't waste a download on an empty repo. Before a result earns a download button, Lemonade inspects the repository's actual file tree and only shows repositories with downloadable GGUF variants.</p>
         </div>
 
         <div class="section-card">
@@ -56,7 +56,7 @@
             <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-search-results.png" alt="Model Manager showing search results from Hugging Face and ModelScope">
           </div>
 
-          <p>Every result tells you what you're getting before you commit: the repository name, a source badge (<strong>MS</strong> or <strong>HF</strong>), the download size, and how many times the community has pulled it. Want a different quantization? Pick one from the dropdown &mdash; Q4_K_M is preselected as a sensible default. Then click download and watch it go.</p>
+          <p>Every result tells you what you're getting before you commit: the repository name, a source badge (<strong>MS</strong> or <strong>HF</strong>), the download size, and how many times the community has pulled it. Want a different quantization? Pick one from the dropdown &mdash; Q4_K_M is preselected when available. Then click download and watch it go.</p>
 
           <div class="blog-media">
             <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-download.png" alt="Download Manager pulling a model from ModelScope">
@@ -84,17 +84,17 @@
             <pre><code id="modelscope-pull">lemonade pull Qwen/Qwen2.5-3B-Instruct-GGUF --source modelscope</code></pre>
           </div>
 
-          <p>If you're building on top of the server, the same search that powers the Model Manager is one GET away:</p>
+          <p>If you're building on top of the server, the registry search behind the Model Manager is one GET away. It returns candidate repositories &mdash; the Model Manager then validates each candidate's file listing with <code>/v1/pull/variants</code> before offering a download.</p>
 
           <div class="enhanced-code-block">
             <div class="code-header">
               <span class="code-title">Registry search API</span>
               <button class="blog-copy-btn" type="button" data-copy-target="modelscope-search-api">Copy</button>
             </div>
-            <pre><code id="modelscope-search-api">curl "http://localhost:13305/v1/registry/search?source=modelscope&amp;query=qwen"</code></pre>
+            <pre><code id="modelscope-search-api">curl "http://localhost:13305/v1/registry/search?source=modelscope&amp;query=qwen&amp;format=gguf"</code></pre>
           </div>
 
-          <p>Add <code>format=gguf</code> to bias results toward GGUF repositories, or <code>limit</code> to control how many come back (1&ndash;50, default 12). Responses include tags, task, download counts, and a GGUF hint per model &mdash; see the <a href="../docs/api/lemonade/" target="_blank" rel="noopener">API docs</a> for the full shape.</p>
+          <p><code>format=gguf</code> biases results toward GGUF repositories, and <code>limit</code> controls how many come back (1&ndash;50, default 12). Responses include tags, task, download counts, and a GGUF hint per model &mdash; see the <a href="../docs/api/lemonade/" target="_blank" rel="noopener">API docs</a> for the full shape.</p>
         </div>
 
         <div class="cta-separator" aria-hidden="true"></div>
