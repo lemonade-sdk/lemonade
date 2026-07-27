@@ -13,14 +13,18 @@ import ImproveTab from './inspect/ImproveTab';
 import CreateModal from './inspect/CreateModal';
 import CurlModal from './inspect/CurlModal';
 import { type AccountSession } from '../features/accounts/accountStore';
+import { WorkspaceActionButton, WorkspaceDetailEmpty } from './WorkspacePanels';
+import { isMobileLayout } from '../styles/breakpoints';
 
 interface InspectViewProps {
   accountSession: AccountSession;
+  embedded?: boolean;
 }
 
-export default function InspectView({ accountSession }: InspectViewProps) {
+export default function InspectView({ accountSession, embedded = false }: InspectViewProps) {
   const { traces, selectedTraceId, capturing, captureReady, searchQuery, filterKind, toast } = useInspectStore();
   const [activeTab, setActiveTab] = useState<'overview' | 'messages' | 'replay' | 'improve'>('overview');
+  const [railCollapsed, setRailCollapsed] = useState(false);
 
   // Shared Replay params state for ReplayTab and CurlModal preview sync
   const [replaySystemPrompt, setReplaySystemPrompt] = useState('');
@@ -34,6 +38,7 @@ export default function InspectView({ accountSession }: InspectViewProps) {
   const [curlModalOpen, setCurlModalOpen] = useState(false);
 
   const tablistRef = useRef<HTMLDivElement>(null);
+  const mobileBackRef = useRef<HTMLButtonElement>(null);
 
   const availableModels = api.allModels;
 
@@ -45,6 +50,12 @@ export default function InspectView({ accountSession }: InspectViewProps) {
   useEffect(() => {
     setActiveTab('overview');
   }, [selectedTraceId]);
+
+  useEffect(() => {
+    if (!embedded || !selectedTrace || !isMobileLayout()) return;
+    const frame = requestAnimationFrame(() => mobileBackRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [embedded, selectedTrace]);
 
   // Sync replay initial values when selected trace changes
   useEffect(() => {
@@ -113,6 +124,15 @@ export default function InspectView({ accountSession }: InspectViewProps) {
     inspectStore.showToast(`Session exported (${exportable.length} traces copied)`);
   };
 
+  const closeMobileDetail = () => {
+    const traceId = selectedTraceId;
+    inspectStore.selectTrace(null);
+    if (!traceId) return;
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-trace-id="${CSS.escape(traceId)}"]`)?.focus();
+    });
+  };
+
   const filteredTraces = useMemo(() => {
     return traces.filter((t) => {
       // 1. Kind filter
@@ -133,7 +153,7 @@ export default function InspectView({ accountSession }: InspectViewProps) {
   }, [traces, filterKind, searchQuery]);
 
   return (
-    <div className="inspect-layout">
+    <div className={`inspect-layout${embedded ? ' inspect-layout--embedded' : ''}${embedded && selectedTrace ? ' inspect-layout--detail-open' : ''}${!embedded && railCollapsed ? ' workspace--rail-collapsed' : ''}`}>
       <TraceList
         traces={traces}
         filteredTraces={filteredTraces}
@@ -145,27 +165,38 @@ export default function InspectView({ accountSession }: InspectViewProps) {
         handleOpenCreateModal={() => setCreateModalOpen(true)}
         handleExportSession={handleExportSession}
         formatTokens={formatTokens}
+        collapsed={!embedded && railCollapsed}
+        onToggleCollapsed={() => setRailCollapsed(value => !value)}
+        embedded={embedded}
       />
 
       <div className="inspect-detail">
         {!selectedTrace ? (
-          <div className="inspect-detail-empty">
-            <span className="inspect-detail-empty__icon">
-              <Icon name="scan-eye" size={48} />
-            </span>
-            <h4>Select a trace run to inspect details</h4>
-            <p>Select any recorded inference from the left panel to review its timeline waterfall, prompts, metrics and optimization suggestions.</p>
-          </div>
+          <WorkspaceDetailEmpty
+            icon="scan-eye"
+            title="Select a request"
+            description="Choose a captured request to review its timeline, prompts, metrics, and optimization suggestions."
+          />
         ) : (
           <>
             <div className="inspect-detail__header">
+              <WorkspaceActionButton
+                ref={mobileBackRef}
+                className="inspect-detail__mobile-back"
+                appearance="quiet"
+                size="small"
+                icon="chevron-right"
+                onClick={closeMobileDetail}
+              >
+                Requests
+              </WorkspaceActionButton>
               <div className="inspect-detail__identity">
                 <span className={`detail-kind-badge ${selectedTrace.kind.toLowerCase()}`}>{selectedTrace.kind}</span>
                 <h2 className="detail-model-name">{selectedTrace.model}</h2>
                 {selectedTrace.operation && (
                   <span className="detail-operation">{selectedTrace.operation}</span>
                 )}
-                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <div className="inspect-detail__status">
                   <span className={`trace-row__status-dot ${selectedTrace.status}`} aria-hidden="true"></span>
                   <span className="trace-row__status-label">
                     {selectedTrace.status === 'ok' ? 'OK' : selectedTrace.status.charAt(0).toUpperCase() + selectedTrace.status.slice(1)}
@@ -263,7 +294,7 @@ export default function InspectView({ accountSession }: InspectViewProps) {
                     onClick={() => setActiveTab(tab)}
                   >
                     {tab === 'improve' ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1.5)' }}>
+                      <span className="detail-tab__label">
                         <Icon name="omni" size={14} /> Improve
                       </span>
                     ) : tab === 'replay' ? (
@@ -333,7 +364,7 @@ export default function InspectView({ accountSession }: InspectViewProps) {
       )}
 
       {/* Permanent invisible live region for screen readers */}
-      <div className="sr-only" role="status" aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', border: 0 }}>
+      <div className="sr-only" role="status" aria-live="polite">
         {toast || ''}
       </div>
 

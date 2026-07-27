@@ -92,33 +92,16 @@ function MessageCard({ m, idx, formatTokens, handleCopyFull }: MessageCardProps)
               <button
                 type="button"
                 className="reasoning-block__header"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--space-1)',
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  textAlign: 'left',
-                  width: '100%',
-                  outline: 'none'
-                }}
                 onClick={() => setThinkingCollapsed(!thinkingCollapsed)}
                 aria-expanded={!thinkingCollapsed}
               >
-                <span style={{
-                  display: 'inline-flex',
-                  transform: thinkingCollapsed ? 'rotate(-90deg)' : 'none',
-                  transition: 'transform 0.15s ease'
-                }}>
+                <span className={`reasoning-block__chevron${thinkingCollapsed ? ' is-collapsed' : ''}`}>
                   <Icon name="chevron-down" size={10} />
                 </span>
                 <span>Reasoning Output</span>
               </button>
               {!thinkingCollapsed && (
-                <div className="reasoning-block__body fade-in" style={{ marginTop: 'var(--space-2)' }}>
+                <div className="reasoning-block__body fade-in">
                   {m.thinking}
                 </div>
               )}
@@ -174,7 +157,7 @@ export default function MessagesTab({
   };
 
   return (
-    <div id="panel-messages" role="tabpanel" aria-labelledby="tab-messages" className="tab-pane fade-in flex-col gap-12" style={{ height: '100%' }}>
+    <div id="panel-messages" role="tabpanel" aria-labelledby="tab-messages" className="tab-pane fade-in flex-col gap-12">
       <div className="messages-toolbar">
         <div className="messages-toolbar__left">
           <span className="messages-toolbar__title">CONVERSATION</span>
@@ -198,7 +181,7 @@ export default function MessagesTab({
           </div>
         </div>
 
-        <div className="split-button" style={{ position: 'relative' }}>
+        <div className="split-button">
           <button
             type="button"
             className="split-button__action"
@@ -213,12 +196,11 @@ export default function MessagesTab({
             aria-label="Select copy format"
             aria-haspopup="menu"
             aria-expanded={copyDropdownOpen}
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <Icon name="chevron-down" size={12} />
           </button>
           {copyDropdownOpen && (
-            <div className="dropdown-menu" style={{ position: 'absolute', right: 0, top: '100%', zIndex: 10 }}>
+            <div className="dropdown-menu">
               <button
                 type="button"
                 className={`dropdown-item ${copyFormat === 'messages' ? 'selected' : ''}`}
@@ -251,22 +233,7 @@ export default function MessagesTab({
           ))}
         </div>
       ) : (
-        <pre
-          className="raw-text-body fade-in"
-          style={{
-            padding: 'var(--space-4)',
-            background: 'var(--surface-1)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-lg)',
-            overflow: 'auto',
-            fontFamily: 'monospace',
-            fontSize: 'var(--text-sm)',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-            margin: 0,
-            flexGrow: 1
-          }}
-        >
+        <pre className="raw-text-body messages-raw-payload fade-in">
           <code>
             {JSON.stringify(
               selectedTrace.messages.map(m => ({

@@ -79,7 +79,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
 
   test('Decoupled Keyboard Selection in Trace List', async ({ page }) => {
     // 1. Navigate to the inspect view directly
-    await page.goto('/#/inspect');
+    await page.goto('/#/dashboard/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
     // 2. Put initial traces in the inspectStore
@@ -207,11 +207,11 @@ test.describe('Session Inspector - Recent Improvements', () => {
 
   test('Combobox Input Focus Highlight', async ({ page }) => {
     // 1. Navigate to the inspect view directly
-    await page.goto('/#/inspect');
+    await page.goto('/#/dashboard/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
     // Open Sim Create Modal
-    await page.click('button.primary-simulate');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
     await page.waitForTimeout(500);
 
     // Locate the search input
@@ -306,7 +306,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
     });
 
     // Navigate to inspect view
-    await page.goto('/#/inspect');
+    await page.goto('/#/dashboard/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
     // Make sure capturing is set to true on store
@@ -417,7 +417,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
     });
 
     // 1. Navigate to the inspect view
-    await page.goto('/#/inspect');
+    await page.goto('/#/dashboard/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
     // Make sure capturing is set to true on store

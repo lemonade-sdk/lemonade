@@ -22,6 +22,12 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar');
 
+    await expect(page.locator('.titlebar__lemon')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'App controls', exact: true })).not.toBeVisible();
+    await expect(page.locator('.titlebar__utility-menu .account-menu__trigger')).toBeVisible();
+    await expect(page.locator('.titlebar__utility-menu').getByRole('button', { name: 'Toggle theme' })).toBeVisible();
+    await expect(page.locator('.titlebar__utility-menu').getByRole('button', { name: 'Open download manager' })).toBeVisible();
+
     // Titlebar brand
     await expect(page.locator('.titlebar__brand')).toContainText('lemonade');
 
@@ -31,12 +37,82 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(nav.getByText('Models')).toBeVisible();
     await expect(nav.getByText('Presets')).toBeVisible();
     await expect(nav.getByText('Backends')).toBeVisible();
+    await expect(nav.getByText('Dashboard')).toBeVisible();
     await expect(nav.getByText('Connect')).toBeVisible();
 
     // Status dot visible
-    await expect(page.locator('.titlebar__status-dot')).toBeVisible();
+    await expect(page.locator('.titlebar__status-dot--brand')).toBeVisible();
 
     await page.screenshot({ path: 'screenshots/01-app-loaded.png', fullPage: true });
+  });
+
+  // The tray and CLI deep-link into the app with `?view=<workspace>/<section>`
+  // (tray_ui.cpp on_show_logs, cli/main.cpp logs). Those routes must resolve.
+  test('01a0 — host deep links address Dashboard sections directly', async ({ page }) => {
+    await page.goto('/?view=dashboard/logs');
+    await page.waitForSelector('[data-view="dashboard"]');
+    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+    await expect(page.getByRole('navigation', { name: 'Dashboard sections' })
+      .getByRole('button', { name: 'Logs', exact: true })).toHaveAttribute('aria-current', 'page');
+
+    await page.goto('/?view=dashboard/telemetry');
+    await page.waitForSelector('[data-view="dashboard"]');
+    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+  });
+
+  test('01a — Dashboard labels and URL sections stay aligned', async ({ page }) => {
+    await page.goto('/#/dashboard/telemetry');
+    await page.waitForSelector('[data-view="dashboard"]');
+
+    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+    await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toBeVisible();
+    await expect(page.locator('.monitor-rail .workspace-rail__title')).toHaveText('Views');
+    const dashboardSections = page.getByRole('navigation', { name: 'Dashboard sections' });
+    await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
+    await dashboardSections.getByRole('button', { name: 'Performance', exact: true }).click();
+    await expect(page).toHaveURL(/#\/dashboard\/performance$/);
+    await dashboardSections.getByRole('button', { name: 'Logs', exact: true }).click();
+    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+    await expect(page.locator('.titlebar__nav').getByText('Monitor')).toHaveCount(0);
+    await expect(page.locator('.titlebar__nav').getByText('Inspect')).toHaveCount(0);
+    await expect(page.locator('.titlebar__nav').getByText('Logs')).toHaveCount(0);
+
+    await page.goto('/#/monitor/requests');
+    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+  });
+
+  test('01b — Dashboard and Connect share routed section navigation', async ({ page }) => {
+    await page.goto('/#/connect/cloud-providers');
+    await page.waitForSelector('[data-view="connect"]');
+
+    const connectSections = page.getByRole('navigation', { name: 'Connect sections' });
+    await expect(connectSections.getByRole('button', { name: 'Cloud providers', exact: true })).toHaveAttribute('aria-current', 'page');
+
+    const expectedConnectRoutes = [
+      ['Server', 'server'],
+      ['Model storage', 'model-storage'],
+      ['Cloud providers', 'cloud-providers'],
+      ['MCP gateway', 'mcp-gateway'],
+      ['App directory', 'app-directory'],
+      ['Help & support', 'help-and-support'],
+    ] as const;
+
+    for (const [label, section] of expectedConnectRoutes) {
+      await connectSections.getByRole('button', { name: label, exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`#\\/connect\\/${section}$`));
+      await expect(page.locator('#connect-pane-title')).toHaveText(label);
+    }
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Dashboard', exact: true }).click();
+    const dashboardSections = page.getByRole('navigation', { name: 'Dashboard sections' });
+    await dashboardSections.getByRole('button', { name: 'Telemetry', exact: true }).click();
+    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Connect', exact: true }).click();
+    await expect(page).toHaveURL(/#\/connect\/help-and-support$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+    await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
   });
 
   test('02 — Chat view renders with composer', async ({ page }) => {
@@ -64,6 +140,16 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForSelector('.manager');
 
     await expect(page.locator('.manager__title h1')).toContainText('Models');
+    await expect(page.locator('.model-nav-rail .workspace-rail__title')).toHaveText('Filters');
+
+    const collapseFilters = page.getByRole('button', { name: 'Collapse model filters sidebar' });
+    await expect(collapseFilters).toBeVisible();
+    await expect(collapseFilters.locator('[data-icon="panel-left-close"]')).toBeVisible();
+    await collapseFilters.click();
+    const expandFilters = page.getByRole('button', { name: 'Expand model filters sidebar' });
+    await expect(expandFilters).toBeVisible();
+    await expect(expandFilters.locator('[data-icon="panel-left-open"]')).toBeVisible();
+    await expandFilters.click();
 
     await page.screenshot({ path: 'screenshots/03-models-view.png', fullPage: true });
   });
@@ -76,7 +162,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.titlebar__nav').getByText('Connect').click();
     await page.waitForSelector('.connect');
 
-    await expect(page.locator('.connect h1')).toContainText('Connect');
+    await expect(page.locator('#connect-pane-title')).toHaveText('Server');
+    await expect(page.locator('.connect__rail .workspace-rail__title')).toHaveText('Settings');
     await expect(page.locator('#host-input')).toBeVisible();
     await expect(page.locator('#key-input')).toBeVisible();
     await expect(page.locator('.connect__section--server button[type="submit"]')).toBeVisible();
@@ -402,6 +489,55 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/12-responsive-mobile.png', fullPage: true });
   });
 
+  test('12a — Every mobile workspace exposes its context panel', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await page.waitForSelector('.titlebar');
+
+    const appControls = page.getByRole('button', { name: 'App controls', exact: true });
+    await expect(appControls).toBeVisible();
+    await expect(appControls.locator('[data-icon="settings"]')).toBeVisible();
+    await appControls.click();
+    await expect(page.locator('.titlebar__utility-menu .account-menu__trigger')).toBeVisible();
+    await expect(page.locator('.titlebar__utility-menu').getByRole('status')).toHaveAccessibleName(/Server (connected|connecting|offline)/i);
+    await appControls.click();
+
+    const workspaces: Array<{ tab: string; trigger: string; dialog: string; visibleControls?: string[] }> = [
+      { tab: 'Chat', trigger: 'Open conversation history', dialog: 'Conversations' },
+      {
+        tab: 'Models',
+        trigger: 'Open model filters',
+        dialog: 'Model filters',
+        visibleControls: ['All Models', 'Downloaded', 'My Models', 'Favorites'],
+      },
+      { tab: 'Presets', trigger: 'Open preset filters', dialog: 'Preset filters' },
+      { tab: 'Backends', trigger: 'Open backend filters', dialog: 'Backend filters' },
+      { tab: 'Dashboard', trigger: 'Open dashboard views', dialog: 'Dashboard navigation' },
+      { tab: 'Connect', trigger: 'Open connection settings', dialog: 'Connection settings' },
+    ];
+
+    const primaryNav = page.getByRole('navigation', { name: 'Primary' });
+    for (const workspace of workspaces) {
+      await primaryNav.getByRole('button', { name: workspace.tab, exact: true }).click();
+      const trigger = page.getByRole('main').getByRole('button', { name: workspace.trigger, exact: true });
+      await expect(trigger).toBeVisible();
+      await trigger.click();
+      const dialog = page.getByRole('dialog', { name: workspace.dialog });
+      await expect(dialog).toBeVisible();
+      for (const control of workspace.visibleControls ?? []) {
+        await expect(dialog.getByRole('button', { name: control })).toBeVisible();
+      }
+      await trigger.click();
+      await expect(page.getByRole('dialog', { name: workspace.dialog })).toHaveCount(0);
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await trigger.click();
+      await expect(page.getByRole('dialog', { name: workspace.dialog })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog', { name: workspace.dialog })).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+    }
+  });
+
   test('13 — Presets v1.4 renders capability flow and stages bindings', async ({ page }) => {
     let loadCalls = 0;
     await page.addInitScript(() => {
@@ -430,22 +566,22 @@ test.describe('Lemonade UI — Feature Parity', () => {
     });
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await expect(page.locator('.titlebar__status-dot')).toHaveClass(/titlebar__status-dot--connected/);
+    await expect(page.locator('.titlebar__status-dot').first()).toHaveClass(/titlebar__status-dot--connected/);
 
     // Navigate to Presets
     await page.locator('.titlebar__nav').getByText('Presets').click();
     await page.waitForSelector('.recipes');
 
     // Title visible
-    await expect(page.locator('.recipes__title h1')).toContainText('Presets');
+    await expect(page.locator('.preset-list-panel .workspace-list-panel__heading h1')).toHaveText('Presets');
 
     // Count subtitle visible
-    await expect(page.locator('.recipes__title-sub')).toContainText('starters');
+    await expect(page.locator('.preset-list-panel .workspace-list-panel__subtitle')).toContainText('items');
 
     // Lede explains the intent-to-tuning separation.
     const lede = page.locator('.recipes__lede');
     await expect(lede).toBeVisible();
-    await expect(lede).toContainText('describe how you want to use a model');
+    await expect(lede).toContainText('Presets capture intent');
     await expect(lede).toContainText('Model Tuning');
 
     // Zone: Bundled starters (scope to recipes view to avoid hitting Models zones).
@@ -475,16 +611,20 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await recipesView.locator('[data-empty="yours"] button').getByText('Pick a starter').click();
     await expect(recipesView.locator('[data-starter-zone]')).toBeFocused();
 
-    // Starter cards expose both flows: edit a customized copy or clone directly.
-    await expect(starterCards.first().getByRole('button', { name: 'Customize' })).toBeVisible();
-    await expect(starterCards.first().getByRole('button', { name: 'Clone' })).toBeVisible();
-
-    // Click a preset card to open slide-over
+    // Click a preset row to open its persistent detail pane.
     await starterCards.first().locator('.recipe-card__overlay-btn').click();
     await page.waitForSelector('.slideover.is-open');
 
+    // Starter actions live in the detail pane rather than crowding the list.
+    await expect(page.locator('.slideover').getByRole('button', { name: 'Customize' })).toBeVisible();
+    await expect(page.locator('.slideover').getByRole('button', { name: 'Clone' })).toBeVisible();
+    const exportButton = page.locator('.slideover').getByRole('button', { name: 'Export' });
+    await expect(exportButton).toHaveClass(/btn--secondary/);
+    await expect(exportButton).not.toHaveClass(/btn--quiet/);
+
     // Slide-over has preset name
     await expect(page.locator('.slideover__title')).toBeVisible();
+    await expect(page.locator('.slideover .workspace-detail-panel__metadata .workspace-metadata-chip--medium')).toHaveCount(0);
 
     // Slide-over shows capability chips
     await expect(page.locator('.slideover .cap-chip').first()).toContainText('Chat');
@@ -513,7 +653,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.locator('.slideover__close').click();
     await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
+    const presetLibraryNav = page.getByRole('navigation', { name: 'Preset filters' });
+    await presetLibraryNav.getByRole('button', { name: 'Applied models', exact: true }).click();
     await expect(recipesView.locator('[data-applied-row="llama-chat"] .preset-status-chip')).toContainText('Will apply on next load');
+    await presetLibraryNav.getByRole('button', { name: 'Starter library', exact: true }).click();
 
     // The single Speech starter owns both TTS-family and voice selection. Its
     // controls align on one baseline and the Apply action stays inside the panel.
@@ -539,10 +682,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     const zoneTitles = await recipesView.locator('.zone__title').allTextContents();
     expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
-    expect(zoneTitles.indexOf('Bundled starters')).toBeLessThan(zoneTitles.indexOf('Applied to models'));
+    expect(zoneTitles).not.toContain('Applied to models');
 
-    // New Preset button visible
-    await expect(page.locator('.recipes__actions .btn--primary')).toContainText('New Preset');
+    // New Preset action uses the same compact list-header template as Models.
+    await expect(page.locator('.preset-list-panel .workspace-list-panel__actions').getByRole('button', { name: 'New preset' })).toBeVisible();
 
     await page.screenshot({ path: 'screenshots/13-presets-view.png', fullPage: true });
 
@@ -578,7 +721,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
 
     const defaultCard = recipesView.locator('[data-recipe-id="s-default"]');
-    await defaultCard.getByRole('button', { name: 'Clone' }).click();
+    await defaultCard.locator('.recipe-card__overlay-btn').click();
+    await page.locator('.slideover [data-recipe-clone]').click();
     const yourCards = recipesView.locator('[data-recipe-grid="yours"] .recipe-card');
     await expect(yourCards).toHaveCount(1);
     await expect(yourCards.first()).toHaveClass(/recipe-card--flash/);
@@ -586,10 +730,20 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('.slideover.is-open')).toHaveCount(0);
 
     const balancedCard = recipesView.locator('[data-recipe-id="s-balanced"]');
-    await balancedCard.getByRole('button', { name: 'Customize' }).click();
+    await balancedCard.locator('.recipe-card__overlay-btn').click();
+    await page.locator('.slideover [data-recipe-customize]').click();
     await expect(yourCards).toHaveCount(2);
     await expect(page.locator('.slideover.is-open')).toBeVisible();
     await expect(page.locator('.slideover__title-input')).toHaveValue('Balanced (copy)');
+    const notes = page.getByPlaceholder('Notes (optional)');
+    await expect(notes).toBeVisible();
+    await expect(notes).toHaveAccessibleName('Notes');
+    const notesBox = await notes.boundingBox();
+    expect(notesBox?.height).toBeGreaterThanOrEqual(48);
+    expect(notesBox?.height).toBeLessThanOrEqual(72);
+    await expect(notes).toHaveCSS('resize', 'vertical');
+    expect(await notes.evaluate(element => element.previousElementSibling?.classList.contains('preset-intent-explainer'))).toBeTruthy();
+    await expect(page.locator('.slideover .workspace-detail-panel__metadata')).toHaveCount(0);
     await page.locator('.slideover__close').click();
 
     const zoneTitles = await recipesView.locator('.zone__title').allTextContents();
@@ -656,7 +810,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.goto('/');
     await page.locator('.titlebar__nav').getByText('Models').click();
-    await expect(page.locator('.titlebar__status-dot')).toHaveClass(/titlebar__status-dot--connected/);
+    await expect(page.locator('.titlebar__status-dot--brand')).toHaveClass(/titlebar__status-dot--connected/);
     await page.locator('.model-list-item').filter({ hasText: 'Preset Beta Model' }).click();
     await page.getByRole('tab', { name: 'Presets' }).click();
 
@@ -665,7 +819,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel.locator('.detail-presets__explanation')).toBeVisible();
     await expect(panel.getByText('Preset intent, translated for this model')).toBeVisible();
 
-    const headerSettings = page.locator('.model-detail-panel__effective-settings');
+    const headerSettings = page.locator('.model-detail-panel .workspace-detail-panel__metadata');
     await expect(headerSettings).toContainText('Temperature');
     await expect(headerSettings).toContainText('Balanced');
     await expect(headerSettings).toContainText('0.70');
@@ -733,19 +887,20 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/14-backends-view.png', fullPage: true });
   });
 
-  test('15 — Dashboard view shows system gauges and session overview', async ({ page }) => {
+  test('15 — Dashboard performance shows system gauges and scrollable graphs', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
     // Dashboard nav button exists
     await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toBeVisible();
 
-    // Navigate to Dashboard
+    // Navigate to Dashboard performance
     await page.locator('.titlebar__nav').getByText('Dashboard').click();
     await page.waitForSelector('[data-view="dashboard"]');
 
-    // Top bar visible
-    await expect(page.locator('.dash2-bar')).toBeVisible();
+    // Performance header and navigation visible
+    await expect(page.locator('.dashboard-header').getByRole('heading', { name: 'Performance' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: 'Performance', exact: true })).toHaveAttribute('aria-current', 'page');
 
     // Connection indicator dot
     await expect(page.locator('.dash2-bar__dot')).toBeVisible();
@@ -779,22 +934,31 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const dashView = page.locator('[data-view="dashboard"]');
     await expect(dashView.getByText('Loaded Models')).toBeVisible();
 
+    const graphScroller = page.locator('.dash2-scroll');
+    const scrollMetrics = await graphScroller.evaluate(element => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }));
+    expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
+    await graphScroller.hover();
+    await page.mouse.wheel(0, 200);
+    await expect.poll(() => graphScroller.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+
     await page.screenshot({ path: 'screenshots/15-dashboard.png', fullPage: true });
   });
 
-  test('16 — Logs view shows toolbar and log output', async ({ page }) => {
+  test('16 — Dashboard logs shows filters and live output', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    // Logs nav button exists
-    await expect(page.locator('.titlebar__nav').getByText('Logs')).toBeVisible();
+    await page.locator('.titlebar__nav').getByText('Dashboard').click();
+    await page.waitForSelector('[data-view="dashboard"]');
 
-    // Navigate to Logs
-    await page.locator('.titlebar__nav').getByText('Logs').click();
+    await page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
     await page.waitForSelector('[data-view="logs"]');
 
-    // Toolbar visible with controls
-    await expect(page.locator('.logs-toolbar')).toBeVisible();
+    // Filter panel visible with controls
+    await expect(page.locator('.logs-rail')).toBeVisible();
 
     // Connection status dot
     await expect(page.locator('.logs-status__dot')).toBeVisible();
@@ -814,7 +978,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(serverSelect).toBeVisible();
 
     // Clear button
-    await expect(page.getByRole('button', { name: 'Clear' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Clear log output' })).toBeVisible();
 
     // Log output area exists
     await expect(page.locator('.logs-output')).toBeVisible();
@@ -840,7 +1004,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.logs-search').fill('xyz_nonexistent_query');
     await page.waitForTimeout(300);
 
-    // Entry count in toolbar should update
+    // Entry count in the filter panel should update
     await expect(page.locator('.logs-toolbar__count')).toBeVisible();
 
     // Clear the search
@@ -855,8 +1019,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    // Navigate to Logs
-    await page.locator('.titlebar__nav').getByText('Logs').click();
+    // Navigate to Dashboard logs
+    await page.locator('.titlebar__nav').getByText('Dashboard').click();
+    await page.waitForSelector('[data-view="dashboard"]');
+    await page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
     await page.waitForSelector('.logs-output', { state: 'visible' });
 
     // Inject enough content to make the container scrollable, then scroll to bottom
@@ -897,8 +1063,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.titlebar__nav').getByText('Models').click();
     await page.waitForTimeout(500);
 
-    // Switch back to Logs
-    await page.locator('.titlebar__nav').getByText('Logs').click();
+    // Switch back to Dashboard, which preserves the active Logs section
+    await page.locator('.titlebar__nav').getByText('Dashboard').click();
     await page.waitForSelector('.logs-output', { state: 'visible' });
     await page.waitForTimeout(500);
 

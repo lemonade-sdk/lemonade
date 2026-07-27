@@ -543,7 +543,7 @@ void TrayUI::on_change_max_loaded_models(int new_max) {
 }
 
 void TrayUI::on_show_logs() {
-    open_desktop_app("view=logs");
+    open_desktop_app("view=dashboard/logs");
 }
 
 void TrayUI::on_open_documentation() {

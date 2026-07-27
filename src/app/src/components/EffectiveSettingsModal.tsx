@@ -18,6 +18,7 @@ import {
   systemPromptNameForPreset,
 } from '../presetStore';
 import { Icon } from './Icon';
+import { WorkspaceActionButton } from './WorkspacePanels';
 
 const RECIPE_OPTION_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
   ctx_size: 'Context size',
@@ -280,9 +281,17 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       >
         <div className="inspect-modal-header">
           <h4><Icon name="sliders-horizontal" size={15} /> Effective settings</h4>
-          <button ref={closeRef} className="close-modal-btn" onClick={onClose} aria-label="Close">
-            <Icon name="x" size={16} />
-          </button>
+          <WorkspaceActionButton
+            ref={closeRef}
+            appearance="quiet"
+            size="toolbar"
+            icon="x"
+            iconOnly
+            className="close-modal-btn"
+            onClick={onClose}
+            aria-label="Close"
+            title="Close"
+          />
         </div>
 
         <div className="inspect-modal-body effective-settings__body">
@@ -357,7 +366,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
               {unlocked && (
                 <div className="effective-settings__editor">
                   <textarea
-                    className="effective-settings__textarea"
+                    className="textarea effective-settings__textarea"
                     value={draft}
                     spellCheck={false}
                     placeholder="--threads 8 --flash-attn on"
@@ -369,13 +378,13 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
                   </p>
                   {previewError && <p className="effective-settings__error">{previewError}</p>}
                   <div className="effective-settings__actions">
-                    <button className="btn btn--primary" onClick={applyOverride} disabled={busy}>
+                    <WorkspaceActionButton appearance="primary" size="small" onClick={applyOverride} disabled={busy}>
                       {busy ? 'Applying…' : (isModelLoaded ? 'Apply & reload' : 'Apply for next load')}
-                    </button>
+                    </WorkspaceActionButton>
                     {hasOverride && (
-                      <button className="btn" onClick={resetOverride} disabled={busy}>
-                        <Icon name="rotate-ccw" size={13} /> Reset override
-                      </button>
+                      <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy}>
+                        Reset override
+                      </WorkspaceActionButton>
                     )}
                   </div>
                 </div>
@@ -383,9 +392,9 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
               {!unlocked && hasOverride && (
                 <div className="effective-settings__actions">
                   <span className="effective-settings__override-flag"><Icon name="alert" size={12} /> A session override is active.</span>
-                  <button className="btn" onClick={resetOverride} disabled={busy}>
-                    <Icon name="rotate-ccw" size={13} /> Reset override
-                  </button>
+                  <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy}>
+                    Reset override
+                  </WorkspaceActionButton>
                 </div>
               )}
               {notice && <p className="effective-settings__notice">{notice}</p>}

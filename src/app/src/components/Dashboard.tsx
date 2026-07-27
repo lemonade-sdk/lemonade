@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
 import { AreaChart as RechartArea, Area, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { LoadedModel } from '../api';
-import { useDashboardData, HISTORY_LEN, SessionCounters } from '../hooks/useDashboardData';
+import { useDashboardData } from '../hooks/useDashboardData';
 import { dashboardMemoryTopology } from '../features/dashboard/memoryTopology';
-import { Icon } from './Icon';
+import { WorkspaceActionButton, WorkspacePaneHeader } from './WorkspacePanels';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -60,7 +60,14 @@ function typeIcon(type: string): string {
   }
 }
 
-const SLOT_COLORS = ['#e8c66b', '#7baed4', '#7fb38a', '#b07df0', '#e07b7b', '#7bc8c8'];
+const SLOT_COLORS = [
+  'var(--chart-series-1)',
+  'var(--chart-series-2)',
+  'var(--chart-series-3)',
+  'var(--chart-series-4)',
+  'var(--chart-series-5)',
+  'var(--chart-series-6)',
+];
 
 /* ── SVG Ring Gauge with glow ──────────────────────────────── */
 
@@ -196,8 +203,6 @@ const ModelRow = React.memo<{ model: LoadedModel }>(({ model }) => (
    ██  MAIN DASHBOARD
    ══════════════════════════════════════════════════════════════ */
 
-const POLL_INTERVAL = 2000;
-
 interface DashboardProps {
   isActive: boolean;
 }
@@ -222,32 +227,37 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
   /* ── Render ──────────────────────────────────────────────── */
 
   return (
-    <section className="dash2" data-view="dashboard">
-      {/* ═══ Top bar ═══ */}
-      <header className="dash2-bar">
-        <div className="dash2-bar__left">
-          <span className="dash2-bar__dot" data-connected={!!health} />
-          <span className="dash2-bar__title">
-            {health ? `Lemonade ${health.version}` : 'Disconnected'}
-          </span>
-          {health && <span className="dash2-bar__uptime">{elapsed(counters.sessionStart)}</span>}
-        </div>
-        <div className="dash2-bar__right">
-          <button className={`dash2-bar__btn ${paused ? 'is-paused' : ''}`}
-            onClick={() => setPaused(p => !p)}
-            title={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
-            aria-label={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
-            data-dashboard-poll-toggle>
-            <Icon name={paused ? 'play' : 'pause'} size={14} aria-hidden="true" />
-          </button>
-        </div>
-      </header>
+    <section className="dash2 dashboard-workspace" data-view="dashboard">
+      <div className="workspace-pane dashboard-main">
+        <WorkspacePaneHeader
+          className="dashboard-header"
+          headingLevel={1}
+          title="Performance"
+          subtitle="Throughput, capacity and resource utilization for this server session."
+          actions={<div className="dashboard-header__actions">
+            <div className="dashboard-header__server" data-connected={!!health}>
+              <span className="dash2-bar__dot" data-connected={!!health} />
+              <span><strong>{health ? `Lemonade ${health.version}` : 'Disconnected'}</strong>{health && <small>{elapsed(counters.sessionStart)}</small>}</span>
+            </div>
+            <WorkspaceActionButton
+              size="small"
+              appearance="secondary"
+              icon={paused ? 'play' : 'pause'}
+              className={`dash2-bar__btn${paused ? ' is-paused' : ''}`}
+              onClick={() => setPaused(p => !p)}
+              title={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
+              aria-label={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
+              data-dashboard-poll-toggle>
+              {paused ? 'Resume' : 'Pause'}
+            </WorkspaceActionButton>
+          </div>}
+        />
 
       {lastError && <div className="dash2-err">Warning: {lastError}</div>}
 
       <div className="dash2-scroll">
         {/* ═══ HERO — Aggregate Throughput ═══ */}
-        <div className="dash2-card dash2-card--glow">
+        <div className="dash2-card">
           <h2 className="dash2-card__h">Aggregate Throughput</h2>
 
           {/* Inline metrics — guaranteed visible with explicit colors */}
@@ -285,8 +295,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
           <SmoothChart
             data={aggChartData}
             series={[
-              { key: 'genTps', color: '#e8c66b', name: 'Generation TPS' },
-              { key: 'ppTps', color: '#7baed4', name: 'Prompt Processing' },
+              { key: 'genTps', color: 'var(--chart-series-1)', name: 'Generation TPS' },
+              { key: 'ppTps', color: 'var(--chart-series-2)', name: 'Prompt Processing' },
             ]}
             height={120}
             unit=" tok/s"
@@ -382,15 +392,15 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                   color="var(--warn)" subtitle={`${sysStats!.vram_gb!.toFixed(1)} GB`} />
               )}
               {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
-                color="#b07df0" subtitle={pct(sysStats!.npu_percent)} />}
+                color="var(--chart-series-4)" subtitle={pct(sysStats!.npu_percent)} />}
               <RingGauge label="KV Cache" value={overallCacheUtil}
                 color="var(--warn)" subtitle={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} />
             </div>
             <SmoothChart
               data={sysChartData}
               series={[
-                { key: 'cpu', color: '#7fb38a', name: 'CPU %' },
-                ...(hasGpu ? [{ key: 'gpu', color: '#e8c66b', name: 'GPU %' }] : []),
+                { key: 'cpu', color: 'var(--chart-series-3)', name: 'CPU %' },
+                ...(hasGpu ? [{ key: 'gpu', color: 'var(--chart-series-1)', name: 'GPU %' }] : []),
               ]}
               height={56}
               unit="%"
@@ -421,7 +431,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
               <div className="dash2-mt-auto">
                 <SmoothChart
                   data={cacheChartData}
-                  series={[{ key: 'cache', color: '#d9a35b', name: 'KV Cache %' }]}
+                  series={[{ key: 'cache', color: 'var(--chart-cache)', name: 'KV Cache %' }]}
                   height={56}
                   unit="%"
                 />
@@ -505,6 +515,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
           </div>
         </div>
         )}
+      </div>
       </div>
     </section>
   );

@@ -11,14 +11,26 @@ import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
 import PresetManager from './components/PresetManager';
 import BackendManager from './components/BackendManager';
-import Dashboard from './components/Dashboard';
-import LogViewer from './components/LogViewer';
 import DownloadManager from './components/DownloadManager';
-import InspectView from './components/InspectView';
+import MonitorView from './components/MonitorView';
 import { Icon } from './components/Icon';
+import { WorkspaceActionButton } from './components/WorkspacePanels';
 import { downloadStore, isDownloadActive } from './features/downloadManager/downloadStore';
+import {
+  WORKSPACE_NAVIGATION,
+  type ConnectSection,
+  type DashboardSection,
+  type WorkspaceRoute,
+  workspaceHash,
+  workspaceRouteFromPath,
+} from './features/navigation/workspaceNavigation';
 
-type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'logs' | 'connect' | 'inspect';
+type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'connect';
+type SimpleView = Exclude<View, 'dashboard' | 'connect'>;
+type AppRoute =
+  | { view: SimpleView }
+  | { view: 'dashboard'; section: DashboardSection }
+  | { view: 'connect'; section: ConnectSection };
 
 /* ── Error boundary ────────────────────────────────────────── */
 
@@ -41,19 +53,19 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: '2rem', color: '#e8c66b', fontFamily: 'var(--font-mono, monospace)' }}>
-          <h2 style={{ color: '#ff6b6b', margin: '0 0 1rem' }}>
+        <div className="view-error">
+          <h2>
             Something went wrong in "{this.props.view}"
           </h2>
-          <pre style={{ whiteSpace: 'pre-wrap', color: '#ccc', fontSize: '13px' }}>
+          <pre>
             {this.state.error.message}
           </pre>
-          <button
+          <WorkspaceActionButton
+            appearance="primary"
             onClick={() => this.setState({ error: null })}
-            style={{ marginTop: '1rem', padding: '0.5rem 1rem', background: '#e8c66b', color: '#16140f', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
           >
             Try again
-          </button>
+          </WorkspaceActionButton>
         </div>
       );
     }
@@ -61,7 +73,7 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   }
 }
 
-const VALID_VIEWS: View[] = ['chat', 'models', 'presets', 'backends', 'dashboard', 'logs', 'connect', 'inspect'];
+const SIMPLE_VIEWS: SimpleView[] = ['chat', 'models', 'presets', 'backends'];
 
 
 type HostNavigationPayload = string | URL | {
@@ -87,71 +99,80 @@ declare global {
   interface Window { api?: LemonadeHostApi & Record<string, unknown>; }
 }
 
-function viewFromValue(raw: unknown): View | null {
+function routeFromValue(raw: unknown): AppRoute | null {
   const value = String(raw || '').trim().replace(/^\//, '').toLowerCase();
-  return VALID_VIEWS.includes(value as View) ? value as View : null;
+  const workspaceRoute = workspaceRouteFromPath(value);
+  if (workspaceRoute) return { view: workspaceRoute.workspace, section: workspaceRoute.section } as AppRoute;
+  return SIMPLE_VIEWS.includes(value as SimpleView) ? { view: value as SimpleView } : null;
 }
 
-function viewFromHashValue(hash: string): View | null {
+function hashForRoute(route: AppRoute): string {
+  if (route.view === 'dashboard' || route.view === 'connect') {
+    return workspaceHash({ workspace: route.view, section: route.section } as WorkspaceRoute);
+  }
+  return `#/${route.view}`;
+}
+
+function routeFromHashValue(hash: string): AppRoute | null {
   try {
     const clean = hash.replace(/^#\/?/, '');
     if (!clean) return null;
     const params = new URLSearchParams(clean.includes('?') ? clean.slice(clean.indexOf('?') + 1) : clean);
-    return viewFromValue(params.get('view')) || viewFromValue(clean.split('?')[0]);
+    return routeFromValue(params.get('view')) || routeFromValue(clean.split('?')[0]);
   } catch { return null; }
 }
 
-function parseUrlLikeNavigation(raw: string): { view: View | null; model: string | null } {
+function parseUrlLikeNavigation(raw: string): { route: AppRoute | null; model: string | null } {
   const text = raw.trim();
-  if (!text) return { view: null, model: null };
+  if (!text) return { route: null, model: null };
   try {
     const url = new URL(text, window.location.origin);
-    const hashView = viewFromHashValue(url.hash || '');
+    const hashRoute = routeFromHashValue(url.hash || '');
     return {
-      view: viewFromValue(url.searchParams.get('view')) || hashView || viewFromValue(url.hostname) || viewFromValue(url.pathname),
+      route: routeFromValue(url.searchParams.get('view')) || hashRoute || routeFromValue(url.hostname) || routeFromValue(url.pathname),
       model: url.searchParams.get('model') || null,
     };
   } catch {
     const search = text.includes('?') ? text.slice(text.indexOf('?') + 1) : text;
     const params = new URLSearchParams(search.replace(/^#\/?/, ''));
-    return { view: viewFromValue(params.get('view')) || viewFromHashValue(text), model: params.get('model') || null };
+    return { route: routeFromValue(params.get('view')) || routeFromHashValue(text), model: params.get('model') || null };
   }
 }
 
-function parseHostNavigation(payload: HostNavigationPayload): { view: View | null; model: string | null } {
+function parseHostNavigation(payload: HostNavigationPayload): { route: AppRoute | null; model: string | null } {
   if (typeof payload === 'string') return parseUrlLikeNavigation(payload);
   if (payload instanceof URL) return parseUrlLikeNavigation(payload.href);
   if (payload && typeof payload === 'object') {
     const obj = payload as Record<string, unknown>;
-    const directView = viewFromValue(obj.view);
+    const directRoute = routeFromValue(obj.view);
     const directModel = typeof obj.model === 'string' ? obj.model : null;
     const urlLike = typeof obj.url === 'string' ? obj.url : (typeof obj.href === 'string' ? obj.href : '');
-    const parsed = urlLike ? parseUrlLikeNavigation(urlLike) : { view: null, model: null };
-    return { view: directView || parsed.view, model: directModel || parsed.model };
+    const parsed = urlLike ? parseUrlLikeNavigation(urlLike) : { route: null, model: null };
+    return { route: directRoute || parsed.route, model: directModel || parsed.model };
   }
-  return { view: null, model: null };
+  return { route: null, model: null };
 }
 
-function viewFromCurrentLocation(): View | null {
+function routeFromCurrentLocation(): AppRoute | null {
   try {
     const params = new URLSearchParams(window.location.search);
-    return viewFromValue(params.get('view')) || viewFromHashValue(window.location.hash || '');
-  } catch { return viewFromHashValue(window.location.hash || ''); }
+    return routeFromValue(params.get('view')) || routeFromHashValue(window.location.hash || '');
+  } catch { return routeFromHashValue(window.location.hash || ''); }
 }
 
-function viewFromHash(): View | null {
-  return viewFromHashValue(window.location.hash || '');
+function routeFromHash(): AppRoute | null {
+  return routeFromHashValue(window.location.hash || '');
 }
 
-function loadSavedView(): View {
-  // Deep-link/search/hash takes priority, then localStorage, then default
-  const fromLocation = viewFromCurrentLocation();
+function loadSavedRoute(): AppRoute {
+  const fromLocation = routeFromCurrentLocation();
   if (fromLocation) return fromLocation;
   try {
     const saved = localStorage.getItem('lemonade_current_view');
-    if (saved && VALID_VIEWS.includes(saved as View)) return saved as View;
+    const savedRoute = routeFromValue(saved);
+    if (savedRoute) return savedRoute;
   } catch { /* ignore */ }
-  return 'chat';
+  return { view: 'chat' };
 }
 
 type Theme = 'dark' | 'light';
@@ -166,7 +187,10 @@ function loadTheme(): Theme {
 }
 
 const App: React.FC = () => {
-  const [view, setViewState] = useState<View>(loadSavedView);
+  const [route, setRouteState] = useState<AppRoute>(loadSavedRoute);
+  const view = route.view;
+  const routeRef = useRef(route);
+  routeRef.current = route;
   const [status, setStatus] = useState<ConnectionStatus>(api.status);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
@@ -179,6 +203,9 @@ const App: React.FC = () => {
   const [accountResetNonce, setAccountResetNonce] = useState(0);
   const accountSessionRef = useRef(accountSession);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
+  const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
+  const utilityMenuRef = useRef<HTMLDivElement>(null);
+  const utilityMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const [isDesktop, setIsDesktop] = useState(false);
 
   useEffect(() => {
@@ -194,6 +221,10 @@ const App: React.FC = () => {
     () => downloadStore.snapshot().filter(isDownloadActive).length,
   );
   const activeDownloadCountRef = useRef(activeDownloadCount);
+  const lastWorkspaceSectionsRef = useRef({
+    dashboard: route.view === 'dashboard' ? route.section : WORKSPACE_NAVIGATION.dashboard.defaultSection,
+    connect: route.view === 'connect' ? route.section : WORKSPACE_NAVIGATION.connect.defaultSection,
+  });
   useEffect(() => {
     accountSessionRef.current = accountSession;
     setPresetStorageScope(accountSession.storageScope);
@@ -232,6 +263,28 @@ const App: React.FC = () => {
   const toggleTheme = useCallback(() => {
     setTheme(t => t === 'dark' ? 'light' : 'dark');
   }, []);
+
+  useEffect(() => {
+    if (!utilityMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!utilityMenuRef.current?.contains(event.target as Node)) setUtilityMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || (event.target as Element | null)?.closest('.account-menu__panel')) return;
+      setUtilityMenuOpen(false);
+      requestAnimationFrame(() => utilityMenuTriggerRef.current?.focus());
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [utilityMenuOpen]);
+
+  useEffect(() => {
+    setUtilityMenuOpen(false);
+  }, [view]);
 
   const applyLoadedModels = useCallback((loaded: LoadedModel[]) => {
     const customInfos = loadCustomModels(accountSession.storageScope).map(customModelToModelInfo);
@@ -277,17 +330,30 @@ const App: React.FC = () => {
     });
   }, [accountSession.storageScope]);
 
-  const setView = useCallback((v: View) => {
-    setViewState(v);
-    try { localStorage.setItem('lemonade_current_view', v); } catch { /* ignore */ }
-    // Update hash without triggering hashchange (we're already setting state)
-    const newHash = `#/${v}`;
+  const navigateToRoute = useCallback((nextRoute: AppRoute) => {
+    if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
+    if (nextRoute.view === 'connect') lastWorkspaceSectionsRef.current.connect = nextRoute.section;
+    setRouteState(nextRoute);
+    const newHash = hashForRoute(nextRoute);
+    try { localStorage.setItem('lemonade_current_view', newHash.slice(2)); } catch { /* ignore */ }
     if (window.location.hash !== newHash) {
       window.history.pushState(null, '', newHash);
     }
   }, []);
 
-  // Electron/host deep-links: GUI2-compatible lemonade://?view=logs&model=... navigation.
+  const setView = useCallback((nextView: View) => {
+    if (nextView === 'dashboard') {
+      navigateToRoute({ view: nextView, section: lastWorkspaceSectionsRef.current.dashboard });
+      return;
+    }
+    if (nextView === 'connect') {
+      navigateToRoute({ view: nextView, section: lastWorkspaceSectionsRef.current.connect });
+      return;
+    }
+    navigateToRoute({ view: nextView });
+  }, [navigateToRoute]);
+
+  // Desktop host deep-links use the same canonical routes as browser navigation.
   useEffect(() => {
     let cancelled = false;
     let cleanup: HostNavigateUnsubscribe;
@@ -296,7 +362,7 @@ const App: React.FC = () => {
     const applyNavigation = (payload: HostNavigationPayload) => {
       const target = parseHostNavigation(payload);
       if (target.model) setCurrentModel(target.model);
-      if (target.view) setView(target.view);
+      if (target.route) navigateToRoute(target.route);
     };
 
     const attach = () => {
@@ -311,26 +377,32 @@ const App: React.FC = () => {
       if (attempts < 50) window.setTimeout(attach, 100);
     };
 
-    const initialView = viewFromCurrentLocation();
-    if (initialView) setView(initialView);
+    const initialRoute = routeFromCurrentLocation();
+    if (initialRoute) navigateToRoute(initialRoute);
     attach();
 
     return () => {
       cancelled = true;
       if (typeof cleanup === 'function') cleanup();
     };
-  }, [setView]);
+  }, [navigateToRoute]);
 
-  // Sync view from hash on back/forward navigation
+  // Sync route from hash on back/forward navigation
   useEffect(() => {
     const onHashChange = () => {
-      const v = viewFromHash();
-      if (v) setViewState(v);
+      const nextRoute = routeFromHash();
+      if (nextRoute) {
+        if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
+        if (nextRoute.view === 'connect') lastWorkspaceSectionsRef.current.connect = nextRoute.section;
+        setRouteState(nextRoute);
+        try { localStorage.setItem('lemonade_current_view', hashForRoute(nextRoute).slice(2)); } catch { /* ignore */ }
+      } else {
+        window.history.replaceState(null, '', hashForRoute(routeRef.current));
+      }
     };
     window.addEventListener('hashchange', onHashChange);
-    // Set initial hash if not already set
-    if (!window.location.hash) {
-      window.history.replaceState(null, '', `#/${view}`);
+    if (!routeFromHash()) {
+      window.history.replaceState(null, '', hashForRoute(routeRef.current));
     }
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
@@ -341,11 +413,12 @@ const App: React.FC = () => {
     const onAppNavigate = (e: Event) => {
       const detail = (e as CustomEvent).detail as { view?: string } | undefined;
       const target = detail?.view;
-      if (target && (VALID_VIEWS as string[]).includes(target)) setView(target as View);
+      const nextRoute = routeFromValue(target);
+      if (nextRoute) navigateToRoute(nextRoute);
     };
     window.addEventListener('lemonade:navigate', onAppNavigate as EventListener);
     return () => window.removeEventListener('lemonade:navigate', onAppNavigate as EventListener);
-  }, [setView]);
+  }, [navigateToRoute]);
 
   useEffect(() => {
     const unsubStatus = api.onStatusChange(setStatus);
@@ -396,22 +469,6 @@ const App: React.FC = () => {
       <div className="app">
         <header className="titlebar" data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
-          <svg className="titlebar__lemon" data-tauri-drag-region="false" width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <path d="M7.036 2.492L2 5.01c.826 2.337 3.525 3.525 6.043 2.518l6.044-2.518C13.26 2.663 9.85 1.177 7.036 2.492Z" fill="url(#ll0)"/>
-            <path d="M14.924 4.6C9.52 6.507 6.69 12.45 8.592 17.87l1.252 3.558c1.403 3.989 4.987 6.583 8.93 6.908a3.07 3.07 0 0 1 1.994.884 2.56 2.56 0 0 0 3.027.605c1.078-.384 1.809-1.314 1.983-2.372a3.9 3.9 0 0 1 .997-1.942c2.864-2.745 4.035-7.013 2.632-11.002l-1.252-3.559C26.253 5.518 20.327 2.681 14.924 4.6Z" fill="url(#ll1)"/>
-            <path d="M14.924 4.6C9.52 6.507 6.69 12.45 8.592 17.87l1.252 3.558c1.403 3.989 4.987 6.583 8.93 6.908a3.07 3.07 0 0 1 1.994.884 2.56 2.56 0 0 0 3.027.605c1.078-.384 1.809-1.314 1.983-2.372a3.9 3.9 0 0 1 .997-1.942c2.864-2.745 4.035-7.013 2.632-11.002l-1.252-3.559C26.253 5.518 20.327 2.681 14.924 4.6Z" fill="url(#ll2)"/>
-            <defs>
-              <linearGradient id="ll0" x1="2" y1="5.009" x2="14.087" y2="5.009" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#80A338"/><stop offset="1" stopColor="#B3D745"/>
-              </linearGradient>
-              <radialGradient id="ll1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(21.2 10.57) rotate(115.15) scale(17.63 14.92)">
-                <stop stopColor="#FFFB98"/><stop offset=".505" stopColor="#FFD84C"/><stop offset="1" stopColor="#E6B534"/>
-              </radialGradient>
-              <radialGradient id="ll2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(14.62 4.97) rotate(69.33) scale(26.75 22.64)">
-                <stop offset=".52" stopColor="#FFDE67" stopOpacity="0"/><stop offset=".74" stopColor="#FFA457" stopOpacity=".2"/><stop offset=".89" stopColor="#D5676D" stopOpacity=".75"/><stop offset=".92" stopColor="#E88257"/><stop offset="1" stopColor="#F49754"/>
-              </radialGradient>
-            </defs>
-          </svg>
           <span data-tauri-drag-region>lemonade</span>
           <span className={`titlebar__status-dot titlebar__status-dot--brand ${
             status === 'connected' ? 'titlebar__status-dot--connected' :
@@ -429,10 +486,8 @@ const App: React.FC = () => {
             { id: 'models',    label: 'Models',    icon: 'hard-drive'         },
             { id: 'presets',   label: 'Presets',   icon: 'sliders-horizontal' },
             { id: 'backends',  label: 'Backends',  icon: 'box'                },
-            { id: 'dashboard', label: 'Dashboard',  icon: 'gauge'              },
-            { id: 'inspect',   label: 'Inspect',   icon: 'search-check'       },
-            { id: 'logs',      label: 'Logs',      icon: 'logs'               },
-            { id: 'connect',   label: 'Connect',   icon: 'plug'               },
+            { id: 'dashboard', label: WORKSPACE_NAVIGATION.dashboard.label, icon: 'gauge' },
+            { id: 'connect',   label: WORKSPACE_NAVIGATION.connect.label, icon: 'plug' },
           ] as { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[]).map(({ id, label, icon }) => (
             <button
               key={id}
@@ -448,27 +503,65 @@ const App: React.FC = () => {
         </nav>
 
         <div className="titlebar__right" data-tauri-drag-region>
-          <div data-tauri-drag-region="false">
-            <AccountMenu
-              session={accountSession}
-              onSessionChange={handleAccountSessionChange}
-              onDataReset={handleAccountDataReset}
-            />
-          </div>
-          <button className="titlebar__theme-toggle" data-tauri-drag-region="false" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-            <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
-          </button>
-          <button
-            className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
+          <div
+            ref={utilityMenuRef}
+            className={`titlebar__utilities${utilityMenuOpen ? ' is-open' : ''}`}
             data-tauri-drag-region="false"
-            onClick={() => setDownloadManagerOpen(open => !open)}
-            aria-label="Open download manager"
-            aria-expanded={downloadManagerOpen}
-            title="Download manager"
           >
-            <Icon name="download" size={16} />
-            {activeDownloadCount > 0 && <span className="titlebar__download-badge">{activeDownloadCount > 9 ? '9+' : activeDownloadCount}</span>}
-          </button>
+            <button
+              ref={utilityMenuTriggerRef}
+              type="button"
+              className="titlebar__utilities-toggle"
+              aria-label="App controls"
+              aria-expanded={utilityMenuOpen}
+              aria-controls="titlebar-utility-menu"
+              title="App controls"
+              onClick={() => setUtilityMenuOpen(open => !open)}
+            >
+              <Icon name="settings" size={17} aria-hidden="true" />
+            </button>
+            <div id="titlebar-utility-menu" className="titlebar__utility-menu" aria-label="App controls">
+              <AccountMenu
+                session={accountSession}
+                onSessionChange={handleAccountSessionChange}
+                onDataReset={handleAccountDataReset}
+              />
+              <div
+                className="titlebar__utility-status"
+                role="status"
+                aria-label={`Server ${status === 'connected' ? 'connected' : status === 'connecting' ? 'connecting' : 'offline'}`}
+              >
+                <span className={`titlebar__status-dot ${
+                  status === 'connected' ? 'titlebar__status-dot--connected' :
+                  status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
+                }`} aria-hidden="true" />
+                <span className="titlebar__utility-label">Server</span>
+                <span className="titlebar__utility-value">
+                  {status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
+                </span>
+              </div>
+              <button
+                className="titlebar__theme-toggle"
+                onClick={() => { toggleTheme(); setUtilityMenuOpen(false); }}
+                aria-label="Toggle theme"
+                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
+                <span className="titlebar__utility-label">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+              </button>
+              <button
+                className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
+                onClick={() => { setDownloadManagerOpen(open => !open); setUtilityMenuOpen(false); }}
+                aria-label="Open download manager"
+                aria-expanded={downloadManagerOpen}
+                title="Download manager"
+              >
+                <Icon name="download" size={16} />
+                <span className="titlebar__utility-label">Downloads</span>
+                {activeDownloadCount > 0 && <span className="titlebar__download-badge">{activeDownloadCount > 9 ? '9+' : activeDownloadCount}</span>}
+              </button>
+            </div>
+          </div>
           {isDesktop && (
             <>
               <button
@@ -506,7 +599,7 @@ const App: React.FC = () => {
       <DownloadManager isVisible={downloadManagerOpen} onClose={() => setDownloadManagerOpen(false)} />
 
       <main id="main-content" tabIndex={-1} className="view-container">
-        <div style={{ display: view === 'chat' ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={view !== 'chat'}>
           <ViewErrorBoundary view="chat">
             <ChatView
               key={`${accountSession.storageScope}:${accountResetNonce}`}
@@ -518,45 +611,41 @@ const App: React.FC = () => {
             />
           </ViewErrorBoundary>
         </div>
-        <div style={{ display: view === 'models' ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={view !== 'models'}>
           <ViewErrorBoundary view="models">
             <ModelManager
               onModelSelect={handleModelSelect}
-              selectedModel={currentModel}
               accountSession={accountSession}
             />
           </ViewErrorBoundary>
         </div>
-        <div style={{ display: view === 'presets' ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={view !== 'presets'}>
           <ViewErrorBoundary view="presets">
             <PresetManager key={accountSession.storageScope} loadedModels={loadedModels} />
           </ViewErrorBoundary>
         </div>
-        <div style={{ display: view === 'backends' ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={view !== 'backends'}>
           <ViewErrorBoundary view="backends">
             <BackendManager isActive={view === 'backends'} />
           </ViewErrorBoundary>
         </div>
-        <div style={{ display: view === 'dashboard' ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={view !== 'dashboard'}>
           <ViewErrorBoundary view="dashboard">
-            <Dashboard isActive={view === 'dashboard'} />
+            <MonitorView
+              accountSession={accountSession}
+              activeSection={route.view === 'dashboard' ? route.section : lastWorkspaceSectionsRef.current.dashboard}
+              isActive={view === 'dashboard'}
+              onSectionChange={section => navigateToRoute({ view: 'dashboard', section })}
+            />
           </ViewErrorBoundary>
         </div>
-        <div style={{ display: view === 'logs' ? 'contents' : 'none' }}>
-          <ViewErrorBoundary view="logs">
-            <LogViewer />
-          </ViewErrorBoundary>
-        </div>
-        <div style={{ display: view === 'inspect' ? 'contents' : 'none' }}>
-          <ViewErrorBoundary view="inspect">
-            <InspectView accountSession={accountSession} />
-          </ViewErrorBoundary>
-        </div>
-        <div style={{ display: view === 'connect' ? 'contents' : 'none' }}>
+        <div className="view-slot" hidden={view !== 'connect'}>
           <ViewErrorBoundary view="connect">
             <ConnectView
               status={status}
               isActive={view === 'connect'}
+              activeSection={route.view === 'connect' ? route.section : lastWorkspaceSectionsRef.current.connect}
+              onSectionChange={section => navigateToRoute({ view: 'connect', section })}
               accountSession={accountSession}
               onLocalDataReset={handleAccountDataReset}
               onSessionChange={handleAccountSessionChange}

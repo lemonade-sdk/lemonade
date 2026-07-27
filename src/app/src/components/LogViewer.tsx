@@ -1,9 +1,14 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import api, { LogEntry, LogStreamHandle } from '../api';
+import { Icon } from './Icon';
+import WorkspaceRailHeader from './WorkspaceRailHeader';
+import { WorkspaceActionButton, WorkspacePaneHeader } from './WorkspacePanels';
+import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 
 /* ── Constants ─────────────────────────────────────────────── */
 
 const MAX_CLIENT_LOGS = 2000;
+const LOG_SOURCE_LIMIT = 10;
 const RECONNECT_DELAY = 5000;
 const BOTTOM_THRESHOLD = 60;
 const LINE_HEIGHT = 22;
@@ -46,11 +51,18 @@ function severityBadge(severity: string): string {
 
 /* ── Component ─────────────────────────────────────────────── */
 
-const LogViewer: React.FC = () => {
+interface LogViewerProps {
+  embedded?: boolean;
+}
+
+const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [filterLevel, setFilterLevel] = useState<LogLevel>('info');
   const [serverLevel, setServerLevel] = useState<LogLevel>('info');
   const [searchQuery, setSearchQuery] = useState('');
+  const [tagFilter, setTagFilter] = useState('all');
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const mobileFilters = useWorkspaceMobileRail();
   const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('disconnected');
   const [autoScroll, setAutoScroll] = useState(true);
   const [isSettingLevel, setIsSettingLevel] = useState(false);
@@ -266,6 +278,7 @@ const LogViewer: React.FC = () => {
 
   const filteredLogs = useMemo(() => {
     let result = logs.filter(l => (SEVERITY_PRIORITY[l.severity] ?? 2) >= filterPriority);
+    if (tagFilter !== 'all') result = result.filter(l => String(l.tag || 'Other') === tagFilter);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(l =>
@@ -275,7 +288,33 @@ const LogViewer: React.FC = () => {
       );
     }
     return result;
-  }, [logs, filterPriority, searchQuery]);
+  }, [logs, filterPriority, searchQuery, tagFilter]);
+
+  const logSources = useMemo(() => {
+    const counts = new Map<string, number>();
+    logs.forEach(log => {
+      const tag = String(log.tag || 'Other');
+      counts.set(tag, (counts.get(tag) || 0) + 1);
+    });
+    const ranked = Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const top = ranked.slice(0, LOG_SOURCE_LIMIT);
+    // The selected source must stay clickable even once it falls out of the
+    // top slice, or the list looks empty with no visible way back.
+    if (tagFilter !== 'all' && !top.some(([tag]) => tag === tagFilter)) {
+      const selected = ranked.find(([tag]) => tag === tagFilter);
+      if (selected) top.push(selected);
+    }
+    return { sources: top, hiddenCount: Math.max(0, ranked.length - LOG_SOURCE_LIMIT) };
+  }, [logs, tagFilter]);
+
+  // Clearing the buffer retires every tag; a filter left pointing at one that
+  // no longer exists would silently hide the whole stream.
+  useEffect(() => {
+    if (tagFilter !== 'all' && !logSources.sources.some(([tag]) => tag === tagFilter)) {
+      setTagFilter('all');
+    }
+  }, [logSources, tagFilter]);
 
   // Use useLayoutEffect so scroll happens synchronously after DOM update
   // (must be after filteredLogs declaration to avoid temporal dead zone)
@@ -330,67 +369,141 @@ const LogViewer: React.FC = () => {
   /* ── Render ──────────────────────────────────────────────── */
 
   return (
-    <section className="logs-view" data-view="logs">
-      {/* ── Toolbar ──────────────────────────────────────── */}
-      <div className="logs-toolbar">
-        <div className="logs-toolbar__left">
-          <span className={`logs-status__dot ${statusDot}`} />
-          <span className="logs-status__label">{statusLabel}</span>
-          <span className="logs-toolbar__count">
-            {filteredLogs.length} / {logs.length} entries
-          </span>
-        </div>
-
-        <div className="logs-toolbar__center">
-          <input
-            type="text"
-            className="logs-search"
-            placeholder="Filter logs…"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            aria-label="Filter logs"
+    <section className={`logs-view logs-workspace${embedded ? ' logs-workspace--embedded' : ''}${embedded && mobileFilters.isOpen ? ' logs-workspace--filters-open' : ''}${!embedded && railCollapsed ? ' workspace--rail-collapsed' : ''}`} data-view="logs">
+      {embedded && mobileFilters.isOpen && (
+        <div className="workspace-mobile-rail-backdrop" onClick={mobileFilters.close} aria-hidden="true" />
+      )}
+      <aside
+        ref={embedded ? mobileFilters.panelRef : undefined}
+        className={`${embedded ? 'monitor-subpanel' : 'workspace-rail'} logs-rail${!embedded && railCollapsed ? ' is-collapsed' : ''}${embedded && mobileFilters.isOpen ? ' is-mobile-open' : ''}`}
+        aria-label="Log filters"
+        role={embedded && mobileFilters.isOpen ? 'dialog' : undefined}
+        aria-modal={embedded && mobileFilters.isOpen ? true : undefined}
+      >
+        {embedded ? (
+          <header className="monitor-subpanel__header">
+            <div className="monitor-subpanel__title-row">
+              <div>
+                <h2>Stream filters</h2>
+                <p>{logs.length} entries received</p>
+              </div>
+              <WorkspaceActionButton
+                className="logs-rail__mobile-close"
+                appearance="quiet"
+                size="toolbar"
+                icon="x"
+                iconOnly
+                aria-label="Close log filters"
+                onClick={mobileFilters.close}
+              />
+            </div>
+          </header>
+        ) : (
+          <WorkspaceRailHeader
+            title="Filters"
+            sidebarLabel="log filters"
+            purpose="filter"
+            collapsed={railCollapsed}
+            onToggle={() => setRailCollapsed(value => !value)}
           />
+        )}
+
+        <div className={`${embedded ? 'monitor-subpanel__body' : 'workspace-rail__body'} logs-rail__body`}>
+          <div className="logs-rail__status">
+            <span className={`logs-status__dot ${statusDot}`} />
+            <span className="logs-status__label">{statusLabel}</span>
+            <span className="logs-toolbar__count">{logs.length} entries</span>
+          </div>
+
+          <div className="workspace-control-group">
+            <span className="workspace-control-group__label">Visibility</span>
+            <label className="logs-level">
+              <span className="logs-level__label">Minimum level</span>
+              <select
+                className="select logs-level__select"
+                value={filterLevel}
+                onChange={e => setFilterLevel(e.target.value as LogLevel)}
+              >
+                {LOG_LEVELS.map(l => (
+                  <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}+</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="logs-level">
+              <span className="logs-level__label">Server capture level</span>
+              <select
+                className="select logs-level__select"
+                value={serverLevel}
+                disabled={isSettingLevel}
+                onChange={e => handleServerLevelChange(e.target.value as LogLevel)}
+              >
+                {LOG_LEVELS.map(l => (
+                  <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="workspace-control-group workspace-filter-list logs-sources">
+            <span className="workspace-control-group__label">Sources</span>
+            <button type="button" className={`workspace-filter-list__item${tagFilter === 'all' ? ' is-active' : ''}`} onClick={() => setTagFilter('all')}>
+              <span className="workspace-filter-list__icon"><Icon name="logs" size={14} aria-hidden="true" /></span>
+              <span className="workspace-filter-list__label">All sources</span><small className="workspace-filter-list__count">{logs.length}</small>
+            </button>
+            {logSources.sources.map(([tag, count]) => (
+              <button key={tag} type="button" className={`workspace-filter-list__item${tagFilter === tag ? ' is-active' : ''}`} onClick={() => setTagFilter(tag)}>
+                <span className="workspace-filter-list__icon"><Icon name="terminal-square" size={14} aria-hidden="true" /></span>
+                <span className="workspace-filter-list__label">{tag}</span><small className="workspace-filter-list__count">{count}</small>
+              </button>
+            ))}
+            {logSources.hiddenCount > 0 && (
+              <p className="workspace-filter-list__note">{logSources.hiddenCount} less active {logSources.hiddenCount === 1 ? 'source' : 'sources'} not shown — search to find them.</p>
+            )}
+          </div>
         </div>
 
-        <div className="logs-toolbar__right">
-          <label className="logs-level">
-            <span className="logs-level__label">Show:</span>
-            <select
-              className="logs-level__select"
-              value={filterLevel}
-              onChange={e => setFilterLevel(e.target.value as LogLevel)}
-            >
-              {LOG_LEVELS.map(l => (
-                <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}+</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="logs-level">
-            <span className="logs-level__label">Server:</span>
-            <select
-              className="logs-level__select"
-              value={serverLevel}
-              disabled={isSettingLevel}
-              onChange={e => handleServerLevelChange(e.target.value as LogLevel)}
-            >
-              {LOG_LEVELS.map(l => (
-                <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>
-              ))}
-            </select>
-          </label>
-
-          <button className="logs-btn" onClick={clearLogs} title="Clear logs" aria-label="Clear log output">
-            Clear
-          </button>
+        <div className={`${embedded ? 'monitor-subpanel__footer' : 'workspace-rail__footer'} logs-rail__actions`}>
+          <WorkspaceActionButton className="logs-btn" icon="trash" onClick={clearLogs} title="Clear logs" aria-label="Clear log output">Clear output</WorkspaceActionButton>
 
           {connStatus !== 'connected' && (
-            <button className="logs-btn logs-btn--accent" onClick={connect} title="Reconnect" aria-label="Reconnect to log stream">
-              Reconnect
-            </button>
+            <WorkspaceActionButton className="logs-btn" appearance="primary" icon="rotate-ccw" onClick={connect} title="Reconnect" aria-label="Reconnect to log stream">Reconnect</WorkspaceActionButton>
           )}
         </div>
-      </div>
+      </aside>
+
+      <div className="workspace-pane logs-main">
+        <WorkspacePaneHeader
+          className="logs-main__header"
+          title="Live stream"
+          subtitle={`${filteredLogs.length} of ${logs.length} entries shown`}
+          actions={<div className="logs-main__tools">
+            <div className="logs-main__search">
+              <Icon name="search" size={14} aria-hidden="true" />
+              <input
+                type="text"
+                className="logs-search"
+                placeholder="Search message, source or severity…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                aria-label="Filter logs"
+              />
+            </div>
+            {embedded && (
+              <WorkspaceActionButton
+                ref={mobileFilters.triggerRef}
+                className="logs-filter-toggle"
+                appearance="secondary"
+                size="toolbar"
+                icon="funnel"
+                iconOnly
+                aria-label="Open log filters"
+                aria-expanded={mobileFilters.isOpen}
+                onClick={mobileFilters.toggle}
+              />
+            )}
+          </div>}
+        />
 
       {/* ── Log output (virtualized) ────────────────────── */}
       <div
@@ -427,8 +540,9 @@ const LogViewer: React.FC = () => {
 
       {/* ── Jump to bottom ───────────────────────────────── */}
       {!autoScroll && filteredLogs.length > 0 && (
-        <button
+        <WorkspaceActionButton
           className="logs-jump"
+          icon="chevron-down"
           onClick={() => {
             autoScrollRef.current = true;
             setAutoScroll(true);
@@ -445,9 +559,10 @@ const LogViewer: React.FC = () => {
             }
           }}
         >
-          ↓ Jump to bottom
-        </button>
+          Jump to bottom
+        </WorkspaceActionButton>
       )}
+      </div>
     </section>
   );
 };

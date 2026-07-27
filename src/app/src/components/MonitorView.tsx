@@ -1,0 +1,58 @@
+import React, { useState } from 'react';
+import { type AccountSession } from '../features/accounts/accountStore';
+import Dashboard from './Dashboard';
+import InspectView from './InspectView';
+import LogViewer from './LogViewer';
+import WorkspaceSectionRail from './WorkspaceSectionRail';
+import { WORKSPACE_NAVIGATION, type DashboardSection } from '../features/navigation/workspaceNavigation';
+
+interface MonitorViewProps {
+  accountSession: AccountSession;
+  activeSection: DashboardSection;
+  isActive: boolean;
+  onSectionChange: (section: DashboardSection) => void;
+}
+
+export default function MonitorView({
+  accountSession,
+  activeSection,
+  isActive,
+  onSectionChange,
+}: MonitorViewProps) {
+  const [railCollapsed, setRailCollapsed] = useState(false);
+
+  return (
+    <section
+      className={`monitor-workspace${railCollapsed ? ' workspace--rail-collapsed' : ''}`}
+      data-view="dashboard"
+    >
+      <WorkspaceSectionRail
+        sections={WORKSPACE_NAVIGATION.dashboard.sections}
+        activeSection={activeSection}
+        onSectionChange={onSectionChange}
+        collapsed={railCollapsed}
+        onCollapsedChange={setRailCollapsed}
+        panelId="dashboard-views-panel"
+        railLabel="Dashboard navigation"
+        navigationLabel="Dashboard sections"
+        railClassName="monitor-rail"
+        navClassName="monitor-nav"
+        headerTitle="Views"
+        sidebarLabel="dashboard navigation"
+        mobileMenuLabel="Open dashboard views"
+      />
+
+      <div className="monitor-content">
+        <div className="monitor-section" hidden={activeSection !== 'performance'}>
+          <Dashboard isActive={isActive && activeSection === 'performance'} />
+        </div>
+        <div className="monitor-section" hidden={activeSection !== 'telemetry'}>
+          <InspectView accountSession={accountSession} embedded />
+        </div>
+        <div className="monitor-section" hidden={activeSection !== 'logs'}>
+          <LogViewer embedded />
+        </div>
+      </div>
+    </section>
+  );
+}

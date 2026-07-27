@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { type Trace, inspectStore } from '../../inspectStore';
 import { Icon } from '../Icon';
+import WorkspaceRailHeader from '../WorkspaceRailHeader';
+import { WorkspaceActionButton } from '../WorkspacePanels';
 
 interface TraceListProps {
   traces: Trace[];
@@ -13,6 +15,9 @@ interface TraceListProps {
   handleOpenCreateModal: () => void;
   handleExportSession: () => void;
   formatTokens: (num: number) => string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  embedded?: boolean;
 }
 
 export function getRelativeTimeAgo(startTimeMs: number): string {
@@ -36,7 +41,10 @@ export default function TraceList({
   filterKind,
   handleOpenCreateModal,
   handleExportSession,
-  formatTokens
+  formatTokens,
+  collapsed,
+  onToggleCollapsed,
+  embedded = false,
 }: TraceListProps) {
   const listboxRef = useRef<HTMLDivElement>(null);
   const [activeTraceId, setActiveTraceId] = useState<string | null>(selectedTraceId);
@@ -116,21 +124,30 @@ export default function TraceList({
   };
 
   return (
-    <div className="inspect-rail">
-      <div className="inspect-rail__header">
-        <div className="inspect-rail__title-row">
-          <h3>Session Inspector</h3>
-          <span className={`capture-badge ${getBadgeClass()}`}>
-            <span className="capture-badge__dot"></span>
-            {getBadgeLabel()}
-          </span>
-        </div>
-        <span className="inspect-rail__subtitle">Local history — persisted in browser storage, never on server</span>
-
+    <div className={`inspect-rail ${embedded ? 'monitor-subpanel' : 'workspace-rail'}${collapsed ? ' is-collapsed' : ''}`}>
+      {embedded ? (
+        <header className="monitor-subpanel__header">
+          <h2>Request history</h2>
+          <p>{filteredTraces.length} of {traces.length} captured</p>
+        </header>
+      ) : (
+        <WorkspaceRailHeader
+          title="Requests"
+          sidebarLabel="request history"
+          purpose="history"
+          collapsed={collapsed}
+          onToggle={onToggleCollapsed}
+        />
+      )}
+      <div className="inspect-rail__controls">
         <div className="inspect-rail__capture-group-row">
           <div className="inspect-rail__capture-label-group">
             <span className="inspect-rail__capture-label">Auto-capture inferences</span>
             <span className="inspect-rail__capture-sublabel">Enables OTel on demand — no server-side storage</span>
+            <span className={`capture-badge ${getBadgeClass()}`}>
+              <span className="capture-badge__dot"></span>
+              {getBadgeLabel()}
+            </span>
           </div>
           <button
             type="button"
@@ -180,7 +197,7 @@ export default function TraceList({
       >
         {filteredTraces.length === 0 ? (
           <div className="inspect-empty-state">
-            <span className="inspect-empty-state__glyph" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span className="inspect-empty-state__glyph">
               <Icon name="search-check" size={32} />
             </span>
             <p>No captured requests yet</p>
@@ -257,27 +274,30 @@ export default function TraceList({
       </div>
 
       <div className="inspect-rail__footer">
-        <button
-          type="button"
-          className="inspect-footer-btn primary-simulate"
+        <WorkspaceActionButton
+          appearance="primary"
+          size="small"
+          icon="compose"
           onClick={handleOpenCreateModal}
         >
-          + Create
-        </button>
-        <button
-          type="button"
-          className="inspect-footer-btn outline"
+          Create
+        </WorkspaceActionButton>
+        <WorkspaceActionButton
+          appearance="danger"
+          size="small"
+          icon="trash"
           onClick={() => inspectStore.clearSession()}
         >
           Clear
-        </button>
-        <button
-          type="button"
-          className="inspect-footer-btn outline"
+        </WorkspaceActionButton>
+        <WorkspaceActionButton
+          appearance="secondary"
+          size="small"
+          icon="copy"
           onClick={handleExportSession}
         >
           Export
-        </button>
+        </WorkspaceActionButton>
       </div>
     </div>
   );
