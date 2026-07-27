@@ -1858,6 +1858,19 @@ message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
 # C++ Unit Tests
 # ============================================================
 
+set(_ARCHIVE_PLATFORM_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_archive_platform.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ARCHIVE_PLATFORM_TEST_SRC}")
+    add_executable(test_archive_platform
+        test/cpp/test_archive_platform.cpp
+    )
+    target_include_directories(test_archive_platform PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    add_test(NAME ArchivePlatformTest COMMAND test_archive_platform)
+endif()
+
 # ProcessManager zombie detection and non-mutating reap contract.
 if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(_PROCESS_MANAGER_TEST_SRC
