@@ -1,3 +1,5 @@
+import { ReactElement } from 'react';
+
 export interface PolicyRule {
   id: string;
   match?: unknown;
@@ -191,7 +193,7 @@ export const renderDecisionTree = (
   policy: RoutingPolicyDoc,
   decision: DecisionResult,
   request: TraceRequestInputs
-): JSX.Element => {
+): ReactElement => {
   const rules = policy.routing?.rules ?? [];
   const defaultModel = policy.routing?.default_model ?? '(none)';
   const matchedIndex = findMatchedRuleIndex(policy, decision);
@@ -225,8 +227,8 @@ export const renderDecisionTree = (
   // rules, an inconsistent-but-non-fatal edge case — nothing is highlighted.)
   const edgeOccurred = (i: number) => (matchedIndex === -1 ? true : i < matchedIndex);
 
-  const nodes: JSX.Element[] = [];
-  const edges: JSX.Element[] = [];
+  const nodes: ReactElement[] = [];
+  const edges: ReactElement[] = [];
 
   rules.forEach((rule, i) => {
     const y = headerOffset + i * rowHeight;

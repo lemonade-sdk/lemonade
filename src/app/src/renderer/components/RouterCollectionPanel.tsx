@@ -40,8 +40,24 @@ const TabPanels: React.FC<{ builder: React.ReactNode; testPrompt: React.ReactNod
   const { currentIndex } = useTabsContext();
   return (
     <>
-      <div className="settings-tab-content" style={{ display: currentIndex === 0 ? undefined : 'none' }}>{builder}</div>
-      <div className="settings-tab-content" style={{ display: currentIndex === 1 ? undefined : 'none' }}>{testPrompt}</div>
+      <div
+        id="tab-content-builder"
+        className="settings-tab-content"
+        role="tabpanel"
+        aria-labelledby="tab-control-builder"
+        style={{ display: currentIndex === 0 ? undefined : 'none' }}
+      >
+        {builder}
+      </div>
+      <div
+        id="tab-content-test-prompt"
+        className="settings-tab-content"
+        role="tabpanel"
+        aria-labelledby="tab-control-test-prompt"
+        style={{ display: currentIndex === 1 ? undefined : 'none' }}
+      >
+        {testPrompt}
+      </div>
     </>
   );
 };

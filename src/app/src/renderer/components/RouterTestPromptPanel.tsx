@@ -161,6 +161,7 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
     const submittedPolicy = policy;
     const submittedHasImages = hasImages;
     const submittedHasTools = hasTools;
+    const { metadata: submittedMetadata } = parseMetadataText(metadataText);
     setIsValidating(true);
     setValidationError(null);
     try {
@@ -175,7 +176,6 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
       }
       if (requestId !== latestRequestIdRef.current) return;
 
-      const { metadata } = parseMetadataText(metadataText);
       const response = await serverFetch('/routing/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -184,7 +184,7 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
           prompt: submittedPrompt,
           has_images: submittedHasImages,
           has_tools: submittedHasTools,
-          ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+          ...(Object.keys(submittedMetadata).length > 0 ? { metadata: submittedMetadata } : {}),
         }),
       });
       const data = await response.json();
@@ -207,7 +207,7 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
         prompt: submittedPrompt,
         hasImages: submittedHasImages,
         hasTools: submittedHasTools,
-        metadata,
+        metadata: submittedMetadata,
         policyFilename: routerName,
       });
       showSuccess(
@@ -221,7 +221,9 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
       setValidationError(error instanceof Error ? error.message : 'Unknown error');
       setResult(null);
     } finally {
-      setIsValidating(false);
+      if (requestId === latestRequestIdRef.current) {
+        setIsValidating(false);
+      }
     }
   };
 
