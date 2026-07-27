@@ -53,46 +53,66 @@ static json load_json_file(const fs::path& path) {
     return json::parse(ss.str());
 }
 
-static std::vector<fs::path> list_subdirs(const fs::path& dir, std::error_code& ec) {
-    std::vector<fs::path> subdirs;
-    for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
-         !ec && it != end; it.increment(ec)) {
-        if (it->is_directory()) subdirs.push_back(it->path());
-    }
-    std::sort(subdirs.begin(), subdirs.end());
-    return subdirs;
+// fs::relative resolves the path, so it throws on entries the corpus should reject
+// (a symlink loop, for one). Labels must survive those.
+static std::string rel_label(const fs::path& path, const fs::path& root) {
+    std::error_code ec;
+    const fs::path rel = fs::relative(path, root, ec);
+    return (ec || rel.empty()) ? path.lexically_relative(root).generic_string()
+                               : rel.generic_string();
 }
 
-// Corpus layout is exactly routing/<version>/<case>/{policy.json,cases.jsonl}. A case
-// dir missing either file, or holding a nested subdirectory, is a hard failure: silent
-// coverage loss / drifted layout otherwise. A directory that cannot be read is a
-// failure too, for the same reason.
+struct DirEntries {
+    std::vector<fs::path> dirs;
+    std::vector<fs::path> non_dirs;
+};
+
+static DirEntries list_entries(const fs::path& dir, std::error_code& ec) {
+    DirEntries entries;
+    for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
+         !ec && it != end; it.increment(ec)) {
+        auto& bucket = it->is_directory(ec) ? entries.dirs : entries.non_dirs;
+        bucket.push_back(it->path());
+    }
+    std::sort(entries.dirs.begin(), entries.dirs.end());
+    std::sort(entries.non_dirs.begin(), entries.non_dirs.end());
+    return entries;
+}
+
+// Corpus layout is exactly routing/<version>/<case>/{policy.json,cases.jsonl}. A version
+// dir holding anything but case dirs, a case dir missing either file or holding a nested
+// subdirectory, and a dir that cannot be read are all hard failures: silent coverage loss
+// / drifted layout otherwise.
 static std::vector<fs::path> find_case_dirs(const fs::path& root) {
     std::vector<fs::path> dirs;
     std::error_code ec;
-    const std::vector<fs::path> versions = list_subdirs(root, ec);
+    // Files directly under the root are docs (README.md), not corpus content.
+    const DirEntries root_entries = list_entries(root, ec);
     if (ec) {
         check(root.generic_string() + ": is readable", false);
         std::printf("  %s\n", ec.message().c_str());
         return dirs;
     }
-    for (const auto& version : versions) {
+    for (const auto& version : root_entries.dirs) {
         std::error_code vec;
-        const std::vector<fs::path> case_dirs = list_subdirs(version, vec);
+        const DirEntries version_entries = list_entries(version, vec);
         if (vec) {
-            check(fs::relative(version, root).generic_string() + ": is readable", false);
+            check(rel_label(version, root) + ": is readable", false);
             std::printf("  %s\n", vec.message().c_str());
             continue;
         }
-        for (const auto& case_dir : case_dirs) {
-            const std::string rel = fs::relative(case_dir, root).generic_string();
+        for (const auto& stray : version_entries.non_dirs) {
+            check(rel_label(stray, root) + ": is a case directory", false);
+        }
+        for (const auto& case_dir : version_entries.dirs) {
+            const std::string rel = rel_label(case_dir, root);
 
             std::error_code policy_ec;
             std::error_code cases_ec;
             const bool has_policy = fs::exists(case_dir / "policy.json", policy_ec);
             const bool has_cases = fs::exists(case_dir / "cases.jsonl", cases_ec);
             std::error_code sec;
-            const std::vector<fs::path> nested = list_subdirs(case_dir, sec);
+            const DirEntries nested = list_entries(case_dir, sec);
 
             bool ok = true;
             if (policy_ec || cases_ec) {
@@ -111,7 +131,7 @@ static std::vector<fs::path> find_case_dirs(const fs::path& root) {
                 check(rel + ": is readable", false);
                 std::printf("  %s\n", sec.message().c_str());
                 ok = false;
-            } else if (!nested.empty()) {
+            } else if (!nested.dirs.empty()) {
                 check(rel + ": is a leaf (no subdirectories)", false);
                 ok = false;
             }
@@ -138,7 +158,7 @@ static void report_mismatch(const json& expected, const json& produced) {
 }
 
 static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
-    const std::string rel = fs::relative(case_dir, root).generic_string();
+    const std::string rel = rel_label(case_dir, root);
 
     RoutePolicy policy;
     try {
@@ -237,14 +257,16 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
 
 int main() {
     const fs::path root = CONFORMANCE_CORPUS_DIR;
-    if (!fs::is_directory(root)) {
-        std::printf("[FAIL] conformance corpus dir missing: %s\n", root.string().c_str());
+    std::error_code ec;
+    if (!fs::is_directory(root, ec)) {
+        check(root.generic_string() + ": is a directory", false);
+        if (ec) std::printf("  %s\n", ec.message().c_str());
         return 1;
     }
 
     const std::vector<fs::path> case_dirs = find_case_dirs(root);
     if (case_dirs.empty()) {
-        std::printf("[FAIL] no cases.jsonl found under %s\n", root.string().c_str());
+        check(root.generic_string() + ": has at least one valid case dir", false);
         return 1;
     }
     int total_cases = 0;

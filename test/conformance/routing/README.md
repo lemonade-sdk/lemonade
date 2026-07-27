@@ -14,6 +14,10 @@ routing/<schema_major>/<case>/
   cases.jsonl    # one request → expected Decision per line
 ```
 
+A `<schema_major>` directory holds case directories and nothing else, and each case
+directory is a leaf. The runner fails on anything else, so a stray file or a broken
+symlink cannot quietly drop cases.
+
 `<schema_major>` is the policy's root `version`. Cases are
 grouped by the **engine behavior they lock**, so the
 corpus reads as a checklist against the v1 semantics table in
