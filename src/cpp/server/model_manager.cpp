@@ -4792,7 +4792,10 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 //       callers, so no identity entries are required here
 //
 //   canonical_public_names_ - cache key → wire-format ID emitted by the API:
-//     - winner cache keys → bare name
+//     - winner cache keys → bare name, EXCEPT a non-built-in collection winner
+//       (user.* / extra.* collection.omni / collection.router) → its canonical-
+//       prefixed ID, so the listed ID matches the one used for registration,
+//       fetch, and chat (the bare name still resolves via public_model_aliases_)
 //     - shadowed cache keys → canonical-prefixed ID (user.X / extra.X / builtin.X)
 //
 // Precedence: Registered > Imported > Builtin.

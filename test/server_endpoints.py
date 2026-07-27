@@ -283,7 +283,9 @@ class EndpointTests(ServerTestBase):
 
         # When idle, both should be false
         self.assertFalse(loaded_model["is_busy"], "Model should not be busy when idle")
-        self.assertFalse(loaded_model["is_streaming"], "Model should not be streaming when idle")
+        self.assertFalse(
+            loaded_model["is_streaming"], "Model should not be streaming when idle"
+        )
 
         print("[OK] is_busy and is_streaming fields exist and are false when idle")
 
@@ -310,7 +312,12 @@ class EndpointTests(ServerTestBase):
             f"{self.base_url}/chat/completions",
             json={
                 "model": ENDPOINT_TEST_MODEL,
-                "messages": [{"role": "user", "content": "Write a haiku about mountains, then another about rivers, then another about clouds."}],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Write a haiku about mountains, then another about rivers, then another about clouds.",
+                    }
+                ],
                 "stream": True,
                 "max_tokens": 150,
             },
@@ -324,7 +331,10 @@ class EndpointTests(ServerTestBase):
         stop_polling.set()
         poll_thread.join(timeout=2)
 
-        self.assertTrue(captured_busy.is_set(), "Expected to capture is_busy=True at least once during streaming")
+        self.assertTrue(
+            captured_busy.is_set(),
+            "Expected to capture is_busy=True at least once during streaming",
+        )
         print("[OK] Captured is_busy=True during streaming")
 
         # After completion, verify flags are reset
@@ -334,11 +344,11 @@ class EndpointTests(ServerTestBase):
             if model["model_name"] == ENDPOINT_TEST_MODEL:
                 self.assertFalse(
                     model.get("is_busy", True),
-                    "is_busy should be false after request completes"
+                    "is_busy should be false after request completes",
                 )
                 self.assertFalse(
                     model.get("is_streaming", True),
-                    "is_streaming should be false after request completes"
+                    "is_streaming should be false after request completes",
                 )
                 break
 
@@ -375,7 +385,9 @@ class EndpointTests(ServerTestBase):
                     f"{self.base_url}/chat/completions",
                     json={
                         "model": ENDPOINT_TEST_MODEL,
-                        "messages": [{"role": "user", "content": f"Say hi. Request {name}."}],
+                        "messages": [
+                            {"role": "user", "content": f"Say hi. Request {name}."}
+                        ],
                         "stream": True,
                         "max_tokens": 10,
                     },
@@ -405,7 +417,9 @@ class EndpointTests(ServerTestBase):
         while not results.empty():
             completed.append(results.get_nowait())
 
-        self.assertEqual(len(completed), 3, f"Expected 3 completed requests, got: {completed}")
+        self.assertEqual(
+            len(completed), 3, f"Expected 3 completed requests, got: {completed}"
+        )
         for name, status, _ in completed:
             self.assertEqual(status, "success", f"Request {name} should succeed")
 
@@ -416,15 +430,17 @@ class EndpointTests(ServerTestBase):
             if model["model_name"] == ENDPOINT_TEST_MODEL:
                 self.assertFalse(
                     model.get("is_streaming", True),
-                    "is_streaming should be false after ALL streams complete"
+                    "is_streaming should be false after ALL streams complete",
                 )
                 self.assertFalse(
                     model.get("is_busy", True),
-                    "is_busy should be false after ALL requests complete"
+                    "is_busy should be false after ALL requests complete",
                 )
                 break
 
-        print("[OK] Concurrent streaming: flags reset correctly after all requests complete")
+        print(
+            "[OK] Concurrent streaming: flags reset correctly after all requests complete"
+        )
 
     def test_002a_metrics_endpoint(self):
         """Test root-level /metrics returns Prometheus text and loaded model samples."""
@@ -2518,8 +2534,9 @@ class EndpointTests(ServerTestBase):
     def test_021j_register_user_collection(self):
         """Register a user-defined collection via POST /pull."""
         canonical_name = f"user.TestColl-{uuid.uuid4().hex[:8]}"
-        # Unique `user.<name>` entries are exposed under the bare public name.
-        public_name = canonical_name[5:]
+        # Registered collections list under their canonical `user.` id; the bare
+        # name stays a resolvable alias but is not emitted as a list row.
+        bare_name = canonical_name[5:]
 
         try:
             response = requests.post(
@@ -2540,11 +2557,20 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(models_response.status_code, 200)
-            entry = next(
-                (m for m in models_response.json()["data"] if m["id"] == public_name),
-                None,
+            ids = [m["id"] for m in models_response.json()["data"]]
+            self.assertIn(
+                canonical_name,
+                ids,
+                f"{canonical_name} should appear in /models under its user. id",
             )
-            self.assertIsNotNone(entry, f"{public_name} should appear in /models")
+            self.assertNotIn(
+                bare_name,
+                ids,
+                "Collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in models_response.json()["data"] if m["id"] == canonical_name
+            )
             self.assertEqual(entry.get("recipe"), "collection.omni")
             self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
             self.assertTrue(
@@ -2552,7 +2578,18 @@ class EndpointTests(ServerTestBase):
                 "Collection should report downloaded=true when all components are downloaded",
             )
 
-            print(f"[OK] Registered omni collection: {public_name}")
+            # Both the bare and prefixed ids still resolve on GET /models/{id}.
+            for lookup in (canonical_name, bare_name):
+                single = requests.get(
+                    f"{self.base_url}/models/{lookup}",
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    single.status_code, 200, f"{lookup} should resolve: {single.text}"
+                )
+                self.assertEqual(single.json().get("id"), canonical_name)
+
+            print(f"[OK] Registered omni collection: {canonical_name}")
         finally:
             try:
                 requests.post(
@@ -2562,6 +2599,56 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
+
+    def test_021j1_register_user_router_collection(self):
+        """A registered router collection lists under its canonical `user.` id.
+
+        Mirrors test_021j for collection.router, so the prefixed-id listing
+        contract is verified for both collection recipes (issue #2788).
+        """
+        canonical_name = f"user.TestRouter-{uuid.uuid4().hex[:8]}"
+        bare_name = canonical_name[5:]
+
+        try:
+            response = self._pull_router_collection(canonical_name)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["status"], "success")
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = [m["id"] for m in models_response.json()["data"]]
+            self.assertIn(
+                canonical_name,
+                ids,
+                f"{canonical_name} should appear in /models under its user. id",
+            )
+            self.assertNotIn(
+                bare_name,
+                ids,
+                "Router collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in models_response.json()["data"] if m["id"] == canonical_name
+            )
+            self.assertEqual(entry.get("recipe"), "collection.router")
+
+            # Both the bare and prefixed ids still resolve on GET /models/{id}.
+            for lookup in (canonical_name, bare_name):
+                single = requests.get(
+                    f"{self.base_url}/models/{lookup}",
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    single.status_code, 200, f"{lookup} should resolve: {single.text}"
+                )
+                self.assertEqual(single.json().get("id"), canonical_name)
+
+            print(f"[OK] Registered router collection: {canonical_name}")
+        finally:
+            self._cleanup_router_collection(canonical_name)
 
     def test_021j_register_user_collection_with_system_prompt(self):
         """A registered user collection round-trips an optional system_prompt.
@@ -2611,7 +2698,7 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(listing.status_code, 200)
             entry = next(
-                (m for m in listing.json()["data"] if m["id"] == public_name),
+                (m for m in listing.json()["data"] if m["id"] == canonical_name),
                 None,
             )
             self.assertIsNotNone(entry)
@@ -2736,7 +2823,7 @@ class EndpointTests(ServerTestBase):
                 (
                     m
                     for m in models_response.json()["data"]
-                    if m["id"] == collection_name[5:]
+                    if m["id"] == collection_name
                 ),
                 None,
             )
@@ -2803,7 +2890,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(models_response.status_code, 200)
         ids = {m["id"] for m in models_response.json()["data"]}
         self.assertNotIn(
-            collection_name[5:],
+            collection_name,
             ids,
             "Rejected inline collection must not be persisted",
         )
@@ -2841,9 +2928,7 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(models_response.status_code, 200)
         ids = {m["id"] for m in models_response.json()["data"]}
-        self.assertNotIn(
-            collection_name[5:], ids, "Rejected collection must not persist"
-        )
+        self.assertNotIn(collection_name, ids, "Rejected collection must not persist")
         self.assertNotIn(comp, ids, "Half-defined component must not be registered")
         print("[OK] Inline collection with invalid component def rejected with 400")
 
@@ -3084,9 +3169,7 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
             ).json()["data"]
         }
-        self.assertNotIn(
-            collection_name[5:], ids, "Rejected collection must not persist"
-        )
+        self.assertNotIn(collection_name, ids, "Rejected collection must not persist")
         print("[OK] Nested collection (component is a registered collection) rejected")
 
     def test_021y_reject_nested_collection_inline_def(self):
@@ -3121,9 +3204,7 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
             ).json()["data"]
         }
-        self.assertNotIn(
-            collection_name[5:], ids, "Rejected collection must not persist"
-        )
+        self.assertNotIn(collection_name, ids, "Rejected collection must not persist")
         self.assertNotIn(child, ids, "Nested child collection must not be registered")
         print("[OK] Nested collection (inline collection component def) rejected")
 
@@ -3489,9 +3570,7 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(resp.status_code, 200, f"auth failed: {resp.text}")
             self.assertEqual(resp.json()["models_discovered"], 1)
 
-            requests.post(
-                f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
-            )
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
             routing = {
                 "candidates": [candidate_model],
@@ -3648,9 +3727,7 @@ class EndpointTests(ServerTestBase):
                 item.get("model_name"): item
                 for item in warm_health.get("all_models_loaded", [])
             }
-            self.assertEqual(
-                warm_loaded[router_model].get("slot_pool"), "standard/llm"
-            )
+            self.assertEqual(warm_loaded[router_model].get("slot_pool"), "standard/llm")
             warm_router_pid = int(warm_loaded[router_model]["pid"])
 
             routing = {
@@ -3704,9 +3781,7 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(
                 loaded[router_model].get("slot_pool"), "routing_helper/llm"
             )
-            self.assertEqual(
-                loaded[candidate_model].get("slot_pool"), "standard/llm"
-            )
+            self.assertEqual(loaded[candidate_model].get("slot_pool"), "standard/llm")
             first_pids = {
                 router_model: int(loaded[router_model]["pid"]),
                 candidate_model: int(loaded[candidate_model]["pid"]),
@@ -3755,9 +3830,7 @@ class EndpointTests(ServerTestBase):
                 for item in pinned_health.get("all_models_loaded", [])
             }
             self.assertTrue(pinned_loaded[candidate_model].get("pinned"))
-            self.assertEqual(
-                pinned_health.get("pinned_models", {}).get("llm"), 1
-            )
+            self.assertEqual(pinned_health.get("pinned_models", {}).get("llm"), 1)
             self.assertEqual(
                 int(pinned_loaded[candidate_model]["pid"]),
                 first_pids[candidate_model],
@@ -3787,9 +3860,7 @@ class EndpointTests(ServerTestBase):
                 json={"model_name": candidate_model, "pinned": False},
                 timeout=TIMEOUT_DEFAULT,
             )
-            self.assertEqual(
-                unpin_candidate.status_code, 200, unpin_candidate.text
-            )
+            self.assertEqual(unpin_candidate.status_code, 200, unpin_candidate.text)
 
             direct_router = requests.post(
                 f"{self.base_url}/chat/completions",
@@ -3892,11 +3963,13 @@ class EndpointTests(ServerTestBase):
                 "object": "chat.completion",
                 "created": 1,
                 "model": req.get("model", upstream_id),
-                "choices": [{
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "ok"},
-                    "finish_reason": "stop",
-                }],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
                 "usage": {
                     "prompt_tokens": 1,
                     "completion_tokens": 1,
@@ -3931,9 +4004,7 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(auth.status_code, 200, auth.text)
-            requests.post(
-                f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
-            )
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
             routing = {
                 "candidates": [candidate_model],
@@ -3982,9 +4053,7 @@ class EndpointTests(ServerTestBase):
             pull = self._pull_router_collection(
                 canonical_name,
                 routing=routing,
-                overrides={
-                    "components": [helper_a, helper_b, candidate_model]
-                },
+                overrides={"components": [helper_a, helper_b, candidate_model]},
             )
             self.assertEqual(pull.status_code, 200, pull.text)
 
@@ -4069,9 +4138,7 @@ class EndpointTests(ServerTestBase):
         canonical_name = f"user.RouterSameModel-{suffix}"
         public_name = canonical_name[5:]
         try:
-            requests.post(
-                f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
-            )
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
             routing = {
                 "candidates": [model],
                 "default_model": model,
@@ -4125,6 +4192,7 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
+
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is
         ENDPOINT_TEST_MODEL. `overrides` is merged into the top-level pull
@@ -4501,7 +4569,6 @@ class EndpointTests(ServerTestBase):
         isn't dropped on export and rejected on re-import."""
         suffix = uuid.uuid4().hex[:8]
         canonical_name = f"user.RouterExport-{suffix}"
-        public_name = canonical_name[5:]
         reimport_name = f"user.RouterReimport-{suffix}"
         try:
             pull_response = self._pull_router_collection(canonical_name)
@@ -4511,10 +4578,12 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
             ).json()
             exported = next(
-                (m for m in models.get("data", []) if m.get("id") == public_name),
+                (m for m in models.get("data", []) if m.get("id") == canonical_name),
                 None,
             )
-            self.assertIsNotNone(exported, f"{public_name} missing from /models export")
+            self.assertIsNotNone(
+                exported, f"{canonical_name} missing from /models export"
+            )
             self.assertEqual(exported.get("recipe"), "collection.router")
             self.assertIn("routing", exported)
             self.assertEqual(
@@ -4639,7 +4708,7 @@ class EndpointTests(ServerTestBase):
                 (
                     m
                     for m in models_response.json()["data"]
-                    if m["id"] == collection_name[5:]
+                    if m["id"] == collection_name
                 ),
                 None,
             )
