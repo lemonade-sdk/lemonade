@@ -189,6 +189,8 @@ function loadTheme(): Theme {
 const App: React.FC = () => {
   const [route, setRouteState] = useState<AppRoute>(loadSavedRoute);
   const view = route.view;
+  const routeRef = useRef(route);
+  routeRef.current = route;
   const [status, setStatus] = useState<ConnectionStatus>(api.status);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
@@ -395,15 +397,15 @@ const App: React.FC = () => {
         setRouteState(nextRoute);
         try { localStorage.setItem('lemonade_current_view', hashForRoute(nextRoute).slice(2)); } catch { /* ignore */ }
       } else {
-        window.history.replaceState(null, '', hashForRoute(route));
+        window.history.replaceState(null, '', hashForRoute(routeRef.current));
       }
     };
     window.addEventListener('hashchange', onHashChange);
     if (!routeFromHash()) {
-      window.history.replaceState(null, '', hashForRoute(route));
+      window.history.replaceState(null, '', hashForRoute(routeRef.current));
     }
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, [route]);
+  }, []);
 
   // Client-local in-app deep-link: components dispatch
   // `lemonade:navigate` with { view } to switch views without involving lemond.

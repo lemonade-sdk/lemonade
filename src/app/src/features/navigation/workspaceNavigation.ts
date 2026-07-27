@@ -4,14 +4,15 @@ const ROUTE_ACRONYMS: Record<string, string> = {
   mcp: 'MCP',
 };
 
+/* Sentence case throughout: only the first word and known acronyms are
+ * capitalized, so "Model storage" and "MCP gateway" read as one set. */
 export function workspaceRouteLabel(routeSegment: string): string {
   const parts = routeSegment.split('-').filter(Boolean);
-  const titleCaseWords = Boolean(ROUTE_ACRONYMS[parts[0]]);
   return parts
     .map((part, index) => {
       if (part === 'and') return '&';
       if (ROUTE_ACRONYMS[part]) return ROUTE_ACRONYMS[part];
-      return index === 0 || titleCaseWords ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : part;
+      return index === 0 ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : part;
     })
     .join(' ');
 }

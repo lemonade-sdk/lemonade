@@ -803,8 +803,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               title={tuning ? 'Edit backend arguments' : 'Add backend arguments'}
               aria-label={`${tuning ? 'Edit' : 'Add'} backend arguments for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
               data-backend-args-button={cellKey}
-            >
-            </WorkspaceActionButton>
+            />
           )}
           {(info.state === 'installable') && (
             <WorkspaceActionButton

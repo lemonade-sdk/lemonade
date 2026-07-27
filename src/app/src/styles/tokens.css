@@ -260,6 +260,50 @@
   --border:         rgba(0, 0, 0, 0.16);
   --border-subtle:  rgba(92, 75, 0, 0.18);
   --border-strong:  rgba(92, 75, 0, 0.18);
+  /* The dark --accent is opaque; the light one is already 58% alpha, so
+     mixing it again would leave the border barely visible. */
+  --accent-border:  rgba(92, 75, 0, 0.32);
+
+  /* ---------- Identity and monitoring colors, darkened for the light canvas ----------
+   * The dark-theme values are tuned against #16140F and land between 1.5:1 and
+   * 2.9:1 on #fdfbf6. These preserve each hue while clearing the 3:1 floor WCAG
+   * 1.4.11 sets for non-text UI components (glyphs, marks, chart series). */
+  --cap-vision:     #A16DFF;
+  --cap-code:       #2C9E6C;
+  --cap-embedding:  #008EF9;
+  --cap-reranking:  #F95500;
+  --cap-image:      #C47A08;
+  --cap-image-edit: #CE752B;
+  --cap-audio:      #2C999C;
+  --cap-audio-generation: #1C9D8D;
+  --cap-tts:        #FF3D94;
+  --cap-model3d:    #727EF8;
+
+  --provider-hugging-face-fg: #C77800;
+  --provider-modelscope-fg:   #4888FF;
+
+  --backend-llamacpp:          #A98700;
+  --backend-vllm:              #308BFC;
+  --backend-flm:               #1E9D6E;
+  --backend-ryzenai:           #E96103;
+  --backend-sd-cpp:            #B164FD;
+  --backend-whispercpp:        #0093D4;
+  --backend-moonshine:         #089BB1;
+  --backend-kokoro:            #F44AA3;
+  --backend-acestep:           #FD4661;
+  --backend-thinksound:        #C47D04;
+  --backend-trellis:           #727EF8;
+  --backend-collection-omni:   #9876FA;
+  --backend-collection-router: #089BB1;
+  --backend-collection:        #7B8EA8;
+
+  --chart-series-1: #B28612;
+  --chart-series-2: #4A92C8;
+  --chart-series-3: #5A9B68;
+  --chart-series-4: #A86FEF;
+  --chart-series-5: #DD6A6A;
+  --chart-series-6: #3A9999;
+  --chart-cache:    #C07F27;
 
   --shadow-sm:
     0 1px 2px rgba(0, 0, 0, 0.06),

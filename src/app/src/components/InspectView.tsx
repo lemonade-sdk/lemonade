@@ -14,6 +14,7 @@ import CreateModal from './inspect/CreateModal';
 import CurlModal from './inspect/CurlModal';
 import { type AccountSession } from '../features/accounts/accountStore';
 import { WorkspaceActionButton, WorkspaceDetailEmpty } from './WorkspacePanels';
+import { isMobileLayout } from '../styles/breakpoints';
 
 interface InspectViewProps {
   accountSession: AccountSession;
@@ -51,7 +52,7 @@ export default function InspectView({ accountSession, embedded = false }: Inspec
   }, [selectedTraceId]);
 
   useEffect(() => {
-    if (!embedded || !selectedTrace || !window.matchMedia('(max-width: 760px)').matches) return;
+    if (!embedded || !selectedTrace || !isMobileLayout()) return;
     const frame = requestAnimationFrame(() => mobileBackRef.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [embedded, selectedTrace]);

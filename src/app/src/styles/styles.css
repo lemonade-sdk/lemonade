@@ -6153,7 +6153,7 @@ optgroup {
   display: none;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .bottom-sheet-backdrop {
     display: block;
     position: fixed;
@@ -8403,7 +8403,7 @@ button.detail-presets__explanation-step {
 .detail-files__status--missing { color: var(--text-tertiary); }
 
 /* ── Responsive: list-first → tap-to-detail on narrow viewports ── */
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   /* Remove grid; each panel takes full width/height */
 .manager--detail {
     position: relative;
@@ -11631,6 +11631,14 @@ button.detail-presets__explanation-step {
 
 .workspace-filter-list__item.is-active .workspace-filter-list__count { color: var(--accent-fg); }
 
+.workspace-filter-list__note {
+  margin: var(--space-1) 0 0;
+  padding-inline: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: var(--type-caption-size);
+  line-height: var(--leading-snug);
+}
+
 .workspace-pane {
   min-width: 0;
   min-height: 0;
@@ -12076,7 +12084,7 @@ button.detail-presets__explanation-step {
   .logs-workspace--embedded { grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .connect--workspace,
   .logs-workspace,
   .backends--workspace {
@@ -12271,7 +12279,7 @@ button.detail-presets__explanation-step {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .titlebar__brand { justify-self: start; }
   .titlebar__right { justify-self: end; }
 
@@ -12552,7 +12560,7 @@ button.detail-presets__explanation-step {
   }
 }
 
-@media (min-width: 481px) and (max-width: 760px) {
+@media (min-width: 481px) and (max-width: 768px) {
   .titlebar {
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   }
@@ -14162,7 +14170,7 @@ button.workspace-metadata-chip:hover {
   .workspace-panel-resizer { display: none; }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .workspace-three-panel {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);

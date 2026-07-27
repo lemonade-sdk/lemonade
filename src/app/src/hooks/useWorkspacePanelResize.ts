@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { MOBILE_BREAKPOINT } from '../styles/breakpoints';
 
 const DEFAULT_RAIL_WIDTH = 248;
 const COLLAPSED_RAIL_WIDTH = 56;
@@ -13,6 +14,7 @@ interface WorkspacePanelResizeOptions {
 
 interface WorkspacePanelWidthState {
   width: number;
+  maxWidth: number;
   customized: boolean;
 }
 
@@ -33,37 +35,39 @@ function initialPanelWidth(storageKey: string, railCollapsed: boolean): Workspac
   const containerWidth = typeof window === 'undefined' ? 1440 : window.innerWidth;
   const railWidth = railCollapsed ? COLLAPSED_RAIL_WIDTH : DEFAULT_RAIL_WIDTH;
   const { balancedWidth, maxWidth } = layoutWidths(containerWidth, railWidth);
-  if (typeof window === 'undefined') return { width: balancedWidth, customized: false };
+  if (typeof window === 'undefined') return { width: balancedWidth, maxWidth, customized: false };
 
   try {
     const storedWidth = Number(window.localStorage.getItem(storageKey));
     if (Number.isFinite(storedWidth) && storedWidth > 0) {
       return {
         width: Math.max(LIST_PANEL_MIN_WIDTH, Math.min(maxWidth, Math.round(storedWidth))),
+        maxWidth,
         customized: true,
       };
     }
   } catch {
-    return { width: balancedWidth, customized: false };
+    return { width: balancedWidth, maxWidth, customized: false };
   }
 
-  return { width: balancedWidth, customized: false };
+  return { width: balancedWidth, maxWidth, customized: false };
 }
 
 export function useWorkspacePanelResize<T extends HTMLElement = HTMLElement>({ storageKey, railCollapsed }: WorkspacePanelResizeOptions) {
   const containerRef = useRef<T>(null);
   const [panelWidth, setPanelWidth] = useState<WorkspacePanelWidthState>(() => initialPanelWidth(storageKey, railCollapsed));
   const panelWidthRef = useRef(panelWidth);
+  panelWidthRef.current = panelWidth;
+  const stopResizeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    panelWidthRef.current = panelWidth;
     if (!panelWidth.customized) return;
     try {
       window.localStorage.setItem(storageKey, String(panelWidth.width));
     } catch {
       return;
     }
-  }, [panelWidth, storageKey]);
+  }, [panelWidth.customized, panelWidth.width, storageKey]);
 
   const measureLayout = useCallback(() => {
     const container = containerRef.current;
@@ -82,7 +86,9 @@ export function useWorkspacePanelResize<T extends HTMLElement = HTMLElement>({ s
         const width = current.customized
           ? Math.max(LIST_PANEL_MIN_WIDTH, Math.min(maxWidth, current.width))
           : balancedWidth;
-        return width === current.width ? current : { ...current, width };
+        return width === current.width && maxWidth === current.maxWidth
+          ? current
+          : { ...current, width, maxWidth };
       });
     };
 
@@ -98,16 +104,21 @@ export function useWorkspacePanelResize<T extends HTMLElement = HTMLElement>({ s
     };
   }, [measureLayout]);
 
+  // A drag in flight owns window listeners and a global body class; unmounting
+  // mid-drag (view switch, error boundary) would otherwise strand both.
+  useEffect(() => () => stopResizeRef.current?.(), []);
+
   const setCustomizedWidth = useCallback((width: number) => {
     const { maxWidth } = measureLayout();
     setPanelWidth({
       width: Math.max(LIST_PANEL_MIN_WIDTH, Math.min(maxWidth, Math.round(width))),
+      maxWidth,
       customized: true,
     });
   }, [measureLayout]);
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (window.innerWidth <= 760) return;
+    if (window.innerWidth <= MOBILE_BREAKPOINT) return;
     event.preventDefault();
 
     const startX = event.clientX;
@@ -116,19 +127,22 @@ export function useWorkspacePanelResize<T extends HTMLElement = HTMLElement>({ s
       ?.getBoundingClientRect().width
       || panelWidthRef.current.width;
     const handle = event.currentTarget;
-    try { handle.setPointerCapture(event.pointerId); } catch {}
+    const pointerId = event.pointerId;
+    try { handle.setPointerCapture(pointerId); } catch {}
 
     const onPointerMove = (moveEvent: PointerEvent) => {
       setCustomizedWidth(startWidth + moveEvent.clientX - startX);
     };
     const stopResize = () => {
+      stopResizeRef.current = null;
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', stopResize);
       window.removeEventListener('pointercancel', stopResize);
       document.body.classList.remove('is-resizing-workspace-panel');
-      try { handle.releasePointerCapture(event.pointerId); } catch {}
+      try { handle.releasePointerCapture(pointerId); } catch {}
     };
 
+    stopResizeRef.current = stopResize;
     document.body.classList.add('is-resizing-workspace-panel');
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', stopResize, { once: true });
@@ -161,7 +175,7 @@ export function useWorkspacePanelResize<T extends HTMLElement = HTMLElement>({ s
     style,
     resizerProps: {
       minWidth: LIST_PANEL_MIN_WIDTH,
-      maxWidth: LIST_PANEL_MAX_WIDTH,
+      maxWidth: panelWidth.maxWidth,
       value: panelWidth.width,
       onPointerDown,
       onKeyDown,

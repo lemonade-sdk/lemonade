@@ -37,6 +37,8 @@ This document is the contract for Lemonade's desktop and web UI. It describes th
 
 Both themes redefine the color roles; component selectors must not contain theme-specific product colors. Brand artwork and user/data-derived colors are the only exceptions.
 
+Identity and chart hues are theme-specific too. A value tuned against the dark canvas typically lands near 2:1 on the light one, so every `--cap-*`, `--backend-*`, `--chart-*`, and provider foreground token carries a darkened light-theme value that clears the 3:1 floor WCAG 1.4.11 sets for non-text UI components. A new identity color is not finished until both themes are declared and measured.
+
 ### Typography
 
 The UI uses `--font-sans`; code, logs, identifiers, and numeric payloads may use `--font-mono`.
@@ -120,6 +122,8 @@ Use two panels when selection does not require a distinct list, and three when f
 - Desktop narrow: 769–1100 px; reduce panel padding and list width without changing control sizes or typography roles.
 - Mobile/tablet: at 768 px and below, show one primary content panel at a time. Context rails are modal panels with backdrop, Escape handling, focus return, and a toggleable hamburger trigger.
 - Phone: 480 px and below; keep touch targets at least 36 px, allow action labels to collapse only when accessible names remain, and avoid horizontally clipped forms or filter groups.
+
+The 768 px and 480 px boundaries are the only ones JavaScript may test. They live in `src/styles/breakpoints.ts` as `MOBILE_BREAKPOINT` and `PHONE_BREAKPOINT`; `styles.css` repeats them as literals because custom properties cannot appear inside `@media`. A layout check that disagrees with its media query leaves a band of widths where the two layouts fight, so JS must read the shared constant rather than inline a number. Components may still define their own intermediate reflow points (for example 900 px or 720 px for a grid that runs out of room early); those are presentation-only and never gate behavior.
 
 ## Tab-specific styles
 

@@ -1779,7 +1779,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
 
     const heading = page.locator('#connect-pane-title');
     await expect(heading).toBeVisible();
-    await expect(heading).toHaveText('MCP Gateway');
+    await expect(heading).toHaveText('MCP gateway');
   });
 
   test('A81 — MCP endpoint URL input contains /mcp path and is read-only', async ({ page }) => {

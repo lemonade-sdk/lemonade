@@ -3,10 +3,12 @@ import api, { LogEntry, LogStreamHandle } from '../api';
 import { Icon } from './Icon';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { WorkspaceActionButton, WorkspacePaneHeader } from './WorkspacePanels';
+import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 
 /* ── Constants ─────────────────────────────────────────────── */
 
 const MAX_CLIENT_LOGS = 2000;
+const LOG_SOURCE_LIMIT = 10;
 const RECONNECT_DELAY = 5000;
 const BOTTOM_THRESHOLD = 60;
 const LINE_HEIGHT = 22;
@@ -60,7 +62,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [tagFilter, setTagFilter] = useState('all');
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const mobileFilters = useWorkspaceMobileRail();
   const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('disconnected');
   const [autoScroll, setAutoScroll] = useState(true);
   const [isSettingLevel, setIsSettingLevel] = useState(false);
@@ -68,8 +70,6 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
   const [viewHeight, setViewHeight] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const mobileFiltersToggleRef = useRef<HTMLButtonElement>(null);
-  const mobileFiltersCloseRef = useRef<HTMLButtonElement>(null);
   const streamRef = useRef<LogStreamHandle | null>(null);
   const lastSeqRef = useRef<number | null>(null);
   const autoScrollRef = useRef(true);
@@ -78,24 +78,6 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
   const batchRef = useRef<LogEntry[]>([]);
   const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userScrollingRef = useRef(false);
-
-  const closeMobileFilters = useCallback(() => {
-    setMobileFiltersOpen(false);
-    requestAnimationFrame(() => mobileFiltersToggleRef.current?.focus());
-  }, []);
-
-  useEffect(() => {
-    if (!embedded || !mobileFiltersOpen) return;
-    const frame = requestAnimationFrame(() => mobileFiltersCloseRef.current?.focus());
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeMobileFilters();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [closeMobileFilters, embedded, mobileFiltersOpen]);
 
   /* ── Auto-scroll ─────────────────────────────────────────── */
 
@@ -314,10 +296,25 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
       const tag = String(log.tag || 'Other');
       counts.set(tag, (counts.get(tag) || 0) + 1);
     });
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, 10);
-  }, [logs]);
+    const ranked = Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const top = ranked.slice(0, LOG_SOURCE_LIMIT);
+    // The selected source must stay clickable even once it falls out of the
+    // top slice, or the list looks empty with no visible way back.
+    if (tagFilter !== 'all' && !top.some(([tag]) => tag === tagFilter)) {
+      const selected = ranked.find(([tag]) => tag === tagFilter);
+      if (selected) top.push(selected);
+    }
+    return { sources: top, hiddenCount: Math.max(0, ranked.length - LOG_SOURCE_LIMIT) };
+  }, [logs, tagFilter]);
+
+  // Clearing the buffer retires every tag; a filter left pointing at one that
+  // no longer exists would silently hide the whole stream.
+  useEffect(() => {
+    if (tagFilter !== 'all' && !logSources.sources.some(([tag]) => tag === tagFilter)) {
+      setTagFilter('all');
+    }
+  }, [logSources, tagFilter]);
 
   // Use useLayoutEffect so scroll happens synchronously after DOM update
   // (must be after filteredLogs declaration to avoid temporal dead zone)
@@ -372,12 +369,16 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
   /* ── Render ──────────────────────────────────────────────── */
 
   return (
-    <section className={`logs-view logs-workspace${embedded ? ' logs-workspace--embedded' : ''}${embedded && mobileFiltersOpen ? ' logs-workspace--filters-open' : ''}${!embedded && railCollapsed ? ' workspace--rail-collapsed' : ''}`} data-view="logs">
+    <section className={`logs-view logs-workspace${embedded ? ' logs-workspace--embedded' : ''}${embedded && mobileFilters.isOpen ? ' logs-workspace--filters-open' : ''}${!embedded && railCollapsed ? ' workspace--rail-collapsed' : ''}`} data-view="logs">
+      {embedded && mobileFilters.isOpen && (
+        <div className="workspace-mobile-rail-backdrop" onClick={mobileFilters.close} aria-hidden="true" />
+      )}
       <aside
-        className={`${embedded ? 'monitor-subpanel' : 'workspace-rail'} logs-rail${!embedded && railCollapsed ? ' is-collapsed' : ''}`}
+        ref={embedded ? mobileFilters.panelRef : undefined}
+        className={`${embedded ? 'monitor-subpanel' : 'workspace-rail'} logs-rail${!embedded && railCollapsed ? ' is-collapsed' : ''}${embedded && mobileFilters.isOpen ? ' is-mobile-open' : ''}`}
         aria-label="Log filters"
-        role={embedded && mobileFiltersOpen ? 'dialog' : undefined}
-        aria-modal={embedded && mobileFiltersOpen ? true : undefined}
+        role={embedded && mobileFilters.isOpen ? 'dialog' : undefined}
+        aria-modal={embedded && mobileFilters.isOpen ? true : undefined}
       >
         {embedded ? (
           <header className="monitor-subpanel__header">
@@ -387,14 +388,13 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
                 <p>{logs.length} entries received</p>
               </div>
               <WorkspaceActionButton
-                ref={mobileFiltersCloseRef}
                 className="logs-rail__mobile-close"
                 appearance="quiet"
                 size="toolbar"
                 icon="x"
                 iconOnly
                 aria-label="Close log filters"
-                onClick={closeMobileFilters}
+                onClick={mobileFilters.close}
               />
             </div>
           </header>
@@ -414,34 +414,35 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
             <span className="logs-status__label">{statusLabel}</span>
             <span className="logs-toolbar__count">{logs.length} entries</span>
           </div>
+
           <div className="workspace-control-group">
             <span className="workspace-control-group__label">Visibility</span>
-          <label className="logs-level">
+            <label className="logs-level">
               <span className="logs-level__label">Minimum level</span>
-            <select
-              className="select logs-level__select"
-              value={filterLevel}
-              onChange={e => setFilterLevel(e.target.value as LogLevel)}
-            >
-              {LOG_LEVELS.map(l => (
-                <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}+</option>
-              ))}
-            </select>
-          </label>
+              <select
+                className="select logs-level__select"
+                value={filterLevel}
+                onChange={e => setFilterLevel(e.target.value as LogLevel)}
+              >
+                {LOG_LEVELS.map(l => (
+                  <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}+</option>
+                ))}
+              </select>
+            </label>
 
-          <label className="logs-level">
+            <label className="logs-level">
               <span className="logs-level__label">Server capture level</span>
-            <select
-              className="select logs-level__select"
-              value={serverLevel}
-              disabled={isSettingLevel}
-              onChange={e => handleServerLevelChange(e.target.value as LogLevel)}
-            >
-              {LOG_LEVELS.map(l => (
-                <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>
-              ))}
-            </select>
-          </label>
+              <select
+                className="select logs-level__select"
+                value={serverLevel}
+                disabled={isSettingLevel}
+                onChange={e => handleServerLevelChange(e.target.value as LogLevel)}
+              >
+                {LOG_LEVELS.map(l => (
+                  <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="workspace-control-group workspace-filter-list logs-sources">
@@ -450,12 +451,15 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
               <span className="workspace-filter-list__icon"><Icon name="logs" size={14} aria-hidden="true" /></span>
               <span className="workspace-filter-list__label">All sources</span><small className="workspace-filter-list__count">{logs.length}</small>
             </button>
-            {logSources.map(([tag, count]) => (
+            {logSources.sources.map(([tag, count]) => (
               <button key={tag} type="button" className={`workspace-filter-list__item${tagFilter === tag ? ' is-active' : ''}`} onClick={() => setTagFilter(tag)}>
                 <span className="workspace-filter-list__icon"><Icon name="terminal-square" size={14} aria-hidden="true" /></span>
                 <span className="workspace-filter-list__label">{tag}</span><small className="workspace-filter-list__count">{count}</small>
               </button>
             ))}
+            {logSources.hiddenCount > 0 && (
+              <p className="workspace-filter-list__note">{logSources.hiddenCount} less active {logSources.hiddenCount === 1 ? 'source' : 'sources'} not shown — search to find them.</p>
+            )}
           </div>
         </div>
 
@@ -487,15 +491,15 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
             </div>
             {embedded && (
               <WorkspaceActionButton
-                ref={mobileFiltersToggleRef}
+                ref={mobileFilters.triggerRef}
                 className="logs-filter-toggle"
                 appearance="secondary"
                 size="toolbar"
                 icon="funnel"
                 iconOnly
                 aria-label="Open log filters"
-                aria-expanded={mobileFiltersOpen}
-                onClick={() => mobileFiltersOpen ? closeMobileFilters() : setMobileFiltersOpen(true)}
+                aria-expanded={mobileFilters.isOpen}
+                onClick={mobileFilters.toggle}
               />
             )}
           </div>}

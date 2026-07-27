@@ -76,6 +76,10 @@ export default function WorkspaceSectionRail<Section extends string>({
               className={activeSection === section.id ? 'is-active' : ''}
               aria-current={activeSection === section.id ? 'page' : undefined}
               aria-label={section.label}
+              // aria-label keeps the name short and stable across the collapsed
+              // state; the description reaches assistive tech as a description
+              // rather than being swallowed by the label override.
+              aria-describedby={collapsed ? undefined : `${panelId}-${section.id}-description`}
               title={collapsed ? section.label : undefined}
               onClick={() => {
                 onSectionChange(section.id);
@@ -85,7 +89,7 @@ export default function WorkspaceSectionRail<Section extends string>({
               <span className="workspace-nav__icon"><Icon name={section.icon} size={15} aria-hidden="true" /></span>
               <span className="workspace-nav__copy">
                 <strong>{section.label}</strong>
-                <small>{section.description}</small>
+                <small id={`${panelId}-${section.id}-description`}>{section.description}</small>
               </span>
               <Icon className="workspace-nav__chevron" name="chevron-right" size={13} aria-hidden="true" />
             </button>

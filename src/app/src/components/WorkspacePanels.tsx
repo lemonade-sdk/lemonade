@@ -63,7 +63,7 @@ function flattenedMetadataChildren(children: React.ReactNode, parentKey = 'metad
 }
 
 export const WorkspaceMetadataGroup: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const orderedChildren = flattenedMetadataChildren(children)
+  const orderedChildren = React.useMemo(() => flattenedMetadataChildren(children)
     .map((child, index) => ({ child, index }))
     .sort((left, right) => {
       const leftEmphasis = React.isValidElement<WorkspaceMetadataChipProps>(left.child)
@@ -75,7 +75,7 @@ export const WorkspaceMetadataGroup: React.FC<{ children: React.ReactNode }> = (
       return METADATA_EMPHASIS_RANK[leftEmphasis] - METADATA_EMPHASIS_RANK[rightEmphasis]
         || left.index - right.index;
     })
-    .map(({ child }) => child);
+    .map(({ child }) => child), [children]);
 
   return <div className="workspace-detail-panel__metadata">{orderedChildren}</div>;
 };
@@ -92,12 +92,22 @@ function workspaceActionClassName(
   return `btn btn--${appearance} btn--${size} workspace-action-button workspace-action-button--${appearance} workspace-action-button--${size}${iconOnly ? ' btn--icon-only workspace-action-button--icon-only' : ''}${className ? ` ${className}` : ''}`;
 }
 
-interface WorkspaceActionButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface WorkspaceActionBase {
   appearance?: WorkspaceActionAppearance;
   size?: WorkspaceActionSize;
   icon?: IconName;
-  iconOnly?: boolean;
 }
+
+/* An icon-only control drops its children, so the accessible name has to come
+ * from somewhere else. Requiring aria-label here makes that structural instead
+ * of a review checklist item. */
+type WorkspaceActionLabelling =
+  | { iconOnly: true; 'aria-label': string }
+  | { iconOnly?: false };
+
+type WorkspaceActionButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement>
+  & WorkspaceActionBase
+  & WorkspaceActionLabelling;
 
 export const WorkspaceActionButton = React.forwardRef<HTMLButtonElement, WorkspaceActionButtonProps>(({
   appearance = 'secondary',
@@ -122,12 +132,9 @@ export const WorkspaceActionButton = React.forwardRef<HTMLButtonElement, Workspa
 
 WorkspaceActionButton.displayName = 'WorkspaceActionButton';
 
-interface WorkspaceActionLinkProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
-  appearance?: WorkspaceActionAppearance;
-  size?: WorkspaceActionSize;
-  icon?: IconName;
-  iconOnly?: boolean;
-}
+type WorkspaceActionLinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement>
+  & WorkspaceActionBase
+  & WorkspaceActionLabelling;
 
 export const WorkspaceActionLink: React.FC<WorkspaceActionLinkProps> = ({
   appearance = 'secondary',

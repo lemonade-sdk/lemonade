@@ -46,6 +46,20 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/01-app-loaded.png', fullPage: true });
   });
 
+  // The tray and CLI deep-link into the app with `?view=<workspace>/<section>`
+  // (tray_ui.cpp on_show_logs, cli/main.cpp logs). Those routes must resolve.
+  test('01a0 — host deep links address Dashboard sections directly', async ({ page }) => {
+    await page.goto('/?view=dashboard/logs');
+    await page.waitForSelector('[data-view="dashboard"]');
+    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+    await expect(page.getByRole('navigation', { name: 'Dashboard sections' })
+      .getByRole('button', { name: 'Logs', exact: true })).toHaveAttribute('aria-current', 'page');
+
+    await page.goto('/?view=dashboard/telemetry');
+    await page.waitForSelector('[data-view="dashboard"]');
+    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+  });
+
   test('01a — Dashboard labels and URL sections stay aligned', async ({ page }) => {
     await page.goto('/#/dashboard/telemetry');
     await page.waitForSelector('[data-view="dashboard"]');
@@ -78,7 +92,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
       ['Server', 'server'],
       ['Model storage', 'model-storage'],
       ['Cloud providers', 'cloud-providers'],
-      ['MCP Gateway', 'mcp-gateway'],
+      ['MCP gateway', 'mcp-gateway'],
       ['App directory', 'app-directory'],
       ['Help & support', 'help-and-support'],
     ] as const;
