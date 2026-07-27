@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { XIcon } from './Icons';
-import { useModels } from '../hooks/useModels';
-import { DownloadAbortError, ensureModelReady } from '../utils/backendInstaller';
 import { serverFetch } from '../utils/serverConfig';
 import { adjustTextareaHeight } from '../utils/textareaUtils';
 import {
@@ -21,14 +19,9 @@ interface RouterTestPromptPanelProps {
    * policyUnavailableReason for why. */
   policy: RoutingPolicyDoc | null;
   policyUnavailableReason: string | null;
-  /** Models /routing/validate will actually exercise to reach a decision
-   * (the llm router model, or classifier models) - ensured downloaded and
-   * loaded before each test, same as any other inference pre-flight. */
-  requiredModels: string[];
   /** Used to label the policy in trace/tree exports - there's no uploaded
    * filename here, since the policy comes from the live draft. */
   routerName: string;
-  showError: (message: string) => void;
   showSuccess: (message: string) => void;
   showWarning: (message: string) => void;
 }
@@ -81,9 +74,8 @@ function metadataEqual(a: Record<string, string>, b: Record<string, string>): bo
 }
 
 const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
-  policy, policyUnavailableReason, requiredModels, routerName, showError, showSuccess, showWarning,
+  policy, policyUnavailableReason, routerName, showSuccess, showWarning,
 }) => {
-  const { modelsData } = useModels();
   const [prompt, setPrompt] = useState('');
   const [imageFilename, setImageFilename] = useState<string | null>(null);
   const [imageThumbnailUrl, setImageThumbnailUrl] = useState<string | null>(null);
@@ -185,21 +177,6 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
     setIsValidating(true);
     setValidationError(null);
     try {
-      // Ensure every model this test will actually exercise (the llm router,
-      // or classifier models) is downloaded and loaded first - otherwise the
-      // classifier just fails open to the default model instead of testing
-      // the real decision. Reuses the same download pipeline (and Download
-      // Manager popup) as creating a router policy.
-      for (const modelName of requiredModels) {
-        if (requestId !== latestRequestIdRef.current) return;
-        // Load as a routing dependency (not user inference) so this preload
-        // lands in the same residency pool the real router uses, instead of
-        // competing with/evicting normal chat models - see LoadPurpose in
-        // model_residency.h.
-        await ensureModelReady(modelName, modelsData, { loadBody: { load_purpose: 'routing_dependency' } });
-      }
-      if (requestId !== latestRequestIdRef.current) return;
-
       const response = await serverFetch('/routing/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -242,7 +219,6 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
       );
     } catch (error) {
       if (requestId !== latestRequestIdRef.current) return;
-      if (error instanceof DownloadAbortError) return; // user paused/cancelled the download - not an error
       setValidationError(error instanceof Error ? error.message : 'Unknown error');
       setResult(null);
     } finally {
@@ -256,12 +232,18 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
   // what `result` was actually produced from - `policy` is compared by
   // reference, matching the abort-in-flight effect above (it's rebuilt via
   // useMemo in RouterCollectionPanel on every draft edit).
+  const { metadata: currentMetadata, error: currentMetadataError } = parseMetadataText(metadataText);
   const isResultOutdated = result !== null && (
     policy !== result.submittedPolicy ||
     prompt !== result.prompt ||
     hasImages !== result.hasImages ||
     hasTools !== result.hasTools ||
-    !metadataEqual(parseMetadataText(metadataText).metadata, result.metadata)
+    // A parse error can't have produced `result` (handleValidate bails out
+    // before submitting), so any current error - even one that also parses
+    // to `{}`, matching a prior valid empty-metadata result - always counts
+    // as a change.
+    currentMetadataError !== null ||
+    !metadataEqual(currentMetadata, result.metadata)
   );
 
   return (

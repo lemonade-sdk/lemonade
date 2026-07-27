@@ -5279,10 +5279,6 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         if (request_json.contains("pinned") && request_json["pinned"].is_boolean()) {
             pinned_opt = request_json["pinned"].get<bool>();
         }
-        LoadPurpose load_purpose = LoadPurpose::UserInference;
-        if (request_json.contains("load_purpose") && request_json["load_purpose"].is_string()) {
-            load_purpose = load_purpose_from_string(request_json["load_purpose"].get<std::string>());
-        }
 
         LOG(INFO, "Server") << "Ensuring model loaded: " << model_name;
         LOG(INFO, "Server") << " " << options.to_log_string(false);
@@ -5330,7 +5326,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             // differ)
             router_->load_model(model_name, info, options, true,
                                 /*allow_reload_on_option_change=*/true,
-                                pinned_opt, load_purpose);
+                                pinned_opt);
 
             // Return success response
             nlohmann::json response = {

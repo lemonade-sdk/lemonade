@@ -33,13 +33,6 @@ inline LoadPurpose load_purpose_for_residency_class(ResidencyClass residency_cla
         : LoadPurpose::UserInference;
 }
 
-// Unrecognized or missing values fall back to UserInference, so callers that
-// don't send this field (nearly all /load callers) keep today's behavior.
-inline LoadPurpose load_purpose_from_string(const std::string& value) {
-    return value == "routing_dependency" ? LoadPurpose::RoutingDependency
-                                          : LoadPurpose::UserInference;
-}
-
 inline std::string residency_class_to_string(ResidencyClass residency_class) {
     switch (residency_class) {
         case ResidencyClass::Standard:
