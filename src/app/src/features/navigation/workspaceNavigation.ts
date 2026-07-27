@@ -16,7 +16,7 @@ export function workspaceRouteLabel(routeSegment: string): string {
     .join(' ');
 }
 
-function defineSection<const Id extends string>(
+function defineSection<Id extends string>(
   id: Id,
   description: string,
   icon: IconName,
@@ -27,8 +27,8 @@ function defineSection<const Id extends string>(
 type DefinedSection = ReturnType<typeof defineSection>;
 
 function defineWorkspace<
-  const Id extends string,
-  const Sections extends readonly DefinedSection[],
+  Id extends string,
+  Sections extends readonly DefinedSection[],
 >(id: Id, sections: Sections): {
   id: Id;
   label: string;
