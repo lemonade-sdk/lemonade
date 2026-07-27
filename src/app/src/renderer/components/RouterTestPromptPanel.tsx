@@ -40,6 +40,11 @@ interface RouterTestPromptPanelProps {
 interface ValidationResult extends TraceRequestInputs {
   decision: DecisionResult;
   policy: RoutingPolicyDoc;
+  /** The exact policy object submitted for this result, kept distinct from
+   * `policy` (the server's evaluated/normalized policy used for decision-tree
+   * resolution) so staleness can be detected by reference against the live
+   * Builder-tab policy without disturbing tree rendering. */
+  submittedPolicy: RoutingPolicyDoc;
 }
 
 /**
@@ -65,6 +70,14 @@ function parseMetadataText(text: string): { metadata: Record<string, string>; er
     metadata[key] = value;
   }
   return { metadata, error: null };
+}
+
+/** Flat string-map equality, used to detect whether the metadata textarea
+ * has changed since a result was produced. */
+function metadataEqual(a: Record<string, string>, b: Record<string, string>): boolean {
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) return false;
+  return aKeys.every((k) => a[k] === b[k]);
 }
 
 const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
@@ -156,12 +169,19 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
 
   const handleValidate = async () => {
     if (!policy) return;
+    // Re-check synchronously rather than trusting metadataError - that state
+    // is only updated by an effect after metadataText changes, so it can lag
+    // a render behind and let an invalid edit slip through as a stale "valid".
+    const { metadata: submittedMetadata, error: metadataParseError } = parseMetadataText(metadataText);
+    if (metadataParseError) {
+      setMetadataError(metadataParseError);
+      return;
+    }
     const requestId = ++latestRequestIdRef.current;
     const submittedPrompt = prompt;
     const submittedPolicy = policy;
     const submittedHasImages = hasImages;
     const submittedHasTools = hasTools;
-    const { metadata: submittedMetadata } = parseMetadataText(metadataText);
     setIsValidating(true);
     setValidationError(null);
     try {
@@ -172,7 +192,11 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
       // Manager popup) as creating a router policy.
       for (const modelName of requiredModels) {
         if (requestId !== latestRequestIdRef.current) return;
-        await ensureModelReady(modelName, modelsData);
+        // Load as a routing dependency (not user inference) so this preload
+        // lands in the same residency pool the real router uses, instead of
+        // competing with/evicting normal chat models - see LoadPurpose in
+        // model_residency.h.
+        await ensureModelReady(modelName, modelsData, { loadBody: { load_purpose: 'routing_dependency' } });
       }
       if (requestId !== latestRequestIdRef.current) return;
 
@@ -204,6 +228,7 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
       setResult({
         decision: newDecision,
         policy: evaluatedPolicy,
+        submittedPolicy,
         prompt: submittedPrompt,
         hasImages: submittedHasImages,
         hasTools: submittedHasTools,
@@ -226,6 +251,18 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
       }
     }
   };
+
+  // True once any input that could change the decision has diverged from
+  // what `result` was actually produced from - `policy` is compared by
+  // reference, matching the abort-in-flight effect above (it's rebuilt via
+  // useMemo in RouterCollectionPanel on every draft edit).
+  const isResultOutdated = result !== null && (
+    policy !== result.submittedPolicy ||
+    prompt !== result.prompt ||
+    hasImages !== result.hasImages ||
+    hasTools !== result.hasTools ||
+    !metadataEqual(parseMetadataText(metadataText).metadata, result.metadata)
+  );
 
   return (
     <div className="router-test-prompt-panel">
@@ -330,6 +367,11 @@ const RouterTestPromptPanel: React.FC<RouterTestPromptPanelProps> = ({
 
       {result && (
         <div className="router-test-prompt-results">
+          {isResultOutdated && (
+            <div className="router-test-prompt-unavailable">
+              This result is outdated — the prompt, flags, metadata, or policy have changed since this test ran.
+            </div>
+          )}
           <div className="router-test-prompt-summary">
             {result.decision.default_used
               ? <>Routed to <b>{result.decision.route_to}</b> (default fallback — no rule matched)</>

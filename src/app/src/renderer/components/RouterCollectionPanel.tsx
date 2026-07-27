@@ -579,17 +579,30 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   [modelsData]);
 
   // Live structural validity + a testable policy for the Test Prompt tab,
-  // recomputed from the draft as the user edits - no explicit "build" step,
-  // and no dependency on the save-time-only lossyAcknowledged gate.
+  // recomputed from the draft as the user edits - no explicit "build" step.
+  // Testing is blocked (with its own reason below) when the draft has lossy
+  // rules, independent of the save-time lossyAcknowledged checkbox gate.
   const structuralError = useMemo(() => validateRouterDraftStructure(draft), [draft]);
+  const hasLossyRules = (draft.lossyRuleIds?.length ?? 0) > 0;
   const testPolicy = useMemo<RoutingPolicyDoc | null>(() => {
-    if (structuralError) return null;
+    if (structuralError || hasLossyRules) return null;
     try {
       return buildRouterCollectionPullRequest(draft) as unknown as RoutingPolicyDoc;
     } catch {
       return null;
     }
-  }, [draft, structuralError]);
+  }, [draft, structuralError, hasLossyRules]);
+  // A policy loaded with conditions the editor can't represent (e.g. metadata)
+  // has already had those conditions dropped from the reconstructed draft -
+  // testing it would validate a reduced policy that no longer matches what's
+  // saved on the server, so block it here rather than in testPolicy alone
+  // (which just returns null; this supplies the user-facing explanation).
+  const testUnavailableReason = structuralError ?? (hasLossyRules
+    ? `Rule${draft.lossyRuleIds!.length > 1 ? 's' : ''} ${draft.lossyRuleIds!.map(id => `"${id}"`).join(', ')} ` +
+      `contain conditions this editor can't display (e.g. metadata). Testing would validate a reduced ` +
+      `policy that no longer matches what's saved on the server, so it's disabled until those rules are ` +
+      `resolved or you save with the conditions removed.`
+    : null);
 
   // Only the models /routing/validate actually exercises to produce a
   // decision - the llm router model, or the classifier models in rules/quick
@@ -987,7 +1000,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           testPrompt={
             <RouterTestPromptPanel
               policy={testPolicy}
-              policyUnavailableReason={structuralError}
+              policyUnavailableReason={testUnavailableReason}
               requiredModels={requiredTestModels}
               routerName={draft.name.trim() || 'Untitled Router'}
               showError={showError}

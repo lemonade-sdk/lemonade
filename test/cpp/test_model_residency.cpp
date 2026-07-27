@@ -10,6 +10,7 @@ using lemon::LoadPurpose;
 using lemon::ModelType;
 using lemon::ResidencyClass;
 using lemon::load_purpose_for_residency_class;
+using lemon::load_purpose_from_string;
 using lemon::residency_class_for_load_purpose;
 using lemon::residency_class_to_string;
 using lemon::residency_limit;
@@ -34,6 +35,14 @@ int main() {
     check("routing helper round-trips to routing dependency",
           load_purpose_for_residency_class(ResidencyClass::RoutingHelper) ==
               LoadPurpose::RoutingDependency);
+
+    check("\"routing_dependency\" string parses to routing dependency",
+          load_purpose_from_string("routing_dependency") ==
+              LoadPurpose::RoutingDependency);
+    check("unknown load purpose string falls back to user inference",
+          load_purpose_from_string("bogus") == LoadPurpose::UserInference);
+    check("empty load purpose string falls back to user inference",
+          load_purpose_from_string("") == LoadPurpose::UserInference);
 
     check("standard pool honors configured limit",
           residency_limit(ResidencyClass::Standard, 3) == 3);
