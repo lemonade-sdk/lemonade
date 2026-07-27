@@ -374,14 +374,15 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
 
     // When a router collection is added, edited, or removed (via the API or an
     // on-disk edit), reclaim any routing helper no remaining policy references.
-    model_manager_->set_models_changed_callback([this]() {
-        router_->reconcile_routing_helpers(active_policy_helper_models());
+    model_manager_->set_models_changed_callback([this](uint64_t generation) {
+        router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
     });
 
     // Seed the router's needed-helper set from policies already present at
     // startup so a helper loaded before the first policy change still validates
     // against an authoritative set (see Router::load_model).
-    router_->reconcile_routing_helpers(active_policy_helper_models());
+    router_->reconcile_routing_helpers(active_policy_helper_models(),
+                                       model_manager_->next_notify_generation());
 
     {
         lemon::jobs::OpProviders providers;

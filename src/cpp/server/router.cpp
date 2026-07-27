@@ -331,18 +331,29 @@ bool Router::ensure_loaded_model_residency(
     return true;
 }
 
-void Router::reconcile_routing_helpers(const std::set<std::string>& needed_helper_models) {
+void Router::reconcile_routing_helpers(const std::set<std::string>& needed_helper_models,
+                                       uint64_t generation) {
     // Canonicalize the policy-authored names outside the lock so they match the
     // (already-canonical) live WrappedServer::get_model_name() during eviction.
     std::set<std::string> needed;
     for (const auto& model : needed_helper_models) {
         needed.insert(resolve_model_name(model));
     }
-    apply_routing_helper_reconcile(std::move(needed));
+    apply_routing_helper_reconcile(std::move(needed), generation);
 }
 
-void Router::apply_routing_helper_reconcile(std::set<std::string> needed) {
+void Router::apply_routing_helper_reconcile(std::set<std::string> needed, uint64_t generation) {
     std::unique_lock<std::mutex> lock(load_mutex_);
+
+    // Discard a notification that lost a race to a newer one. Policy callbacks can
+    // run concurrently and finish out of order; republishing an older set would
+    // resurrect helpers a newer policy already dropped (or drop ones it re-added).
+    // The newest generation always carries the final registry state, so keeping
+    // only the highest generation converges on the authoritative set.
+    if (generation <= last_reconcile_generation_) {
+        return;
+    }
+    last_reconcile_generation_ = generation;
 
     // Publish the authoritative set immediately, even while a load is in flight.
     // A helper's backend loads with load_mutex_ released, so a concurrent load
@@ -371,15 +382,25 @@ void Router::prune_stale_routing_helpers_locked() {
             server->get_residency_class() != ResidencyClass::RoutingHelper) {
             continue;
         }
+        std::string name = server->get_model_name();
         // A user pin is an explicit "keep" and outranks policy-churn reclamation.
-        // A busy helper is skipped so this never blocks on an eviction timeout;
-        // the next prune reclaims it once idle.
-        if (server->is_pinned() || server->is_busy()) {
+        if (server->is_pinned()) {
+            server->clear_pending_stale();
             continue;
         }
-        if (needed_helper_models_.count(server->get_model_name()) == 0) {
-            stale.push_back(server.get());
+        if (needed_helper_models_.count(name) != 0) {
+            // Referenced again (e.g. a policy re-added it): cancel any pending
+            // release-triggered reclaim.
+            server->clear_pending_stale();
+            continue;
         }
+        if (server->is_busy()) {
+            // Evicting now would block on the request drain; instead arrange for
+            // the helper to self-reclaim the moment its last request releases.
+            server->mark_pending_stale([this, name] { reclaim_stale_helper_if_idle(name); });
+            continue;
+        }
+        stale.push_back(server.get());
     }
 
     for (auto* server : stale) {
@@ -389,16 +410,58 @@ void Router::prune_stale_routing_helpers_locked() {
     }
 }
 
+void Router::reclaim_stale_helper_if_idle(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+
+    // A load or exclusive session owns residency decisions right now; leave the
+    // helper marked pending-stale so the subsequent prune reclaims it instead.
+    if (is_loading_ || exclusive_active_) {
+        return;
+    }
+
+    WrappedServer* server = find_server_by_model_name(model_name);
+    if (!server || !server->is_backend_alive() ||
+        server->get_residency_class() != ResidencyClass::RoutingHelper) {
+        return;
+    }
+
+    // Rescued by a pin or referenced again by a policy change since we marked it.
+    if (!routing_helper_no_longer_needed(model_name, ResidencyClass::RoutingHelper,
+                                         server->is_pinned())) {
+        server->clear_pending_stale();
+        return;
+    }
+
+    // Mark EVICTING then atomically confirm still idle. A request that slipped in
+    // between the release and here rescues the model (try_commit_eviction returns
+    // false), leaving it loaded and still pending-stale for the next release.
+    server->set_state(ModelState::EVICTING);
+    if (!server->try_commit_eviction()) {
+        return;
+    }
+    server->clear_pending_stale();
+    LOG(INFO, "Router") << "Routing helper " << model_name
+                        << " released and referenced by no active policy, evicting" << std::endl;
+    evict_server(server);
+}
+
+bool Router::routing_helper_no_longer_needed(const std::string& canonical_model_name,
+                                             ResidencyClass requested_residency_class,
+                                             bool pinned) const {
+    // Only routing helpers are subject to policy churn; a pin is an explicit
+    // "keep" that outranks it. Any other backend is never considered stale.
+    if (requested_residency_class != ResidencyClass::RoutingHelper || pinned) {
+        return false;
+    }
+    return needed_helper_models_.count(canonical_model_name) == 0;
+}
+
 bool Router::may_commit_loaded_server(const WrappedServer& server,
                                       const std::string& canonical_model_name,
                                       ResidencyClass requested_residency_class) const {
-    // Only routing helpers are subject to policy churn; a pin is an explicit
-    // "keep" that outranks it. Any other backend always commits.
-    if (requested_residency_class != ResidencyClass::RoutingHelper ||
-        server.is_pinned()) {
-        return true;
-    }
-    return needed_helper_models_.count(canonical_model_name) != 0;
+    return !routing_helper_no_longer_needed(canonical_model_name,
+                                            requested_residency_class,
+                                            server.is_pinned());
 }
 
 bool Router::has_npu_server() const {
@@ -702,6 +765,20 @@ void Router::load_model(const std::string& model_name,
         // reconcile). Cheap and non-blocking; runs before every load path.
         prune_stale_routing_helpers_locked();
 
+        // If this load is itself for a routing helper the active policies no
+        // longer reference, abandon it now — before any destructive side effect
+        // (NPU/FLM eviction, capacity making room, or the nuclear retry below).
+        // Committing it would only be undone at load-completion anyway.
+        if (routing_helper_no_longer_needed(canonical_model_name,
+                                            requested_residency_class, final_pinned)) {
+            LOG(INFO, "Router") << "Skipping load of routing helper "
+                                << canonical_model_name
+                                << "; referenced by no active policy" << std::endl;
+            is_loading_ = false;
+            load_cv_.notify_all();
+            return;
+        }
+
         // Check if model is already loaded. Watchdog-reset or otherwise dead
         // entries are evicted first so auto-load performs a real lazy restart.
         WrappedServer* existing = find_server_by_model_name(canonical_model_name);
@@ -924,6 +1001,18 @@ void Router::load_model(const std::string& model_name,
             if (is_file_not_found) {
                 LOG(ERROR, "Router") << "File not found error, NOT evicting other models" << std::endl;
                 throw std::runtime_error(error_message);
+            }
+
+            // A policy change may have dropped this helper during the failed
+            // load. Don't unleash the nuclear eviction on behalf of a backend we
+            // would immediately discard at commit time anyway.
+            if (routing_helper_no_longer_needed(canonical_model_name,
+                                                requested_residency_class, final_pinned)) {
+                LOG(INFO, "Router") << "Routing helper " << canonical_model_name
+                          << " no longer referenced by any active policy; "
+                          << "abandoning nuclear retry" << std::endl;
+                load_cv_.notify_all();
+                return;
             }
 
             // Nuclear option: evict all models and retry

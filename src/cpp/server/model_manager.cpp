@@ -968,9 +968,13 @@ void ModelManager::invalidate_models_cache() {
     cache_valid_ = false;
 }
 
-void ModelManager::set_models_changed_callback(std::function<void()> cb) {
+void ModelManager::set_models_changed_callback(std::function<void(uint64_t)> cb) {
     std::lock_guard<std::mutex> lock(models_changed_callback_mutex_);
     models_changed_callback_ = std::move(cb);
+}
+
+uint64_t ModelManager::next_notify_generation() {
+    return ++notify_generation_;
 }
 
 void ModelManager::notify_models_changed() {
@@ -980,7 +984,7 @@ void ModelManager::notify_models_changed() {
     if (in_notify) {
         return;
     }
-    std::function<void()> cb;
+    std::function<void(uint64_t)> cb;
     {
         std::lock_guard<std::mutex> lock(models_changed_callback_mutex_);
         cb = models_changed_callback_;
@@ -992,16 +996,17 @@ void ModelManager::notify_models_changed() {
     struct ResetGuard {
         ~ResetGuard() { in_notify = false; }
     } reset_guard;
-    // Serialize the full callback execution so two concurrent registry updates
-    // cannot compute snapshots in parallel and publish them out of order (an
-    // older snapshot overwriting a newer authoritative one). The in_notify guard
-    // above already blocks same-thread re-entry, so this never self-deadlocks.
-    std::lock_guard<std::mutex> exec_lock(notify_execution_mutex_);
+    // Tag this notification with a monotonic generation. Two concurrent registry
+    // updates may run their callbacks in parallel and publish out of order; the
+    // consumer keeps only the highest generation instead of us serializing the
+    // whole (potentially blocking) callback here, which would stall a newer
+    // update behind an older one.
+    const uint64_t generation = ++notify_generation_;
     // Best-effort: a notification must never abort the registry mutation that
     // triggered it. delete_model fires this from a scope-guard destructor, where
     // a propagating exception would call std::terminate.
     try {
-        cb();
+        cb(generation);
     } catch (const std::exception& e) {
         LOG(WARNING, "ModelManager") << "models-changed callback threw: " << e.what() << std::endl;
     } catch (...) {

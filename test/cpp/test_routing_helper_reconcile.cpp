@@ -22,6 +22,7 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <memory>
 #include <set>
@@ -82,9 +83,11 @@ struct RoutingHelperTestHook {
     // Drive the production reconcile core directly. Names are pre-canonicalized
     // (the test never touches ModelManager::resolve_model_name, which reads the
     // cache dir), so this exercises the real publish-then-prune transition a
-    // policy change triggers — not the prune in isolation.
+    // policy change triggers — not the prune in isolation. Each call carries a
+    // strictly increasing generation, matching the production ordering guard.
     static void reconcile(Router& r, std::set<std::string> needed) {
-        r.apply_routing_helper_reconcile(std::move(needed));
+        static std::atomic<uint64_t> generation{0};
+        r.apply_routing_helper_reconcile(std::move(needed), ++generation);
     }
 
     static bool has_helper(Router& r, const std::string& model_name) {
@@ -185,6 +188,37 @@ static void test_busy_helper_reclaimed_when_idle(Router& router) {
           survived_while_busy && reclaimed_when_idle);
 }
 
+// Reviewer's guaranteed-lifecycle ask: a helper busy at policy-change time must
+// be reclaimed the moment its last request releases it, WITHOUT any follow-up
+// reconcile. prune marks it pending-stale; release_inference then hands it to
+// the reclaim on a background thread (a helper must never be unloaded on its own
+// release call stack).
+static void test_busy_helper_reclaimed_on_release(Router& router) {
+    StubWrappedServer* helper =
+        RoutingHelperTestHook::add_server(router, make_helper("release.helper"));
+    // An in-flight request holds the helper busy via the real request counter.
+    helper->acquire_for_inference();
+
+    RoutingHelperTestHook::reconcile(router, {});
+    bool survived_while_busy = RoutingHelperTestHook::has_helper(router, "release.helper");
+
+    // The final request releases; no second reconcile. The helper self-reclaims
+    // on a background thread, so poll for the eviction to land.
+    helper->release_inference();
+
+    bool reclaimed = false;
+    for (int i = 0; i < 200; ++i) {
+        if (!RoutingHelperTestHook::has_helper(router, "release.helper")) {
+            reclaimed = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    check("busy stale routing helper self-reclaims on final release (no reconcile)",
+          survived_while_busy && reclaimed);
+}
+
 // Policy update racing a helper toggling busy/idle plus concurrent reconcile
 // passes. The needed-set always includes the helper during the concurrent phase
 // so it is never evicted (avoiding a use-after-free on the raw pointer the
@@ -250,6 +284,7 @@ int main() {
         test_pinned_stale_helper_survives(router);
         test_standard_model_untouched(router);
         test_busy_helper_reclaimed_when_idle(router);
+        test_busy_helper_reclaimed_on_release(router);
         test_concurrent_policy_update(router);
     }
 

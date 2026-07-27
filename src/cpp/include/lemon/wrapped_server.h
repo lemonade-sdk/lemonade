@@ -205,13 +205,48 @@ public:
     }
 
     void release_inference() {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        // Note: is_streaming_ is managed by end_backend_request() which correctly
-        // clears the flag only when the last streaming request completes.
-        if (--active_request_count_ == 0) {
-            state_ = ModelState::READY;
-            state_cv_.notify_all();
+        std::function<void()> on_idle;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            // Note: is_streaming_ is managed by end_backend_request() which correctly
+            // clears the flag only when the last streaming request completes.
+            if (--active_request_count_ == 0) {
+                state_ = ModelState::READY;
+                state_cv_.notify_all();
+                // A routing helper dropped by a policy change while it was busy was
+                // left resident (evicting it then would block on this very request).
+                // Now idle, hand it to the reclaim callback.
+                if (pending_stale_) {
+                    on_idle = pending_stale_reclaim_;
+                }
+            }
         }
+        // Run the reclaim on a detached thread, never on this release call stack:
+        // reclaim may unload and destroy this very object, which must not happen
+        // while a member function of it is still executing. The callback re-looks
+        // the server up by name and re-validates under the router lock, so a raced
+        // concurrent eviction or a new request is a safe no-op.
+        if (on_idle) {
+            std::thread(std::move(on_idle)).detach();
+        }
+    }
+
+    // Mark this routing helper as no longer referenced by any active policy while
+    // it is busy. The stored callback is invoked (on a separate thread) the moment
+    // the last in-flight request releases the model, so a busy helper is still
+    // reclaimed without a follow-up reconcile. Idempotent.
+    void mark_pending_stale(std::function<void()> on_idle_reclaim) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        pending_stale_ = true;
+        pending_stale_reclaim_ = std::move(on_idle_reclaim);
+    }
+
+    // Cancel a pending release-triggered reclaim, e.g. because a policy change
+    // referenced the helper again.
+    void clear_pending_stale() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        pending_stale_ = false;
+        pending_stale_reclaim_ = nullptr;
     }
 
     // Called by the eviction engine (under the router lock) to atomically claim an
@@ -540,6 +575,11 @@ protected:
     // from being unloaded/destroyed while the engine holds a raw pointer to it.
     bool maintenance_in_progress_;
     bool is_streaming_ = false;
+    // Set when this routing helper was dropped by a policy change while busy;
+    // pending_stale_reclaim_ is invoked once the last request releases it. Both
+    // are guarded by state_mutex_.
+    bool pending_stale_ = false;
+    std::function<void()> pending_stale_reclaim_;
     long load_duration_ms_;
     bool pinned_ = false;
     std::atomic<bool>* load_cancel_ = nullptr;

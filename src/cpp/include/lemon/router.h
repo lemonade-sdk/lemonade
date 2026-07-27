@@ -97,8 +97,12 @@ public:
     // against it at load-completion (see load_model), making reconciliation
     // durable rather than a one-time snapshot; only the eviction pass is deferred
     // to a safe point. Pinned and busy helpers are left resident; a busy helper
-    // is reclaimed by a later reconcile once it goes idle.
-    void reconcile_routing_helpers(const std::set<std::string>& needed_helper_models);
+    // is marked pending-stale and reclaimed the moment its last request releases
+    // (see WrappedServer::release_inference), or by a later reconcile.
+    // The generation orders concurrent policy notifications: an older generation
+    // arriving after a newer one is ignored so it cannot republish a stale set.
+    void reconcile_routing_helpers(const std::set<std::string>& needed_helper_models,
+                                   uint64_t generation);
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
@@ -210,6 +214,9 @@ private:
     // Guarded by load_mutex_; the authoritative snapshot a freshly loaded helper
     // validates itself against and a prune pass reclaims against.
     std::set<std::string> needed_helper_models_;
+    // Highest policy-notification generation applied to needed_helper_models_.
+    // Guarded by load_mutex_; an out-of-order (older) reconcile is ignored.
+    uint64_t last_reconcile_generation_ = 0;
 
     bool exclusive_active_ = false;
     std::thread::id exclusive_owner_;
@@ -248,11 +255,24 @@ private:
     // then defer the eviction pass until no load holds the slot. Split out from
     // reconcile_routing_helpers so the set is visible to a mid-load helper's
     // load-completion validation even while is_loading_ is still true.
-    void apply_routing_helper_reconcile(std::set<std::string> needed);
+    void apply_routing_helper_reconcile(std::set<std::string> needed, uint64_t generation);
     // Evict idle, unpinned routing helpers whose model is not in
-    // needed_helper_models_. Skips busy helpers (reclaimed on a later pass) so it
-    // never blocks a caller on an eviction timeout. Caller holds load_mutex_.
+    // needed_helper_models_. A busy not-needed helper is marked pending-stale so
+    // it self-reclaims on its final release instead of blocking this pass on an
+    // eviction timeout. Caller holds load_mutex_.
     void prune_stale_routing_helpers_locked();
+    // Whether a routing helper of the given residency/pin state is no longer
+    // referenced by any active policy (absent from needed_helper_models_). Non
+    // routing-helper and pinned models are never considered stale. Caller holds
+    // load_mutex_.
+    bool routing_helper_no_longer_needed(const std::string& canonical_model_name,
+                                         ResidencyClass requested_residency_class,
+                                         bool pinned) const;
+    // Release-triggered reclaim: unload a pending-stale routing helper once its
+    // last request drains. Looks the server up by name (never a captured raw
+    // pointer) and re-validates staleness under load_mutex_, so it is safe to
+    // call from a thread other than the one that ran release_inference.
+    void reclaim_stale_helper_if_idle(const std::string& model_name);
     // Whether a freshly loaded backend may be committed to loaded_servers_. A
     // routing helper whose backend finished starting after a policy change
     // dropped it must be discarded rather than leaked; shared by the initial
