@@ -145,7 +145,14 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
 
     RoutePolicy policy;
     try {
-        policy = lemon::parse_route_policy_collection(load_json_file(case_dir / "policy.json"));
+        const json policy_json = load_json_file(case_dir / "policy.json");
+        const std::string directory_version = case_dir.parent_path().filename().string();
+        if (!policy_json.contains("version") || !policy_json["version"].is_string() ||
+            policy_json["version"].get<std::string>() != directory_version) {
+            check(rel + ": policy version matches schema-major directory", false);
+            return 0;
+        }
+        policy = lemon::parse_route_policy_collection(policy_json);
     } catch (const std::exception& e) {
         check(rel + ": policy.json parses", false);
         std::printf("  %s\n", e.what());
