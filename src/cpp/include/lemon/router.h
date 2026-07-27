@@ -93,10 +93,11 @@ public:
     // Record the authoritative set of routing-helper models the active policies
     // need resident (the union across all active policies, as policy-authored
     // names — resolved internally), then reclaim any live helper no longer in
-    // it. The set is retained so a helper that finishes loading after this call
-    // can validate itself (see load_model), making reconciliation durable rather
-    // than a one-time snapshot. Pinned and busy helpers are left resident; a busy
-    // helper is reclaimed by a later prune once it goes idle.
+    // it. The set is published immediately so a helper still mid-load validates
+    // against it at load-completion (see load_model), making reconciliation
+    // durable rather than a one-time snapshot; only the eviction pass is deferred
+    // to a safe point. Pinned and busy helpers are left resident; a busy helper
+    // is reclaimed by a later reconcile once it goes idle.
     void reconcile_routing_helpers(const std::set<std::string>& needed_helper_models);
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
@@ -243,6 +244,11 @@ private:
     void evict_all_npu_servers();
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
+    // Publish the (already-canonicalized) needed-helper set under load_mutex_,
+    // then defer the eviction pass until no load holds the slot. Split out from
+    // reconcile_routing_helpers so the set is visible to a mid-load helper's
+    // load-completion validation even while is_loading_ is still true.
+    void apply_routing_helper_reconcile(std::set<std::string> needed);
     // Evict idle, unpinned routing helpers whose model is not in
     // needed_helper_models_. Skips busy helpers (reclaimed on a later pass) so it
     // never blocks a caller on an eviction timeout. Caller holds load_mutex_.

@@ -166,7 +166,7 @@ struct ConstCondition : Condition {
 // them to resolve condition `label` refs.
 struct LabeledClassifier : Classifier {
     LabeledClassifier()
-        : Classifier("pii", "classifier", OnError::MatchTrue,
+        : Classifier("pii", "classifier", OnError::MatchTrue, "test-labeled-model",
                      {"PII", "NO_PII"}, std::string("PII")) {}
     Score evaluate(const ClassifierContext&) const override {
         Score s;
@@ -178,7 +178,8 @@ struct LabeledClassifier : Classifier {
 // A label-less classifier: declares no labels and returns a single score, read
 // via primary().
 struct SingleScoreClassifier : Classifier {
-    SingleScoreClassifier() : Classifier("single", "classifier", OnError::MatchFalse) {}
+    SingleScoreClassifier()
+        : Classifier("single", "classifier", OnError::MatchFalse, "test-single-model") {}
     Score evaluate(const ClassifierContext&) const override {
         Score s;
         s.labels["POSITIVE"] = 0.5;

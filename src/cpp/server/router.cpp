@@ -338,18 +338,28 @@ void Router::reconcile_routing_helpers(const std::set<std::string>& needed_helpe
     for (const auto& model : needed_helper_models) {
         needed.insert(resolve_model_name(model));
     }
+    apply_routing_helper_reconcile(std::move(needed));
+}
 
+void Router::apply_routing_helper_reconcile(std::set<std::string> needed) {
     std::unique_lock<std::mutex> lock(load_mutex_);
+
+    // Publish the authoritative set immediately, even while a load is in flight.
+    // A helper's backend loads with load_mutex_ released, so a concurrent load
+    // re-acquires the lock at completion and validates against this fresh set
+    // (see load_model) — closing the load-versus-policy-change race without a
+    // timer. Deferring the publish behind the wait below would let that load
+    // commit an already-obsolete helper.
+    needed_helper_models_ = std::move(needed);
+
+    // Only the eviction pass must wait for a quiet slot: evict_server mutates
+    // loaded_servers_ and blocks on request drain, neither of which is safe to
+    // interleave with an in-flight load.
     load_cv_.wait(lock, [&] {
         return !is_loading_ &&
                (!exclusive_active_ ||
                 exclusive_owner_ == std::this_thread::get_id());
     });
-
-    // Retain the authoritative set: a helper still mid-load (its backend starts
-    // with load_mutex_ released) validates against this when it completes, and a
-    // helper busy during this pass is reclaimed by a later prune.
-    needed_helper_models_ = std::move(needed);
     prune_stale_routing_helpers_locked();
 }
 

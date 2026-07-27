@@ -1,9 +1,12 @@
 // Concurrency/residency test for routing-helper reconciliation.
 //
 // Exercises the durable-reconciliation core the router uses to reclaim routing
-// helpers when a collection's policy changes: the stored needed-set, the
+// helpers when a collection's policy changes: the published needed-set, the
 // non-blocking prune that skips busy/pinned helpers, and thread-safety of a
-// policy update racing a helper going busy/idle.
+// policy update racing a helper going busy/idle. Cases drive the production
+// reconcile entry (apply_routing_helper_reconcile) rather than the prune in
+// isolation, so a busy helper is reclaimed by a subsequent policy reconcile once
+// idle — the real transition, not a hand-invoked second prune.
 //
 // The full load_model interleaving (the load-completion validation guard) is an
 // integration concern: it needs a real ModelManager (reads server_models.json),
@@ -76,14 +79,12 @@ struct RoutingHelperTestHook {
         return raw;
     }
 
-    static void set_needed(Router& r, std::set<std::string> needed) {
-        std::lock_guard<std::mutex> lock(r.load_mutex_);
-        r.needed_helper_models_ = std::move(needed);
-    }
-
-    static void prune(Router& r) {
-        std::lock_guard<std::mutex> lock(r.load_mutex_);
-        r.prune_stale_routing_helpers_locked();
+    // Drive the production reconcile core directly. Names are pre-canonicalized
+    // (the test never touches ModelManager::resolve_model_name, which reads the
+    // cache dir), so this exercises the real publish-then-prune transition a
+    // policy change triggers — not the prune in isolation.
+    static void reconcile(Router& r, std::set<std::string> needed) {
+        r.apply_routing_helper_reconcile(std::move(needed));
     }
 
     static bool has_helper(Router& r, const std::string& model_name) {
@@ -135,17 +136,15 @@ static std::unique_ptr<StubWrappedServer> make_standard(const std::string& name)
 
 static void test_stale_idle_helper_evicted(Router& router) {
     RoutingHelperTestHook::add_server(router, make_helper("stale.helper"));
-    RoutingHelperTestHook::set_needed(router, {});
-    RoutingHelperTestHook::prune(router);
-    check("stale idle routing helper is evicted by prune",
+    RoutingHelperTestHook::reconcile(router, {});
+    check("stale idle routing helper is evicted on policy change",
           !RoutingHelperTestHook::has_helper(router, "stale.helper"));
 }
 
 static void test_needed_helper_survives(Router& router) {
     RoutingHelperTestHook::add_server(router, make_helper("kept.helper"));
-    RoutingHelperTestHook::set_needed(router, {"kept.helper"});
-    RoutingHelperTestHook::prune(router);
-    check("routing helper still referenced by a policy survives prune",
+    RoutingHelperTestHook::reconcile(router, {"kept.helper"});
+    check("routing helper still referenced by a policy survives reconcile",
           RoutingHelperTestHook::has_helper(router, "kept.helper"));
 }
 
@@ -153,53 +152,51 @@ static void test_pinned_stale_helper_survives(Router& router) {
     auto helper = make_helper("pinned.helper");
     helper->set_pinned(true);
     RoutingHelperTestHook::add_server(router, std::move(helper));
-    RoutingHelperTestHook::set_needed(router, {});
-    RoutingHelperTestHook::prune(router);
-    check("user-pinned stale routing helper survives prune",
+    RoutingHelperTestHook::reconcile(router, {});
+    check("user-pinned stale routing helper survives reconcile",
           RoutingHelperTestHook::has_helper(router, "pinned.helper"));
 }
 
 static void test_standard_model_untouched(Router& router) {
     RoutingHelperTestHook::add_server(router, make_standard("user.model"));
-    RoutingHelperTestHook::set_needed(router, {});
-    RoutingHelperTestHook::prune(router);
-    check("standard (non-helper) model is never reclaimed by helper prune",
+    RoutingHelperTestHook::reconcile(router, {});
+    check("standard (non-helper) model is never reclaimed by reconcile",
           RoutingHelperTestHook::has_any_model(router, "user.model"));
 }
 
 // Reviewer's busy-helper concern: a helper busy during the policy change is
-// skipped (never blocks on an eviction timeout) and durably reclaimed on the
-// next prune once it goes idle.
+// skipped (never blocks on an eviction timeout) and durably reclaimed by the
+// next policy reconcile once it goes idle.
 static void test_busy_helper_reclaimed_when_idle(Router& router) {
     StubWrappedServer* helper =
         RoutingHelperTestHook::add_server(router, make_helper("busy.helper"));
     helper->set_busy(true);
-    RoutingHelperTestHook::set_needed(router, {});
 
-    RoutingHelperTestHook::prune(router);
+    RoutingHelperTestHook::reconcile(router, {});
     bool survived_while_busy = RoutingHelperTestHook::has_helper(router, "busy.helper");
 
+    // The request finishes, then a later policy reconcile reclaims the now-idle
+    // helper (reloading the policy is the durable reclamation path).
     helper->set_busy(false);
-    RoutingHelperTestHook::prune(router);
+    RoutingHelperTestHook::reconcile(router, {});
     bool reclaimed_when_idle = !RoutingHelperTestHook::has_helper(router, "busy.helper");
 
-    check("busy stale routing helper survives prune, reclaimed once idle",
+    check("busy stale routing helper survives, reclaimed by later reconcile once idle",
           survived_while_busy && reclaimed_when_idle);
 }
 
-// Policy update racing a helper toggling busy/idle plus concurrent prune passes.
-// The needed-set always includes the helper during the concurrent phase so it is
-// never evicted (avoiding a use-after-free on the raw pointer the busy-toggler
-// holds); the assertion is that nothing deadlocks or crashes and the helper is
-// still resident. A final single-threaded prune with an empty needed-set then
+// Policy update racing a helper toggling busy/idle plus concurrent reconcile
+// passes. The needed-set always includes the helper during the concurrent phase
+// so it is never evicted (avoiding a use-after-free on the raw pointer the
+// busy-toggler holds); the assertion is that nothing deadlocks or crashes and
+// the helper is still resident. A final reconcile with an empty needed-set then
 // confirms it is reclaimed once idle.
 static void test_concurrent_policy_update(Router& router) {
     StubWrappedServer* helper =
         RoutingHelperTestHook::add_server(router, make_helper("race.helper"));
-    RoutingHelperTestHook::set_needed(router, {"race.helper"});
+    RoutingHelperTestHook::reconcile(router, {"race.helper"});
 
     constexpr int kIterations = 2000;
-    std::atomic<bool> stop{false};
 
     std::thread busy_toggler([&] {
         for (int i = 0; i < kIterations; ++i) {
@@ -208,40 +205,31 @@ static void test_concurrent_policy_update(Router& router) {
         helper->set_busy(false);
     });
 
-    std::vector<std::thread> pruners;
+    std::vector<std::thread> policy_writers;
     for (int t = 0; t < 3; ++t) {
-        pruners.emplace_back([&] {
-            while (!stop.load()) {
-                RoutingHelperTestHook::prune(router);
+        policy_writers.emplace_back([&, t] {
+            for (int i = 0; i < kIterations; ++i) {
+                // Always keep race.helper needed so no reconcile evicts it mid-race.
+                RoutingHelperTestHook::reconcile(
+                    router, {"race.helper", "churn." + std::to_string((i + t) % 8)});
             }
         });
     }
 
-    std::thread policy_writer([&] {
-        for (int i = 0; i < kIterations; ++i) {
-            // Always keep race.helper needed so no pruner can evict it mid-race.
-            RoutingHelperTestHook::set_needed(
-                router, {"race.helper", "churn." + std::to_string(i % 8)});
-        }
-    });
-
     busy_toggler.join();
-    policy_writer.join();
-    stop.store(true);
-    for (auto& p : pruners) {
-        p.join();
+    for (auto& w : policy_writers) {
+        w.join();
     }
 
     bool survived_race = RoutingHelperTestHook::has_helper(router, "race.helper");
 
     helper->set_busy(false);
-    RoutingHelperTestHook::set_needed(router, {});
-    RoutingHelperTestHook::prune(router);
+    RoutingHelperTestHook::reconcile(router, {});
     bool reclaimed_after_race = !RoutingHelperTestHook::has_helper(router, "race.helper");
 
     check("concurrent policy update + busy toggling keeps needed helper resident",
           survived_race);
-    check("helper reclaimed by prune after the race once no policy needs it",
+    check("helper reclaimed by reconcile after the race once no policy needs it",
           reclaimed_after_race);
 }
 
