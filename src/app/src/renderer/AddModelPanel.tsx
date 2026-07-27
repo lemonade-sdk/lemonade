@@ -37,7 +37,7 @@ interface AddModelPanelProps {
   initialValues?: AddModelInitialValues;
 }
 
-const FALLBACK_RECIPE_OPTIONS = ['llamacpp', 'flm', 'ryzenai-llm'];
+const FALLBACK_RECIPE_OPTIONS = ['llamacpp', 'lemon-mlx', 'flm', 'ryzenai-llm'];
 const HIDDEN_RECIPE_OPTIONS = new Set([COLLECTION_OMNI_MODEL_RECIPE]);
 
 const getRecipeLabel = (recipe: string): string => RECIPE_DISPLAY_NAMES[recipe] ?? recipe;
@@ -61,6 +61,10 @@ const RECIPE_EXAMPLES: Record<string, RecipeExample> = {
   'flm': {
     name: 'Gemma-3-4B-FLM',
     checkpoint: 'gemma3:4b',
+  },
+  'lemon-mlx': {
+    name: 'Qwen3.5-4B-MLX',
+    checkpoint: 'mlx-community/Qwen3.5-4B-4bit',
   },
   'whispercpp': {
     name: 'Whisper-Tiny',

@@ -296,6 +296,8 @@ def _build_runtime_config(additional_server_args=None):
         config["sdcpp"] = {"backend": backend}
     elif wrapped_server == "whispercpp" and backend:
         config["whispercpp"] = {"backend": backend}
+    elif wrapped_server == "lemon-mlx" and backend:
+        config["lemon-mlx"] = {"backend": backend}
     elif wrapped_server == "thinksound" and backend:
         config["thinksound"] = {"backend": backend}
     elif wrapped_server == "acestep" and backend:
@@ -324,6 +326,9 @@ def _build_runtime_config(additional_server_args=None):
             i += 2
         elif arg == "--whispercpp" and i + 1 < len(additional):
             config["whispercpp"] = {"backend": additional[i + 1]}
+            i += 2
+        elif arg == "--lemon-mlx" and i + 1 < len(additional):
+            config["lemon-mlx"] = {"backend": additional[i + 1]}
             i += 2
         elif arg == "--ctx-size" and i + 1 < len(additional):
             config["ctx_size"] = int(additional[i + 1])

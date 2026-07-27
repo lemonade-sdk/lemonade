@@ -379,6 +379,14 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
+#### Lemon MLX (experimental) (`lemon-mlx` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--lemon-mlx BACKEND` | lemon-mlx backend to use | Auto-detected |
+| `--lemon-mlx-args ARGS` | Custom arguments to pass to lemon-mlx server | `""` |
+
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |

@@ -1,5 +1,5 @@
 {
-  "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
+  "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, FLM (and many more) versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "checksums": {
     "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
     "github": {
@@ -131,6 +131,11 @@
   },
   "flm": {
     "npu": "v0.9.45"
+  },
+  "lemon-mlx": {
+    "metal": "b1049-stable",
+    "rocm-stable": "b1049-stable",
+    "cpu": "b1049-stable"
   },
   "kokoro": {
     "cpu": "b17",
