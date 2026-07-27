@@ -17,7 +17,6 @@ Usage:
 """
 
 import json as _json
-import math
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -123,10 +122,7 @@ SEMANTIC_CODING_PROMPT = (
     "How do I refactor this recursive function to lower its time complexity?"
 )
 SEMANTIC_OTHER_PROMPT = "What are some good recipes for a summer picnic by the lake?"
-# The probes must remain meaningfully separable. Their absolute cosine values are
-# deliberately not frozen: model revisions, quantization, and backend arithmetic
-# may shift both while preserving the routing behavior the test actually owns.
-SEMANTIC_MIN_SCORE_GAP = 0.05
+SEMANTIC_MIN_SCORE = 0.6
 
 COLLECTION_NAME = "user.Test-Router-Local"
 
@@ -161,24 +157,11 @@ POLICY = {
 }
 
 
-def _cosine_similarity(left, right):
-    """Compute cosine similarity independently from the C++ router."""
-    if not left or len(left) != len(right):
-        raise ValueError("embedding vectors must be non-empty and equal length")
-
-    dot = math.fsum(a * b for a, b in zip(left, right))
-    left_norm = math.sqrt(math.fsum(value * value for value in left))
-    right_norm = math.sqrt(math.fsum(value * value for value in right))
-    if left_norm == 0.0 or right_norm == 0.0:
-        raise ValueError("embedding vectors must have non-zero magnitude")
-    return dot / (left_norm * right_norm)
-
 
 class RouterTests(ServerTestBase):
     """End-to-end routing through a collection.router collection."""
 
     _setup_done = False
-    _semantic_calibration = None
 
     @classmethod
     def _ensure_setup(cls):
@@ -264,84 +247,24 @@ class RouterTests(ServerTestBase):
                 return entry.get("score")
         return None
 
-    def _embedding(self, text):
-        """Request one embedding and validate the OpenAI response envelope."""
+    def _load_semantic_model(self):
+        """Load the embedding model before entering router evaluation.
+
+        Semantic routing is not intended to test cold-start model loading. Keeping
+        that lifecycle concern outside the routed request avoids a transient
+        ensure/load failure being converted into Score{ok=false} and silently
+        falling through to the default candidate.
+        """
         resp = requests.post(
-            f"{self.base_url}/embeddings",
-            json={"model": EMBED_MODEL, "input": text},
+            f"{self.base_url}/load",
+            json={"model_name": EMBED_MODEL},
             timeout=600,
         )
         self.assertEqual(
             resp.status_code,
             200,
-            f"embedding request for {EMBED_MODEL} failed: {resp.text}",
+            f"failed to preload semantic model {EMBED_MODEL}: {resp.text}",
         )
-        payload = resp.json()
-        data = payload.get("data", [])
-        self.assertEqual(
-            len(data),
-            1,
-            f"expected one embedding result, got: {payload}",
-        )
-        embedding = data[0].get("embedding") if isinstance(data[0], dict) else None
-        self.assertIsInstance(
-            embedding,
-            list,
-            f"embedding response did not contain a vector: {payload}",
-        )
-        self.assertTrue(
-            embedding,
-            f"embedding response contained an empty vector: {payload}",
-        )
-        self.assertTrue(
-            all(isinstance(value, (int, float)) for value in embedding),
-            "embedding vector contained a non-numeric value",
-        )
-        return [float(value) for value in embedding]
-
-    def _calibrate_semantic_threshold(self):
-        """Return a stable threshold derived from the active embedding runtime.
-
-        Absolute cosine values are not a Lemonade API contract. They can move
-        when the embedding artifact, quantization, llama.cpp build, or CPU math
-        changes. The actual contract tested here is that the coding probe is
-        clearly closer to the coding references than the unrelated probe, and
-        that the router applies a threshold between those two scores correctly.
-        """
-        cls = type(self)
-        if cls._semantic_calibration is not None:
-            return cls._semantic_calibration
-
-        references = [self._embedding(text) for text in SEMANTIC_REFERENCE_PHRASES]
-
-        def max_similarity(text):
-            embedded = self._embedding(text)
-            max_cosine = max(
-                _cosine_similarity(embedded, reference) for reference in references
-            )
-            return min(1.0, max(0.0, max_cosine))
-
-        coding_score = max_similarity(SEMANTIC_CODING_PROMPT)
-        other_score = max_similarity(SEMANTIC_OTHER_PROMPT)
-        gap = coding_score - other_score
-        self.assertGreaterEqual(
-            gap,
-            SEMANTIC_MIN_SCORE_GAP,
-            (
-                f"{EMBED_MODEL} no longer separates the semantic probes: "
-                f"coding={coding_score:.6f}, unrelated={other_score:.6f}, "
-                f"required_gap={SEMANTIC_MIN_SCORE_GAP:.6f}"
-            ),
-        )
-
-        threshold = other_score + gap / 2.0
-        cls._semantic_calibration = (threshold, coding_score, other_score)
-        print(
-            "[SETUP] Semantic threshold calibrated: "
-            f"unrelated={other_score:.3f} < threshold={threshold:.3f} "
-            f"< coding={coding_score:.3f}"
-        )
-        return cls._semantic_calibration
 
     def test_600_default_fallthrough(self):
         """A prompt matching no rule falls open to default_model."""
@@ -539,11 +462,11 @@ class RouterTests(ServerTestBase):
 
         This is the first *model-backed* condition in the suite: it embeds the
         input (via `Router::embeddings`) and scores it against labelled
-        reference phrases. The threshold is calibrated between two clearly
-        separated live scores instead of freezing a backend-specific cosine.
+        reference phrases. The embedding model is explicitly loaded first so
+        this test measures routing behavior rather than cold-start lifecycle.
         """
         pull_model_with_retry(EMBED_MODEL)
-        threshold, expected_coding, expected_other = self._calibrate_semantic_threshold()
+        self._load_semantic_model()
         collection = "user.Test-Router-Semantic"
         policy = {
             "version": "1",
@@ -569,7 +492,7 @@ class RouterTests(ServerTestBase):
                         "match": {
                             "classifier": "topic",
                             "label": "coding",
-                            "min_score": threshold,
+                            "min_score": SEMANTIC_MIN_SCORE,
                         },
                         "route_to": CAPABLE_MODEL,
                     }
@@ -594,11 +517,8 @@ class RouterTests(ServerTestBase):
             )
             self.assertGreaterEqual(
                 coding_score,
-                threshold,
-                (
-                    f"coding score {coding_score:.6f} fell below calibrated threshold "
-                    f"{threshold:.6f} (preflight={expected_coding:.6f})"
-                ),
+                SEMANTIC_MIN_SCORE,
+                f"coding score {coding_score:.6f} fell below {SEMANTIC_MIN_SCORE:.6f}",
             )
             self.assertEqual(
                 decision.get("route_to"),
@@ -607,7 +527,7 @@ class RouterTests(ServerTestBase):
             )
             self.assertEqual(decision.get("matched_rule"), "coding-to-capable")
             print(
-                f"[OK] semantic coding ({coding_score:.3f} >= {threshold:.3f}) "
+                f"[OK] semantic coding ({coding_score:.3f} >= {SEMANTIC_MIN_SCORE:.3f}) "
                 f"-> {CAPABLE_MODEL}"
             )
 
@@ -623,11 +543,8 @@ class RouterTests(ServerTestBase):
             )
             self.assertLess(
                 other_score,
-                threshold,
-                (
-                    f"unrelated score {other_score:.6f} reached calibrated threshold "
-                    f"{threshold:.6f} (preflight={expected_other:.6f})"
-                ),
+                SEMANTIC_MIN_SCORE,
+                f"unrelated score {other_score:.6f} reached {SEMANTIC_MIN_SCORE:.6f}",
             )
             self.assertEqual(
                 decision.get("route_to"),
@@ -636,7 +553,7 @@ class RouterTests(ServerTestBase):
             )
             self.assertTrue(decision.get("default_used"))
             print(
-                f"[OK] semantic non-coding ({other_score:.3f} < {threshold:.3f}) "
+                f"[OK] semantic non-coding ({other_score:.3f} < {SEMANTIC_MIN_SCORE:.3f}) "
                 f"-> {DEFAULT_MODEL}"
             )
         finally:
@@ -651,7 +568,7 @@ class RouterTests(ServerTestBase):
         query goes to the cloud model; an unrelated query stays local.
         """
         pull_model_with_retry(EMBED_MODEL)
-        threshold, expected_coding, expected_other = self._calibrate_semantic_threshold()
+        self._load_semantic_model()
         provider = "testsemcloud"
         upstream_id = "vendor/sem-cloud-model"
         marker = "answered-by-cloud-provider"
@@ -717,7 +634,7 @@ class RouterTests(ServerTestBase):
                             "match": {
                                 "classifier": "topic",
                                 "label": "coding",
-                                "min_score": threshold,
+                                "min_score": SEMANTIC_MIN_SCORE,
                             },
                             "route_to": cloud_model,
                             "outputs": {"route_category": "cloud"},
@@ -742,11 +659,8 @@ class RouterTests(ServerTestBase):
             )
             self.assertGreaterEqual(
                 coding_score,
-                threshold,
-                (
-                    f"coding score {coding_score:.6f} fell below calibrated threshold "
-                    f"{threshold:.6f} (preflight={expected_coding:.6f})"
-                ),
+                SEMANTIC_MIN_SCORE,
+                f"coding score {coding_score:.6f} fell below {SEMANTIC_MIN_SCORE:.6f}",
             )
             self.assertEqual(
                 decision.get("route_to"),
@@ -760,7 +674,7 @@ class RouterTests(ServerTestBase):
                 "coding prompt should be answered by the cloud provider",
             )
             print(
-                f"[OK] semantic coding ({coding_score:.3f} >= {threshold:.3f}) "
+                f"[OK] semantic coding ({coding_score:.3f} >= {SEMANTIC_MIN_SCORE:.3f}) "
                 f"-> {cloud_model} (cloud), answered by mock"
             )
 
@@ -776,11 +690,8 @@ class RouterTests(ServerTestBase):
             )
             self.assertLess(
                 other_score,
-                threshold,
-                (
-                    f"unrelated score {other_score:.6f} reached calibrated threshold "
-                    f"{threshold:.6f} (preflight={expected_other:.6f})"
-                ),
+                SEMANTIC_MIN_SCORE,
+                f"unrelated score {other_score:.6f} reached {SEMANTIC_MIN_SCORE:.6f}",
             )
             self.assertEqual(
                 decision.get("route_to"),
@@ -789,7 +700,7 @@ class RouterTests(ServerTestBase):
             )
             self.assertTrue(decision.get("default_used"))
             print(
-                f"[OK] semantic non-coding ({other_score:.3f} < {threshold:.3f}) "
+                f"[OK] semantic non-coding ({other_score:.3f} < {SEMANTIC_MIN_SCORE:.3f}) "
                 f"-> {DEFAULT_MODEL} (local default)"
             )
         finally:
