@@ -620,8 +620,8 @@ json LlamaCppServer::normalize_response_model(json response, const json& request
 json LlamaCppServer::chat_completion(const json& request) {
     return normalize_response_model(
         forward_request("/v1/chat/completions",
-                        JsonUtils::with_legacy_max_tokens_alias(
-                            llamacpp::sanitize_tool_schema_limits(request))),
+                        llamacpp::sanitize_tool_schema_limits(
+                            JsonUtils::with_legacy_max_tokens_alias(request))),
         request);
 }
 
@@ -669,6 +669,9 @@ void LlamaCppServer::forward_streaming_request(const std::string& endpoint,
     if (endpoint == "/v1/chat/completions" || endpoint == "/v1/responses") {
         json request = json::parse(request_body, nullptr, false);
         if (!request.is_discarded()) {
+            if (endpoint == "/v1/chat/completions") {
+                JsonUtils::add_legacy_max_tokens_alias(request);
+            }
             body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();
         }
     }

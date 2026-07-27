@@ -39,12 +39,39 @@ int main() {
                         {"name", {
                             {"type", "string"},
                             {"maxLength", 1999},
+                            {"minLength", 1999},
+                        }},
+                        {"description", {
+                            {"type", "string"},
+                            {"minLength", 2000},
                         }},
                         {"steps", {
                             {"type", "array"},
                             {"maxItems", 2000},
+                            {"minItems", 1999},
                             {"items", {
                                 {"$ref", "#/$defs/step"},
+                            }},
+                        }},
+                        {"queue", {
+                            {"type", "array"},
+                            {"maxItems", 1999},
+                            {"minItems", 2000},
+                        }},
+                        {"config", {
+                            {"const", {
+                                {"maxLength", 524288},
+                                {"minItems", 2000},
+                            }},
+                        }},
+                        {"mode", {
+                            {"enum", {
+                                {
+                                    {"maxItems", 2000},
+                                },
+                                {
+                                    {"minLength", 4096},
+                                },
                             }},
                         }},
                     }},
@@ -70,10 +97,24 @@ int main() {
            "removes oversized Chat Completions maxLength");
     expect(parameters["properties"]["name"]["maxLength"] == 1999,
            "preserves maxLength below the llama.cpp limit");
+    expect(parameters["properties"]["name"]["minLength"] == 1999,
+           "preserves minLength below the llama.cpp limit");
+    expect(!parameters["properties"]["description"].contains("minLength"),
+           "removes minLength at the llama.cpp limit");
     expect(!parameters["properties"]["steps"].contains("maxItems"),
-           "removes oversized maxItems");
+           "removes maxItems at the llama.cpp limit");
+    expect(parameters["properties"]["steps"]["minItems"] == 1999,
+           "preserves minItems below the llama.cpp limit");
+    expect(parameters["properties"]["queue"]["maxItems"] == 1999,
+           "preserves maxItems below the llama.cpp limit");
+    expect(!parameters["properties"]["queue"].contains("minItems"),
+           "removes minItems at the llama.cpp limit");
     expect(!parameters["$defs"]["step"]["properties"]["output"].contains("maxLength"),
            "recurses through $defs");
+    expect(parameters["properties"]["config"]["const"] == chat_request["tools"][0]["function"]["parameters"]["properties"]["config"]["const"],
+           "preserves object values inside const");
+    expect(parameters["properties"]["mode"]["enum"] == chat_request["tools"][0]["function"]["parameters"]["properties"]["mode"]["enum"],
+           "preserves object values inside enum");
     expect(chat_request["tools"][0]["function"]["parameters"]["properties"]["script"]["maxLength"] == 524288,
            "does not mutate the caller's request");
 

@@ -30,17 +30,52 @@ void sanitize_schema(nlohmann::json& schema) {
     if (!schema.is_object()) return;
 
     // llama.cpp rejects grammar repetitions at this threshold. Remove oversized
-    // upper bounds instead of clamping them, which would reject valid tool arguments.
+    // bounds instead of clamping them, which would reject valid tool arguments.
     // Remove this workaround once ggml-org/llama.cpp#17473 is fixed in pinned builds.
-    for (const std::string key : {"maxLength", "maxItems"}) {
+    for (const std::string key : {"minLength", "maxLength", "minItems", "maxItems"}) {
         auto limit = schema.find(key);
         if (limit != schema.end() && exceeds_grammar_repetition_limit(*limit)) {
             schema.erase(limit);
         }
     }
 
-    for (auto& item : schema.items()) {
-        sanitize_schema(item.value());
+    for (const std::string key : {
+             "additionalItems",
+             "additionalProperties",
+             "allOf",
+             "anyOf",
+             "contains",
+             "contentSchema",
+             "else",
+             "if",
+             "items",
+             "not",
+             "oneOf",
+             "prefixItems",
+             "propertyNames",
+             "then",
+             "unevaluatedItems",
+             "unevaluatedProperties",
+         }) {
+        auto subschema = schema.find(key);
+        if (subschema != schema.end()) {
+            sanitize_schema(*subschema);
+        }
+    }
+
+    for (const std::string key : {
+             "$defs",
+             "definitions",
+             "dependencies",
+             "dependentSchemas",
+             "patternProperties",
+             "properties",
+         }) {
+        auto subschemas = schema.find(key);
+        if (subschemas == schema.end() || !subschemas->is_object()) continue;
+        for (auto& item : subschemas->items()) {
+            sanitize_schema(item.value());
+        }
     }
 }
 
