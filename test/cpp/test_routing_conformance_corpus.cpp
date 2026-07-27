@@ -53,10 +53,6 @@ static json load_json_file(const fs::path& path) {
     return json::parse(ss.str());
 }
 
-static bool is_debug_name(const fs::path& dir) {
-    return dir.filename().generic_string().rfind("_debug", 0) == 0;
-}
-
 static std::vector<fs::path> list_subdirs(const fs::path& dir, std::error_code& ec) {
     std::vector<fs::path> subdirs;
     for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
@@ -68,54 +64,55 @@ static std::vector<fs::path> list_subdirs(const fs::path& dir, std::error_code& 
 }
 
 // Corpus layout is exactly routing/<version>/<case>/{policy.json,cases.jsonl}. A case
-// dir missing either file, or holding a nested subdirectory, is a hard failure (silent
-// coverage loss / drifted layout otherwise), except under a _debug version or case dir,
-// where it degrades to a warning.
+// dir missing either file, or holding a nested subdirectory, is a hard failure: silent
+// coverage loss / drifted layout otherwise. A directory that cannot be read is a
+// failure too, for the same reason.
 static std::vector<fs::path> find_case_dirs(const fs::path& root) {
     std::vector<fs::path> dirs;
     std::error_code ec;
     const std::vector<fs::path> versions = list_subdirs(root, ec);
     if (ec) {
-        std::printf("[FAIL] cannot walk %s: %s\n", root.string().c_str(), ec.message().c_str());
+        check(root.generic_string() + ": is readable", false);
+        std::printf("  %s\n", ec.message().c_str());
         return dirs;
     }
     for (const auto& version : versions) {
-        const bool version_debug = is_debug_name(version);
         std::error_code vec;
         const std::vector<fs::path> case_dirs = list_subdirs(version, vec);
         if (vec) {
-            std::printf("[FAIL] cannot walk %s: %s\n", version.string().c_str(),
-                        vec.message().c_str());
+            check(fs::relative(version, root).generic_string() + ": is readable", false);
+            std::printf("  %s\n", vec.message().c_str());
             continue;
         }
         for (const auto& case_dir : case_dirs) {
-            const bool debug = version_debug || is_debug_name(case_dir);
             const std::string rel = fs::relative(case_dir, root).generic_string();
-            auto report = [&](const std::string& warn_detail, const std::string& fail_assertion) {
-                if (debug) {
-                    std::printf("[WARN] %s: %s (ignored: _debug)\n", rel.c_str(),
-                                warn_detail.c_str());
-                } else {
-                    check(rel + ": " + fail_assertion, false);
-                }
-            };
 
-            std::error_code fec;
-            const bool has_policy = fs::exists(case_dir / "policy.json", fec);
-            const bool has_cases = fs::exists(case_dir / "cases.jsonl", fec);
+            std::error_code policy_ec;
+            std::error_code cases_ec;
+            const bool has_policy = fs::exists(case_dir / "policy.json", policy_ec);
+            const bool has_cases = fs::exists(case_dir / "cases.jsonl", cases_ec);
             std::error_code sec;
-            const bool has_subdir = !list_subdirs(case_dir, sec).empty();
+            const std::vector<fs::path> nested = list_subdirs(case_dir, sec);
 
             bool ok = true;
-            if (!has_policy || !has_cases) {
+            if (policy_ec || cases_ec) {
+                check(rel + ": entries are readable", false);
+                std::printf("  %s\n", (policy_ec ? policy_ec : cases_ec).message().c_str());
+                ok = false;
+            } else if (!has_policy || !has_cases) {
                 const std::string missing = (!has_policy && !has_cases)
                                                 ? "policy.json and cases.jsonl"
                                                 : (!has_policy ? "policy.json" : "cases.jsonl");
-                report("missing " + missing, "has policy.json + cases.jsonl");
+                check(rel + ": has policy.json + cases.jsonl", false);
+                std::printf("  missing %s\n", missing.c_str());
                 ok = false;
             }
-            if (has_subdir) {
-                report("has unexpected subdirectory", "is a leaf (no subdirectories)");
+            if (sec) {
+                check(rel + ": is readable", false);
+                std::printf("  %s\n", sec.message().c_str());
+                ok = false;
+            } else if (!nested.empty()) {
+                check(rel + ": is a leaf (no subdirectories)", false);
                 ok = false;
             }
             if (ok) {
