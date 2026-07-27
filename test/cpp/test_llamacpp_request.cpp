@@ -55,8 +55,15 @@ int main() {
                         }},
                         {"queue", {
                             {"type", "array"},
-                            {"maxItems", 1999},
                             {"minItems", 2000},
+                        }},
+                        {"backlog", {
+                            {"type", "array"},
+                            {"minItems", 2001},
+                        }},
+                        {"results", {
+                            {"type", "array"},
+                            {"maxItems", 2001},
                         }},
                         {"config", {
                             {"const", {
@@ -101,14 +108,16 @@ int main() {
            "preserves minLength below the llama.cpp limit");
     expect(!parameters["properties"]["description"].contains("minLength"),
            "removes minLength at the llama.cpp limit");
-    expect(!parameters["properties"]["steps"].contains("maxItems"),
-           "removes maxItems at the llama.cpp limit");
+    expect(parameters["properties"]["steps"]["maxItems"] == 2000,
+           "preserves maxItems whose generated repetition stays below the limit");
     expect(parameters["properties"]["steps"]["minItems"] == 1999,
            "preserves minItems below the llama.cpp limit");
-    expect(parameters["properties"]["queue"]["maxItems"] == 1999,
-           "preserves maxItems below the llama.cpp limit");
-    expect(!parameters["properties"]["queue"].contains("minItems"),
-           "removes minItems at the llama.cpp limit");
+    expect(parameters["properties"]["queue"]["minItems"] == 2000,
+           "preserves minItems whose generated repetition stays below the limit");
+    expect(!parameters["properties"]["backlog"].contains("minItems"),
+           "removes minItems whose generated repetition reaches the limit");
+    expect(!parameters["properties"]["results"].contains("maxItems"),
+           "removes maxItems whose generated repetition reaches the limit");
     expect(!parameters["$defs"]["step"]["properties"]["output"].contains("maxLength"),
            "recurses through $defs");
     expect(parameters["properties"]["config"]["const"] == chat_request["tools"][0]["function"]["parameters"]["properties"]["config"]["const"],

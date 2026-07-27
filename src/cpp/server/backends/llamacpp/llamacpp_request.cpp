@@ -10,12 +10,12 @@ namespace {
 
 constexpr std::uint64_t GRAMMAR_REPETITION_LIMIT = 2000;
 
-bool exceeds_grammar_repetition_limit(const nlohmann::json& value) {
+bool has_integer_value_at_least(const nlohmann::json& value, std::uint64_t threshold) {
     if (value.is_number_unsigned()) {
-        return value.get<std::uint64_t>() >= GRAMMAR_REPETITION_LIMIT;
+        return value.get<std::uint64_t>() >= threshold;
     }
     if (value.is_number_integer()) {
-        return value.get<std::int64_t>() >= static_cast<std::int64_t>(GRAMMAR_REPETITION_LIMIT);
+        return value.get<std::int64_t>() >= static_cast<std::int64_t>(threshold);
     }
     return false;
 }
@@ -32,9 +32,18 @@ void sanitize_schema(nlohmann::json& schema) {
     // llama.cpp rejects grammar repetitions at this threshold. Remove oversized
     // bounds instead of clamping them, which would reject valid tool arguments.
     // Remove this workaround once ggml-org/llama.cpp#17473 is fixed in pinned builds.
-    for (const std::string key : {"minLength", "maxLength", "minItems", "maxItems"}) {
+    for (const std::string key : {"minLength", "maxLength"}) {
         auto limit = schema.find(key);
-        if (limit != schema.end() && exceeds_grammar_repetition_limit(*limit)) {
+        if (limit != schema.end() && has_integer_value_at_least(*limit, GRAMMAR_REPETITION_LIMIT)) {
+            schema.erase(limit);
+        }
+    }
+
+    // Array grammars emit the first item separately, so an item bound of N
+    // produces a repetition bound of N - 1.
+    for (const std::string key : {"minItems", "maxItems"}) {
+        auto limit = schema.find(key);
+        if (limit != schema.end() && has_integer_value_at_least(*limit, GRAMMAR_REPETITION_LIMIT + 1)) {
             schema.erase(limit);
         }
     }
