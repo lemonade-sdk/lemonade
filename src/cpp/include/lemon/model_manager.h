@@ -384,6 +384,12 @@ private:
     // own mutex; invoked outside all other ModelManager locks.
     std::mutex models_changed_callback_mutex_;
     std::function<void()> models_changed_callback_;
+    // Serializes the whole callback execution. The callback reads the live
+    // registry to compute a snapshot and publishes it downstream; running two
+    // concurrently lets an older snapshot publish after a newer one and clobber
+    // the authoritative state. Held across the entire cb() call, distinct from
+    // models_changed_callback_mutex_ (which only guards the pointer copy).
+    std::mutex notify_execution_mutex_;
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;

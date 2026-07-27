@@ -253,6 +253,13 @@ private:
     // needed_helper_models_. Skips busy helpers (reclaimed on a later pass) so it
     // never blocks a caller on an eviction timeout. Caller holds load_mutex_.
     void prune_stale_routing_helpers_locked();
+    // Whether a freshly loaded backend may be committed to loaded_servers_. A
+    // routing helper whose backend finished starting after a policy change
+    // dropped it must be discarded rather than leaked; shared by the initial
+    // load and the nuclear-retry path. Caller holds load_mutex_.
+    bool may_commit_loaded_server(const WrappedServer& server,
+                                  const std::string& canonical_model_name,
+                                  ResidencyClass requested_residency_class) const;
     // Eviction-engine entry point: physically unload a model previously marked
     // EVICTING, but only if it has not been rescued by an in-flight request
     // (see WrappedServer::try_commit_eviction). Safe against request races.

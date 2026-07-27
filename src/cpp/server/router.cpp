@@ -389,6 +389,18 @@ void Router::prune_stale_routing_helpers_locked() {
     }
 }
 
+bool Router::may_commit_loaded_server(const WrappedServer& server,
+                                      const std::string& canonical_model_name,
+                                      ResidencyClass requested_residency_class) const {
+    // Only routing helpers are subject to policy churn; a pin is an explicit
+    // "keep" that outranks it. Any other backend always commits.
+    if (requested_residency_class != ResidencyClass::RoutingHelper ||
+        server.is_pinned()) {
+        return true;
+    }
+    return needed_helper_models_.count(canonical_model_name) != 0;
+}
+
 bool Router::has_npu_server() const {
     for (const auto& server : loaded_servers_) {
         if (server->is_backend_alive() && (server->get_device_type() & DEVICE_NPU)) {
@@ -868,9 +880,8 @@ void Router::load_model(const std::string& model_name,
             // starting (the load ran with load_mutex_ released). Now that we hold
             // the lock again, validate against the authoritative needed set so a
             // helper no active policy references is never committed.
-            if (requested_residency_class == ResidencyClass::RoutingHelper &&
-                !new_server->is_pinned() &&
-                needed_helper_models_.count(canonical_model_name) == 0) {
+            if (!may_commit_loaded_server(*new_server, canonical_model_name,
+                                          requested_residency_class)) {
                 LOG(INFO, "Router") << "Routing helper " << canonical_model_name
                           << " no longer referenced by any active policy; "
                           << "discarding freshly loaded backend" << std::endl;
@@ -943,9 +954,24 @@ void Router::load_model(const std::string& model_name,
 
                 lock.lock();
 
+                retry_server->set_load_cancel_flag(nullptr);
+
+                // Same policy-churn guard as the initial load: a helper the
+                // active policy dropped while this retry backend was starting
+                // must be discarded, not committed.
+                if (!may_commit_loaded_server(*retry_server, canonical_model_name,
+                                              requested_residency_class)) {
+                    LOG(INFO, "Router") << "Routing helper " << canonical_model_name
+                              << " no longer referenced by any active policy; "
+                              << "discarding freshly loaded backend" << std::endl;
+                    retry_server->unload();
+                    is_loading_ = false;
+                    load_cv_.notify_all();
+                    return;
+                }
+
                 retry_server->set_state(ModelState::READY);
                 const auto retry_duration_ms = retry_server->get_load_duration_ms();
-                retry_server->set_load_cancel_flag(nullptr);
                 loaded_servers_.push_back(std::move(retry_server));
                 is_loading_ = false;
                 load_cv_.notify_all();
