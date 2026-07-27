@@ -1346,13 +1346,17 @@ const ModelTuningTab: React.FC<{
   loadedModel: LoadedModel | null;
   isActive: boolean;
   serverDefaultCtxSize: number;
+  isDownloaded?: boolean;
+  isLoadingThis?: boolean;
   onReloadModel?: (model: LoadedModel, recipeOptions?: Record<string, unknown>) => Promise<void>;
-}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, onReloadModel }) => {
+  onLoadWithOptions?: (recipeOptions: RecipeOptions) => Promise<void>;
+}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isDownloaded, isLoadingThis, onReloadModel, onLoadWithOptions }) => {
   const name = mdName(model);
   const imageOnly = isImageOnlyModel(model);
   const [storeVersion, setStoreVersion] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [isReloading, setIsReloading] = useState(false);
+  const [isLoadingViaPanel, setIsLoadingViaPanel] = useState(false);
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
 
   useEffect(() => {
@@ -1552,6 +1556,13 @@ const ModelTuningTab: React.FC<{
     return sanitizeRecipeOptions(raw);
   };
 
+  const buildLoadOptions = (): RecipeOptions => {
+    const opts = buildRecipeOptions() as Record<string, unknown>;
+    const ctxSize = effectiveTuning.recipe_options.ctx_size;
+    if (typeof ctxSize === 'number') opts.ctx_size = ctxSize;
+    return opts as RecipeOptions;
+  };
+
   const buildIntentValues = () => {
     const temperature: Partial<Record<TemperatureHint, number>> = {};
     const context: Partial<Record<EditableContextHint, number>> = {};
@@ -1599,15 +1610,26 @@ const ModelTuningTab: React.FC<{
     setNotice(`Model tuning for ${selectedPreset.name} restored to its resolved built-in and generic values.`);
   };
 
+  const loadViaPanel = async () => {
+    if (!onLoadWithOptions) return;
+    saveDraft();
+    setIsLoadingViaPanel(true);
+    try {
+      await onLoadWithOptions(buildLoadOptions());
+    } finally {
+      setIsLoadingViaPanel(false);
+    }
+  };
+
   const reloadWithTuning = async () => {
     if (!loadedModel || !onReloadModel) return;
     saveDraft();
     setIsReloading(true);
     try {
-      await onReloadModel(loadedModel);
-      setNotice('Model reloaded with current tuning.');
+      await onReloadModel(loadedModel, buildLoadOptions() as Record<string, unknown>);
+      setNotice('Model reloaded with current options.');
     } catch {
-      setNotice('Could not reload this model with the current tuning.');
+      setNotice('Could not reload this model with the current options.');
     } finally {
       setIsReloading(false);
     }
@@ -2100,16 +2122,26 @@ const ModelTuningTab: React.FC<{
         <div className="detail-tuning__actions">
           <button type="button" className="btn btn--primary btn--sm" onClick={saveDraft}>Save tuning</button>
           <button type="button" className="btn btn--ghost btn--sm" onClick={resetDraft} disabled={!hasUserTuning && !hasDraftValues}>Reset tuning</button>
+          {!loadedModel && isDownloaded && onLoadWithOptions && (
+            <button
+              type="button"
+              className="btn btn--primary btn--sm"
+              onClick={loadViaPanel}
+              disabled={isLoadingViaPanel || isLoadingThis}
+              aria-busy={isLoadingViaPanel}
+            >
+              <Icon name="play" size={13} aria-hidden="true" /> {isLoadingViaPanel ? 'Loading…' : 'Load with these options'}
+            </button>
+          )}
           {loadedModel && onReloadModel && (
             <button
               type="button"
               className="btn btn--ghost btn--sm"
               onClick={reloadWithTuning}
-              disabled={isReloading || !selectedPresetIsLinked}
+              disabled={isReloading || isLoadingThis}
               aria-busy={isReloading}
-              title={selectedPresetIsLinked ? 'Reload the model with this tuning' : 'Link this preset before reloading with its tuning'}
             >
-              <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading…' : 'Reload with tuning'}
+              <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading…' : 'Reload with these options'}
             </button>
           )}
         </div>
@@ -2364,6 +2396,8 @@ export interface ModelDetailPanelProps {
   pullingHf?: Record<string, number>;
   /** Cancel an in-progress HF download. */
   onCancelHfPull?: (hfId: string) => void;
+  /** Load a model with explicit recipe options, bypassing the preset system. */
+  onLoadWithOptions?: (model: ModelInfo, recipeOptions: Record<string, unknown>) => Promise<void>;
 }
 
 type DetailTab = 'settings' | 'readme' | 'presets' | 'tuning' | 'files';
@@ -2413,6 +2447,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   onHfPull,
   pullingHf,
   onCancelHfPull,
+  onLoadWithOptions,
 }) => {
   const [activeTab, setActiveTab] = useState<DetailTab>('readme');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -2745,15 +2780,25 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           )}
         </>
       ) : isDownloaded ? (
-        <WorkspaceActionButton
-          appearance="primary"
-          icon="play"
-          onClick={() => onLoad(model)}
-          disabled={isLoadingThis}
-          aria-label={isLoadingThis ? `Loading ${name}…` : `Load ${name}`}
-        >
-          {isLoadingThis ? 'Loading…' : 'Load'}
-        </WorkspaceActionButton>
+        <>
+          <WorkspaceActionButton
+            appearance="quiet"
+            icon="sliders-horizontal"
+            onClick={() => setActiveTab('tuning')}
+            title="Configure runtime options before loading"
+          >
+            Configure…
+          </WorkspaceActionButton>
+          <WorkspaceActionButton
+            appearance="primary"
+            icon="play"
+            onClick={() => onLoad(model)}
+            disabled={isLoadingThis}
+            aria-label={isLoadingThis ? `Loading ${name}…` : `Load ${name}`}
+          >
+            {isLoadingThis ? 'Loading…' : 'Load'}
+          </WorkspaceActionButton>
+        </>
       ) : (
         <>
           <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPullAndLoad(model)} aria-label={`Get and load ${name}`}>
@@ -2893,7 +2938,10 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
               loadedModel={loadedModel}
               isActive={activeTab === 'tuning'}
               serverDefaultCtxSize={serverDefaultCtxSize}
+              isDownloaded={isDownloaded}
+              isLoadingThis={isLoadingThis}
               onReloadModel={onReloadModel}
+              onLoadWithOptions={onLoadWithOptions ? (opts) => onLoadWithOptions(model, opts as Record<string, unknown>) : undefined}
             />
           )}
           {tab.id === 'files' && (

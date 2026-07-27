@@ -1624,6 +1624,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
     await refresh();
   };
 
+  const handleLoadWithOptions = async (model: ModelInfo, recipeOptions: Record<string, unknown>): Promise<void> => {
+    if (loadingModel) return;
+    const name = modelName(model);
+    if (activeDownloadForModel(downloadStore.snapshot(), name)) {
+      setLoadError({ modelName: name, message: `${name} is still downloading. Wait for the download to finish before loading it.` });
+      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+      return;
+    }
+    setLoadError(null);
+    setLoadingModel(name);
+    try {
+      await api.loadModel(name, recipeOptions, model);
+      await refresh();
+      onModelSelect(name);
+    } catch (err) {
+      console.error('Load with options failed:', err);
+      const message = friendlyErrorMessage(err);
+      setLoadError({ modelName: name, message });
+      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+    }
+    setLoadingModel(null);
+  };
+
   const handleDeleteRouterDefinition = async (name: string): Promise<void> => {
     if (api.isConnected) await api.deleteModel(name);
     deleteRouterRecord(accountSession.storageScope, name);
@@ -3149,6 +3172,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
           onLoad={handleLoad}
           onUnload={handleUnload}
           onReloadModel={handleReloadModel}
+          onLoadWithOptions={handleLoadWithOptions}
           onPull={handlePull}
           onPullAndLoad={handlePullAndLoad}
           onDelete={handleDelete}
