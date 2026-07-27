@@ -307,8 +307,9 @@ jobs:
           cmake --build --preset default --target test_job_graph
           cmake --build --preset default --target test_origin_utils
           cmake --build --preset default --target test_model_residency
+          cmake --build --preset default --target test_custom_args
           cd build
-          ctest --output-on-failure -R "ProcessManagerTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|LlmRouter|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest|ModelResidencyTest"
+          ctest --output-on-failure -R "ProcessManagerTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|LlmRouter|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest|ModelResidencyTest|CustomArgsTest"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -623,8 +624,9 @@ jobs:
           cmake --build --preset default --target test_job_graph
           cmake --build --preset default --target test_origin_utils
           cmake --build --preset default --target test_model_residency
+          cmake --build --preset default --target test_custom_args
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|LlmRouter|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest|ModelResidencyTest"
+          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|LlmRouter|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest|ModelResidencyTest|CustomArgsTest"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
