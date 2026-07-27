@@ -63,11 +63,11 @@ These are enforced mechanically, not just by convention:
   and immutability actually protects users.)
 - `test/test_routing_fixtures.py` keeps the schemas self-valid and the example
   fixtures conformant.
-- A frozen conformance corpus (golden policy → expected `Decision`) under
+- A committed conformance corpus (golden policy → expected `Decision`) under
   `test/conformance/routing/<schema_major>/` enforces *behavioral* stability
   across versions: a runner replays each case through the real engine and
-  asserts the emitted `Decision` matches byte-for-byte. See that directory's
-  `README.md`.
+  asserts the emitted `Decision` equals the recorded one, field for field. See
+  that directory's `README.md`.
 
 Lemonade executes a policy identically regardless of version — the only behavioral
 drift for model-backed classifiers (semantic_similarity / classifier / llm) comes
@@ -118,6 +118,6 @@ The C++ types/interfaces these schemas back live in
   (CTest target `RoutingPolicyContractTest`): default_model and every
   `route_to` must be a candidate; classifier condition refs must resolve.
 - **Behavioral back-compat** — `test/cpp/test_routing_conformance_corpus.cpp`
-  (CTest target `RoutingConformanceCorpusTest`): replays the frozen golden
-  corpus under `test/conformance/routing/` and asserts each emitted `Decision`
-  matches its frozen expectation.
+  (CTest target `RoutingConformanceCorpusTest`): replays the golden corpus under
+  `test/conformance/routing/` and asserts each emitted `Decision` equals its
+  recorded expectation.

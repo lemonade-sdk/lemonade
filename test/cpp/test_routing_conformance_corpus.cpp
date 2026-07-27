@@ -1,13 +1,13 @@
 // Back-compat conformance corpus runner (#2425).
 //
-// Replays every frozen golden case under test/conformance/routing/ through the
-// real routing engine and asserts the emitted Decision (via the production
-// route_decision_to_json serializer) matches the frozen expectation exactly.
-// Any drift is a back-compat violation.
+// Replays every golden case under test/conformance/routing/ through the real
+// routing engine and asserts the emitted Decision (via the production
+// route_decision_to_json serializer) equals the recorded expectation: same
+// fields, same values, no tolerance. Any drift is a back-compat violation.
 //
 // Deterministic corpus only: keywords_any / regex / min_chars / metadata and
-// first-match / fail-open behavior reproduce byte-for-byte with no model
-// backend, so an empty ClassifierServices is sufficient.
+// first-match / fail-open behavior reproduce exactly with no model backend, so
+// an empty ClassifierServices is sufficient.
 
 #include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"

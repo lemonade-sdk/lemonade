@@ -2260,9 +2260,9 @@ if(EXISTS "${_ROUTE_DECISION_RESPONSE_TEST_SRC}")
     add_test(NAME RouteDecisionResponseTest COMMAND test_route_decision_response)
 endif()
 
-# Router back-compat conformance corpus (issue #2425): replays the frozen golden
+# Router back-compat conformance corpus (issue #2425): replays the golden
 # policy -> Decision cases under test/conformance/routing/ through the real
-# engine and asserts each emitted Decision matches its frozen expectation.
+# engine and asserts each emitted Decision equals its recorded expectation.
 set(_ROUTING_CONFORMANCE_CORPUS_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_conformance_corpus.cpp"
 )

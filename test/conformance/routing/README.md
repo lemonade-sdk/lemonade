@@ -3,8 +3,10 @@
 A corpus of golden `policy → Decision` conformance cases for the
 back-compat rule: a future server must never break a policy authored against an
 earlier schema major. A runner replays each case through the routing engine and
-asserts the produced `Decision` matches the expectation exactly; any
-drift is a back-compat violation.
+compares the produced `Decision` with the recorded one: every field, every
+value, no tolerance. (The comparison is on parsed JSON, so key order and
+formatting do not matter — only the values.) Any drift is a back-compat
+violation.
 
 ## Layout
 
@@ -72,7 +74,7 @@ defines for v1 has exactly one lock, and combinators/resolution are tested once
 | `keywords_any` — case-fold is ASCII-only (`É` not folded to `é` ⇒ no match) | `l1_conditions_vocab/keywords_any-non-ascii-no-case-fold` |
 | `keywords_all` — all tokens present | `l1_conditions_vocab/keywords_all-both-present` |
 | `keywords_all` — one token missing ⇒ no match | `l1_conditions_vocab/keywords_all-one-missing-no-match` |
-| `regex` — ECMAScript dialect | `l1_conditions_vocab/regex-ecmascript` |
+| `regex` — pattern searched for anywhere in the input, not matched against all of it | `l1_conditions_vocab/regex-matches-substring` |
 | `regex` — non-matching input ⇒ no match | `l1_conditions_vocab/regex-no-match` |
 | `regex` — case-sensitive (uppercase input misses lowercase pattern) | `l1_conditions_vocab/regex-case-sensitive-no-match` |
 | `any` — matches if at least one child matches | `l1_conditions_vocab/any-one-child-matches` |
@@ -133,6 +135,11 @@ defines for v1 has exactly one lock, and combinators/resolution are tested once
 The one trace-emitting family not locked above is the classifier band (`classifier:<id>`),
 which is model-backed and non-deterministic — it arrives with the stubbed `l2`/`l3`/`l0a`
 groups below.
+
+The regex **dialect** is also not locked. The engine builds patterns with
+`std::regex::ECMAScript`, but the corpus patterns use syntax that every regex grammar
+shares, so the cases would still pass if that setting changed. Locking it needs a
+pattern with ECMAScript-only syntax, such as `\d`.
 
 Stubbed model-backed semantics (`min_score`/`max_score` band, `semantic_similarity`
 max-cosine, `classifier` label resolution, `llm` router desugaring, `on_error`
