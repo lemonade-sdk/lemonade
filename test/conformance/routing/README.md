@@ -1,10 +1,10 @@
 # Router back-compat conformance corpus
 
-Frozen golden `policy → Decision` cases that enforce the hard back-compat rule:
-a future server must never break a policy authored against an earlier schema
-major. A runner replays each case through the routing engine and asserts the
-produced `Decision` matches the frozen expectation exactly; any drift is a
-back-compat violation.
+A corpus of golden `policy → Decision` conformance cases for the
+back-compat rule: a future server must never break a policy authored against an
+earlier schema major. A runner replays each case through the routing engine and
+asserts the produced `Decision` matches the expectation exactly; any
+drift is a back-compat violation.
 
 ## Layout
 
@@ -16,7 +16,7 @@ routing/<schema_major>/<case>/
 
 `<schema_major>` is the policy's root `version`. Cases are
 grouped by the **engine behavior they lock**, so the
-corpus reads as a checklist against the frozen-v1 semantics table in
+corpus reads as a checklist against the v1 semantics table in
 `src/cpp/resources/schemas/README.md`.
 
 ```
@@ -33,7 +33,7 @@ corpus reads as a checklist against the frozen-v1 semantics table in
   # l2_semantic/              # stubbed semantic_similarity — to be added
   # l3_classifier/            # stubbed classifier             — to be added
   # l0a_router/               # stubbed llm router + desugaring — to be added
-2/ # coming with a following version
+2/ # coming in a later version
   ...
 ```
 
@@ -55,12 +55,12 @@ Each line is one JSON object:
 
 ## Coverage matrix
 
-One frozen deterministic semantic per row → the single case that locks it. The
+One deterministic semantic per row → the single case that locks it. The
 matrix is the sufficiency argument: every deterministic behavior the engine
-freezes for v1 has exactly one lock, and combinators/resolution are tested once
+defines for v1 has exactly one lock, and combinators/resolution are tested once
 (they are op-agnostic) rather than across every leaf.
 
-| Frozen semantic | Case |
+| Semantic | Case |
 |-----------------|------|
 | `keywords_any` — substring match | `l1_conditions_vocab/keywords_any-substring` |
 | `keywords_any` — ASCII case-fold | `l1_conditions_vocab/keywords_any-case-fold` |
