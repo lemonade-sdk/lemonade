@@ -2578,6 +2578,26 @@ class EndpointTests(ServerTestBase):
                 "Collection should report downloaded=true when all components are downloaded",
             )
 
+            # The plain /models surface (downloaded-only, no show_all) is the one
+            # the PR explicitly promises alongside ?show_all=true — assert the
+            # same prefixed-id contract holds there.
+            plain_response = requests.get(
+                f"{self.base_url}/models",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(plain_response.status_code, 200)
+            plain_ids = [m["id"] for m in plain_response.json()["data"]]
+            self.assertIn(
+                canonical_name,
+                plain_ids,
+                f"{canonical_name} should appear in plain /models under its user. id",
+            )
+            self.assertNotIn(
+                bare_name,
+                plain_ids,
+                "Collection must not be listed under its bare name on plain /models",
+            )
+
             # Both the bare and prefixed ids still resolve on GET /models/{id}.
             for lookup in (canonical_name, bare_name):
                 single = requests.get(
@@ -2649,6 +2669,71 @@ class EndpointTests(ServerTestBase):
             print(f"[OK] Registered router collection: {canonical_name}")
         finally:
             self._cleanup_router_collection(canonical_name)
+
+    def test_021j2_collection_lists_prefixed_in_ollama_tags(self):
+        """Ollama /api/tags emits the canonical `user.` collection id (issue #2788).
+
+        The prefixed-id listing contract is global, not OpenAI-only: /api/tags is
+        backed by the same get_downloaded_models() mapping as /v1/models. /api/show
+        and invocation must still accept both the bare and prefixed forms via the
+        resolvable alias.
+        """
+        canonical_name = f"user.OllamaColl-{uuid.uuid4().hex[:8]}"
+        bare_name = canonical_name[5:]
+        ollama_base = f"http://localhost:{PORT}/api"
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            tags = requests.get(f"{ollama_base}/tags", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(tags.status_code, 200, tags.text)
+            # Ollama appends a ":latest" tag to every model id.
+            names = {m["name"] for m in tags.json()["models"]}
+            models = {m["model"] for m in tags.json()["models"]}
+            self.assertIn(
+                f"{canonical_name}:latest",
+                names,
+                f"/api/tags should list the collection as {canonical_name}:latest",
+            )
+            self.assertEqual(names, models)
+            self.assertNotIn(
+                f"{bare_name}:latest",
+                names,
+                "Collection must not also appear under its bare name in /api/tags",
+            )
+
+            # /api/show must resolve both the bare and prefixed forms.
+            for lookup in (canonical_name, bare_name):
+                show = requests.post(
+                    f"{ollama_base}/show",
+                    json={"model": lookup},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    show.status_code,
+                    200,
+                    f"{lookup} should resolve on /api/show: {show.text}",
+                )
+
+            print(f"[OK] /api/tags lists collection prefixed: {canonical_name}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_021j_register_user_collection_with_system_prompt(self):
         """A registered user collection round-trips an optional system_prompt.
