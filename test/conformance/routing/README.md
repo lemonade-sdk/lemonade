@@ -88,7 +88,8 @@ defines for v1 has exactly one lock, and combinators/resolution are tested once
 | `has_tools` — empty `tools[]` counts as absent ⇒ no match | `l1_conditions_features/has_tools-empty-array-no-match` |
 | `has_images` — image content part ⇒ match | `l1_conditions_features/has_images-present-matches` |
 | `has_images` — no image ⇒ no match | `l1_conditions_features/has_images-absent-no-match` |
-| `has_images` — Responses API `input_image` part ⇒ match | `l1_conditions_features/has_images-input-image-part` |
+| `has_images` — Responses API `input` array, role-tagged item with an `input_image` part ⇒ match | `l1_conditions_features/has_images-input-image-part` |
+| `has_images` — Responses API `input` array, bare `input_image` part (no role wrapper) ⇒ match | `l1_conditions_features/has_images-input-bare-image-part` |
 | `has_images` — scans every message, not just the routing turn | `l1_conditions_features/has_images-earlier-turn-still-counts` |
 | `has_tools: false` — equality, matches when tools absent | `l1_conditions_features_negated/has_tools-false-matches-absent` |
 | `has_tools: false` — no match when tools present (not a catch-all) | `l1_conditions_features_negated/has_tools-false-no-match-when-present` |
