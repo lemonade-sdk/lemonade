@@ -342,6 +342,65 @@ function installBrowserStorageShim() {
     assert.equal(presets.backendTuningForKey('llamacpp:cpu').args, '--backend-base');
 
 
+
+    // Direct Configuration saved under DEFAULT_PRESET.id must apply as a base
+    // layer when a non-default preset is active for regular load/chat sampling.
+    storage.clear();
+    const directConfigChatModel = {
+      id: 'direct-config-model',
+      name: 'direct-config-model',
+      labels: ['llm'],
+      recipe: 'llamacpp',
+      max_context_window: 32768,
+    };
+    // Simulate what ModelConfigurationTab.saveConfig() does.
+    presets.saveModelTuning('direct-config-model', {
+      recipe_options: { llamacpp_backend: 'vulkan', llamacpp_args: '--direct-args', ctx_size: 8192 },
+      sampling: { temperature: 0.5, top_p: 0.9 },
+    }, presets.DEFAULT_PRESET.id);
+    // Link a named (non-default) chat preset to the model.
+    presets.saveApplied({ 'direct-config-model': codePreset.id });
+
+    // Backend/args from direct config must appear in the merged recipe options.
+    const directMerged = presets.recipeOptionsForModel('direct-config-model', directConfigChatModel);
+    assert.equal(directMerged.llamacpp_backend, 'vulkan',
+      'direct config backend must apply when a non-default preset is active');
+    assert.equal(directMerged.llamacpp_args, '--direct-args',
+      'direct config args must apply when a non-default preset is active');
+    // ctx_size must come from the preset intent (code = large hint), not the direct config value.
+    assert.equal(directMerged.ctx_size, presets.contextSizeForHint('large', 32768),
+      'ctx_size must be resolved from preset intent, not from direct config');
+
+    // temperature must come from the preset intent (code = precise = 0.4), not direct config.
+    // Non-temperature sampling params from the direct config must still apply.
+    const directSampling = presets.samplingForModel('direct-config-model', directConfigChatModel);
+    assert.equal(directSampling.temperature, 0.4,
+      'temperature must be resolved from preset intent, not from direct config');
+    assert.equal(directSampling.top_p, 0.9,
+      'non-temperature sampling params from direct config must apply for non-default preset');
+
+    // Preset-specific user tuning wins over direct config for the same key.
+    presets.saveModelTuning('direct-config-model', {
+      recipe_options: { llamacpp_args: '--preset-specific-args' },
+      sampling: { top_p: 0.95 },
+    }, codePreset.id);
+    const afterPresetTuning = presets.recipeOptionsForModel('direct-config-model', directConfigChatModel);
+    assert.equal(afterPresetTuning.llamacpp_args, '--preset-specific-args',
+      'preset-specific tuning must win over direct config for the same key');
+    assert.equal(afterPresetTuning.llamacpp_backend, 'vulkan',
+      'keys only set in direct config still apply when preset tuning does not override them');
+    const afterPresetSampling = presets.samplingForModel('direct-config-model', directConfigChatModel);
+    assert.equal(afterPresetSampling.top_p, 0.95,
+      'preset-specific sampling wins over direct config');
+
+    // When DEFAULT_PRESET is active the existing behaviour is unchanged.
+    presets.saveApplied({ 'direct-config-model': presets.DEFAULT_PRESET.id });
+    const defaultActiveOpts = presets.recipeOptionsForModel('direct-config-model', directConfigChatModel);
+    assert.equal(defaultActiveOpts.llamacpp_backend, 'vulkan',
+      'direct config applies normally when DEFAULT_PRESET is the active preset');
+    assert.equal(defaultActiveOpts.ctx_size, 8192,
+      'ctx_size from direct config applies unchanged when DEFAULT_PRESET is active (no intent override)');
+
     console.log('Preset intent runtime tests passed.');
   } finally {
     fs.rmSync(outputPath, { recursive: true, force: true });

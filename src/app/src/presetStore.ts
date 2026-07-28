@@ -1789,18 +1789,31 @@ function concretePresetTuningForRequest(
 ): ModelTuning {
   const builtIn = modelPresetTuningCandidate(model, preset);
   const user = loadModelTuning(modelName, preset.id);
+  // When a non-default preset is active, the direct Configuration saved under
+  // DEFAULT_PRESET.id (by ModelConfigurationTab) provides model-specific base
+  // settings (backend, device, args, non-temperature sampling params, etc.)
+  // that should apply even when a named preset governs intent-based ctx_size
+  // and temperature. For chat models supportsIntent=true causes ctx_size and
+  // temperature to be deleted and re-applied from the preset's intent, so they
+  // do not leak through from directConfig. Preset-specific user tuning (user)
+  // still wins over directConfig where the same key is set by both.
+  const directConfig = preset.id !== DEFAULT_PRESET.id
+    ? loadModelTuning(modelName, DEFAULT_PRESET.id)
+    : null;
   const capability = model ? capabilityFromModelInfo(model) : 'unknown';
   const supportsIntent = preset.id !== DEFAULT_PRESET.id
     && presetSupportsChatIntent(preset)
     && isChatPreviewCapability(capability);
-  const maxContext = resolvedMaximumContext(model, fallbackCtxSize, builtIn, user);
+  const maxContext = resolvedMaximumContext(model, fallbackCtxSize, builtIn, directConfig, user);
   const translations = resolveIntentTranslations(maxContext, preset, builtIn, user);
   const recipe_options: RecipeOptions = {
     ...(builtIn?.recipe_options || {}),
+    ...(directConfig?.recipe_options || {}),
     ...(user?.recipe_options || {}),
   };
   const sampling: SamplingParams = {
     ...(builtIn?.sampling || {}),
+    ...(directConfig?.sampling || {}),
     ...(user?.sampling || {}),
   };
   if (supportsIntent) {

@@ -1526,7 +1526,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
     }
   };
 
-  const loadModelRuntime = async (target: ModelInfo | string, visited = new Set<string>(), registered = new Set<string>()) => {
+  const loadModelRuntime = async (
+    target: ModelInfo | string,
+    visited = new Set<string>(),
+    registered = new Set<string>(),
+    overrideOptions?: Record<string, unknown>,
+  ) => {
     const name = typeof target === 'string' ? target : modelName(target);
     if (!name) return;
     const key = name.toLowerCase();
@@ -1556,11 +1561,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
       await ensureCustomRegistration(info);
       registered.add(key);
     }
-    await api.loadModel(name, info ? customLoadOptions(info) : undefined, info);
+    // overrideOptions (direct configuration) wins over stored custom options for ordinary models.
+    await api.loadModel(name, overrideOptions ?? (info ? customLoadOptions(info) : undefined), info);
     visited.delete(key);
   };
 
-  const loadWithGlobalPolicy = async (model: ModelInfo): Promise<void> => {
+  const loadWithGlobalPolicy = async (model: ModelInfo, overrideOptions?: Record<string, unknown>): Promise<void> => {
     await loadWithGlobalModelPolicy({
       loadedModels,
       allModels,
@@ -1568,7 +1574,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
       pinnedNames: pinnedModels,
       settings: globalModelSettings,
       unload: name => api.unloadModel(name),
-      load: () => loadModelRuntime(model),
+      load: () => loadModelRuntime(model, new Set<string>(), new Set<string>(), overrideOptions),
     });
   };
 
@@ -1635,7 +1641,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
     setLoadError(null);
     setLoadingModel(name);
     try {
-      await api.loadModel(name, recipeOptions, model);
+      await loadWithGlobalPolicy(model, recipeOptions);
       await refresh();
       onModelSelect(name);
     } catch (err) {
