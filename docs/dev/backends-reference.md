@@ -186,7 +186,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |-------|-----------|--------|
 | `kokoro-v1` | 0.354 | tts |
 
-#### `llamacpp` — Llama.cpp GPU (77 models)
+#### `llamacpp` — Llama.cpp GPU (87 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
@@ -217,6 +217,16 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Llama-3.2-1B-Instruct-GGUF` | 0.834 | — |
 | `Llama-3.2-3B-Instruct-GGUF` | 2.06 | — |
 | `Llama-4-Scout-17B-16E-Instruct-GGUF` | 63.2 | vision |
+| `MiniCPM-V-4-GGUF` | 3.15 | vision |
+| `MiniCPM-V-4.5-GGUF` | 6.12 | vision |
+| `MiniCPM-V-4.6-GGUF` | 1.64 | hot, vision |
+| `MiniCPM-V-4.6-Thinking-GGUF` | 1.64 | reasoning, vision |
+| `MiniCPM-o-2.6-Vision-GGUF` | 5.73 | vision |
+| `MiniCPM-o-4.5-Vision-GGUF` | 6.12 | vision |
+| `MiniCPM3-4B-GGUF` | 2.47 | — |
+| `MiniCPM4-8B-GGUF` | 4.97 | — |
+| `MiniCPM4.1-8B-GGUF` | 4.97 | reasoning |
+| `MiniCPM5-1B-GGUF` | 0.69 | hot, reasoning |
 | `Ministral-3-3B-Instruct-2512-GGUF` | 2.99 | vision |
 | `Nemotron-3-Nano-30B-A3B-GGUF` | 22.8 | — |
 | `Phi-4-mini-instruct-GGUF` | 2.49 | — |
