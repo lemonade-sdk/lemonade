@@ -102,28 +102,33 @@ class WhisperTests(ServerTestBase):
         """Load the configured Whisper model before positive transcription tests."""
         model = _get_whisper_model()
         whispercpp_backend = _get_whispercpp_backend()
-
-        # Load model with specified backend if provided
+    
+        load_payload = {"model_name": model}
+    
         if whispercpp_backend:
             print(f"[INFO] Loading model with {whispercpp_backend} backend")
-            load_payload = {
-                "model_name": model,
-                "whispercpp_backend": whispercpp_backend,
-            }
-            load_response = requests.post(
-                f"{self.base_url}/load",
-                json=load_payload,
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(
-                load_response.status_code,
-                200,
-                (
-                    f"Failed to load model {model} with {whispercpp_backend} "
-                    f"backend: {load_response.text}"
-                ),
-            )
-
+            load_payload["whispercpp_backend"] = whispercpp_backend
+        else:
+            print(f"[INFO] Loading model {model}")
+    
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json=load_payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+    
+        backend_description = (
+            f" with {whispercpp_backend} backend" if whispercpp_backend else ""
+        )
+        self.assertEqual(
+            load_response.status_code,
+            200,
+            (
+                f"Failed to load model {model}{backend_description}: "
+                f"{load_response.text}"
+            ),
+        )
+    
         return model
 
     def test_001_transcription_basic(self):
