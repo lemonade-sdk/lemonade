@@ -52,36 +52,36 @@ elseif(APPLE)
     )
 
 elseif(UNIX)  # Linux
-    # Check for Linux tray dependencies (GTK3, AppIndicator3)
-    find_package(PkgConfig REQUIRED)
+    option(REQUIRE_LINUX_TRAY
+        "Enable Linux system tray support (requires AppIndicator3; GTK3 not needed when using the glib variant)"
+        OFF)
 
-    option(REQUIRE_LINUX_TRAY "Enable Linux system tray support (requires AppIndicator3; GTK3 not needed when using the glib variant)" OFF)
+    if(REQUIRE_LINUX_TRAY)
+        find_package(PkgConfig REQUIRED)
 
-    pkg_check_modules(GTK3 gtk+-3.0)
+        pkg_check_modules(GTK3 gtk+-3.0)
 
-    # Prefer the newer GLib variant (GTK-free, recommended successor).
-    pkg_check_modules(APP_INDICATOR_GLIB ayatana-appindicator-glib-0.1)
-    if(NOT APP_INDICATOR_GLIB_FOUND)
-        pkg_check_modules(APP_INDICATOR_GLIB ayatana-appindicator-glib)
-    endif()
-    if(NOT APP_INDICATOR_GLIB_FOUND)
-        pkg_check_modules(APP_INDICATOR3 ayatana-appindicator3-0.1)
-        if(APP_INDICATOR3_FOUND)
-            set(HAVE_AYATANA_APPINDICATOR TRUE)
-        else()
-            pkg_check_modules(APP_INDICATOR3 appindicator3-0.1)
+        pkg_check_modules(APP_INDICATOR_GLIB ayatana-appindicator-glib-0.1)
+        if(NOT APP_INDICATOR_GLIB_FOUND)
+            pkg_check_modules(APP_INDICATOR_GLIB ayatana-appindicator-glib)
         endif()
-    endif()
+        if(NOT APP_INDICATOR_GLIB_FOUND)
+            pkg_check_modules(APP_INDICATOR3 ayatana-appindicator3-0.1)
+            if(APP_INDICATOR3_FOUND)
+                set(HAVE_AYATANA_APPINDICATOR TRUE)
+            else()
+                pkg_check_modules(APP_INDICATOR3 appindicator3-0.1)
+            endif()
+        endif()
 
-    pkg_check_modules(LIBNOTIFY libnotify)
+        pkg_check_modules(LIBNOTIFY libnotify)
 
-    if(REQUIRE_LINUX_TRAY AND NOT (APP_INDICATOR_GLIB_FOUND OR (GTK3_FOUND AND APP_INDICATOR3_FOUND)))
-        message(FATAL_ERROR "REQUIRE_LINUX_TRAY=ON but required dependencies not found. "
-            "Install one of: ayatana-appindicator-glib-devel (GTK-free), "
-            "or gtk3-devel + ayatana-appindicator3-devel / libappindicator-gtk3-devel.")
-    endif()
+        if(NOT (APP_INDICATOR_GLIB_FOUND OR (GTK3_FOUND AND APP_INDICATOR3_FOUND)))
+            message(FATAL_ERROR "REQUIRE_LINUX_TRAY=ON but required dependencies not found. "
+                "Install one of: ayatana-appindicator-glib-devel (GTK-free), "
+                "or gtk3-devel + ayatana-appindicator3-devel / libappindicator-gtk3-devel.")
+        endif()
 
-    if(APP_INDICATOR_GLIB_FOUND OR (GTK3_FOUND AND APP_INDICATOR3_FOUND))
         set(_LINUX_TRAY_BUILD ON)
 
         if(APP_INDICATOR_GLIB_FOUND)
@@ -119,8 +119,6 @@ elseif(UNIX)  # Linux
         endif()
 
         set(TRAY_PLATFORM_SOURCES platform/linux_tray.cpp)
-    else()
-        set(_LINUX_TRAY_BUILD OFF)
     endif()
 endif()
 
@@ -310,13 +308,15 @@ elseif(UNIX)
         else()
             message(STATUS "lemonade-tray: ENABLED (GTK3 + AppIndicator3)")
         endif()
-        if(LIBNOTIFY_FOUND)
+        if(REQUIRE_LINUX_TRAY AND LIBNOTIFY_FOUND)
             message(STATUS "  Notifications: ENABLED (libnotify)")
-        else()
-            message(STATUS "  Notifications: DISABLED")
         endif()
     else()
-        message(STATUS "lemonade-tray: NOT BUILT (AppIndicator3 not found)")
+        if(REQUIRE_LINUX_TRAY)
+            message(STATUS "lemonade-tray: DISABLED (REQUIRE_LINUX_TRAY=ON but deps not found)")
+        else()
+            message(STATUS "lemonade-tray: DISABLED (REQUIRE_LINUX_TRAY=OFF)")
+        endif()
     endif()
 endif()
 message(STATUS "====================================")

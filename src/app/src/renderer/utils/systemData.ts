@@ -39,8 +39,23 @@ export interface Recipes {
   [recipeName: string]: Recipe;
 }
 
+// Per-recipe option schema, generated from the C++ backend descriptor.
+export interface RecipeOptionSchema {
+  name: string;
+  cli_flag: string;
+  default: unknown;
+  type_name: string;
+  help: string;
+  group: string;
+}
+
 export interface Recipe {
   default_backend?: string;
+  // Descriptor metadata (generated from the C++ backend descriptors).
+  display_name?: string;
+  selectable_backend?: boolean;
+  uses_ctx_size?: boolean;
+  options?: RecipeOptionSchema[];
   backends: {
     [backendName: string]: BackendInfo;
   };
@@ -74,6 +89,11 @@ const fetchSystemInfoFromAPI = async (): Promise<SystemData> => {
 
     const data = await response.json();
     const systemInfo: SystemInfo = { ...data };
+
+    // Seed recipe display names from the descriptor-generated /system-info data
+    // so the UI doesn't hardcode per-recipe names.
+    const { updateRecipeDisplayNames } = await import('./recipeNames');
+    updateRecipeDisplayNames(systemInfo.recipes);
 
     return { info: systemInfo };
   } catch (error) {

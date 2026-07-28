@@ -34,9 +34,10 @@ interface BackendManagerProps {
   searchQuery: string;
   showError: (msg: string) => void;
   showSuccess: (msg: string) => void;
+  showWarning: (msg: string) => void;
 }
 
-const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError, showSuccess }) => {
+const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError, showSuccess, showWarning }) => {
   const { systemInfo, isLoading, refresh } = useSystem();
   const [backendAssetSizes, setBackendAssetSizes] = useState<Record<string, number>>({});
 
@@ -172,6 +173,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
       searchQuery={searchQuery}
       showError={showError}
       showSuccess={showSuccess}
+      showWarning={showWarning}
     />
   );
 

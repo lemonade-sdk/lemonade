@@ -104,12 +104,39 @@ public:
     };
     static std::vector<RecipeStatus> get_all_recipe_statuses();
 
-    static std::string get_flm_version();
-    static std::string get_system_llamacpp_version();
-
     // Device support detection
     static std::string get_rocm_arch();
     static std::string get_cuda_arch();
+
+    // Picks the ROCm compute target from an "amd_gpu" device array: a discrete GPU wins
+    // over an integrated one on a hybrid host (e.g. Strix Halo APU + MI300X dGPU).
+    static std::string select_rocm_arch(const json& amd_gpu_devices);
+
+    // Collapse a concrete ROCm ISA (e.g. gfx1201) to the family target name the
+    // GitHub release repos publish their assets under (e.g. gfx120X), per the
+    // rocm_asset_families map in backend_versions.json. ISAs absent from the map
+    // (and values already in family form) are returned unchanged.
+    static std::string rocm_asset_family(const std::string& arch);
+
+    // AMD ships CDNA-dcgpu (gfx942) vLLM wheels on a different cadence than RDNA, so no
+    // single tag covers both; returns vllm.rocm_arch_overrides[family], or empty for the
+    // default pin. Beware: vLLM release tags use the raw ISA (gfx942), unlike
+    // therock.url_mapping, which maps it to gfx94X-dcgpu.
+    static std::string vllm_rocm_version_override(const std::string& asset_family);
+
+    // When set non-empty on the calling thread, get_rocm_arch() returns this
+    // value instead of probing hardware, so backend asset URLs can be resolved
+    // for an arbitrary GPU topology with no GPU present. Per-thread so it cannot
+    // affect concurrent requests.
+    static void set_rocm_arch_override(const std::string& arch);
+
+    // True if (recipe, backend) is published for the given ROCm family/ISA, per
+    // the backend support matrix. Lets callers tell "this arch should have an
+    // asset" from "this arch is intentionally not built" without duplicating the
+    // matrix.
+    static bool backend_supports_arch(const std::string& recipe,
+                                      const std::string& backend,
+                                      const std::string& arch);
 
     // CUDA release assets are architecture-specific (sm_89, sm_120, etc.).
     // Return the physical CUDA device indices whose compute capability matches

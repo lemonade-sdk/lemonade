@@ -5,10 +5,10 @@
 #      area::*, runtime::*, component, and type labels. Runs once per
 #      newly opened issue/PR.
 #   2. Deterministic priority::warm / priority::hot from community
-#      engagement counts (commenters + supporting reactions, excluding
-#      maintainers). Refreshed on every new comment (engagement event)
-#      and via a daily cron (to pick up reaction-only changes, which
-#      don't fire webhook events).
+#      engagement counts (author + commenters + supporting reactions,
+#      excluding bots and write-access users). Refreshed on every new
+#      comment (engagement event) and via a daily cron (to pick up
+#      reaction-only changes, which don't fire webhook events).
 #
 # *** Labels applied by this workflow are ADVISORY ONLY. ***
 # Do not use them as inputs to CI gates, release gates, security

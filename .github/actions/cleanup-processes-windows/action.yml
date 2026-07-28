@@ -46,6 +46,10 @@ runs:
         # Kill FLM processes (Windows only)
         Stop-ProcessByPattern -Pattern "flm" -Description "FLM"
 
+        # Kill backend subprocesses that outlive a force-killed lemond
+        Stop-ProcessByPattern -Pattern "ort-server" -Description "ort-server"
+        Stop-ProcessByPattern -Pattern "moonshine-server" -Description "moonshine-server"
+
         # Kill lemonade processes (lemond, lemonade, lemonade-tray, etc.)
         Stop-ProcessByPattern -Pattern "lemonade" -Description "lemonade"
         Stop-ProcessByPattern -Pattern "lemond" -Description "lemond"

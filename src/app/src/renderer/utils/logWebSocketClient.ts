@@ -1,4 +1,4 @@
-import { buildWebSocketUrl } from './serverConfig';
+import { buildWebSocketUrl, webSocketProtocols } from './serverConfig';
 
 export interface LogEntry {
   seq: number;
@@ -24,8 +24,9 @@ export async function connectLogStream(
   afterSeq: number | null,
   callbacks: LogStreamCallbacks,
 ): Promise<LogStreamHandle> {
+  const protocols = await webSocketProtocols();
   const wsUrl = buildWebSocketUrl('/logs/stream');
-  const socket = new WebSocket(wsUrl);
+  const socket = new WebSocket(wsUrl, protocols);
 
   socket.addEventListener('open', () => {
     socket.send(JSON.stringify({

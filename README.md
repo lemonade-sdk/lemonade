@@ -113,7 +113,7 @@ For hybrid setups, Lemonade can also route to any OpenAI-compatible cloud provid
 
 Lemonade supports a wide variety of LLMs (**GGUF**, **FLM**, and **ONNX**), whisper, stable diffusion, etc. models across CPU, GPU, and NPU.
 
-Use `lemonade pull` or the built-in **Model Manager** to download models. You can also import custom GGUF/ONNX models from Hugging Face.
+Use `lemonade pull` or the built-in **Model Manager** to download models. Custom GGUF/ONNX models can be pulled from Hugging Face or ModelScope, with their source retained for future updates.
 
 **[Browse all built-in models →](https://lemonade-server.ai/models.html)**
 
@@ -123,6 +123,7 @@ Use `lemonade pull` or the built-in **Model Manager** to download models. You ca
 
 Lemonade supports multiple inference engines for LLM, speech, TTS, and image generation, and each has its own backend and hardware requirements.
 
+<!-- BEGIN GENERATED: backends-matrix -->
 <table>
   <thead>
     <tr>
@@ -137,18 +138,28 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     <tr>
       <td rowspan="9"><strong>Text generation</strong></td>
       <td rowspan="6"><code>llamacpp</code></td>
+      <td><code>system</code></td>
+      <td><code>x86_64</code>/ARM64 CPU, GPU</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td><code>metal</code></td>
+      <td>Apple Silicon GPU</td>
+      <td>macOS</td>
+    </tr>
+    <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs (Turing or newer)**</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
       <td><code>vulkan</code></td>
       <td><code>x86_64</code> CPU, AMD iGPU, AMD dGPU; ARM64 CPU/GPU (Linux)</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
       <td><code>rocm</code></td>
-      <td>Supported AMD ROCm iGPU/dGPU families*</td>
-      <td>Windows, Linux</td>
-    </tr>
-    <tr>
-      <td><code>cuda</code></td>
-      <td>NVIDIA GPUs (Turing or newer)**</td>
+      <td>Supported AMD ROCm iGPU/dGPU families, incl. AMD Instinct MI300X (gfx942) and MI350X (gfx950, Linux + stable only)*</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
@@ -157,44 +168,39 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>metal</code></td>
-      <td>Apple Silicon GPU</td>
-      <td>macOS</td>
-    </tr>
-    <tr>
-      <td><code>system</code></td>
-      <td><code>x86_64</code>/ARM64 CPU, GPU</td>
-      <td>Linux</td>
-    </tr>
-    <tr>
-      <td><code>flm</code></td>
+      <td rowspan="1"><code>flm</code></td>
       <td><code>npu</code></td>
       <td>XDNA2 NPU</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>ryzenai-llm</code></td>
+      <td rowspan="1"><code>ryzenai-llm</code></td>
       <td><code>npu</code></td>
       <td>XDNA2 NPU</td>
       <td>Windows</td>
     </tr>
     <tr>
-      <td><code>vllm</code> (experimental)</td>
+      <td rowspan="1"><code>vllm</code> (experimental)</td>
       <td><code>rocm</code></td>
       <td>Strix Halo iGPU (gfx1151)</td>
       <td>Linux</td>
     </tr>
     <tr>
-      <td rowspan="4"><strong>Speech-to-text</strong></td>
-      <td rowspan="3"><code>whispercpp</code></td>
+      <td rowspan="6"><strong>Speech-to-text</strong></td>
+      <td rowspan="5"><code>whispercpp</code></td>
       <td><code>npu</code></td>
       <td>XDNA2 NPU</td>
       <td>Windows</td>
     </tr>
     <tr>
+      <td><code>rocm</code></td>
+      <td>Supported AMD ROCm iGPU/dGPU families*</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
       <td><code>vulkan</code></td>
       <td><code>x86_64</code> CPU</td>
-      <td>Linux</td>
+      <td>Windows, Linux</td>
     </tr>
     <tr>
       <td><code>cpu</code></td>
@@ -202,23 +208,37 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>moonshine</code></td>
+      <td><code>metal</code></td>
+      <td>Apple Silicon GPU</td>
+      <td>macOS</td>
+    </tr>
+    <tr>
+      <td rowspan="1"><code>moonshine</code></td>
       <td><code>cpu</code></td>
       <td><code>x86_64</code>/<code>arm64</code> CPU</td>
       <td>Windows, Linux, macOS</td>
     </tr>
     <tr>
-      <td><strong>Text-to-speech</strong></td>
-      <td><code>kokoro</code></td>
+      <td rowspan="5"><strong>Text-to-speech</strong></td>
+      <td rowspan="2"><code>kokoro</code></td>
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td rowspan="4"><strong>Image generation</strong></td>
-      <td rowspan="4"><code>sd-cpp</code></td>
+      <td><code>metal</code></td>
+      <td>Apple Silicon GPU</td>
+      <td>macOS</td>
+    </tr>
+    <tr>
+      <td rowspan="3"><code>openmoss</code> (experimental)</td>
       <td><code>rocm</code></td>
-      <td>Supported AMD ROCm iGPU/dGPU families*</td>
+      <td>AMD GPUs (ROCm via TheRock)</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
@@ -227,17 +247,102 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
+      <td rowspan="6"><strong>Audio generation</strong></td>
+      <td rowspan="3"><code>thinksound</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>vulkan</code></td>
+      <td>Vulkan-capable GPUs</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="3"><code>acestep</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>vulkan</code></td>
+      <td>Vulkan-capable GPUs</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="5"><strong>Image generation</strong></td>
+      <td rowspan="5"><code>sd-cpp</code></td>
+      <td><code>rocm</code></td>
+      <td>Supported AMD ROCm iGPU/dGPU families*</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
       <td><code>cuda</code></td>
       <td>NVIDIA GPUs (Turing or newer)**</td>
-      <td>Linux</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>vulkan</code></td>
+      <td>Vulkan-capable GPUs</td>
+      <td>Windows, Linux</td>
     </tr>
     <tr>
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU</td>
       <td>Windows, Linux</td>
     </tr>
+    <tr>
+      <td><code>metal</code></td>
+      <td>Apple Silicon GPU</td>
+      <td>macOS</td>
+    </tr>
+    <tr>
+      <td rowspan="3"><strong>3D generation</strong></td>
+      <td rowspan="3"><code>trellis</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>vulkan</code></td>
+      <td>Vulkan-capable GPUs</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="3"><strong>Text classification</strong></td>
+      <td rowspan="3"><code>onnxruntime</code> (experimental)</td>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code> CPU</td>
+      <td>Windows</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code>/<code>arm64</code> CPU</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>arm64</code> CPU</td>
+      <td>macOS</td>
+    </tr>
   </tbody>
 </table>
+<!-- END GENERATED: backends-matrix -->
 
 To check exactly which recipes/backends are supported on your own machine, run:
 
@@ -325,7 +430,7 @@ lemonade backends
 
 Lemonade's roadmap is defined by a set of working groups. Visit the landing page [here](./docs/dev/working-groups/README.md) to learn each group's goal and roadmap.
 
-## Integrate Embeddable Lemonade in You Application
+## Integrate Embeddable Lemonade in Your Application
 
 Embeddable Lemonade is a binary version of Lemonade that you can bundle into your own app to give it a portable, auto-optimizing, multi-modal local AI stack. This lets users focus on your app, with zero Lemonade installers, branding, or telemetry.
 
@@ -387,7 +492,7 @@ Free code signing provided by [SignPath.io](https://signpath.io), certificate by
 - **Committers and reviewers**: [Maintainers](#maintainers) of this repo
 - **Approvers**: [Owners](https://github.com/orgs/lemonade-sdk/people?query=role%3Aowner)
 
-**Privacy policy**: This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. When the user requests it, Lemonade downloads AI models from [Hugging Face Hub](https://huggingface.co/) (see their [privacy policy](https://huggingface.co/privacy)).
+**Privacy policy**: This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. When the user requests a model download or registry lookup, Lemonade may contact [Hugging Face Hub](https://huggingface.co/) (see their [privacy policy](https://huggingface.co/privacy)) or [ModelScope](https://modelscope.cn/), according to the model source selected by the user or packager.
 
 ## License and Attribution
 
@@ -400,6 +505,7 @@ This project is:
   - [kokoros](https://github.com/lucasjinreal/Kokoros)
   - [OnnxRuntime GenAI](https://github.com/microsoft/onnxruntime-genai)
   - [Hugging Face Hub](https://github.com/huggingface/huggingface_hub)
+  - [ModelScope](https://github.com/modelscope/modelscope)
   - [OpenAI API](https://github.com/openai/openai-python)
   - [IRON/MLIR-AIE](https://github.com/Xilinx/mlir-aie)
   - and more...

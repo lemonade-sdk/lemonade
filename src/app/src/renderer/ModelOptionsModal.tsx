@@ -140,7 +140,15 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
         setModelInfo({ ...data });
 
         const checkpoint = typeof data.checkpoint === 'string' ? data.checkpoint : '';
-        setModelUrl(checkpoint ? `https://huggingface.co/${checkpoint.replace(/:.+$/, '')}` : '');
+        const repoId = checkpoint.replace(/:.+$/, '');
+        const registrySource = data.registry_source
+          ?? (data.source === 'modelscope' || data.source === 'huggingface'
+            ? data.source
+            : 'huggingface');
+        const registryUrl = registrySource === 'modelscope'
+          ? `https://modelscope.cn/models/${repoId}/summary`
+          : `https://huggingface.co/${repoId}`;
+        setModelUrl(checkpoint ? registryUrl : '');
 
         const recipe = data.recipe as string;
         const recipeOptions = data.recipe_options ?? {};

@@ -43,6 +43,17 @@ public:
     // Get all enrichment data for a backend in one call (avoids repeated config lookups)
     BackendEnrichment get_backend_enrichment(const std::string& recipe, const std::string& backend);
 
+    // Install parameters for a backend (repo + filename + version)
+    struct InstallParams {
+        std::string repo;
+        std::string filename;
+        std::string version;
+    };
+
+    // Unlike the enrichment helpers above, this returns the repo and lets
+    // exceptions propagate so callers can surface stale-pin/404-shaped failures.
+    InstallParams get_install_params(const std::string& recipe, const std::string& backend);
+
     // Returns the most-recent upstream release tag for the given (recipe, backend),
     // resolved via GitHub. The result is cached for the lifetime of this
     // BackendManager so each repo is queried at most once. Returns "" on failure
@@ -69,16 +80,6 @@ private:
 
     // Get version for a recipe/backend from the cached config
     std::string get_version_from_config(const std::string& recipe, const std::string& backend);
-
-    // Install parameters for a backend (repo + filename + version)
-    struct InstallParams {
-        std::string repo;
-        std::string filename;
-        std::string version;
-    };
-
-    // Get the install parameters for a recipe/backend combination
-    InstallParams get_install_params(const std::string& recipe, const std::string& backend);
 
     // Resolve the user's *_bin config value for a (recipe, backend) into a
     // concrete release tag. Falls back to `pinned_version` for "" / "builtin"

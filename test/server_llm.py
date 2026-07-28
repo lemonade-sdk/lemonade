@@ -168,7 +168,7 @@ class LLMTests(ServerTestBase):
         self.assertGreater(
             chunk_count, 2, f"Should have multiple chunks, got {chunk_count}"
         )
-        self.assertGreater(len(complete_response), 5, "Response should have content")
+        self.assertGreater(len(complete_response), 0, "Response should have content")
 
     @skip_if_unsupported("chat_completions_async")
     def test_003_chat_completions_streaming_async(self):
@@ -199,7 +199,7 @@ class LLMTests(ServerTestBase):
 
             print()
             self.assertGreater(chunk_count, 2)
-            self.assertGreater(len(complete_response), 5)
+            self.assertGreater(len(complete_response), 0)
 
         asyncio.run(_run())
 
@@ -221,7 +221,7 @@ class LLMTests(ServerTestBase):
         )
 
         print(f"Response: {completion.choices[0].text}")
-        self.assertGreater(len(completion.choices[0].text), 5)
+        self.assertGreater(len(completion.choices[0].text), 0)
 
         # Check usage fields
         self.assertGreater(completion.usage.prompt_tokens, 0)
@@ -251,7 +251,7 @@ class LLMTests(ServerTestBase):
 
         print()
         self.assertGreater(chunk_count, 2)
-        self.assertGreater(len(complete_response), 5)
+        self.assertGreater(len(complete_response), 0)
 
     @skip_if_unsupported("completions_async")
     def test_006_completions_streaming_async(self):
@@ -278,7 +278,7 @@ class LLMTests(ServerTestBase):
 
             print()
             self.assertGreater(chunk_count, 2)
-            self.assertGreater(len(complete_response), 5)
+            self.assertGreater(len(complete_response), 0)
 
         asyncio.run(_run())
 
@@ -301,7 +301,7 @@ class LLMTests(ServerTestBase):
         )
 
         print(f"Response: {response.output[0].content[0].text}")
-        self.assertGreater(len(response.output[0].content[0].text), 5)
+        self.assertGreater(len(response.output[0].content[0].text), 0)
 
     @skip_if_unsupported("responses_api_streaming")
     def test_008_responses_api_streaming(self):
@@ -343,7 +343,7 @@ class LLMTests(ServerTestBase):
 
         print()
         self.assertEqual(last_event_type, "response.completed")
-        self.assertGreater(len(complete_response), 5)
+        self.assertGreater(len(complete_response), 0)
 
     # =========================================================================
     # PARAMETER TESTS

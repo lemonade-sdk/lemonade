@@ -1,0 +1,11 @@
+{
+  "version": "1",
+  "route_to": "Qwen3-8B-GGUF",
+  "matched_rule": "keep-private",
+  "default_used": false,
+  "outputs": { "verdict": "warn" },
+  "trace": [
+    { "condition": "classifier:pii", "score": 0.81, "result": true },
+    { "condition": "keywords_any", "result": false }
+  ]
+}

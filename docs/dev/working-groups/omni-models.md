@@ -16,7 +16,7 @@ Please see the general [contribution guidelines](../contribute.md), then contact
 
 ## Roadmap
 
-> Roadmap items may be high-level objectives that may span multiple issues and PRs. Specific issues and PRs can be found in the [Omni Models GitHub Milestone](github.com/lemonade-sdk/lemonade/milestone/11).
+> Roadmap items may be high-level objectives that may span multiple issues and PRs. Specific issues and PRs can be found in the [Omni Models GitHub Milestone](https://github.com/lemonade-sdk/lemonade/milestone/11).
 
 - [ ] Develop application-specific LMX skills, system prompts, and tools to be more useful for workflows such as image generation.
 - [ ] Update the Lemonade website and top-level README to emphasize the developer journey, towards embedding lemond and integrating LMX models.

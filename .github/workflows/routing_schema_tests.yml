@@ -1,0 +1,31 @@
+name: Routing Schema Tests
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  routing-schema-tests:
+    name: Routing schema + fixtures
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip jsonschema
+      # Pure-python, no server binary needed — fast PR gate for the routing
+      # policy/decision schemas. Keeps the back-compat guardrails enforced.
+      - name: Validate fixtures against the JSON schemas
+        run: python test/test_routing_fixtures.py
+      - name: Verify frozen-major schema lock
+        run: python test/test_schema_lock.py

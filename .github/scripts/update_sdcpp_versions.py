@@ -15,7 +15,6 @@ import re
 from pathlib import Path
 from typing import Iterable
 
-
 SDCPP_RELEASE_RE = re.compile(r"^master-[0-9]+-[0-9a-f]{7,40}$")
 DEFAULT_BACKENDS = ("cpu", "vulkan", "rocm-stable", "metal", "cuda")
 FORBIDDEN_BACKENDS = {"rocm-nightly"}
@@ -52,7 +51,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def validate_backends(requested: Iterable[str], section: dict[str, object]) -> list[str]:
+def validate_backends(
+    requested: Iterable[str], section: dict[str, object]
+) -> list[str]:
     keys: list[str] = []
     seen: set[str] = set()
     for key in requested:

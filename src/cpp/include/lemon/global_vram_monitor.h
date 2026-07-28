@@ -41,7 +41,7 @@ private:
     std::atomic<bool> running_;
     int poll_interval_ms_;
     std::thread monitor_thread_;
-    
+
     std::mutex callback_mutex_;
     VramPressureCallback pressure_callback_;
 };

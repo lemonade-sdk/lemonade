@@ -6,17 +6,24 @@
 
 namespace lemon_cli {
 
-// Accept either a bare Hugging Face repo id / checkpoint string or a full
-// huggingface.co URL and return the canonical checkpoint form expected by the
-// CLI and server (for example: owner/repo[:variant]).
+// Accept a bare checkpoint or a Hugging Face / ModelScope model URL. The
+// returned value is owner/repo[:variant]. When detected_source is non-null it
+// receives "huggingface" or "modelscope" when the URL identifies a provider;
+// otherwise it receives the normalized source_hint.
+std::string normalize_registry_checkpoint_arg(const std::string& arg,
+                                              const std::string& source_hint,
+                                              std::string* detected_source = nullptr);
+
+// Backward-compatible helper retained for existing callers/tests.
 std::string normalize_huggingface_checkpoint_arg(const std::string& arg);
 
-// Pull a model from a Hugging Face checkpoint id, optionally with a variant
-// suffix (`owner/repo[:variant]`). Fetches /api/v1/pull/variants from lemond,
-// presents an interactive variant menu when needed, then issues /v1/pull.
-//
-// `assume_yes` skips the interactive menu and picks the first variant.
-// Returns 0 on success, non-zero on error.
+// Discover variants through lemond and pull from the selected remote registry.
+int registry_pull_flow(lemonade::LemonadeClient& client,
+                       const std::string& model_arg,
+                       bool assume_yes,
+                       const std::string& registry_source);
+
+// Backward-compatible Hugging Face entry point.
 int hf_pull_flow(lemonade::LemonadeClient& client,
                  const std::string& model_arg,
                  bool assume_yes);

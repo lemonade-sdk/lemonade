@@ -266,7 +266,7 @@ lemonade --help
 lemond --help
 ```
 
-### Linux .rpm Package (Fedora 43 & 44)
+### Linux .rpm Package (Fedora, RHEL etc)
 
 **Building:**
 
@@ -395,9 +395,9 @@ The notarization process will:
 3. Install Dev Containers extension in Visual Studio Code by using
   control + p to open the command bar at the top of the IDE or if on mac with Cmd + p.
 4. Type "> Extensions: Install Extensions" which will open the Extensions side panel.
-5. in the extensions search type ```Dev Containers``` and install it.
+5. in the extensions search type `Dev Containers` and install it.
 6. Once completed with the prior steps you may run command
-```>Dev Containers: Open Workspace in Container``` or ```>Dev Containers: Open Folder in Container``` which you can do in the command bar in the IDE and it should reopen the visual studio code project.
+`Dev Containers: Open Workspace in Container` or `Dev Containers: Open Folder in Container` which you can do in the command bar in the IDE and it should reopen the visual studio code project.
 7. It will launch a docker and start building a new docker and then the project will open in visual studio code.
 
 ### Build & Compile Options
@@ -439,7 +439,7 @@ The notarization process will:
 > Cmake: Delete Cache and Reconfigure
 ```
 
-2. Custom configurations for cmake are in the root directory under ```.vscode/settings.json``` in which you may set custom args for launching the debug in the json key ```cmake.debugConfig```
+2. Custom configurations for cmake are in the root directory under `.vscode/settings.json` in which you may set custom args for launching the debug in the json key `cmake.debugConfig`
 
 > **Note**
 >
@@ -625,6 +625,7 @@ Internal endpoints accept connections from any address, so first-party clients o
 | `POST` | `/internal/shutdown` | Unloads all models and shuts down the server |
 | `POST` | `/internal/set` | Unified config setter (see below) |
 | `GET`  | `/internal/config` | Returns the full runtime config snapshot |
+| `GET`  | `/internal/config/defaults` | Returns the canonical default config (factory defaults) |
 | `POST` | `/internal/cleanup-cache` | Cleans up orphaned files in the Hugging Face cache |
 | `POST` | `/internal/pin` | Pin or unpin a loaded model |
 
@@ -674,6 +675,15 @@ Returns the full runtime configuration as a flat JSON object containing all serv
 **Example:**
 ```bash
 curl http://localhost:13305/internal/config
+```
+
+#### `GET /internal/config/defaults`
+
+Returns the canonical default configuration — the values a brand-new `config.json` is seeded with, independent of this instance's current config or deployment overrides. The per-recipe sections come from the backend descriptors (each descriptor's `config_defaults()`), making this the authoritative source of the factory defaults. `docs/tools/gen_backend_boilerplate.py` reads this endpoint to regenerate the committed `src/cpp/resources/defaults.json`, and a CI `--check` fails if that file drifts from the descriptors.
+
+**Example:**
+```bash
+curl http://localhost:13305/internal/config/defaults
 ```
 
 ### Dependencies

@@ -8,7 +8,7 @@
 
 namespace lemon {
 
-// Single GGUF variant detected in a Hugging Face repository.
+// Single GGUF variant detected in a remote model registry repository.
 struct GgufVariant {
     std::string name;          // Quant token (e.g. "Q4_K_M") or folder/file name fallback.
     std::string primary_file;  // First file (lexicographic) representing this variant.
@@ -17,16 +17,15 @@ struct GgufVariant {
     uint64_t size_bytes = 0;   // Sum of file sizes (0 if unknown).
 };
 
-// Result of enumerating GGUF variants in a HF repo file listing.
+// Result of enumerating GGUF variants in a registry file listing.
 struct GgufVariantSet {
     std::vector<GgufVariant> variants;
     std::vector<std::string> mmproj_files;  // Bare filenames of mmproj-*.gguf files.
 };
 
-// Enumerate GGUF variants from a list of files in a HuggingFace repository.
+// Enumerate GGUF variants from a normalized repository file list.
 //
-// `repo_files` should be the rfilenames from the HF /api/models/<id> "siblings"
-// array. `file_sizes` is an optional map (rfilename -> size in bytes) used to
+// `repo_files` is the normalized path list returned by the selected registry. `file_sizes` is an optional map (rfilename -> size in bytes) used to
 // populate per-variant size totals; missing entries are treated as 0.
 //
 // Mirrors the JS logic in src/app/src/renderer/ModelManager.tsx detectBackend()
@@ -37,10 +36,16 @@ GgufVariantSet enumerate_gguf_variants(
 
 // Build the JSON response body for GET /api/v{0,1}/pull/variants.
 //
-// Performs the HTTP call to HuggingFace, runs `enumerate_gguf_variants`,
+// Queries the selected registry, runs `enumerate_gguf_variants`,
 // derives suggested labels from the repo id, and returns the response JSON.
 // Throws std::runtime_error on transport failure; sets `not_found` true if
-// the HF API returned 404 so the caller can return an HTTP 404.
-nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_found);
+// the registry reports a missing/inaccessible repo so the caller can return HTTP 404.
+nlohmann::json fetch_pull_variants(const std::string& checkpoint,
+                                   const std::string& registry_source,
+                                   bool& not_found);
+
+inline nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_found) {
+    return fetch_pull_variants(checkpoint, "huggingface", not_found);
+}
 
 }  // namespace lemon

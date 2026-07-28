@@ -27,7 +27,6 @@
 #include <httplib.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstring>
@@ -36,6 +35,8 @@
 #include <thread>
 
 namespace lemon {
+
+bool is_websocket_endpoint(const std::string& path);
 
 namespace detail {
 
@@ -99,17 +100,7 @@ inline bool peek_websocket_upgrade(socket_t sock) {
         if (query != std::string::npos) {
             path = path.substr(0, query);
         }
-        // Accept the bare and quad-prefixed forms (mirrors
-        // WebSocketServer::classify_path; OpenAI Realtime SDK clients use
-        // /v1/realtime)
-        for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
-            size_t len = std::strlen(prefix);
-            if (path.rfind(prefix, 0) == 0 && path.size() > len && path[len] == '/') {
-                path = path.substr(len);
-                break;
-            }
-        }
-        if (path != "/realtime" && path != "/logs/stream") {
+        if (!lemon::is_websocket_endpoint(path)) {
             return false;
         }
 

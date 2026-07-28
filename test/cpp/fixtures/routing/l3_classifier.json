@@ -1,0 +1,24 @@
+{
+  "version": "1",
+  "model_name": "user.Router-Classify",
+  "recipe": "collection.router",
+  "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b", "pii-detector-small", "jailbreak-detector-small"],
+  "routing": {
+    "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+    "default_model": "vllm.qwen3-32b",
+    "classifiers": [
+      { "id": "pii",       "type": "classifier", "model": "pii-detector-small",
+        "labels": ["PII", "NO_PII"],        "default_label": "PII",       "on_error": "match_true" },
+      { "id": "jailbreak", "type": "classifier", "model": "jailbreak-detector-small",
+        "labels": ["JAILBREAK", "BENIGN"],  "default_label": "JAILBREAK", "on_error": "match_true" }
+    ],
+    "rules": [
+      { "id": "sensitive-stays-local",
+        "match": { "any": [
+          { "classifier": "pii",       "min_score": 0.5 },
+          { "classifier": "jailbreak", "min_score": 0.5 } ] },
+        "route_to": "Qwen3-8B-GGUF",
+        "outputs": { "verdict": "warn" } }
+    ]
+  }
+}

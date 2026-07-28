@@ -443,10 +443,17 @@ CollectionOrchestrator::ToolSet CollectionOrchestrator::build_tools(const ModelI
     }
     if (!tool_list.empty() && tool_list.back() == '\n') tool_list.pop_back();
 
-    // Build the omni system prompt.
-    if (defs.contains("system_prompt") && defs["system_prompt"].is_string()) {
-        std::string prompt = replace_all(defs["system_prompt"].get<std::string>(),
-                                         "{tool_list}", tool_list);
+    // Build the omni system prompt. The collection model's own `system_prompt`
+    // overrides the global default in toolDefinitions.json so authors can
+    // customize behavior per collection without forking the shared file.
+    std::string prompt_template;
+    if (!collection_info.system_prompt.empty()) {
+        prompt_template = collection_info.system_prompt;
+    } else if (defs.contains("system_prompt") && defs["system_prompt"].is_string()) {
+        prompt_template = defs["system_prompt"].get<std::string>();
+    }
+    if (!prompt_template.empty()) {
+        std::string prompt = replace_all(prompt_template, "{tool_list}", tool_list);
         result.system_prompt = replace_all(prompt, "{tool_guidance}", tool_guidance);
     }
 
