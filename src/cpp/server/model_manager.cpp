@@ -127,15 +127,20 @@ static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 // unsupported chat_completion path at runtime.
 static ModelType get_deployment_model_type(const std::string& recipe,
                                            const std::vector<std::string>& labels) {
+    const ModelType declared = get_model_type_from_labels(labels);
     if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
         for (const auto& label : desc->default_labels) {
             ModelType backend_type = get_model_type_from_labels({label});
             if (backend_type != ModelType::LLM) {
-                return backend_type;
+                // A backend may serve several modalities (openmoss: tts +
+                // audio-generation). Its default label is the fallback, not an
+                // override — but only a definitive claim by the model displaces
+                // it, so a stray chat-indicator label still cannot promote to LLM.
+                return declared != ModelType::LLM ? declared : backend_type;
             }
         }
     }
-    ModelType type = get_model_type_from_labels(labels);
+    ModelType type = declared;
 
     // Reaching here means the backend declares no definitive non-LLM deployment,
     // i.e. it is a chat/general backend (llamacpp/flm/ryzenai/vllm/cloud) — none

@@ -6,6 +6,7 @@ import { AccountSession, currentSession, subscribeAccountSessionChanges } from '
 import { setPresetStorageScope } from './presetStore';
 import { customModelToModelInfo, loadCustomModels } from './features/customModels/customModelStore';
 import { findModelInfoByName, isCollectionFullyLoaded, isCollectionModel, withVirtualLoadedCollections } from './features/collections/collectionModels';
+import { isModelSelectionLocked, onModelSelectionUnlocked } from './features/modelSettings/modelSelectionLock';
 import ChatView from './components/ChatView';
 import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
@@ -314,10 +315,16 @@ const App: React.FC = () => {
     };
     setLoadedModels(enriched);
     setCurrentModel(current => {
+      if (current && isModelSelectionLocked()) return current;
       if (current && enriched.some(m => m.model_name === current && (canSelectInComposer(m) || customSelectable(m.model_name) || infoSelectable(m.model_name)))) return current;
       if (current) {
         const info = findModelInfoByName(knownInfos, current);
         if (info && isCollectionModel(info) && isCollectionFullyLoaded(info, loaded)) return current;
+        // A downloaded model the user picked stays picked while it is still
+        // being prepared. Loading a backend can take minutes (install, then
+        // weights), and eviction is a resource decision, not a user one —
+        // neither should silently retarget the composer.
+        if (info && (info as any).downloaded) return current;
       }
       const virtualOmni = enriched.find(model => {
         const info = findModelInfoByName(knownInfos, model.model_name);
@@ -329,6 +336,12 @@ const App: React.FC = () => {
         || null;
     });
   }, [accountSession.storageScope]);
+
+  useEffect(() => onModelSelectionUnlocked(() => {
+    api.refresh()
+      .then(result => { if (result) applyLoadedModels(result.health.all_models_loaded); })
+      .catch(() => { });
+  }), [applyLoadedModels]);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
     if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;

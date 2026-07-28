@@ -2572,7 +2572,8 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
             break;
         }
     }
-    for (const char* key : {"display_name", "component_roles", "custom_tools"}) {
+    for (const char* key : {"display_name", "component_roles", "custom_tools",
+                            "speech_defaults", "audio_defaults"}) {
         auto it = info.extras.find(key);
         if (it != info.extras.end() && !it->second.is_null()) {
             model_json[key] = it->second;
