@@ -9081,6 +9081,40 @@ button.detail-presets__explanation-step {
     flex-basis: 100%;
   }
 }
+/* -- Model Configuration Tab ---------------------------------------- */
+.detail-configuration {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.detail-configuration__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.detail-configuration__section-heading {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* Constrain grid columns so fields do not stretch too wide */
+.detail-configuration .detail-tuning__field-grid {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 280px));
+}
+
 /* ── Session Inspector Redesign Styles ──────────────────────── */
 .inspect-layout {
   display: grid;

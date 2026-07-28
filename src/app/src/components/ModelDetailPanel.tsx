@@ -168,7 +168,7 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   trellis_backend: 'TRELLIS accelerator backend for 3D reconstruction.',
   'sd-cpp_backend': 'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.',
   llamacpp_device: 'Optional device selector for the selected backend.',
-  llamacpp_args: 'Raw backend args for this model and selected backend only.',
+  llamacpp_args: 'CLI-style flags for llama-server, applied on Load/Reload. E.g. --gpu-layers 35 --threads 8 --batch-size 512. See llama-server --help for all options.',
   sdcpp_args: 'Raw backend args for this image model only.',
   whispercpp_args: 'Raw backend args for this transcription model only.',
   moonshine_args: 'Raw backend args for this transcription model only.',
@@ -2337,16 +2337,28 @@ const ModelConfigurationTab: React.FC<{
     }
 
     if (ARGS_TUNING_KEYS.has(key)) {
+      const hint = TUNING_FIELD_HINTS[key];
+      const defaultPlaceholders: Partial<Record<keyof RecipeOptions, string>> = {
+        llamacpp_args: '--gpu-layers 35 --threads 8 --batch-size 512',
+        vllm_args: '--tensor-parallel-size 1 --max-model-len 8192',
+        sdcpp_args: '--steps 20 --cfg-scale 7.5',
+        whispercpp_args: '--threads 4 --beam-size 5',
+        moonshine_args: '--threads 4',
+        flm_args: '--threads 4',
+      };
+      const argsPlaceholder = optionalDisplayValue(baseValue) || defaultPlaceholders[key] || 'Space-separated CLI flags';
       return (
         <label key={String(key)} className="detail-tuning__field detail-tuning__field--wide" htmlFor={fieldId}>
           <span>{label}</span>
           <textarea
             id={fieldId}
-            rows={3}
+            className="detail-tuning__args"
+            rows={4}
             value={draftValue}
-            placeholder={optionalDisplayValue(baseValue) || 'Type backend args here...'}
+            placeholder={argsPlaceholder}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           />
+          {hint && <small>{hint}</small>}
         </label>
       );
     }
@@ -2394,8 +2406,8 @@ const ModelConfigurationTab: React.FC<{
 
   return (
     <div className="detail-tab-content detail-configuration">
-      <section aria-label="Runtime settings">
-        <h3>Runtime settings</h3>
+      <section className="detail-configuration__section" aria-label="Runtime settings">
+        <h3 className="detail-configuration__section-heading">Runtime settings</h3>
 
         <div className="detail-tuning__field-grid">
           {!imageOnly && (

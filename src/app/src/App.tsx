@@ -9,7 +9,6 @@ import { findModelInfoByName, isCollectionFullyLoaded, isCollectionModel, withVi
 import ChatView from './components/ChatView';
 import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
-import PresetManager from './components/PresetManager';
 import BackendManager from './components/BackendManager';
 import DownloadManager from './components/DownloadManager';
 import MonitorView from './components/MonitorView';
@@ -25,7 +24,7 @@ import {
   workspaceRouteFromPath,
 } from './features/navigation/workspaceNavigation';
 
-type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'connect';
+type View = 'chat' | 'models' | 'backends' | 'dashboard' | 'connect';
 type SimpleView = Exclude<View, 'dashboard' | 'connect'>;
 type AppRoute =
   | { view: SimpleView }
@@ -73,7 +72,7 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   }
 }
 
-const SIMPLE_VIEWS: SimpleView[] = ['chat', 'models', 'presets', 'backends'];
+const SIMPLE_VIEWS: SimpleView[] = ['chat', 'models', 'backends'];
 
 
 type HostNavigationPayload = string | URL | {
@@ -484,7 +483,6 @@ const App: React.FC = () => {
           {([
             { id: 'chat',      label: 'Chat',      icon: 'chat'               },
             { id: 'models',    label: 'Models',    icon: 'hard-drive'         },
-            { id: 'presets',   label: 'Presets',   icon: 'sliders-horizontal' },
             { id: 'backends',  label: 'Backends',  icon: 'box'                },
             { id: 'dashboard', label: WORKSPACE_NAVIGATION.dashboard.label, icon: 'gauge' },
             { id: 'connect',   label: WORKSPACE_NAVIGATION.connect.label, icon: 'plug' },
@@ -617,11 +615,6 @@ const App: React.FC = () => {
               onModelSelect={handleModelSelect}
               accountSession={accountSession}
             />
-          </ViewErrorBoundary>
-        </div>
-        <div className="view-slot" hidden={view !== 'presets'}>
-          <ViewErrorBoundary view="presets">
-            <PresetManager key={accountSession.storageScope} loadedModels={loadedModels} />
           </ViewErrorBoundary>
         </div>
         <div className="view-slot" hidden={view !== 'backends'}>

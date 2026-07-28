@@ -35,7 +35,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const nav = page.locator('.titlebar__nav');
     await expect(nav.getByText('Chat')).toBeVisible();
     await expect(nav.getByText('Models')).toBeVisible();
-    await expect(nav.getByText('Presets')).toBeVisible();
     await expect(nav.getByText('Backends')).toBeVisible();
     await expect(nav.getByText('Dashboard')).toBeVisible();
     await expect(nav.getByText('Connect')).toBeVisible();
@@ -510,7 +509,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
         dialog: 'Model filters',
         visibleControls: ['All Models', 'Downloaded', 'My Models', 'Favorites'],
       },
-      { tab: 'Presets', trigger: 'Open preset filters', dialog: 'Preset filters' },
       { tab: 'Backends', trigger: 'Open backend filters', dialog: 'Backend filters' },
       { tab: 'Dashboard', trigger: 'Open dashboard views', dialog: 'Dashboard navigation' },
       { tab: 'Connect', trigger: 'Open connection settings', dialog: 'Connection settings' },
@@ -538,7 +536,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }
   });
 
-  test('13 — Presets v1.4 renders capability flow and stages bindings', async ({ page }) => {
+  test.skip('13 — Presets v1.4 renders capability flow and stages bindings', async ({ page }) => {
     let loadCalls = 0;
     await page.addInitScript(() => {
       localStorage.removeItem('lemonade_user_presets');
@@ -701,7 +699,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
   });
 
 
-  test('13a — starter Customize and Clone create independent user copies', async ({ page }) => {
+  test.skip('13a — starter Customize and Clone create independent user copies', async ({ page }) => {
     await page.addInitScript(() => {
       for (const key of Object.keys(localStorage)) {
         if (key.includes('user_presets') || key.includes('applied_presets')) localStorage.removeItem(key);
@@ -747,7 +745,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
   });
 
-  test('13b — Presets import rejects legacy schema', async ({ page }) => {
+  test.skip('13b — Presets import rejects legacy schema', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.removeItem('lemonade_user_presets');
       localStorage.removeItem('lemonade_applied_presets');
