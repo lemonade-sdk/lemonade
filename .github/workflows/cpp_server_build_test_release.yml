@@ -1244,6 +1244,14 @@ jobs:
         run: |
           $ErrorActionPreference = "Continue"
 
+          # 1. Kill any running/orphaned processes to release file locks
+          $patterns = @("lemonade", "lemond", "llama-server", "llama", "flm", "ort-server", "moonshine-server", "wscript", "LemonadeServer")
+          foreach ($p in $patterns) {
+              Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
+          # 2. Force-delete stale in-tree legacy paths that could lock git checkout
+
           # Local composite actions are unavailable before actions/checkout,
           # so this minimal long-path-safe cleanup stays inline. It removes
           # stale workspace cache/install dirs that can otherwise make
@@ -1835,6 +1843,13 @@ jobs:
           Pop-Location
           Write-Host "Embeddable Windows smoke test PASSED!" -ForegroundColor Green
 
+      - name: Cleanup processes (Windows)
+        if: always()
+        shell: PowerShell
+        run: |
+          Stop-Process -Name lemond -Force -ErrorAction SilentlyContinue
+          Stop-Process -Name lemonade -Force -ErrorAction SilentlyContinue
+
   test-dmg-inference:
     name: Test .dmg - macOS inference
     runs-on: macos-latest
@@ -2229,6 +2244,21 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
     steps:
+      # Pre-checkout cleanup is run here as a safeguard to release file locks on Windows
+      # in case this job is mapped to persistent self-hosted runners labeled as 'windows-latest'.
+      - name: Prepare Windows runner for long paths and stale workspace caches
+        if: runner.os == 'Windows'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          # 1. Kill any running/orphaned processes to release file locks
+          $patterns = @("lemonade", "lemond", "llama-server", "llama", "flm", "ort-server", "moonshine-server", "wscript", "LemonadeServer")
+          foreach ($p in $patterns) {
+              Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
+
       - uses: actions/checkout@v5
 
       # ---- Windows Setup ----
@@ -2466,6 +2496,20 @@ jobs:
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
+      # Pre-checkout cleanup is run here as a safeguard to release file locks on Windows
+      # in case this job is mapped to persistent self-hosted runners labeled as 'windows-latest'.
+      - name: Prepare Windows runner for long paths and stale workspace caches
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          # 1. Kill any running/orphaned processes to release file locks
+          $patterns = @("lemonade", "lemond", "llama-server", "llama", "flm", "ort-server", "moonshine-server", "wscript", "LemonadeServer")
+          foreach ($p in $patterns) {
+              Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
+
       - uses: actions/checkout@v5
 
       - name: Setup & sanitize Windows CI environment

@@ -1,5 +1,5 @@
 name: 'Cleanup Processes (Windows)'
-description: 'Kill all lemonade, Python, llama-server, and FLM processes on Windows'
+description: 'Kill all lemonade, llama-server, and FLM processes on Windows'
 runs:
   using: "composite"
   steps:
@@ -108,9 +108,6 @@ runs:
             # Kill lemonade processes (lemond, lemonade, lemonade-tray, etc.)
             Stop-ProcessByPattern -Pattern "lemonade" -Description "lemonade"
             Stop-ProcessByPattern -Pattern "lemond" -Description "lemond"
-
-            # Kill Python processes
-            Stop-ProcessByPattern -Pattern "python" -Description "Python"
 
             # Kill wscript processes (VBScript launcher used by lemonade)
             Stop-ProcessByPattern -Pattern "wscript" -Description "wscript"

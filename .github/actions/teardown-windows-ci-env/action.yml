@@ -4,9 +4,11 @@ runs:
   using: 'composite'
   steps:
     - name: Cleanup processes (Windows)
+      if: always()
       uses: ./.github/actions/cleanup-processes-windows
 
     - name: Cleanup current Windows CI directories
+      if: always()
       uses: ./.github/actions/cleanup-ci-paths-windows
       with:
         paths: |
@@ -15,6 +17,7 @@ runs:
         expected-root: C:\lemonade-ci
 
     - name: Cleanup legacy workspace cache dirs
+      if: always()
       uses: ./.github/actions/cleanup-ci-paths-windows
       with:
         paths: |
@@ -24,6 +27,7 @@ runs:
         expected-root: ${{ github.workspace }}
 
     - name: Prune old transient Windows CI directories
+      if: always()
       uses: ./.github/actions/cleanup-ci-paths-windows
       with:
         paths: |
