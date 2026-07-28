@@ -832,38 +832,6 @@ test.describe('Accessibility — backend argument tuning', () => {
       return null;
     });
     expect(stored).toMatchObject({ args: '--threads 8 --ctx-size 65536', source: 'user' });
-    expect(stored?.auto_opt_run_id).toBeUndefined();
-  });
-
-  test('A170 — editing an AutoOpt-owned entry clearly warns and converts it to a manual override', async ({ page }) => {
-    await page.evaluate(() => {
-      localStorage.setItem('lemonade:guest:shared:backend_tunings', JSON.stringify({
-        'llamacpp:cpu': {
-          args: '--autoopt-old',
-          source: 'optimized',
-          auto_opt_run_id: 'run-123',
-          updated_at: '2026-01-01T00:00:00.000Z',
-        },
-      }));
-    });
-    await gotoBackends(page);
-    await expect(page.locator('[data-cell="llamacpp:cpu"] [data-cell-backend-args="optimized"]')).toContainText('Args · AutoOpt');
-    await page.locator('[data-backend-args-button="llamacpp:cpu"]').click();
-    const dialog = page.locator('[data-backend-args-dialog="llamacpp:cpu"]');
-    await expect(dialog.getByRole('status')).toContainText('AutoOpt last replaced this backend entry');
-    await dialog.locator('[data-backend-args-input]').fill('--manual-replacement');
-    await dialog.locator('[data-backend-args-save]').click();
-
-    const stored = await page.evaluate(() => {
-      for (const key of Object.keys(localStorage)) {
-        if (!key.includes('backend_tunings')) continue;
-        const entries = JSON.parse(localStorage.getItem(key) || '{}');
-        if (entries['llamacpp:cpu']) return entries['llamacpp:cpu'];
-      }
-      return null;
-    });
-    expect(stored).toMatchObject({ args: '--manual-replacement', source: 'user' });
-    expect(stored?.auto_opt_run_id).toBeUndefined();
   });
 
   test('A171 — Escape closes the modal editor and restores focus to its backend action', async ({ page }) => {

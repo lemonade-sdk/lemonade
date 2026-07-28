@@ -290,21 +290,6 @@ function installBrowserStorageShim() {
     );
     assert.notEqual(merged?.llamacpp_args, '--backend-args');
 
-    // AutoOpt replaces the exact backend entry instead of creating or mutating
-    // a Preset. A later manual edit replaces it again and changes the source.
-    presets.saveBackendTuning('llamacpp:vulkan', '--autoopt-args', 'optimized', 'run-1');
-    assert.deepEqual(presets.backendTuningForKey('llamacpp:vulkan'), {
-      args: '--autoopt-args',
-      source: 'optimized',
-      auto_opt_run_id: 'run-1',
-      updated_at: presets.backendTuningForKey('llamacpp:vulkan').updated_at,
-    });
-    presets.saveBackendTuning('llamacpp:vulkan', '--manual-replacement', 'user');
-    const manualBackendTuning = presets.backendTuningForKey('llamacpp:vulkan');
-    assert.equal(manualBackendTuning.args, '--manual-replacement');
-    assert.equal(manualBackendTuning.source, 'user');
-    assert.equal(manualBackendTuning.auto_opt_run_id, undefined);
-
     // Legacy backend-preset args migrate once into backend tuning, but semantic
     // intent/context/backend selection never do.
     storage.clear();

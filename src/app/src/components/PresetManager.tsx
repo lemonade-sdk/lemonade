@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { LoadedModel, ModelInfo } from '../api';
 import {
   CAPABILITY_LABELS,
@@ -35,13 +35,9 @@ import {
 } from '../presetStore';
 import { CapabilityIcon, Icon, PresetIcon, type IconName } from './Icon';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import AutoOptRail, { openAutoOptRun, type PresetLibraryFilter } from '../features/autoOpt/AutoOptRail';
-import { autoOptStore, type AutoOptState } from '../features/autoOpt/autoOptStore';
-import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { useWorkspacePanelResize } from '../hooks/useWorkspacePanelResize';
 import { LEMONADE_MCP_SERVER, listMcpServerOptions, type McpServerOption } from '../tools/mcpRuntime';
 import { DEFAULT_TTS_VOICE, OPENMOSS_VOICE_PRESETS, TTS_VOICES } from '../features/audio/ttsSettings';
-import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import {
   WorkspaceActionButton,
   WorkspaceActionGroup,
@@ -56,6 +52,7 @@ import {
 const CAPABILITIES: Capability[] = ['chat', 'omni', 'vision', 'code', 'tts'];
 const VISIBLE_STARTERS = STARTERS.filter(preset => preset.applies_to.some(capability => CAPABILITIES.includes(capability)));
 type TtsPresetEngine = 'kokoro' | 'openmoss';
+type PresetLibraryFilter = 'all' | 'mine' | 'starters' | 'applied';
 
 function ttsEngineForPreset(preset: Preset): TtsPresetEngine {
   return preset.engine_hint === 'openmoss' ? 'openmoss' : 'kokoro';
@@ -165,13 +162,11 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const [importError, setImportError] = useState<string | null>(null);
   const [applyTarget, setApplyTarget] = useState('');
   const [applySuccess, setApplySuccess] = useState<string | null>(null);
-  const [autoRailCollapsed, setAutoRailCollapsed] = useState(false);
   const panelResize = useWorkspacePanelResize<HTMLElement>({
     storageKey: 'lemonade_workspace_presets_list_width_v1',
-    railCollapsed: autoRailCollapsed,
+    noRail: true,
   });
   const [libraryFilter, setLibraryFilter] = useState<PresetLibraryFilter>('all');
-  const mobileRail = useWorkspaceMobileRail();
   const [highlightPresetId, setHighlightPresetId] = useState<string | null>(null);
   const slideoverRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -282,8 +277,6 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
       sampling: {},
       engine_hint: 'auto',
       starter: false,
-      auto_opt_enabled: true,
-      auto_opt_run_id: null,
       system_prompt_id: 'general',
       system_prompts: cloneSystemPrompts(CUSTOM_PRESET_PROMPTS),
       mcp_server_ids: [LEMONADE_MCP_SERVER.id],
@@ -408,31 +401,10 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     <>
       <section
         ref={panelResize.containerRef}
-        className={`recipes recipes--with-rail workspace-three-panel${autoRailCollapsed ? ' context-rail-collapsed' : ''}`}
+        className="recipes workspace-two-panel"
         style={panelResize.style}
         data-view="presets"
       >
-        {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
-        <AutoOptRail
-          loadedModels={loadedModels}
-          collapsed={autoRailCollapsed}
-          onToggleCollapsed={() => setAutoRailCollapsed(v => !v)}
-          mobileOpen={mobileRail.isOpen}
-          onMobileClose={mobileRail.close}
-          railRef={mobileRail.panelRef}
-          libraryFilter={libraryFilter}
-          onLibraryFilterChange={value => { setLibraryFilter(value); mobileRail.close(); }}
-          userPresetCount={userPresets.length}
-          starterCount={VISIBLE_STARTERS.length + 1}
-          appliedCount={appliedModelNames.length}
-        />
-        <WorkspaceMobileMenuButton
-          menuLabel="Open preset filters"
-          panelId="preset-filters-panel"
-          expanded={mobileRail.isOpen}
-          onClick={mobileRail.toggle}
-          triggerRef={mobileRail.triggerRef}
-        />
         <WorkspaceListPanel
           className="preset-list-panel"
           title="Presets"
@@ -607,7 +579,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
 };
 
 function linkedModelsText(preset: Preset, linkedModels: string[]): string {
-  return `${preset.auto_opt_run_id ? 'Optimized for' : 'Linked to'} ${linkedModels.join(', ')}`;
+  return `Linked to ${linkedModels.join(', ')}`;
 }
 
 const PresetCard: React.FC<{
@@ -633,7 +605,7 @@ const PresetCard: React.FC<{
       <CapabilityChip key={capability} cap={capability} small />
     ))}
     {linkedModels && linkedModels.length > 0 && (
-      <span className={preset.auto_opt_run_id ? 'recipe-card__linked--optimized' : ''} data-preset-linked-models>
+      <span data-preset-linked-models>
         {linkedModelsText(preset, linkedModels)}
       </span>
     )}
@@ -710,15 +682,8 @@ const SlideoverContent: React.FC<{
   const [mcpServers, setMcpServers] = useState<McpServerOption[]>([LEMONADE_MCP_SERVER]);
   const [mcpLoadError, setMcpLoadError] = useState('');
   const [saved, setSaved] = useState(false);
-  const [autoOptState, setAutoOptState] = useState<AutoOptState>(() => autoOptStore.snapshot());
-  const [missingRunNote, setMissingRunNote] = useState(false);
-
-  useEffect(() => autoOptStore.subscribe(setAutoOptState), []);
-
-
 
   useEffect(() => {
-    setMissingRunNote(false);
     setName(preset.name);
     setDescription(preset.description);
     setAppliesTo(normalizePresetCapabilities(preset.id, preset.applies_to));
@@ -889,40 +854,17 @@ const SlideoverContent: React.FC<{
       ) : (
         <input className="slideover__title-input" value={name} onChange={event => setName(event.target.value)} placeholder="Preset name" data-recipe-name aria-label="Preset name" />
       )}
-      metadata={(preset.starter || preset.auto_opt_run_id || linkedModels.length > 0) ? (
+      metadata={(preset.starter || linkedModels.length > 0) ? (
         <>
           {preset.starter && (
             <WorkspaceMetadataChip emphasis="high" tone="accent" dataAttributes={{ 'data-recipe-starter-badge': true }}>
               Starter
             </WorkspaceMetadataChip>
           )}
-          {preset.auto_opt_run_id && (
-            <WorkspaceMetadataChip
-              emphasis="high"
-              tone="accent"
-              icon="gauge"
-              title="Open the AutoOpt run that produced this preset"
-              dataAttributes={{ 'data-preset-autoopt-chip': true }}
-              buttonProps={{
-                onClick: () => {
-                  const runId = preset.auto_opt_run_id!;
-                  if (autoOptState.runs.some(run => run.id === runId)) {
-                    setMissingRunNote(false);
-                    openAutoOptRun(runId);
-                  } else {
-                    setMissingRunNote(true);
-                  }
-                },
-              }}
-            >
-              Optimized by AutoOpt
-            </WorkspaceMetadataChip>
-          )}
           {linkedModels.length > 0 && (
             <WorkspaceMetadataChip
               emphasis="low"
-              icon={preset.auto_opt_run_id ? 'gauge' : 'hard-drive'}
-              className={preset.auto_opt_run_id ? 'preset-linked-note--optimized' : ''}
+              icon="hard-drive"
               dataAttributes={{ 'data-preset-editor-linked': true }}
             >
               {linkedModelsText(preset, linkedModels)}
@@ -930,7 +872,6 @@ const SlideoverContent: React.FC<{
           )}
         </>
       ) : undefined}
-      headerExtras={missingRunNote && <p className="preset-help" data-preset-autoopt-missing>Run no longer exists on this machine.</p>}
       actions={(
         <WorkspaceActionGroup className="preset-detail-actions" label={`Actions for ${preset.name}`}>
           {preset.starter ? (

@@ -356,7 +356,7 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
         </p>
         {tuning?.source === 'optimized' && (
           <p className="backend-args-dialog__notice" role="status">
-            AutoOpt last replaced this backend entry. Saving here changes it to a manual override.
+            These backend arguments were set by an optimizer. Saving here converts them to a manual override.
           </p>
         )}
         <label className="field__label" htmlFor="backend-args-value">Arguments</label>
@@ -779,11 +779,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             className={`cell__args-state cell__args-state--${tuning.source}`}
             data-cell-backend-args={tuning.source}
             title={tuning.source === 'optimized'
-              ? 'Backend arguments last replaced by AutoOpt'
+              ? 'Backend arguments set by optimizer'
               : 'Manual backend arguments'}
           >
             <Icon name="terminal-square" size={12} aria-hidden="true" />
-            Args · {tuning.source === 'optimized' ? 'AutoOpt' : 'Manual'}
+            Args · {tuning.source === 'optimized' ? 'Optimized' : 'Manual'}
           </span>
         )}
         {showTech && info.message && <span className="cell__message">{info.message}</span>}

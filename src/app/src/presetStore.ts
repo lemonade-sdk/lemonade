@@ -72,8 +72,6 @@ export interface Preset {
   sampling: SamplingParams;
   engine_hint?: PresetRecipe;
   starter: boolean;
-  auto_opt_run_id?: string | null;
-  auto_opt_enabled?: boolean;
   system_prompt_id?: string;
   system_prompts?: PresetSystemPrompt[];
   /** MCP servers available to chat for this preset. Canonical replacement for tools_enabled. */
@@ -97,7 +95,6 @@ export interface ModelTuning {
   /** Optional runtime hint kept separate from shared Preset intent. */
   engine_hint?: PresetRecipe;
   source?: 'model' | 'user' | 'optimized';
-  auto_opt_run_id?: string;
   updated_at?: string;
 }
 
@@ -111,7 +108,6 @@ export interface ModelTuning {
 export interface BackendTuning {
   args: string;
   source: 'user' | 'optimized';
-  auto_opt_run_id?: string;
   updated_at?: string;
 }
 
@@ -241,8 +237,6 @@ export const DEFAULT_PRESET: Preset = {
   sampling: {},
   engine_hint: 'auto',
   starter: true,
-  auto_opt_enabled: true,
-  auto_opt_run_id: null,
   system_prompt_id: NO_SYSTEM_PROMPT_ID,
   system_prompts: [],
   mcp_server_ids: [BUILTIN_LEMONADE_MCP_ID],
@@ -687,8 +681,6 @@ export function sanitizePreset(p: Partial<Preset>): Preset | null {
     sampling,
     engine_hint: p.engine_hint || 'auto',
     starter: p.starter ?? false,
-    auto_opt_run_id: p.auto_opt_run_id ?? null,
-    auto_opt_enabled: p.auto_opt_enabled ?? true,
     system_prompt_id: systemPromptId,
     system_prompts: systemPrompts,
     mcp_server_ids: supportsChatIntent
@@ -763,9 +755,6 @@ function sanitizeBackendTuning(raw: Partial<BackendTuning> | null | undefined): 
   return {
     args,
     source: raw.source === 'optimized' ? 'optimized' : 'user',
-    ...(typeof raw.auto_opt_run_id === 'string' && raw.auto_opt_run_id
-      ? { auto_opt_run_id: raw.auto_opt_run_id }
-      : {}),
     ...(typeof raw.updated_at === 'string' && raw.updated_at
       ? { updated_at: raw.updated_at }
       : {}),
@@ -839,7 +828,6 @@ export function saveBackendTuning(
   key: string,
   args: string,
   source: BackendTuning['source'] = 'user',
-  autoOptRunId?: string,
 ): void {
   if (!key) return;
   const recipe = key.split(':')[0] || '';
@@ -852,7 +840,6 @@ export function saveBackendTuning(
     next[key] = {
       args: trimmed,
       source,
-      ...(source === 'optimized' && autoOptRunId ? { auto_opt_run_id: autoOptRunId } : {}),
       updated_at: new Date().toISOString(),
     };
   }
@@ -957,7 +944,6 @@ export function sanitizeModelTuning(raw: Partial<ModelTuning> | null | undefined
     sampling,
     ...(engine_hint ? { engine_hint } : {}),
     source: raw?.source === 'user' || raw?.source === 'model' || raw?.source === 'optimized' ? raw.source : undefined,
-    ...(typeof raw?.auto_opt_run_id === 'string' && raw.auto_opt_run_id ? { auto_opt_run_id: raw.auto_opt_run_id } : {}),
     updated_at: typeof raw?.updated_at === 'string' ? raw.updated_at : undefined,
   };
 }
@@ -995,9 +981,8 @@ function presetForTuningId(presetId: string): Preset {
 function migrateLegacyConcreteIntentValues(tuning: Partial<ModelTuning>, presetId: string): ModelTuning {
   const sanitized = sanitizeModelTuning(tuning);
   const preset = presetForTuningId(presetId);
-  // AutoOpt writes a complete, measured model-tuning recommendation. Unlike
-  // legacy Preset payloads, its concrete context must remain in recipe_options
-  // so the exact measured configuration is reproduced on the next load.
+  // Optimized tunings store a complete, measured recommendation; concrete context
+  // must remain in recipe_options so the exact measured configuration is reproduced.
   if (sanitized.source === 'optimized' && preset.id !== DEFAULT_PRESET.id) return sanitized;
   if (!presetSupportsChatIntent(preset)) return sanitized;
 
@@ -1099,22 +1084,6 @@ export function saveModelTuning(modelName: string, tuning: Partial<ModelTuning>,
   if (!modelName) return;
   const resolvedPresetId = presetId || activePresetIdForModelName(modelName);
   const sanitized = migrateLegacyConcreteIntentValues({ ...tuning, source: 'user', updated_at: new Date().toISOString() }, resolvedPresetId);
-  const next = { ...loadModelTunings() };
-  const key = modelPresetTuningKey(modelName, resolvedPresetId);
-  if (hasConcreteTuning(sanitized)) next[key] = sanitized;
-  else delete next[key];
-  saveModelTunings(next);
-}
-
-export function saveOptimizedModelTuning(modelName: string, tuning: Partial<ModelTuning>, presetId: string, autoOptRunId: string): void {
-  if (!modelName) return;
-  const resolvedPresetId = presetId || activePresetIdForModelName(modelName);
-  const sanitized = migrateLegacyConcreteIntentValues({
-    ...tuning,
-    source: 'optimized',
-    auto_opt_run_id: autoOptRunId,
-    updated_at: new Date().toISOString(),
-  }, resolvedPresetId);
   const next = { ...loadModelTunings() };
   const key = modelPresetTuningKey(modelName, resolvedPresetId);
   if (hasConcreteTuning(sanitized)) next[key] = sanitized;
@@ -1493,7 +1462,6 @@ function resolveModelTuning(
       sampling: sanitizeSamplingParams(sampling),
       engine_hint: user?.engine_hint || builtIn?.engine_hint || (activeRecipeName(model) as PresetRecipe) || 'auto',
       source: user ? (user.source === 'optimized' ? 'optimized' : 'user') : 'model',
-      ...(user?.auto_opt_run_id ? { auto_opt_run_id: user.auto_opt_run_id } : {}),
       updated_at: user?.updated_at,
     },
     preset_id: preset.id,

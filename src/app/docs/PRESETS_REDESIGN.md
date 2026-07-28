@@ -1,8 +1,8 @@
 # Presets Redesign — Audit & Recommendations
 
-**Author:** Mattingly (UI agent)  
-**Date:** 2026-06-19  
-**Branch:** `kpoin/ui-testing`  
+**Author:** Mattingly (UI agent)
+**Date:** 2026-06-19
+**Branch:** `kpoin/ui-testing`
 **Scope:** `prototype/ui-redesign/` — design audit + phased plan. No source code was modified.
 
 ---
@@ -11,27 +11,27 @@
 
 **Top 3 Findings**
 
-1. **Starter presets are read-only with no path to customization from the card.**  
+1. **Starter presets are read-only with no path to customization from the card.**
    Kyle's exact pain — "I can't even figure out how to edit the default starters" — is 100% confirmed by the code (`const isReadOnly = preset.starter` in `SlideoverContent`, line 749) and by the screenshots (slideover footer shows only "Export" + "Clone", no "Save"; all inputs are `disabled`). The _only_ affordance is a `Clone` button at the bottom of a scrollable panel. On a first visit there's no obvious CTA on the card itself that says "clone to customize."
 
-2. **Recipe/engine preference is invisible and passive.**  
+2. **Recipe/engine preference is invisible and passive.**
    All 9 starters embed an `engine_hint` (`llamacpp`, `sd-cpp`) that biases backend selection — but this value never appears on cards, never appears prominently in the slideover, and lives in a collapsed `<details>` section labeled "Advanced engine options." A preset cannot _drive_ recipe selection when a model supports multiple recipes. The `engine_hint` is a whisper, not a driver.
 
-3. **Mobile layout is single-column with a large AutoOpt block above the fold.**  
-   On 390px, the AutoOpt summary card with raw CLI args (`--threads auto --batch-size 512…`) occupies ~40% of the first viewport. Starters are below a "Bundled Starters 10" heading, and only the Default card is visible before scroll. The AutoOpt rail collapses correctly, but the summary block stays visible inline. A new user has no idea what "AutoOpt #1 · balanced local baseline" means or why it dominates the screen.
+3. **Mobile layout is single-column with a large AutoOpt block above the fold.**
+   *(AutoOpt has since been removed. This finding is no longer applicable.)*
 
 ---
 
 **Top 3 Recommendations**
 
-1. **Add "Customize" (duplicate-and-open) CTA directly on each starter card.**  
+1. **Add "Customize" (duplicate-and-open) CTA directly on each starter card.**
    One button on the card face — no need to open the slideover first. Clones the starter, opens the edit slideover on the clone immediately. Phase A, ≤ 1 day.
 
-2. **Promote `engine_hint` to `recipe_preference` — make it first-class and visible.**  
+2. **Promote `engine_hint` to `recipe_preference` — make it first-class and visible.**
    Show a recipe badge on every card. Add a recipe picker row in the main slideover body (not buried in Advanced). When applying a preset to a multi-recipe model, check `recipe_preference` and either auto-select or present a one-click confirmation. Phase B, ~3–4 days.
 
-3. **Move AutoOpt summary below the fold on mobile; make it collapsible inline.**  
-   On mobile the AutoOpt summary block should collapse by default (show name + toggle arrow). Starters should be the first thing visible. Phase A, ≤ half day.
+3. **Move AutoOpt summary below the fold on mobile; make it collapsible inline.**
+   *(AutoOpt has been removed; this recommendation is no longer applicable.)*
 
 ---
 
@@ -422,5 +422,5 @@ Selecting "Clone a starter…" opens an inline picker of STARTERS — same as cl
 
 ---
 
-*Screenshots: `docs/screenshots/presets/*.png`  
+*Screenshots: `docs/screenshots/presets/*.png`
 Script: `scripts/screenshot-presets.mjs`*

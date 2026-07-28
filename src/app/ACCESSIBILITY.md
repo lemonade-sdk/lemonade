@@ -1,9 +1,9 @@
 # Accessibility Plan — Lemonade UI Redesign Prototype
 
-**Date:** 2026-06-25  
-**Branch:** `feat/gui3-model-detail-redesign`  
-**Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete, Group H (Model-detail Presets card grid — #2424 fl0rianr) ✅ complete, Group I (Model view refinements — #2424 fl0rianr review) ✅ complete, Group J (Model view merge items — #2424 fl0rianr 2nd review) ✅ complete, Group K (Update preset while loaded — #2356) ✅ complete  
+**Date:** 2026-06-25
+**Branch:** `feat/gui3-model-detail-redesign`
+**Scope:** `prototype/ui-redesign/` only
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete, Group H (Model-detail Presets card grid — #2424 fl0rianr) ✅ complete, Group I (Model view refinements — #2424 fl0rianr review) ✅ complete, Group J (Model view merge items — #2424 fl0rianr 2nd review) ✅ complete, Group K (Update preset while loaded — #2356) ✅ complete
 **Test status (2026-06-26):** All 181 automated tests passing, 7 skipped, 0 failed on `feat/gui3-update-preset-while-loaded` (A154–A166 cover #2356 update-preset-while-loaded, simplified design)
 
 ---
@@ -208,15 +208,15 @@ Replaces the old preset-rail layout with an email-client-style master-detail spl
 - **What:** Added `'funnel'` to `IconName` in `Icon.tsx` with the matching SVG path. Used on the filter toggle button in `ModelListPanel`.
 - **WCAG:** 1.1.1 (icon buttons have explicit `aria-label`; icon SVG has `aria-hidden="true"`)
 
-**Tests added:** A91–A105 (15 tests) in `tests/a11y.spec.ts`.  
-- A91–A92: layout landmarks and heading  
-- A93–A94: search input association and filtering  
-- A95–A96: funnel filter button ARIA attributes and popover  
-- A97–A99: listbox role + option role + keyboard navigation  
-- A100–A101: tablist ARIA structure + keyboard tab navigation  
-- A102–A103: Presets tab keyboard reachability and panel label  
-- A104: Custom model / Omni collection buttons visible + keyboard-accessible  
-- A105: Full axe-core WCAG 2.1 AA scan with mock data + selected model  
+**Tests added:** A91–A105 (15 tests) in `tests/a11y.spec.ts`.
+- A91–A92: layout landmarks and heading
+- A93–A94: search input association and filtering
+- A95–A96: funnel filter button ARIA attributes and popover
+- A97–A99: listbox role + option role + keyboard navigation
+- A100–A101: tablist ARIA structure + keyboard tab navigation
+- A102–A103: Presets tab keyboard reachability and panel label
+- A104: Custom model / Omni collection buttons visible + keyboard-accessible
+- A105: Full axe-core WCAG 2.1 AA scan with mock data + selected model
 
 **Files changed:** `ModelDetailPanel.tsx` (new), `ModelListPanel.tsx` (new), `ModelManager.tsx`, `Icon.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `tests/features.spec.ts`, `ACCESSIBILITY.md`.
 
@@ -320,10 +320,10 @@ Adds a new read-only MCP dashboard section to `ConnectView.tsx` exposing the exi
 - **What:** Calls `POST /mcp` with spec-aligned handshake: (1) `initialize` with `protocolVersion`, `capabilities`, and `clientInfo`; validates response (HTTP ok + no JSON-RPC `error` + `result.protocolVersion` present) and surfaces an accessible `role="alert"` error state on failure without proceeding to tools/list. (2) `notifications/initialized` notification (no `id`, with `MCP-Protocol-Version: 2025-06-18` header). (3) `tools/list` (with same protocol header + `Mcp-Session-Id` if server returned one). Stale-async guard via `AbortController` (aborted on disconnect, new connect, and unmount). Clipboard copy guarded for unsupported/insecure contexts — falls back to accessible "Copy not supported — select and copy manually" message via the existing aria-live region. Renders returned tools (name + description) in a `<ul aria-label="MCP tools">`. Auth header (`Authorization: Bearer <key>`) passed via existing `api.apiKey`. Refresh button has `aria-label="Refresh MCP tools list"`.
 - **WCAG:** 4.1.2 (Name, Role, Value)
 
-**Tests added:** A80–A90 (11 tests) in `tests/a11y.spec.ts`.  
-- A80–A88: original MCP panel a11y checks  
-- A89: behavioral — MCP request sequence, params, and MCP-Protocol-Version/Mcp-Session-Id headers  
-- A90: error — failed `initialize` surfaces accessible error; tools list absent; status not Connected  
+**Tests added:** A80–A90 (11 tests) in `tests/a11y.spec.ts`.
+- A80–A88: original MCP panel a11y checks
+- A89: behavioral — MCP request sequence, params, and MCP-Protocol-Version/Mcp-Session-Id headers
+- A90: error — failed `initialize` surfaces accessible error; tools list absent; status not Connected
 **Files changed:** `McpPanel.tsx`, `ConnectView.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
 
 ---
@@ -356,7 +356,7 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
   Visual toast and notice remain conditionally rendered; only the sr-only live regions are always in DOM.
 - **WCAG:** 4.1.3 (Status Messages)
 
-**Tests added:** A51–A58 (8 tests) in `tests/a11y.spec.ts`.  
+**Tests added:** A51–A58 (8 tests) in `tests/a11y.spec.ts`.
 **Files changed:** `BackendManager.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
 
 ---
@@ -388,7 +388,7 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 | 21 | Backend/device fields discoverable (#2339) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
 | 22 | Preset card exposes metadata to AT (#2345) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
 | 23 | Capability chip toggle-button semantics (#2350) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 (revised 2026-06-22) |
-| 24 | AutoOpt run selection state (#2352) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
+| 24 | AutoOpt run selection state (#2352) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 — removed with AutoOpt |
 | 25 | MCP endpoint URL + copy-to-clipboard (#2417) | MCP Gateway | **P0** | S | ✅ Done 2026-06-25 |
 | 26 | MCP health/status indicator — not color-only (#2417) | MCP Gateway | **P0** | S | ✅ Done 2026-06-25 |
 | 27 | MCP tools list accessible labels + live states (#2417) | MCP Gateway | **P0** | S | ✅ Done 2026-06-25 |
@@ -660,7 +660,7 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 
 - **What:** Keyboard users should be able to jump past the titlebar nav directly to main content.
 - **Current state:** No skip link exists anywhere. `index.html` only renders `<div id="root">`.
-- **Target:** Add a visually-hidden `<a href="#main-content" className="skip-link">Skip to main content</a>` as the very first child of `<body>` (or `<div id="root">`). Show on `:focus`. Requires the `<main id="main-content">` from 1.1.1.  
+- **Target:** Add a visually-hidden `<a href="#main-content" className="skip-link">Skip to main content</a>` as the very first child of `<body>` (or `<div id="root">`). Show on `:focus`. Requires the `<main id="main-content">` from 1.1.1.
   CSS pattern:
   ```css
   .skip-link {
@@ -726,7 +726,7 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
     }
   }
   ```
-  For the bottom sheet, additionally set `transform: none` at the reduced-motion breakpoint to skip the slide-in entirely (snap open/closed).  
+  For the bottom sheet, additionally set `transform: none` at the reduced-motion breakpoint to skip the slide-in entirely (snap open/closed).
   Streaming output: batch DOM updates (see 2.5) — this helps both motion sensitivity and screen reader performance.
 - **Effort:** M (CSS block is S; streaming batching is M)
 - **Priority:** P0 — WCAG 2.3.3 (Animation from Interactions, AAA) and strong user expectation
@@ -857,11 +857,11 @@ Do these first. All are small changes with high compliance impact.
 
 All five items from the blind NVDA screen-reader user's feedback on UI 3 beta:
 
-23. **#2338** ✅ DONE — All Preset parameter controls labelled via `htmlFor`/`id` (temperature, top_p, context size, top_k, repeat penalty, steps, CFG scale, engine hint, AutoOpt result, llamacpp_args, sdcpp_args) and via `aria-label` (image width, image height which share one visual label). File: `PresetManager.tsx` lines ~1000–1075.
+23. **#2338** ✅ DONE — All Preset parameter controls labelled via `htmlFor`/`id` (temperature, top_p, context size, top_k, repeat penalty, steps, CFG scale, engine hint, llamacpp_args, sdcpp_args) and via `aria-label` (image width, image height which share one visual label). File: `PresetManager.tsx` lines ~1000–1075.
 24. **#2339** ✅ DONE — `llamacpp_backend` and `llamacpp_device` converted to `<input list=>` + `<datalist>` exposing known values (backends: auto/cpu/cuda/vulkan/kompute/metal/rpc/opencl/mmap; devices: Auto/CPU/CUDA0/CUDA1/Vulkan0/Vulkan1/Metal). File: `PresetManager.tsx` lines ~1060–1067.
 25. **#2345** ✅ DONE — PresetCard overlay button gains `aria-describedby` pointing to a `sr-only` span containing: starter/manual-args state, applies_to capability list, parameter summary, prompt name, tools state. File: `PresetManager.tsx` lines ~700–726.
 26. **#2350** ✅ DONE (revised) — Capability chip container changed from `role="radiogroup"` to `role="group" aria-label="Applies to capabilities"`; each chip button changed from `role="radio" aria-checked={…}` to `aria-pressed={…}` (toggle-button semantics). Radiogroup requires arrow-key navigation (ARIA APG / WCAG 2.1.1); toggle buttons are keyboard-correct with Tab + Enter/Space. File: `PresetManager.tsx` lines ~937–943.
-27. **#2352** ✅ DONE — AutoOpt run buttons gain `aria-pressed={selectedAutoRunId === run.id}`, updated on selection change. File: `PresetManager.tsx` line ~528.
+27. **#2352** ✅ DONE — AutoOpt run selection state (removed with AutoOpt feature).
 
 ### GUI3 A11y Series — targeted fixes (branches feat/gui3-*)
 
@@ -872,7 +872,7 @@ All five items from the blind NVDA screen-reader user's feedback on UI 3 beta:
 
 ### Group F — Forms, Omni picker, icon names (2026-06-22)
 
-**Branch:** `feat/gui3-forms-icons-a11y`  
+**Branch:** `feat/gui3-forms-icons-a11y`
 Closes #2347 #2349 #2353
 
 23. **#2347 (Item 10)** ✅ DONE — `OmniComponentPicker` full combobox semantics: `role="combobox"`, `aria-expanded`, `aria-controls` (points to listbox), `aria-activedescendant` (tracks active option), `aria-autocomplete="list"`, arrow-key navigation (ArrowDown/Up moves active option, Enter selects, Escape closes). Options converted from `<button role="option">` to `<div role="option">` (buttons cannot own `role="option"`). HF search action moved outside the `role="listbox"` to avoid invalid owned-element violation. Clear button gained `aria-label`. Label now associated via `htmlFor`/`id` pair. Keyboard focus indicator (`.omni-component-picker__option--focused`) added to CSS.
@@ -883,7 +883,7 @@ Closes #2347 #2349 #2353
 
 ## Running the Accessibility Tests
 
-The test suite lives in `prototype/ui-redesign/tests/a11y.spec.ts`.  
+The test suite lives in `prototype/ui-redesign/tests/a11y.spec.ts`.
 It uses **Playwright** (already a dev dependency) plus **@axe-core/playwright** for automated WCAG scans.
 
 ### Prerequisites
@@ -928,7 +928,7 @@ npm test
 | Backend/device discoverable (#2339) | A38–A39 | llamacpp_backend and llamacpp_device inputs have datalist with ≥3 options |
 | Preset card metadata (#2345) | A40 | Card button aria-describedby includes applies_to, prompt, tools |
 | Capability toggle-button semantics (#2350) | A41–A43 | Container has role=group + aria-label; buttons are plain buttons with aria-pressed; exactly 1 pressed=true, all others false |
-| AutoOpt selection state (#2352) | A44–A45 | aria-pressed exposed; updates on click |
+| AutoOpt selection state (#2352) | A44–A45 | Removed with AutoOpt feature |
 | Backend matrix + action/live regions | A51–A58 | Matrix cell buttons expose selection + labels; action buttons include recipe/backend; persistent status live regions exist |
 | Model row qualified names | A46–A50 | Load/Delete/Download/Get&Load buttons include model name in aria-label; no bare generic names |
 | Download progress bar | A59–A62 | `role="progressbar"` present; aria-valuenow/min/max correct; model name in label; sr-only status live region exists |

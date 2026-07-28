@@ -147,9 +147,9 @@ The labels below are normative boundaries, not backlog states. **Justified speci
 
 ### Presets
 
-**Layout:** three panels: `.context-rail--autoopt` filter/optimization rail, `.preset-list-panel.workspace-list-panel`, and `.preset-detail-panel.workspace-detail-panel`.
+**Layout:** two panels: `.preset-list-panel.workspace-list-panel` and `.preset-detail-panel.workspace-detail-panel`.
 
-**Justified specialization:** intent chips, linked-model state, AutoOpt progress, and parameter editors communicate preset-specific concepts.
+**Justified specialization:** intent chips, linked-model state, and parameter editors communicate preset-specific concepts.
 
 **Prohibited variation:** card-grid presentation in the list, modal-like detail styling on desktop, or unique creation-form hierarchy. The library is a single-column list matching Models; creation and editing use the shared detail shell. `compose` creates, while `file-up` imports.
 
