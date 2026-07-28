@@ -43,7 +43,7 @@ async function navigateToMonitorSection(page: Page, label: 'Performance' | 'Tele
 }
 
 async function navigateToConnectSection(page: Page, label: string): Promise<void> {
-  await navigateToView(page, 'Connect');
+  await navigateToView(page, 'Settings');
   await page.waitForSelector('.connect');
   await page.locator('.connect .workspace-nav').getByText(new RegExp(`^${label}$`, 'i')).click();
 }
@@ -135,7 +135,7 @@ test.describe('Accessibility — axe-core automated scans', () => {
   test('A04 — Connect view passes WCAG 2.1 AA', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToView(page, 'Settings');
     await page.waitForSelector('.connect');
 
     const results = await new AxeBuilder({ page })
@@ -272,7 +272,7 @@ test.describe('Accessibility — keyboard navigation', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    const knownNavLabels = ['Chat', 'Models', 'Backends', 'Dashboard', 'Connect'];
+    const knownNavLabels = ['Chat', 'Models', 'Backends', 'Dashboard', 'Settings'];
     const encountered: string[] = [];
 
     for (let i = 0; i < 12; i++) {

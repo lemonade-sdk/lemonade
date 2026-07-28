@@ -37,7 +37,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(nav.getByText('Models')).toBeVisible();
     await expect(nav.getByText('Backends')).toBeVisible();
     await expect(nav.getByText('Dashboard')).toBeVisible();
-    await expect(nav.getByText('Connect')).toBeVisible();
+    await expect(nav.getByText('Settings')).toBeVisible();
 
     // Status dot visible
     await expect(page.locator('.titlebar__status-dot--brand')).toBeVisible();
@@ -107,7 +107,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await dashboardSections.getByRole('button', { name: 'Telemetry', exact: true }).click();
     await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
 
-    await page.locator('.titlebar__nav').getByRole('button', { name: 'Connect', exact: true }).click();
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true }).click();
     await expect(page).toHaveURL(/#\/connect\/help-and-support$/);
     await page.goBack();
     await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
@@ -158,7 +158,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForSelector('.titlebar__nav');
 
     // Navigate to Connect
-    await page.locator('.titlebar__nav').getByText('Connect').click();
+    await page.locator('.titlebar__nav').getByText('Settings').click();
     await page.waitForSelector('.connect');
 
     await expect(page.locator('#connect-pane-title')).toHaveText('Server');
@@ -183,8 +183,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('.manager')).toBeVisible();
 
     // Switch to Connect
-    await page.locator('.titlebar__nav').getByText('Connect').click();
-    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Connect');
+    await page.locator('.titlebar__nav').getByText('Settings').click();
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Settings');
     await expect(page.locator('.connect')).toBeVisible();
 
     // Back to Chat
@@ -198,7 +198,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
   test('06 — Connect form connects to server', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await page.locator('.titlebar__nav').getByText('Connect').click();
+    await page.locator('.titlebar__nav').getByText('Settings').click();
     await page.waitForSelector('.connect');
 
     // Fill in server URL (lemond should be running)
@@ -511,7 +511,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
       },
       { tab: 'Backends', trigger: 'Open backend filters', dialog: 'Backend filters' },
       { tab: 'Dashboard', trigger: 'Open dashboard views', dialog: 'Dashboard navigation' },
-      { tab: 'Connect', trigger: 'Open connection settings', dialog: 'Connection settings' },
+      { tab: 'Settings', trigger: 'Open connection settings', dialog: 'Connection settings' },
     ];
 
     const primaryNav = page.getByRole('navigation', { name: 'Primary' });
@@ -1152,7 +1152,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForSelector('.titlebar__nav');
 
     // Connect to server first
-    await page.locator('.titlebar__nav').getByText('Connect').click();
+    await page.locator('.titlebar__nav').getByText('Settings').click();
     await page.waitForSelector('.connect');
     const testPort = process.env.LEMONADE_TEST_PORT || '13305';
     const urlInput = page.locator('#host-input');
