@@ -1185,6 +1185,50 @@ json Router::responses(const json& request) {
     });
 }
 
+json Router::reset_chat_session(const json& request) {
+    std::string requested_model;
+    if (request.contains("model") && request["model"].is_string()) {
+        requested_model = request["model"].get<std::string>();
+    } else if (request.contains("model_name") && request["model_name"].is_string()) {
+        requested_model = request["model_name"].get<std::string>();
+    }
+
+    WrappedServer* server = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        if (!requested_model.empty()) {
+            server = find_server_by_model_name(resolve_model_name(requested_model));
+        } else {
+            for (const auto& loaded : loaded_servers_) {
+                if (!loaded->is_backend_alive() || loaded->get_model_type() != ModelType::LLM) {
+                    continue;
+                }
+                if (!server || loaded->get_last_access_time() > server->get_last_access_time()) {
+                    server = loaded.get();
+                }
+            }
+        }
+
+        if (!server || !server->is_backend_alive()) {
+            return json{{"status", "success"}, {"message", "No loaded model to reset"}};
+        }
+
+        if (!server->acquire_for_inference()) {
+            return ErrorResponse::from_exception(ModelNotLoadedException("No models loaded"));
+        }
+        server->update_access_time();
+    }
+
+    try {
+        auto response = server->reset_chat_session(request);
+        server->release_inference();
+        return response;
+    } catch (...) {
+        server->release_inference();
+        throw;
+    }
+}
+
 json Router::audio_transcriptions(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
         auto transcription_server = dynamic_cast<ITranscriptionServer*>(server);

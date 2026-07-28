@@ -530,6 +530,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_chat_completions(req, res);
     });
 
+    register_post("chat/sessions/reset", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_chat_session_reset(req, res);
+    });
+
     // Completions
     register_post("completions", [this](const httplib::Request& req, httplib::Response& res) {
         handle_completions(req, res);
@@ -1000,9 +1004,10 @@ window.api = {
 
             // Determine content type based on extension
             std::string content_type = "application/octet-stream";
+            std::string ext;
             size_t dot_pos = file_path.rfind('.');
             if (dot_pos != std::string::npos) {
-                std::string ext = file_path.substr(dot_pos);
+                ext = file_path.substr(dot_pos);
                 if (ext == ".js") content_type = "text/javascript";
                 else if (ext == ".css") content_type = "text/css";
                 else if (ext == ".html") content_type = "text/html";
@@ -1017,6 +1022,12 @@ window.api = {
             }
 
             res.set_content(content, content_type);
+
+            if (ext == ".js" || ext == ".css" || ext == ".html") {
+                res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+                res.set_header("Pragma", "no-cache");
+                res.set_header("Expires", "0");
+            }
         };
 
         // Serve favicon from web-app directory at root
@@ -2562,6 +2573,38 @@ void Server::handle_slots_by_id(const httplib::Request& req, httplib::Response& 
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_slots_by_id: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_chat_session_reset(const httplib::Request& req, httplib::Response& res) {
+    try {
+        LOG(INFO, "Server") << "POST /api/v1/chat/sessions/reset" << std::endl;
+
+        json request_body = json::object();
+        if (!req.body.empty()) {
+            try {
+                request_body = json::parse(req.body);
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
+                res.status = 400;
+                res.set_content("{\"error\": \"Invalid JSON in request body\"}", "application/json");
+                return;
+            }
+        }
+
+        auto response = router_->reset_chat_session(request_body);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
+        res.status = 200;
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_chat_session_reset: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
