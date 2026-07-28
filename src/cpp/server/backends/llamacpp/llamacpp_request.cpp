@@ -1,5 +1,6 @@
 #include "lemon/backends/llamacpp/llamacpp_request.h"
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 
@@ -17,7 +18,11 @@ bool has_integer_value_at_least(const nlohmann::json& value, std::uint64_t thres
     if (value.is_number_integer()) {
         return value.get<std::int64_t>() >= static_cast<std::int64_t>(threshold);
     }
-    return false;
+    if (!value.is_number_float()) return false;
+
+    const double number = value.get<double>();
+    return std::isfinite(number) && number >= 0.0 && std::floor(number) == number &&
+           number >= static_cast<double>(threshold);
 }
 
 void sanitize_schema(nlohmann::json& schema) {

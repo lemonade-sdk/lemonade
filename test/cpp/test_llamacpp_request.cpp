@@ -45,6 +45,18 @@ int main() {
                             {"type", "string"},
                             {"minLength", 2000},
                         }},
+                        {"floatDescription", {
+                            {"type", "string"},
+                            {"maxLength", 2000.0},
+                        }},
+                        {"fractionalDescription", {
+                            {"type", "string"},
+                            {"maxLength", 2000.5},
+                        }},
+                        {"negativeDescription", {
+                            {"type", "string"},
+                            {"maxLength", -2000.0},
+                        }},
                         {"steps", {
                             {"type", "array"},
                             {"maxItems", 2000},
@@ -60,6 +72,10 @@ int main() {
                         {"backlog", {
                             {"type", "array"},
                             {"minItems", 2001},
+                        }},
+                        {"floatBacklog", {
+                            {"type", "array"},
+                            {"minItems", 2001.0},
                         }},
                         {"results", {
                             {"type", "array"},
@@ -108,6 +124,12 @@ int main() {
            "preserves minLength below the llama.cpp limit");
     expect(!parameters["properties"]["description"].contains("minLength"),
            "removes minLength at the llama.cpp limit");
+    expect(!parameters["properties"]["floatDescription"].contains("maxLength"),
+           "removes integral floating-point maxLength at the llama.cpp limit");
+    expect(parameters["properties"]["fractionalDescription"]["maxLength"] == 2000.5,
+           "preserves non-integral floating-point bounds");
+    expect(parameters["properties"]["negativeDescription"]["maxLength"] == -2000.0,
+           "preserves negative floating-point bounds");
     expect(parameters["properties"]["steps"]["maxItems"] == 2000,
            "preserves maxItems whose generated repetition stays below the limit");
     expect(parameters["properties"]["steps"]["minItems"] == 1999,
@@ -116,6 +138,8 @@ int main() {
            "preserves minItems whose generated repetition stays below the limit");
     expect(!parameters["properties"]["backlog"].contains("minItems"),
            "removes minItems whose generated repetition reaches the limit");
+    expect(!parameters["properties"]["floatBacklog"].contains("minItems"),
+           "removes integral floating-point minItems whose repetition reaches the limit");
     expect(!parameters["properties"]["results"].contains("maxItems"),
            "removes maxItems whose generated repetition reaches the limit");
     expect(!parameters["$defs"]["step"]["properties"]["output"].contains("maxLength"),
