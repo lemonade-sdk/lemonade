@@ -7,7 +7,7 @@
 **Background:** Lemonade is attaining increased traction with users and commercial entities worldwide, and at the same time is seeing a large influx of new PRs and Issues on a daily basis. There is an inherent tension between velocity and robustness that has become top of mind for many stakeholders.
 
 **Goal:** Establish new automated systems including bots, agents, dashboards, and new CI so that we don't have to choose between velocity and robustness.
- - Side goal: use local AI for as many of the automations as possible, to prove Lemonade and local AI for enterprise use.
+ - Side goal: use local AI for as much of the automation as possible, to prove Lemonade and local AI for enterprise use.
 
 ## Contributing
 
@@ -30,14 +30,20 @@ Analyze all issues (including those that are already open) for:
 - Duplicate of another issue.
 - Hot issues (lots of likes and/or comments) get a notification onto discord #dev channel.
 - Is the issue still relevant, or has it been resolved (e.g., bug fixed in a release) or obsoleted (e.g., gui2 feedback after gui3 release)?
-- Auto-assign "good" issues to maintainers, according to the table in contribute.md, and tag them on discord #dev channel.
 - Assess whether issues are "good": reproducible, clearly defined, and aligned to philosophy.md. If they aren't, auto-reply with guidance and direct the author to the discord.
+- Auto-assign "good" issues to maintainers, according to the table in contribute.md, and tag them on discord #dev channel.
+
+### Performance Regression Suite
+
+For each engine and backend supported by Lemonade, keep a database of performance data for each tagged release we support. This data is intended for use in:
+- When a user wants to maximize performance for a specific model, we can pinpoint the engine/backend/tag combination that would serve them best.
+- When upgrading tags, make sure there are not performance regressions on hot models.
 
 ### CI Enhancements
 
 Improve test coverage while reducing unnecessary delays incurred during development.
 
-- Performance regression testing for engine upgrades.
+- Leverage performance database to approve/reject engine/backend upgrades.
 - Use Radeon emulation to increase CI coverage of AMD GPUs.
 - Add more physical Radeon and Nvidia GPUs to the self-hosted runners pool.
 - Increased filtering, so that fewer runners are invoked when narrow changes are introduced.
