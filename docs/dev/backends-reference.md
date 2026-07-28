@@ -287,8 +287,8 @@ the generator instead. Prose outside the markers is preserved. -->
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
-| `MOSS-SoundEffect` | 7.1 | audio-generation |
-| `MOSS-TTS-Local` | 16.4 | tts |
+| `MOSS-SoundEffect` | 6.6 | audio-generation |
+| `MOSS-TTS-Local` | 15.8 | tts |
 | `OpenMOSS-TTS` | 19.8 | tts |
 
 #### `ryzenai-llm` — Ryzen AI LLM (79 models)

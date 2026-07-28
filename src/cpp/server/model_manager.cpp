@@ -4038,6 +4038,22 @@ void ModelManager::download_from_registry(const ModelInfo& info,
         files_to_download[repo_id].push_back(variant);
     }
 
+    // A file can be reached twice: once because the backend's
+    // select_checkpoint_files claimed it alongside the main weight, and again
+    // because it is also declared as its own checkpoint role. Same bytes either
+    // way, so collapse before counting or the progress total overshoots.
+    for (auto& [repo_id, files] : files_to_download) {
+        (void)repo_id;
+        std::set<std::string> seen;
+        std::vector<std::string> unique_files;
+        for (auto& filename : files) {
+            if (seen.insert(filename).second) {
+                unique_files.push_back(filename);
+            }
+        }
+        files = std::move(unique_files);
+    }
+
     int total_files = 0;
     LOG(INFO, "ModelManager") << "Identified files to download:" << std::endl;
     for (const auto& [repo_id, files] : files_to_download) {
