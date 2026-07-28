@@ -474,11 +474,9 @@ std::vector<Rule> parse_rules(const json& routing,
                               const std::map<std::string, ClassifierPtr>& classifiers,
                               const std::set<std::string>& declared,
                               const RoutingPolicyParseOptions& options) {
-    if (routing.contains("router")) {
-        reject_unknown_keys(routing.at("router"), routing_router_keys(), "routing.router");
-        throw std::invalid_argument(
-            "routing.router desugaring is reserved for #2405 and is not implemented by the M9 parser");
-    }
+    // `routing.router` is desugared into `classifiers` + `rules` by the caller
+    // (see desugar_routing_router) before this runs, so `routing` here is
+    // always already in core form.
     const json& rules_json = required_field(routing, "rules", "routing");
     if (!rules_json.is_array() || rules_json.empty()) {
         throw std::invalid_argument("routing.rules must be a non-empty array");
@@ -631,7 +629,8 @@ json desugar_routing_router(const json& routing) {
 }
 
 RoutePolicy parse_route_policy_collection(const json& collection_json,
-                                          const RoutingPolicyParseOptions& options) {
+                                          const RoutingPolicyParseOptions& options,
+                                          json* out_normalized_routing) {
     reject_unknown_keys(collection_json, routing_policy_root_keys(), "collection");
     validate_version_1(collection_json);
 
@@ -662,6 +661,10 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
     const json classifier_configs = parse_classifier_configs(*routing_eff, declared, options);
     policy.classifiers = make_classifiers(classifier_configs);
     policy.rules = parse_rules(*routing_eff, policy.candidates, policy.classifiers, declared, options);
+
+    if (out_normalized_routing) {
+        *out_normalized_routing = *routing_eff;
+    }
     return policy;
 }
 

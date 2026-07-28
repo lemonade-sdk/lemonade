@@ -18,6 +18,7 @@ Usage:
 import json
 import os
 import sys
+import uuid
 
 # Make the `utils` package importable when this file is executed directly.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -248,6 +249,71 @@ class McpGatewayTests(ServerTestBase):
     # ---------------------------------------------------------------------
     # tools/call error paths
     # ---------------------------------------------------------------------
+
+    def test_013_list_models_emits_prefixed_collection_id(self):
+        """lemonade_list_models emits the canonical `user.` collection id (issue #2788).
+
+        The MCP listing tool serializes the same get_downloaded_models() mapping
+        as /v1/models and Ollama /api/tags, so a registered `user.*` collection
+        must appear under its prefixed id, not its bare name.
+        """
+        canonical_name = f"user.McpColl-{uuid.uuid4().hex[:8]}"
+        bare_name = canonical_name[5:]
+        base = f"http://localhost:{PORT}/api/v1"
+        try:
+            pull = requests.post(
+                f"{base}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull.status_code, 200, pull.text)
+
+            response = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 20,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "lemonade_list_models",
+                        "arguments": {"include_suggested": False},
+                    },
+                }
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertFalse(body["result"]["isError"], msg=str(body))
+            # content[1] carries the JSON payload as a text block.
+            payload = json.loads(body["result"]["content"][1]["text"])
+            available = {m["model_name"] for m in payload["available"]}
+            self.assertIn(
+                canonical_name,
+                available,
+                f"lemonade_list_models should list {canonical_name} under its user. id",
+            )
+            self.assertNotIn(
+                bare_name,
+                available,
+                "Collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in payload["available"] if m["model_name"] == canonical_name
+            )
+            self.assertEqual(entry.get("recipe"), "collection.omni")
+        finally:
+            try:
+                requests.post(
+                    f"{base}/delete",
+                    json={"model_name": canonical_name},
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_020_tools_call_unknown_tool_returns_is_error(self):
         """An unknown tool name must return isError=true (not a JSON-RPC error)."""
