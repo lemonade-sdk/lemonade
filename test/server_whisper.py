@@ -462,7 +462,7 @@ class WhisperTests(ServerTestBase):
         asyncio.run(self._test_006_realtime_websocket_connect())
 
     async def _test_006_realtime_websocket_connect(self):
-        model = _get_whisper_model()
+        model = self._load_whisper_model_or_fail()
         ws_port = self._get_websocket_port()
         print(f"[INFO] WebSocket port from /health: {ws_port}")
 
@@ -502,7 +502,7 @@ class WhisperTests(ServerTestBase):
         asyncio.run(self._test_007_realtime_websocket_transcription())
 
     async def _test_007_realtime_websocket_transcription(self):
-        model = _get_whisper_model()
+        model = self._load_whisper_model_or_fail()
         chunks = self._get_pcm16_chunks()
 
         client = self._make_openai_client()
