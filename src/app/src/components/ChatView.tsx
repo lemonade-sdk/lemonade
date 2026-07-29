@@ -721,7 +721,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [fallbackModelOverride, setFallbackModelOverride] = useState<string | null>(null);
   const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName());
   const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName());
-  const [modelPreparation, setModelPreparation] = useState<ModelPreparationState | null>(null);
+  const [modelPreparations, setModelPreparations] = useState<Record<string, ModelPreparationState>>({});
   const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference());
   const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(loadPersistencePreference()));
   const [activeId, setActiveId] = useState<string | null>(() => loadActiveId(loadPersistencePreference()));
@@ -742,7 +742,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [liveTranscript, setLiveTranscript] = useState('');
   const [liveError, setLiveError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
-  const [capabilityBusy, setCapabilityBusy] = useState(false);
+  const [capabilityBusyConvoIds, setCapabilityBusyConvoIds] = useState<Set<string>>(() => new Set());
   const [presetVersion, setPresetVersion] = useState(0);
   const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings());
   const [globalModelSettings, setGlobalModelSettings] = useState(() => loadGlobalModelSettings());
@@ -1457,7 +1457,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     });
   }, [globalModelSettings, knownModelInfos, loadedModels]);
 
-  const waitForExistingModelDownload = useCallback(async (modelName: string): Promise<boolean> => {
+  const waitForExistingModelDownload = useCallback(async (modelName: string, convoId: string): Promise<boolean> => {
     let sawDownload = false;
     const startedAt = Date.now();
 
@@ -1470,11 +1470,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         if (active.status === 'paused') {
           throw new Error(`Download for ${modelName} is paused. Resume it in Downloads, then send again.`);
         }
-        setModelPreparation({
-          modelName,
-          phase: 'waiting',
-          percent: Number.isFinite(active.percent) ? active.percent : undefined,
-        });
+        setModelPreparations(prev => ({
+          ...prev,
+          [convoId]: {
+            modelName,
+            phase: 'waiting',
+            percent: Number.isFinite(active.percent) ? active.percent : undefined,
+          },
+        }));
         await new Promise(resolve => window.setTimeout(resolve, 750));
         continue;
       }
@@ -1506,6 +1509,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const ensureChatModelReady = useCallback(async (
     modelName: string,
     initialInfo: ModelInfo | null,
+    convoId: string,
   ): Promise<ModelSnapshot> => {
     const loadedFrom = (models: LoadedModel[]) => models.find(
       model => model.model_name.toLowerCase() === modelName.toLowerCase(),
@@ -1521,7 +1525,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
     let freshModels = await api.models(true).catch(() => ({ data: knownModelInfos }));
     let info = findModelInfoByName(freshModels.data, modelName) || initialInfo;
-    const existingFinished = await waitForExistingModelDownload(modelName);
+    const existingFinished = await waitForExistingModelDownload(modelName, convoId);
     if (existingFinished) {
       freshModels = await api.models(true).catch(() => freshModels);
       info = findModelInfoByName(freshModels.data, modelName) || info;
@@ -1531,16 +1535,19 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       let pullError: Error | null = null;
       let pullCompleted = false;
       downloadStore.markLocal(modelName, 'downloading', 'model');
-      setModelPreparation({ modelName, phase: 'downloading', percent: 0 });
+      setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'downloading', percent: 0 } }));
 
       await api.pullModel(modelName, {
         onProgress: data => {
           const item = downloadStore.upsertFromPull(modelName, data as Record<string, unknown>, 'model');
-          setModelPreparation({
-            modelName,
-            phase: 'downloading',
-            percent: item?.percent ?? (typeof data.percent === 'number' ? data.percent : undefined),
-          });
+          setModelPreparations(prev => ({
+            ...prev,
+            [convoId]: {
+              modelName,
+              phase: 'downloading',
+              percent: item?.percent ?? (typeof data.percent === 'number' ? data.percent : undefined),
+            },
+          }));
         },
         onComplete: data => {
           pullCompleted = true;
@@ -1568,7 +1575,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       }
     }
 
-    setModelPreparation({ modelName, phase: 'loading', percent: 100 });
+    setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'loading', percent: 100 } }));
     await loadModelWithPolicy(modelName, info || initialInfo);
     await Promise.resolve(onRefresh());
     health = await api.health();
@@ -1675,12 +1682,23 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   // Derived: is the CURRENT conversation streaming?
   const currentStream = activeId ? streaming.getStream(activeId) : undefined;
   const isStreaming = !!currentStream;
+  const modelPreparation = activeId ? modelPreparations[activeId] || null : null;
+  const capabilityBusy = activeId ? capabilityBusyConvoIds.has(activeId) : false;
   const isBusy = isStreaming || capabilityBusy || isLiveRecording || modelPreparation !== null;
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
   const streamingToolStatus = currentStream?.toolStatus || '';
   const streamingToolCalls = currentStream?.toolCalls || [];
   const currentLiveStats = activeId ? streaming.getLiveStats(activeId) : undefined;
+
+  const clearModelPreparation = useCallback((convoId: string) => {
+    setModelPreparations(prev => {
+      if (!prev[convoId]) return prev;
+      const next = { ...prev };
+      delete next[convoId];
+      return next;
+    });
+  }, []);
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
@@ -2074,7 +2092,7 @@ ${finalText}`
     audioFiles: File[],
     images: string[] = [],
   ) => {
-    setCapabilityBusy(true);
+    setCapabilityBusyConvoIds(prev => new Set(prev).add(convoId));
     try {
       if (model.capability === 'image') {
         if (!text) throw new Error('Image mode needs a text prompt.');
@@ -2249,7 +2267,12 @@ ${finalText}`
         isError: true,
       });
     } finally {
-      setCapabilityBusy(false);
+      setCapabilityBusyConvoIds(prev => {
+        if (!prev.has(convoId)) return prev;
+        const next = new Set(prev);
+        next.delete(convoId);
+        return next;
+      });
     }
   }, [
     appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings,
@@ -2529,7 +2552,7 @@ ${finalText}`
     }
 
     try {
-      const preparedSnapshot = await ensureChatModelReady(currentModel, currentKnownModelInfo);
+      const preparedSnapshot = await ensureChatModelReady(currentModel, currentKnownModelInfo, convoId);
       updateConversation(convoId, conversation => ({
         ...conversation,
         model: preparedSnapshot,
@@ -2540,7 +2563,7 @@ ${finalText}`
         )),
         updatedAt: Date.now(),
       }));
-      setModelPreparation(null);
+      clearModelPreparation(convoId);
       await startAssistantResponse(
         convoId,
         preparedSnapshot,
@@ -2556,7 +2579,7 @@ ${finalText}`
         isError: true,
       });
     } finally {
-      setModelPreparation(null);
+      clearModelPreparation(convoId);
     }
   };
 
