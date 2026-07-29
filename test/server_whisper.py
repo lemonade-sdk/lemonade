@@ -102,28 +102,33 @@ class WhisperTests(ServerTestBase):
         """Load the configured Whisper model before positive transcription tests."""
         model = _get_whisper_model()
         whispercpp_backend = _get_whispercpp_backend()
-
-        # Load model with specified backend if provided
+    
+        load_payload = {"model_name": model}
+    
         if whispercpp_backend:
             print(f"[INFO] Loading model with {whispercpp_backend} backend")
-            load_payload = {
-                "model_name": model,
-                "whispercpp_backend": whispercpp_backend,
-            }
-            load_response = requests.post(
-                f"{self.base_url}/load",
-                json=load_payload,
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(
-                load_response.status_code,
-                200,
-                (
-                    f"Failed to load model {model} with {whispercpp_backend} "
-                    f"backend: {load_response.text}"
-                ),
-            )
-
+            load_payload["whispercpp_backend"] = whispercpp_backend
+        else:
+            print(f"[INFO] Loading model {model}")
+    
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json=load_payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+    
+        backend_description = (
+            f" with {whispercpp_backend} backend" if whispercpp_backend else ""
+        )
+        self.assertEqual(
+            load_response.status_code,
+            200,
+            (
+                f"Failed to load model {model}{backend_description}: "
+                f"{load_response.text}"
+            ),
+        )
+    
         return model
 
     def test_001_transcription_basic(self):
@@ -462,7 +467,7 @@ class WhisperTests(ServerTestBase):
         asyncio.run(self._test_006_realtime_websocket_connect())
 
     async def _test_006_realtime_websocket_connect(self):
-        model = _get_whisper_model()
+        model = self._load_whisper_model_or_fail()
         ws_port = self._get_websocket_port()
         print(f"[INFO] WebSocket port from /health: {ws_port}")
 
@@ -502,7 +507,7 @@ class WhisperTests(ServerTestBase):
         asyncio.run(self._test_007_realtime_websocket_transcription())
 
     async def _test_007_realtime_websocket_transcription(self):
-        model = _get_whisper_model()
+        model = self._load_whisper_model_or_fail()
         chunks = self._get_pcm16_chunks()
 
         client = self._make_openai_client()
@@ -512,8 +517,19 @@ class WhisperTests(ServerTestBase):
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(event.type, "session.created")
 
-            # Configure model
-            await conn.session.update(session={"model": model})
+            # The shared fixture contains several phrases separated by enough silence
+            # for the default VAD to create multiple final jobs. This test exits after
+            # the first completion, so those jobs used to leak into test_008. Keep the
+            # fixture in one VAD speech window and force exactly one final via commit.
+            await conn.session.update(
+                session={
+                    "model": model,
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "silence_duration_ms": 6000,
+                    },
+                }
+            )
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(event.type, "session.updated")
 
