@@ -5302,9 +5302,20 @@ bool Server::apply_upscale_if_configured(
     }
 #endif
 
-    // Perform upscaling
+    // Perform upscaling — tell sd-cli which GPU backend to use (diffusion component).
+    // Maps recipe backend names to sd-cli device identifiers (vulkan0, rocm0, etc).
+    std::string sd_backend;
+    if (backend == "rocm") {
+        sd_backend = "rocm0";
+    } else if (backend == "cuda") {
+        sd_backend = "cuda0";
+    } else if (backend == "metal") {
+        sd_backend = "metal0";
+    } else {
+        sd_backend = backend;  // vulkan and cpu map directly
+    }
     std::string upscaled = lemon::backends::SDServer::upscale_via_cli(
-        b64_image, upscale_model_path, cli_exe.string(), env_vars);
+        b64_image, upscale_model_path, cli_exe.string(), env_vars, sd_backend);
 
     if (upscaled.empty()) {
         LOG(WARNING, "Server") << "Auto-upscale failed for model '" << model_name << '"' << std::endl;
@@ -5461,8 +5472,20 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 #endif
 
         std::string b64_image = request_json["image"].get<std::string>();
+
+        // Map recipe backend names to sd-cli device identifiers.
+        std::string sd_backend;
+        if (backend == "rocm") {
+            sd_backend = "rocm0";
+        } else if (backend == "cuda") {
+            sd_backend = "cuda0";
+        } else if (backend == "metal") {
+            sd_backend = "metal0";
+        } else {
+            sd_backend = backend;  // vulkan and cpu map directly
+        }
         std::string upscaled = lemon::backends::SDServer::upscale_via_cli(
-            b64_image, upscale_model_path, cli_exe.string(), env_vars);
+            b64_image, upscale_model_path, cli_exe.string(), env_vars, sd_backend);
 
         if (upscaled.empty()) {
             res.status = 500;
