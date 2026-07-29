@@ -83,12 +83,13 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
 
   useEffect(() => {
     const modelInfo = modelsData[selectedModel];
+    const recipeOpts = modelInfo?.recipe_options as Record<string, unknown> | undefined;
     const defaults = modelInfo?.image_defaults;
     setImageSettings(prev => ({
-      steps: defaults?.steps ?? DEFAULT_IMAGE_SETTINGS.steps,
-      cfgScale: defaults?.cfg_scale ?? DEFAULT_IMAGE_SETTINGS.cfgScale,
-      width: defaults?.width ?? DEFAULT_IMAGE_SETTINGS.width,
-      height: defaults?.height ?? DEFAULT_IMAGE_SETTINGS.height,
+      steps: (recipeOpts?.steps as number) ?? defaults?.steps ?? DEFAULT_IMAGE_SETTINGS.steps,
+      cfgScale: (recipeOpts?.cfg_scale as number) ?? defaults?.cfg_scale ?? DEFAULT_IMAGE_SETTINGS.cfgScale,
+      width: (recipeOpts?.width as number) ?? defaults?.width ?? DEFAULT_IMAGE_SETTINGS.width,
+      height: (recipeOpts?.height as number) ?? defaults?.height ?? DEFAULT_IMAGE_SETTINGS.height,
       seed: DEFAULT_IMAGE_SETTINGS.seed,
       upscaleModel: prev.upscaleModel,
     }));
