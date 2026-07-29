@@ -171,6 +171,7 @@ class EndpointTests(ServerTestBase):
             "pull",
             "registry/search",
             "pull/variants",
+            "routing/validate",
             "delete",
             "load",
             "unload",
@@ -284,7 +285,9 @@ class EndpointTests(ServerTestBase):
 
         # When idle, both should be false
         self.assertFalse(loaded_model["is_busy"], "Model should not be busy when idle")
-        self.assertFalse(loaded_model["is_streaming"], "Model should not be streaming when idle")
+        self.assertFalse(
+            loaded_model["is_streaming"], "Model should not be streaming when idle"
+        )
 
         print("[OK] is_busy and is_streaming fields exist and are false when idle")
 
@@ -311,7 +314,12 @@ class EndpointTests(ServerTestBase):
             f"{self.base_url}/chat/completions",
             json={
                 "model": ENDPOINT_TEST_MODEL,
-                "messages": [{"role": "user", "content": "Write a haiku about mountains, then another about rivers, then another about clouds."}],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Write a haiku about mountains, then another about rivers, then another about clouds.",
+                    }
+                ],
                 "stream": True,
                 "max_tokens": 150,
             },
@@ -325,7 +333,10 @@ class EndpointTests(ServerTestBase):
         stop_polling.set()
         poll_thread.join(timeout=2)
 
-        self.assertTrue(captured_busy.is_set(), "Expected to capture is_busy=True at least once during streaming")
+        self.assertTrue(
+            captured_busy.is_set(),
+            "Expected to capture is_busy=True at least once during streaming",
+        )
         print("[OK] Captured is_busy=True during streaming")
 
         # After completion, verify flags are reset
@@ -335,11 +346,11 @@ class EndpointTests(ServerTestBase):
             if model["model_name"] == ENDPOINT_TEST_MODEL:
                 self.assertFalse(
                     model.get("is_busy", True),
-                    "is_busy should be false after request completes"
+                    "is_busy should be false after request completes",
                 )
                 self.assertFalse(
                     model.get("is_streaming", True),
-                    "is_streaming should be false after request completes"
+                    "is_streaming should be false after request completes",
                 )
                 break
 
@@ -376,7 +387,9 @@ class EndpointTests(ServerTestBase):
                     f"{self.base_url}/chat/completions",
                     json={
                         "model": ENDPOINT_TEST_MODEL,
-                        "messages": [{"role": "user", "content": f"Say hi. Request {name}."}],
+                        "messages": [
+                            {"role": "user", "content": f"Say hi. Request {name}."}
+                        ],
                         "stream": True,
                         "max_tokens": 10,
                     },
@@ -406,7 +419,9 @@ class EndpointTests(ServerTestBase):
         while not results.empty():
             completed.append(results.get_nowait())
 
-        self.assertEqual(len(completed), 3, f"Expected 3 completed requests, got: {completed}")
+        self.assertEqual(
+            len(completed), 3, f"Expected 3 completed requests, got: {completed}"
+        )
         for name, status, _ in completed:
             self.assertEqual(status, "success", f"Request {name} should succeed")
 
@@ -417,15 +432,17 @@ class EndpointTests(ServerTestBase):
             if model["model_name"] == ENDPOINT_TEST_MODEL:
                 self.assertFalse(
                     model.get("is_streaming", True),
-                    "is_streaming should be false after ALL streams complete"
+                    "is_streaming should be false after ALL streams complete",
                 )
                 self.assertFalse(
                     model.get("is_busy", True),
-                    "is_busy should be false after ALL requests complete"
+                    "is_busy should be false after ALL requests complete",
                 )
                 break
 
-        print("[OK] Concurrent streaming: flags reset correctly after all requests complete")
+        print(
+            "[OK] Concurrent streaming: flags reset correctly after all requests complete"
+        )
 
     def test_002a_metrics_endpoint(self):
         """Test root-level /metrics returns Prometheus text and loaded model samples."""
@@ -2519,8 +2536,9 @@ class EndpointTests(ServerTestBase):
     def test_021j_register_user_collection(self):
         """Register a user-defined collection via POST /pull."""
         canonical_name = f"user.TestColl-{uuid.uuid4().hex[:8]}"
-        # Unique `user.<name>` entries are exposed under the bare public name.
-        public_name = canonical_name[5:]
+        # Registered collections list under their canonical `user.` id; the bare
+        # name stays a resolvable alias but is not emitted as a list row.
+        bare_name = canonical_name[5:]
 
         try:
             response = requests.post(
@@ -2541,11 +2559,20 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(models_response.status_code, 200)
-            entry = next(
-                (m for m in models_response.json()["data"] if m["id"] == public_name),
-                None,
+            ids = [m["id"] for m in models_response.json()["data"]]
+            self.assertIn(
+                canonical_name,
+                ids,
+                f"{canonical_name} should appear in /models under its user. id",
             )
-            self.assertIsNotNone(entry, f"{public_name} should appear in /models")
+            self.assertNotIn(
+                bare_name,
+                ids,
+                "Collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in models_response.json()["data"] if m["id"] == canonical_name
+            )
             self.assertEqual(entry.get("recipe"), "collection.omni")
             self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
             self.assertTrue(
@@ -2553,7 +2580,153 @@ class EndpointTests(ServerTestBase):
                 "Collection should report downloaded=true when all components are downloaded",
             )
 
-            print(f"[OK] Registered omni collection: {public_name}")
+            # The plain /models surface (downloaded-only, no show_all) is the one
+            # the PR explicitly promises alongside ?show_all=true — assert the
+            # same prefixed-id contract holds there.
+            plain_response = requests.get(
+                f"{self.base_url}/models",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(plain_response.status_code, 200)
+            plain_ids = [m["id"] for m in plain_response.json()["data"]]
+            self.assertIn(
+                canonical_name,
+                plain_ids,
+                f"{canonical_name} should appear in plain /models under its user. id",
+            )
+            self.assertNotIn(
+                bare_name,
+                plain_ids,
+                "Collection must not be listed under its bare name on plain /models",
+            )
+
+            # Both the bare and prefixed ids still resolve on GET /models/{id}.
+            for lookup in (canonical_name, bare_name):
+                single = requests.get(
+                    f"{self.base_url}/models/{lookup}",
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    single.status_code, 200, f"{lookup} should resolve: {single.text}"
+                )
+                self.assertEqual(single.json().get("id"), canonical_name)
+
+            print(f"[OK] Registered omni collection: {canonical_name}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021j1_register_user_router_collection(self):
+        """A registered router collection lists under its canonical `user.` id.
+
+        Mirrors test_021j for collection.router, so the prefixed-id listing
+        contract is verified for both collection recipes (issue #2788).
+        """
+        canonical_name = f"user.TestRouter-{uuid.uuid4().hex[:8]}"
+        bare_name = canonical_name[5:]
+
+        try:
+            response = self._pull_router_collection(canonical_name)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["status"], "success")
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = [m["id"] for m in models_response.json()["data"]]
+            self.assertIn(
+                canonical_name,
+                ids,
+                f"{canonical_name} should appear in /models under its user. id",
+            )
+            self.assertNotIn(
+                bare_name,
+                ids,
+                "Router collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in models_response.json()["data"] if m["id"] == canonical_name
+            )
+            self.assertEqual(entry.get("recipe"), "collection.router")
+
+            # Both the bare and prefixed ids still resolve on GET /models/{id}.
+            for lookup in (canonical_name, bare_name):
+                single = requests.get(
+                    f"{self.base_url}/models/{lookup}",
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    single.status_code, 200, f"{lookup} should resolve: {single.text}"
+                )
+                self.assertEqual(single.json().get("id"), canonical_name)
+
+            print(f"[OK] Registered router collection: {canonical_name}")
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
+    def test_021j2_collection_lists_prefixed_in_ollama_tags(self):
+        """Ollama /api/tags emits the canonical `user.` collection id (issue #2788).
+
+        The prefixed-id listing contract is global, not OpenAI-only: /api/tags is
+        backed by the same get_downloaded_models() mapping as /v1/models. /api/show
+        and invocation must still accept both the bare and prefixed forms via the
+        resolvable alias.
+        """
+        canonical_name = f"user.OllamaColl-{uuid.uuid4().hex[:8]}"
+        bare_name = canonical_name[5:]
+        ollama_base = f"http://localhost:{PORT}/api"
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            tags = requests.get(f"{ollama_base}/tags", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(tags.status_code, 200, tags.text)
+            # Ollama appends a ":latest" tag to every model id.
+            names = {m["name"] for m in tags.json()["models"]}
+            models = {m["model"] for m in tags.json()["models"]}
+            self.assertIn(
+                f"{canonical_name}:latest",
+                names,
+                f"/api/tags should list the collection as {canonical_name}:latest",
+            )
+            self.assertEqual(names, models)
+            self.assertNotIn(
+                f"{bare_name}:latest",
+                names,
+                "Collection must not also appear under its bare name in /api/tags",
+            )
+
+            # /api/show must resolve both the bare and prefixed forms.
+            for lookup in (canonical_name, bare_name):
+                show = requests.post(
+                    f"{ollama_base}/show",
+                    json={"model": lookup},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    show.status_code,
+                    200,
+                    f"{lookup} should resolve on /api/show: {show.text}",
+                )
+
+            print(f"[OK] /api/tags lists collection prefixed: {canonical_name}")
         finally:
             try:
                 requests.post(
@@ -2612,7 +2785,7 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(listing.status_code, 200)
             entry = next(
-                (m for m in listing.json()["data"] if m["id"] == public_name),
+                (m for m in listing.json()["data"] if m["id"] == canonical_name),
                 None,
             )
             self.assertIsNotNone(entry)
@@ -2737,7 +2910,7 @@ class EndpointTests(ServerTestBase):
                 (
                     m
                     for m in models_response.json()["data"]
-                    if m["id"] == collection_name[5:]
+                    if m["id"] == collection_name
                 ),
                 None,
             )
@@ -2804,7 +2977,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(models_response.status_code, 200)
         ids = {m["id"] for m in models_response.json()["data"]}
         self.assertNotIn(
-            collection_name[5:],
+            collection_name,
             ids,
             "Rejected inline collection must not be persisted",
         )
@@ -2842,9 +3015,7 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(models_response.status_code, 200)
         ids = {m["id"] for m in models_response.json()["data"]}
-        self.assertNotIn(
-            collection_name[5:], ids, "Rejected collection must not persist"
-        )
+        self.assertNotIn(collection_name, ids, "Rejected collection must not persist")
         self.assertNotIn(comp, ids, "Half-defined component must not be registered")
         print("[OK] Inline collection with invalid component def rejected with 400")
 
@@ -3085,9 +3256,7 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
             ).json()["data"]
         }
-        self.assertNotIn(
-            collection_name[5:], ids, "Rejected collection must not persist"
-        )
+        self.assertNotIn(collection_name, ids, "Rejected collection must not persist")
         print("[OK] Nested collection (component is a registered collection) rejected")
 
     def test_021y_reject_nested_collection_inline_def(self):
@@ -3122,9 +3291,7 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
             ).json()["data"]
         }
-        self.assertNotIn(
-            collection_name[5:], ids, "Rejected collection must not persist"
-        )
+        self.assertNotIn(collection_name, ids, "Rejected collection must not persist")
         self.assertNotIn(child, ids, "Nested child collection must not be registered")
         print("[OK] Nested collection (inline collection component def) rejected")
 
@@ -3407,6 +3574,415 @@ class EndpointTests(ServerTestBase):
         finally:
             self._cleanup_router_collection(canonical_name)
 
+    def test_021zs_routing_validate_deterministic_match(self):
+        """/routing/validate runs an ad-hoc (unregistered) policy document and
+        returns the matched rule plus its full trace, without requiring the
+        policy to be attached to a registered model."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "code-to-big",
+                        "match": {
+                            "any": [
+                                {
+                                    "keywords_any": [
+                                        "def ",
+                                        "function",
+                                        "stack trace",
+                                        "compile",
+                                    ]
+                                },
+                                {"regex": "```[a-z]*"},
+                            ]
+                        },
+                        "route_to": "vllm.qwen3-32b",
+                    },
+                    {
+                        "id": "long-context-to-big",
+                        "match": {"min_chars": 4000},
+                        "route_to": "vllm.qwen3-32b",
+                    },
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "please write a def to reverse a list"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "vllm.qwen3-32b")
+        self.assertEqual(decision["matched_rule"], "code-to-big")
+        self.assertFalse(decision["default_used"])
+        trace = decision.get("trace")
+        self.assertIsInstance(trace, list)
+        self.assertTrue(trace)
+        self.assertTrue(
+            any(
+                entry.get("condition") == "keywords_any" and entry.get("result") is True
+                for entry in trace
+            ),
+            f"trace must include the matched keywords condition: {trace}",
+        )
+        print("[OK] /routing/validate matched a deterministic keyword rule")
+
+    def test_021zt_routing_validate_default_fallthrough(self):
+        """A prompt matching no rule falls through to the declared default_model."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "code-to-big",
+                        "match": {"keywords_any": ["def ", "function"]},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "what's the weather like today?"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "Qwen3-8B-GGUF")
+        self.assertTrue(decision["default_used"])
+        print("[OK] /routing/validate fell through to the default model")
+
+    def test_021zu_routing_validate_bad_policy_returns_400(self):
+        """A malformed policy (missing the required 'routing' key) is rejected
+        with a 400 and a clear error message, not a crash."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("error", response.json())
+        print("[OK] /routing/validate rejected a malformed policy with 400")
+
+    def test_021zv_routing_validate_undeclared_component_returns_400(self):
+        """/routing/validate only relaxes live-registry resolution (an
+        identity resolve_component), not internal consistency — a candidate,
+        default_model, rule route_to, or classifier model that isn't listed
+        in collection.components is rejected with a 400, same as the normal
+        collection-registration path would reject it."""
+        policy_undeclared_candidate = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],  # "vllm.qwen3-32b" is not declared
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "code-to-big",
+                        "match": {"keywords_any": ["def "]},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy_undeclared_candidate, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("vllm.qwen3-32b", response.json()["error"])
+
+        policy_undeclared_classifier_model = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "classifiers": [
+                    {
+                        "id": "pii",
+                        "type": "classifier",
+                        # not listed in collection.components
+                        "model": "undeclared-classifier-model",
+                        "labels": ["safe", "unsafe"],
+                    }
+                ],
+                "rules": [
+                    {
+                        "id": "flag-to-big",
+                        "match": {"classifier": "pii", "label": "unsafe"},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy_undeclared_classifier_model, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("undeclared-classifier-model", response.json()["error"])
+        print("[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400")
+
+    def test_021zm_routing_validate_llm_router_fails_open_returns_200(self):
+        """The 'llm' router type is fully implemented: the parser desugars
+        routing.router into one llm classifier plus an identity rule per
+        candidate (__route_0, __route_1, ...), and the engine runs that live.
+        If the router's own model can't run, the classifier fails and its
+        identity rules simply don't match, so the engine fails open to
+        default_model like any other rule miss — this returns 200 with a
+        decision, never a 400."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": [
+                "Qwen3-8B-GGUF",
+                "Qwen3.5-35B-A3B-GGUF",
+                "nonexistent-router-model-021zm",
+            ],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+                "router": {
+                    "type": "llm",
+                    "model": "nonexistent-router-model-021zm",
+                    "prompt": "Reply with ONLY a model name.",
+                },
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        decision = body["decision"]
+        self.assertTrue(decision["default_used"])
+        self.assertEqual(decision["route_to"], "Qwen3-8B-GGUF")
+
+        # The as-authored policy has routing.router and no routing.rules, so a
+        # client can't resolve a synthesized matched_rule id (e.g. __route_0)
+        # against it. normalized_policy is what the engine actually ran.
+        normalized_routing = body["normalized_policy"]["routing"]
+        self.assertNotIn("router", normalized_routing)
+        self.assertEqual(len(normalized_routing["classifiers"]), 1)
+        self.assertEqual(normalized_routing["classifiers"][0]["id"], "__router")
+        self.assertEqual(normalized_routing["classifiers"][0]["type"], "llm")
+        self.assertEqual(
+            [rule["id"] for rule in normalized_routing["rules"]],
+            ["__route_0", "__route_1"],
+        )
+        print("[OK] /routing/validate ran an llm router live and failed open to the default model")
+
+    def test_021zn_routing_validate_has_images_flag(self):
+        """The has_images request flag flows through to a has_images match
+        condition."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "vision-to-big",
+                        "match": {"has_images": True},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response_without_image = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "describe this", "has_images": False},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_without_image.status_code, 200)
+        self.assertTrue(response_without_image.json()["decision"]["default_used"])
+
+        response_with_image = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "describe this", "has_images": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_with_image.status_code, 200)
+        decision = response_with_image.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "vision-to-big")
+        self.assertFalse(decision["default_used"])
+        print("[OK] /routing/validate honored the has_images flag")
+
+    def test_021zo_routing_validate_has_tools_flag(self):
+        """The has_tools request flag flows through to a has_tools match
+        condition."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "tools-to-big",
+                        "match": {"has_tools": True},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response_without_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "call a function", "has_tools": False},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_without_tools.status_code, 200)
+        self.assertTrue(response_without_tools.json()["decision"]["default_used"])
+
+        response_with_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "call a function", "has_tools": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_with_tools.status_code, 200)
+        decision = response_with_tools.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "tools-to-big")
+        self.assertFalse(decision["default_used"])
+        print("[OK] /routing/validate honored the has_tools flag")
+
+    def test_021zp_routing_validate_metadata_flag(self):
+        """Arbitrary caller-supplied metadata key/value pairs flow through to
+        a metadata match condition."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "tenant-to-big",
+                        "match": {"metadata": {"key": "tenant", "equals": "acme"}},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response_without_metadata = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_without_metadata.status_code, 200)
+        self.assertTrue(response_without_metadata.json()["decision"]["default_used"])
+
+        response_other_tenant = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": {"tenant": "other"}},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_other_tenant.status_code, 200)
+        self.assertTrue(response_other_tenant.json()["decision"]["default_used"])
+
+        response_matching_tenant = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": {"tenant": "acme"}},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_matching_tenant.status_code, 200)
+        decision = response_matching_tenant.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "tenant-to-big")
+        self.assertFalse(decision["default_used"])
+        print("[OK] /routing/validate honored the metadata flag")
+
+    def test_021zq_routing_validate_bad_metadata_returns_400(self):
+        """A malformed 'metadata' field (not an object, or a non-string
+        value) is rejected with a 400 and a clear error message."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+            },
+        }
+        response_not_object = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": "not-an-object"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_not_object.status_code, 400)
+        self.assertIn("error", response_not_object.json())
+
+        response_bad_value = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": {"tenant": 123}},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_value.status_code, 400)
+        self.assertIn("tenant", response_bad_value.json()["error"])
+        print("[OK] /routing/validate rejected malformed metadata with 400")
+
+    def test_021zr_routing_validate_bad_field_types_return_400(self):
+        """A malformed 'prompt', 'has_images', or 'has_tools' field (wrong
+        JSON type) is rejected with a 400 and a clear error message, not a
+        generic server error from an uncaught nlohmann::json type_error."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+            },
+        }
+        response_bad_prompt = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": 12345},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_prompt.status_code, 400)
+        self.assertIn("prompt", response_bad_prompt.json()["error"])
+
+        response_bad_has_images = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "has_images": "yes"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_has_images.status_code, 400)
+        self.assertIn("has_images", response_bad_has_images.json()["error"])
+
+        response_bad_has_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "has_tools": "yes"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_has_tools.status_code, 400)
+        self.assertIn("has_tools", response_bad_has_tools.json()["error"])
+        print("[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400")
+
     def test_021zj_router_llm_l0a_live(self):
         """L0a live path (#2405), deterministic: the router component is a mock
         cloud model (via _start_mock_cloud_provider) that returns a fixed valid
@@ -3490,9 +4066,7 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(resp.status_code, 200, f"auth failed: {resp.text}")
             self.assertEqual(resp.json()["models_discovered"], 1)
 
-            requests.post(
-                f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
-            )
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
             routing = {
                 "candidates": [candidate_model],
@@ -3649,9 +4223,7 @@ class EndpointTests(ServerTestBase):
                 item.get("model_name"): item
                 for item in warm_health.get("all_models_loaded", [])
             }
-            self.assertEqual(
-                warm_loaded[router_model].get("slot_pool"), "standard/llm"
-            )
+            self.assertEqual(warm_loaded[router_model].get("slot_pool"), "standard/llm")
             warm_router_pid = int(warm_loaded[router_model]["pid"])
 
             routing = {
@@ -3705,9 +4277,7 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(
                 loaded[router_model].get("slot_pool"), "routing_helper/llm"
             )
-            self.assertEqual(
-                loaded[candidate_model].get("slot_pool"), "standard/llm"
-            )
+            self.assertEqual(loaded[candidate_model].get("slot_pool"), "standard/llm")
             first_pids = {
                 router_model: int(loaded[router_model]["pid"]),
                 candidate_model: int(loaded[candidate_model]["pid"]),
@@ -3756,9 +4326,7 @@ class EndpointTests(ServerTestBase):
                 for item in pinned_health.get("all_models_loaded", [])
             }
             self.assertTrue(pinned_loaded[candidate_model].get("pinned"))
-            self.assertEqual(
-                pinned_health.get("pinned_models", {}).get("llm"), 1
-            )
+            self.assertEqual(pinned_health.get("pinned_models", {}).get("llm"), 1)
             self.assertEqual(
                 int(pinned_loaded[candidate_model]["pid"]),
                 first_pids[candidate_model],
@@ -3788,9 +4356,7 @@ class EndpointTests(ServerTestBase):
                 json={"model_name": candidate_model, "pinned": False},
                 timeout=TIMEOUT_DEFAULT,
             )
-            self.assertEqual(
-                unpin_candidate.status_code, 200, unpin_candidate.text
-            )
+            self.assertEqual(unpin_candidate.status_code, 200, unpin_candidate.text)
 
             direct_router = requests.post(
                 f"{self.base_url}/chat/completions",
@@ -3893,11 +4459,13 @@ class EndpointTests(ServerTestBase):
                 "object": "chat.completion",
                 "created": 1,
                 "model": req.get("model", upstream_id),
-                "choices": [{
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "ok"},
-                    "finish_reason": "stop",
-                }],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
                 "usage": {
                     "prompt_tokens": 1,
                     "completion_tokens": 1,
@@ -3932,9 +4500,7 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(auth.status_code, 200, auth.text)
-            requests.post(
-                f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
-            )
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
             routing = {
                 "candidates": [candidate_model],
@@ -3983,9 +4549,7 @@ class EndpointTests(ServerTestBase):
             pull = self._pull_router_collection(
                 canonical_name,
                 routing=routing,
-                overrides={
-                    "components": [helper_a, helper_b, candidate_model]
-                },
+                overrides={"components": [helper_a, helper_b, candidate_model]},
             )
             self.assertEqual(pull.status_code, 200, pull.text)
 
@@ -4070,9 +4634,7 @@ class EndpointTests(ServerTestBase):
         canonical_name = f"user.RouterSameModel-{suffix}"
         public_name = canonical_name[5:]
         try:
-            requests.post(
-                f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
-            )
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
             routing = {
                 "candidates": [model],
                 "default_model": model,
@@ -4126,6 +4688,7 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
+
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is
         ENDPOINT_TEST_MODEL. `overrides` is merged into the top-level pull
@@ -4502,7 +5065,6 @@ class EndpointTests(ServerTestBase):
         isn't dropped on export and rejected on re-import."""
         suffix = uuid.uuid4().hex[:8]
         canonical_name = f"user.RouterExport-{suffix}"
-        public_name = canonical_name[5:]
         reimport_name = f"user.RouterReimport-{suffix}"
         try:
             pull_response = self._pull_router_collection(canonical_name)
@@ -4512,10 +5074,12 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
             ).json()
             exported = next(
-                (m for m in models.get("data", []) if m.get("id") == public_name),
+                (m for m in models.get("data", []) if m.get("id") == canonical_name),
                 None,
             )
-            self.assertIsNotNone(exported, f"{public_name} missing from /models export")
+            self.assertIsNotNone(
+                exported, f"{canonical_name} missing from /models export"
+            )
             self.assertEqual(exported.get("recipe"), "collection.router")
             self.assertIn("routing", exported)
             self.assertEqual(
@@ -4640,7 +5204,7 @@ class EndpointTests(ServerTestBase):
                 (
                     m
                     for m in models_response.json()["data"]
-                    if m["id"] == collection_name[5:]
+                    if m["id"] == collection_name
                 ),
                 None,
             )
