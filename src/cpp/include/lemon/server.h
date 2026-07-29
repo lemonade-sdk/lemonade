@@ -316,6 +316,15 @@ private:
         nlohmann::json& response,
         httplib::Response& res);
 
+    // Internal helper: resolve upscale model path, pick backend, run sd-cli.
+    // Returns the upscaled base64 image, or empty on failure (with error
+    // already written to res if res is not null).
+    std::string do_upscale(
+        const std::string& b64_image,
+        const std::string& upscale_model_name,
+        const std::string& main_model_name,
+        httplib::Response* res);
+
     bool parse_required_json_body(const httplib::Request& req,
                                   httplib::Response& res,
                                   nlohmann::json& out);
