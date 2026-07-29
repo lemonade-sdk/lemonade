@@ -105,6 +105,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|----------|------|---------|-------------|
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `flm_args` | `--flm-args` | ARGS | "" | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption |
+| `modelscope` | `--modelscope` | BOOL | false | Download models from ModelScope instead of HuggingFace |
 
 #### `llamacpp` — Llama.cpp GPU
 
