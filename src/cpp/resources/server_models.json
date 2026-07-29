@@ -64,6 +64,18 @@
         ],
         "size": 6.2
     },
+    "deepseek-v4": {
+        "checkpoint": "amd/DeepSeek-V4-Flash-EXTENSOR",
+        "recipe": "extensor",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 153.2,
+        "min_resident_gb": 117.2
+    },
     "AMD-OLMo-1B-SFT-DPO-Hybrid": {
         "checkpoint": "amd/AMD-OLMo-1B-SFT-DPO-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",

@@ -207,6 +207,7 @@ set(LEMON_BACKENDS
     "flm|fastflowlm"
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
+    "extensor|extensor"
     "thenoise|thenoise"
     "ds4|ds4"
     "cloud|cloud"
