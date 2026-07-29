@@ -309,6 +309,24 @@ private:
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
+    // Auto-upscale an image response if the source model has an "upscale_model"
+    // recipe option configured. Returns a new JSON response with the upscaled
+    // image, or the original response unchanged if no upscaler is set.
+    // On failure, sets res status/body and returns false.
+    bool apply_upscale_if_configured(
+        const std::string& model_name,
+        nlohmann::json& response,
+        httplib::Response& res);
+
+    // Internal helper: resolve upscale model path, pick backend, run sd-cli.
+    // Returns the upscaled base64 image, or empty on failure (with error
+    // already written to res if res is not null).
+    std::string do_upscale(
+        const std::string& b64_image,
+        const std::string& upscale_model_name,
+        const std::string& main_model_name,
+        httplib::Response* res);
+
     bool parse_required_json_body(const httplib::Request& req,
                                   httplib::Response& res,
                                   nlohmann::json& out);
