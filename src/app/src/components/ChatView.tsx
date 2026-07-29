@@ -3883,29 +3883,29 @@ interface EmptyStateProps {
 const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onOpenModelDetails, onUnloadModel, unloadingModel, onChipClick, customModelInfos }) => (
   <>
     <div className="hero">
-      <h1 className="hero__title">What's on your mind?</h1>
+      <h1 className="hero__title">Learn Lemonade</h1>
       <p className="hero__subtitle">
         {loadedModels.length > 0
-          ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} loaded. Choose the right mode, then start fresh.`
-          : 'Ask anything. Lemonade will reuse your last ready chat model or download the selected default automatically.'}
+          ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} ready. Ask a question or explore what Lemonade can do.`
+          : 'Ask a question to learn how Lemonade works and get started with your first model.'}
       </p>
 
       <div className="chips" role="list">
-        <button className="chip" role="listitem" onClick={() => onChipClick('What models do I have loaded?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="hard-drive" size={16} /></span>
-          Loaded models
+        <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
+          <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
+          How do I use Lemonade?
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('What models can I download from the Qwen collection?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="search" size={16} /></span>
-          Find Qwen models
-        </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
-          Check hardware
-        </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('Download and load a good chat model for me.')}>
+        <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
           <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
-          Load a model
+          How do I add a model?
+        </button>
+        <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
+          <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
+          What are Lemonade tools?
+        </button>
+        <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
+          <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
+          What can my hardware run?
         </button>
       </div>
     </div>
