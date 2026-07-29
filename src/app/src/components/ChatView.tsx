@@ -1032,15 +1032,23 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   useEffect(() => {
     if (currentCapability !== 'audio-generation') return;
-    const recipeOptions = currentPreset?.recipe_options || {};
+    const recipeOptions = (currentPreset?.recipe_options || {}) as Record<string, unknown>;
+    // A preset wins over the model's declared defaults, which win over generic ones.
+    const modelDefaults = ((currentKnownModelInfo as any)?.audio_defaults || {}) as Record<string, number>;
+    const pick = (key: string, fallback: number) => (
+      typeof recipeOptions[key] === 'number' ? recipeOptions[key] as number
+        : typeof modelDefaults[key] === 'number' ? modelDefaults[key]
+        : fallback
+    );
     setAudioGenerationSettings(prev => ({
       ...prev,
-      duration: isAceStepAudio ? 150 : 10,
-      steps: typeof recipeOptions.steps === 'number' ? recipeOptions.steps : 50,
-      cfg: typeof recipeOptions.cfg_scale === 'number' ? recipeOptions.cfg_scale : 4.5,
+      duration: typeof modelDefaults.seconds === 'number' ? modelDefaults.seconds : (isAceStepAudio ? 150 : 10),
+      steps: pick('steps', 50),
+      cfg: pick('cfg_scale', 4.5),
+      sigmaShift: typeof modelDefaults.sigma_shift === 'number' ? modelDefaults.sigma_shift : prev.sigmaShift,
       lyrics: '',
     }));
-  }, [currentModel, currentCapability, currentPreset, isAceStepAudio]);
+  }, [currentModel, currentCapability, currentKnownModelInfo, currentPreset, isAceStepAudio]);
 
   useEffect(() => {
     if (!isOpenMossTts) return;
@@ -2107,6 +2115,13 @@ ${finalText}`
           audioOptions.sigma_shift = audioGenerationSettings.sigmaShift;
           const negative = audioGenerationSettings.negativePrompt.trim();
           if (negative) audioOptions.negative_prompt = negative;
+          // OpenMOSS SFX seeds are unsigned and 0 is a real seed, not a "random"
+          // sentinel. Omitting -1 would fall through to that 0 and render the
+          // identical clip on every generation, so draw a seed here instead and
+          // let a blank seed box keep meaning random.
+          if (audioOptions.seed === -1) {
+            audioOptions.seed = Math.floor(Math.random() * 0xffffffff);
+          }
         }
         const audio = await api.audioGeneration(model.name, text, audioOptions);
         appendAssistantMessage(convoId, {
@@ -2162,14 +2177,17 @@ ${finalText}`
         const audio = await withModelSelectionLock(async () => {
           if (isOpenMossTts) {
             Object.assign(speechOptions, openMossSpeechParams);
+            const styleNote = openMossSettings.voiceDescription.trim();
             if (openMossMode === 'describe') {
-              voice = openMossSettings.voiceDescription.trim();
-              if (!voice) throw new Error('Describe the voice you want before generating speech.');
+              if (!styleNote) throw new Error('Describe the voice you want before generating speech.');
+              // Opt-in extension: `voice` keeps its OpenAI-compatible meaning.
+              speechOptions.voice_design_description = styleNote;
+              voice = '';
               content = 'Designed a voice from your description and generated speech with it.';
             } else {
               const sample = audioFiles[0];
               if (!sample) throw new Error('Attach a WAV voice sample to clone.');
-              voice = '';
+              voice = styleNote;
               speechOptions.reference_wav_b64 = await wavVoiceSampleToBase64(sample);
               content = 'Generated speech using the attached voice sample.';
             }
