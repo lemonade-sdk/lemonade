@@ -5316,15 +5316,21 @@ std::string Server::do_upscale(
 #endif
 
     // Map recipe backend names to sd-cli device identifiers (vulkan0, rocm0, etc.)
-    std::string sd_backend;
-    if (backend == "rocm") sd_backend = "rocm0";
-    else if (backend == "cuda") sd_backend = "cuda0";
-    else if (backend == "metal") sd_backend = "metal0";
-    else sd_backend = backend;  // vulkan and cpu map directly
+    std::string sd_backend = sd_backend_for_recipe(backend);
 
     return lemon::backends::SDServer::upscale_via_cli(
         b64_image, upscale_model_path, cli_exe.string(), env_vars, sd_backend);
 }
+std::string Server::sd_backend_for_recipe(const std::string& recipe_backend) {
+    // Map recipe backend names to sd-cli diffusion component device identifiers.
+    // Recipe backends use component names (rocm, cuda, metal); sd-cli uses
+    // component=device suffix (rocm0, cuda0, metal0). Vulkan and cpu map directly.
+    if (recipe_backend == "rocm") return "rocm0";
+    if (recipe_backend == "cuda") return "cuda0";
+    if (recipe_backend == "metal") return "metal0";
+    return recipe_backend;  // vulkan, cpu — no suffix needed
+}
+
 
 void Server::handle_image_upscale(const httplib::Request& req, httplib::Response& res) {
     try {
