@@ -1086,6 +1086,15 @@ RecipeOptions Router::get_model_recipe_options(const std::string& model_name) co
     return RecipeOptions();
 }
 
+json Router::get_model_runtime_props(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto* server = find_server_by_model_name(resolve_model_name(model_name));
+    if (!server || !server->is_backend_alive()) {
+        throw ModelNotLoadedException(model_name);
+    }
+    return server->get_runtime_props();
+}
+
 RecipeOptions Router::resolve_effective_recipe_options(const ModelInfo& model_info,
                                                        const RecipeOptions& options) const {
     const std::string backend_option = model_info.recipe + "_backend";

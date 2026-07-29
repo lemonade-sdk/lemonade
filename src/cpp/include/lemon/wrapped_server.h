@@ -303,6 +303,7 @@ public:
         std::lock_guard<std::mutex> lock(state_mutex_);
         return recipe_options_;
     }
+    json get_runtime_props() { return forward_get_request("/props", 3); }
     int get_process_id() const { return get_process_handle_snapshot().pid; }
     int get_backend_port() const;
 

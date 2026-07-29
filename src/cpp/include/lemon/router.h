@@ -115,6 +115,7 @@ public:
     bool is_model_loaded(const std::string& model_name) const;
 
     RecipeOptions get_model_recipe_options(const std::string& model_name) const;
+    json get_model_runtime_props(const std::string& model_name) const;
 
     RecipeOptions resolve_effective_recipe_options(const ModelInfo& model_info,
                                                    const RecipeOptions& options) const;

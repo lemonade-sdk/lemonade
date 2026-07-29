@@ -1296,15 +1296,11 @@ class LemonadeAPI {
   async loadedModelContextSize(model: LoadedModel): Promise<number | null> {
     const configured = Number(model.recipe_options?.ctx_size);
     if (Number.isFinite(configured) && configured > 0) return configured;
-    if (!model.backend_url) return null;
     try {
-      const propsUrl = new URL('/props', model.backend_url).toString();
-      const response = await fetch(propsUrl);
-      if (!response.ok) return null;
-      const props = await response.json() as {
-        default_generation_settings?: { params?: { n_ctx?: unknown } };
-      };
-      const contextSize = Number(props.default_generation_settings?.params?.n_ctx);
+      const runtime = await this._json<{ ctx_size?: unknown }>(
+        `/api/v1/models/${encodeURIComponent(model.model_name)}/runtime`,
+      );
+      const contextSize = Number(runtime.ctx_size);
       return Number.isFinite(contextSize) && contextSize > 0 ? contextSize : null;
     } catch {
       return null;

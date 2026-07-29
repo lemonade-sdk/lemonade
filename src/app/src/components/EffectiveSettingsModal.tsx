@@ -135,6 +135,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     repeat_penalty: '',
   });
   const [loadedContextSize, setLoadedContextSize] = useState<number | null>(null);
+  const [resolvingContextSize, setResolvingContextSize] = useState(false);
 
   const hasOverride = !!getSessionArgsOverride(modelName);
 
@@ -184,13 +185,29 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   useEffect(() => {
     if (!open || !loadedModel) {
       setLoadedContextSize(null);
+      setResolvingContextSize(false);
       return;
     }
     let cancelled = false;
+    let settled = false;
+    setLoadedContextSize(null);
+    setResolvingContextSize(true);
+    const timeout = window.setTimeout(() => {
+      if (cancelled || settled) return;
+      settled = true;
+      setResolvingContextSize(false);
+    }, 5000);
     void api.loadedModelContextSize(loadedModel).then(contextSize => {
-      if (!cancelled) setLoadedContextSize(contextSize);
+      if (cancelled || settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      setLoadedContextSize(contextSize);
+      setResolvingContextSize(false);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
   }, [open, loadedModel]);
 
   useEffect(() => {
@@ -345,7 +362,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <div className="effective-settings__rows">
               <div className="effective-settings__row">
                 <span className="effective-settings__row-label">Context size</span>
-                <span className="effective-settings__row-value">{loadedContextSize ? loadedContextSize.toLocaleString() : (loadedModel ? 'Resolving…' : 'Not loaded')}</span>
+                <span className="effective-settings__row-value">{loadedContextSize ? loadedContextSize.toLocaleString() : (loadedModel ? (resolvingContextSize ? 'Resolving…' : 'Unavailable') : 'Not loaded')}</span>
                 <span className="effective-settings__source effective-settings__source--generic">Runtime</span>
               </div>
               <div className="effective-settings__row">
