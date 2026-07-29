@@ -96,6 +96,38 @@ int main() {
     }
     check(threw_unknown_otlp, "rejects unknown telemetry.otlp subkey");
 
+    json extensor_update = {
+        {"extensor", {
+            {"extensor_model_path", "/models/deepseek-v4.extensor.gguf"},
+            {"extensor_preset", "demo"}
+        }}
+    };
+    config.set(extensor_update);
+    snapshot = config.snapshot();
+    check(snapshot["extensor"]["extensor_model_path"] ==
+              "/models/deepseek-v4.extensor.gguf",
+          "accepts descriptor-declared backend string option");
+    check(snapshot["extensor"]["extensor_preset"] == "demo",
+          "persists descriptor-declared backend option");
+
+    bool threw_wrong_extensor_type = false;
+    try {
+        config.set(json{{"extensor", {{"extensor_preset", 42}}}});
+    } catch (const std::invalid_argument&) {
+        threw_wrong_extensor_type = true;
+    }
+    check(threw_wrong_extensor_type,
+          "rejects wrong type for descriptor-declared backend option");
+
+    bool threw_unknown_extensor = false;
+    try {
+        config.set(json{{"extensor", {{"unknown_option", "value"}}}});
+    } catch (const std::invalid_argument&) {
+        threw_unknown_extensor = true;
+    }
+    check(threw_unknown_extensor,
+          "rejects undeclared backend option");
+
     // 3. Test CLI dotted key config path parsing logic
     std::vector<std::string> cli_args = {
         "telemetry.otlp.endpoint=http://127.0.0.1:5555/v1/traces",

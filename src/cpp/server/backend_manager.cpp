@@ -587,6 +587,16 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         installed_backend_binary_path(*spec, resolved_backend);
     const bool has_existing_backend = !existing_backend_binary.empty();
 
+    const std::string configured_binary =
+        backends::BackendUtils::get_bin_config_value(recipe, resolved_backend);
+    if (!force && has_existing_backend && utils::looks_like_path(configured_binary)) {
+        LOG(INFO, "BackendManager")
+            << "Using user-managed " << recipe << ":" << resolved_backend
+            << " backend at " << existing_backend_binary << std::endl;
+        report_backend_ready(recipe, resolved_backend, progress_cb);
+        return;
+    }
+
     if (auto* cfg = RuntimeConfig::global()) {
         const bool offline = cfg->offline();
         const bool no_fetch = cfg->no_fetch_executables();
