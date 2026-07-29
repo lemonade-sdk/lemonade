@@ -1,6 +1,8 @@
 #pragma once
 
 #include <map>
+#include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include "lemon/routing_policy.h"
@@ -15,6 +17,8 @@
 //                                    model, else a deterministic unit vector).
 //   - run_classifier(model, text) -> a fixed label->score map per model.
 //   - chat(model, prompt, input)  -> a fixed reply per model.
+//
+// A model can also be marked as failing, so callers can exercise on_error.
 //
 // Nothing here implements routing or scoring logic; tests dictate every output.
 
@@ -56,6 +60,17 @@ public:
         chat_replies_[model] = std::move(reply);
     }
 
+    // Make run_classifier / chat throw for `model`, which the owning classifier
+    // turns into Score{ok=false} so its on_error applies. embed needs no
+    // equivalent: an empty vector already forces a cosine failure.
+    void set_classifier_failure(const std::string& model) { failing_classifiers_.insert(model); }
+
+    void set_chat_failure(const std::string& model) { failing_chats_.insert(model); }
+
+    // Restore a freshly-constructed state. The object keeps its address, so a
+    // ClassifierServices already handed out by make() stays valid.
+    void reset() { *this = FakeClassifierServices{}; }
+
     // Build a ClassifierServices wired to this fake. The returned struct copies
     // `this` by pointer, so keep the FakeClassifierServices alive for the
     // services' lifetime.
@@ -75,12 +90,18 @@ public:
             return std::vector<float>{1.0f, 0.0f, 0.0f};
         };
         svc.run_classifier = [self](const std::string& model, const std::string&) {
+            if (self->failing_classifiers_.count(model) != 0) {
+                throw std::runtime_error("fake classifier failure: " + model);
+            }
             auto it = self->classifier_scores_.find(model);
             if (it != self->classifier_scores_.end()) return it->second;
             return std::map<std::string, double>{};
         };
         svc.chat = [self](const std::string& model, const std::string&,
                           const std::string&) {
+            if (self->failing_chats_.count(model) != 0) {
+                throw std::runtime_error("fake chat failure: " + model);
+            }
             auto it = self->chat_replies_.find(model);
             if (it != self->chat_replies_.end()) return it->second;
             return std::string{};
@@ -95,6 +116,8 @@ private:
     int total_embed_calls_ = 0;
     std::map<std::string, std::map<std::string, double>> classifier_scores_;
     std::map<std::string, std::string> chat_replies_;
+    std::set<std::string> failing_classifiers_;
+    std::set<std::string> failing_chats_;
 };
 
 } // namespace testing

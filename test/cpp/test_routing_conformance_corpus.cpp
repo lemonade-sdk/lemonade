@@ -3,21 +3,24 @@
 // Replays every golden case under test/conformance/routing/ through the real
 // routing engine and asserts the emitted Decision (via the production
 // route_decision_to_json serializer) equals the recorded expectation: same
-// fields, same values, no tolerance. Any drift is a back-compat violation.
+// fields, same values. Any drift is a back-compat violation.
 //
-// Deterministic corpus only: keywords_any / regex / min_chars / metadata and
-// first-match / fail-open behavior reproduce exactly with no model backend, so
-// an empty ClassifierServices is sufficient.
+// Deterministic cases need no backend. Model-backed cases bind the engine to
+// FakeClassifierServices and declare the answers it returns, so a case tests
+// the engine's threshold and selection logic rather than a real model's floats.
 
+#include "fake_classifier_services.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
 #include "lemon/routing_policy_parser.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -35,6 +38,12 @@ using lemon::Decision;
 using lemon::RoutePolicy;
 using lemon::RoutingPolicyEngine;
 using lemon::json;
+
+// Every Decision field is compared exactly except a trace score, which is
+// computed (dot product, square roots, a division) and so can differ in its last
+// bits between CI's x86 and ARM runners. The margin is far above that noise and
+// far below any score difference a case could care about.
+static constexpr double kScoreTolerance = 1e-12;
 
 static int g_failures = 0;
 
@@ -143,6 +152,172 @@ static std::vector<fs::path> find_case_dirs(const fs::path& root) {
     return dirs;
 }
 
+static bool parse_vector(const json& value, std::vector<float>& out) {
+    if (!value.is_array()) return false;
+    out.clear();
+    for (const auto& item : value) {
+        if (!item.is_number()) return false;
+        out.push_back(item.get<float>());
+    }
+    return true;
+}
+
+// services.json: reference-phrase vectors, shared by every case in the dir.
+// They cannot live in a case row: SemanticSimilarityClassifier embeds each
+// phrase once and caches it, so only the first row's vectors would be used.
+//
+//   {"embed": {"<model>": {"<phrase>": [numbers]}}}
+static bool apply_dir_services(lemon::testing::FakeClassifierServices& fake, const json& spec,
+                               const std::string& where) {
+    if (!spec.is_object()) {
+        check(where + ": is an object", false);
+        return false;
+    }
+    bool ok = true;
+    for (auto service = spec.begin(); service != spec.end(); ++service) {
+        if (service.key() != "embed") {
+            check(where + ": unknown service '" + service.key() + "'", false);
+            ok = false;
+            continue;
+        }
+        if (!service.value().is_object()) {
+            check(where + ".embed: is a model -> phrase map", false);
+            ok = false;
+            continue;
+        }
+        for (auto model = service.value().begin(); model != service.value().end(); ++model) {
+            if (!model.value().is_object()) {
+                check(where + ".embed." + model.key() + ": is a phrase -> vector map", false);
+                ok = false;
+                continue;
+            }
+            for (auto phrase = model.value().begin(); phrase != model.value().end(); ++phrase) {
+                std::vector<float> vec;
+                if (!parse_vector(phrase.value(), vec)) {
+                    check(where + ".embed." + model.key() + "." + phrase.key() +
+                              ": is a number array",
+                          false);
+                    ok = false;
+                    continue;
+                }
+                fake.set_embedding(model.key(), phrase.key(), std::move(vec));
+            }
+        }
+    }
+    return ok;
+}
+
+// A case row's own stub answers. `embed` sets the model's default vector, which
+// is what the routing input gets: reference phrases are matched by text from
+// services.json and take precedence. A null answer makes that service fail for
+// the model, so the classifier's on_error applies.
+//
+//   {"embed":          {"<model>": [numbers] | null},
+//    "run_classifier": {"<model>": {"<label>": number} | null},
+//    "chat":           {"<model>": "<reply>" | null}}
+static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, const json& spec,
+                               const std::string& where) {
+    if (!spec.is_object()) {
+        check(where + ": is an object", false);
+        return false;
+    }
+    bool ok = true;
+    for (auto service = spec.begin(); service != spec.end(); ++service) {
+        const std::string& name = service.key();
+        if (name != "embed" && name != "run_classifier" && name != "chat") {
+            check(where + ": unknown service '" + name + "'", false);
+            ok = false;
+            continue;
+        }
+        if (!service.value().is_object()) {
+            check(where + "." + name + ": is a model -> answer map", false);
+            ok = false;
+            continue;
+        }
+        for (auto model = service.value().begin(); model != service.value().end(); ++model) {
+            const json& answer = model.value();
+            const std::string label = where + "." + name + "." + model.key();
+            if (name == "embed") {
+                std::vector<float> vec;
+                if (answer.is_null()) {
+                    fake.set_embedding(model.key(), std::vector<float>{});
+                } else if (parse_vector(answer, vec)) {
+                    fake.set_embedding(model.key(), std::move(vec));
+                } else {
+                    check(label + ": is a number array or null", false);
+                    ok = false;
+                }
+            } else if (name == "run_classifier") {
+                if (answer.is_null()) {
+                    fake.set_classifier_failure(model.key());
+                    continue;
+                }
+                std::map<std::string, double> scores;
+                bool scores_ok = answer.is_object();
+                for (auto score = answer.begin(); scores_ok && score != answer.end(); ++score) {
+                    if (!score.value().is_number()) {
+                        scores_ok = false;
+                        break;
+                    }
+                    scores[score.key()] = score.value().get<double>();
+                }
+                if (!scores_ok) {
+                    check(label + ": is a label -> number map or null", false);
+                    ok = false;
+                    continue;
+                }
+                fake.set_classifier_scores(model.key(), std::move(scores));
+            } else {
+                if (answer.is_null()) {
+                    fake.set_chat_failure(model.key());
+                } else if (answer.is_string()) {
+                    fake.set_chat_reply(model.key(), answer.get<std::string>());
+                } else {
+                    check(label + ": is a string or null", false);
+                    ok = false;
+                }
+            }
+        }
+    }
+    return ok;
+}
+
+static bool trace_entries_match(const json& expected, const json& produced) {
+    if (!expected.is_object() || !produced.is_object()) return expected == produced;
+    json expected_rest = expected;
+    json produced_rest = produced;
+    expected_rest.erase("score");
+    produced_rest.erase("score");
+    if (expected_rest != produced_rest) return false;
+    if (expected.contains("score") != produced.contains("score")) return false;
+    if (!expected.contains("score")) return true;
+    if (!expected["score"].is_number() || !produced["score"].is_number()) {
+        return expected["score"] == produced["score"];
+    }
+    return std::fabs(expected["score"].get<double>() - produced["score"].get<double>()) <=
+           kScoreTolerance;
+}
+
+static bool decisions_match(const json& expected, const json& produced) {
+    json expected_rest = expected;
+    json produced_rest = produced;
+    expected_rest.erase("trace");
+    produced_rest.erase("trace");
+    if (expected_rest != produced_rest) return false;
+    if (expected.contains("trace") != produced.contains("trace")) return false;
+    if (!expected.contains("trace")) return true;
+    const json& expected_trace = expected["trace"];
+    const json& produced_trace = produced["trace"];
+    if (!expected_trace.is_array() || !produced_trace.is_array() ||
+        expected_trace.size() != produced_trace.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < expected_trace.size(); ++i) {
+        if (!trace_entries_match(expected_trace[i], produced_trace[i])) return false;
+    }
+    return true;
+}
+
 static void report_mismatch(const json& expected, const json& produced) {
     std::printf("  expected: %s\n", expected.dump().c_str());
     std::printf("  produced: %s\n", produced.dump().c_str());
@@ -154,6 +329,22 @@ static void report_mismatch(const json& expected, const json& produced) {
         const std::string prod = produced.contains(ptr) ? produced.at(ptr).dump() : "<absent>";
         std::printf("    %s: expected: %s, produced: %s\n", op.value("path", "").c_str(),
                     exp.c_str(), prod.c_str());
+    }
+    if (!expected.contains("trace") || !produced.contains("trace")) return;
+    const json& expected_trace = expected["trace"];
+    const json& produced_trace = produced["trace"];
+    if (!expected_trace.is_array() || !produced_trace.is_array()) return;
+    for (std::size_t i = 0; i < expected_trace.size() && i < produced_trace.size(); ++i) {
+        const json& e = expected_trace[i];
+        const json& p = produced_trace[i];
+        if (!e.is_object() || !p.is_object()) continue;
+        if (!e.contains("score") || !p.contains("score")) continue;
+        if (!e["score"].is_number() || !p["score"].is_number()) continue;
+        const double delta = std::fabs(e["score"].get<double>() - p["score"].get<double>());
+        if (delta > kScoreTolerance) {
+            std::printf("    /trace/%zu/score: |delta| %.3g exceeds tolerance %.3g\n", i, delta,
+                        kScoreTolerance);
+        }
     }
 }
 
@@ -175,12 +366,39 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
         std::printf("  %s\n", e.what());
         return 0;
     }
+    // A policy with classifiers reaches a backend, so its cases must say what
+    // that backend answers. Without stubs the fake returns its own defaults and
+    // the cases would pass while testing nothing.
+    const bool needs_stubs = !policy.classifiers.empty();
+
+    // Declared before the engine so it outlives the ClassifierServices that
+    // make() binds to it.
+    lemon::testing::FakeClassifierServices fake;
     std::optional<RoutingPolicyEngine> engine;
     try {
-        engine.emplace(std::move(policy), lemon::ClassifierServices{});
+        engine.emplace(std::move(policy), fake.make());
     } catch (const std::exception& e) {
         check(rel + ": policy compiles", false);
         std::printf("  %s\n", e.what());
+        return 0;
+    }
+
+    json dir_services;
+    const fs::path dir_services_path = case_dir / "services.json";
+    std::error_code dir_services_ec;
+    if (fs::exists(dir_services_path, dir_services_ec)) {
+        try {
+            dir_services = load_json_file(dir_services_path);
+        } catch (const std::exception& e) {
+            check(rel + ": services.json parses", false);
+            std::printf("  %s\n", e.what());
+            return 0;
+        }
+        // Validate once here so a malformed file is not reported per case row.
+        if (!apply_dir_services(fake, dir_services, rel + "/services.json")) return 0;
+    } else if (dir_services_ec) {
+        check(rel + ": services.json is readable", false);
+        std::printf("  %s\n", dir_services_ec.message().c_str());
         return 0;
     }
 
@@ -194,7 +412,8 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
     std::string line;
     int line_no = 0;
     std::set<std::string> seen_names;
-    static const std::set<std::string> kAllowedRowKeys = {"name", "note", "request", "decision"};
+    static const std::set<std::string> kAllowedRowKeys = {"name", "note", "request", "decision",
+                                                          "services"};
     while (std::getline(cases, line)) {
         ++line_no;
         if (line.find_first_not_of(" \t\r\n") == std::string::npos) {
@@ -236,6 +455,21 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
         }
         const std::string name = rel + "/" + case_name;
 
+        if (needs_stubs && !row.contains("services")) {
+            check(name + ": has services (the policy declares classifiers)", false);
+            continue;
+        }
+        fake.reset();
+        bool services_ok = true;
+        if (!dir_services.is_null()) {
+            services_ok = apply_dir_services(fake, dir_services, rel + "/services.json");
+        }
+        if (row.contains("services")) {
+            services_ok = apply_row_services(fake, row.at("services"), name + ".services") &&
+                          services_ok;
+        }
+        if (!services_ok) continue;
+
         const json& request = row.at("request");
         const bool want_trace = request.value("route_trace", false);
         Decision decision = engine->route(
@@ -243,7 +477,7 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
         const json produced = lemon::route_decision_to_json(decision);
         const json& expected = row.at("decision");
 
-        const bool ok = produced == expected;
+        const bool ok = decisions_match(expected, produced);
         check(name, ok);
         if (!ok) {
             report_mismatch(expected, produced);
