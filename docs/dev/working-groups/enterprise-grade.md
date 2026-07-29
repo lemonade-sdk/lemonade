@@ -4,9 +4,10 @@
 
 **Lead:** This working group is led by Jeremy Fowers, whose handle is @jeremyfowers on GitHub and @jfowers_amd on Discord.
 
-**Background:** Lemonade is attaining increased traction with users and commercial entities worldwide, and at the same time is seeing a large influx of new PRs and Issues on a daily basis. There is an inherent tension between velocity and robustness that has become top of mind for many stakeholders.
+**Background:** Lemonade has attained traction with users and commercial entities worldwide, and at the same time is seeing a large influx of new PRs and Issues on a daily basis. There is an inherent tension between velocity and robustness that has become top of mind for many stakeholders.
 
-**Goal:** Establish new automated systems including bots, agents, dashboards, and new CI so that we don't have to choose between velocity and robustness.
+**Goal:** Establish Lemonade as the trusted inference orchestration layer for business-critical deployments.
+ - We don't have to choose between velocity and robustness.
  - Side goal: use local AI for as much of the automation as possible, to prove Lemonade and local AI for enterprise use.
 
 ## Contributing
@@ -16,6 +17,8 @@ Please see the general [contribution guidelines](../contribute.md), then contact
 See this working group's entry in the [table of working groups](./README.md#table-of-working-groups).
 
 ## Roadmap
+
+The overall technical roadmap is to introduce agents, CI enhancements, and dashboards that ensure the quality of Lemonade contributions and releases, while enhancing maintainer bandwidth.
 
 ### PR Review Agent
 
