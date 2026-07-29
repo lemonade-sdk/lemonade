@@ -31,6 +31,9 @@ namespace {
 // the timbre it is rendered in, which becomes the reference for the speech model.
 constexpr const char* kVoiceDesignPhrase =
     "Hello there. This is a short sample of the voice you described.";
+
+// Opt-in extension field; `voice` keeps its OpenAI-compatible meaning.
+constexpr const char* kVoiceDesignField = "voice_design_description";
 }  // namespace
 
 InstallParams OpenMossServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -120,29 +123,25 @@ void OpenMossServer::load(const std::string& model_name,
         BackendUtils::apply_cuda_env_vars(env_vars, "openmoss-server");
     }
 
+    // Same reason as unload(): a load arriving mid-design must not race the
+    // restart of the process design is in the middle of swapping.
+    std::lock_guard<std::mutex> lock(design_mutex_);
     exe_path_ = exe_path;
     env_vars_ = env_vars;
+    model_path_ = model_path;
     voicegen_path_ = model_info.resolved_path("voicegen");
     if (!voicegen_path_.empty() && !std::filesystem::exists(voicegen_path_)) {
         voicegen_path_.clear();
     }
     reference_cache_.clear();
 
-    Subprocess main_proc = spawn(model_path);
-    port_ = main_proc.port;
-    set_process_handle(main_proc.handle);
-    LOG(INFO, "openmoss-server") << "Process started with PID: " << main_proc.handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("openmoss-server failed to start or become ready");
-    }
+    start_speech_process();
 }
 
 OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path) {
     Subprocess proc;
-    // Deliberately not choose_port(): that assigns port_, which addresses the
-    // resident speech process. A transient voice-design child must not retarget it.
+    // Deliberately not choose_port(): that assigns port_, and the caller decides
+    // whether this process is the one port_ should address.
     proc.port = utils::ProcessManager::find_free_port(8001);
     if (proc.port <= 0) {
         throw std::runtime_error("Failed to find an available port");
@@ -169,13 +168,34 @@ OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path) 
     return proc;
 }
 
-void OpenMossServer::unload() {
+void OpenMossServer::stop_speech_process() {
     stop_backend_watchdog();
     const ProcessHandle handle = consume_process_handle_for_cleanup();
     if (has_process_handle(handle)) {
         LOG(INFO, "openmoss-server") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
         utils::ProcessManager::stop_process(handle);
     }
+}
+
+void OpenMossServer::start_speech_process() {
+    Subprocess proc = spawn(model_path_);
+    port_ = proc.port;
+    set_process_handle(proc.handle);
+    LOG(INFO, "openmoss-server") << "Process started with PID: " << proc.handle.pid << std::endl;
+
+    if (!wait_for_ready("/health")) {
+        // Not unload(): this runs under design_mutex_, which unload() takes.
+        stop_speech_process();
+        throw std::runtime_error("openmoss-server failed to start or become ready");
+    }
+}
+
+void OpenMossServer::unload() {
+    // Serialised against voice design, which takes the speech process down and
+    // brings it back. Without this, unloading mid-design races the restart and
+    // leaves a live process behind a server that believes it has none.
+    std::lock_guard<std::mutex> lock(design_mutex_);
+    stop_speech_process();
     reference_cache_.clear();
 }
 
@@ -186,13 +206,50 @@ std::string OpenMossServer::design_reference_sample(const std::string& voice_des
         return cached->second;
     }
 
+    // One model at a time. The speech model comes down, the voice generator
+    // renders the reference sample, and the speech model goes back up — the
+    // sequence the GUI used to drive by hand, now that the cascade lives here.
+    // Holding both would need a card that fits the pair, which is a strictly
+    // harder requirement than running the model the user actually asked for.
     LOG(INFO, "openmoss-server") << "Designing reference voice for: " << voice_description << std::endl;
+    stop_speech_process();
+
+    std::string sample;
+    try {
+        sample = render_reference_sample(voice_description);
+    } catch (...) {
+        // The speech model has to come back whatever went wrong, or a failed
+        // design would leave a loaded model with no process behind it.
+        try {
+            start_speech_process();
+        } catch (const std::exception& e) {
+            LOG(ERROR, "openmoss-server")
+                << "Speech model failed to restart after an unsuccessful voice design: "
+                << e.what() << std::endl;
+        }
+        throw;
+    }
+    start_speech_process();
+
+    reference_cache_[voice_description] = sample;
+    return sample;
+}
+
+std::string OpenMossServer::render_reference_sample(const std::string& voice_description) {
     Subprocess designer = spawn(voicegen_path_);
     std::string sample;
     try {
         const std::string base = "http://127.0.0.1:" + std::to_string(designer.port);
         bool ready = false;
-        for (int attempt = 0; attempt < 3000 && !ready; ++attempt) {
+        const int max_attempts = 3000;
+        for (int attempt = 0; attempt < max_attempts && !ready; ++attempt) {
+            if (!utils::ProcessManager::is_running(designer.handle)) {
+                const int exit_code = utils::ProcessManager::reap_process(designer.handle);
+                designer.handle = ProcessHandle{};
+                throw std::runtime_error(
+                    "voice-design backend exited during startup with code "
+                    + std::to_string(exit_code));
+            }
             try {
                 auto health = utils::HttpClient::get(
                     base + "/health", {}, 2, utils::HttpSecurityPolicy::TrustedLoopback);
@@ -219,27 +276,34 @@ std::string OpenMossServer::design_reference_sample(const std::string& voice_des
         }
         sample = utils::JsonUtils::base64_encode(response.body);
     } catch (...) {
-        utils::ProcessManager::stop_process(designer.handle);
+        // The handle is cleared when the poll loop already reaped an exited child.
+        if (has_process_handle(designer.handle)) {
+            utils::ProcessManager::stop_process(designer.handle);
+        }
         throw;
     }
     utils::ProcessManager::stop_process(designer.handle);
     LOG(INFO, "openmoss-server") << "Voice-design subprocess released" << std::endl;
-
-    reference_cache_[voice_description] = sample;
     return sample;
 }
 
 json OpenMossServer::apply_voice_design(const json& request) {
     json forwarded = request;
-    if (voicegen_path_.empty() || forwarded.contains("reference_wav_b64")) {
+
+    // Voice design is an opt-in extension, never inferred from `voice`. That
+    // field keeps its OpenAI-compatible meaning and is forwarded as an
+    // instruction, so a client sending "voice": "default" gets speech rather
+    // than a design run for a voice literally named "default".
+    const std::string description = forwarded.value(kVoiceDesignField, std::string());
+    forwarded.erase(kVoiceDesignField);
+    if (description.empty() || forwarded.contains("reference_wav_b64")) {
         return forwarded;
     }
-    const std::string description = forwarded.value("voice", std::string());
-    if (description.empty()) {
-        return forwarded;
+    if (voicegen_path_.empty()) {
+        throw std::runtime_error(
+            "This model has no voice-design component; attach reference audio instead.");
     }
     forwarded["reference_wav_b64"] = design_reference_sample(description);
-    forwarded.erase("voice");
     return forwarded;
 }
 
