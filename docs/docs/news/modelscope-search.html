@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Search ModelScope from Lemonade - Lemonade Server</title>
+  <link rel="icon" href="../assets/favicon.ico">
+  <link rel="stylesheet" href="../assets/website-styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="../assets/navbar.js"></script>
+  <meta name="description" content="Lemonade v11.5 adds ModelScope as a second model registry, right next to Hugging Face. Same search box, twice the catalog.">
+  <meta property="og:title" content="Search ModelScope from Lemonade">
+  <meta property="og:description" content="Lemonade v11.5 adds ModelScope as a second model registry, right next to Hugging Face. Same search box, twice the catalog.">
+  <meta property="og:image" content="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-search-results.png">
+  <meta property="og:type" content="article">
+  <meta property="article:published_time" content="2026-07-27">
+  <meta property="article:author" content="Lemonade Team">
+</head>
+<body>
+  <div class="navbar-placeholder"></div>
+
+  <main class="main blog-main">
+    <article class="blog-article blog-article-unified">
+      <div class="hero-section">
+        <div class="hero-content">
+          <div class="hero-badge">New Feature</div>
+          <h1 class="hero-title">Search ModelScope from Lemonade</h1>
+          <div class="hero-subtitle" id="article-subtitle">Lemonade v11.5 adds ModelScope as a second model registry, right next to Hugging Face. Same search box, twice the catalog.</div>
+          <div class="hero-meta">
+            <div class="meta-item"><span class="meta-icon">Date:</span>July 27, 2026</div>
+            <div class="meta-item meta-authors"><span class="meta-icon">Author:</span>Lemonade Team</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="article-content">
+        <div class="section-card">
+          <div class="section-header">
+            <span class="section-kicker">Announcement</span>
+            <h2 class="section-title">Twice the catalog, same search box</h2>
+            <p>Starting with v11.5, Lemonade supports <a href="https://modelscope.cn" target="_blank" rel="noopener">ModelScope</a> as a model registry alongside Hugging Face. Search it the same way you search Hugging Face &mdash; right from the Model Manager &mdash; and download models from whichever registry has what you need. This matters most for users in regions where ModelScope mirrors are significantly faster, and for models that publish to ModelScope first.</p>
+          </div>
+
+          <p>There's nothing to set up &mdash; no accounts, no extra configuration. Type a name, browse the GGUF variants, and hit download.</p>
+          <p>And you won't waste a download on an empty repo. Before a result earns a download button, Lemonade inspects the repository's actual file tree and only shows repositories with downloadable GGUF variants.</p>
+        </div>
+
+        <div class="section-card">
+          <div class="section-header">
+            <span class="section-kicker">Walkthrough</span>
+            <h2 class="section-title">Take it for a spin</h2>
+            <p>Open the Lemonade app (or the web app at <code>http://localhost:13305/app</code>) and head to the <strong>Model Manager</strong>. Start typing &mdash; <code>Qwen 2.5</code>, say. After three characters the search goes live, and two new sections appear below your local models: <strong>FROM HUGGING FACE</strong> and <strong>FROM MODELSCOPE</strong>.</p>
+          </div>
+
+          <div class="blog-media">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-search-results.png" alt="Model Manager showing search results from Hugging Face and ModelScope">
+          </div>
+
+          <p>Every result tells you what you're getting before you commit: the repository name, a source badge (<strong>MS</strong> or <strong>HF</strong>), the download size, and how many times the community has pulled it. Want a different quantization? Pick one from the dropdown &mdash; Q4_K_M is preselected when available. Then click download and watch it go.</p>
+
+          <div class="blog-media">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-download.png" alt="Download Manager pulling a model from ModelScope">
+          </div>
+
+          <p>When the download finishes, the model registers itself and is ready to use &mdash; select it in the chat panel, point your favorite OpenAI-compatible client at it, whatever you'd do with any other Lemonade model. Where it came from stops mattering the moment it lands on your disk.</p>
+
+          <div class="blog-media">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-chat.png" alt="Chatting with a model downloaded from ModelScope">
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-header">
+            <span class="section-kicker">CLI &amp; API</span>
+            <h2 class="section-title">Prefer a terminal?</h2>
+            <p>The CLI speaks ModelScope too. Give <code>lemonade pull</code> a checkpoint and tell it where to look &mdash; or just paste a <code>modelscope.cn</code> model URL and it figures out the rest.</p>
+          </div>
+
+          <div class="enhanced-code-block">
+            <div class="code-header">
+              <span class="code-title">Pull from ModelScope</span>
+              <button class="blog-copy-btn" type="button" data-copy-target="modelscope-pull">Copy</button>
+            </div>
+            <pre><code id="modelscope-pull">lemonade pull Qwen/Qwen2.5-3B-Instruct-GGUF --source modelscope</code></pre>
+          </div>
+
+          <p>If you're building on top of the server, the registry search behind the Model Manager is one GET away. It returns candidate repositories &mdash; the Model Manager then validates each candidate's file listing with <code>/v1/pull/variants</code> before offering a download.</p>
+
+          <div class="enhanced-code-block">
+            <div class="code-header">
+              <span class="code-title">Registry search API</span>
+              <button class="blog-copy-btn" type="button" data-copy-target="modelscope-search-api">Copy</button>
+            </div>
+            <pre><code id="modelscope-search-api">curl "http://localhost:13305/v1/registry/search?source=modelscope&amp;query=qwen&amp;format=gguf"</code></pre>
+          </div>
+
+          <p><code>format=gguf</code> biases results toward GGUF repositories, and <code>limit</code> controls how many come back (1&ndash;50, default 12). Responses include tags, task, download counts, and a GGUF hint per model &mdash; see the <a href="../docs/api/lemonade/" target="_blank" rel="noopener">API docs</a> for the full shape.</p>
+        </div>
+
+        <div class="cta-separator" aria-hidden="true"></div>
+
+        <div class="cta-section cta-section-minimal">
+          <div class="cta-content">
+            <h2 class="cta-title">Go find something new</h2>
+            <p class="cta-subtitle">Update to Lemonade v11.5 and search both registries from one box.</p>
+            <div class="cta-actions">
+              <a href="../index.html#getting-started" class="download-btn" target="_blank" rel="noopener">Install Lemonade</a>
+              <a href="https://discord.gg/5xXzkMu8Zk" class="download-btn" target="_blank" rel="noopener">Join the Discord</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+  </main>
+
+  <div class="footer-placeholder"></div>
+
+  <script src="../assets/footer.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      initializeNavbar('../');
+      initializeFooter('../');
+
+      const copyButtons = document.querySelectorAll('.blog-copy-btn[data-copy-target]');
+      copyButtons.forEach((button) => {
+        button.addEventListener('click', async () => {
+          const targetId = button.getAttribute('data-copy-target');
+          const codeEl = targetId ? document.getElementById(targetId) : null;
+          const text = codeEl ? codeEl.textContent : '';
+          if (!text) return;
+
+          try {
+            await navigator.clipboard.writeText(text.trim());
+          } catch (error) {
+            const helper = document.createElement('textarea');
+            helper.value = text.trim();
+            document.body.appendChild(helper);
+            helper.select();
+            document.execCommand('copy');
+            document.body.removeChild(helper);
+          }
+
+          button.classList.add('is-copied');
+          const original = button.textContent;
+          button.textContent = 'Copied';
+          setTimeout(() => {
+            button.classList.remove('is-copied');
+            button.textContent = original;
+          }, 1000);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

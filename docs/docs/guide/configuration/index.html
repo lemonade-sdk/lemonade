@@ -3430,6 +3430,10 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 
 <span class="c1"># Set multiple values at once</span>
 lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">port</span><span class="o">=</span><span class="m">9000</span><span class="w"> </span>llamacpp.backend<span class="o">=</span>rocm<span class="w"> </span>sdcpp.steps<span class="o">=</span><span class="m">30</span>
+
+<span class="c1"># Set complex types like JSON arrays and objects (use single quotes to prevent shell expansion)</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.otlp.semantics<span class="o">=</span><span class="s1">&#39;[&quot;openinference&quot;]&#39;</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.otlp.headers<span class="o">=</span><span class="s1">&#39;{&quot;Authorization&quot;:&quot;Bearer key&quot;}&#39;</span>
 </code></pre></div>
 <h3 id="lemond-cli-arguments-fallback">lemond CLI arguments (fallback)</h3>
 <p>If the server cannot start (e.g., invalid port in config.json), <code>lemond</code> accepts <code>--port</code> and <code>--host</code> as CLI arguments to override config.json. These overrides are persisted so the server can start normally next time:</p>
@@ -3509,6 +3513,10 @@ sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class=
 <p><strong>Client Behavior:</strong> Clients (CLI, tray app) automatically prefer <code>LEMONADE_ADMIN_API_KEY</code> if set, otherwise fall back to <code>LEMONADE_API_KEY</code>.</p>
 <h3 id="allowed-origins">Allowed Origins</h3>
 <p>The <code>LEMONADE_ALLOWED_ORIGINS</code> environment variable controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).</p>
+<blockquote>
+<p>[!NOTE]
+<code>LEMONADE_ALLOWED_ORIGINS</code> specifies the <strong>client application/web page's origin</strong> (where the request originates), <strong>not</strong> the target Lemonade server URL. Non-browser HTTP clients (such as CLI tools, cURL, or server-side SDKs) do not send an <code>Origin</code> header and are not restricted by origin validation.</p>
+</blockquote>
 <ul>
 <li><strong>Format</strong>: A comma-separated list of complete origins including the scheme and optional port (e.g., <code>https://app.lemonade.dev,http://localhost:3000</code>).<blockquote>
 <p>[!WARNING]
@@ -3521,7 +3529,7 @@ Allowing a non-local plain-HTTP origin (e.g., <code>http://app.example.com</code
 Using <code>LEMONADE_ALLOWED_ORIGINS=*</code> permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if <code>LEMONADE_API_KEY</code> is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.</p>
 </blockquote>
 </li>
-<li><strong>Local/Loopback Access</strong>: Loopback origins (<code>localhost</code>, <code>127.0.0.1</code>, <code>[::1]</code>, and <code>tauri.localhost</code>) are always allowed and do not need to be explicitly listed.</li>
+<li><strong>Local/Loopback &amp; Desktop Access</strong>: Loopback addresses (<code>localhost</code>, <code>127.0.0.1</code>, <code>[::1]</code>, <code>*.localhost</code>) and custom desktop application schemes (<code>file://</code>, <code>app://.</code>, <code>vscode-webview://</code>, <code>jan://</code>, etc.) are permitted for local client connections. Opaque <code>null</code> origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in <code>LEMONADE_ALLOWED_ORIGINS</code> to prevent CSWSH attacks.</li>
 </ul>
 <h2 id="remote-server-connection">Remote Server Connection</h2>
 <p>To make Lemonade Server accessible from other machines on your network, set the host to <code>0.0.0.0</code>:</p>

@@ -1469,10 +1469,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#llamacpp-llamacpp-gpu-77-models" class="md-nav__link">
+  <a href="#llamacpp-llamacpp-gpu-87-models" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>llamacpp</code> — Llama.cpp GPU (77 models)
+        <code>llamacpp</code> — Llama.cpp GPU (87 models)
       </span>
     </span>
   </a>
@@ -2858,10 +2858,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#llamacpp-llamacpp-gpu-77-models" class="md-nav__link">
+  <a href="#llamacpp-llamacpp-gpu-87-models" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>llamacpp</code> — Llama.cpp GPU (77 models)
+        <code>llamacpp</code> — Llama.cpp GPU (87 models)
       </span>
     </span>
   </a>
@@ -3156,12 +3156,6 @@ the generator instead. Prose outside the markers is preserved. -->
 <tbody>
 <tr>
 <td><code>acestep</code></td>
-<td>rocm</td>
-<td>linux, windows</td>
-<td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
-</tr>
-<tr>
-<td><code>acestep</code></td>
 <td>cuda</td>
 <td>linux, windows</td>
 <td>nvidia_gpu</td>
@@ -3173,6 +3167,12 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>amd_gpu; cpu (x86_64); nvidia_gpu</td>
 </tr>
 <tr>
+<td><code>acestep</code></td>
+<td>rocm</td>
+<td>linux, windows</td>
+<td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
+</tr>
+<tr>
 <td><code>flm</code></td>
 <td>npu</td>
 <td>linux, windows</td>
@@ -3180,15 +3180,15 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>kokoro</code></td>
-<td>cpu</td>
-<td>linux, windows</td>
-<td>cpu (x86_64)</td>
-</tr>
-<tr>
-<td><code>kokoro</code></td>
 <td>metal</td>
 <td>macos</td>
 <td>metal</td>
+</tr>
+<tr>
+<td><code>kokoro</code></td>
+<td>cpu</td>
+<td>linux, windows</td>
+<td>cpu (x86_64)</td>
 </tr>
 <tr>
 <td><code>llamacpp</code></td>
@@ -3264,12 +3264,6 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>openmoss</code></td>
-<td>rocm</td>
-<td>linux, windows</td>
-<td>amd_gpu</td>
-</tr>
-<tr>
-<td><code>openmoss</code></td>
 <td>cuda</td>
 <td>linux, windows</td>
 <td>nvidia_gpu</td>
@@ -3281,6 +3275,12 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>amd_gpu; cpu (x86_64); nvidia_gpu</td>
 </tr>
 <tr>
+<td><code>openmoss</code></td>
+<td>rocm</td>
+<td>linux, windows</td>
+<td>amd_gpu</td>
+</tr>
+<tr>
 <td><code>ryzenai-llm</code></td>
 <td>npu</td>
 <td>windows</td>
@@ -3288,9 +3288,9 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>sd-cpp</code></td>
-<td>rocm</td>
-<td>linux, windows</td>
-<td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
+<td>metal</td>
+<td>macos</td>
+<td>metal</td>
 </tr>
 <tr>
 <td><code>sd-cpp</code></td>
@@ -3306,23 +3306,17 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>sd-cpp</code></td>
+<td>rocm</td>
+<td>linux, windows</td>
+<td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
+</tr>
+<tr>
+<td><code>sd-cpp</code></td>
 <td>cpu</td>
 <td>linux, windows</td>
 <td>cpu (x86_64)</td>
 </tr>
 <tr>
-<td><code>sd-cpp</code></td>
-<td>metal</td>
-<td>macos</td>
-<td>metal</td>
-</tr>
-<tr>
-<td><code>thinksound</code></td>
-<td>rocm</td>
-<td>linux, windows</td>
-<td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
-</tr>
-<tr>
 <td><code>thinksound</code></td>
 <td>cuda</td>
 <td>linux, windows</td>
@@ -3335,7 +3329,7 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>amd_gpu; cpu (x86_64); nvidia_gpu</td>
 </tr>
 <tr>
-<td><code>trellis</code></td>
+<td><code>thinksound</code></td>
 <td>rocm</td>
 <td>linux, windows</td>
 <td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
@@ -3351,6 +3345,12 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>vulkan</td>
 <td>linux, windows</td>
 <td>amd_gpu; cpu (x86_64); nvidia_gpu</td>
+</tr>
+<tr>
+<td><code>trellis</code></td>
+<td>rocm</td>
+<td>linux, windows</td>
+<td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
 </tr>
 <tr>
 <td><code>vllm</code></td>
@@ -3366,9 +3366,9 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>whispercpp</code></td>
-<td>rocm</td>
-<td>linux, windows</td>
-<td>amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X)</td>
+<td>metal</td>
+<td>macos</td>
+<td>metal</td>
 </tr>
 <tr>
 <td><code>whispercpp</code></td>
@@ -3378,15 +3378,15 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>whispercpp</code></td>
-<td>cpu</td>
+<td>rocm</td>
 <td>linux, windows</td>
-<td>cpu (x86_64)</td>
+<td>amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X)</td>
 </tr>
 <tr>
 <td><code>whispercpp</code></td>
-<td>metal</td>
-<td>macos</td>
-<td>metal</td>
+<td>cpu</td>
+<td>linux, windows</td>
+<td>cpu (x86_64)</td>
 </tr>
 </tbody>
 </table>
@@ -3806,7 +3806,7 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 </tr>
 </tbody>
 </table>
-<h4 id="llamacpp-llamacpp-gpu-77-models"><code>llamacpp</code> — Llama.cpp GPU (77 models)</h4>
+<h4 id="llamacpp-llamacpp-gpu-87-models"><code>llamacpp</code> — Llama.cpp GPU (87 models)</h4>
 <table>
 <thead>
 <tr>
@@ -3950,6 +3950,56 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 <td><code>Llama-4-Scout-17B-16E-Instruct-GGUF</code></td>
 <td>63.2</td>
 <td>vision</td>
+</tr>
+<tr>
+<td><code>MiniCPM-V-4-GGUF</code></td>
+<td>3.15</td>
+<td>vision</td>
+</tr>
+<tr>
+<td><code>MiniCPM-V-4.5-GGUF</code></td>
+<td>6.12</td>
+<td>vision</td>
+</tr>
+<tr>
+<td><code>MiniCPM-V-4.6-GGUF</code></td>
+<td>1.64</td>
+<td>hot, vision</td>
+</tr>
+<tr>
+<td><code>MiniCPM-V-4.6-Thinking-GGUF</code></td>
+<td>1.64</td>
+<td>reasoning, vision</td>
+</tr>
+<tr>
+<td><code>MiniCPM-o-2.6-Vision-GGUF</code></td>
+<td>5.73</td>
+<td>vision</td>
+</tr>
+<tr>
+<td><code>MiniCPM-o-4.5-Vision-GGUF</code></td>
+<td>6.12</td>
+<td>vision</td>
+</tr>
+<tr>
+<td><code>MiniCPM3-4B-GGUF</code></td>
+<td>2.47</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>MiniCPM4-8B-GGUF</code></td>
+<td>4.97</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>MiniCPM4.1-8B-GGUF</code></td>
+<td>4.97</td>
+<td>reasoning</td>
+</tr>
+<tr>
+<td><code>MiniCPM5-1B-GGUF</code></td>
+<td>0.69</td>
+<td>hot, reasoning</td>
 </tr>
 <tr>
 <td><code>Ministral-3-3B-Instruct-2512-GGUF</code></td>
