@@ -316,6 +316,9 @@ void SDServer::load(const std::string& model_name,
     }
 
     env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+    if (resolved_backend == "rocm-stable") {
+        env_vars.push_back({"AMD_LOG_LEVEL", "4"});
+    }
     LOG(DEBUG, "SDServer") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
 #else
     // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
@@ -338,6 +341,9 @@ void SDServer::load(const std::string& model_name,
             new_path = new_path + ";" + std::string(existing_path);
         }
         env_vars.push_back({"PATH", new_path});
+        if (resolved_backend == "rocm-stable") {
+            env_vars.push_back({"AMD_LOG_LEVEL", "4"});
+        }
 
         LOG(INFO, "SDServer") << "ROCm backend: added " << path_to_utf8(exe_dir) << " to PATH" << std::endl;
     } else if (is_cuda_backend(resolved_backend)) {
