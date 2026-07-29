@@ -762,6 +762,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(() => loadScopedStringArray(storageScope, MCP_SERVER_IDS_KEY) || []);
   const [selectedMcpToolNames, setSelectedMcpToolNames] = useState<string[] | null>(() => loadScopedStringArray(storageScope, MCP_TOOL_NAMES_KEY));
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [mcpOptions, setMcpOptions] = useState<McpServerToolOption[]>([]);
   const [mcpPickerLoading, setMcpPickerLoading] = useState(false);
   const [mcpPickerError, setMcpPickerError] = useState('');
@@ -781,7 +782,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
-  const mcpPickerRef = useRef<HTMLDivElement>(null);
+  const addMenuRef = useRef<HTMLDivElement>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
   const scrollRafRef = useRef<number>(0);
@@ -1303,15 +1304,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, [loadMcpPickerOptions, mcpPickerOpen, modeSupportsMcp]);
 
   useEffect(() => {
-    if (!mcpPickerOpen) return;
+    if (!addMenuOpen) return;
     const onPointerDown = (event: PointerEvent) => {
-      const root = mcpPickerRef.current;
+      const root = addMenuRef.current;
       if (!root || root.contains(event.target as Node)) return;
+      setAddMenuOpen(false);
       setMcpPickerOpen(false);
     };
     window.addEventListener('pointerdown', onPointerDown);
     return () => window.removeEventListener('pointerdown', onPointerDown);
-  }, [mcpPickerOpen]);
+  }, [addMenuOpen]);
 
   const resetMcpToPreset = useCallback(() => {
     const nextIds = presetMcpServerIds(currentPreset || DEFAULT_PRESET);
@@ -3285,97 +3287,6 @@ ${finalText}`
               <Icon name="sliders-horizontal" size={13} />
             </button>
           )}
-          <div className="composer__mcp-picker" ref={mcpPickerRef}>
-            <button
-              type="button"
-              className={`composer__tools-toggle ${useMcp && modeSupportsMcp ? 'composer__tools-toggle--active' : ''}`}
-              onClick={() => setMcpPickerOpen(open => !open)}
-              disabled={!modeSupportsMcp}
-              title={modeSupportsMcp
-                ? (useMcp ? `Tools enabled for ${selectedMcpServerIds.length} server${selectedMcpServerIds.length === 1 ? '' : 's'} and ${selectedMcpToolCount} tool${selectedMcpToolCount === 1 ? '' : 's'}` : 'Choose Lemonade tools and external MCP servers for this chat')
-                : 'Tools are only available for chat-completion models'}
-              aria-pressed={useMcp && modeSupportsMcp}
-              aria-haspopup="dialog"
-              aria-expanded={mcpPickerOpen}
-            >
-              <span aria-hidden="true">🍋</span> Tools
-            </button>
-            {mcpPickerOpen && (
-              <div className="composer__mcp-menu" role="dialog" aria-label="Tools for this chat">
-                <div className="composer__mcp-header">
-                  <label className="composer__mcp-master">
-                    <input
-                      type="checkbox"
-                      checked={useMcp && modeSupportsMcp}
-                      disabled={!modeSupportsMcp}
-                      onChange={event => persistMcpEnabled(event.target.checked)}
-                    />
-                    <span>
-                      <strong>Tools for this chat</strong>
-                      <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
-                    </span>
-                  </label>
-                  <button type="button" className="btn btn--ghost" onClick={resetMcpToPreset}>Preset default</button>
-                </div>
-                {mcpPickerLoading ? (
-                  <p className="composer__mcp-empty">Loading MCP tools…</p>
-                ) : mcpPickerError ? (
-                  <div className="composer__mcp-error" role="alert">{mcpPickerError}</div>
-                ) : mcpOptions.length === 0 ? (
-                  <p className="composer__mcp-empty">No tools available.</p>
-                ) : (
-                  <div className="composer__mcp-servers">
-                    {mcpOptions.map(server => {
-                      const serverSelected = selectedMcpServerIdSet.has(server.id);
-                      return (
-                        <section key={server.id} className={`composer__mcp-server${serverSelected ? ' is-selected' : ''}`}>
-                          <label className="composer__mcp-server-row">
-                            <input
-                              type="checkbox"
-                              checked={serverSelected}
-                              disabled={!useMcp || (!serverSelected && selectedMcpServerIds.length >= MAX_PRESET_MCP_SERVERS)}
-                              onChange={() => handleMcpServerToggle(server)}
-                            />
-                            <span className={`composer__mcp-status${server.connected ? ' is-connected' : ''}`} aria-hidden="true" />
-                            <span className="composer__mcp-server-text">
-                              <strong>{server.name}</strong>
-                              <small>{server.transport === 'builtin' ? 'Built in' : `External MCP · ${server.status}`} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
-                            </span>
-                          </label>
-                          {serverSelected && (
-                            <div className="composer__mcp-tools">
-                              {server.toolOptions.length === 0 ? (
-                                <p className="composer__mcp-empty">No tools discovered for this server.</p>
-                              ) : server.toolOptions.map(tool => {
-                                const toolSelected = selectedMcpToolNameSet === null || selectedMcpToolNameSet.has(tool.runtimeName);
-                                return (
-                                  <label key={tool.runtimeName} className="composer__mcp-tool" title={tool.description || tool.title || tool.name}>
-                                    <input
-                                      type="checkbox"
-                                      checked={toolSelected}
-                                      disabled={!useMcp}
-                                      onChange={() => handleMcpToolToggle(server, tool.runtimeName)}
-                                    />
-                                    <span>
-                                      <strong>{tool.title || tool.name}</strong>
-                                      {tool.runtimeName !== tool.name && <small>{tool.runtimeName}</small>}
-                                    </span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </section>
-                      );
-                    })}
-                  </div>
-                )}
-                <div className="composer__mcp-footer">
-                  <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>Select all tools for selected servers</button>
-                </div>
-              </div>
-            )}
-          </div>
           <button
             className={`composer__tools-toggle ${showInlineLogs ? 'composer__tools-toggle--active' : ''}`}
             onClick={() => setShowInlineLogs(v => !v)}
@@ -3738,31 +3649,158 @@ ${finalText}`
           </div>
         )}
         <div className="composer__bar">
-          <button
-            className="composer__attach"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!canAttach || !currentModel || isBusy || imageAttachmentLimitReached}
-            title={isOpenMossCloneMode
-              ? 'Attach WAV voice sample'
-              : currentCapability === 'model3d'
-                ? 'Attach reference image'
-                : acceptsImageAttachments && acceptsAudioAttachments
-                  ? 'Attach image or audio'
-                  : acceptsImageAttachments
-                    ? 'Attach image'
-                    : 'Attach audio'}
-            aria-label={isOpenMossCloneMode
-              ? 'Attach WAV voice sample'
-              : currentCapability === 'model3d'
-                ? 'Attach reference image'
-                : acceptsImageAttachments && acceptsAudioAttachments
-                  ? 'Attach image or audio'
-                  : acceptsImageAttachments
-                    ? 'Attach image'
-                    : 'Attach audio'}
-          >
-            <Icon name="paperclip" size={16} />
-          </button>
+          <div className="composer__add" ref={addMenuRef}>
+            <button
+              className="composer__attach composer__add-trigger"
+              onClick={() => {
+                setAddMenuOpen(open => {
+                  const next = !open;
+                  if (!next) setMcpPickerOpen(false);
+                  return next;
+                });
+              }}
+              disabled={!currentModel || isBusy || (!modeSupportsMcp && (!canAttach || imageAttachmentLimitReached))}
+              title="Add files, photos, or tools"
+              aria-label="Add files, photos, or tools"
+              aria-haspopup="menu"
+              aria-expanded={addMenuOpen}
+            >
+              <Icon name="plus" size={18} />
+            </button>
+            {addMenuOpen && (
+              <div className="composer__add-menu" role="menu" aria-label="Add to chat">
+                <button
+                  type="button"
+                  className="composer__add-row"
+                  role="menuitem"
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                    setAddMenuOpen(false);
+                  }}
+                  disabled={!canAttach || !currentModel || isBusy || imageAttachmentLimitReached}
+                >
+                  <span className="composer__add-icon"><Icon name="paperclip" size={16} /></span>
+                  <span className="composer__add-text">
+                    <strong>Add photos & files</strong>
+                    <small>{isOpenMossCloneMode
+                      ? 'Upload a WAV voice sample'
+                      : currentCapability === 'model3d'
+                        ? 'Upload a reference image'
+                        : acceptsImageAttachments && acceptsAudioAttachments
+                          ? 'Upload images or audio'
+                          : acceptsImageAttachments
+                            ? 'Upload images'
+                            : acceptsAudioAttachments
+                              ? 'Upload audio'
+                              : 'Not available for this model'}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={`composer__add-row${mcpPickerOpen ? ' is-active' : ''}`}
+                  role="menuitem"
+                  onClick={() => setMcpPickerOpen(open => !open)}
+                  disabled={!modeSupportsMcp}
+                  aria-pressed={mcpPickerOpen}
+                >
+                  <span className="composer__add-icon" aria-hidden="true">🍋</span>
+                  <span className="composer__add-text">
+                    <strong>Lemonade tools</strong>
+                    <small>{useMcp ? `${selectedMcpToolCount} selected tool${selectedMcpToolCount === 1 ? '' : 's'}` : 'Models, downloads, hardware, and local generation'}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={`composer__add-row${mcpPickerOpen ? ' is-active' : ''}`}
+                  role="menuitem"
+                  onClick={() => setMcpPickerOpen(open => !open)}
+                  disabled={!modeSupportsMcp}
+                  aria-pressed={mcpPickerOpen}
+                >
+                  <span className="composer__add-icon"><Icon name="plug" size={16} /></span>
+                  <span className="composer__add-text">
+                    <strong>External MCP servers</strong>
+                    <small>Enable connected external tool providers</small>
+                  </span>
+                </button>
+                {mcpPickerOpen && (
+                  <div className="composer__mcp-menu composer__mcp-menu--inline" role="dialog" aria-label="Tools for this chat">
+                    <div className="composer__mcp-header">
+                      <label className="composer__mcp-master">
+                        <input
+                          type="checkbox"
+                          checked={useMcp && modeSupportsMcp}
+                          disabled={!modeSupportsMcp}
+                          onChange={event => persistMcpEnabled(event.target.checked)}
+                        />
+                        <span>
+                          <strong>Tools for this chat</strong>
+                          <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
+                        </span>
+                      </label>
+                      <button type="button" className="btn btn--ghost" onClick={resetMcpToPreset}>Preset default</button>
+                    </div>
+                    {mcpPickerLoading ? (
+                      <p className="composer__mcp-empty">Loading MCP tools…</p>
+                    ) : mcpPickerError ? (
+                      <div className="composer__mcp-error" role="alert">{mcpPickerError}</div>
+                    ) : mcpOptions.length === 0 ? (
+                      <p className="composer__mcp-empty">No tools available.</p>
+                    ) : (
+                      <div className="composer__mcp-servers">
+                        {mcpOptions.map(server => {
+                          const serverSelected = selectedMcpServerIdSet.has(server.id);
+                          return (
+                            <section key={server.id} className={`composer__mcp-server${serverSelected ? ' is-selected' : ''}`}>
+                              <label className="composer__mcp-server-row">
+                                <input
+                                  type="checkbox"
+                                  checked={serverSelected}
+                                  disabled={!useMcp || (!serverSelected && selectedMcpServerIds.length >= MAX_PRESET_MCP_SERVERS)}
+                                  onChange={() => handleMcpServerToggle(server)}
+                                />
+                                <span className={`composer__mcp-status${server.connected ? ' is-connected' : ''}`} aria-hidden="true" />
+                                <span className="composer__mcp-server-text">
+                                  <strong>{server.name}</strong>
+                                  <small>{server.transport === 'builtin' ? 'Built in' : `External MCP · ${server.status}`} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
+                                </span>
+                              </label>
+                              {serverSelected && (
+                                <div className="composer__mcp-tools">
+                                  {server.toolOptions.length === 0 ? (
+                                    <p className="composer__mcp-empty">No tools discovered for this server.</p>
+                                  ) : server.toolOptions.map(tool => {
+                                    const toolSelected = selectedMcpToolNameSet === null || selectedMcpToolNameSet.has(tool.runtimeName);
+                                    return (
+                                      <label key={tool.runtimeName} className="composer__mcp-tool" title={tool.description || tool.title || tool.name}>
+                                        <input
+                                          type="checkbox"
+                                          checked={toolSelected}
+                                          disabled={!useMcp}
+                                          onChange={() => handleMcpToolToggle(server, tool.runtimeName)}
+                                        />
+                                        <span>
+                                          <strong>{tool.title || tool.name}</strong>
+                                          {tool.runtimeName !== tool.name && <small>{tool.runtimeName}</small>}
+                                        </span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </section>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="composer__mcp-footer">
+                      <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>Select all tools for selected servers</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <input
             ref={fileInputRef}
             type="file"

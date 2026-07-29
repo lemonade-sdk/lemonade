@@ -1228,6 +1228,14 @@ input, textarea {
   box-shadow: var(--shadow-lg);
 }
 
+.composer__mcp-menu--inline {
+  position: static;
+  width: 100%;
+  max-height: min(360px, calc(100vh - 260px));
+  margin-top: var(--space-2);
+  box-shadow: none;
+}
+
 .composer__mcp-header,
 .composer__mcp-footer {
   display: flex;
@@ -4811,6 +4819,85 @@ optgroup {
 .composer__attach:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.composer__add {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.composer__add-trigger {
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+}
+
+.composer__add-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + var(--space-2));
+  z-index: var(--z-dropdown);
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(620px, calc(100vh - 150px));
+  overflow-y: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+}
+
+.composer__add-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer__add-row:hover:not(:disabled),
+.composer__add-row.is-active {
+  background: var(--surface-2);
+}
+
+.composer__add-row:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer__add-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.composer__add-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.composer__add-text strong {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.composer__add-text small {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

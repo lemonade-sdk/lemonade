@@ -2878,7 +2878,7 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
 //
 // The Preset selector ("Preset: Default" badge and dropdown) was removed from
 // the Chat composer toolbar. The model selector, Effective Settings button,
-// Tools toggle, and Logs toggle must remain accessible. Range: A185–A187.
+// Add menu, tools entry, and Logs toggle must remain accessible. Range: A185–A187.
 
 test.describe('Chat toolbar — no preset picker after GUI3 removal', () => {
   async function goToChatWithLoadedModel(page: Page): Promise<void> {
@@ -2927,33 +2927,32 @@ test.describe('Chat toolbar — no preset picker after GUI3 removal', () => {
     await expect(page.locator('[aria-label="Search presets"]')).toHaveCount(0);
   });
 
-  test('A186 — composer toolbar retains model selector, settings, Tools, and Logs buttons', async ({ page }) => {
+  test('A186 — composer toolbar retains model selector, settings, add menu, and Logs buttons', async ({ page }) => {
     await goToChatWithLoadedModel(page);
     // Model picker button is present (model is loaded so it appears)
     await expect(page.locator('.composer__model-button')).toBeVisible();
-    // Tools toggle
-    await expect(page.getByRole('button', { name: /Tools/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Add files, photos, or tools/i })).toBeVisible();
     // Logs toggle
     await expect(page.getByRole('button', { name: /Logs/i })).toBeVisible();
     // Effective Settings button (requires currentPreset && currentModel)
     await expect(page.getByRole('button', { name: 'Effective settings' })).toBeVisible();
   });
 
-  test('A187 — Tools toggle has aria-pressed and is keyboard-operable', async ({ page }) => {
+  test('A187 — add menu exposes Lemonade tools and is keyboard-operable', async ({ page }) => {
     await goToChatWithLoadedModel(page);
-    const toolsBtn = page.getByRole('button', { name: /Tools/i });
-    await expect(toolsBtn).toBeVisible();
-    // Capture initial pressed state (mock can seed it true or false)
-    const initialPressed = await toolsBtn.getAttribute('aria-pressed');
-    await expect(initialPressed).toMatch(/^(true|false)$/);
-    const toggledState = initialPressed === 'true' ? 'false' : 'true';
-    // Activate via keyboard and assert it toggles to opposite
-    await toolsBtn.focus();
+    const addBtn = page.getByRole('button', { name: /Add files, photos, or tools/i });
+    await expect(addBtn).toBeVisible();
+    await expect(addBtn).toHaveAttribute('aria-expanded', 'false');
+    await addBtn.focus();
     await page.keyboard.press('Space');
-    await expect(toolsBtn).toHaveAttribute('aria-pressed', toggledState);
-    // Activate again and assert it restores original state
+    await expect(addBtn).toHaveAttribute('aria-expanded', 'true');
+    const menu = page.getByRole('menu', { name: 'Add to chat' });
+    await expect(menu).toBeVisible();
+    const lemonadeTools = page.getByRole('menuitem', { name: /Lemonade tools/i });
+    await expect(lemonadeTools).toBeVisible();
+    await lemonadeTools.focus();
     await page.keyboard.press('Space');
-    await expect(toolsBtn).toHaveAttribute('aria-pressed', initialPressed);
+    await expect(page.getByRole('dialog', { name: 'Tools for this chat' })).toBeVisible();
   });
 });
 
