@@ -364,6 +364,7 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--flm-args ARGS` | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption | `""` |
+| `--modelscope BOOL` | Download models from ModelScope instead of HuggingFace | `false` |
 
 #### Ryzen AI LLM (`ryzenai-llm` recipe)
 
