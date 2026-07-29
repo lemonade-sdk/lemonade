@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { type AccountSession } from '../features/accounts/accountStore';
 import Dashboard from './Dashboard';
 import InspectView from './InspectView';
 import LogViewer from './LogViewer';
@@ -7,14 +6,12 @@ import WorkspaceSectionRail from './WorkspaceSectionRail';
 import { WORKSPACE_NAVIGATION, type DashboardSection } from '../features/navigation/workspaceNavigation';
 
 interface MonitorViewProps {
-  accountSession: AccountSession;
   activeSection: DashboardSection;
   isActive: boolean;
   onSectionChange: (section: DashboardSection) => void;
 }
 
 export default function MonitorView({
-  accountSession,
   activeSection,
   isActive,
   onSectionChange,
@@ -47,7 +44,7 @@ export default function MonitorView({
           <Dashboard isActive={isActive && activeSection === 'performance'} />
         </div>
         <div className="monitor-section" hidden={activeSection !== 'telemetry'}>
-          <InspectView accountSession={accountSession} embedded />
+          <InspectView embedded />
         </div>
         <div className="monitor-section" hidden={activeSection !== 'logs'}>
           <LogViewer embedded />

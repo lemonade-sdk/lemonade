@@ -1,5 +1,6 @@
 import type { ModelInfo } from './api';
 import { capabilityFromModelInfo, type ModelCapability } from './modelCapabilities';
+import { storageKey } from './storage';
 import {
   NO_SYSTEM_PROMPT_ID,
   defaultSystemPromptIdForPreset,
@@ -188,14 +189,8 @@ export function backendSupportsArgs(recipe: string): boolean {
   return backendArgsFieldForRecipe(recipe) !== null;
 }
 
-let activeStorageScope = 'guest:shared';
-
-export function setPresetStorageScope(scope: string): void {
-  activeStorageScope = scope || 'guest:shared';
-}
-
 function scopedPresetKey(key: string): string {
-  return `lemonade:${activeStorageScope}:${key}`;
+  return storageKey(key);
 }
 
 function emitPresetStoreEvent(): void {

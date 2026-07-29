@@ -1,6 +1,6 @@
 import type { ModelInfo } from '../../api';
 import type { ModelCapability } from '../../modelCapabilities';
-import { scopedStorageKey } from '../accounts/accountStore';
+import { storageKey } from '../../storage';
 import { COLLECTION_OMNI_RECIPE } from '../collections/collectionModels';
 import { routerRegistrationOptions } from '../router/routerStore';
 
@@ -168,9 +168,9 @@ function isRecord(value: unknown): value is CustomModelRecord {
     && obj.custom === true;
 }
 
-export function loadCustomModels(scope: string): CustomModelRecord[] {
+export function loadCustomModels(): CustomModelRecord[] {
   try {
-    const raw = localStorage.getItem(scopedStorageKey(scope, CUSTOM_MODELS_KEY));
+    const raw = localStorage.getItem(storageKey(CUSTOM_MODELS_KEY));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed?.models) ? parsed.models : [];
@@ -178,11 +178,11 @@ export function loadCustomModels(scope: string): CustomModelRecord[] {
   } catch { return []; }
 }
 
-function saveCustomModels(scope: string, models: CustomModelRecord[]): void {
-  localStorage.setItem(scopedStorageKey(scope, CUSTOM_MODELS_KEY), JSON.stringify({ version: 2, models }));
+function saveCustomModels(models: CustomModelRecord[]): void {
+  localStorage.setItem(storageKey(CUSTOM_MODELS_KEY), JSON.stringify({ version: 2, models }));
 }
 
-export function upsertCustomModel(scope: string, draft: CustomModelDraft): CustomModelRecord {
+export function upsertCustomModel(draft: CustomModelDraft): CustomModelRecord {
   const now = Date.now();
   const customTools = normalizeCustomTools(draft.customTools);
   const normalizedComponents = Array.from(new Set((draft.components || []).map(normalizeComponentName).filter(Boolean)));
@@ -210,7 +210,7 @@ export function upsertCustomModel(scope: string, draft: CustomModelDraft): Custo
   const isCollectionOmni = capability === 'omni' && components.length > 0;
   if (!hasCheckpoint && !isCollectionOmni) throw new Error('Checkpoint, repo id, or local model path is required. Omni collections can instead reference existing component model names.');
 
-  const current = loadCustomModels(scope);
+  const current = loadCustomModels();
   const existing = current.find(m => m.name.toLowerCase() === name.toLowerCase());
   const record: CustomModelRecord = {
     id: existing?.id || `custom.${now.toString(36)}.${Math.random().toString(36).slice(2, 8)}`,
@@ -239,13 +239,13 @@ export function upsertCustomModel(scope: string, draft: CustomModelDraft): Custo
     record.recipe = COLLECTION_OMNI_RECIPE;
     record.checkpoint = '';
   }
-  saveCustomModels(scope, [record, ...current.filter(m => m.id !== record.id && m.name.toLowerCase() !== name.toLowerCase())]);
+  saveCustomModels([record, ...current.filter(m => m.id !== record.id && m.name.toLowerCase() !== name.toLowerCase())]);
   return record;
 }
 
-export function deleteCustomModel(scope: string, idOrName: string): void {
-  const current = loadCustomModels(scope);
-  saveCustomModels(scope, current.filter(m => m.id !== idOrName && m.name !== idOrName));
+export function deleteCustomModel(idOrName: string): void {
+  const current = loadCustomModels();
+  saveCustomModels(current.filter(m => m.id !== idOrName && m.name !== idOrName));
 }
 
 export function customModelToModelInfo(record: CustomModelRecord): ModelInfo {
@@ -429,11 +429,11 @@ function normalizeImportedRecord(raw: unknown, index: number): CustomModelDraft 
   };
 }
 
-export function exportCustomModelsPayload(scope: string): Record<string, unknown> {
+export function exportCustomModelsPayload(): Record<string, unknown> {
   return {
     version: 2,
     exportedAt: new Date().toISOString(),
-    models: loadCustomModels(scope),
+    models: loadCustomModels(),
   };
 }
 
@@ -449,7 +449,7 @@ function importItemsFromPayload(payload: unknown): unknown[] {
   return looksLikeModelPayload(payload) ? [payload, ...embedded] : embedded;
 }
 
-export function importCustomModels(scope: string, payload: unknown): CustomModelImportResult {
+export function importCustomModels(payload: unknown): CustomModelImportResult {
   const rawItems = importItemsFromPayload(payload);
   const result: CustomModelImportResult = { imported: 0, skipped: 0, errors: [] };
   rawItems.forEach((item, index) => {
@@ -460,7 +460,7 @@ export function importCustomModels(scope: string, payload: unknown): CustomModel
       return;
     }
     try {
-      upsertCustomModel(scope, draft);
+      upsertCustomModel(draft);
       result.imported += 1;
     } catch (err) {
       result.skipped += 1;

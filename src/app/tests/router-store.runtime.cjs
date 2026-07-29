@@ -56,18 +56,17 @@ const validDraft = {
   const { outputPath, modulePath } = await bundleStore();
   try {
     const store = require(modulePath);
-    const first = store.upsertRouterRecord('account-a', validDraft);
+    const first = store.upsertRouterRecord(validDraft);
     assert.equal(first.model_name, 'user.Scoped-router');
-    assert.equal(store.loadRouterRecords('account-a').length, 1);
-    assert.equal(store.loadRouterRecords('account-b').length, 0, 'router definitions must be account scoped');
-    assert.ok([...storage.keys()].some(key => key.includes('account-a') && key.endsWith('router_collections')));
+    assert.equal(store.loadRouterRecords().length, 1);
+    assert.ok(storage.has('lemonade:router_collections'));
 
-    const updated = store.upsertRouterRecord('account-a', { ...validDraft, name: 'Scoped router renamed' });
-    assert.equal(store.loadRouterRecords('account-a').length, 2, 'a changed generated model id creates a separate router');
+    const updated = store.upsertRouterRecord({ ...validDraft, name: 'Scoped router renamed' });
+    assert.equal(store.loadRouterRecords().length, 2, 'a changed generated model id creates a separate router');
     assert.notEqual(updated.model_name, first.model_name);
 
-    const replacement = store.upsertRouterRecord('account-a', { ...validDraft, modelName: first.model_name, name: 'Better display name' });
-    const records = store.loadRouterRecords('account-a');
+    const replacement = store.upsertRouterRecord({ ...validDraft, modelName: first.model_name, name: 'Better display name' });
+    const records = store.loadRouterRecords();
     assert.equal(records.length, 2);
     assert.equal(records.find(item => item.model_name === first.model_name).display_name, 'Better display name');
     assert.equal(records.find(item => item.model_name === first.model_name).createdAt, first.createdAt, 'upsert preserves creation time');
@@ -77,17 +76,17 @@ const validDraft = {
     assert.equal(modelInfo.custom, true);
     assert.equal(modelInfo.routing.default_model, 'smart');
 
-    const badImport = store.importRouterRecords('account-a', {
+    const badImport = store.importRouterRecords({
       version: '1', model_name: 'user.bad', recipe: 'collection.router', components: ['fast'],
       routing: { candidates: ['fast'], default_model: 'fast', router: { type: 'llm', model: 'fast', prompt: 'route' } },
     });
     assert.equal(badImport.imported, 0);
     assert.match(badImport.errors[0], /not supported/i);
 
-    store.deleteRouterRecord('account-a', first.model_name);
-    assert.equal(store.loadRouterRecords('account-a').some(item => item.model_name === first.model_name), false);
+    store.deleteRouterRecord(first.model_name);
+    assert.equal(store.loadRouterRecords().some(item => item.model_name === first.model_name), false);
 
-    console.log('GUI3 router store scope and persistence checks passed.');
+    console.log('GUI3 router store persistence checks passed.');
   } finally {
     fs.rmSync(outputPath, { recursive: true, force: true });
   }

@@ -91,7 +91,6 @@ function nextConceptName(existing: Record<string, string[]>): string {
 
 interface RouterEditorPanelProps {
   models: ModelInfo[];
-  scope: string;
   initialModel?: ModelInfo | null;
   onRegister: (request: RouterPullRequest) => Promise<void>;
   onSaved?: (model: ModelInfo) => void;
@@ -101,7 +100,6 @@ interface RouterEditorPanelProps {
 
 export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   models,
-  scope,
   initialModel,
   onRegister,
   onSaved,
@@ -109,7 +107,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   onClose,
 }) => {
   const [draft, setDraft] = useState<RouterDraft>(() => createEmptyRouterDraft());
-  const [savedRecords, setSavedRecords] = useState(() => loadRouterRecords(scope));
+  const [savedRecords, setSavedRecords] = useState(() => loadRouterRecords());
   const [candidateSearch, setCandidateSearch] = useState('');
   const [tab, setTab] = useState<'builder' | 'json'>('builder');
   const [saving, setSaving] = useState(false);
@@ -117,11 +115,11 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   const [notice, setNotice] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
-  const refreshSaved = () => setSavedRecords(loadRouterRecords(scope));
+  const refreshSaved = () => setSavedRecords(loadRouterRecords());
 
   useEffect(() => {
-    setSavedRecords(loadRouterRecords(scope));
-  }, [scope]);
+    setSavedRecords(loadRouterRecords());
+  }, []);
 
   useEffect(() => {
     if (!initialModel || String((initialModel as any).recipe || '').toLowerCase() !== 'collection.router') return;
@@ -297,7 +295,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     setSaving(true);
     try {
       await onRegister(nextRequest);
-      const record = upsertRouterRecord(scope, { ...draft, modelName: nextRequest.model_name });
+      const record = upsertRouterRecord({ ...draft, modelName: nextRequest.model_name });
       refreshSaved();
       setDraft(routerRecordToDraft(record));
       setNotice(`Registered ${record.model_name}.`);
@@ -385,7 +383,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
           <>
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Identity</h3><p>Saved as a user-scoped virtual model.</p></div>
+                <div><h3>Identity</h3><p>Saved as a virtual model.</p></div>
               </div>
               <div className="router-editor__form-grid">
                 <label><span>Router name</span><input className="input" value={draft.name} placeholder="Fast-or-smart" onChange={event => setPatch({ name: event.target.value })} /></label>

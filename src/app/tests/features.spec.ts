@@ -24,7 +24,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await expect(page.locator('.titlebar__lemon')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'App controls', exact: true })).not.toBeVisible();
-    await expect(page.locator('.titlebar__utility-menu .account-menu__trigger')).toBeVisible();
     await expect(page.locator('.titlebar__utility-menu').getByRole('button', { name: 'Toggle theme' })).toBeVisible();
     await expect(page.locator('.titlebar__utility-menu').getByRole('button', { name: 'Open download manager' })).toBeVisible();
 
@@ -497,7 +496,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(appControls).toBeVisible();
     await expect(appControls.locator('[data-icon="settings"]')).toBeVisible();
     await appControls.click();
-    await expect(page.locator('.titlebar__utility-menu .account-menu__trigger')).toBeVisible();
     await expect(page.locator('.titlebar__utility-menu').getByRole('status')).toHaveAccessibleName(/Server (connected|connecting|offline)/i);
     await appControls.click();
 
@@ -1303,7 +1301,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const chatReqOff = requests.find(r => r.url.includes('/chat/completions'));
     expect(chatReqOff).toBeDefined();
     expect(chatReqOff!.headers['x-client-session-id']).toBeUndefined();
-    expect(chatReqOff!.headers['x-account-session-id']).toBeUndefined();
 
     // Now toggle capturing ON
     await page.evaluate(() => {
@@ -1330,7 +1327,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const chatReqOn = requestsAfterToggle.find(r => r.url.includes('/chat/completions'));
     expect(chatReqOn).toBeDefined();
     expect(chatReqOn!.headers['x-client-session-id']).toBeDefined();
-    expect(chatReqOn!.headers['x-account-session-id']).toBeDefined();
   });
 
   test('24 — fallback retry: retries without session headers on fetch preflight/network failure and disables them', async ({ page }) => {

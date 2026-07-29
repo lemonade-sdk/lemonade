@@ -314,7 +314,7 @@ function installBrowserStorageShim() {
     };
     presets.saveUserPresets([legacyModelPreset, legacyBackendPreset]);
     presets.saveApplied({ 'legacy-bound-model': legacyModelPreset.id });
-    localStorage.setItem('lemonade:guest:shared:backend_presets', JSON.stringify({ 'llamacpp:cpu': legacyBackendPreset.id }));
+    localStorage.setItem('lemonade:backend_presets', JSON.stringify({ 'llamacpp:cpu': legacyBackendPreset.id }));
     const legacyMerged = presets.recipeOptionsForModel(
       'legacy-bound-model',
       { id: 'legacy-bound-model', name: 'legacy-bound-model', labels: ['llm'], recipe: 'llamacpp', downloaded: true },

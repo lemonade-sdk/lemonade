@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import api, { ConnectionStatus, LoadedModel } from './api';
 import { canSelectInComposer, capabilityFromModelInfo, selectPreferredLoadedModel } from './modelCapabilities';
-import AccountMenu from './features/accounts/AccountMenu';
-import { AccountSession, currentSession, subscribeAccountSessionChanges } from './features/accounts/accountStore';
-import { setPresetStorageScope } from './presetStore';
 import { customModelToModelInfo, loadCustomModels } from './features/customModels/customModelStore';
 import { findModelInfoByName, isCollectionFullyLoaded, isCollectionModel, withVirtualLoadedCollections } from './features/collections/collectionModels';
 import ChatView from './components/ChatView';
@@ -196,13 +193,7 @@ const App: React.FC = () => {
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [theme, setTheme] = useState<Theme>(loadTheme);
-  const [accountSession, setAccountSession] = useState<AccountSession>(() => {
-    const session = currentSession();
-    setPresetStorageScope(session.storageScope);
-    return session;
-  });
-  const [accountResetNonce, setAccountResetNonce] = useState(0);
-  const accountSessionRef = useRef(accountSession);
+  const [clientDataResetNonce, setClientDataResetNonce] = useState(0);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
   const [modelDetailsRequest, setModelDetailsRequest] = useState<{ modelName: string; nonce: number } | null>(null);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
@@ -227,34 +218,11 @@ const App: React.FC = () => {
     dashboard: route.view === 'dashboard' ? route.section : WORKSPACE_NAVIGATION.dashboard.defaultSection,
     connect: route.view === 'connect' ? route.section : WORKSPACE_NAVIGATION.connect.defaultSection,
   });
-  useEffect(() => {
-    accountSessionRef.current = accountSession;
-    setPresetStorageScope(accountSession.storageScope);
-  }, [accountSession]);
-
   useEffect(() => downloadStore.subscribe(items => {
     const nextCount = items.filter(isDownloadActive).length;
     if (nextCount === activeDownloadCountRef.current) return;
     activeDownloadCountRef.current = nextCount;
     setActiveDownloadCount(nextCount);
-  }), []);
-
-  const handleAccountSessionChange = useCallback((next: AccountSession) => {
-    setPresetStorageScope(next.storageScope);
-    setAccountSession(next);
-  }, []);
-
-  const handleAccountDataReset = useCallback(() => {
-    setAccountResetNonce(n => n + 1);
-  }, []);
-
-  useEffect(() => subscribeAccountSessionChanges((next) => {
-    const prev = accountSessionRef.current;
-    const changed = prev.id !== next.id || prev.name !== next.name || prev.role !== next.role || prev.storageScope !== next.storageScope;
-    if (!changed) return;
-    accountSessionRef.current = next;
-    setAccountSession(next);
-    setAccountResetNonce(n => n + 1);
   }), []);
 
   useEffect(() => {
@@ -266,13 +234,17 @@ const App: React.FC = () => {
     setTheme(t => t === 'dark' ? 'light' : 'dark');
   }, []);
 
+  const handleLocalDataReset = useCallback(() => {
+    setClientDataResetNonce(n => n + 1);
+  }, []);
+
   useEffect(() => {
     if (!utilityMenuOpen) return;
     const onPointerDown = (event: PointerEvent) => {
       if (!utilityMenuRef.current?.contains(event.target as Node)) setUtilityMenuOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || (event.target as Element | null)?.closest('.account-menu__panel')) return;
+      if (event.key !== 'Escape') return;
       setUtilityMenuOpen(false);
       requestAnimationFrame(() => utilityMenuTriggerRef.current?.focus());
     };
@@ -289,7 +261,7 @@ const App: React.FC = () => {
   }, [view]);
 
   const applyLoadedModels = useCallback((loaded: LoadedModel[]) => {
-    const customInfos = loadCustomModels(accountSession.storageScope).map(customModelToModelInfo);
+    const customInfos = loadCustomModels().map(customModelToModelInfo);
     const knownInfos = [...customInfos, ...api.allModels];
     const enriched = withVirtualLoadedCollections(loaded, knownInfos).map(model => {
       const info = findModelInfoByName(knownInfos, model.model_name);
@@ -330,7 +302,7 @@ const App: React.FC = () => {
         || enriched.find(m => customSelectable(m.model_name) || infoSelectable(m.model_name))?.model_name
         || null;
     });
-  }, [accountSession.storageScope]);
+  }, []);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
     if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
@@ -529,11 +501,6 @@ const App: React.FC = () => {
               <Icon name="settings" size={17} aria-hidden="true" />
             </button>
             <div id="titlebar-utility-menu" className="titlebar__utility-menu" aria-label="App controls">
-              <AccountMenu
-                session={accountSession}
-                onSessionChange={handleAccountSessionChange}
-                onDataReset={handleAccountDataReset}
-              />
               <div
                 className="titlebar__utility-status"
                 role="status"
@@ -610,10 +577,9 @@ const App: React.FC = () => {
         <div className="view-slot" hidden={view !== 'chat'}>
           <ViewErrorBoundary view="chat">
             <ChatView
-              key={`${accountSession.storageScope}:${accountResetNonce}`}
+              key={clientDataResetNonce}
               currentModel={currentModel}
               loadedModels={loadedModels}
-              accountSession={accountSession}
               onModelSelect={handleModelSelect}
               onOpenModelDetails={openModelDetails}
               onRefresh={handleRefreshModels}
@@ -623,8 +589,8 @@ const App: React.FC = () => {
         <div className="view-slot" hidden={view !== 'models'}>
           <ViewErrorBoundary view="models">
             <ModelManager
+              key={clientDataResetNonce}
               onModelSelect={handleModelSelect}
-              accountSession={accountSession}
               openModelRequest={modelDetailsRequest}
             />
           </ViewErrorBoundary>
@@ -642,7 +608,6 @@ const App: React.FC = () => {
         <div className="view-slot" hidden={view !== 'dashboard'}>
           <ViewErrorBoundary view="dashboard">
             <MonitorView
-              accountSession={accountSession}
               activeSection={route.view === 'dashboard' ? route.section : lastWorkspaceSectionsRef.current.dashboard}
               isActive={view === 'dashboard'}
               onSectionChange={section => navigateToRoute({ view: 'dashboard', section })}
@@ -656,9 +621,7 @@ const App: React.FC = () => {
               isActive={view === 'connect'}
               activeSection={route.view === 'connect' ? route.section : lastWorkspaceSectionsRef.current.connect}
               onSectionChange={section => navigateToRoute({ view: 'connect', section })}
-              accountSession={accountSession}
-              onLocalDataReset={handleAccountDataReset}
-              onSessionChange={handleAccountSessionChange}
+              onLocalDataReset={handleLocalDataReset}
             />
           </ViewErrorBoundary>
         </div>

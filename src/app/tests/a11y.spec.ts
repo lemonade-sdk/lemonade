@@ -846,7 +846,7 @@ test.describe('Accessibility — backend argument tuning', () => {
 
   test('A172 — saved backend args can be cleared without affecting another backend entry', async ({ page }) => {
     await page.evaluate(() => {
-      localStorage.setItem('lemonade:guest:shared:backend_tunings', JSON.stringify({
+      localStorage.setItem('lemonade:backend_tunings', JSON.stringify({
         'llamacpp:cpu': { args: '--cpu', source: 'user' },
         'llamacpp:vulkan': { args: '--vulkan', source: 'user' },
       }));
@@ -1092,9 +1092,9 @@ test.describe('Accessibility — conversation rail listbox', () => {
       localStorage.setItem(data.convKey, JSON.stringify({ version: 3, conversations: data.convos }));
       localStorage.setItem(data.activeKey, 'rc1');
     }, {
-      persistKey: 'lemonade:guest:shared:persist_conversations',
-      convKey: 'lemonade:guest:shared:conversations',
-      activeKey: 'lemonade:guest:shared:active_conversation',
+      persistKey: 'lemonade:persist_conversations',
+      convKey: 'lemonade:conversations',
+      activeKey: 'lemonade:active_conversation',
       convos: RAIL_CONVOS,
     });
     await page.goto('/');
@@ -1131,67 +1131,6 @@ test.describe('Accessibility — conversation rail listbox', () => {
     expect(label).toBeTruthy();
     expect(label!.toLowerCase()).toContain('delete');
     expect(label).toContain('Alpha conversation');
-  });
-});
-
-// ─── 18. Account menu — modal dialog semantics ────────────────────────────────
-
-test.describe('Accessibility — account menu dialog', () => {
-  test('A67 — account menu trigger has aria-haspopup="dialog" and aria-expanded="false" on load', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.account-menu__trigger');
-
-    const trigger = page.locator('.account-menu__trigger');
-    expect(await trigger.getAttribute('aria-haspopup')).toBe('dialog');
-    expect(await trigger.getAttribute('aria-expanded')).toBe('false');
-  });
-
-  test('A68 — opening account menu: panel has role="dialog" + aria-modal="true", trigger aria-expanded="true"', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.account-menu__trigger');
-
-    await page.locator('.account-menu__trigger').click();
-    await page.waitForSelector('.account-menu__panel');
-
-    const panel = page.locator('.account-menu__panel');
-    expect(await panel.getAttribute('role')).toBe('dialog');
-    expect(await panel.getAttribute('aria-modal')).toBe('true');
-
-    const trigger = page.locator('.account-menu__trigger');
-    expect(await trigger.getAttribute('aria-expanded')).toBe('true');
-  });
-
-  test('A69 — opening account menu moves focus inside the panel (useFocusTrap activates)', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.account-menu__trigger');
-
-    await page.locator('.account-menu__trigger').click();
-    await page.waitForSelector('.account-menu__panel');
-
-    const activeIsInPanel = await page.evaluate(() => {
-      const panel = document.querySelector('.account-menu__panel');
-      return panel?.contains(document.activeElement) ?? false;
-    });
-    expect(activeIsInPanel).toBe(true);
-  });
-
-  test('A70 — Escape closes account menu and restores focus to the trigger', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.account-menu__trigger');
-
-    await page.locator('.account-menu__trigger').click();
-    await page.waitForSelector('.account-menu__panel');
-
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(100); // allow rAF focus restore
-
-    await expect(page.locator('.account-menu__panel')).not.toBeVisible({ timeout: 3000 });
-
-    const activeClass = await page.evaluate(
-      () => (document.activeElement as HTMLElement | null)?.className ?? '',
-    );
-    expect(activeClass).toContain('account-menu__trigger');
-
   });
 });
 

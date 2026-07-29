@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import api, { CloudProviderRow, ConnectionStatus, DirectorySettings, friendlyErrorMessage, normalizeBaseUrl } from '../api';
-import { AccountSession, clearAllAccountsAndScopedData, clearCurrentSessionData, describeSession } from '../features/accounts/accountStore';
+import { clearClientStorage } from '../storage';
 import { Icon, IconName } from './Icon';
 import McpPanel from './McpPanel';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
@@ -18,9 +18,7 @@ interface ConnectViewProps {
   isActive: boolean;
   activeSection: ConnectSection;
   onSectionChange: (section: ConnectSection) => void;
-  accountSession: AccountSession;
   onLocalDataReset: () => void;
-  onSessionChange: (session: AccountSession) => void;
 }
 
 const HELP_LINKS: { label: string; href: string; icon: IconName; description: string }[] = [
@@ -39,7 +37,7 @@ const CLOUD_QUICK_FILL = [
 
 const emptyDirectorySettings: DirectorySettings = { modelsDir: '', extraModelsDir: '', canPersist: false };
 
-const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSection, onSectionChange, accountSession, onLocalDataReset, onSessionChange }) => {
+const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSection, onSectionChange, onLocalDataReset }) => {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [host, setHost] = useState(api.baseUrl);
   const [apiKey, setApiKey] = useState(api.apiKey);
@@ -161,17 +159,10 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
   };
 
   const handleClearLocalData = async () => {
-    const target = accountSession.role === 'admin'
-      ? 'all scoped user/guest data plus global connection settings'
-      : `${describeSession(accountSession)} data plus global connection settings`;
-    const ok = window.confirm(`Clear ${target} on this device? Other signed-in users are protected unless you are admin.`);
+    const ok = window.confirm('Clear Lemonade browser data and connection settings on this device?');
     if (!ok) return;
 
-    if (accountSession.role === 'admin') {
-      onSessionChange(clearAllAccountsAndScopedData());
-    } else {
-      clearCurrentSessionData(accountSession);
-    }
+    clearClientStorage();
 
     for (const store of [localStorage, sessionStorage]) {
       Object.keys(store)
@@ -192,9 +183,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     setCanPersistApiKey(api.canPersistApiKey);
     setRememberApiKey(false);
     onLocalDataReset();
-    setNotice(accountSession.role === 'admin'
-      ? 'Admin cleared all scoped local user data and global connection settings.'
-      : 'Current profile data and global connection settings were cleared.');
+    setNotice('Local Lemonade data and global connection settings were cleared.');
     setError(clearSettingsError);
   };
 

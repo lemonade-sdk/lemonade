@@ -30,7 +30,7 @@ import {
   snapshotFromModelInfo,
   snapshotFromName,
 } from '../modelCapabilities';
-import { AccountSession, describeSession, scopedStorageKey } from '../features/accounts/accountStore';
+import { storageKey } from '../storage';
 import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
 import { activeDownloadForModel, downloadsForModel, downloadStore, isDownloadTerminal, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
@@ -109,10 +109,10 @@ function clampChatLogsWidth(width: number, railExpanded = true): number {
   return Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(maxChatLogsWidthForViewport(railExpanded), Math.round(width)));
 }
 
-function loadChatLogsWidth(scope: string): number {
+function loadChatLogsWidth(): number {
   if (typeof window === 'undefined') return CHAT_LOGS_DEFAULT_WIDTH;
   try {
-    const stored = Number(window.localStorage.getItem(scopedKey(scope, CHAT_LOGS_WIDTH_KEY)));
+    const stored = Number(window.localStorage.getItem(scopedKey(CHAT_LOGS_WIDTH_KEY)));
     const width = Number.isFinite(stored) ? stored : CHAT_LOGS_DEFAULT_WIDTH;
     return clampChatLogsWidth(width, true);
   } catch {
@@ -124,13 +124,13 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function scopedKey(scope: string, key: string): string {
-  return scopedStorageKey(scope, key);
+function scopedKey(key: string): string {
+  return storageKey(key);
 }
 
-function loadScopedStringArray(scope: string, key: string): string[] | null {
+function loadScopedStringArray(key: string): string[] | null {
   try {
-    const raw = localStorage.getItem(scopedKey(scope, key));
+    const raw = localStorage.getItem(scopedKey(key));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.map(value => String(value)).filter(Boolean) : null;
@@ -139,17 +139,17 @@ function loadScopedStringArray(scope: string, key: string): string[] | null {
   }
 }
 
-function saveScopedStringArray(scope: string, key: string, values: string[] | null): void {
+function saveScopedStringArray(key: string, values: string[] | null): void {
   try {
-    if (values === null) localStorage.removeItem(scopedKey(scope, key));
-    else localStorage.setItem(scopedKey(scope, key), JSON.stringify([...new Set(values.filter(Boolean))]));
+    if (values === null) localStorage.removeItem(scopedKey(key));
+    else localStorage.setItem(scopedKey(key), JSON.stringify([...new Set(values.filter(Boolean))]));
   } catch {
     // Non-critical UI preference persistence.
   }
 }
 
-function loadPersistencePreference(scope: string): boolean {
-  try { return localStorage.getItem(scopedKey(scope, PERSIST_KEY)) === 'true'; } catch { return false; }
+function loadPersistencePreference(): boolean {
+  try { return localStorage.getItem(scopedKey(PERSIST_KEY)) === 'true'; } catch { return false; }
 }
 
 function normalizeSnapshot(raw: unknown): ModelSnapshot | null {
@@ -198,10 +198,10 @@ function normalizeConversation(raw: unknown): Conversation | null {
   };
 }
 
-function loadConversations(persist: boolean, scope: string): Conversation[] {
+function loadConversations(persist: boolean): Conversation[] {
   if (!persist) return [];
   try {
-    const raw = localStorage.getItem(scopedKey(scope, STORAGE_KEY));
+    const raw = localStorage.getItem(scopedKey(STORAGE_KEY));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     const list: unknown[] = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.conversations) ? parsed.conversations : []);
@@ -210,11 +210,11 @@ function loadConversations(persist: boolean, scope: string): Conversation[] {
   return [];
 }
 
-function saveConversations(convos: Conversation[], persist: boolean, scope: string) {
+function saveConversations(convos: Conversation[], persist: boolean) {
   if (!persist) {
     try {
-      localStorage.removeItem(scopedKey(scope, STORAGE_KEY));
-      localStorage.removeItem(scopedKey(scope, ACTIVE_KEY));
+      localStorage.removeItem(scopedKey(STORAGE_KEY));
+      localStorage.removeItem(scopedKey(ACTIVE_KEY));
     } catch { /* ignore */ }
     return;
   }
@@ -234,22 +234,22 @@ function saveConversations(convos: Conversation[], persist: boolean, scope: stri
       model3dName: undefined,
     })),
   }));
-  try { localStorage.setItem(scopedKey(scope, STORAGE_KEY), JSON.stringify({ version: STORAGE_VERSION, conversations: stripped })); } catch { /* ignore */ }
+  try { localStorage.setItem(scopedKey(STORAGE_KEY), JSON.stringify({ version: STORAGE_VERSION, conversations: stripped })); } catch { /* ignore */ }
 }
 
-function loadActiveId(persist: boolean, scope: string): string | null {
+function loadActiveId(persist: boolean): string | null {
   if (!persist) return null;
-  try { return localStorage.getItem(scopedKey(scope, ACTIVE_KEY)); } catch { return null; }
+  try { return localStorage.getItem(scopedKey(ACTIVE_KEY)); } catch { return null; }
 }
 
-function saveActiveId(id: string | null, persist: boolean, scope: string) {
+function saveActiveId(id: string | null, persist: boolean) {
   try {
     if (!persist) {
-      localStorage.removeItem(scopedKey(scope, ACTIVE_KEY));
+      localStorage.removeItem(scopedKey(ACTIVE_KEY));
     } else if (id) {
-      localStorage.setItem(scopedKey(scope, ACTIVE_KEY), id);
+      localStorage.setItem(scopedKey(ACTIVE_KEY), id);
     } else {
-      localStorage.removeItem(scopedKey(scope, ACTIVE_KEY));
+      localStorage.removeItem(scopedKey(ACTIVE_KEY));
     }
   } catch { /* ignore */ }
 }
@@ -350,7 +350,6 @@ interface ChatViewProps {
   onModelSelect: (model: string) => void;
   onOpenModelDetails: (model: string) => void;
   onRefresh: () => void | Promise<void>;
-  accountSession: AccountSession;
 }
 
 interface ModelPreparationState {
@@ -718,15 +717,14 @@ function friendlyChatError(message: string): string {
   return `I couldn't complete that request.\n\n${cleaned}`;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, onModelSelect, onOpenModelDetails, onRefresh, accountSession }) => {
-  const storageScope = accountSession.storageScope;
+const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, onModelSelect, onOpenModelDetails, onRefresh }) => {
   const [fallbackModelOverride, setFallbackModelOverride] = useState<string | null>(null);
-  const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName(storageScope));
-  const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName(storageScope));
+  const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName());
+  const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName());
   const [modelPreparation, setModelPreparation] = useState<ModelPreparationState | null>(null);
-  const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference(storageScope));
-  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(loadPersistencePreference(storageScope), storageScope));
-  const [activeId, setActiveId] = useState<string | null>(() => loadActiveId(loadPersistencePreference(storageScope), storageScope));
+  const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference());
+  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(loadPersistencePreference()));
+  const [activeId, setActiveId] = useState<string | null>(() => loadActiveId(loadPersistencePreference()));
   const [inputValue, setInputValue] = useState('');
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
@@ -746,8 +744,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [audioLevel, setAudioLevel] = useState(0);
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [presetVersion, setPresetVersion] = useState(0);
-  const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings(storageScope));
-  const [globalModelSettings, setGlobalModelSettings] = useState(() => loadGlobalModelSettings(storageScope));
+  const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings());
+  const [globalModelSettings, setGlobalModelSettings] = useState(() => loadGlobalModelSettings());
   const [railExpanded, setRailExpanded] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const sheetHandleRef = useRef<HTMLDivElement>(null);
@@ -755,15 +753,15 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const bottomSheetRef = useRef<HTMLDivElement>(null);
   const [useMcp, setUseMcp] = useState(() => {
     try {
-      const explicit = localStorage.getItem(scopedKey(storageScope, MCP_ENABLED_KEY));
+      const explicit = localStorage.getItem(scopedKey(MCP_ENABLED_KEY));
       if (explicit !== null) return explicit === 'true';
-      const legacy = localStorage.getItem(scopedKey(storageScope, LEGACY_TOOLS_KEY));
+      const legacy = localStorage.getItem(scopedKey(LEGACY_TOOLS_KEY));
       if (legacy !== null) return legacy === 'true';
       return true;
     } catch { return true; }
   });
-  const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(() => loadScopedStringArray(storageScope, MCP_SERVER_IDS_KEY) || DEFAULT_MCP_SERVER_IDS);
-  const [selectedMcpToolNames, setSelectedMcpToolNames] = useState<string[] | null>(() => loadScopedStringArray(storageScope, MCP_TOOL_NAMES_KEY));
+  const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(() => loadScopedStringArray(MCP_SERVER_IDS_KEY) || DEFAULT_MCP_SERVER_IDS);
+  const [selectedMcpToolNames, setSelectedMcpToolNames] = useState<string[] | null>(() => loadScopedStringArray(MCP_TOOL_NAMES_KEY));
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [mcpOptions, setMcpOptions] = useState<McpServerToolOption[]>([]);
@@ -771,7 +769,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [mcpPickerError, setMcpPickerError] = useState('');
   const presetMcpSeedRef = useRef('');
   const [showInlineLogs, setShowInlineLogs] = useState(false);
-  const [chatLogsWidth, setChatLogsWidth] = useState(() => loadChatLogsWidth(storageScope));
+  const [chatLogsWidth, setChatLogsWidth] = useState(() => loadChatLogsWidth());
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerQuery, setModelPickerQuery] = useState('');
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
@@ -816,11 +814,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(scopedKey(storageScope, CHAT_LOGS_WIDTH_KEY), String(chatLogsWidth));
+      window.localStorage.setItem(scopedKey(CHAT_LOGS_WIDTH_KEY), String(chatLogsWidth));
     } catch {
       // Non-critical: inline log width persistence is best-effort only.
     }
-  }, [chatLogsWidth, storageScope]);
+  }, [chatLogsWidth]);
 
   const chatLayoutStyle = useMemo(() => ({
     '--chat-logs-width': `${chatLogsWidth}px`,
@@ -874,8 +872,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, [railExpanded]);
 
   const customModelInfos = useMemo(
-    () => loadCustomModels(storageScope).map(customModelToModelInfo),
-    [storageScope],
+    () => loadCustomModels().map(customModelToModelInfo),
+    [],
   );
   const knownModelInfos = useMemo(
     () => {
@@ -951,9 +949,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   useEffect(() => {
     if (!currentLoadedModel || (currentCapability !== 'chat' && currentCapability !== 'omni')) return;
-    saveLastReadyModelName(storageScope, currentLoadedModel.model_name);
+    saveLastReadyModelName(currentLoadedModel.model_name);
     setLastReadyModelName(currentLoadedModel.model_name);
-  }, [currentCapability, currentLoadedModel, storageScope]);
+  }, [currentCapability, currentLoadedModel]);
 
   const currentRecipe = String(currentModelSnapshot?.recipe || currentKnownModelInfo?.recipe || '').toLowerCase();
   const isAceStepAudio = currentCapability === 'audio-generation'
@@ -1032,18 +1030,18 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, []);
 
   useEffect(() => {
-    const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings(storageScope));
+    const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings());
     reloadTtsSettings();
     window.addEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
     return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
-  }, [storageScope]);
+  }, []);
 
   useEffect(() => {
-    const reloadGlobalModelSettings = () => setGlobalModelSettings(loadGlobalModelSettings(storageScope));
+    const reloadGlobalModelSettings = () => setGlobalModelSettings(loadGlobalModelSettings());
     reloadGlobalModelSettings();
     window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
     return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
-  }, [storageScope]);
+  }, []);
 
   const currentPreset = useMemo(
     () => currentModel ? (currentCapability === 'image' ? DEFAULT_PRESET : activePresetForModel(currentModel)) : null,
@@ -1091,23 +1089,23 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     const selectedIds = presetMcpServerIds(currentPreset);
     const fallbackIds = selectedIds.length > 0 ? selectedIds : DEFAULT_MCP_SERVER_IDS;
     const next = fallbackIds.length > 0;
-    const seed = `${storageScope}:${currentModel}:${currentPreset.id}:${selectedIds.join(',')}:${next ? 'mcp-on' : 'mcp-off'}`;
+    const seed = `${currentModel}:${currentPreset.id}:${selectedIds.join(',')}:${next ? 'mcp-on' : 'mcp-off'}`;
     if (presetMcpSeedRef.current === seed) return;
     presetMcpSeedRef.current = seed;
-    const storedIds = loadScopedStringArray(storageScope, MCP_SERVER_IDS_KEY);
-    const storedTools = loadScopedStringArray(storageScope, MCP_TOOL_NAMES_KEY);
+    const storedIds = loadScopedStringArray(MCP_SERVER_IDS_KEY);
+    const storedTools = loadScopedStringArray(MCP_TOOL_NAMES_KEY);
     const nextIds = storedIds && storedIds.length > 0 ? storedIds : fallbackIds;
     let nextEnabled = nextIds.length > 0;
     try {
-      const explicit = localStorage.getItem(scopedKey(storageScope, MCP_ENABLED_KEY));
+      const explicit = localStorage.getItem(scopedKey(MCP_ENABLED_KEY));
       if (explicit !== null && (!storedIds || storedIds.length > 0)) nextEnabled = explicit === 'true';
     } catch { /* ignore */ }
     setSelectedMcpServerIds(nextIds);
     setSelectedMcpToolNames(storedTools);
-    saveScopedStringArray(storageScope, MCP_SERVER_IDS_KEY, nextIds);
+    saveScopedStringArray(MCP_SERVER_IDS_KEY, nextIds);
     setUseMcp(nextEnabled);
-    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(nextEnabled)); } catch { /* ignore */ }
-  }, [currentModel, currentPreset, storageScope]);
+    try { localStorage.setItem(scopedKey(MCP_ENABLED_KEY), String(nextEnabled)); } catch { /* ignore */ }
+  }, [currentModel, currentPreset]);
 
   const hasRealtimeAudio = useMemo(
     () => !!currentModel && modelSupportsRealtimeAudio(currentModel, currentKnownModelInfo, currentLoadedModel),
@@ -1269,17 +1267,17 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   const persistMcpEnabled = useCallback((next: boolean) => {
     setUseMcp(next);
-    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
-  }, [storageScope]);
+    try { localStorage.setItem(scopedKey(MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
+  }, []);
 
   const persistMcpSelection = useCallback((serverIds: string[], toolNames: string[] | null) => {
     const uniqueServerIds = [...new Set(serverIds.filter(Boolean))].slice(0, MAX_PRESET_MCP_SERVERS);
     const uniqueToolNames = toolNames === null ? null : [...new Set(toolNames.filter(Boolean))];
     setSelectedMcpServerIds(uniqueServerIds);
     setSelectedMcpToolNames(uniqueToolNames);
-    saveScopedStringArray(storageScope, MCP_SERVER_IDS_KEY, uniqueServerIds);
-    saveScopedStringArray(storageScope, MCP_TOOL_NAMES_KEY, uniqueToolNames);
-  }, [storageScope]);
+    saveScopedStringArray(MCP_SERVER_IDS_KEY, uniqueServerIds);
+    saveScopedStringArray(MCP_TOOL_NAMES_KEY, uniqueToolNames);
+  }, []);
 
   const startLemonadeToolPrompt = useCallback((text: string) => {
     persistMcpEnabled(true);
@@ -1452,12 +1450,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       loadedModels: currentLoaded,
       allModels: knownModelInfos,
       target,
-      pinnedNames: loadPinnedModelNames(storageScope),
+      pinnedNames: loadPinnedModelNames(),
       settings: globalModelSettings,
       unload: name => api.unloadModel(name),
       load: () => api.loadModel(modelName, recipeOptions, target),
     });
-  }, [globalModelSettings, knownModelInfos, loadedModels, storageScope]);
+  }, [globalModelSettings, knownModelInfos, loadedModels]);
 
   const waitForExistingModelDownload = useCallback(async (modelName: string): Promise<boolean> => {
     let sawDownload = false;
@@ -1516,7 +1514,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     let health = await api.health();
     let loaded = loadedFrom(health.all_models_loaded || []);
     if (loaded) {
-      saveLastReadyModelName(storageScope, loaded.model_name);
+      saveLastReadyModelName(loaded.model_name);
       setLastReadyModelName(loaded.model_name);
       return snapshotFromLoaded(loaded) || snapshotFromModelInfo(initialInfo) || snapshotFromName(modelName, [loaded])!;
     }
@@ -1577,14 +1575,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     loaded = loadedFrom(health.all_models_loaded || []);
     if (!loaded) throw new Error(`${modelName} was downloaded but did not become ready for chat.`);
 
-    saveLastReadyModelName(storageScope, loaded.model_name);
+    saveLastReadyModelName(loaded.model_name);
     setLastReadyModelName(loaded.model_name);
     setFallbackModelOverride(null);
     onModelSelect(loaded.model_name);
     return snapshotFromLoaded(loaded)
       || snapshotFromModelInfo(info || initialInfo)
       || snapshotFromName(modelName, [loaded])!;
-  }, [knownModelInfos, loadModelWithPolicy, onModelSelect, onRefresh, storageScope, waitForExistingModelDownload]);
+  }, [knownModelInfos, loadModelWithPolicy, onModelSelect, onRefresh, waitForExistingModelDownload]);
 
   const speakWithPinnedTts = useCallback(async (text: string, source: 'assistant' | 'user', force = false) => {
     const trimmed = text.trim();
@@ -1737,14 +1735,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   // Persist conversations to localStorage only when the user explicitly opted in.
   useEffect(() => {
-    saveConversations(conversations, persistHistory, storageScope);
-    try { localStorage.setItem(scopedKey(storageScope, PERSIST_KEY), String(persistHistory)); } catch { /* ignore */ }
-  }, [conversations, persistHistory, storageScope]);
+    saveConversations(conversations, persistHistory);
+    try { localStorage.setItem(scopedKey(PERSIST_KEY), String(persistHistory)); } catch { /* ignore */ }
+  }, [conversations, persistHistory]);
 
   // Persist active conversation id
   useEffect(() => {
-    saveActiveId(activeId, persistHistory, storageScope);
-  }, [activeId, persistHistory, storageScope]);
+    saveActiveId(activeId, persistHistory);
+  }, [activeId, persistHistory]);
 
   // Active ID can point at stale/missing data after manual localStorage edits or migrations.
   useEffect(() => {
@@ -2380,7 +2378,7 @@ ${finalText}`
         // failure, switch MCP off for this chat, and continue the same request
         // as a normal model completion without tools.
         persistMcpEnabled(false);
-        try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), 'false'); } catch { /* ignore */ }
+        try { localStorage.setItem(scopedKey(MCP_ENABLED_KEY), 'false'); } catch { /* ignore */ }
         appendAssistantMessage(convoId, {
           content: friendlyChatError(`MCP setup failed and was switched off for this chat. Continuing without tools: ${friendlyErrorMessage(err)}`),
           model: modelSnapshot,
@@ -2462,7 +2460,6 @@ ${finalText}`
     runCapabilityRequest,
     speakWithPinnedTts,
     streaming,
-    storageScope,
     updateConversation,
     useMcp,
   ]);
@@ -2791,7 +2788,7 @@ ${finalText}`
       const configuredDefault = lemonadeDefaultModel(option.name);
       setFallbackModelOverride(option.name);
       if (configuredDefault) {
-        const preferred = savePreferredDefaultModelName(storageScope, configuredDefault.name);
+        const preferred = savePreferredDefaultModelName(configuredDefault.name);
         setPreferredDefaultModelName(preferred);
       }
       onModelSelect(option.name);
@@ -2825,7 +2822,7 @@ ${finalText}`
     } finally {
       setModelPickerLoading(null);
     }
-  }, [currentModel, loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh, storageScope]);
+  }, [currentModel, loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh]);
 
   // ── Option select from assistant messages ───────────────────
 
@@ -2986,9 +2983,9 @@ ${finalText}`
         <div className="rail__privacy">
           <label className="rail__privacy-toggle">
             <input type="checkbox" checked={persistHistory} onChange={handlePersistenceToggle} />
-            <span>{accountSession.isGuest ? 'Shared guest history' : 'Private local history'} {persistHistory ? 'ON' : 'OFF'}</span>
+            <span>Local browser history {persistHistory ? 'ON' : 'OFF'}</span>
           </label>
-          <span className="rail__privacy-note">{describeSession(accountSession)} · Media is never persisted.</span>
+          <span className="rail__privacy-note">Media is never persisted.</span>
         </div>
       </aside>
 
@@ -3085,7 +3082,7 @@ ${finalText}`
                   key={i}
                   message={msg}
                   activeModel={currentModelSnapshot}
-                  userLabel={accountSession.isGuest ? 'Guest' : accountSession.name}
+                  userLabel="You"
                   defaultThinkingOpen={!globalModelSettings.collapseThinkingByDefault}
                   onOptionSelect={handleOptionSelect}
                   onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}

@@ -23,7 +23,7 @@ function installBrowserShim() {
 function loadSettingsModule() {
   const filename = path.join(root, 'src/features/modelSettings/globalModelSettings.ts');
   const source = fs.readFileSync(filename, 'utf8')
-    .replace("import { scopedStorageKey } from '../accounts/accountStore';", "const scopedStorageKey = (scope: string, key: string) => `lemonade:${scope}:${key}`;");
+    .replace("import { storageKey } from '../../storage';", "const storageKey = (key: string) => `lemonade:${key}`;");
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       target: ts.ScriptTarget.ES2020,
@@ -56,18 +56,16 @@ assert.equal(settings.DEFAULT_GLOBAL_MODEL_SETTINGS.automaticModelUpdates, false
 assert.equal(settings.DEFAULT_GLOBAL_MODEL_SETTINGS.autoEvictOnPressure, false, 'pressure eviction must be opt-in');
 assert.equal(settings.DEFAULT_GLOBAL_MODEL_SETTINGS.collapseThinkingByDefault, true);
 
-const savedA = settings.saveGlobalModelSettings('account-a', {
+const saved = settings.saveGlobalModelSettings({
   ...settings.DEFAULT_GLOBAL_MODEL_SETTINGS,
   resourceBudgetMode: 'vram',
   resourceBudgetGb: 23.456,
   loadingPolicy: 'budget-aware',
   autoEvictOnPressure: true,
 });
-assert.equal(savedA.resourceBudgetGb, 23.5);
-assert.equal(settings.loadGlobalModelSettings('account-a').loadingPolicy, 'budget-aware');
-assert.equal(settings.loadGlobalModelSettings('account-b').resourceBudgetMode, 'server', 'settings must remain account scoped');
-assert.ok([...storage.keys()].some(key => key.includes('account-a') && key.endsWith('global_model_settings')));
-
+assert.equal(saved.resourceBudgetGb, 23.5);
+assert.equal(settings.loadGlobalModelSettings().loadingPolicy, 'budget-aware');
+assert.ok(storage.has('lemonade:global_model_settings'));
 const sanitized = settings.sanitizeGlobalModelSettings({
   resourceBudgetMode: 'invalid',
   resourceBudgetGb: -4,

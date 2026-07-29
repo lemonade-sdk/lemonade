@@ -966,22 +966,6 @@ class LemonadeAPI {
     if (includeSessionHeaders && this.sessionHeadersEnabled) {
       h['X-Client-Session-Id'] = this.clientSessionId;
 
-      // Add current account session token or guest ID to scope model caches
-      try {
-        const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
-        if (raw) {
-          const parsed = JSON.parse(raw) as { id?: string };
-          if (parsed.id) {
-            h['X-Account-Session-Id'] = parsed.id;
-          } else {
-            h['X-Account-Session-Id'] = 'guest';
-          }
-        } else {
-          h['X-Account-Session-Id'] = 'guest';
-        }
-      } catch {
-        h['X-Account-Session-Id'] = 'guest';
-      }
     }
 
     return h;
@@ -1086,21 +1070,6 @@ class LemonadeAPI {
     const params = new URLSearchParams(query);
     if (this.apiKey) params.set('api_key', this.apiKey);
     params.set('client_session_id', this.clientSessionId);
-    try {
-      const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
-      if (raw) {
-        const parsed = JSON.parse(raw) as { id?: string };
-        if (parsed.id) {
-          params.set('account_session_id', parsed.id);
-        } else {
-          params.set('account_session_id', 'guest');
-        }
-      } else {
-        params.set('account_session_id', 'guest');
-      }
-    } catch {
-      params.set('account_session_id', 'guest');
-    }
     url.search = params.toString();
     return url.toString();
   }

@@ -3,7 +3,7 @@ import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModel
 import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo, modelMatchesCapabilityTags } from '../modelCapabilities';
 import { Icon } from './Icon';
-import { scopedStorageKey, type AccountSession } from '../features/accounts/accountStore';
+import { storageKey } from '../storage';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import { DEFAULT_CONTEXT_SIZE } from '../presetStore';
@@ -451,21 +451,21 @@ function recipeOptionsFromSystemInfo(info: Record<string, unknown> | null): Part
 // Pinned models float to the top of the middle list; favorites is a separate
 // filter/count surfaced by the left-rail "Favorites" (star) entry. Stored under
 // a separate `favorite_models` key so the two never alias.
-function favoriteModelsKey(scope: string): string {
-  return scopedStorageKey(scope, 'favorite_models');
+function favoriteModelsKey(): string {
+  return storageKey('favorite_models');
 }
 
-function loadFavoriteModels(scope: string): string[] {
+function loadFavoriteModels(): string[] {
   try {
-    const raw = localStorage.getItem(favoriteModelsKey(scope));
+    const raw = localStorage.getItem(favoriteModelsKey());
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed.map(v => String(v).trim()).filter(Boolean) : [];
   } catch { return []; }
 }
 
-function saveFavoriteModels(scope: string, names: string[]): void {
+function saveFavoriteModels(names: string[]): void {
   try {
-    localStorage.setItem(favoriteModelsKey(scope), JSON.stringify(Array.from(new Set(names.filter(Boolean)))));
+    localStorage.setItem(favoriteModelsKey(), JSON.stringify(Array.from(new Set(names.filter(Boolean)))));
   } catch {}
 }
 
@@ -1044,11 +1044,10 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
 
 interface ModelManagerProps {
   onModelSelect: (model: string) => void;
-  accountSession: AccountSession;
   openModelRequest?: { modelName: string; nonce: number } | null;
 }
 
-const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSession, openModelRequest }) => {
+const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelRequest }) => {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [connectionStatus, setConnectionStatus] = useState(api.status);
@@ -1094,8 +1093,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
   const [remoteVariants, setRemoteVariants] = useState<Record<string, PullVariantsResult>>({});
   const [remoteVariantsLoading, setRemoteVariantsLoading] = useState<Record<string, boolean>>({});
 
-  const [customModels, setCustomModels] = useState<ModelInfo[]>(() => loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
-  const [routerModels, setRouterModels] = useState<ModelInfo[]>(() => loadRouterRecords(accountSession.storageScope).map(routerRecordToModelInfo));
+  const [customModels, setCustomModels] = useState<ModelInfo[]>(() => loadCustomModels().map(customModelToModelInfo));
+  const [routerModels, setRouterModels] = useState<ModelInfo[]>(() => loadRouterRecords().map(routerRecordToModelInfo));
   const [showRouterEditor, setShowRouterEditor] = useState(false);
   const [routerEditorModel, setRouterEditorModel] = useState<ModelInfo | null>(null);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
@@ -1106,13 +1105,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
   const [customDraft, setCustomDraft] = useState<CustomModelDraftState>(() => createEmptyCustomDraft());
   const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
   const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
-  const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModelNames(accountSession.storageScope));
-  const [favoriteModels, setFavoriteModels] = useState<string[]>(() => loadFavoriteModels(accountSession.storageScope));
+  const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModelNames());
+  const [favoriteModels, setFavoriteModels] = useState<string[]>(() => loadFavoriteModels());
   // Multi-select functional capability filter driven by the funnel popover.
   const [capabilityFilter, setCapabilityFilter] = useState<Set<string>>(() => new Set());
   // Real disk usage for the storage meter (null until/unless lemond exposes it).
   const [storageInfo, setStorageInfo] = useState<import('../api').StorageInfo | null>(null);
-  const [globalModelSettings, setGlobalModelSettings] = useState<GlobalModelSettings>(() => loadGlobalModelSettings(accountSession.storageScope));
+  const [globalModelSettings, setGlobalModelSettings] = useState<GlobalModelSettings>(() => loadGlobalModelSettings());
   const automaticUpdateStartedRef = useRef(false);
   const customJsonInputRef = useRef<HTMLInputElement>(null);
 
@@ -1128,22 +1127,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
   useEffect(() => downloadStore.subscribe(setDownloadItems), []);
 
   const reloadCustomModels = useCallback(() => {
-    setCustomModels(loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
-  }, [accountSession.storageScope]);
+    setCustomModels(loadCustomModels().map(customModelToModelInfo));
+  }, []);
 
   useEffect(() => { reloadCustomModels(); }, [reloadCustomModels]);
 
   const reloadRouterModels = useCallback(() => {
-    setRouterModels(loadRouterRecords(accountSession.storageScope).map(routerRecordToModelInfo));
-  }, [accountSession.storageScope]);
+    setRouterModels(loadRouterRecords().map(routerRecordToModelInfo));
+  }, []);
 
   useEffect(() => { reloadRouterModels(); }, [reloadRouterModels]);
 
 
   useEffect(() => {
-    setPinnedModels(loadPinnedModelNames(accountSession.storageScope));
-    setFavoriteModels(loadFavoriteModels(accountSession.storageScope));
-  }, [accountSession.storageScope]);
+    setPinnedModels(loadPinnedModelNames());
+    setFavoriteModels(loadFavoriteModels());
+  }, []);
 
   // Fetch real model-storage disk stats. Returns null in the POC (lemond has no
   // disk endpoint yet) → the rail derives a graceful fallback. Re-runs when the
@@ -1157,12 +1156,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
   }, [models.length]);
 
   useEffect(() => {
-    const reloadGlobalSettings = () => setGlobalModelSettings(loadGlobalModelSettings(accountSession.storageScope));
+    const reloadGlobalSettings = () => setGlobalModelSettings(loadGlobalModelSettings());
     automaticUpdateStartedRef.current = false;
     reloadGlobalSettings();
     window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalSettings);
     return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalSettings);
-  }, [accountSession.storageScope]);
+  }, []);
 
   const refreshCustomRecipeAvailability = useCallback(async () => {
     if (!api.isConnected) {
@@ -1656,7 +1655,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
 
   const handleDeleteRouterDefinition = async (name: string): Promise<void> => {
     if (api.isConnected) await api.deleteModel(name);
-    deleteRouterRecord(accountSession.storageScope, name);
+    deleteRouterRecord(name);
     reloadRouterModels();
     if (selectedDetailModelId === name) setSelectedDetailModelId(null);
   };
@@ -1676,7 +1675,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
       if (!confirm(`Delete custom model definition "${model.display_name || name}"? This does not remove external model files.`)) return;
       try {
         if (api.isConnected) await api.deleteModel(name);
-        deleteCustomModel(accountSession.storageScope, String((model as any).id || name));
+        deleteCustomModel(String((model as any).id || name));
         reloadCustomModels();
         await refresh();
       } catch (err) {
@@ -2024,7 +2023,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
   };
 
   const handleExportCustomModels = () => {
-    exportJsonFile('lemonade-custom-models', exportCustomModelsPayload(accountSession.storageScope));
+    exportJsonFile('lemonade-custom-models', exportCustomModelsPayload());
     setCustomJsonNotice('Exported custom model JSON.');
     window.setTimeout(() => setCustomJsonNotice(null), 2200);
   };
@@ -2034,7 +2033,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
     setCustomError(null);
     try {
       const payload = JSON.parse(await file.text());
-      const result = importCustomModels(accountSession.storageScope, payload);
+      const result = importCustomModels(payload);
       reloadCustomModels();
       setCustomJsonNotice(`Imported ${result.imported} custom model${result.imported === 1 ? '' : 's'}${result.skipped ? `, skipped ${result.skipped}` : ''}.`);
       if (result.errors.length) setCustomError(result.errors.slice(0, 3).join(' '));
@@ -2050,7 +2049,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
     setPinnedModels(prev => {
       const exists = prev.some(item => item.toLowerCase() === name.toLowerCase());
       const next = exists ? prev.filter(item => item.toLowerCase() !== name.toLowerCase()) : [name, ...prev];
-      savePinnedModelNames(accountSession.storageScope, next);
+      savePinnedModelNames(next);
       return next;
     });
   };
@@ -2059,7 +2058,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
     setFavoriteModels(prev => {
       const exists = prev.some(item => item.toLowerCase() === name.toLowerCase());
       const next = exists ? prev.filter(item => item.toLowerCase() !== name.toLowerCase()) : [name, ...prev];
-      saveFavoriteModels(accountSession.storageScope, next);
+      saveFavoriteModels(next);
       return next;
     });
   };
@@ -2148,7 +2147,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
       const checkpoints = checkpoint && Object.keys(extraCheckpoints).length > 0
         ? { main: checkpoint, ...extraCheckpoints }
         : undefined;
-      const saved = upsertCustomModel(accountSession.storageScope, {
+      const saved = upsertCustomModel({
         name: editingCustomModelName || implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model'),
         displayName: customDraft.displayName,
         checkpoint,
@@ -2391,13 +2390,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
     if (!automaticUpdateIsDue(globalModelSettings)) return;
     automaticUpdateStartedRef.current = true;
     void handleUpdateAllModels().finally(() => {
-      const next = saveGlobalModelSettings(accountSession.storageScope, {
-        ...loadGlobalModelSettings(accountSession.storageScope),
+      const next = saveGlobalModelSettings({
+        ...loadGlobalModelSettings(),
         lastAutomaticUpdateAt: new Date().toISOString(),
       });
       setGlobalModelSettings(next);
     });
-  }, [accountSession.storageScope, globalModelSettings, handleUpdateAllModels, modelsLoading]);
+  }, [globalModelSettings, handleUpdateAllModels, modelsLoading]);
 
   const localRegistryRefs = useMemo(() => {
     const refs = new Set<string>();
@@ -2848,7 +2847,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
       {showGlobalSettings ? (
         <div className="manager__detail-form-panel manager__detail-form-panel--global-settings">
           <GlobalModelSettingsPanel
-            scope={accountSession.storageScope}
             models={allModels}
             loadedModels={loadedModels}
             pinnedModels={pinnedModels}
@@ -2861,7 +2859,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
         <div className="manager__detail-form-panel manager__detail-form-panel--router">
           <RouterEditorPanel
             models={allModels}
-            scope={accountSession.storageScope}
             initialModel={routerEditorModel}
             onRegister={handleRegisterRouter}
             onSaved={handleRouterSaved}
