@@ -126,7 +126,14 @@ function parseNumberOrUndefined(value: string): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-const TUNING_FIELD_LABELS: Record<keyof RecipeOptions, string> = {
+function stringRecordEqual(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key]);
+}
+
+const TUNING_FIELD_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
   ctx_size: 'Context size',
   llamacpp_backend: 'Backend',
   llamacpp_device: 'Device',
@@ -152,8 +159,6 @@ const TUNING_FIELD_LABELS: Record<keyof RecipeOptions, string> = {
   flm_args: 'Backend args',
   voice: 'Voice',
   speed: 'Speed',
-  merge_args: 'Backend args behavior',
-  mmproj_enabled: 'Vision projector',
 };
 
 const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
@@ -174,12 +179,10 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   moonshine_args: 'Raw backend args for this transcription model only.',
   vllm_args: 'Raw backend args for this model only.',
   flm_args: 'Raw backend args for this model only.',
-  merge_args: 'Choose whether backend defaults, model args, or both should be used for this model.',
-  mmproj_enabled: "Off frees the projector's memory for context when image input is not needed.",
 };
 
 const NUMERIC_TUNING_KEYS = new Set<keyof RecipeOptions>(['steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed']);
-const BOOLEAN_TUNING_KEYS = new Set<keyof RecipeOptions>(['merge_args', 'mmproj_enabled']);
+const BOOLEAN_TUNING_KEYS = new Set<keyof RecipeOptions>();
 const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'sd-cpp_backend', 'whispercpp_backend', 'moonshine_backend', 'acestep_backend', 'thinksound_backend', 'openmoss_backend', 'trellis_backend']);
 const DEVICE_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_device']);
 const ARGS_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_args', 'sdcpp_args', 'whispercpp_args', 'moonshine_args', 'vllm_args', 'flm_args']);
@@ -191,14 +194,14 @@ const BACKEND_ARGS_KEY: Partial<Record<keyof RecipeOptions, keyof RecipeOptions>
   moonshine_backend: 'moonshine_args',
 };
 
-const LLAMACPP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'mmproj_enabled', 'merge_args'];
-const VLLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['vllm_backend', 'vllm_args', 'merge_args'];
-const FLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['flm_args', 'merge_args'];
-const RYZENAI_RECIPE_KEYS: Array<keyof RecipeOptions> = ['merge_args'];
-const IMAGE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['sd-cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args'];
-const WHISPER_RECIPE_KEYS: Array<keyof RecipeOptions> = ['whispercpp_backend', 'whispercpp_args', 'merge_args'];
-const MOONSHINE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['moonshine_backend', 'moonshine_args', 'merge_args'];
-const TTS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['voice', 'speed', 'merge_args'];
+const LLAMACPP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['llamacpp_backend', 'llamacpp_device', 'llamacpp_args'];
+const VLLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['vllm_backend', 'vllm_args'];
+const FLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['flm_args'];
+const RYZENAI_RECIPE_KEYS: Array<keyof RecipeOptions> = [];
+const IMAGE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['sd-cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args'];
+const WHISPER_RECIPE_KEYS: Array<keyof RecipeOptions> = ['whispercpp_backend', 'whispercpp_args'];
+const MOONSHINE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['moonshine_backend', 'moonshine_args'];
+const TTS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['voice', 'speed'];
 const ACESTEP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['acestep_backend'];
 const THINKSOUND_RECIPE_KEYS: Array<keyof RecipeOptions> = ['thinksound_backend'];
 const OPENMOSS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['openmoss_backend', 'voice', 'speed'];
@@ -261,9 +264,11 @@ function tuningKeysForModel(model: ModelInfo): Array<keyof RecipeOptions> {
 
   const base = modelBaseTuningForModel(model).recipe_options;
   Object.keys(base).forEach(key => {
-    if (key !== 'ctx_size') set.add(key as keyof RecipeOptions);
+    if (key !== 'ctx_size' && key !== 'merge_args' && key !== 'mmproj_enabled') set.add(key as keyof RecipeOptions);
   });
   set.delete('ctx_size');
+  set.delete('merge_args');
+  set.delete('mmproj_enabled');
   return [...set];
 }
 
@@ -1334,8 +1339,8 @@ const ModelPresetsTab: React.FC<{
 
 function tuningSourceLabel(source: TuningValueSource | undefined): string {
   switch (source) {
-    case 'custom': return 'Custom tuning';
-    case 'built-in': return 'Built-in tuning';
+    case 'custom': return 'Direct configuration';
+    case 'built-in': return 'Recipe default';
     case 'optimized': return 'Optimized';
     default: return 'Generic fallback';
   }
@@ -1433,7 +1438,7 @@ const ModelTuningTab: React.FC<{
     }
     const nextRecipe: Record<string, string> = {};
     for (const [key, value] of Object.entries(nextUser?.recipe_options || {})) {
-      if (key !== 'ctx_size') nextRecipe[key] = fieldValue(value);
+      if (key !== 'ctx_size' && key !== 'merge_args' && key !== 'mmproj_enabled') nextRecipe[key] = fieldValue(value);
     }
     const nextSampling: Record<string, string> = {};
     for (const [key, value] of Object.entries(nextUser?.sampling || {})) nextSampling[key] = fieldValue(value);
@@ -1607,7 +1612,7 @@ const ModelTuningTab: React.FC<{
     setRecipeDraft({});
     setSamplingDraft({});
     setBackendArgsDrafts({});
-    setNotice(`Model tuning for ${selectedPreset.name} restored to its resolved built-in and generic values.`);
+    setNotice(`Configuration for ${selectedPreset.name} restored to recipe defaults and generic values.`);
   };
 
   const loadViaPanel = async () => {
@@ -1789,25 +1794,6 @@ const ModelTuningTab: React.FC<{
       );
     }
 
-    if (key === 'mmproj_enabled') {
-      const activeState = typeof baseValue === 'boolean' && !baseValue ? 'Off' : 'On';
-      const alternatives = activeState === 'On'
-        ? [{ value: 'false', label: 'Off' }]
-        : [{ value: 'true', label: 'On' }];
-      return (
-        <label key={key} className="detail-tuning__field" htmlFor={inputId}>
-          <span>{label}</span>
-          <select id={inputId} className="select" value={draftValue} onChange={e => setRecipeField(key, e.target.value)}>
-            <option value="">{activeState}</option>
-            {alternatives.map(option => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          {hint && <small>{hint}</small>}
-        </label>
-      );
-    }
-
     if (BOOLEAN_TUNING_KEYS.has(key)) {
       const argsKey = activeArgsKey;
       const hasModelArgs = !!(argsKey && (recipeDraft[argsKey] || fieldValue(baseTuning.recipe_options[argsKey])));
@@ -1872,6 +1858,8 @@ const ModelTuningTab: React.FC<{
     }
 
     if (ARGS_TUNING_KEYS.has(key)) {
+      const hasDraftValue = Object.prototype.hasOwnProperty.call(recipeDraft, key);
+      const effectiveArgsValue = (hasDraftValue ? draftValue : optionalDisplayValue(baseValue)) || '';
       return (
         <label key={key} className="detail-tuning__field detail-tuning__field--wide" htmlFor={inputId}>
           <span>{label}</span>
@@ -1879,11 +1867,15 @@ const ModelTuningTab: React.FC<{
             id={inputId}
             className="input detail-tuning__args"
             rows={3}
-            value={draftValue}
-            placeholder={optionalDisplayValue(baseValue) || 'Type backend args here...'}
+            value={effectiveArgsValue}
+            placeholder="Type backend args here..."
             onChange={e => setRecipeField(key, e.target.value)}
           />
-          {hint && <small>{hint}</small>}
+          <small>
+            {hasDraftValue && draftValue.trim()
+              ? 'Saved override for this model. Clear it to use the resolved runtime value.'
+              : `Current runtime value${hint ? ` - ${hint}` : ''}`}
+          </small>
         </label>
       );
     }
@@ -1981,7 +1973,7 @@ const ModelTuningTab: React.FC<{
         </div>
         <div className="detail-tuning__summary-card">
           <span className="detail-tuning__summary-label">Pair source</span>
-          <strong>{resolvedTuning.tuning.source === 'optimized' ? 'AutoOpt optimized' : (hasUserTuning ? 'Custom tuning' : 'Resolved defaults')}</strong>
+          <strong>{resolvedTuning.tuning.source === 'optimized' ? 'Optimized' : (hasUserTuning ? 'Custom tuning' : 'Resolved defaults')}</strong>
         </div>
       </section>
 
@@ -2152,13 +2144,6 @@ const ModelTuningTab: React.FC<{
 
 /* ── Configuration tab ──────────────────────────────────────── */
 
-const CONFIG_SAMPLING_LABELS: Record<string, string> = {
-  temperature: 'Temperature',
-  top_p: 'Top-P',
-  top_k: 'Top-K',
-  repeat_penalty: 'Repeat penalty',
-};
-
 const ModelConfigurationTab: React.FC<{
   model: ModelInfo;
   loadedModel: LoadedModel | null;
@@ -2168,7 +2153,8 @@ const ModelConfigurationTab: React.FC<{
   isLoadingThis?: boolean;
   onReloadModel?: (model: LoadedModel, recipeOptions?: Record<string, unknown>) => Promise<void>;
   onLoadWithOptions?: (recipeOptions: RecipeOptions) => Promise<void>;
-}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isDownloaded, isLoadingThis, onReloadModel, onLoadWithOptions }) => {
+  onDirtyChange?: (dirty: boolean) => void;
+}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isDownloaded, isLoadingThis, onReloadModel, onLoadWithOptions, onDirtyChange }) => {
   const name = mdName(model);
   const imageOnly = isImageOnlyModel(model);
   const [storeVersion, setStoreVersion] = useState(0);
@@ -2199,33 +2185,61 @@ const ModelConfigurationTab: React.FC<{
     [model, serverDefaultCtxSize],
   );
   const recipeKeys = useMemo(() => tuningKeysForModel(model), [model]);
-  const allowSampling = samplingAllowedForModel(model);
 
   const [ctxSizeDraft, setCtxSizeDraft] = useState('');
   const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
-  const [samplingDraft, setSamplingDraft] = useState<Record<string, string>>({});
 
-  const loadFromStore = useCallback(() => {
+  const loadSettingsDraftFromStore = useCallback(() => {
     const userTuning = loadModelTuning(name, DEFAULT_PRESET.id);
     const nextRecipe: Record<string, string> = {};
     for (const [key, value] of Object.entries(userTuning?.recipe_options || {})) {
-      if (key !== 'ctx_size') nextRecipe[key] = fieldValue(value);
-    }
-    const nextSampling: Record<string, string> = {};
-    for (const [key, value] of Object.entries(userTuning?.sampling || {})) {
-      nextSampling[key] = fieldValue(value);
+      if (key !== 'ctx_size' && key !== 'merge_args' && key !== 'mmproj_enabled') nextRecipe[key] = fieldValue(value);
     }
     const ctxRaw = userTuning?.recipe_options?.ctx_size;
-    setCtxSizeDraft(ctxRaw != null ? String(ctxRaw) : '');
-    setRecipeDraft(nextRecipe);
-    setSamplingDraft(nextSampling);
+    return {
+      ctxSize: ctxRaw != null ? String(ctxRaw) : '',
+      recipe: nextRecipe,
+    };
   }, [name]);
+
+  const loadFromStore = useCallback(() => {
+    const next = loadSettingsDraftFromStore();
+    setCtxSizeDraft(next.ctxSize);
+    setRecipeDraft(next.recipe);
+  }, [loadSettingsDraftFromStore]);
 
   useEffect(() => { loadFromStore(); }, [loadFromStore, storeVersion]);
   useEffect(() => { setNotice(null); }, [name]);
 
+  const savedLoadSettings = loadSettingsDraftFromStore();
+  const hasLoadSettingChanges = ctxSizeDraft !== savedLoadSettings.ctxSize
+    || !stringRecordEqual(recipeDraft, savedLoadSettings.recipe);
+
+  useEffect(() => {
+    onDirtyChange?.(hasLoadSettingChanges);
+  }, [hasLoadSettingChanges, onDirtyChange]);
+
   const ctxSizeId = `config-${name}-ctx_size`.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const ctxSliderId = `${ctxSizeId}-slider`;
   const info = systemInfo || {};
+  const ctxMin = 512;
+  const ctxStep = 512;
+  const positiveCtxValue = (value: unknown): number | undefined => {
+    const n = parseNumberOrUndefined(String(value ?? ''));
+    return n !== undefined && n >= ctxMin ? n : undefined;
+  };
+  const baseCtxSize = positiveCtxValue(baseTuning.recipe_options.ctx_size)
+    ?? positiveCtxValue(serverDefaultCtxSize)
+    ?? 4096;
+  const currentCtxSize = positiveCtxValue(ctxSizeDraft) ?? baseCtxSize;
+  const ctxMax = Math.max(
+    ctxMin,
+    currentCtxSize,
+    Number(model?.max_context_window) || 131072,
+  );
+  const selectorKeys = recipeKeys.filter(key => BACKEND_TUNING_KEYS.has(key) || DEVICE_TUNING_KEYS.has(key));
+  const argsKeys = recipeKeys.filter(key => ARGS_TUNING_KEYS.has(key));
+  const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
 
   const buildConfigOptions = (): RecipeOptions => {
     const raw: Partial<RecipeOptions> = {};
@@ -2245,26 +2259,36 @@ const ModelConfigurationTab: React.FC<{
     return sanitizeRecipeOptions(raw);
   };
 
-  const buildSampling = (): SamplingParams => {
-    const raw: Partial<SamplingParams> = {};
-    for (const key of ['temperature', 'top_p', 'top_k', 'repeat_penalty'] as Array<keyof SamplingParams>) {
-      const n = parseNumberOrUndefined(samplingDraft[String(key)] || '');
-      if (n !== undefined) (raw as Record<string, unknown>)[String(key)] = n;
-    }
-    return sanitizeSamplingParams(raw);
-  };
-
   const saveConfig = () => {
-    saveModelTuning(name, { recipe_options: buildConfigOptions(), sampling: buildSampling() }, DEFAULT_PRESET.id);
-    setNotice('Configuration saved. Context and runtime fields apply on next load; sampling applies to the next request.');
+    const existingTuning = loadModelTuning(name, DEFAULT_PRESET.id);
+    saveModelTuning(name, {
+      ...(existingTuning || {}),
+      recipe_options: buildConfigOptions(),
+      sampling: existingTuning?.sampling || {},
+    }, DEFAULT_PRESET.id);
+    setNotice('Load settings saved. Reload the model to apply them.');
   };
 
   const resetConfig = () => {
-    resetModelTuning(name, DEFAULT_PRESET.id);
+    const existingTuning = loadModelTuning(name, DEFAULT_PRESET.id);
+    if (existingTuning) {
+      saveModelTuning(name, {
+        ...existingTuning,
+        recipe_options: {},
+        sampling: existingTuning.sampling || {},
+      }, DEFAULT_PRESET.id);
+    } else {
+      resetModelTuning(name, DEFAULT_PRESET.id);
+    }
     setCtxSizeDraft('');
     setRecipeDraft({});
-    setSamplingDraft({});
-    setNotice('Configuration reset to built-in defaults.');
+    setNotice('Load settings reset to built-in defaults.');
+  };
+
+  const discardConfig = () => {
+    loadFromStore();
+    onDirtyChange?.(false);
+    setNotice('Unsaved load setting changes discarded.');
   };
 
   const loadViaPanel = async () => {
@@ -2302,10 +2326,11 @@ const ModelConfigurationTab: React.FC<{
       const activeBackend = activeBackendValue(key, baseValue, model, info);
       const options = backendOptionsForKey(key, draftValue || undefined, model, info).filter(opt => opt !== activeBackend);
       return (
-        <label key={String(key)} className="detail-tuning__field" htmlFor={fieldId}>
+        <label key={String(key)} className="detail-tuning__field detail-configuration__field" htmlFor={fieldId}>
           <span>{label}</span>
           <select
             id={fieldId}
+            className="select detail-configuration__select"
             value={draftValue}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
@@ -2322,10 +2347,11 @@ const ModelConfigurationTab: React.FC<{
       const activeDevice = optionalDisplayValue(baseValue) || 'auto';
       const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info).filter(opt => opt !== activeDevice);
       return (
-        <label key={String(key)} className="detail-tuning__field" htmlFor={fieldId}>
+        <label key={String(key)} className="detail-tuning__field detail-configuration__field" htmlFor={fieldId}>
           <span>{label}</span>
           <select
             id={fieldId}
+            className="select detail-configuration__select"
             value={draftValue}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
@@ -2346,19 +2372,26 @@ const ModelConfigurationTab: React.FC<{
         moonshine_args: '--threads 4',
         flm_args: '--threads 4',
       };
-      const argsPlaceholder = optionalDisplayValue(baseValue) || defaultPlaceholders[key] || 'Space-separated CLI flags';
+      const draftKey = String(key);
+      const hasDraftValue = Object.prototype.hasOwnProperty.call(recipeDraft, draftKey);
+      const effectiveArgsValue = (hasDraftValue ? draftValue : optionalDisplayValue(baseValue)) || '';
+      const argsPlaceholder = defaultPlaceholders[key] || 'Space-separated CLI flags';
       return (
-        <label key={String(key)} className="detail-tuning__field detail-tuning__field--wide" htmlFor={fieldId}>
+        <label key={String(key)} className="detail-tuning__field detail-tuning__field--wide detail-configuration__field detail-configuration__args-field" htmlFor={fieldId}>
           <span>{label}</span>
           <textarea
             id={fieldId}
             className="detail-tuning__args"
             rows={4}
-            value={draftValue}
+            value={effectiveArgsValue}
             placeholder={argsPlaceholder}
-            onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
+            onChange={e => setRecipeDraft(prev => ({ ...prev, [draftKey]: e.target.value }))}
           />
-          {hint && <small>{hint}</small>}
+          <small>
+            {hasDraftValue && draftValue.trim()
+              ? 'Custom args saved for this model.'
+              : 'Using the current backend args. Edit to customize load/reload flags.'}
+          </small>
         </label>
       );
     }
@@ -2368,6 +2401,7 @@ const ModelConfigurationTab: React.FC<{
         <span>{label}</span>
         <input
           id={fieldId}
+          className="input"
           type={NUMERIC_TUNING_KEYS.has(key) ? 'number' : 'text'}
           value={draftValue}
           placeholder={optionalDisplayValue(baseValue) || ''}
@@ -2377,68 +2411,81 @@ const ModelConfigurationTab: React.FC<{
     );
   };
 
-  const renderConfigSamplingField = (key: keyof SamplingParams) => {
-    const fieldId = `config-${name}-sampling-${String(key)}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-    const label = CONFIG_SAMPLING_LABELS[String(key)] || String(key);
-    const draftValue = samplingDraft[String(key)] || '';
-    const spec = numericSliderSpec(key);
-    const baseValue = baseTuning.sampling[key];
-    const currentValue = parseNumberOrUndefined(draftValue) ?? (typeof baseValue === 'number' ? baseValue : undefined) ?? spec?.fallback ?? 0;
-    return (
-      <label key={String(key)} className="detail-tuning__field" htmlFor={fieldId}>
-        <span>{label}</span>
-        <div className="field__row detail-tuning__control-row">
-          <input
-            id={fieldId}
-            className="slider"
-            type="range"
-            min={spec?.min ?? 0}
-            max={spec?.max ?? 1}
-            step={spec?.step ?? 0.01}
-            value={currentValue}
-            onChange={e => setSamplingDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
-          />
-          <span className="field__value">{spec ? sliderDisplay(currentValue, spec.digits) : currentValue}</span>
-        </div>
-      </label>
-    );
-  };
-
   return (
     <div className="detail-tab-content detail-configuration">
-      <section className="detail-configuration__section" aria-label="Runtime settings">
-        <h3 className="detail-configuration__section-heading">Runtime settings</h3>
-
-        <div className="detail-tuning__field-grid">
-          {!imageOnly && (
-            <label className="detail-tuning__field" htmlFor={ctxSizeId}>
-              <span>Context size</span>
-              <input
-                id={ctxSizeId}
-                type="number"
-                min={512}
-                max={(model?.max_context_window as number | undefined) || 131072}
-                step={512}
-                value={ctxSizeDraft}
-                placeholder={String(baseTuning.recipe_options.ctx_size ?? serverDefaultCtxSize)}
-                onChange={e => setCtxSizeDraft(e.target.value)}
-              />
-            </label>
-          )}
-          {recipeKeys.map(key => renderConfigRecipeField(key))}
+      <section className="detail-configuration__section" aria-label="Load settings">
+        <div className="detail-configuration__section-head">
+          <div>
+            <h3 className="detail-configuration__section-heading">Load settings</h3>
+            <p className="detail-configuration__section-copy">
+              Choose how this model is loaded. Changes apply after loading or reloading the model.
+            </p>
+          </div>
+          <span className={`detail-configuration__status ${loadedModel ? 'is-loaded' : ''}`}>
+            {loadedModel ? 'Loaded now' : 'Saved defaults'}
+          </span>
         </div>
 
-        {allowSampling && (
-          <div className="detail-tuning__sampling">
-            <h4>Sampling</h4>
-            <div className="detail-tuning__field-grid">
-              {(['temperature', 'top_p', 'top_k', 'repeat_penalty'] as Array<keyof SamplingParams>).map(renderConfigSamplingField)}
+        <div className="detail-configuration__load-controls">
+          {!imageOnly && (
+            <div className="detail-configuration__context-card">
+              <div className="detail-configuration__control-head">
+                <label htmlFor={ctxSliderId}>Context size</label>
+                <input
+                  id={ctxSizeId}
+                  className="input detail-configuration__context-input"
+                  type="number"
+                  min={ctxMin}
+                  max={ctxMax}
+                  step={ctxStep}
+                  value={ctxSizeDraft}
+                  placeholder={String(baseCtxSize)}
+                  onChange={e => setCtxSizeDraft(e.target.value)}
+                  aria-label="Context size tokens"
+                />
+              </div>
+              <div className="detail-configuration__slider-row">
+                <span>{formatContextSize(ctxMin)}</span>
+                <input
+                  id={ctxSliderId}
+                  className="slider detail-configuration__context-slider"
+                  type="range"
+                  min={ctxMin}
+                  max={ctxMax}
+                  step={ctxStep}
+                  value={currentCtxSize}
+                  onChange={e => setCtxSizeDraft(e.target.value)}
+                />
+                <span>{formatContextSize(ctxMax)}</span>
+              </div>
+              <small>{currentCtxSize.toLocaleString()} tokens</small>
             </div>
-          </div>
-        )}
+          )}
+
+          {selectorKeys.length > 0 && (
+            <div className="detail-configuration__selector-grid">
+              {selectorKeys.map(key => renderConfigRecipeField(key))}
+            </div>
+          )}
+
+          {otherRecipeKeys.length > 0 && (
+            <div className="detail-configuration__selector-grid">
+              {otherRecipeKeys.map(key => renderConfigRecipeField(key))}
+            </div>
+          )}
+
+          {argsKeys.length > 0 && (
+            <div className="detail-configuration__args-grid">
+              {argsKeys.map(key => renderConfigRecipeField(key))}
+            </div>
+          )}
+        </div>
 
         <div className="detail-tuning__actions">
-          <button type="button" className="btn btn--primary btn--sm" onClick={saveConfig}>Save configuration</button>
+          <button type="button" className="btn btn--primary btn--sm" onClick={saveConfig}>Save load settings</button>
+          {hasLoadSettingChanges && (
+            <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>Discard changes</button>
+          )}
           <button type="button" className="btn btn--ghost btn--sm" onClick={resetConfig}>Reset</button>
           {!loadedModel && isDownloaded && onLoadWithOptions && (
             <button
@@ -2727,8 +2774,8 @@ export interface ModelDetailPanelProps {
 type DetailTab = 'settings' | 'readme' | 'config' | 'files';
 
 const TABS: Array<{ id: DetailTab; label: string }> = [
-  { id: 'readme', label: 'README' },
   { id: 'config', label: 'Configuration' },
+  { id: 'readme', label: 'README' },
   { id: 'files', label: 'Files' },
 ];
 
@@ -2768,7 +2815,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   onCancelHfPull,
   onLoadWithOptions,
 }) => {
-  const [activeTab, setActiveTab] = useState<DetailTab>('readme');
+  const [activeTab, setActiveTab] = useState<DetailTab>('config');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
   const updateBtnRef = useRef<HTMLButtonElement>(null);
@@ -2781,6 +2828,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   type UpdatePhase = 'idle' | 'live' | 'reload' | 'done-live' | 'done-reload' | 'error';
   const [updateStatus, setUpdateStatus] = useState<{ phase: UpdatePhase; msg: string }>({ phase: 'idle', msg: '' });
   const [focusUnloadAfterPresetUpdate, setFocusUnloadAfterPresetUpdate] = useState(false);
+  const [configHasUnsavedChanges, setConfigHasUnsavedChanges] = useState(false);
 
   const detailName = model ? mdName(model) : '';
   const detailLoaded = !!loadedModel;
@@ -2788,11 +2836,11 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const imageOnly = isImageOnlyModel(model);
   const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS);
 
-  // Move focus to heading when model changes. Image-only models skip the
-  // immature preset concept and open directly in concrete Model Tuning.
+  // Move focus to heading when model changes.
   useEffect(() => {
     if (model) panelHeadingRef.current?.focus();
-    setActiveTab(isCustomCollection ? 'settings' : (imageOnly ? 'config' : 'readme'));
+    setActiveTab(isCustomCollection ? 'settings' : 'config');
+    setConfigHasUnsavedChanges(false);
   }, [detailName, isCustomCollection, imageOnly]);
 
   // Re-render when the preset store changes (applied/running/user presets).
@@ -2903,6 +2951,15 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     }
   }, [model, loadedModel, onReloadModel]);
 
+  const confirmDiscardLoadSettings = useCallback(() => (
+    !configHasUnsavedChanges || window.confirm('Discard unsaved load setting changes?')
+  ), [configHasUnsavedChanges]);
+
+  const handleDetailClose = useCallback(() => {
+    if (!confirmDiscardLoadSettings()) return;
+    onClose?.();
+  }, [confirmDiscardLoadSettings, onClose]);
+
   // Roving tabindex: keyboard navigation across tabs
   const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
     const count = detailTabs.length;
@@ -2984,17 +3041,6 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     : 'none';
   const isUpdatingPreset = updateStatus.phase === 'live' || updateStatus.phase === 'reload';
   const canUpdatePreset = isLoaded && presetChangeKind !== 'none' && !isUpdatingPreset && !isLoadingThis;
-  const activeSettingsPreset = isLoaded && runningPreset ? runningPreset : linkedPreset;
-  const activeSettingsTuning = samplingAllowedForModel(model)
-    ? resolvedModelTuningForPreset(name, model, activeSettingsPreset, serverDefaultCtxSize).tuning
-    : null;
-  const activeUsesSavedModelSettings = activeSettingsPreset.id === DEFAULT_PRESET.id;
-  const activeTemperatureHint = TEMPERATURE_HINT_LABELS[activeSettingsPreset.temperature_hint || 'balanced'];
-  const activeContextHint = activeUsesSavedModelSettings
-    ? 'Model'
-    : CONTEXT_HINT_LABELS[activeSettingsPreset.context_hint || 'medium'];
-  const activeTemperatureValue = formatResolvedTemperature(activeSettingsTuning?.sampling.temperature);
-  const activeContextValue = formatResolvedContext(activeSettingsTuning?.recipe_options.ctx_size);
 
   const detailMetadata = (
     <>
@@ -3017,26 +3063,6 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       )}
       {isDownloaded && !isLoaded && (
         <WorkspaceMetadataChip emphasis="high" tone="success">Ready</WorkspaceMetadataChip>
-      )}
-      {activeSettingsTuning && (
-        <>
-          <WorkspaceMetadataChip
-            emphasis="low"
-            icon="thermometer"
-            title={`Temperature intent ${activeTemperatureHint}; effective value ${activeTemperatureValue}`}
-          >
-            Temperature <strong>{activeTemperatureHint}</strong> {activeTemperatureValue}
-          </WorkspaceMetadataChip>
-          <WorkspaceMetadataChip
-            emphasis="low"
-            icon="scan-text"
-            title={activeUsesSavedModelSettings
-              ? `Saved model context: ${activeContextValue}`
-              : `Context intent ${activeContextHint}; effective value ${activeContextValue}`}
-          >
-            Context <strong>{activeContextHint}</strong> {activeContextValue}
-          </WorkspaceMetadataChip>
-        </>
       )}
       {hfRepo && (
         <WorkspaceMetadataChip
@@ -3198,7 +3224,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       onBack={onBack}
       backLabel="Back to models"
       backClassName="model-detail-panel__back-btn"
-      onClose={onClose}
+      onClose={onClose ? handleDetailClose : undefined}
       closeClassName="model-detail-panel__close-btn"
     >
 
@@ -3253,6 +3279,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
                         isLoadingThis={isLoadingThis}
                         onReloadModel={onReloadModel}
                         onLoadWithOptions={onLoadWithOptions ? (opts) => onLoadWithOptions(model, opts as Record<string, unknown>) : undefined}
+                        onDirtyChange={setConfigHasUnsavedChanges}
                       />
                     )}
                     {tab.id === 'files' && (

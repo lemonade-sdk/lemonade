@@ -9,6 +9,7 @@ import { findModelInfoByName, isCollectionFullyLoaded, isCollectionModel, withVi
 import ChatView from './components/ChatView';
 import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
+import AppsView from './components/AppsView';
 import BackendManager from './components/BackendManager';
 import DownloadManager from './components/DownloadManager';
 import MonitorView from './components/MonitorView';
@@ -24,7 +25,7 @@ import {
   workspaceRouteFromPath,
 } from './features/navigation/workspaceNavigation';
 
-type View = 'chat' | 'models' | 'backends' | 'dashboard' | 'connect';
+type View = 'chat' | 'models' | 'backends' | 'apps' | 'dashboard' | 'connect';
 type SimpleView = Exclude<View, 'dashboard' | 'connect'>;
 type AppRoute =
   | { view: SimpleView }
@@ -72,7 +73,7 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   }
 }
 
-const SIMPLE_VIEWS: SimpleView[] = ['chat', 'models', 'backends'];
+const SIMPLE_VIEWS: SimpleView[] = ['chat', 'models', 'backends', 'apps'];
 
 
 type HostNavigationPayload = string | URL | {
@@ -100,6 +101,7 @@ declare global {
 
 function routeFromValue(raw: unknown): AppRoute | null {
   const value = String(raw || '').trim().replace(/^\//, '').toLowerCase();
+  if (value === 'connect/app-directory') return { view: 'apps' };
   const workspaceRoute = workspaceRouteFromPath(value);
   if (workspaceRoute) return { view: workspaceRoute.workspace, section: workspaceRoute.section } as AppRoute;
   return SIMPLE_VIEWS.includes(value as SimpleView) ? { view: value as SimpleView } : null;
@@ -202,6 +204,7 @@ const App: React.FC = () => {
   const [accountResetNonce, setAccountResetNonce] = useState(0);
   const accountSessionRef = useRef(accountSession);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
+  const [modelDetailsRequest, setModelDetailsRequest] = useState<{ modelName: string; nonce: number } | null>(null);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
   const utilityMenuRef = useRef<HTMLDivElement>(null);
   const utilityMenuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -352,6 +355,11 @@ const App: React.FC = () => {
     navigateToRoute({ view: nextView });
   }, [navigateToRoute]);
 
+  const openModelDetails = useCallback((modelName: string) => {
+    setModelDetailsRequest({ modelName, nonce: Date.now() });
+    setView('models');
+  }, [setView]);
+
   // Desktop host deep-links use the same canonical routes as browser navigation.
   useEffect(() => {
     let cancelled = false;
@@ -468,7 +476,8 @@ const App: React.FC = () => {
       <div className="app">
         <header className="titlebar" data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
-          <span data-tauri-drag-region>lemonade</span>
+          <span className="titlebar__brand-mark" data-tauri-drag-region aria-hidden="true" />
+          <span className="titlebar__brand-text" data-tauri-drag-region>lemonade</span>
           <span className={`titlebar__status-dot titlebar__status-dot--brand ${
             status === 'connected' ? 'titlebar__status-dot--connected' :
             status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
@@ -484,8 +493,9 @@ const App: React.FC = () => {
             { id: 'chat',      label: 'Chat',      icon: 'chat'               },
             { id: 'models',    label: 'Models',    icon: 'hard-drive'         },
             { id: 'backends',  label: 'Backends',  icon: 'box'                },
+            { id: 'apps',      label: 'Apps',      icon: 'layers'             },
             { id: 'dashboard', label: WORKSPACE_NAVIGATION.dashboard.label, icon: 'gauge' },
-            { id: 'connect',   label: WORKSPACE_NAVIGATION.connect.label, icon: 'plug' },
+            { id: 'connect',   label: WORKSPACE_NAVIGATION.connect.label, icon: 'settings' },
           ] as { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[]).map(({ id, label, icon }) => (
             <button
               key={id}
@@ -605,6 +615,7 @@ const App: React.FC = () => {
               loadedModels={loadedModels}
               accountSession={accountSession}
               onModelSelect={handleModelSelect}
+              onOpenModelDetails={openModelDetails}
               onRefresh={handleRefreshModels}
             />
           </ViewErrorBoundary>
@@ -614,12 +625,18 @@ const App: React.FC = () => {
             <ModelManager
               onModelSelect={handleModelSelect}
               accountSession={accountSession}
+              openModelRequest={modelDetailsRequest}
             />
           </ViewErrorBoundary>
         </div>
         <div className="view-slot" hidden={view !== 'backends'}>
           <ViewErrorBoundary view="backends">
             <BackendManager isActive={view === 'backends'} />
+          </ViewErrorBoundary>
+        </div>
+        <div className="view-slot" hidden={view !== 'apps'}>
+          <ViewErrorBoundary view="apps">
+            <AppsView isActive={view === 'apps'} />
           </ViewErrorBoundary>
         </div>
         <div className="view-slot" hidden={view !== 'dashboard'}>

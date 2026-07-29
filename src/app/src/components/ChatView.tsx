@@ -3,7 +3,7 @@ import api, { ChatMessage, ChatCompletionStats, LoadedModel, ModelInfo, Realtime
 import { copyTextToClipboard } from '../clipboard';
 import MarkdownMessage from './MarkdownMessage';
 import LogViewer from './LogViewer';
-import { Icon, CapabilityIcon, PresetIcon } from './Icon';
+import { Icon, CapabilityIcon } from './Icon';
 import EffectiveSettingsModal from './EffectiveSettingsModal';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
@@ -35,23 +35,13 @@ import { customModelToModelInfo, loadCustomModels } from '../features/customMode
 import { activeDownloadForModel, downloadsForModel, downloadStore, isDownloadTerminal, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { buildOmniToolRuntime } from '../tools/omniTools';
-import { buildSelectedMcpRuntime, composeMcpRuntimes } from '../tools/mcpRuntime';
+import { MAX_PRESET_MCP_SERVERS, buildSelectedMcpRuntime, composeMcpRuntimes, listMcpServerToolOptions, type McpServerToolOption } from '../tools/mcpRuntime';
 import {
   DEFAULT_PRESET,
   PRESET_STORE_EVENT,
-  type Preset,
   activePresetForModel,
-  allStoredPresets,
-  isCompatible,
-  loadApplied,
-  saveApplied,
-  classifyPresetChange,
-  runningPresetIdForModel,
-  setRunningPreset,
   systemPromptTextForPreset,
-  systemPromptNameForPreset,
   presetMcpServerIds,
-  presetMcpDisplayText,
 } from '../presetStore';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import {
@@ -136,6 +126,26 @@ function generateId(): string {
 
 function scopedKey(scope: string, key: string): string {
   return scopedStorageKey(scope, key);
+}
+
+function loadScopedStringArray(scope: string, key: string): string[] | null {
+  try {
+    const raw = localStorage.getItem(scopedKey(scope, key));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(value => String(value)).filter(Boolean) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveScopedStringArray(scope: string, key: string, values: string[] | null): void {
+  try {
+    if (values === null) localStorage.removeItem(scopedKey(scope, key));
+    else localStorage.setItem(scopedKey(scope, key), JSON.stringify([...new Set(values.filter(Boolean))]));
+  } catch {
+    // Non-critical UI preference persistence.
+  }
 }
 
 function loadPersistencePreference(scope: string): boolean {
@@ -268,6 +278,12 @@ function titleFromInput(text: string, hasImages: boolean, audioFiles: File[] = [
   return 'New conversation';
 }
 
+function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: string[]): string[] {
+  const selected = new Set(serverIds);
+  return servers
+    .filter(server => selected.has(server.id))
+    .flatMap(server => server.toolOptions.map(tool => tool.runtimeName));
+}
 
 const ModelModeIcons: React.FC<{
   capability: ModelCapability;
@@ -332,6 +348,7 @@ interface ChatViewProps {
   currentModel: string | null;
   loadedModels: LoadedModel[];
   onModelSelect: (model: string) => void;
+  onOpenModelDetails: (model: string) => void;
   onRefresh: () => void | Promise<void>;
   accountSession: AccountSession;
 }
@@ -343,6 +360,8 @@ interface ModelPreparationState {
 }
 
 const MCP_ENABLED_KEY = 'mcp_enabled';
+const MCP_SERVER_IDS_KEY = 'mcp_server_ids';
+const MCP_TOOL_NAMES_KEY = 'mcp_tool_names';
 const LEGACY_TOOLS_KEY = 'use_tools';
 const MAX_IMAGE_DIM = 1024;
 const MAX_IMAGES = 4;
@@ -698,7 +717,7 @@ function friendlyChatError(message: string): string {
   return `I couldn't complete that request.\n\n${cleaned}`;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, onModelSelect, onRefresh, accountSession }) => {
+const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, onModelSelect, onOpenModelDetails, onRefresh, accountSession }) => {
   const storageScope = accountSession.storageScope;
   const [fallbackModelOverride, setFallbackModelOverride] = useState<string | null>(null);
   const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName(storageScope));
@@ -740,6 +759,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       return localStorage.getItem(scopedKey(storageScope, LEGACY_TOOLS_KEY)) === 'true';
     } catch { return false; }
   });
+  const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(() => loadScopedStringArray(storageScope, MCP_SERVER_IDS_KEY) || []);
+  const [selectedMcpToolNames, setSelectedMcpToolNames] = useState<string[] | null>(() => loadScopedStringArray(storageScope, MCP_TOOL_NAMES_KEY));
+  const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
+  const [mcpOptions, setMcpOptions] = useState<McpServerToolOption[]>([]);
+  const [mcpPickerLoading, setMcpPickerLoading] = useState(false);
+  const [mcpPickerError, setMcpPickerError] = useState('');
   const presetMcpSeedRef = useRef('');
   const [showInlineLogs, setShowInlineLogs] = useState(false);
   const [chatLogsWidth, setChatLogsWidth] = useState(() => loadChatLogsWidth(storageScope));
@@ -751,16 +776,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => chatBlockingDownloads(downloadStore.snapshot()));
   const downloadAvailabilityKeyRef = useRef(chatBlockingDownloadsKey(downloadItems));
   const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
-  const [presetPickerOpen, setPresetPickerOpen] = useState(false);
-  const [presetPickerQuery, setPresetPickerQuery] = useState('');
-  const [presetPickerApplying, setPresetPickerApplying] = useState<string | null>(null);
-  const [presetPickerError, setPresetPickerError] = useState<string | null>(null);
   const [effectiveSettingsOpen, setEffectiveSettingsOpen] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
-  const presetPickerRef = useRef<HTMLDivElement>(null);
+  const mcpPickerRef = useRef<HTMLDivElement>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
   const scrollRafRef = useRef<number>(0);
@@ -1020,7 +1041,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
   }, [storageScope]);
 
-  const allPresets = useMemo(() => allStoredPresets(), [presetVersion]);
   const currentPreset = useMemo(
     () => currentModel ? (currentCapability === 'image' ? DEFAULT_PRESET : activePresetForModel(currentModel)) : null,
     [currentCapability, currentModel, presetVersion],
@@ -1069,8 +1089,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     const seed = `${storageScope}:${currentModel}:${currentPreset.id}:${selectedIds.join(',')}:${next ? 'mcp-on' : 'mcp-off'}`;
     if (presetMcpSeedRef.current === seed) return;
     presetMcpSeedRef.current = seed;
-    setUseMcp(next);
-    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
+    const storedIds = loadScopedStringArray(storageScope, MCP_SERVER_IDS_KEY);
+    const storedTools = loadScopedStringArray(storageScope, MCP_TOOL_NAMES_KEY);
+    const nextIds = storedIds || selectedIds;
+    setSelectedMcpServerIds(nextIds);
+    setSelectedMcpToolNames(storedTools);
+    saveScopedStringArray(storageScope, MCP_SERVER_IDS_KEY, nextIds);
+    setUseMcp(nextIds.length > 0);
+    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(nextIds.length > 0)); } catch { /* ignore */ }
   }, [currentModel, currentPreset, storageScope]);
 
   const hasRealtimeAudio = useMemo(
@@ -1227,104 +1253,94 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return filtered.slice(0, 80);
   }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
 
-
-  const presetPickerTarget = currentKnownModelInfo || currentCustomModelInfo || currentModel || null;
-  const presetPickerOptions = useMemo(() => {
-    if (!currentModel || currentCapability === 'image') return [];
-    const q = presetPickerQuery.trim().toLowerCase();
-    return allPresets
-      .filter(preset => isCompatible(preset, presetPickerTarget))
-      .filter(preset => {
-        if (!q) return true;
-        return [
-          preset.name,
-          preset.description,
-          preset.applies_to.join(' '),
-          systemPromptNameForPreset(preset),
-          `mcp ${presetMcpDisplayText(preset)}`,
-        ].join(' ').toLowerCase().includes(q);
-      })
-      .slice(0, 80);
-  }, [allPresets, currentCapability, currentModel, presetPickerQuery, presetPickerTarget]);
-
-  const handlePresetPickerSelect = useCallback(async (preset: Preset) => {
-    if (!currentModel || presetPickerApplying) return;
-
-    const targetName = currentModel;
-    const previousApplied = loadApplied();
-    const previouslyLinkedPreset = currentPreset || activePresetForModel(targetName);
-    const runId = runningPresetIdForModel(targetName);
-    const runningPreset = runId
-      ? (allStoredPresets().find(p => p.id === runId) ?? previouslyLinkedPreset)
-      : previouslyLinkedPreset;
-    const changeKind = currentLoadedModel
-      ? classifyPresetChange(runningPreset, preset)
-      : 'none';
-
-    const nextApplied = { ...previousApplied };
-    if (preset.id === DEFAULT_PRESET.id) delete nextApplied[targetName];
-    else nextApplied[targetName] = preset.id;
-
-    setPresetPickerApplying(preset.id);
-    setPresetPickerError(null);
-    saveApplied(nextApplied);
-
-    const nextMcp = presetMcpServerIds(preset).length > 0;
-    setUseMcp(nextMcp);
-    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(nextMcp)); } catch { /* ignore */ }
-
-    // Choosing a preset from the Chat composer is an explicit user action, just
-    // like choosing a different model. Apply the target state immediately: live
-    // request-time changes take effect on the next request; load-time changes
-    // trigger a reload so the running backend is actually using the selected
-    // preset instead of merely linking it for later.
-    try {
-      if (currentCapability === 'image') {
-        imageSettingsTouchedRef.current = false;
-        imageSettingsCommittedRef.current = false;
-        setImageSettings(imageDefaultsForModel(
-          currentLoadedModel,
-          currentKnownModelInfo,
-          preset.recipe_options as Record<string, unknown> | undefined,
-        ));
-        setImageMode('generate');
-      }
-
-      if (currentLoadedModel && changeKind === 'reload') {
-        await api.reloadModel(
-          targetName,
-          Object.keys(preset.recipe_options || {}).length > 0
-            ? preset.recipe_options as Record<string, unknown>
-            : undefined,
-          currentKnownModelInfo || currentCustomModelInfo || null,
-        );
-        await Promise.resolve(onRefresh());
-      }
-
-      if (currentLoadedModel) setRunningPreset(targetName, preset.id);
-      setPresetPickerOpen(false);
-      setPresetPickerQuery('');
-    } catch (err) {
-      setPresetPickerOpen(true);
-      setPresetPickerError(friendlyErrorMessage(err));
-    } finally {
-      setPresetPickerApplying(null);
-    }
-  }, [
-    currentCapability,
-    currentCustomModelInfo,
-    currentKnownModelInfo,
-    currentLoadedModel,
-    currentModel,
-    currentPreset,
-    onRefresh,
-    presetPickerApplying,
-    storageScope,
-  ]);
-
   const modeSupportsChatCompletions = currentCapability === 'chat' || currentCapability === 'omni';
   const modeSupportsMcp = modeSupportsChatCompletions;
   const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
+
+  const persistMcpEnabled = useCallback((next: boolean) => {
+    setUseMcp(next);
+    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
+  }, [storageScope]);
+
+  const persistMcpSelection = useCallback((serverIds: string[], toolNames: string[] | null) => {
+    const uniqueServerIds = [...new Set(serverIds.filter(Boolean))].slice(0, MAX_PRESET_MCP_SERVERS);
+    const uniqueToolNames = toolNames === null ? null : [...new Set(toolNames.filter(Boolean))];
+    setSelectedMcpServerIds(uniqueServerIds);
+    setSelectedMcpToolNames(uniqueToolNames);
+    saveScopedStringArray(storageScope, MCP_SERVER_IDS_KEY, uniqueServerIds);
+    saveScopedStringArray(storageScope, MCP_TOOL_NAMES_KEY, uniqueToolNames);
+  }, [storageScope]);
+
+  const selectedMcpServerIdSet = useMemo(() => new Set(selectedMcpServerIds), [selectedMcpServerIds]);
+  const selectedMcpToolNameSet = useMemo(() => selectedMcpToolNames === null ? null : new Set(selectedMcpToolNames), [selectedMcpToolNames]);
+  const selectedMcpToolCount = useMemo(() => {
+    if (selectedMcpToolNames !== null) return selectedMcpToolNames.length;
+    return mcpToolNamesForServers(mcpOptions, selectedMcpServerIds).length;
+  }, [mcpOptions, selectedMcpServerIds, selectedMcpToolNames]);
+
+  const loadMcpPickerOptions = useCallback(async () => {
+    setMcpPickerLoading(true);
+    setMcpPickerError('');
+    try {
+      setMcpOptions(await listMcpServerToolOptions());
+    } catch (error) {
+      setMcpPickerError(friendlyErrorMessage(error));
+    } finally {
+      setMcpPickerLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mcpPickerOpen || !modeSupportsMcp) return;
+    void loadMcpPickerOptions();
+  }, [loadMcpPickerOptions, mcpPickerOpen, modeSupportsMcp]);
+
+  useEffect(() => {
+    if (!mcpPickerOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const root = mcpPickerRef.current;
+      if (!root || root.contains(event.target as Node)) return;
+      setMcpPickerOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [mcpPickerOpen]);
+
+  const resetMcpToPreset = useCallback(() => {
+    const nextIds = presetMcpServerIds(currentPreset || DEFAULT_PRESET);
+    persistMcpSelection(nextIds, null);
+    persistMcpEnabled(nextIds.length > 0);
+  }, [currentPreset, persistMcpEnabled, persistMcpSelection]);
+
+  const handleMcpServerToggle = useCallback((server: McpServerToolOption) => {
+    const selected = selectedMcpServerIdSet.has(server.id);
+    const nextIds = selected
+      ? selectedMcpServerIds.filter(id => id !== server.id)
+      : [...selectedMcpServerIds, server.id].slice(0, MAX_PRESET_MCP_SERVERS);
+    let nextToolNames = selectedMcpToolNames;
+    if (nextToolNames !== null) {
+      const serverToolNames = new Set(server.toolOptions.map(tool => tool.runtimeName));
+      nextToolNames = selected
+        ? nextToolNames.filter(name => !serverToolNames.has(name))
+        : [...new Set([...nextToolNames, ...serverToolNames])];
+    }
+    persistMcpSelection(nextIds, nextToolNames);
+    if (!useMcp && nextIds.length > 0) persistMcpEnabled(true);
+  }, [persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet, selectedMcpServerIds, selectedMcpToolNames, useMcp]);
+
+  const handleMcpToolToggle = useCallback((server: McpServerToolOption, runtimeName: string) => {
+    const allVisibleSelectedTools = mcpToolNamesForServers(mcpOptions, selectedMcpServerIds);
+    const base = selectedMcpToolNames === null ? allVisibleSelectedTools : selectedMcpToolNames;
+    const selected = base.includes(runtimeName);
+    const nextToolNames = selected
+      ? base.filter(name => name !== runtimeName)
+      : [...new Set([...base, runtimeName])];
+    const nextIds = selectedMcpServerIdSet.has(server.id)
+      ? selectedMcpServerIds
+      : [...selectedMcpServerIds, server.id].slice(0, MAX_PRESET_MCP_SERVERS);
+    persistMcpSelection(nextIds, nextToolNames);
+    if (!useMcp) persistMcpEnabled(true);
+  }, [mcpOptions, persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet, selectedMcpServerIds, selectedMcpToolNames, useMcp]);
 
   const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
     if (!isLiveRecordingRef.current && liveFinalizeTimerRef.current === null) return;
@@ -1366,17 +1382,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     window.addEventListener('pointerdown', onPointerDown);
     return () => window.removeEventListener('pointerdown', onPointerDown);
   }, [modelPickerOpen]);
-
-  useEffect(() => {
-    if (!presetPickerOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      const root = presetPickerRef.current;
-      if (!root || root.contains(event.target as Node)) return;
-      setPresetPickerOpen(false);
-    };
-    window.addEventListener('pointerdown', onPointerDown);
-    return () => window.removeEventListener('pointerdown', onPointerDown);
-  }, [presetPickerOpen]);
 
   useEffect(() => {
     const selectedStillUsable = selectedModel && loadedModels.some(m => m.model_name === selectedModel && canSelectInComposer(m));
@@ -2341,18 +2346,19 @@ ${finalText}`
     if (useMcp && modeSupportsMcp) {
       try {
         selectedMcpRuntime = await buildSelectedMcpRuntime(
-          presetMcpServerIds(currentPreset || DEFAULT_PRESET),
+          selectedMcpServerIds,
           {
             attachedImages: images || [],
             attachedAudioFiles: audioFiles,
             previousImages: collectConversationImages(priorMessages),
           },
+          selectedMcpToolNames || undefined,
         );
       } catch (err) {
         // MCP availability must never dead-end the chat composer. Surface the
         // failure, switch MCP off for this chat, and continue the same request
         // as a normal model completion without tools.
-        setUseMcp(false);
+        persistMcpEnabled(false);
         try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), 'false'); } catch { /* ignore */ }
         appendAssistantMessage(convoId, {
           content: friendlyChatError(`MCP setup failed and was switched off for this chat. Continuing without tools: ${friendlyErrorMessage(err)}`),
@@ -2428,6 +2434,9 @@ ${finalText}`
     modeSupportsChatCompletions,
     modeSupportsMcp,
     canUseAudioInput,
+    persistMcpEnabled,
+    selectedMcpServerIds,
+    selectedMcpToolNames,
     supportsChatImageInput,
     runCapabilityRequest,
     speakWithPinnedTts,
@@ -2734,6 +2743,20 @@ ${finalText}`
     }
   }, [modelPickerUnloading, onRefresh]);
 
+  const handleLoadedCardUnload = useCallback((modelName: string) => {
+    if (modelPickerUnloading) return;
+    setModelPickerUnloading(modelName);
+    void (async () => {
+      try {
+        await api.unloadModel(modelName);
+        await Promise.resolve(onRefresh());
+        setUnloadAnnouncement(`${modelName} unloaded`);
+      } finally {
+        setModelPickerUnloading(null);
+      }
+    })();
+  }, [modelPickerUnloading, onRefresh]);
+
   const handleModelPickerSelect = useCallback(async (option: ModelPickerOption) => {
     if (option.loaded) {
       setFallbackModelOverride(null);
@@ -2764,6 +2787,8 @@ ${finalText}`
     }
     setModelPickerError(null);
     setModelPickerLoading(option.name);
+    setFallbackModelOverride(option.name);
+    onModelSelect(option.name);
     try {
       await loadModelWithPolicy(option.name, option.info || null);
       await Promise.resolve(onRefresh());
@@ -2772,11 +2797,14 @@ ${finalText}`
       setModelPickerOpen(false);
       setModelPickerQuery('');
     } catch (err) {
+      setFallbackModelOverride(null);
+      if (currentModel) onModelSelect(currentModel);
       setModelPickerError(friendlyErrorMessage(err));
+      setModelPickerOpen(true);
     } finally {
       setModelPickerLoading(null);
     }
-  }, [loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh, storageScope]);
+  }, [currentModel, loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh, storageScope]);
 
   // ── Option select from assistant messages ───────────────────
 
@@ -3023,6 +3051,9 @@ ${finalText}`
               loadedModels={loadedModels}
               currentModel={currentModel}
               onModelSelect={onModelSelect}
+              onOpenModelDetails={onOpenModelDetails}
+              onUnloadModel={handleLoadedCardUnload}
+              unloadingModel={modelPickerUnloading}
               onChipClick={(text) => setInputValue(text)}
               customModelInfos={customModelInfos}
             />
@@ -3150,7 +3181,7 @@ ${finalText}`
               <button
                 type="button"
                 className="composer__model-button"
-                onClick={() => { setModelPickerOpen(v => !v); setPresetPickerOpen(false); setModelPickerError(null); }}
+                onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
                 aria-haspopup="listbox"
                 aria-expanded={modelPickerOpen}
               >
@@ -3199,7 +3230,7 @@ ${finalText}`
                           type="button"
                           className="composer__model-option"
                           onClick={() => handleModelPickerSelect(option)}
-                          disabled={!!modelPickerLoading || modelPickerUnloading === option.name}
+                          disabled={modelPickerLoading === option.name || modelPickerUnloading === option.name}
                           role="option"
                           aria-selected={option.name === currentModel}
                         >
@@ -3220,7 +3251,7 @@ ${finalText}`
                             type="button"
                             className="composer__model-option-unload"
                             onClick={(e) => handleModelPickerUnload(option.name, e)}
-                            disabled={!!modelPickerUnloading}
+                            disabled={!!modelPickerUnloading || !!modelPickerLoading}
                             aria-label={`Unload ${option.name}`}
                           >
                             {modelPickerUnloading === option.name ? '…' : '×'}
@@ -3230,60 +3261,8 @@ ${finalText}`
                     ))}
                     {modelPickerOptions.length === 0 && <div className="composer__model-empty">No matching models</div>}
                   </div>
+                  {modelPickerLoading && <div className="composer__model-loading-bar">Loading {modelPickerLoading}…</div>}
                   {modelPickerError && <div className="composer__model-error">{modelPickerError}</div>}
-                </div>
-              )}
-            </div>
-          )}
-          {currentPreset && currentModel && currentCapability !== 'image' && (
-            <div className="composer__preset-picker" ref={presetPickerRef}>
-              <button
-                type="button"
-                className="composer__preset-badge composer__preset-badge--interactive"
-                onClick={() => { setPresetPickerOpen(v => !v); setModelPickerOpen(false); }}
-                title={`Active preset for this model. Prompt: ${systemPromptNameForPreset(currentPreset)}. MCP: ${presetMcpDisplayText(currentPreset || DEFAULT_PRESET)}. Click to change preset.`}
-                aria-haspopup="listbox"
-                aria-expanded={presetPickerOpen}
-              >
-                <PresetIcon preset={currentPreset} /> Preset: {currentPreset.name}
-                <span className="composer__model-button-caret">▾</span>
-              </button>
-              {presetPickerOpen && (
-                <div className="composer__model-menu composer__preset-menu" role="dialog" aria-label="Search presets">
-                  <label className="composer__model-search">
-                    <Icon name="search" size={14} />
-                    <input
-                      autoFocus
-                      value={presetPickerQuery}
-                      placeholder="Search presets…"
-                      onChange={e => setPresetPickerQuery(e.target.value)}
-                    />
-                  </label>
-                  <div className="composer__model-results" role="listbox">
-                    {presetPickerOptions.map(preset => {
-                      const isActive = preset.id === currentPreset.id;
-                      return (
-                        <button
-                          type="button"
-                          key={preset.id}
-                          className={`composer__model-option${isActive ? ' is-active' : ''}`}
-                          onClick={() => handlePresetPickerSelect(preset)}
-                          disabled={!!presetPickerApplying}
-                          role="option"
-                          aria-selected={isActive}
-                        >
-                          <PresetIcon preset={preset} />
-                          <span className="composer__model-option-text">
-                            <strong>{preset.name}</strong>
-                            <span>{preset.description || 'No description'} · Prompt: {systemPromptNameForPreset(preset)} · MCP {presetMcpDisplayText(preset)}</span>
-                          </span>
-                          {presetPickerApplying === preset.id && <span className="composer__model-option-loading">Applying…</span>}
-                        </button>
-                      );
-                    })}
-                    {presetPickerOptions.length === 0 && <div className="composer__model-empty">No matching presets</div>}
-                  </div>
-                  {presetPickerError && <div className="composer__model-error">{presetPickerError}</div>}
                 </div>
               )}
             </div>
@@ -3299,21 +3278,97 @@ ${finalText}`
               <Icon name="sliders-horizontal" size={13} />
             </button>
           )}
-          <button
-            className={`composer__tools-toggle ${useMcp && modeSupportsMcp ? 'composer__tools-toggle--active' : ''}`}
-            onClick={() => {
-              const next = !useMcp;
-              setUseMcp(next);
-              try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
-            }}
-            disabled={!modeSupportsMcp}
-            title={modeSupportsMcp
-              ? (useMcp ? `MCP enabled (${presetMcpDisplayText(currentPreset || DEFAULT_PRESET)}) — click to disable for this chat` : 'Enable the MCP servers selected by this preset')
-              : 'MCP is only available for chat-completion models'}
-            aria-pressed={useMcp && modeSupportsMcp}
-          >
-            <Icon name="plug" size={13} /> MCP {useMcp && modeSupportsMcp ? presetMcpServerIds(currentPreset || DEFAULT_PRESET).length : 'OFF'}
-          </button>
+          <div className="composer__mcp-picker" ref={mcpPickerRef}>
+            <button
+              type="button"
+              className={`composer__tools-toggle ${useMcp && modeSupportsMcp ? 'composer__tools-toggle--active' : ''}`}
+              onClick={() => setMcpPickerOpen(open => !open)}
+              disabled={!modeSupportsMcp}
+              title={modeSupportsMcp
+                ? (useMcp ? `MCP enabled for ${selectedMcpServerIds.length} server${selectedMcpServerIds.length === 1 ? '' : 's'} and ${selectedMcpToolCount} tool${selectedMcpToolCount === 1 ? '' : 's'}` : 'Choose MCP servers and tools for this chat')
+                : 'MCP is only available for chat-completion models'}
+              aria-pressed={useMcp && modeSupportsMcp}
+              aria-haspopup="dialog"
+              aria-expanded={mcpPickerOpen}
+            >
+              <Icon name="plug" size={13} /> MCP
+            </button>
+            {mcpPickerOpen && (
+              <div className="composer__mcp-menu" role="dialog" aria-label="MCP servers and tools">
+                <div className="composer__mcp-header">
+                  <label className="composer__mcp-master">
+                    <input
+                      type="checkbox"
+                      checked={useMcp && modeSupportsMcp}
+                      disabled={!modeSupportsMcp}
+                      onChange={event => persistMcpEnabled(event.target.checked)}
+                    />
+                    <span>
+                      <strong>MCP for this chat</strong>
+                      <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
+                    </span>
+                  </label>
+                  <button type="button" className="btn btn--ghost" onClick={resetMcpToPreset}>Preset default</button>
+                </div>
+                {mcpPickerLoading ? (
+                  <p className="composer__mcp-empty">Loading MCP tools…</p>
+                ) : mcpPickerError ? (
+                  <div className="composer__mcp-error" role="alert">{mcpPickerError}</div>
+                ) : mcpOptions.length === 0 ? (
+                  <p className="composer__mcp-empty">No MCP servers available.</p>
+                ) : (
+                  <div className="composer__mcp-servers">
+                    {mcpOptions.map(server => {
+                      const serverSelected = selectedMcpServerIdSet.has(server.id);
+                      return (
+                        <section key={server.id} className={`composer__mcp-server${serverSelected ? ' is-selected' : ''}`}>
+                          <label className="composer__mcp-server-row">
+                            <input
+                              type="checkbox"
+                              checked={serverSelected}
+                              disabled={!useMcp || (!serverSelected && selectedMcpServerIds.length >= MAX_PRESET_MCP_SERVERS)}
+                              onChange={() => handleMcpServerToggle(server)}
+                            />
+                            <span className={`composer__mcp-status${server.connected ? ' is-connected' : ''}`} aria-hidden="true" />
+                            <span className="composer__mcp-server-text">
+                              <strong>{server.name}</strong>
+                              <small>{server.transport === 'builtin' ? 'Built in' : server.status} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
+                            </span>
+                          </label>
+                          {serverSelected && (
+                            <div className="composer__mcp-tools">
+                              {server.toolOptions.length === 0 ? (
+                                <p className="composer__mcp-empty">No tools discovered for this server.</p>
+                              ) : server.toolOptions.map(tool => {
+                                const toolSelected = selectedMcpToolNameSet === null || selectedMcpToolNameSet.has(tool.runtimeName);
+                                return (
+                                  <label key={tool.runtimeName} className="composer__mcp-tool" title={tool.description || tool.title || tool.name}>
+                                    <input
+                                      type="checkbox"
+                                      checked={toolSelected}
+                                      disabled={!useMcp}
+                                      onChange={() => handleMcpToolToggle(server, tool.runtimeName)}
+                                    />
+                                    <span>
+                                      <strong>{tool.title || tool.name}</strong>
+                                      {tool.runtimeName !== tool.name && <small>{tool.runtimeName}</small>}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="composer__mcp-footer">
+                  <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>Select all tools for selected servers</button>
+                </div>
+              </div>
+            )}
+          </div>
           <button
             className={`composer__tools-toggle ${showInlineLogs ? 'composer__tools-toggle--active' : ''}`}
             onClick={() => setShowInlineLogs(v => !v)}
@@ -3763,11 +3818,14 @@ interface EmptyStateProps {
   loadedModels: LoadedModel[];
   currentModel: string | null;
   onModelSelect: (model: string) => void;
+  onOpenModelDetails: (model: string) => void;
+  onUnloadModel: (model: string) => void;
+  unloadingModel: string | null;
   onChipClick: (text: string) => void;
   customModelInfos: ModelInfo[];
 }
 
-const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onChipClick, customModelInfos }) => (
+const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onOpenModelDetails, onUnloadModel, unloadingModel, onChipClick, customModelInfos }) => (
   <>
     <div className="hero">
       <h1 className="hero__title">What's on your mind?</h1>
@@ -3812,11 +3870,18 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
             const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
             const isActive = currentModel === m.model_name;
             return (
-              <div className="active-card" key={m.model_name}>
+              <article className="active-card" key={m.model_name}>
                 <div className="active-card__head">
                   <div>
                     <div className="active-card__name-row">
-                      <div className="active-card__name">{m.model_name}</div>
+                      <button
+                        type="button"
+                        className="active-card__name"
+                        onClick={() => onOpenModelDetails(m.model_name)}
+                        title={`Open ${m.model_name} in Models`}
+                      >
+                        {m.model_name}
+                      </button>
                       <CopyInlineButton text={m.model_name} title="Copy model name" />
                     </div>
                     <div className="active-card__meta">{m.recipe || 'runtime'} · {m.checkpoint || 'default'}</div>
@@ -3826,16 +3891,32 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
                 <div className="active-card__badges">
                   <span className={`cap-badge cap-badge--${capabilityBadge(cap)}`}><ModelModeIcons capability={cap} audioInput={audioInput} size={13} /> {modeLabel}</span>
                 </div>
-                {isActive ? (
-                  <span className="active-card__status">● Active {modeLabel} mode</span>
-                ) : selectable ? (
-                  <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
-                    Use in {modeLabel} mode ▸
+                <div className="active-card__actions">
+                  {isActive ? (
+                    <span className="active-card__status">● Active {modeLabel} mode</span>
+                  ) : selectable ? (
+                    <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
+                      Use in {modeLabel}
+                    </button>
+                  ) : (
+                    <span className="active-card__status active-card__status--muted">Utility model only</span>
+                  )}
+                </div>
+                <div className="active-card__footer">
+                  <button type="button" className="active-card__details" onClick={() => onOpenModelDetails(m.model_name)}>
+                    View details
                   </button>
-                ) : (
-                  <span className="active-card__status active-card__status--muted">Utility model only</span>
-                )}
-              </div>
+                  <button
+                    type="button"
+                    className="active-card__eject"
+                    onClick={() => onUnloadModel(m.model_name)}
+                    disabled={unloadingModel === m.model_name}
+                    title={`Unload ${m.model_name}`}
+                  >
+                    {unloadingModel === m.model_name ? 'Unloading…' : 'Unload'}
+                  </button>
+                </div>
+              </article>
             );
           })}
         </div>

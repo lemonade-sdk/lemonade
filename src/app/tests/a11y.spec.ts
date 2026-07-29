@@ -2872,3 +2872,186 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 });
+
+
+// ─── 32. Chat toolbar — preset picker removed (#GUI3-presets) ────────────────
+//
+// The Preset selector ("Preset: Default" badge and dropdown) was removed from
+// the Chat composer toolbar. The model selector, Effective Settings button,
+// MCP toggle, and Logs toggle must remain accessible. Range: A185–A187.
+
+test.describe('Chat toolbar — no preset picker after GUI3 removal', () => {
+  async function goToChatWithLoadedModel(page: Page): Promise<void> {
+    await page.route('**/api/v1/health**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          version: 'test',
+          all_models_loaded: [
+            {
+              model_name: 'Llama-3.1-8B-Instruct',
+              checkpoint: 'Llama-3.1-8B-Instruct',
+              recipe: 'llamacpp',
+              device: 'cpu',
+              backend_url: 'http://localhost:11434',
+              pid: 1234,
+              type: 'llm',
+              last_use: Date.now(),
+              labels: ['llm'],
+              capabilities: ['chat'],
+            },
+          ],
+        }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B-Instruct', name: 'Llama-3.1-8B-Instruct', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+    await page.waitForTimeout(300);
+  }
+
+  test('A185 — composer toolbar has no preset badge or preset picker', async ({ page }) => {
+    await goToChatWithLoadedModel(page);
+    await expect(page.locator('.composer__preset__badge')).toHaveCount(0);
+    await expect(page.locator('.composer__preset__picker')).toHaveCount(0);
+    await expect(page.locator('[aria-label="Search presets"]')).toHaveCount(0);
+  });
+
+  test('A186 — composer toolbar retains model selector, settings, MCP, and Logs buttons', async ({ page }) => {
+    await goToChatWithLoadedModel(page);
+    // Model picker button is present (model is loaded so it appears)
+    await expect(page.locator('.composer__model-button')).toBeVisible();
+    // MCP toggle
+    await expect(page.getByRole('button', { name: /MCP/i })).toBeVisible();
+    // Logs toggle
+    await expect(page.getByRole('button', { name: /Logs/i })).toBeVisible();
+    // Effective Settings button (requires currentPreset && currentModel)
+    await expect(page.getByRole('button', { name: 'Effective settings' })).toBeVisible();
+  });
+
+  test('A187 — MCP toggle has aria-pressed and is keyboard-operable', async ({ page }) => {
+    await goToChatWithLoadedModel(page);
+    const mcpBtn = page.getByRole('button', { name: /MCP/i });
+    await expect(mcpBtn).toBeVisible();
+    // Capture initial pressed state (mock can seed it true or false)
+    const initialPressed = await mcpBtn.getAttribute('aria-pressed');
+    await expect(initialPressed).toMatch(/^(true|false)$/);
+    const toggledState = initialPressed === 'true' ? 'false' : 'true';
+    // Activate via keyboard and assert it toggles to opposite
+    await mcpBtn.focus();
+    await page.keyboard.press('Space');
+    await expect(mcpBtn).toHaveAttribute('aria-pressed', toggledState);
+    // Activate again and assert it restores original state
+    await page.keyboard.press('Space');
+    await expect(mcpBtn).toHaveAttribute('aria-pressed', initialPressed);
+  });
+});
+
+
+// ─── 33. Effective Settings modal — no preset framing, renamed source badges ──
+//
+// After GUI3 preset cleanup:
+//   - Modal header subtitle must NOT contain "Preset:".
+//   - No dedicated "Preset" source row should appear in Settings by source.
+//   - Built-in tuning source badge is renamed to "Recipe default".
+//   - Local direct-config badge renamed to "Direct configuration".
+//   - An authority note near Settings by source explains that the load command
+//     includes server-applied defaults not shown in the rows table.
+// Range: A188–A192.
+
+test.describe('Effective Settings modal — post-GUI3 preset framing cleanup', () => {
+  async function openEffectiveSettings(page: Page): Promise<void> {
+    await page.route('**/api/v1/health**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          version: 'test',
+          all_models_loaded: [
+            {
+              model_name: 'Llama-3.1-8B-Instruct',
+              checkpoint: 'Llama-3.1-8B-Instruct',
+              recipe: 'llamacpp',
+              device: 'cpu',
+              backend_url: 'http://localhost:11434',
+              pid: 1234,
+              type: 'llm',
+              last_use: Date.now(),
+              labels: ['llm'],
+              capabilities: ['chat'],
+            },
+          ],
+        }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B-Instruct', name: 'Llama-3.1-8B-Instruct', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    await page.route('**/api/v1/load**', async route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ args: ['--threads', '8'], options: {}, backend: 'llamacpp' }) }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: 'Effective settings' }).click();
+    await page.waitForSelector('[role="dialog"]');
+    await page.waitForTimeout(200);
+  }
+
+  test('A188 — modal header subtitle does not contain "Preset:"', async ({ page }) => {
+    await openEffectiveSettings(page);
+    const meta = page.locator('.effective-settings__meta');
+    await expect(meta).toBeVisible();
+    await expect(meta).not.toContainText('Preset:');
+  });
+
+  test('A189 — no dedicated "Preset" source row in Settings by source', async ({ page }) => {
+    await openEffectiveSettings(page);
+    const rows = page.locator('.effective-settings__rows .effective-settings__row-label');
+    const labels = await rows.allTextContents();
+    expect(labels).not.toContain('Preset');
+  });
+
+  test('A190 — no "Preset" source badge appears anywhere in the modal', async ({ page }) => {
+    await openEffectiveSettings(page);
+    const presetBadges = page.locator('.effective-settings__source--preset');
+    await expect(presetBadges).toHaveCount(0);
+  });
+
+  test('A191 — Settings by source has an authority note referencing the Effective load command', async ({ page }) => {
+    await openEffectiveSettings(page);
+    const note = page.locator('.effective-settings__section').first().locator('.effective-settings__note');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('Effective load command');
+    await expect(note).toContainText('authoritative');
+  });
+
+  test('A192 — modal passes a WCAG 2.1 AA axe-core scan with no critical/serious violations', async ({ page }) => {
+    await openEffectiveSettings(page);
+    const results = await new AxeBuilder({ page })
+      .include('[role="dialog"]')
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+});

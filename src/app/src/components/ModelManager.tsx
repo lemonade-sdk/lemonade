@@ -1045,9 +1045,10 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
 interface ModelManagerProps {
   onModelSelect: (model: string) => void;
   accountSession: AccountSession;
+  openModelRequest?: { modelName: string; nonce: number } | null;
 }
 
-const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSession }) => {
+const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSession, openModelRequest }) => {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [connectionStatus, setConnectionStatus] = useState(api.status);
@@ -2451,6 +2452,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, accountSessi
     : null;
   const selectedDetailIsCustom = Boolean(selectedDetailModel && modelIsCustom(selectedDetailModel));
   const showCustomEditor = showCustomForm || (primaryFilter === 'my-models' && !selectedDetailIsCustom);
+
+  useEffect(() => {
+    const requested = openModelRequest?.modelName?.trim();
+    if (!requested) return;
+    const match = allModels.find(model => modelName(model).toLowerCase() === requested.toLowerCase());
+    const id = match ? modelName(match) : requested;
+    setSelectedDetailModelId(id);
+    setSelectedRemoteModel(null);
+    setMobileDetailOpen(true);
+    setSearchQuery('');
+    setFilterTab('all');
+    setPrimaryFilter('all');
+    setBackendFilter('all');
+    setTagFilter(null);
+    setCapabilityFilter(new Set());
+    if (showCustomForm) closeCustomForm();
+    if (showRouterEditor) closeRouterEditor();
+    if (showGlobalSettings) closeGlobalSettings();
+  }, [allModels, openModelRequest?.modelName, openModelRequest?.nonce]);
 
   const handlePrimaryFilterChange = (next: PrimaryFilter) => {
     setPrimaryFilter(next);

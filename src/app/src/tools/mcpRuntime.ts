@@ -43,6 +43,17 @@ export interface McpServerOption {
   lastError?: string;
 }
 
+export interface McpToolOption {
+  name: string;
+  runtimeName: string;
+  title?: string;
+  description?: string;
+}
+
+export interface McpServerToolOption extends McpServerOption {
+  toolOptions: McpToolOption[];
+}
+
 const MULTIMODAL_LEMONADE_TOOLS: ToolFunction[] = [
   {
     type: 'function',
@@ -499,10 +510,26 @@ async function executeLemonadeMultimodalTool(
   }
 }
 
-function buildLemonadeRuntime(context: McpRuntimeContext): ChatToolRuntime {
+function filterTools(
+  tools: Record<string, unknown>[],
+  allowedToolNames?: Set<string>,
+): Record<string, unknown>[] {
+  if (!allowedToolNames) return tools;
+  return tools.filter(tool => {
+    const name = String((tool as { function?: { name?: unknown } }).function?.name || '');
+    return name && allowedToolNames.has(name);
+  });
+}
+
+function buildLemonadeRuntime(
+  context: McpRuntimeContext,
+  allowedToolNames?: Set<string>,
+): ChatToolRuntime | null {
   const multimodalNames = new Set(MULTIMODAL_LEMONADE_TOOLS.map(tool => tool.function.name));
+  const tools = filterTools(LEMONADE_MCP_TOOLS as unknown as Record<string, unknown>[], allowedToolNames);
+  if (tools.length === 0) return null;
   return {
-    tools: LEMONADE_MCP_TOOLS as unknown as Record<string, unknown>[],
+    tools,
     systemPrompt: [
       'The Lemon-Tools MCP server controls local models and multimodal backends.',
       'Use management tools for models, recipes, hardware, downloads, and health.',
@@ -561,10 +588,17 @@ function externalToolResult(
   };
 }
 
-function buildExternalRuntime(entries: McpToolCatalogEntry[]): ChatToolRuntime | null {
+function buildExternalRuntime(
+  entries: McpToolCatalogEntry[],
+  allowedToolNames?: Set<string>,
+): ChatToolRuntime | null {
   if (entries.length === 0) return null;
-  const byChatName = new Map(entries.map(entry => [entry.chat_name, entry]));
-  const tools = entries.map(entry => {
+  const filteredEntries = allowedToolNames
+    ? entries.filter(entry => allowedToolNames.has(entry.chat_name))
+    : entries;
+  if (filteredEntries.length === 0) return null;
+  const byChatName = new Map(filteredEntries.map(entry => [entry.chat_name, entry]));
+  const tools = filteredEntries.map(entry => {
     const provided = entry.openai_tool && typeof entry.openai_tool === 'object'
       ? entry.openai_tool as { type?: unknown; function?: Record<string, unknown> }
       : {};
@@ -643,6 +677,34 @@ export async function listMcpServerOptions(): Promise<McpServerOption[]> {
   ];
 }
 
+export async function listMcpServerToolOptions(): Promise<McpServerToolOption[]> {
+  const servers = await listMcpServerOptions();
+  const externalTools = api.adminApiKey ? await api.listMcpTools() : [];
+  return servers.map(server => {
+    if (server.id === LEMONADE_MCP_SERVER_ID) {
+      return {
+        ...server,
+        toolOptions: LEMONADE_MCP_TOOLS.map(tool => ({
+          name: tool.function.name,
+          runtimeName: tool.function.name,
+          description: tool.function.description,
+        })),
+      };
+    }
+
+    const toolOptions = externalTools
+      .filter(tool => tool.server_id === server.id)
+      .map(tool => ({
+        name: tool.name,
+        runtimeName: tool.chat_name,
+        title: tool.title,
+        description: tool.description,
+      }));
+
+    return { ...server, toolOptions };
+  });
+}
+
 async function connectSelectedExternalServers(ids: string[]): Promise<McpServerState[]> {
   const states = await api.listMcpServers();
   const selected = ids.map(id => {
@@ -662,10 +724,12 @@ async function connectSelectedExternalServers(ids: string[]): Promise<McpServerS
 export async function buildSelectedMcpRuntime(
   requestedIds: string[],
   context: McpRuntimeContext = {},
+  allowedToolNames?: string[],
 ): Promise<ChatToolRuntime | null> {
   const selectedIds = [...new Set(requestedIds.filter(Boolean))].slice(0, MAX_PRESET_MCP_SERVERS);
   if (selectedIds.length === 0) return null;
 
+  const allowed = allowedToolNames ? new Set(allowedToolNames.filter(Boolean)) : undefined;
   const includeLemonade = selectedIds.includes(LEMONADE_MCP_SERVER_ID);
   const externalIds = selectedIds.filter(id => id !== LEMONADE_MCP_SERVER_ID);
   if (externalIds.length > 0) await connectSelectedExternalServers(externalIds);
@@ -679,7 +743,7 @@ export async function buildSelectedMcpRuntime(
   }
 
   return composeMcpRuntimes([
-    includeLemonade ? buildLemonadeRuntime(context) : null,
-    buildExternalRuntime(catalog),
+    includeLemonade ? buildLemonadeRuntime(context, allowed) : null,
+    buildExternalRuntime(catalog, allowed),
   ]);
 }

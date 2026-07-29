@@ -34,8 +34,6 @@ const RECIPE_OPTION_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
   moonshine_args: 'Backend args',
   sdcpp_args: 'Backend args',
   'sd-cpp_backend': 'Backend',
-  mmproj_enabled: 'Multimodal projector',
-  merge_args: 'Merge args',
   steps: 'Steps',
   cfg_scale: 'CFG scale',
   width: 'Width',
@@ -56,9 +54,9 @@ const SAMPLING_LABELS: Partial<Record<keyof SamplingParams, string>> = {
 
 function sourceLabel(source: TuningValueSource | undefined): string {
   switch (source) {
-    case 'custom': return 'Model tuning';
-    case 'built-in': return 'Built-in tuning';
-    case 'optimized': return 'AutoOpt optimized';
+    case 'custom': return 'Direct configuration';
+    case 'built-in': return 'Recipe default';
+    case 'optimized': return 'Optimized';
     default: return 'Default';
   }
 }
@@ -247,6 +245,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     if (!resolved) return [];
     const rows: SourceRow[] = [];
     for (const [key, value] of Object.entries(resolved.tuning.recipe_options || {})) {
+      if (key === 'merge_args' || key === 'mmproj_enabled') continue;
       rows.push({
         key: `ro-${key}`,
         label: RECIPE_OPTION_LABELS[key as keyof RecipeOptions] || key,
@@ -297,26 +296,22 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
         <div className="inspect-modal-body effective-settings__body">
           <p className="effective-settings__model">
             <strong>{modelName}</strong>
-            <span className="effective-settings__meta">Preset: {preset.name} · Backend: {backendLabel}</span>
+            <span className="effective-settings__meta">Backend: {backendLabel}</span>
           </p>
 
           <section className="effective-settings__section">
             <h5 className="effective-settings__section-title">Settings by source</h5>
+            <p className="effective-settings__note"><Icon name="info" size={12} /> These rows show known sources for individual settings. The <strong>Effective load command</strong> below is authoritative — it includes architecture and global defaults applied by the server that may not appear here.</p>
             <div className="effective-settings__rows">
-              <div className="effective-settings__row">
-                <span className="effective-settings__row-label">Preset</span>
-                <span className="effective-settings__row-value">{preset.name}</span>
-                <span className="effective-settings__source effective-settings__source--preset">Preset</span>
-              </div>
               <div className="effective-settings__row">
                 <span className="effective-settings__row-label">System prompt</span>
                 <span className="effective-settings__row-value">{systemPromptNameForPreset(preset)}</span>
-                <span className="effective-settings__source effective-settings__source--preset">Preset</span>
+                <span className="effective-settings__source effective-settings__source--generic">Setting</span>
               </div>
               <div className="effective-settings__row">
                 <span className="effective-settings__row-label">MCP servers</span>
                 <span className="effective-settings__row-value">{presetMcpDisplayText(preset)}</span>
-                <span className="effective-settings__source effective-settings__source--preset">Preset</span>
+                <span className="effective-settings__source effective-settings__source--generic">Setting</span>
               </div>
               {resolved && (
                 <div className="effective-settings__row">
