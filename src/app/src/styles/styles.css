@@ -2948,11 +2948,6 @@ optgroup {
   cursor: pointer;
 }
 
-.backends__toggle input { accent-color: var(--accent-fg); }
-
-
-
-
 .backends__toast {
   position: fixed;
   bottom: var(--space-6);
@@ -4945,7 +4940,8 @@ optgroup {
   cursor: pointer;
 }
 
-.rail__privacy-toggle input {
+.rail__privacy-toggle input,
+.backends__toggle input {
   appearance: none;
   display: grid;
   place-content: center;
@@ -4959,7 +4955,8 @@ optgroup {
   cursor: pointer;
 }
 
-.rail__privacy-toggle input::after {
+.rail__privacy-toggle input::after,
+.backends__toggle input::after {
   width: 5px;
   height: 8px;
   content: '';
@@ -4969,14 +4966,17 @@ optgroup {
   transition: transform var(--duration-fast) var(--ease-out);
 }
 
-.rail__privacy-toggle input:checked {
+.rail__privacy-toggle input:checked,
+.backends__toggle input:checked {
   background: var(--accent);
   border-color: var(--accent);
 }
 
-.rail__privacy-toggle input:checked::after { transform: rotate(45deg) scale(1); }
+.rail__privacy-toggle input:checked::after,
+.backends__toggle input:checked::after { transform: rotate(45deg) scale(1); }
 
-.rail__privacy-toggle input:focus-visible {
+.rail__privacy-toggle input:focus-visible,
+.backends__toggle input:focus-visible {
   outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
 }
