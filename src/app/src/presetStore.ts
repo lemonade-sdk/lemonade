@@ -1861,8 +1861,8 @@ function modelSupportsExplicitThinking(model: ModelInfo | null | undefined): boo
 
 export function samplingForModel(modelName: string, model?: ModelInfo | null): ChatRequestPresetOptions {
   const preset = activePresetForModel(modelName);
-  const concreteTuning = concretePresetTuningForRequest(modelName, model, preset);
-  const merged: ChatRequestPresetOptions = { ...concreteTuning.sampling };
+  const requestTuning = loadModelTuning(modelName, DEFAULT_PRESET.id);
+  const merged: ChatRequestPresetOptions = { ...(requestTuning?.sampling || {}) };
   if (preset.thinking_mode === 'none' && modelSupportsExplicitThinking(model)) merged.enable_thinking = false;
   return merged;
 }

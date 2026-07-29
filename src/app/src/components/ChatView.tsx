@@ -3313,6 +3313,7 @@ ${finalText}`
             modelInfo={currentKnownModelInfo || currentCustomModelInfo || null}
             preset={currentPreset}
             recipe={currentRecipe}
+            loadedModel={currentLoadedModel}
             isModelLoaded={!!currentLoadedModel}
             onReload={async () => {
               await api.reloadModel(currentModel, undefined, currentKnownModelInfo || currentCustomModelInfo || null);

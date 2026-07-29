@@ -14618,6 +14618,27 @@ button.workspace-metadata-chip:hover {
   font-size: var(--text-sm);
 }
 
+.effective-settings__sampling {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.effective-settings__sampling-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.effective-settings__sampling-field .input {
+  width: 100%;
+  font-family: var(--font-mono);
+}
+
 .effective-settings__danger {
   padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--warn) 28%, var(--border-subtle));
