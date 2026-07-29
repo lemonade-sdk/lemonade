@@ -23,7 +23,7 @@ You can see the full set of project maintainers, and the subject areas they main
 | Cloud Hybrid | @ramkrishna2910 | @ramkrishna2910 | Lemonade can intelligently route between local and cloud models. |
 | Remote Use | @Geramy | @geramyl | Lemonade can serve inference to any device in any location. |
 | GUI App | @kponiel | @primaL- | Users can explore local AI in a delightful built‑in GUI. |
-| Quality Assurance | @jeremyfowers | @jfowers_amd | Provide systematic testing and quality assurance for Lemonade components. |
+| [Enterprise Grade](./enterprise-grade.md) | @jeremyfowers | @jfowers_amd | Provide systematic testing and quality assurance for Lemonade components. |
 
 ## Archived Working Groups
 

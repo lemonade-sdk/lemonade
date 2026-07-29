@@ -595,12 +595,12 @@
     var WG_DOCS_BASE = 'https://lemonade-server.ai/docs/dev/working-groups/';
     // Shown only if the live fetch/parse fails, so the section is never empty.
     var WG_FALLBACK = [
-      { name: 'Omni Models', slug: 'omni-models', lead: 'jeremyfowers', goal: 'Improve Omni Models to become a staple of local AI apps and use.' },
       { name: 'Auto-Tune', slug: 'auto-tune', lead: 'bitgamma', goal: 'Enable Lemonade instances to self-optimize models and backends.' },
       { name: 'Cross-Vendor Support', slug: 'cross-vendor', lead: 'kenvandine', goal: 'Lemonade is supported on all mass-market hardware and OS platforms.' },
       { name: 'Cloud Hybrid', slug: '', lead: 'ramkrishna2910', goal: 'Lemonade can intelligently route between local and cloud models.' },
       { name: 'Remote Use', slug: '', lead: 'Geramy', goal: 'Lemonade can serve inference to any device in any location.' },
-      { name: 'GUI App', slug: '', lead: 'kponiel', goal: 'Users can explore local AI in a delightful built-in GUI.' }
+      { name: 'GUI App', slug: '', lead: 'kponiel', goal: 'Users can explore local AI in a delightful built-in GUI.' },
+      { name: 'Enterprise Grade', slug: 'enterprise-grade', lead: 'jeremyfowers', goal: 'Provide systematic testing and quality assurance for Lemonade components.' }
     ].map(function(g) {
       return { name: g.name, href: g.slug ? WG_DOCS_BASE + g.slug + '/' : WG_OVERVIEW_URL, lead: g.lead, goal: g.goal };
     });

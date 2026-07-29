@@ -1,4 +1,4 @@
-# Working Group: Quality Assurance
+# Working Group: Enterprise Grade
 
 ## Overview
 
@@ -13,6 +13,8 @@
 
 Please see the general [contribution guidelines](../contribute.md), then contact @jfowers_amd on Discord before getting started.
 
+See this working group's entry in the [table of working groups](./README.md#table-of-working-groups).
+
 ## Roadmap
 
 ### PR Review Agent
@@ -24,6 +26,10 @@ The PR agent will run as part of regular CI and invoke a Lemonade-based Pi agent
 - Analyze whether the PR includes any breaking API or UX changes and ensure that they are 1) properly documented and 2) approved by a core maintainer.
 - Suggest reviewer(s) for the PR based on the maintainer table in contribute.md.
 
+The PR review agent is intended to guide authors towards a review-ready PR, and to inform reviewers of what to look out for during review. It is not meant to replace human review.
+
+> Note: should eventually consolidate the existing cloud-based PR auto-triage and review automations.
+
 ### Issue Review Agent
 
 Analyze all issues (including those that are already open) for:
@@ -32,12 +38,17 @@ Analyze all issues (including those that are already open) for:
 - Is the issue still relevant, or has it been resolved (e.g., bug fixed in a release) or obsoleted (e.g., gui2 feedback after gui3 release)?
 - Assess whether issues are "good": reproducible, clearly defined, and aligned to philosophy.md. If they aren't, auto-reply with guidance and direct the author to the discord.
 - Auto-assign "good" issues to maintainers, according to the table in contribute.md, and tag them on discord #dev channel.
+- Suggest whether an issue should be labeled as a Good First Issue.
+
+> Note: should eventually consolidate the existing cloud-based issue auto-triage automations.
 
 ### Performance Regression Suite
 
 For each engine and backend supported by Lemonade, keep a database of performance data for each tagged release we support. This data is intended for use in:
 - When a user wants to maximize performance for a specific model, we can pinpoint the engine/backend/tag combination that would serve them best.
 - When upgrading tags, make sure there are not performance regressions on hot models.
+
+The performance regression suite should leverage `lemonade bench` to measure performance on scenarios that are interesting to our audience.
 
 ### CI Enhancements
 
