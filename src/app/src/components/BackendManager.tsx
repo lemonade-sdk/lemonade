@@ -169,7 +169,25 @@ const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS', '3D'] as const;
 
 type CapabilityCol = typeof CAPABILITY_COLS[number];
 type CellEntry = { recipe: string; backend: string; info: BackendInfo };
+type BackendCatalogEntry = CellEntry & { devices: DeviceKey[] };
+type BackendCatalogSection = { capability: CapabilityCol; entries: BackendCatalogEntry[] };
 type BackendViewFilter = 'all' | 'installed' | 'available' | 'updates' | 'experimental';
+
+const CAPABILITY_LABELS: Record<CapabilityCol, string> = {
+  LLM: 'Language models',
+  Audio: 'Audio',
+  Image: 'Image generation',
+  TTS: 'Text to speech',
+  '3D': '3D generation',
+};
+
+const CAPABILITY_DESCRIPTIONS: Record<CapabilityCol, string> = {
+  LLM: 'Chat, completion, embedding, and reranking runtimes.',
+  Audio: 'Transcription and sound generation runtimes.',
+  Image: 'Image generation and editing runtimes.',
+  TTS: 'Text-to-speech runtimes.',
+  '3D': '3D asset generation runtimes.',
+};
 
 const BACKEND_VIEW_FILTERS: Array<[BackendViewFilter, string, string, IconName]> = [
   ['all', 'All backends', 'Complete compatibility matrix', 'layers'],
@@ -199,6 +217,43 @@ function backendDownloadMatches(download: DownloadListItem, recipe: string, back
 
 function backendProgressPercent(download: DownloadListItem): number {
   return Math.max(0, Math.min(100, Number.isFinite(download.percent) ? download.percent : 0));
+}
+
+function buildBackendCatalog(cells: Map<string, CellEntry[]>): BackendCatalogSection[] {
+  const byCapability = new Map<CapabilityCol, Map<string, BackendCatalogEntry>>();
+
+  for (const [key, entries] of cells) {
+    const [device, capability] = key.split(':') as [DeviceKey, CapabilityCol];
+    const capabilityEntries = byCapability.get(capability) || new Map<string, BackendCatalogEntry>();
+    byCapability.set(capability, capabilityEntries);
+
+    for (const entry of entries) {
+      const key = backendKey(entry.recipe, entry.backend);
+      const existing = capabilityEntries.get(key);
+      if (existing) {
+        if (!existing.devices.includes(device)) existing.devices.push(device);
+      } else {
+        capabilityEntries.set(key, { ...entry, devices: [device] });
+      }
+    }
+  }
+
+  const stateRank: Record<BackendInfo['state'], number> = {
+    update_required: 0,
+    update_available: 1,
+    installed: 2,
+    action_required: 3,
+    installable: 4,
+    unsupported: 5,
+  };
+
+  return CAPABILITY_COLS.map(capability => ({
+    capability,
+    entries: [...(byCapability.get(capability)?.values() || [])].sort((a, b) => (
+      stateRank[a.info.state] - stateRank[b.info.state]
+      || (RECIPE_LABELS[a.recipe] || a.recipe).localeCompare(RECIPE_LABELS[b.recipe] || b.recipe)
+    )),
+  })).filter(section => section.entries.length > 0);
 }
 
 /* ── Helpers ─────────────────────────────────────────────── */
@@ -610,17 +665,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   /* ── Build the matrix ─────────────────────────────────── */
 
-  const detectedDevices = useMemo(() => {
-    if (!sysInfo) return [] as DeviceKey[];
-    const devs: DeviceKey[] = [];
-    if (sysInfo.devices.cpu?.available) devs.push('cpu');
-    if ((sysInfo.devices.nvidia_gpu || []).some(g => g.available)) devs.push('nvidia_gpu');
-    if (amdGpuDevices(sysInfo).some(g => g.available)) devs.push('amd_gpu');
-    if (sysInfo.devices.metal?.available) devs.push('metal');
-    if (amdNpuDevice(sysInfo)?.available) devs.push('amd_npu');
-    return devs;
-  }, [sysInfo]);
-
   const matrixCells = useMemo(() => {
     if (!sysInfo?.recipes) return new Map<string, CellEntry[]>();
     const cells = new Map<string, CellEntry[]>();
@@ -669,23 +713,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     return cells;
   }, [sysInfo]);
 
-  const matrixRows = useMemo(() => {
-    const referenced = new Set<DeviceKey>();
-    for (const key of matrixCells.keys()) {
-      const device = key.split(':')[0] as DeviceKey;
-      if (DEVICE_ORDER.includes(device)) referenced.add(device);
-    }
-    return DEVICE_ORDER.filter(d => detectedDevices.includes(d) || referenced.has(d));
-  }, [detectedDevices, matrixCells]);
-
-  const unsupportedMatrixRows = useMemo(() => {
-    const referenced = new Set<DeviceKey>();
-    for (const key of unsupportedMatrixCells.keys()) {
-      const device = key.split(':')[0] as DeviceKey;
-      if (DEVICE_ORDER.includes(device)) referenced.add(device);
-    }
-    return DEVICE_ORDER.filter(d => referenced.has(d));
-  }, [unsupportedMatrixCells]);
+  const backendCatalog = useMemo(() => buildBackendCatalog(matrixCells), [matrixCells]);
+  const unsupportedBackendCatalog = useMemo(() => buildBackendCatalog(unsupportedMatrixCells), [unsupportedMatrixCells]);
 
   const unsupportedBackendCount = useMemo(() => {
     const keys = new Set<string>();
@@ -694,11 +723,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     }
     return keys.size;
   }, [unsupportedMatrixCells]);
-
-  // Keep the matrix skeleton mounted even when /system-info is unavailable.
-  // This preserves navigation/test affordances while the cells truthfully show
-  // no backend entries until the server reports real data.
-  const matrixRowsForRender = matrixRows.length > 0 ? matrixRows : (['cpu'] as DeviceKey[]);
 
   const updatesAvailable = useMemo(() => {
     if (!sysInfo?.recipes) return 0;
@@ -736,21 +760,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     return recipeInfo ? isExperimentalBackend(entry.recipe, recipeInfo, entry.info) : Boolean(entry.info.experimental);
   }, [sysInfo, viewFilter]);
 
-  /* ── Device detail row ────────────────────────────────── */
-
-  const deviceDetail = useCallback((deviceKey: DeviceKey): string => {
-    if (!sysInfo) return '';
-    switch (deviceKey) {
-      case 'cpu': return sysInfo.devices.cpu?.name || '';
-      case 'amd_gpu': return amdGpuDevices(sysInfo).map(g => g.name).filter(Boolean).join(', ') || '';
-      case 'nvidia_gpu': return (sysInfo.devices.nvidia_gpu || []).map(g => g.name).join(', ') || '';
-      case 'metal': return sysInfo.devices.metal?.name || '';
-      case 'amd_npu': return amdNpuDevice(sysInfo)?.name || '';
-      default: return '';
-    }
-  }, [sysInfo]);
-
-  const renderBackendCell = useCallback(({ recipe, backend, info }: CellEntry) => {
+  const renderBackendCard = useCallback(({ recipe, backend, info, devices }: BackendCatalogEntry) => {
     const badge = stateBadge(info.state);
     const cellKey = backendKey(recipe, backend);
     const isInstalling = installing === cellKey;
@@ -758,36 +768,54 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
     const tuning = backendTunings[cellKey] || null;
     const supportsArgs = backendSupportsArgs(recipe);
+    const name = `${RECIPE_LABELS[recipe] || recipe}${backend !== 'cpu' && backend !== 'npu' ? ` · ${backend}` : ''}`;
 
     return (
-      <div className="cell" key={`${recipe}-${backend}`} data-cell={cellKey}>
-        <span className={`cell__name${info.experimental ? ' cell__name--experimental' : ''}`}>
-          <span>
-            {RECIPE_LABELS[recipe] || recipe}
-            {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
-          </span>
-          {info.experimental && (
-            <span className="cell__experimental-icon" role="img" title="experimental" aria-label="experimental">
-              <Icon name="flask-conical" size={13} />
-            </span>
-          )}
-        </span>
-        <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
-        {showTech && info.version && <span className="cell__sha">{info.version}</span>}
+      <article className="backend-card" key={cellKey} data-cell={cellKey}>
+        <div className="backend-card__head">
+          <div>
+            <h3 className={info.experimental ? 'backend-card__name is-experimental' : 'backend-card__name'}>
+              {name}
+              {info.experimental && <Icon name="flask-conical" size={14} aria-label="Experimental" />}
+            </h3>
+            <div className="backend-card__devices">
+              {devices.map(device => <span key={device}>{DEVICE_LABELS[device]}</span>)}
+            </div>
+          </div>
+          <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
+        </div>
+
+        {showTech && info.version && <span className="backend-card__version">{info.version}</span>}
         {tuning && (
-          <span
-            className={`cell__args-state cell__args-state--${tuning.source}`}
-            data-cell-backend-args={tuning.source}
-            title={tuning.source === 'optimized'
-              ? 'Backend arguments set by optimizer'
-              : 'Manual backend arguments'}
-          >
+          <span className={`cell__args-state cell__args-state--${tuning.source}`}>
             <Icon name="terminal-square" size={12} aria-hidden="true" />
             Args · {tuning.source === 'optimized' ? 'Optimized' : 'Manual'}
           </span>
         )}
-        {showTech && info.message && <span className="cell__message">{info.message}</span>}
-        <div className="cell__actions" onClick={e => e.stopPropagation()}>
+
+        <div className="backend-card__footer">
+          <div className="backend-card__actions">
+            {info.state === 'installable' && (
+              <WorkspaceActionButton size="small" appearance="primary" icon="download" disabled={isInstalling} onClick={() => handleInstall(recipe, backend)}>
+                {isInstalling ? 'Installing…' : 'Install'}
+              </WorkspaceActionButton>
+            )}
+            {(info.state === 'update_required' || info.state === 'update_available') && (
+              <WorkspaceActionButton size="small" appearance="primary" icon="rotate-ccw" disabled={isInstalling} onClick={() => handleInstall(recipe, backend, true)}>
+                {isInstalling ? 'Updating…' : 'Update'}
+              </WorkspaceActionButton>
+            )}
+            {info.state === 'action_required' && info.action && (
+              <WorkspaceActionButton size="small" appearance="secondary" icon="book-open" onClick={() => handleAction(info.action)}>
+                Setup guide
+              </WorkspaceActionButton>
+            )}
+            {canShowUninstall(info) && (
+              <WorkspaceActionButton size="small" appearance="danger" icon="trash" disabled={isInstalling} onClick={() => handleUninstall(recipe, backend)}>
+                {isInstalling ? 'Working…' : 'Uninstall'}
+              </WorkspaceActionButton>
+            )}
+          </div>
           {supportsArgs && (
             <WorkspaceActionButton
               type="button"
@@ -801,73 +829,26 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                 setArgsEditorKey(cellKey);
               }}
               title={tuning ? 'Edit backend arguments' : 'Add backend arguments'}
-              aria-label={`${tuning ? 'Edit' : 'Add'} backend arguments for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-              data-backend-args-button={cellKey}
+              aria-label={`${tuning ? 'Edit' : 'Add'} backend arguments for ${name}`}
             />
           )}
-          {(info.state === 'installable') && (
-            <WorkspaceActionButton
-              size="small"
-              appearance="primary"
-              icon="download"
-              className="cell__swap"
-              disabled={isInstalling}
-              aria-label={`Install ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-              onClick={() => handleInstall(recipe, backend)}>
-              {isInstalling ? 'Installing…' : 'Install'}
-            </WorkspaceActionButton>
-          )}
-          {(info.state === 'update_required' || info.state === 'update_available') && (
-            <WorkspaceActionButton
-              size="small"
-              appearance="primary"
-              icon="rotate-ccw"
-              className="cell__swap"
-              disabled={isInstalling}
-              aria-label={`Update ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-              onClick={() => handleInstall(recipe, backend, true)}>
-              {isInstalling ? 'Updating…' : 'Update'}
-            </WorkspaceActionButton>
-          )}
-          {info.state === 'action_required' && info.action && (
-            <WorkspaceActionButton
-              size="small"
-              appearance="secondary"
-              icon="book-open"
-              className="cell__swap"
-              aria-label={`Setup guide for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-              onClick={() => handleAction(info.action)}>
-              Setup guide
-            </WorkspaceActionButton>
-          )}
-          {canShowUninstall(info) && (
-            <WorkspaceActionButton
-              size="small"
-              appearance="danger"
-              icon="trash"
-              className="cell__swap cell__swap--danger"
-              disabled={isInstalling}
-              aria-label={`Uninstall ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-              onClick={() => handleUninstall(recipe, backend)}>
-              {isInstalling ? 'Working…' : 'Uninstall'}
-            </WorkspaceActionButton>
-          )}
         </div>
+
         {showBackendProgress && backendDownload && (
           <div className="cell__download-progress" aria-label={`${backendProgressPercent(backendDownload).toFixed(0)}%`}>
             <div className="cell__download-progress-track">
-              <div
-                className="cell__download-progress-fill"
-                style={{ width: `${backendProgressPercent(backendDownload)}%` }}
-              />
+              <div className="cell__download-progress-fill" style={{ width: `${backendProgressPercent(backendDownload)}%` }} />
             </div>
             <span className="cell__download-progress-text">{backendProgressPercent(backendDownload).toFixed(0)}%</span>
           </div>
         )}
-        {backendDownload?.status === 'error' && backendDownload.error && (
-          <span className="cell__download-error">{backendDownload.error}</span>
+        {(showTech && info.message || backendDownload?.status === 'error' && backendDownload.error) && (
+          <details className="backend-card__details">
+            <summary>View technical details</summary>
+            <span>{backendDownload?.status === 'error' && backendDownload.error ? backendDownload.error : info.message}</span>
+          </details>
         )}
-      </div>
+      </article>
     );
   }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, showTech]);
 
@@ -968,8 +949,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
       </div>
 
-      {matrixRows.length === 0 && (
-        <p className="sr-only" data-backends-matrix-empty>No backend/device data is available for this Lemonade server yet.</p>
+      {backendCatalog.length === 0 && (
+        <p className="sr-only" data-backends-matrix-empty>No backend data is available for this Lemonade server yet.</p>
       )}
 
       {backendStateCounts[viewFilter] === 0 && (
@@ -977,52 +958,49 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           <Icon name={viewFilter === 'updates' ? 'check' : 'box'} size={24} />
           <strong>No {viewFilter} backends</strong>
           <span>{viewFilter === 'updates' ? 'Every installed backend is current.' : 'No runtimes match this filter on the connected machine.'}</span>
-        </div>
-      )}
+          </div>
+        )}
 
-      <div className="matrix" data-backends-matrix>
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Device</th>
-                {CAPABILITY_COLS.map(c => (
-                  <th scope="col" key={c}>{c}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {matrixRowsForRender.map(deviceKey => (
-                <tr key={deviceKey}>
-                  <th scope="row">
-                    {DEVICE_LABELS[deviceKey]}
-                    {showTech && (
-                      <div className="cell__device-detail">{deviceDetail(deviceKey) || 'reported by backend metadata'}</div>
-                    )}
-                  </th>
-                  {CAPABILITY_COLS.map(cap => {
-                    const key = `${deviceKey}:${cap}`;
-                    const entries = matrixCells.get(key);
-                    if (!entries || entries.length === 0) {
-                      return (
-                        <td className="matrix__empty" key={cap}>
-                          <span aria-hidden="true">—</span>
-                        </td>
-                      );
-                    }
-                    return (
-                      <td key={cap}>
-                        {entries.filter(backendMatchesView).map(renderBackendCell)}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="backends__content">
+          <section className="backend-overview" aria-label="Backend setup summary">
+            <button type="button" className="backend-overview__item" onClick={() => setViewFilter('installed')}>
+              <strong>{backendStateCounts.installed}</strong>
+              <span>Ready to use</span>
+            </button>
+            <button type="button" className="backend-overview__item" onClick={() => setViewFilter('available')}>
+              <strong>{backendStateCounts.available}</strong>
+              <span>Ready to install</span>
+            </button>
+            <button type="button" className="backend-overview__item" onClick={() => setViewFilter('updates')}>
+              <strong>{backendStateCounts.updates}</strong>
+              <span>Need attention</span>
+            </button>
+          </section>
+
+          <div className="backend-catalog" data-backends-matrix>
+            {backendCatalog.map(({ capability, entries }) => {
+              const visibleEntries = entries.filter(backendMatchesView);
+              if (visibleEntries.length === 0) return null;
+              return (
+                <section className="backend-catalog__section" key={capability}>
+                  <header className="backend-catalog__heading">
+                    <div>
+                      <h2>{CAPABILITY_LABELS[capability]}</h2>
+                      <p>{CAPABILITY_DESCRIPTIONS[capability]}</p>
+                    </div>
+                    <span>{visibleEntries.length} runtime{visibleEntries.length === 1 ? '' : 's'}</span>
+                  </header>
+                  <div className="backend-catalog__grid">
+                    {visibleEntries.map(renderBackendCard)}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
         </div>
 
         {unsupportedBackendCount > 0 && (
-          <section className="backends__unsupported" data-backends-unsupported>
+            <section className="backends__unsupported" data-backends-unsupported>
             <button
               type="button"
               className="backends__unsupported-toggle"
@@ -1039,45 +1017,17 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             </button>
 
             {showUnsupported && (
-              <div className="matrix matrix--unsupported" id="backends-unsupported-matrix" data-backends-unsupported-matrix>
-                <table>
-                  <thead>
-                    <tr>
-                      <th scope="col">Device</th>
-                      {CAPABILITY_COLS.map(c => (
-                        <th scope="col" key={c}>{c}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {unsupportedMatrixRows.map(deviceKey => (
-                      <tr key={deviceKey}>
-                        <th scope="row">
-                          {DEVICE_LABELS[deviceKey]}
-                          {showTech && (
-                            <div className="cell__device-detail">{deviceDetail(deviceKey) || 'reported by backend metadata'}</div>
-                          )}
-                        </th>
-                        {CAPABILITY_COLS.map(cap => {
-                          const key = `${deviceKey}:${cap}`;
-                          const entries = unsupportedMatrixCells.get(key);
-                          if (!entries || entries.length === 0) {
-                            return (
-                              <td className="matrix__empty" key={cap}>
-                                <span aria-hidden="true">—</span>
-                              </td>
-                            );
-                          }
-                          return (
-                            <td key={cap}>
-                              {entries.map(renderBackendCell)}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="backend-catalog backend-catalog--unsupported" id="backends-unsupported-matrix" data-backends-unsupported-matrix>
+                {unsupportedBackendCatalog.map(({ capability, entries }) => (
+                  <section className="backend-catalog__section" key={capability}>
+                    <header className="backend-catalog__heading">
+                      <div><h2>{CAPABILITY_LABELS[capability]}</h2></div>
+                    </header>
+                    <div className="backend-catalog__grid">
+                      {entries.map(renderBackendCard)}
+                    </div>
+                  </section>
+                ))}
               </div>
             )}
           </section>
