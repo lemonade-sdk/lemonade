@@ -4319,6 +4319,10 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
                 LOG(ERROR, "Server") << "Image generation backend error: " << response.dump() << std::endl;
                 res.status = 500;
             }
+            // Auto-upscale if the loaded model has an upscale_model recipe option
+            if (!apply_upscale_if_configured(requested_model, response, res)) {
+                return; // Error already set by apply_upscale_if_configured
+            }
             res.set_content(response.dump(), "application/json");
         }
 
@@ -4533,10 +4537,15 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
 
         if (!load_image_model(request_json, res)) return;
 
+        std::string edit_model_name = request_json["model"].get<std::string>();
         auto response = router_->image_edits(request_json);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Image edits backend error: " << response.dump() << std::endl;
             res.status = 500;
+        }
+        // Auto-upscale if the loaded model has an upscale_model recipe option
+        if (!apply_upscale_if_configured(edit_model_name, response, res)) {
+            return; // Error already set by apply_upscale_if_configured
         }
         res.set_content(response.dump(), "application/json");
 
@@ -4585,10 +4594,15 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
         if (!extract_image_from_form(req, res, request_json)) return;
         if (!load_image_model(request_json, res))             return;
 
+        std::string var_model_name = request_json["model"].get<std::string>();
         auto response = router_->image_variations(request_json);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Image variations backend error: " << response.dump() << std::endl;
             res.status = 500;
+        }
+        // Auto-upscale if the loaded model has an upscale_model recipe option
+        if (!apply_upscale_if_configured(var_model_name, response, res)) {
+            return; // Error already set by apply_upscale_if_configured
         }
         res.set_content(response.dump(), "application/json");
 
@@ -4609,6 +4623,167 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
         }}};
         res.set_content(error.dump(), "application/json");
     }
+}
+
+bool Server::apply_upscale_if_configured(
+    const std::string& model_name,
+    nlohmann::json& response,
+    httplib::Response& res) {
+    // Check if this model has an upscale_model recipe option configured
+    std::string upscale_model_name;
+    try {
+        auto info = model_manager_->get_model_info(model_name);
+        auto upscale_opt = info.recipe_options.get_option("upscale_model");
+        if (upscale_opt.is_string() && !upscale_opt.get<std::string>().empty()) {
+            upscale_model_name = upscale_opt.get<std::string>();
+        } else {
+            return true; // No upscaler configured
+        }
+    } catch (const std::exception&) {
+        return true; // Model not found or error — pass through
+    }
+
+    LOG(INFO, "Server") << "Auto-upscaling image for model '" << model_name
+                        << "' using '" << upscale_model_name << '"' << std::endl;
+
+    // Extract the base64 image from the response
+    std::string b64_image;
+    if (response.contains("data") && response["data"].is_array() &&
+        response["data"].size() > 0 &&
+        response["data"][0].contains("b64_json") &&
+        response["data"][0]["b64_json"].is_string()) {
+        b64_image = response["data"][0]["b64_json"].get<std::string>();
+    } else {
+        LOG(WARNING, "Server") << "Response has no b64_json image to upscale" << std::endl;
+        return true; // Nothing to upscale — pass through
+    }
+
+    // Resolve upscale model path
+    std::string upscale_model_path;
+    std::string backend;
+    try {
+        auto info = model_manager_->get_model_info(upscale_model_name);
+
+        if (!model_manager_->is_model_downloaded(upscale_model_name)) {
+            LOG(INFO, "Server") << "Upscale model not cached, downloading..." << std::endl;
+            model_manager_->download_registered_model(info, true);
+            info = model_manager_->get_model_info(upscale_model_name);
+        }
+
+        upscale_model_path = info.resolved_path("main");
+    } catch (const std::exception& e) {
+        res.status = 404;
+        nlohmann::json error = {{{"error", {{
+            "message", "Upscale model not found: " + upscale_model_name
+        }}, {"type", "invalid_request_error"}}}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+
+    // Determine backend for the sd-cli binary.
+    // Prefer the main model's backend preference if it has one (keeps GPU/ROCm
+    // consistent between generation and upscaling), fall back to global config,
+    // then auto-detect.
+    try {
+        auto main_info = model_manager_->get_model_info(model_name);
+        auto main_backend_opt = main_info.recipe_options.get_option("sd-cpp_backend");
+        if (main_backend_opt.is_string() && !main_backend_opt.get<std::string>().empty()) {
+            backend = main_backend_opt.get<std::string>();
+        }
+    } catch (const std::exception&) {
+        // Main model info unavailable — fall through to config
+    }
+    if (backend.empty()) {
+        auto recipe_opts = config_->recipe_options("");
+        if (recipe_opts.contains("sd-cpp_backend") &&
+            recipe_opts["sd-cpp_backend"].is_string()) {
+            backend = recipe_opts["sd-cpp_backend"].get<std::string>();
+        }
+    }
+    if (backend.empty()) {
+        auto supported = SystemInfo::get_supported_backends("sd-cpp");
+        if (!supported.backends.empty()) {
+            backend = supported.backends[0];
+        } else {
+            backend = "cpu";
+        }
+    }
+
+    std::string exe_dir = lemon::backends::BackendUtils::get_backend_binary_path(
+        *lemon::backends::try_get_spec_for_recipe("sd-cpp"), backend);
+    std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
+#ifdef _WIN32
+        "sd-cli.exe";
+#else
+        "sd-cli";
+#endif
+
+    if (!std::filesystem::exists(cli_exe)) {
+        res.status = 500;
+        nlohmann::json error = {{{"error", {{
+            "message", "sd-cpp backend not installed (sd-cli not found)"
+        }}, {"type", "server_error"}}}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+
+    // Build environment variables
+    std::vector<std::pair<std::string, std::string>> env_vars;
+    std::filesystem::path cli_dir = cli_exe.parent_path();
+    std::string resolved_backend = backend;
+    if (backend == "rocm") {
+        std::string channel = "stable";
+        if (config_) {
+            channel = config_->rocm_channel_for_recipe("sd-cpp");
+        }
+        resolved_backend = "rocm-" + channel;
+    }
+#ifndef _WIN32
+    std::string lib_path = cli_dir.string();
+    if (resolved_backend == "rocm-stable") {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (!rocm_arch.empty()) {
+            std::string therock_lib = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
+            if (!therock_lib.empty()) {
+                lib_path = therock_lib + ":" + lib_path;
+            }
+        }
+    }
+    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+    if (existing_ld_path && strlen(existing_ld_path) > 0) {
+        lib_path = lib_path + ":" + std::string(existing_ld_path);
+    }
+    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+#else
+    if (resolved_backend == "rocm-stable") {
+        std::string new_path = cli_dir.string();
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (!rocm_arch.empty()) {
+            std::string therock_bin = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
+            if (!therock_bin.empty()) {
+                new_path = therock_bin + ";" + new_path;
+            }
+        }
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
+        env_vars.push_back({"PATH", new_path});
+    }
+#endif
+
+    // Perform upscaling
+    std::string upscaled = lemon::backends::SDServer::upscale_via_cli(
+        b64_image, upscale_model_path, cli_exe.string(), env_vars);
+
+    if (upscaled.empty()) {
+        LOG(WARNING, "Server") << "Auto-upscale failed for model '" << model_name << '"' << std::endl;
+        // Don't fail the request — just return the original image
+        return true;
+    }
+
+    // Replace the b64_json in the response with the upscaled image
+    response["data"][0]["b64_json"] = upscaled;
+    LOG(INFO, "Server") << "Auto-upscale complete for model '" << model_name << '"' << std::endl;
+    return true;
 }
 
 void Server::handle_image_upscale(const httplib::Request& req, httplib::Response& res) {
