@@ -12,6 +12,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
 | `GET` | [`/v1/downloads`](#get-v1downloads) | List server-owned model download jobs |
 | `POST` | [`/v1/downloads/control`](#post-v1downloadscontrol) | Pause, cancel, or remove server-owned model download jobs |
+| `GET` | [`/v1/registry/search`](#get-v1registrysearch) | Search Hugging Face or ModelScope for model repositories |
 | `GET` | [`/v1/pull/variants`](#get-v1pullvariants) | Enumerate GGUF variants for a Hugging Face checkpoint |
 | `POST` | [`/v1/delete`](#post-v1delete) | Delete a model |
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
@@ -522,6 +523,68 @@ If the job is already missing and `action` is `remove`, the endpoint returns:
 ```json
 {"status":"ok","missing":true}
 ```
+
+## `GET /v1/registry/search`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Search a remote model registry (Hugging Face or ModelScope) for repositories matching a text query. This endpoint returns **candidate repositories** based on registry metadata; it does not verify that a repository contains servable files. The desktop app's Model Manager follows up with [`/v1/pull/variants`](#get-v1pullvariants) on each candidate and only offers a download for repositories whose file listing passes that validation.
+
+Requires network access: returns 400 with code `lemond_offline` when the server is in offline mode.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `query` | Yes | Search text, minimum 3 characters after trimming. `q` is accepted as an alias. |
+| `source` | No | Registry to search: `huggingface` (default) or `modelscope`. Aliases `hf` and `ms` are accepted; the canonical name is echoed in the response. |
+| `limit` | No | Maximum number of results, an integer from 1 to 50. Default 12. |
+| `format` | No | The only accepted value is `gguf`. Biases search and ranking toward GGUF repositories and echoes `"format": "gguf"` in the response. |
+
+Example request:
+
+```bash
+curl 'http://localhost:13305/v1/registry/search?source=modelscope&query=qwen&format=gguf'
+```
+
+### Response
+
+```json
+{
+  "source": "modelscope",
+  "query": "qwen",
+  "format": "gguf",
+  "total": 128,
+  "results": [
+    {
+      "repository_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+      "display_name": "Qwen2.5-3B-Instruct-GGUF",
+      "source": "modelscope",
+      "repository_type": "model",
+      "description": "GGUF quantizations of Qwen2.5-3B-Instruct",
+      "tags": ["gguf", "chat"],
+      "task": "text-generation",
+      "downloads": 222500,
+      "likes": 12,
+      "has_gguf": true
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `source`, `query` | Echoed input (`source` canonicalized to `huggingface` or `modelscope`). |
+| `format` | Present only when `format=gguf` was requested. |
+| `total` | Total match count reported by the upstream registry; may exceed the number of returned results. |
+| `results[]` | Up to `limit` repositories, each with `repository_id`, `display_name`, `source`, `repository_type`, `description`, `tags`, `task`, `downloads`, `likes`, and `has_gguf`. `has_gguf` is a hint derived from registry metadata, not proof of a servable model — [`/v1/pull/variants`](#get-v1pullvariants) performs the authoritative file-level validation. |
+
+### Error responses
+
+| Status | Cause |
+|--------|-------|
+| 400 | `query` shorter than 3 characters, invalid `source`, `limit`, or `format`, or the server is in offline mode (`code: lemond_offline`). |
+| 429 | The upstream registry rate-limited the request. |
+| 502 | Other upstream transport or parsing failures; the body includes the upstream status code when available. |
 
 ## `GET /v1/pull/variants`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
