@@ -35,7 +35,7 @@ import { customModelToModelInfo, loadCustomModels } from '../features/customMode
 import { activeDownloadForModel, downloadsForModel, downloadStore, isDownloadTerminal, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { buildOmniToolRuntime } from '../tools/omniTools';
-import { LEMONADE_MCP_SERVER_ID, MAX_PRESET_MCP_SERVERS, buildSelectedMcpRuntime, composeMcpRuntimes, listMcpServerToolOptions, type McpServerToolOption } from '../tools/mcpRuntime';
+import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOLS, MAX_PRESET_MCP_SERVERS, buildSelectedMcpRuntime, composeMcpRuntimes, listMcpServerToolOptions, type McpServerToolOption } from '../tools/mcpRuntime';
 import {
   DEFAULT_PRESET,
   PRESET_STORE_EVENT,
@@ -363,6 +363,7 @@ const MCP_ENABLED_KEY = 'mcp_enabled';
 const MCP_SERVER_IDS_KEY = 'mcp_server_ids';
 const MCP_TOOL_NAMES_KEY = 'mcp_tool_names';
 const LEGACY_TOOLS_KEY = 'use_tools';
+const DEFAULT_MCP_SERVER_IDS = [LEMONADE_MCP_SERVER_ID];
 const MAX_IMAGE_DIM = 1024;
 const MAX_IMAGES = 4;
 const IMAGE_SIZE_OPTIONS = [256, 512, 768, 1024, 1536, 2048] as const;
@@ -756,10 +757,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     try {
       const explicit = localStorage.getItem(scopedKey(storageScope, MCP_ENABLED_KEY));
       if (explicit !== null) return explicit === 'true';
-      return localStorage.getItem(scopedKey(storageScope, LEGACY_TOOLS_KEY)) === 'true';
-    } catch { return false; }
+      const legacy = localStorage.getItem(scopedKey(storageScope, LEGACY_TOOLS_KEY));
+      if (legacy !== null) return legacy === 'true';
+      return true;
+    } catch { return true; }
   });
-  const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(() => loadScopedStringArray(storageScope, MCP_SERVER_IDS_KEY) || []);
+  const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(() => loadScopedStringArray(storageScope, MCP_SERVER_IDS_KEY) || DEFAULT_MCP_SERVER_IDS);
   const [selectedMcpToolNames, setSelectedMcpToolNames] = useState<string[] | null>(() => loadScopedStringArray(storageScope, MCP_TOOL_NAMES_KEY));
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -1086,18 +1089,24 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   useEffect(() => {
     if (!currentModel || !currentPreset) return;
     const selectedIds = presetMcpServerIds(currentPreset);
-    const next = selectedIds.length > 0;
+    const fallbackIds = selectedIds.length > 0 ? selectedIds : DEFAULT_MCP_SERVER_IDS;
+    const next = fallbackIds.length > 0;
     const seed = `${storageScope}:${currentModel}:${currentPreset.id}:${selectedIds.join(',')}:${next ? 'mcp-on' : 'mcp-off'}`;
     if (presetMcpSeedRef.current === seed) return;
     presetMcpSeedRef.current = seed;
     const storedIds = loadScopedStringArray(storageScope, MCP_SERVER_IDS_KEY);
     const storedTools = loadScopedStringArray(storageScope, MCP_TOOL_NAMES_KEY);
-    const nextIds = storedIds || selectedIds;
+    const nextIds = storedIds && storedIds.length > 0 ? storedIds : fallbackIds;
+    let nextEnabled = nextIds.length > 0;
+    try {
+      const explicit = localStorage.getItem(scopedKey(storageScope, MCP_ENABLED_KEY));
+      if (explicit !== null && (!storedIds || storedIds.length > 0)) nextEnabled = explicit === 'true';
+    } catch { /* ignore */ }
     setSelectedMcpServerIds(nextIds);
     setSelectedMcpToolNames(storedTools);
     saveScopedStringArray(storageScope, MCP_SERVER_IDS_KEY, nextIds);
-    setUseMcp(nextIds.length > 0);
-    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(nextIds.length > 0)); } catch { /* ignore */ }
+    setUseMcp(nextEnabled);
+    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(nextEnabled)); } catch { /* ignore */ }
   }, [currentModel, currentPreset, storageScope]);
 
   const hasRealtimeAudio = useMemo(
@@ -1283,7 +1292,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const selectedMcpToolNameSet = useMemo(() => selectedMcpToolNames === null ? null : new Set(selectedMcpToolNames), [selectedMcpToolNames]);
   const selectedMcpToolCount = useMemo(() => {
     if (selectedMcpToolNames !== null) return selectedMcpToolNames.length;
-    return mcpToolNamesForServers(mcpOptions, selectedMcpServerIds).length;
+    const visibleToolCount = mcpToolNamesForServers(mcpOptions, selectedMcpServerIds).length;
+    if (visibleToolCount > 0) return visibleToolCount;
+    return selectedMcpServerIds.includes(LEMONADE_MCP_SERVER_ID) ? LEMONADE_MCP_TOOLS.length : 0;
   }, [mcpOptions, selectedMcpServerIds, selectedMcpToolNames]);
 
   const loadMcpPickerOptions = useCallback(async () => {
@@ -1316,7 +1327,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, [addMenuOpen]);
 
   const resetMcpToPreset = useCallback(() => {
-    const nextIds = presetMcpServerIds(currentPreset || DEFAULT_PRESET);
+    const presetIds = presetMcpServerIds(currentPreset || DEFAULT_PRESET);
+    const nextIds = presetIds.length > 0 ? presetIds : DEFAULT_MCP_SERVER_IDS;
     persistMcpSelection(nextIds, null);
     persistMcpEnabled(nextIds.length > 0);
   }, [currentPreset, persistMcpEnabled, persistMcpSelection]);
