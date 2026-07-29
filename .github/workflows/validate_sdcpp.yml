@@ -330,6 +330,7 @@ jobs:
           LEMONADE_VALIDATE_SD_PROMPT: ${{ env.SDCPP_TEST_PROMPT }}
           LEMONADE_VALIDATE_SD_STEPS: ${{ env.SDCPP_TEST_STEPS }}
           LEMONADE_VALIDATE_SD_TIMEOUT: ${{ env.LEMONADE_VALIDATE_SD_TIMEOUT }}
+          AMD_LOG_LEVEL: "4"
         run: |
           $ErrorActionPreference = "Stop"
           $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
