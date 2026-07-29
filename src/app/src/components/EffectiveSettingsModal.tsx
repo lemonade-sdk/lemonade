@@ -134,6 +134,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     min_p: '',
     repeat_penalty: '',
   });
+  const [loadedContextSize, setLoadedContextSize] = useState<number | null>(null);
 
   const hasOverride = !!getSessionArgsOverride(modelName);
 
@@ -179,6 +180,18 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       repeat_penalty: savedSampling.repeat_penalty === undefined ? '' : String(savedSampling.repeat_penalty),
     });
   }, [open, loadEffective]);
+
+  useEffect(() => {
+    if (!open || !loadedModel) {
+      setLoadedContextSize(null);
+      return;
+    }
+    let cancelled = false;
+    void api.loadedModelContextSize(loadedModel).then(contextSize => {
+      if (!cancelled) setLoadedContextSize(contextSize);
+    });
+    return () => { cancelled = true; };
+  }, [open, loadedModel]);
 
   useEffect(() => {
     if (!open || !unlocked || !argsField) { setPreview(null); return; }
@@ -274,11 +287,6 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     return rows;
   }, [resolved]);
 
-  const loadedContextSize = useMemo(() => {
-    const value = Number(loadedModel?.recipe_options?.ctx_size);
-    return Number.isFinite(value) && value > 0 ? value : null;
-  }, [loadedModel]);
-
   const saveSampling = () => {
     const sampling: SamplingParams = {};
     for (const key of Object.keys(samplingDraft) as Array<keyof SamplingParams>) {
@@ -337,7 +345,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <div className="effective-settings__rows">
               <div className="effective-settings__row">
                 <span className="effective-settings__row-label">Context size</span>
-                <span className="effective-settings__row-value">{loadedContextSize ? loadedContextSize.toLocaleString() : 'Not loaded'}</span>
+                <span className="effective-settings__row-value">{loadedContextSize ? loadedContextSize.toLocaleString() : (loadedModel ? 'Resolving…' : 'Not loaded')}</span>
                 <span className="effective-settings__source effective-settings__source--generic">Runtime</span>
               </div>
               <div className="effective-settings__row">
