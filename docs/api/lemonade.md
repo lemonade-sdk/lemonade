@@ -273,8 +273,9 @@ The `recipe` field defines which software framework and device will be used to l
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | Namespaced [Lemonade Server model name](https://lemonade-server.ai/models.html) to register and install. |
-| `checkpoint` | Yes | HuggingFace checkpoint to install. |
 | `recipe` | Yes | Lemonade API recipe to load the model with. |
+| `checkpoint` | Yes | HuggingFace "main" checkpoint to install. |
+| `checkpoints` | No | HuggingFace checkpoints to install, for multi-checkpoint models. |
 | `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). Adds 'reasoning' label. |
 | `vision` | No | Whether the model has vision capabilities for processing images (default: false). Adds 'vision' label. |
 | `embedding` | No | Whether the model is an embedding model (default: false). Adds 'embeddings' label. |
@@ -284,11 +285,45 @@ The `recipe` field defines which software framework and device will be used to l
 Example request:
 
 ```bash
+# Single checkpoint
 curl -X POST http://localhost:13305/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "user.Phi-4-Mini-GGUF",
     "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M",
+    "recipe": "llamacpp"
+  }'
+```
+
+Instead of defining a model by `checkpoint` and `mmproj`, a model can also
+be defined with a dict of checkpoint types and paths. These requests do the
+same thing, but the syntax for pulling the mmproj differs. More complex
+(image generation) models might require `main`, `text_encoder`, and `vae`.
+
+```bash
+# Multi-checkpoint
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.My-Gemma3",
+    "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+    "mmproj": "mmproj-model-f16.gguf",
+	"vision": true,
+    "recipe": "llamacpp"
+  }'
+```
+
+```bash
+# Multi-checkpoint
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.My-Gemma3",
+    "checkpoints": {
+        "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+        "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"
+    },
+	"vision": true,
     "recipe": "llamacpp"
   }'
 ```
