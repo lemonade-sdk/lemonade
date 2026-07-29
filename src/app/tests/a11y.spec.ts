@@ -2878,7 +2878,7 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
 //
 // The Preset selector ("Preset: Default" badge and dropdown) was removed from
 // the Chat composer toolbar. The model selector, Effective Settings button,
-// MCP toggle, and Logs toggle must remain accessible. Range: A185–A187.
+// Tools toggle, and Logs toggle must remain accessible. Range: A185–A187.
 
 test.describe('Chat toolbar — no preset picker after GUI3 removal', () => {
   async function goToChatWithLoadedModel(page: Page): Promise<void> {
@@ -2927,33 +2927,33 @@ test.describe('Chat toolbar — no preset picker after GUI3 removal', () => {
     await expect(page.locator('[aria-label="Search presets"]')).toHaveCount(0);
   });
 
-  test('A186 — composer toolbar retains model selector, settings, MCP, and Logs buttons', async ({ page }) => {
+  test('A186 — composer toolbar retains model selector, settings, Tools, and Logs buttons', async ({ page }) => {
     await goToChatWithLoadedModel(page);
     // Model picker button is present (model is loaded so it appears)
     await expect(page.locator('.composer__model-button')).toBeVisible();
-    // MCP toggle
-    await expect(page.getByRole('button', { name: /MCP/i })).toBeVisible();
+    // Tools toggle
+    await expect(page.getByRole('button', { name: /Tools/i })).toBeVisible();
     // Logs toggle
     await expect(page.getByRole('button', { name: /Logs/i })).toBeVisible();
     // Effective Settings button (requires currentPreset && currentModel)
     await expect(page.getByRole('button', { name: 'Effective settings' })).toBeVisible();
   });
 
-  test('A187 — MCP toggle has aria-pressed and is keyboard-operable', async ({ page }) => {
+  test('A187 — Tools toggle has aria-pressed and is keyboard-operable', async ({ page }) => {
     await goToChatWithLoadedModel(page);
-    const mcpBtn = page.getByRole('button', { name: /MCP/i });
-    await expect(mcpBtn).toBeVisible();
+    const toolsBtn = page.getByRole('button', { name: /Tools/i });
+    await expect(toolsBtn).toBeVisible();
     // Capture initial pressed state (mock can seed it true or false)
-    const initialPressed = await mcpBtn.getAttribute('aria-pressed');
+    const initialPressed = await toolsBtn.getAttribute('aria-pressed');
     await expect(initialPressed).toMatch(/^(true|false)$/);
     const toggledState = initialPressed === 'true' ? 'false' : 'true';
     // Activate via keyboard and assert it toggles to opposite
-    await mcpBtn.focus();
+    await toolsBtn.focus();
     await page.keyboard.press('Space');
-    await expect(mcpBtn).toHaveAttribute('aria-pressed', toggledState);
+    await expect(toolsBtn).toHaveAttribute('aria-pressed', toggledState);
     // Activate again and assert it restores original state
     await page.keyboard.press('Space');
-    await expect(mcpBtn).toHaveAttribute('aria-pressed', initialPressed);
+    await expect(toolsBtn).toHaveAttribute('aria-pressed', initialPressed);
   });
 });
 

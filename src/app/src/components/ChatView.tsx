@@ -35,7 +35,7 @@ import { customModelToModelInfo, loadCustomModels } from '../features/customMode
 import { activeDownloadForModel, downloadsForModel, downloadStore, isDownloadTerminal, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { buildOmniToolRuntime } from '../tools/omniTools';
-import { MAX_PRESET_MCP_SERVERS, buildSelectedMcpRuntime, composeMcpRuntimes, listMcpServerToolOptions, type McpServerToolOption } from '../tools/mcpRuntime';
+import { LEMONADE_MCP_SERVER_ID, MAX_PRESET_MCP_SERVERS, buildSelectedMcpRuntime, composeMcpRuntimes, listMcpServerToolOptions, type McpServerToolOption } from '../tools/mcpRuntime';
 import {
   DEFAULT_PRESET,
   PRESET_STORE_EVENT,
@@ -1270,6 +1270,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     saveScopedStringArray(storageScope, MCP_SERVER_IDS_KEY, uniqueServerIds);
     saveScopedStringArray(storageScope, MCP_TOOL_NAMES_KEY, uniqueToolNames);
   }, [storageScope]);
+
+  const startLemonadeToolPrompt = useCallback((text: string) => {
+    persistMcpEnabled(true);
+    persistMcpSelection([LEMONADE_MCP_SERVER_ID], null);
+    setInputValue(text);
+    inputRef.current?.focus();
+  }, [persistMcpEnabled, persistMcpSelection]);
 
   const selectedMcpServerIdSet = useMemo(() => new Set(selectedMcpServerIds), [selectedMcpServerIds]);
   const selectedMcpToolNameSet = useMemo(() => selectedMcpToolNames === null ? null : new Set(selectedMcpToolNames), [selectedMcpToolNames]);
@@ -3054,7 +3061,7 @@ ${finalText}`
               onOpenModelDetails={onOpenModelDetails}
               onUnloadModel={handleLoadedCardUnload}
               unloadingModel={modelPickerUnloading}
-              onChipClick={(text) => setInputValue(text)}
+              onChipClick={startLemonadeToolPrompt}
               customModelInfos={customModelInfos}
             />
           ) : (
@@ -3285,16 +3292,16 @@ ${finalText}`
               onClick={() => setMcpPickerOpen(open => !open)}
               disabled={!modeSupportsMcp}
               title={modeSupportsMcp
-                ? (useMcp ? `MCP enabled for ${selectedMcpServerIds.length} server${selectedMcpServerIds.length === 1 ? '' : 's'} and ${selectedMcpToolCount} tool${selectedMcpToolCount === 1 ? '' : 's'}` : 'Choose MCP servers and tools for this chat')
-                : 'MCP is only available for chat-completion models'}
+                ? (useMcp ? `Tools enabled for ${selectedMcpServerIds.length} server${selectedMcpServerIds.length === 1 ? '' : 's'} and ${selectedMcpToolCount} tool${selectedMcpToolCount === 1 ? '' : 's'}` : 'Choose Lemonade tools and external MCP servers for this chat')
+                : 'Tools are only available for chat-completion models'}
               aria-pressed={useMcp && modeSupportsMcp}
               aria-haspopup="dialog"
               aria-expanded={mcpPickerOpen}
             >
-              <Icon name="plug" size={13} /> MCP
+              <span aria-hidden="true">🍋</span> Tools
             </button>
             {mcpPickerOpen && (
-              <div className="composer__mcp-menu" role="dialog" aria-label="MCP servers and tools">
+              <div className="composer__mcp-menu" role="dialog" aria-label="Tools for this chat">
                 <div className="composer__mcp-header">
                   <label className="composer__mcp-master">
                     <input
@@ -3304,7 +3311,7 @@ ${finalText}`
                       onChange={event => persistMcpEnabled(event.target.checked)}
                     />
                     <span>
-                      <strong>MCP for this chat</strong>
+                      <strong>Tools for this chat</strong>
                       <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
                     </span>
                   </label>
@@ -3315,7 +3322,7 @@ ${finalText}`
                 ) : mcpPickerError ? (
                   <div className="composer__mcp-error" role="alert">{mcpPickerError}</div>
                 ) : mcpOptions.length === 0 ? (
-                  <p className="composer__mcp-empty">No MCP servers available.</p>
+                  <p className="composer__mcp-empty">No tools available.</p>
                 ) : (
                   <div className="composer__mcp-servers">
                     {mcpOptions.map(server => {
@@ -3332,7 +3339,7 @@ ${finalText}`
                             <span className={`composer__mcp-status${server.connected ? ' is-connected' : ''}`} aria-hidden="true" />
                             <span className="composer__mcp-server-text">
                               <strong>{server.name}</strong>
-                              <small>{server.transport === 'builtin' ? 'Built in' : server.status} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
+                              <small>{server.transport === 'builtin' ? 'Built in' : `External MCP · ${server.status}`} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
                             </span>
                           </label>
                           {serverSelected && (
@@ -3836,21 +3843,21 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
       </p>
 
       <div className="chips" role="list">
-        <button className="chip" role="listitem" onClick={() => onChipClick('Summarize this document for me')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="file" size={16} /></span>
-          Summarize a doc
+        <button className="chip" role="listitem" onClick={() => onChipClick('What models do I have loaded?')}>
+          <span className="chip__icon" aria-hidden="true"><Icon name="hard-drive" size={16} /></span>
+          Loaded models
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('Review this code and suggest improvements')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="code" size={16} /></span>
-          Code review
+        <button className="chip" role="listitem" onClick={() => onChipClick('What models can I download from the Qwen collection?')}>
+          <span className="chip__icon" aria-hidden="true"><Icon name="search" size={16} /></span>
+          Find Qwen models
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('Create an image of a cozy lemonade stand at sunset')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="image" size={16} /></span>
-          Create image
+        <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well?')}>
+          <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
+          Check hardware
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('Turn this text into natural speech')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="tts" size={16} /></span>
-          Text to speech
+        <button className="chip" role="listitem" onClick={() => onChipClick('Download and load a good chat model for me.')}>
+          <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
+          Load a model
         </button>
       </div>
     </div>

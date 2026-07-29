@@ -182,7 +182,7 @@ export const LEMONADE_MCP_TOOLS: ToolFunction[] = [
 
 export const LEMONADE_MCP_SERVER: McpServerOption = {
   id: LEMONADE_MCP_SERVER_ID,
-  name: 'Lemon-Tools MCP',
+  name: 'Lemonade tools',
   transport: 'builtin',
   connected: true,
   status: 'connected',

@@ -2259,14 +2259,14 @@ const ModelConfigurationTab: React.FC<{
     return sanitizeRecipeOptions(raw);
   };
 
-  const saveConfig = () => {
+  const saveConfig = (showNotice = true) => {
     const existingTuning = loadModelTuning(name, DEFAULT_PRESET.id);
     saveModelTuning(name, {
       ...(existingTuning || {}),
       recipe_options: buildConfigOptions(),
       sampling: existingTuning?.sampling || {},
     }, DEFAULT_PRESET.id);
-    setNotice('Load settings saved. Reload the model to apply them.');
+    if (showNotice) setNotice('Defaults saved for future loads.');
   };
 
   const resetConfig = () => {
@@ -2293,10 +2293,11 @@ const ModelConfigurationTab: React.FC<{
 
   const loadViaPanel = async () => {
     if (!onLoadWithOptions) return;
-    saveConfig();
+    saveConfig(false);
     setIsLoadingViaPanel(true);
     try {
       await onLoadWithOptions(buildConfigOptions());
+      setNotice('Model loaded with current settings.');
     } finally {
       setIsLoadingViaPanel(false);
     }
@@ -2304,7 +2305,7 @@ const ModelConfigurationTab: React.FC<{
 
   const reloadViaPanel = async () => {
     if (!loadedModel || !onReloadModel) return;
-    saveConfig();
+    saveConfig(false);
     setIsReloading(true);
     try {
       await onReloadModel(loadedModel, buildConfigOptions() as Record<string, unknown>);
@@ -2418,7 +2419,7 @@ const ModelConfigurationTab: React.FC<{
           <div>
             <h3 className="detail-configuration__section-heading">Load settings</h3>
             <p className="detail-configuration__section-copy">
-              Choose how this model is loaded. Changes apply after loading or reloading the model.
+              Settings used when this model loads or reloads.
             </p>
           </div>
           <span className={`detail-configuration__status ${loadedModel ? 'is-loaded' : ''}`}>
@@ -2481,12 +2482,7 @@ const ModelConfigurationTab: React.FC<{
           )}
         </div>
 
-        <div className="detail-tuning__actions">
-          <button type="button" className="btn btn--primary btn--sm" onClick={saveConfig}>Save load settings</button>
-          {hasLoadSettingChanges && (
-            <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>Discard changes</button>
-          )}
-          <button type="button" className="btn btn--ghost btn--sm" onClick={resetConfig}>Reset</button>
+        <div className="detail-tuning__actions detail-configuration__actions">
           {!loadedModel && isDownloaded && onLoadWithOptions && (
             <button
               type="button"
@@ -2495,20 +2491,25 @@ const ModelConfigurationTab: React.FC<{
               disabled={isLoadingViaPanel || isLoadingThis}
               aria-busy={isLoadingViaPanel}
             >
-              <Icon name="play" size={13} aria-hidden="true" /> {isLoadingViaPanel ? 'Loading\u2026' : 'Load with these options'}
+              <Icon name="play" size={13} aria-hidden="true" /> {isLoadingViaPanel ? 'Loading\u2026' : 'Load model'}
             </button>
           )}
           {loadedModel && onReloadModel && (
             <button
               type="button"
-              className="btn btn--ghost btn--sm"
+              className="btn btn--primary btn--sm"
               onClick={reloadViaPanel}
               disabled={isReloading || isLoadingThis}
               aria-busy={isReloading}
             >
-              <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading\u2026' : 'Reload with these options'}
+              <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading\u2026' : 'Reload model'}
             </button>
           )}
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => saveConfig()}>Save defaults</button>
+          {hasLoadSettingChanges && (
+            <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>Discard changes</button>
+          )}
+          <button type="button" className="btn btn--ghost btn--sm" onClick={resetConfig}>Reset to defaults</button>
         </div>
 
         {notice && (
