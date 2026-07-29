@@ -307,6 +307,15 @@ private:
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
+    // Auto-upscale an image response if the source model has an "upscale_model"
+    // recipe option configured. Returns a new JSON response with the upscaled
+    // image, or the original response unchanged if no upscaler is set.
+    // On failure, sets res status/body and returns false.
+    bool apply_upscale_if_configured(
+        const std::string& model_name,
+        nlohmann::json& response,
+        httplib::Response& res);
+
     bool parse_required_json_body(const httplib::Request& req,
                                   httplib::Response& res,
                                   nlohmann::json& out);
