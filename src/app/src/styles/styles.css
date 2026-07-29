@@ -4945,7 +4945,41 @@ optgroup {
   cursor: pointer;
 }
 
-.rail__privacy-toggle input { accent-color: var(--accent-fg); }
+.rail__privacy-toggle input {
+  appearance: none;
+  display: grid;
+  place-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  background: var(--surface-base);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.rail__privacy-toggle input::after {
+  width: 5px;
+  height: 8px;
+  content: '';
+  border: solid var(--accent-on);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.rail__privacy-toggle input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.rail__privacy-toggle input:checked::after { transform: rotate(45deg) scale(1); }
+
+.rail__privacy-toggle input:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 2px;
+}
 
 .rail__privacy-note {
   display: block;
