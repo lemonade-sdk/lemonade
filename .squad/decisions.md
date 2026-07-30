@@ -2789,3 +2789,44 @@ Prefer a **persistent loaded-model strip directly above the composer toolbar** i
 - Give unload buttons explicit labels like `Unload Qwen3.6-35B-A3B-GGUF`
 - Announce unload completion/failure with polite live region
 - Preserve keyboard access even when strip scrolls horizontally
+
+******************
+
+## 2026-07-30 — Logs and Telemetry UI Display Refinement
+
+**Author:** Mattingly (UI/Frontend)
+**Status:** Implemented
+**Session:** 20260730T091124Z
+
+## Decision
+
+Refine the Logs display component to trim redundant structured-field prefixes (timestamp, severity, source, process) while preserving the raw `LogEntry.line` payload for filtering. Relocate Logs search into the filter rail using the telemetry search input styling, and standardize telemetry rail spacing.
+
+## Key Changes
+
+1. **Display-only prefix trimming in LogViewer.tsx**: Strip leading timestamp/severity/source/process when the structured fields are already presented separately. Raw `LogEntry.line` remains available for search/filter operations via existing structured-field access.
+
+2. **Logs search moved to filter rail**: Integrate search control into the existing filter rail alongside model/capability filtering. Use telemetry search input styling for visual consistency.
+
+3. **Shared dropdown-chevron styling**: Apply consistent `<select>` chevron appearance across both Logs and telemetry controls.
+
+4. **Telemetry rail spacing unified**: Match spacing and layout of telemetry filter controls to ensure visual cohesion.
+
+## Validation
+
+* TypeScript: `npm run typecheck` — passes
+* Logs feature test — passes
+* Accessibility tests: 2 Logs a11y tests + 4 telemetry interaction tests — all pass
+* No regressions in forbidden areas (backend, server routes, model loading)
+
+## Files Modified
+
+* `src/app/src/components/LogViewer.tsx` — Display transform, search relocation
+* `src/app/src/styles/styles.css` — Styling updates for filter rail integration and unified spacing
+
+## Architecture Notes
+
+****** No server-side changes (`lemond` remains off-limits per GUI3 POC rules)
+****** No new npm dependencies
+****** No changes to desktop lifecycle (GUI3 remains on-demand)
+****** Many-clients-one-server invariant: client-local UI state only
