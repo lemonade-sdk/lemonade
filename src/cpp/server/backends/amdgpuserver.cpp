@@ -17,11 +17,13 @@ using namespace lemon::utils;
 namespace lemon {
 
 InstallParams AMDGPUServer::get_install_params(const std::string& /*backend*/, const std::string& /*version*/) {
-    // No public GitHub release; the binary is installed locally into the cache
-    // (bin/amdgpu-server/gpu/). These values are only consulted if a download is
-    // triggered, which does not happen while the installed version.txt matches
-    // the pin in backend_versions.json.
-    return {"lemonade-sdk/amdgpu-server", "amdgpu-server.zip"};
+    // Published by the lemonade-sdk/amdgpu-server release pipeline (built against
+    // ROCm/hip-ep). Per-OS assets; the version tag comes from backend_versions.json.
+#ifdef _WIN32
+    return {"lemonade-sdk/amdgpu-server", "amdgpu-server-windows-x64.zip"};
+#else
+    return {"lemonade-sdk/amdgpu-server", "amdgpu-server-linux-x64.tar.gz"};
+#endif
 }
 
 AMDGPUServer::AMDGPUServer(const std::string& model_name, bool debug, ModelManager* model_manager, BackendManager* backend_manager)
