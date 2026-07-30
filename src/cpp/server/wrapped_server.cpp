@@ -570,6 +570,14 @@ bool WrappedServer::is_process_running() const {
     return is_backend_alive();
 }
 
+json WrappedServer::reset_chat_session(const json& request) {
+    (void)request;
+    return json{
+        {"status", "unsupported"},
+        {"message", server_name_ + " does not support chat session reset"}
+    };
+}
+
 json WrappedServer::forward_get_request(const std::string& endpoint, long timeout_seconds) {
     (void)timeout_seconds;
     if (!is_backend_alive()) {

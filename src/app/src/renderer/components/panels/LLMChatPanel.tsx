@@ -497,6 +497,29 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     ...buildChatRequestOverrides(appSettings),
   });
 
+  const handleStartNewChat = async () => {
+    const body: Record<string, string> = { conversation_id: 'default' };
+    if (chatModelName) {
+      body.model = chatModelName;
+    }
+
+    try {
+      const response = await serverFetch('/chat/sessions/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        console.warn('Chat session reset failed:', response.status, detail);
+      }
+    } catch (error) {
+      console.warn('Chat session reset failed:', error);
+    }
+
+    onNewChat?.();
+  };
+
   /** Build an error message enriched with backend action help text when available. */
   const buildErrorMessage = (error: any): string => {
     const errorMessage = error.message || 'Failed to get response from the model.';
@@ -1263,7 +1286,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           )}
           <button
             className="new-chat-button"
-            onClick={onNewChat}
+            onClick={handleStartNewChat}
             disabled={isBusy}
             title="Start a new chat"
           >

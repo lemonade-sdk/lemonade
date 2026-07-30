@@ -167,4 +167,11 @@ json AMDGPUServer::responses(const json& request) {
     return forward_request("/v1/responses", request);
 }
 
+json AMDGPUServer::reset_chat_session(const json& request) {
+    if (!is_loaded_) {
+        throw ModelNotLoadedException("AMDGPU-Server");
+    }
+    return forward_request("/v1/sessions/reset", request);
+}
+
 } // namespace lemon

@@ -312,6 +312,9 @@ public:
     virtual json completion(const json& request) override = 0;
     virtual json responses(const json& request) = 0;
 
+    // Reset multi-turn KV cache on backends that support session reuse (e.g. OGA).
+    virtual json reset_chat_session(const json& request);
+
     // Forward streaming requests to the wrapped server (public for Router access)
     // Virtual so backends can transform request (e.g., FLM needs checkpoint in model field)
     using TelemetryCallback = std::function<void(int input_tokens,
