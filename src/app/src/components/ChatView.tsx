@@ -756,6 +756,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(() => loadScopedStringArray(MCP_SERVER_IDS_KEY) || DEFAULT_MCP_SERVER_IDS);
   const [selectedMcpToolNames, setSelectedMcpToolNames] = useState<string[] | null>(() => loadScopedStringArray(MCP_TOOL_NAMES_KEY));
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
+  const [mcpPickerTab, setMcpPickerTab] = useState<'lemonade' | 'external'>('lemonade');
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [mcpOptions, setMcpOptions] = useState<McpServerToolOption[]>([]);
   const [mcpPickerLoading, setMcpPickerLoading] = useState(false);
@@ -776,7 +777,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
-  const mcpReturnFocusEntryRef = useRef<'lemonade' | 'external'>('lemonade');
+  const mcpReturnFocusEntryRef = useRef<'tools'>('tools');
   const mcpBackButtonRef = useRef<HTMLButtonElement | null>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
@@ -1256,6 +1257,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     if (visibleToolCount > 0) return visibleToolCount;
     return selectedMcpServerIds.includes(LEMONADE_MCP_SERVER_ID) ? LEMONADE_MCP_TOOLS.length : 0;
   }, [mcpOptions, selectedMcpServerIds, selectedMcpToolNames]);
+  const visibleMcpOptions = useMemo(
+    () => mcpOptions.filter(server => mcpPickerTab === 'lemonade' ? server.transport === 'builtin' : server.transport !== 'builtin'),
+    [mcpOptions, mcpPickerTab],
+  );
 
   const loadMcpPickerOptions = useCallback(async () => {
     setMcpPickerLoading(true);
@@ -1322,8 +1327,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     if (!useMcp) persistMcpEnabled(true);
   }, [mcpOptions, persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet, selectedMcpServerIds, selectedMcpToolNames, useMcp]);
 
-  const openMcpPicker = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    mcpReturnFocusEntryRef.current = event.currentTarget.dataset.mcpEntry === 'external' ? 'external' : 'lemonade';
+  const openMcpPicker = useCallback(() => {
+    mcpReturnFocusEntryRef.current = 'tools';
+    setMcpPickerTab('lemonade');
     setMcpPickerOpen(true);
   }, []);
 
@@ -3710,30 +3716,15 @@ ${finalText}`
                   type="button"
                   className={`composer__add-row${mcpPickerOpen ? ' is-active' : ''}`}
                   role="menuitem"
-                  data-mcp-entry="lemonade"
+                  data-mcp-entry="tools"
                   onClick={openMcpPicker}
                   disabled={!modeSupportsMcp}
                   aria-pressed={mcpPickerOpen}
                 >
-                  <span className="composer__add-icon" aria-hidden="true">🍋</span>
+                  <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Lemonade tools</strong>
-                    <small>{useMcp ? `${selectedMcpToolCount} selected tool${selectedMcpToolCount === 1 ? '' : 's'}` : 'Models, downloads, hardware, and local generation'}</small>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className={`composer__add-row${mcpPickerOpen ? ' is-active' : ''}`}
-                  role="menuitem"
-                  data-mcp-entry="external"
-                  onClick={openMcpPicker}
-                  disabled={!modeSupportsMcp}
-                  aria-pressed={mcpPickerOpen}
-                >
-                  <span className="composer__add-icon"><Icon name="plug" size={16} /></span>
-                  <span className="composer__add-text">
-                    <strong>External MCP servers</strong>
-                    <small>Enable connected external tool providers</small>
+                    <strong>Configure tools</strong>
+                    <small>{useMcp ? `${selectedMcpToolCount} selected tool${selectedMcpToolCount === 1 ? '' : 's'}` : 'Lemonade tools and external MCP servers'}</small>
                   </span>
                 </button>
               </div>
@@ -3776,15 +3767,37 @@ ${finalText}`
                     </label>
                     <button type="button" className="btn btn--ghost" onClick={resetMcpSelection}>Built-in default</button>
                   </div>
+                  <div className="composer__mcp-tabs" role="tablist" aria-label="Tool providers">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={mcpPickerTab === 'lemonade'}
+                      className={`composer__mcp-tab${mcpPickerTab === 'lemonade' ? ' is-active' : ''}`}
+                      onClick={() => setMcpPickerTab('lemonade')}
+                    >
+                      Lemonade tools
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={mcpPickerTab === 'external'}
+                      className={`composer__mcp-tab${mcpPickerTab === 'external' ? ' is-active' : ''}`}
+                      onClick={() => setMcpPickerTab('external')}
+                    >
+                      External MCP servers
+                    </button>
+                  </div>
                   {mcpPickerLoading ? (
                     <p className="composer__mcp-empty">Loading MCP tools…</p>
                   ) : mcpPickerError ? (
                     <div className="composer__mcp-error" role="alert">{mcpPickerError}</div>
-                  ) : mcpOptions.length === 0 ? (
-                    <p className="composer__mcp-empty">No tools available.</p>
+                  ) : visibleMcpOptions.length === 0 ? (
+                    <p className="composer__mcp-empty">
+                      {mcpPickerTab === 'external' ? 'No external MCP servers are connected.' : 'No Lemonade tools available.'}
+                    </p>
                   ) : (
                     <div className="composer__mcp-servers">
-                      {mcpOptions.map(server => {
+                      {visibleMcpOptions.map(server => {
                         const serverSelected = selectedMcpServerIdSet.has(server.id);
                         return (
                           <section key={server.id} className={`composer__mcp-server${serverSelected ? ' is-selected' : ''}`}>

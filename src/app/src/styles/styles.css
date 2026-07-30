@@ -1297,6 +1297,43 @@ input, textarea {
   gap: var(--space-3);
 }
 
+.composer__mcp-tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.composer__mcp-tab {
+  flex: 1;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.composer__mcp-tab:hover {
+  color: var(--text-primary);
+}
+
+.composer__mcp-tab.is-active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.composer__mcp-tab:focus-visible {
+  outline: 2px solid var(--accent-fg);
+  outline-offset: 1px;
+}
+
 .composer__mcp-footer {
   margin-top: var(--space-3);
   padding-top: var(--space-3);
