@@ -124,3 +124,42 @@ Kyle's direct request is a narrow authorization exception to the older frontend-
 ### 2026-07-30T09:52:57.950-06:00 — MCP parity review
 
 REJECTED the five-tool MCP parity implementation. `lemonade_list_backends` returns raw `BackendManager::get_all_backends_status()`, which includes `action` and `release_url`; this bypasses the local public-data sanitizer and violates the contract forbidding admin controls and backend URLs. The model-info/loaded-state serializers also expose `checkpoint` data even though custom model registration stores checkpoint paths; the sanitizer does not redact checkpoint values, violating the no-filesystem-paths rule. The new tests do not assert either redaction requirement, and the docs should be updated to describe the sanitized backend payload after the implementation is corrected. Revision ownership is locked out: Aaron should revise the C++ MCP implementation, Liebergot should revise `test/server_mcp.py`, and Kranz should revise `docs/api/mcp.md`; none is the original author of the rejected artifact they are assigned.
+
+### 2026-07-30T10:21:06.265-06:00 — MCP Parity Revision Cycle — Final Review Pending
+
+**Three parallel autonomous revisions completed:**
+
+1. **Aaron (C++ Backend Integrator):** Remediated diagnostic serialization redaction
+   - Backend `lemonade_list_backends` tool now uses explicit allowlist: `recipe`, `name`, `state`, `message`, `version`
+   - Model `lemonade_get_model_info` tool now omits checkpoint/path fields
+   - `lemonade_server_core` Release target compiled successfully
+   - **Locked:** Liebergot is blocked from MCP C++ code
+
+2. **Liebergot (C++ Server Core):** Remediated test coverage with recursive assertions
+   - `test/server_mcp.py` now recursively validates forbidden field absence across nested payloads
+   - Covers: control, URL, process, credential, checkpoint, path, admin field checks
+   - Static checks passed; live validation blocked (server not rebuilt)
+   - **Locked:** Liebergot is blocked from touching MCP C++ code
+
+3. **Kranz (Build & Release):** Remediated documentation contract
+   - `docs/api/mcp.md` now names all five canonical tools and defines payload allowlists
+   - Explicitly lists prohibited fields: controls, URLs, paths, credentials, processes
+   - Security principle documented: "Read-only does not mean unfiltered"
+   - `git diff --check` passed
+   - **Locked:** Kranz is blocked from C++ and test code
+
+**Lovell's review gates (strict lockout policy):**
+- All three agents revise independently; Lovell reviews all as separate components
+- Pass criteria: all three original defects addressed, no new issues surface
+- Lovell reviews Aaron's C++ changes, Liebergot's test changes, Kranz's documentation independently
+
+**Current status:** All three remediations COMPLETED. Scribe recorded orchestration entries (20260730T102106Z_*). Lovell now ready for parallel final review.
+
+**Timeline:**
+- Remediations: 2026-07-30 10:12–10:13Z (completed in parallel)
+- Orchestration: 2026-07-30 10:21:06Z (recorded by Scribe)
+- Next: Lovell final review → merge (if all pass) → server rebuild → live test validation
+
+### 2026-07-30T10:21:06.029-06:00 — MCP parity final review
+
+**Verdict: REJECT.** The C++ lifecycle implementation is not install-free: `lemonade_load_model` delegates to `Router::load_model`, while backend `load()` implementations call `BackendManager::install_backend()` when needed, violating the phase boundary that excludes install side effects. Diagnostic sanitization also does not uniformly protect every allowlisted string value: `safe_public_scalar()` is used for backend name/state/version and public system fields, while `safe_public_text()` does not reject relative slash paths or bare URL-like values. The tests do not cover the no-install lifecycle guarantee and their path detector only rejects absolute paths; the documentation lists model fields (`source`, `registry_source`, `labels`, `components`, `recipe_options`) that the approved C++ serializer explicitly omits.

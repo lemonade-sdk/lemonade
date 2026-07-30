@@ -62,3 +62,17 @@ many-clients-one-server topology, API key passthrough.
 **Next task for Liebergot:** After Aaron's C++ revision, enhance test assertions to recursively validate forbidden field absence.
 
 **Timeline:** Aaron revises C++ (~1-2 days) → Liebergot takes over tests (~1 day) → Lovell re-review.
+
+### 2026-07-30T10:12:56.951-06:00 — MCP redaction test revision
+
+Updated `test/server_mcp.py` with recursive nested object/array checks for forbidden control, URL, process, credential, checkpoint, and filesystem path data. Added explicit allowlists for model, backend, server-health, loaded-model, and lifecycle payloads; backend diagnostics now also verify model load state is unchanged. Static checks and isolated recursive assertion probes pass. The live suite reached the existing five-tool server but stopped because the running server has not been rebuilt with the five parity tools.
+
+### 2026-07-30T10:21:06.265-06:00 — MCP revision cycle orchestration (Scribe)
+
+Scribe recorded Liebergot's completed test redaction enhancement in the orchestration
+log (20260730T102106Z_liebergot_mcp_tests_background.md). Liebergot is now locked
+OUT of C++ MCP code (Aaron owns redaction fix per Lovell's strict lockout policy).
+Liebergot's test assertions now recursively validate forbidden field absence across
+all nested payloads. Aaron's C++ fix must merge first; Liebergot's tests activate
+only after C++ rebuild provides the parity tools. Lovell will review all three
+parallel revisions (Aaron C++, Liebergot tests, Kranz docs). Handoff complete.

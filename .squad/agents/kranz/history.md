@@ -92,3 +92,17 @@ While addressing review comments on the bug-report template, verified the curren
 **No C++ or test code changes required.** Documentation only.
 
 **Approval gates:** Lovell re-review after content update.
+
+### 2026-07-30T10:12:57.271-06:00 — MCP redaction documentation revision
+
+Updated `docs/api/mcp.md` independently after the MCP parity documentation rejection. The revised contract names all five canonical lifecycle/diagnostic tools, defines their public payload allowlists, and explicitly excludes backend controls and release URLs, checkpoint/path values, PIDs, backend URLs, credentials, and internal/admin process controls. Lightweight contract assertions and `git diff --check` passed; no C++ or test files were changed by this revision.
+
+### 2026-07-30T10:21:06.265-06:00 — MCP revision cycle orchestration (Scribe)
+
+Scribe recorded Kranz's completed documentation revision in the orchestration log
+(20260730T102106Z_kranz_mcp_docs_background.md). Kranz is now locked OUT of MCP
+C++ and test code (per Lovell's strict lockout policy: Aaron owns C++, Liebergot
+owns tests, Kranz owns documentation only). The documentation contract now matches
+the implemented allowlists and explicitly names forbidden fields. Lovell will
+re-review all three parallel revisions (Aaron C++, Liebergot tests, Kranz docs)
+as independent components. Handoff complete; awaiting merge.

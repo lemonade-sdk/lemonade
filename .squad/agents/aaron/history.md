@@ -37,3 +37,22 @@ Backends are subprocess-based — never in-process. NPU exclusivity is critical.
 **Timeline:** ~1-2 days. Liebergot takes over test enhancements after Aaron's revision merges.
 
 **Approval gates:** Lovell re-review after C++ fix + test enhancements + docs update.
+
+### 2026-07-30T10:12:56.935-06:00 — MCP parity redaction revision
+
+Replaced the parity diagnostics' generic JSON filtering with explicit public
+allowlists. Backend status now retains only `recipe`, `name`, `state`, `message`,
+and optional `version`; model and loaded-state payloads omit checkpoint data,
+paths, process metadata, URLs, credentials, and control fields. The existing
+`lemonade_list_models` loaded section now uses the same safe loaded-model
+serializer. The `lemonade-server-core` Release target compiled successfully.
+
+### 2026-07-30T10:21:06.265-06:00 — MCP revision cycle orchestration (Scribe)
+
+Scribe recorded Aaron's completed C++ redaction fix in the orchestration log
+(20260730T102106Z_aaron_mcp_redaction_background.md). Aaron's revision addresses
+all three original defects: backend allowlist redaction, model checkpoint omission,
+and control/URL/path field exclusion. Liebergot now takes over test enhancements
+(locked out from C++ code per Lovell's strict lockout policy). Lovell will
+re-review all three parallel revisions (Aaron C++, Liebergot tests, Kranz docs).
+Handoff complete; awaiting merge.
