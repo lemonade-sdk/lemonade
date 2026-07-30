@@ -291,6 +291,7 @@ static void report_mismatch(const json& expected, const json& produced) {
         std::printf("    %s: expected: %s, produced: %s\n", op.value("path", "").c_str(),
                     exp.c_str(), prod.c_str());
     }
+    // TODO: maybe delete the trace piece, think about it
     if (!expected.contains("trace") || !produced.contains("trace")) return;
     const json& expected_trace = expected["trace"];
     const json& produced_trace = produced["trace"];
@@ -337,7 +338,7 @@ static std::optional<RoutingPolicyEngine> compile_engine(RoutePolicy policy,
     try {
         return RoutingPolicyEngine(std::move(policy), std::move(services));
     } catch (const std::exception& e) {
-        check(rel + ": policy compiles", false);
+        check(rel + ": policy engine compiles", false);
         std::printf("  %s\n", e.what());
         return std::nullopt;
     }
