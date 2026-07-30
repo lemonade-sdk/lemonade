@@ -357,14 +357,13 @@ input, textarea {
   width: 32px;
   height: 32px;
   border-radius: var(--radius-pill);
-  background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
+  background: transparent;
+  border: 0;
   cursor: pointer;
   font-size: var(--text-base);
   transition: background var(--duration-fast) var(--ease-out);
   line-height: 1;
 }
-[data-theme="light"] .titlebar__theme-toggle { background: var(--surface-titlebar); }
 .titlebar__theme-toggle:hover { background: var(--surface-2); }
 
 .titlebar__window-btn {
@@ -6396,8 +6395,8 @@ optgroup {
   width: 32px;
   height: 32px;
   border-radius: var(--radius-pill);
-  background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
+  background: transparent;
+  border: 0;
   color: var(--text-secondary);
   cursor: pointer;
   transition: background var(--duration-fast) var(--ease-out),
@@ -6410,7 +6409,6 @@ optgroup {
 .titlebar__download-toggle.is-active {
   background: var(--surface-2);
   color: var(--text-primary);
-  border-color: var(--border-strong);
 }
 
 .titlebar__download-toggle.has-active-downloads {
