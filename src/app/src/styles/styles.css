@@ -145,8 +145,8 @@ input, textarea {
 }
 
 .titlebar__brand-logo {
-  width: 74px;
-  height: 18px;
+  width: 100px;
+  height: 24px;
   flex: 0 0 auto;
   background: url('../../assets/lemonade-logo-dark-128h.png') center / contain no-repeat;
 }
@@ -11951,7 +11951,7 @@ optgroup {
   .titlebar { grid-template-columns: 42px minmax(0, 1fr) minmax(160px, 240px) auto; }
   .titlebar__nav button { min-width: 42px; padding-inline: var(--space-2); }
   .titlebar__nav .nav-label { display: none; }
-  .titlebar__brand-logo { width: 18px; background-position: left center; }
+  .titlebar__brand-logo { width: 24px; background-position: left center; }
   .workspace-nav__copy small { display: none; }
   .workspace-nav button { min-height: 44px; }
   .workspace-pane__header { padding-inline: var(--space-4); }
