@@ -170,7 +170,6 @@ function(apply_tray_deps target_name)
     endif()
 
     if(HTTPLIB_SUPPORTS_MBEDTLS)
-        target_compile_definitions(${target_name} PRIVATE CPPHTTPLIB_MBEDTLS_SUPPORT)
         target_link_libraries(${target_name} PRIVATE lemonade-digest-crypto)
         if(APPLE)
             find_library(SECURITY_FRAMEWORK Security REQUIRED)

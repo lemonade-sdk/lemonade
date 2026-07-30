@@ -196,10 +196,10 @@ elseif(HTTPLIB_VERSION AND NOT HTTPLIB_VERSION VERSION_LESS "0.31.0")
 endif()
 
 if(HTTPLIB_SUPPORTS_MBEDTLS)
-    target_compile_definitions(lemonade PRIVATE LEMONADE_CLI CPPHTTPLIB_MBEDTLS_SUPPORT)
-else()
-    target_compile_definitions(lemonade PRIVATE LEMONADE_CLI)
+    target_compile_definitions(lemonade-digest-crypto INTERFACE CPPHTTPLIB_MBEDTLS_SUPPORT)
 endif()
+
+target_compile_definitions(lemonade PRIVATE LEMONADE_CLI)
 
 # Platform-specific settings
 if(WIN32)
