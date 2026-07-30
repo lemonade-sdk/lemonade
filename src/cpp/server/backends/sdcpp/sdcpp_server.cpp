@@ -339,17 +339,52 @@ void SDServer::load(const std::string& model_name,
                     // Copying to the application directory ensures highest priority.
                     fs::path therock_dll = fs::path(therock_bin) / "amdhip64_7.dll";
                     fs::path target_dll = exe_dir / "amdhip64_7.dll";
+
+                    LOG(INFO, "SDServer") << "=== DLL Copy Verification ===" << std::endl;
+                    LOG(INFO, "SDServer") << "Source: " << path_to_utf8(therock_dll) << std::endl;
+                    LOG(INFO, "SDServer") << "Target: " << path_to_utf8(target_dll) << std::endl;
+
                     if (fs::exists(therock_dll)) {
                         std::error_code ec;
+                        auto source_size = fs::file_size(therock_dll, ec);
+                        LOG(INFO, "SDServer") << "Source size: " << source_size << " bytes" << std::endl;
+
                         fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
                         if (!ec) {
-                            LOG(INFO, "SDServer") << "Copied amdhip64_7.dll from TheRock to " << path_to_utf8(target_dll) << std::endl;
+                            auto target_size = fs::file_size(target_dll, ec);
+                            LOG(INFO, "SDServer") << "Copied amdhip64_7.dll to " << path_to_utf8(target_dll) << std::endl;
+                            LOG(INFO, "SDServer") << "Target size: " << target_size << " bytes (match: " << (source_size == target_size ? "YES" : "NO") << ")" << std::endl;
                         } else {
-                            LOG(WARNING, "SDServer") << "Failed to copy amdhip64_7.dll: " << ec.message() << std::endl;
+                            LOG(ERROR, "SDServer") << "Failed to copy amdhip64_7.dll: " << ec.message() << std::endl;
                         }
                     } else {
-                        LOG(DEBUG, "SDServer") << "amdhip64_7.dll not found in TheRock at " << path_to_utf8(therock_dll) << std::endl;
+                        LOG(ERROR, "SDServer") << "Source amdhip64_7.dll not found in TheRock" << std::endl;
                     }
+
+                    // Check System32 for comparison
+                    const char* sysroot = std::getenv("SystemRoot");
+                    if (sysroot) {
+                        fs::path system32_dll = fs::path(sysroot) / "System32" / "amdhip64_7.dll";
+                        if (fs::exists(system32_dll)) {
+                            std::error_code ec;
+                            auto sys32_size = fs::file_size(system32_dll, ec);
+                            LOG(INFO, "SDServer") << "System32 amdhip64_7.dll exists: " << path_to_utf8(system32_dll) << " (" << sys32_size << " bytes)" << std::endl;
+                        } else {
+                            LOG(INFO, "SDServer") << "No System32 amdhip64_7.dll found" << std::endl;
+                        }
+                    }
+
+                    // List all amdhip64*.dll files in the target directory
+                    LOG(INFO, "SDServer") << "All amdhip64*.dll files in sd-server directory:" << std::endl;
+                    std::error_code ec;
+                    for (const auto& entry : fs::directory_iterator(exe_dir, ec)) {
+                        std::string filename = path_to_utf8(entry.path().filename());
+                        if (filename.find("amdhip64") != std::string::npos && entry.path().extension() == ".dll") {
+                            auto fsize = fs::file_size(entry.path(), ec);
+                            LOG(INFO, "SDServer") << "  " << filename << " (" << fsize << " bytes)" << std::endl;
+                        }
+                    }
+                    LOG(INFO, "SDServer") << "=== End DLL Verification ===" << std::endl;
                 }
             }
         }
