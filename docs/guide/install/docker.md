@@ -103,6 +103,7 @@ docker run -d \
   -v lemonade-recipe:/opt/lemonade/.cache/lemonade \
   --device=/dev/kfd \
   --device=/dev/dri \
+  --group-add video --group-add 992
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
@@ -162,6 +163,13 @@ services:
       # Persist model options and other backend binaries
       - lemonade-recipe:/opt/lemonade/.cache/lemonade
     restart: unless-stopped
+    # Needed if using rocm using linux
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/kfd:/dev/kfd
+    group_add:
+      - video
+      - "992"
 
 volumes:
   lemonade-cache:
