@@ -915,7 +915,7 @@ A typical workflow is to generate an image first, then upscale it:
 
 Speech Generation API. You provide a text input and receive an audio file. This API uses [Kokoros](https://github.com/lucasjinreal/Kokoros) as the backend.
 
-> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` (voice cloning from a reference WAV) and `MOSS-VoiceGen` (voice design from a text description).
+> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` and `MOSS-TTS-Local`, both of which clone a voice from a reference WAV and can design one from a text description. Voice design is not a separate model: the voice generator ships as a component of the speech model, and a design request swaps it in just long enough to render the reference sample before the speech model is reloaded. That request therefore takes noticeably longer than a plain one, and the result is cached per description.
 >
 > **Limitations:** `kokoro-v1` supports `mp3`, `wav`, `opus`, and `pcm`; OpenMOSS models natively produce `wav` only, and other formats are rejected with `400 Bad Request`. Streaming is supported in `audio` (`pcm`) mode on `kokoro-v1`.
 
@@ -929,6 +929,7 @@ Speech Generation API. You provide a text input and receive an audio file. This 
 | `voice` | No | The voice to use. All OpenAI-defined voices can be used (`alloy`, `ash`, ...), as well as those defined by the kokoro model (`af_sky`, `am_echo`, ...). Default: `shimmer` | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `voice` (OpenMOSS) | No | For OpenMOSS models the field is a free-text voice/style instruction instead of a fixed voice name (e.g. `a calm, deep male narrator voice`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `reference_wav_b64` | No | Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the voice to clone. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `voice_design_description` | No | Lemonade extension (OpenMOSS voice design): a description of the voice to invent, e.g. `a warm low female voice with a British accent`. Lemonade renders a short sample in that voice and uses it as the reference, so the effect is the same as supplying `reference_wav_b64` yourself. Ignored when `reference_wav_b64` is also present. Design is opt-in through this field only — `voice` never triggers it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Format of the response. `mp3`, `wav`, `opus`, and `pcm` are supported. Default: `mp3`| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `stream_format` | No | If set, the response will be streamed. Only `audio` is supported, which will output `pcm` audio. Default: not set| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 

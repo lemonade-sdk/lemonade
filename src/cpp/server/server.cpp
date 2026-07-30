@@ -2572,7 +2572,8 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
             break;
         }
     }
-    for (const char* key : {"display_name", "component_roles", "custom_tools"}) {
+    for (const char* key : {"display_name", "component_roles", "custom_tools",
+                            "speech_defaults", "audio_defaults"}) {
         auto it = info.extras.find(key);
         if (it != info.extras.end() && !it->second.is_null()) {
             model_json[key] = it->second;
@@ -3846,6 +3847,15 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             res.set_content(error.dump(), "application/json");
             return;
         }
+        if (!request_json["input"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "'input' must be a string"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
 
         bool is_streaming = (request_json.contains("stream") && request_json["stream"].get<bool>());
 
@@ -4017,7 +4027,7 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
                 {"type", "invalid_request_error"}}}}.dump(), "application/json");
             return;
         }
-        for (const auto* field : {"lyrics", "vocal_language"}) {
+        for (const auto* field : {"prompt", "lyrics", "vocal_language"}) {
             if (request_json.contains(field) && !request_json[field].is_string()) {
                 res.status = 400;
                 res.set_content(nlohmann::json{{"error", {

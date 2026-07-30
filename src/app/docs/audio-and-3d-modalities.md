@@ -6,7 +6,7 @@ GUI3 treats speech input, speech output, generated audio, and 3D as distinct cap
 | --- | --- | --- | --- |
 | Transcription | `whispercpp`, `moonshine` | audio file or microphone -> text | `/api/v1/audio/transcriptions`, `/v1/realtime` |
 | TTS | `kokoro`, `openmoss` | text -> spoken audio | `/api/v1/audio/speech` |
-| Audio generation | `acestep`, `thinksound` | prompt -> music or sound effect | `/api/v1/audio/generations` |
+| Audio generation | `acestep`, `thinksound`, `openmoss` | prompt -> music or sound effect | `/api/v1/audio/generations` |
 | 3D | `trellis` | image -> GLB, or text -> reference image -> GLB | `/api/v1/3d/generations` |
 
 ## ACE-Step and ThinkSound
@@ -15,13 +15,14 @@ ACE-Step exposes music duration, steps, seed, optional structured lyrics, and a 
 
 ## OpenMOSS
 
-OpenMOSS follows the established GUI2 workflows while fitting the unified GUI3 composer:
+OpenMOSS speech has two composer modes, both against a single loaded model:
 
-- **Plain:** synthesize text with an optional style instruction.
-- **Describe:** use `MOSS-VoiceGen` directly, or design a short reference voice and pass it to `OpenMOSS-TTS` when both models are installed.
-- **Clone:** attach one validated WAV sample and synthesize through `OpenMOSS-TTS` with `reference_wav_b64`.
+- **Describe voice:** send the description as `voice_design_description`. The backend invents a voice matching it and speaks the text in that voice.
+- **Clone WAV sample:** attach one validated WAV sample, sent as `reference_wav_b64`. The optional style note travels as `voice`, so delivery can be directed without changing the timbre.
 
-Voice-design and clone models are discovered from downloaded or loaded OpenMOSS models. Model switching is performed explicitly between the design and synthesis stages so the second request cannot accidentally run against the first backend instance.
+Voice design is no longer a second model the GUI switches to. The voice generator ships as a component of the speech model, and the backend now drives the sequence the GUI used to drive by hand: it takes the speech model down, brings the voice generator up to render one reference sample, tears it down, and brings the speech model back. Only ever one model at a time, so any card that can run the speech model can design a voice for it. The sample is cached per description, so repeating a description costs nothing.
+
+`MOSS-SoundEffect` is an audio-generation model rather than a speech one, exposing steps, CFG, sigma shift, a negative prompt, and a seed. Its seed is unsigned with no random sentinel — `0` is a real seed — so the composer draws a random one whenever the seed box is left blank.
 
 ## TRELLIS
 

@@ -127,15 +127,20 @@ static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 // unsupported chat_completion path at runtime.
 static ModelType get_deployment_model_type(const std::string& recipe,
                                            const std::vector<std::string>& labels) {
+    const ModelType declared = get_model_type_from_labels(labels);
     if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
         for (const auto& label : desc->default_labels) {
             ModelType backend_type = get_model_type_from_labels({label});
             if (backend_type != ModelType::LLM) {
-                return backend_type;
+                // A backend may serve several modalities (openmoss: tts +
+                // audio-generation). Its default label is the fallback, not an
+                // override — but only a definitive claim by the model displaces
+                // it, so a stray chat-indicator label still cannot promote to LLM.
+                return declared != ModelType::LLM ? declared : backend_type;
             }
         }
     }
-    ModelType type = get_model_type_from_labels(labels);
+    ModelType type = declared;
 
     // Reaching here means the backend declares no definitive non-LLM deployment,
     // i.e. it is a chat/general backend (llamacpp/flm/ryzenai/vllm/cloud) — none
@@ -4031,6 +4036,22 @@ void ModelManager::download_from_registry(const ModelInfo& info,
                                      source_display + ": " + repo_id + ":" + variant);
         }
         files_to_download[repo_id].push_back(variant);
+    }
+
+    // A file can be reached twice: once because the backend's
+    // select_checkpoint_files claimed it alongside the main weight, and again
+    // because it is also declared as its own checkpoint role. Same bytes either
+    // way, so collapse before counting or the progress total overshoots.
+    for (auto& [repo_id, files] : files_to_download) {
+        (void)repo_id;
+        std::set<std::string> seen;
+        std::vector<std::string> unique_files;
+        for (auto& filename : files) {
+            if (seen.insert(filename).second) {
+                unique_files.push_back(filename);
+            }
+        }
+        files = std::move(unique_files);
     }
 
     int total_files = 0;

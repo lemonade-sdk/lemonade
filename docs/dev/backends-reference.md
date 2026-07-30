@@ -283,12 +283,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Bert-Phishing-ONNX` | 1.34 | classification |
 | `Phishing-Email-Detection-ONNX` | 0.27 | classification |
 
-#### `openmoss` — OpenMOSS TTS (2 models)
+#### `openmoss` — OpenMOSS TTS (3 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
-| `MOSS-VoiceGen` | 7.3 | tts, voice-design |
-| `OpenMOSS-TTS` | 12.5 | tts |
+| `MOSS-SoundEffect` | 6.6 | audio-generation |
+| `MOSS-TTS-Local` | 15.8 | tts |
+| `OpenMOSS-TTS` | 19.8 | tts |
 
 #### `ryzenai-llm` — Ryzen AI LLM (79 models)
 
