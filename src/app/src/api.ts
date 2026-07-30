@@ -4,7 +4,7 @@
  * and model downloads, and health polling.
  */
 
-import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './presetStore';
+import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './modelConfiguration';
 import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
 
 function detectDefaultBaseUrl(): string {
@@ -1048,9 +1048,13 @@ class LemonadeAPI {
       err.status = resp.status;
       err.url = url;
       err.endpoint = endpoint;
-      err.userMessage = resp.status === 403 && serverMessage.toLowerCase() === 'origin not allowed'
-        ? originNotAllowedMessage(this.baseUrl)
-        : `${url} returned ${resp.status} ${statusText}${serverMessage ? ` — ${serverMessage}` : ''}`;
+      err.userMessage = resp.status === 401
+        ? auth === 'admin'
+          ? 'The server rejected the admin API key. Enter the matching admin key in the MCP panel.'
+          : 'The server requires an API key or rejected the current one. Enter the matching key in Settings, then reconnect.'
+        : resp.status === 403 && serverMessage.toLowerCase() === 'origin not allowed'
+          ? originNotAllowedMessage(this.baseUrl)
+          : `${url} returned ${resp.status} ${statusText}${serverMessage ? ` — ${serverMessage}` : ''}`;
       throw err;
     }
     return resp;
@@ -1307,24 +1311,6 @@ class LemonadeAPI {
     }
   }
 
-  /**
-   * Apply a *load-time* preset change to an already-loaded model (#2356).
-   *
-   * Simplified design (per @fl0rianr review + Lovell): there is NO dedicated
-   * update-preset endpoint and NO client-provided `mode` parameter — the UI is
-   * not the source of truth for runtime capability. Load-time fields (ctx_size,
-   * backend, device, model args via recipe_options) require a real reload, which
-   * today is literally an unload followed by a load, exactly as `main` does.
-   *
-   * This helper is named `reloadModel` (rather than inlining unload→load at every
-   * call site) so that if a real in-place backend reload ever lands, only this
-   * method's body changes; callers and tests stay identical.
-   *
-   * Request-time fields (system_prompt, sampling/temperature, tools) are NOT
-   * handled here — rebinding the active preset is the whole "live" operation and
-   * request composition (`samplingForModel`, `systemPromptTextForPreset`) carries
-   * the new values on the next generation request; nothing is POSTed.
-   */
   async reloadModel(
     modelName: string,
     recipeOptions?: Record<string, unknown>,
@@ -1431,7 +1417,7 @@ class LemonadeAPI {
 
   async listMcpServers(): Promise<McpServerState[]> {
     // External MCP administration is deliberately fail-closed on the server.
-    // Do not probe /internal/mcp/servers from ordinary preset/chat rendering
+    // Do not probe /internal/mcp/servers from ordinary chat rendering
     // when the app has no admin-capable credential: on a default keyless server
     // that request is guaranteed to be rejected and only produces noisy 403 logs.
     // The dedicated MCP panel prompts for a key before calling this method.

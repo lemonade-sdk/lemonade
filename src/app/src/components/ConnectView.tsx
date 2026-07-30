@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import api, { CloudProviderRow, ConnectionStatus, DirectorySettings, friendlyErrorMessage, normalizeBaseUrl } from '../api';
 import { clearClientStorage } from '../storage';
+import { loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
 import { Icon, IconName } from './Icon';
 import McpPanel from './McpPanel';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
@@ -46,6 +47,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(api.lastConnectionError);
   const [notice, setNotice] = useState<string | null>(null);
+  const [persistHistory, setPersistHistory] = useState(() => loadChatHistoryPreference());
 
   const [providers, setProviders] = useState<CloudProviderRow[]>([]);
   const [providerName, setProviderName] = useState('');
@@ -381,6 +383,21 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
               </WorkspaceActionButton>
             </WorkspaceActionGroup>
           </form>
+          <div className="connect__section">
+            <label className="connect__checkbox">
+              <input
+                type="checkbox"
+                checked={persistHistory}
+                onChange={event => {
+                  const persist = event.target.checked;
+                  setPersistHistory(persist);
+                  saveChatHistoryPreference(persist);
+                }}
+              />
+              <span>Save chat history in this browser</span>
+            </label>
+            <p className="connect__hint">Chat media is never persisted.</p>
+          </div>
         </section>
         )}
 

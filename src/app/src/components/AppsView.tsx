@@ -4,6 +4,7 @@ import { Icon } from './Icon';
 import {
   WorkspaceActionButton,
   WorkspaceActionGroup,
+  WorkspaceMetadataChip,
   WorkspacePaneHeader,
   WorkspaceResourceList,
   WorkspaceResourceRow,
@@ -24,6 +25,7 @@ const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketpl
 const AppsView: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   const [marketplaceApps, setMarketplaceApps] = useState<MarketplaceApp[]>([]);
   const [marketplaceSearch, setMarketplaceSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
 
@@ -47,12 +49,25 @@ const AppsView: React.FC<{ isActive: boolean }> = ({ isActive }) => {
     return () => { cancelled = true; };
   }, [isActive, marketplaceApps.length]);
 
+  const categories = useMemo(() => Array.from(new Set(
+    marketplaceApps.flatMap(app => app.category || [])
+      .map(category => category.trim())
+      .filter(Boolean),
+  )).sort((left, right) => left.localeCompare(right)), [marketplaceApps]);
+
   const filteredMarketplaceApps = useMemo(() => {
     const query = marketplaceSearch.trim().toLowerCase();
     return marketplaceApps
-      .filter(app => !query || app.name.toLowerCase().includes(query) || (app.description || '').toLowerCase().includes(query) || (app.category || []).join(' ').toLowerCase().includes(query))
+      .filter(app => {
+        const categories = app.category || [];
+        const matchesCategory = !categoryFilter || categories.some(category => category.toLowerCase() === categoryFilter.toLowerCase());
+        const matchesQuery = !query || app.name.toLowerCase().includes(query)
+          || (app.description || '').toLowerCase().includes(query)
+          || categories.join(' ').toLowerCase().includes(query);
+        return matchesCategory && matchesQuery;
+      })
       .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name));
-  }, [marketplaceApps, marketplaceSearch]);
+  }, [categoryFilter, marketplaceApps, marketplaceSearch]);
 
   const openExternal = (url?: string) => {
     if (!url) return;
@@ -83,9 +98,30 @@ const AppsView: React.FC<{ isActive: boolean }> = ({ isActive }) => {
               aria-label="Search apps"
             />
           </div>
+          {categories.length > 0 && (
+            <div className="apps__category-filters" role="group" aria-label="Filter apps by category">
+              <WorkspaceMetadataChip
+                emphasis={categoryFilter === null ? 'medium' : 'low'}
+                tone={categoryFilter === null ? 'accent' : 'neutral'}
+                buttonProps={{ onClick: () => setCategoryFilter(null), 'aria-pressed': categoryFilter === null }}
+              >
+                All
+              </WorkspaceMetadataChip>
+              {categories.map(category => (
+                <WorkspaceMetadataChip
+                  key={category}
+                  emphasis={categoryFilter === category ? 'medium' : 'low'}
+                  tone={categoryFilter === category ? 'accent' : 'neutral'}
+                  buttonProps={{ onClick: () => setCategoryFilter(category), 'aria-pressed': categoryFilter === category }}
+                >
+                  {category}
+                </WorkspaceMetadataChip>
+              ))}
+            </div>
+          )}
           {marketplaceLoading ? <div className="connect__empty">Loading apps...</div> : marketplaceError ? <div className="connect__error">Apps unavailable: {marketplaceError}</div> : (
             <WorkspaceResourceList label="Compatible apps">
-              {filteredMarketplaceApps.slice(0, 12).map(app => (
+              {filteredMarketplaceApps.map(app => (
                 <WorkspaceResourceRow
                   key={app.id || app.name}
                   title={app.name}

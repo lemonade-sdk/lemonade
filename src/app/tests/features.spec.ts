@@ -534,238 +534,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }
   });
 
-  test.skip('13 — Presets v1.4 renders capability flow and stages bindings', async ({ page }) => {
-    let loadCalls = 0;
-    await page.addInitScript(() => {
-      localStorage.removeItem('lemonade_user_presets');
-      localStorage.removeItem('lemonade_applied_presets');
-    });
-    // Presets fetch /models directly, while the Models view only hydrates its
-    // list after the API client has a successful health state. Keep both views
-    // on the same deterministic mock server so the image fixture remains
-    // available after navigating from Presets to Models.
-    await page.route('**/api/v1/health**', route => route.fulfill({
-      json: { status: 'ok', version: 'test', all_models_loaded: [] },
-    }));
-    await page.route('**/api/v1/models**', async route => route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: [
-          { id: 'llama-chat', name: 'llama-chat', labels: ['llm'], recipe: 'llamacpp' },
-          { id: 'sd-image', name: 'sd-image', labels: ['image'], recipe: 'sd-cpp' },
-        ],
-      }),
-    }));
-    await page.route('**/api/v1/load', async route => {
-      loadCalls++;
-      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) });
-    });
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await expect(page.locator('.titlebar__status-dot').first()).toHaveClass(/titlebar__status-dot--connected/);
-
-    // Navigate to Presets
-    await page.locator('.titlebar__nav').getByText('Presets').click();
-    await page.waitForSelector('.recipes');
-
-    // Title visible
-    await expect(page.locator('.preset-list-panel .workspace-list-panel__heading h1')).toHaveText('Presets');
-
-    // Count subtitle visible
-    await expect(page.locator('.preset-list-panel .workspace-list-panel__subtitle')).toContainText('items');
-
-    // Lede explains the intent-to-tuning separation.
-    const lede = page.locator('.recipes__lede');
-    await expect(lede).toBeVisible();
-    await expect(lede).toContainText('Presets capture intent');
-    await expect(lede).toContainText('Model Tuning');
-
-    // Zone: Bundled starters (scope to recipes view to avoid hitting Models zones).
-    // User-created content sorts above the starters, so match by title.
-    const recipesView = page.locator('.recipes').last();
-    const starterZone = recipesView.locator('.zone').filter({ hasText: 'Bundled starters' });
-    await expect(starterZone.locator('.zone__title')).toContainText('Bundled starters');
-
-    // Six chat starters plus one configurable Speech starter.
-    const starterCards = recipesView.locator('[data-recipe-grid="starters"] .recipe-card');
-    await expect(starterCards).toHaveCount(7);
-
-    // Starter badge on first card
-    await expect(starterCards.first().locator('.starter-badge')).toContainText('Starter');
-
-    // Capability chip visible on cards (v1.4 applies_to schema)
-    await expect(starterCards.first().locator('.cap-chip')).toContainText('Chat');
-    await expect(starterCards.nth(6).locator('.cap-chip')).toContainText('TTS');
-    await expect(recipesView.locator('[data-recipe-id="s-speech"]')).toHaveCount(1);
-    await expect(recipesView.locator('[data-recipe-id="s-quality"], [data-recipe-id="s-preview"], [data-recipe-id="s-turbo"]')).toHaveCount(0);
-
-    // Zone: Your presets is genuinely empty on first run
-    await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
-    await expect(recipesView.locator('[data-empty="yours"]')).toContainText('Pick a starter, customize it, or create a preset from scratch');
-
-    // The empty-state shortcut brings keyboard and visual position to the start of starters.
-    await recipesView.locator('[data-empty="yours"] button').getByText('Pick a starter').click();
-    await expect(recipesView.locator('[data-starter-zone]')).toBeFocused();
-
-    // Click a preset row to open its persistent detail pane.
-    await starterCards.first().locator('.recipe-card__overlay-btn').click();
-    await page.waitForSelector('.slideover.is-open');
-
-    // Starter actions live in the detail pane rather than crowding the list.
-    await expect(page.locator('.slideover').getByRole('button', { name: 'Customize' })).toBeVisible();
-    await expect(page.locator('.slideover').getByRole('button', { name: 'Clone' })).toBeVisible();
-    const exportButton = page.locator('.slideover').getByRole('button', { name: 'Export' });
-    await expect(exportButton).toHaveClass(/btn--secondary/);
-    await expect(exportButton).not.toHaveClass(/btn--quiet/);
-
-    // Slide-over has preset name
-    await expect(page.locator('.slideover__title')).toBeVisible();
-    await expect(page.locator('.slideover .workspace-detail-panel__metadata .workspace-metadata-chip--medium')).toHaveCount(0);
-
-    // Slide-over shows capability chips
-    await expect(page.locator('.slideover .cap-chip').first()).toContainText('Chat');
-
-    // Slide-over exposes semantic intent controls and no concrete runtime controls.
-    await expect(page.locator('[data-preset-intent="temperature"]')).toBeVisible();
-    await expect(page.locator('[data-preset-intent="context"]')).toBeVisible();
-    await expect(page.locator('[data-preset-intent="thinking"]')).toBeVisible();
-    await expect(page.locator('[data-preset-intent="temperature"] [data-intent-value]')).toHaveCount(4);
-    await expect(page.locator('[data-preset-intent="context"] [data-intent-value]')).toHaveCount(4);
-    await expect(page.locator('[data-intent-value="smart"]')).toBeDisabled();
-    await expect(page.locator('[data-intent-value="smart-extra"]')).toBeDisabled();
-    await expect(page.locator('.slideover details.preset-advanced')).toHaveCount(0);
-    await expect(page.locator('.slideover .slider')).toHaveCount(0);
-
-    // Incompatible model options are disabled with an explanation tooltip
-    const imageOption = page.locator('[data-recipe-apply-target] option[value="sd-image"]');
-    await expect(imageOption).toBeDisabled();
-    await expect(imageOption).toHaveAttribute('title', /Incompatible/);
-
-    // Applying stages the binding only; it does not POST /load immediately.
-    await page.locator('[data-recipe-apply-target]').selectOption('llama-chat');
-    await page.locator('.slideover .btn--primary').getByText('Apply').click();
-    await expect(page.locator('.preset-success')).toContainText('Will apply on next load');
-    expect(loadCalls).toBe(0);
-
-    await page.locator('.slideover__close').click();
-    await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
-    const presetLibraryNav = page.getByRole('navigation', { name: 'Preset filters' });
-    await presetLibraryNav.getByRole('button', { name: 'Applied models', exact: true }).click();
-    await expect(recipesView.locator('[data-applied-row="llama-chat"] .preset-status-chip')).toContainText('Will apply on next load');
-    await presetLibraryNav.getByRole('button', { name: 'Starter library', exact: true }).click();
-
-    // The single Speech starter owns both TTS-family and voice selection. Its
-    // controls align on one baseline and the Apply action stays inside the panel.
-    await recipesView.locator('[data-recipe-id="s-speech"] .recipe-card__overlay-btn').click();
-    const ttsSelects = page.locator('[data-preset-fields="tts-voice"] select');
-    await expect(ttsSelects).toHaveCount(2);
-    const ttsBoxes = await ttsSelects.evaluateAll(elements => elements.map(element => {
-      const rect = element.getBoundingClientRect();
-      return { top: rect.top, height: rect.height };
-    }));
-    expect(Math.abs(ttsBoxes[0].top - ttsBoxes[1].top)).toBeLessThanOrEqual(1);
-    expect(Math.abs(ttsBoxes[0].height - ttsBoxes[1].height)).toBeLessThanOrEqual(1);
-    const applyButton = page.locator('.preset-apply-row .btn--primary');
-    await expect(applyButton).toBeVisible();
-    const applyFits = await applyButton.evaluate(button => {
-      const buttonRect = button.getBoundingClientRect();
-      const panelRect = button.closest('.slideover')!.getBoundingClientRect();
-      return buttonRect.right <= panelRect.right && buttonRect.left >= panelRect.left;
-    });
-    expect(applyFits).toBeTruthy();
-    await page.locator('.slideover__close').click();
-    await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
-
-    const zoneTitles = await recipesView.locator('.zone__title').allTextContents();
-    expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
-    expect(zoneTitles).not.toContain('Applied to models');
-
-    // New Preset action uses the same compact list-header template as Models.
-    await expect(page.locator('.preset-list-panel .workspace-list-panel__actions').getByRole('button', { name: 'New preset' })).toBeVisible();
-
-    await page.screenshot({ path: 'screenshots/13-presets-view.png', fullPage: true });
-
-    // Image-only models skip README and open directly in Configuration.
-    await page.locator('.titlebar__nav').getByText('Models').click();
-    const imageModel = page.locator('.model-list-item').filter({ hasText: 'sd-image' }).first();
-    await expect(imageModel).toBeVisible();
-    await imageModel.click();
-    await expect(page.locator('#detail-tab-presets')).toHaveCount(0);
-    await expect(page.locator('#detail-tab-config')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('#detail-panel-config')).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Configuration' })).toHaveAttribute('aria-selected', 'true');
-  });
-
-
-  test.skip('13a — starter Customize and Clone create independent user copies', async ({ page }) => {
-    await page.addInitScript(() => {
-      for (const key of Object.keys(localStorage)) {
-        if (key.includes('user_presets') || key.includes('applied_presets')) localStorage.removeItem(key);
-      }
-    });
-    await page.route('**/api/v1/models**', route => route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({ data: [] }),
-    }));
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await page.locator('.titlebar__nav').getByText('Presets').click();
-    const recipesView = page.locator('.recipes').last();
-    await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
-
-    const defaultCard = recipesView.locator('[data-recipe-id="s-default"]');
-    await defaultCard.locator('.recipe-card__overlay-btn').click();
-    await page.locator('.slideover [data-recipe-clone]').click();
-    const yourCards = recipesView.locator('[data-recipe-grid="yours"] .recipe-card');
-    await expect(yourCards).toHaveCount(1);
-    await expect(yourCards.first()).toHaveClass(/recipe-card--flash/);
-    await expect(yourCards.first().locator('.recipe-card__name')).toHaveText('Default (copy)');
-    await expect(page.locator('.slideover.is-open')).toHaveCount(0);
-
-    const balancedCard = recipesView.locator('[data-recipe-id="s-balanced"]');
-    await balancedCard.locator('.recipe-card__overlay-btn').click();
-    await page.locator('.slideover [data-recipe-customize]').click();
-    await expect(yourCards).toHaveCount(2);
-    await expect(page.locator('.slideover.is-open')).toBeVisible();
-    await expect(page.locator('.slideover__title-input')).toHaveValue('Balanced (copy)');
-    const notes = page.getByPlaceholder('Notes (optional)');
-    await expect(notes).toBeVisible();
-    await expect(notes).toHaveAccessibleName('Notes');
-    const notesBox = await notes.boundingBox();
-    expect(notesBox?.height).toBeGreaterThanOrEqual(48);
-    expect(notesBox?.height).toBeLessThanOrEqual(72);
-    await expect(notes).toHaveCSS('resize', 'vertical');
-    expect(await notes.evaluate(element => element.previousElementSibling?.classList.contains('preset-intent-explainer'))).toBeTruthy();
-    await expect(page.locator('.slideover .workspace-detail-panel__metadata')).toHaveCount(0);
-    await page.locator('.slideover__close').click();
-
-    const zoneTitles = await recipesView.locator('.zone__title').allTextContents();
-    expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
-  });
-
-  test.skip('13b — Presets import rejects legacy schema', async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.removeItem('lemonade_user_presets');
-      localStorage.removeItem('lemonade_applied_presets');
-    });
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await page.locator('.titlebar__nav').getByText('Presets').click();
-    await page.waitForSelector('.recipes');
-
-    await page.locator('.dropdown__trigger').click();
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.locator('.dropdown__item').getByText('From file…').click();
-    const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles({
-      name: 'legacy-preset.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from(JSON.stringify({ id: 'legacy', name: 'Legacy', recipe: 'llamacpp' })),
-    });
-
-    await expect(page.locator('.preset-error')).toContainText('This file uses the legacy schema. Use the v1.4 export instead.');
-  });
-
   test('13c — Configuration tab shows runtime controls for a downloaded model', async ({ page }) => {
     await page.addInitScript(() => {
       for (const key of Object.keys(localStorage)) {
@@ -809,10 +577,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     const panel = page.locator('#detail-panel-config');
     await expect(panel).toBeVisible();
-    await expect(panel.getByRole('heading', { name: 'Runtime settings' })).toBeVisible();
-    await expect(panel.getByLabel('Context size')).toBeVisible();
+    await expect(panel.getByRole('heading', { name: 'Load settings' })).toBeVisible();
+    await expect(panel.getByLabel('Context size tokens')).toBeVisible();
     await expect(panel.locator('[id$="llamacpp_backend"]')).toBeVisible();
-    await expect(panel.getByRole('button', { name: 'Save configuration' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Save defaults' })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Reset' })).toBeVisible();
   });
 
@@ -1415,7 +1183,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     expect(finalEnabled).toBe(false);
   });
 
-  test('25 — Configuration tab saves model-specific defaults under s-default', async ({ page }) => {
+  test('25 — Configuration tab saves model-specific defaults under the direct model key', async ({ page }) => {
     const modelName = 'config-map-model';
     await page.addInitScript(() => {
       for (const key of Object.keys(localStorage)) {
@@ -1456,23 +1224,23 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.model-list-item').first().click();
     await page.locator('#detail-tab-config').click();
 
-    await expect(page.getByLabel('Context size')).toBeVisible();
+    await expect(page.getByLabel('Context size tokens')).toBeVisible();
     await expect(page.locator('[id$="llamacpp_backend"]')).toBeVisible();
 
-    await page.getByLabel('Context size').fill('16384');
-    await page.getByRole('button', { name: 'Save configuration' }).click();
+    await page.getByLabel('Context size tokens').fill('16384');
+    await page.getByRole('button', { name: 'Save defaults' }).click();
 
-    const saved = await page.evaluate(({ model, preset }) => {
+    const saved = await page.evaluate(({ model }) => {
       for (const key of Object.keys(localStorage)) {
         if (!key.includes('model_tunings')) continue;
         try {
           const value = JSON.parse(localStorage.getItem(key) || '{}');
-          const tuning = value[`${model}@@${preset}`];
+          const tuning = value[model];
           if (tuning) return tuning;
         } catch { /* keep looking */ }
       }
       return null;
-    }, { model: modelName, preset: 's-default' });
+    }, { model: modelName });
 
     expect(saved?.recipe_options?.ctx_size).toBe(16384);
     expect(saved?.sampling ?? {}).toEqual({});
@@ -1512,9 +1280,9 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel).toBeVisible();
 
     // Save — notice must appear and stay visible
-    await panel.getByRole('button', { name: 'Save configuration' }).click();
+    await panel.getByRole('button', { name: 'Save defaults' }).click();
     await expect(panel.locator('.detail-tuning__notice')).toBeVisible();
-    await expect(panel.locator('.detail-tuning__notice')).toContainText('Configuration saved.');
+    await expect(panel.locator('.detail-tuning__notice')).toContainText('Defaults saved for future loads.');
 
     // Switch to model B — stale notice must be gone
     await page.locator('.model-list-item').filter({ hasText: modelB }).click();

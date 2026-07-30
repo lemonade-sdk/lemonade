@@ -2,7 +2,7 @@
 
 GUI3 is the **React 19 + TypeScript + webpack** frontend integrated under `src/app/`. It runs **real-server-first** against `lemond` at `http://localhost:13305` by default and powers both the browser-delivered web app and the Tauri desktop application from one React codebase.
 
-**Beta status:** GUI3 is frozen for beta stabilization on `GUI3_merging`. New work should be limited to release-blocking fixes and integration updates. See [`docs/PRESETS_REDESIGN.md`](docs/PRESETS_REDESIGN.md) for the capability-keyed preset architecture.
+**Beta status:** GUI3 is frozen for beta stabilization on `GUI3_merging`. New work should be limited to release-blocking fixes and integration updates.
 
 ## Prerequisites
 
@@ -80,14 +80,13 @@ npx playwright install
 
 ## What's Implemented
 
-This prototype showcases the **redesigned UI** with capability-keyed presets (v1.4):
+This prototype showcases the **redesigned UI** with the current model and chat configuration flows:
 
 ### UI Panels
-- **Chat** — multi-turn conversation with streaming support, scoped user/guest history, omni-capable composer routing, preset selector, sampling controls
+- **Chat** — multi-turn conversation with streaming support, scoped user/guest history, omni-capable composer routing, sampling controls
 - **Models** — model registry with load/unload, custom model/custom omni registration, categorized view (Loaded / Downloaded / Registry / HuggingFace)
 - **Backends** — device-first capability matrix, backend versions and status
 - **Connect / Discover** — integration showcase and curated model feed
-- **Presets** — capability-keyed preset system with chat/omni (Balanced, Quality, Fast, Creative, Long Context, Code) and image (Sharp, Quick) starters
 
 ### Multimodal / Omni Mode
 - **Omni capability detection** recognizes loaded models marked as `omni`, `multimodal`, `vision`, VLM, LLaVA, Pixtral, Qwen-VL, MiniCPM-V, Mllama, GPT-4o-style, and similar names or labels.
@@ -103,15 +102,8 @@ This prototype showcases the **redesigned UI** with capability-keyed presets (v1
 ### Local Users / Privacy Prototype
 - **Guest mode is shared:** users can chat without signing in. If guest history is enabled, it is visible to anyone using the same browser profile.
 - **Named local users:** users can create an account with name + password. Passwords are salted and hashed with PBKDF2 in browser storage; raw passwords are never stored.
-- **Scoped data:** conversations, active chat, tools setting, user presets, and custom model definitions are namespaced under `lemonade:<storageScope>:...`. Signed-in users see only their own local profile data.
+- **Scoped data:** conversations, active chat, tools setting, and custom model definitions are namespaced under `lemonade:<storageScope>:...`. Signed-in users see only their own local profile data.
 - **Deletion rules:** guests can delete shared guest data, signed-in users can delete their own scoped data/account, and the first local account is admin with an all-local-user-data reset. The account UI lives in `src/features/accounts/` so it can be extracted/replaced by server-backed auth for production.
-
-### Presets v1.4 Features
-- **Capability-keyed compatibility** — presets declare `applies_to: [capability]` and models declare `labels`; runtime matches by label intersection
-- **Staged bindings** — when you adjust preset settings (temperature, top-p, etc.), they show "Will apply on next load" — no immediate server calls
-- **Sampling wired** — temperature, top_p, top_k, repeat_penalty settings are forwarded to `/api/v1/chat/completions`
-- **Advanced disclosure** — backend hint field behind an Advanced toggle for power users
-- **Distinct image presets** — Steps and CFG scale controls for image generation, separate from chat sampling
 
 ## Project Structure
 
@@ -121,8 +113,7 @@ src/
   index.html            # HTML shell
   App.tsx               # Root component
   api.ts                # API client (health, models, chat/completions, etc.)
-  presetStore.ts        # Scoped presets state & v1.4 capability-keyed data model
-  components/           # React components (Chat, Models, Backends, Presets, etc.)
+  components/           # React components (Chat, Models, Backends, etc.)
   features/accounts/    # Extractable local user/session prototype
   features/customModels/# Extractable custom model + custom omni prototype
   hooks/                # Custom React hooks
@@ -186,7 +177,6 @@ Playwright waits up to 60 seconds by default (see `playwright.config.ts`). `npm 
 - **Local client state:** Conversation history is opt-in and now scoped to either the shared guest space or a signed-in local user. The account menu controls profile deletion; admin can clear every local profile.
 - **Client-only auth caveat:** The account prototype protects data by browser-storage namespace and password-hash login, but production must enforce users, sessions, and authorization on the backend.
 - **Custom model caveat:** Custom model records are prototype metadata; production should validate checkpoint paths, allowed recipes, and permissions server-side before loading.
-- **Presets are client-side:** Presets are not persisted to the server; they're computed locally based on the model registry and user adjustments, and user-created presets are scoped per local user/guest space.
 
 ## Next Steps
 
@@ -197,7 +187,6 @@ For beta stabilization and final integration:
 3. Keep API calls aligned with the finalized `/api/v1/...` server contract.
 4. Validate both npm-based desktop builds and distro system-module web builds.
 
-See [`docs/PRESETS_REDESIGN.md`](docs/PRESETS_REDESIGN.md), [`docs/UPDATE_PRESET_CONTRACT.md`](docs/UPDATE_PRESET_CONTRACT.md), and [`docs/CLIENT_MCP.md`](docs/CLIENT_MCP.md) for the current design and runtime contracts.
 
 ### Follow-up fixes in this prototype package
 

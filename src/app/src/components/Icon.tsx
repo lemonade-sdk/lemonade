@@ -1,7 +1,5 @@
 import React from 'react';
 import { ModelCapability } from '../modelCapabilities';
-import type { Preset } from '../presetStore';
-import { presetIconName } from '../presetStore';
 import { LOCAL_ICON_DEFINITIONS, LocalIcon } from './localIcons';
 
 /**
@@ -14,15 +12,14 @@ import { LOCAL_ICON_DEFINITIONS, LocalIcon } from './localIcons';
 
 export type IconName =
   | 'sun' | 'moon' | 'paperclip' | 'mic' | 'send' | 'stop' | 'copy' | 'check'
-  | 'x' | 'tools' | 'chat' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding'
+  | 'x' | 'eject' | 'tools' | 'chat' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding'
   | 'reranking' | 'model' | 'globe' | 'file' | 'code' | 'vision' | 'logs'
   | 'search' | 'search-check' | 'eye' | 'eye-off' | 'plus' | 'edit' | 'compose' | 'download' | 'file-up' | 'play' | 'pause' | 'trash' | 'rotate-ccw' | 'chevron-down' | 'chevron-up' | 'chevron-right' | 'plug' | 'box' | 'alert' | 'clock'
-  | 'citrus' | 'scale' | 'scan-eye' | 'gem' | 'gauge' | 'timer' | 'pen-line' | 'library'
-  | 'hard-drive' | 'sliders-horizontal' | 'flame' | 'wrench' | 'brain' | 'rocket' | 'pin'
+  | 'sliders-horizontal' | 'flame' | 'wrench' | 'brain' | 'rocket' | 'pin'
   | 'star' | 'hugging-face' | 'cloud' | 'cloud-off' | 'user-round-cog' | 'router'
   | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel' | 'info'
-  | 'thermometer' | 'crosshair' | 'compass' | 'lightbulb' | 'scan-text' | 'minimize-2'
-  | 'panel-top' | 'panel-left-close' | 'panel-left-open' | 'expand' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off' | 'terminal-square' | 'settings' | 'layers'
+  | 'thermometer' | 'gem' | 'gauge' | 'timer' | 'hard-drive' | 'library' | 'scan-eye' | 'minimize-2'
+  | 'panel-left-close' | 'panel-left-open' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off' | 'terminal-square' | 'settings' | 'layers'
   | 'menu' | 'flask-conical';
 
 interface IconProps {
@@ -82,8 +79,4 @@ export function capabilityIconName(capability: CapabilityIconTarget): IconName {
 
 export const CapabilityIcon: React.FC<{ capability: CapabilityIconTarget; size?: number; className?: string; title?: string }> = ({ capability, size, className, title }) => (
   <Icon name={capabilityIconName(capability)} size={size} className={className} title={title} />
-);
-
-export const PresetIcon: React.FC<{ preset: Pick<Preset, 'id' | 'name' | 'starter'> | null | undefined; size?: number; className?: string; title?: string }> = ({ preset, size = 14, className, title }) => (
-  <Icon name={presetIconName(preset)} size={size} className={className} title={title || preset?.name} />
 );

@@ -3,40 +3,6 @@
 **Date:** 2026-06-25
 **Branch:** `feat/gui3-model-detail-redesign`
 **Scope:** `prototype/ui-redesign/` only
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3), Phase 3 (GUI3 preset a11y) ✅ complete, Group C (BackendManager) ✅ complete, Group D (MCP Gateway panel) ✅ complete, Group E (Master-detail model view, #2355 Slice 1) ✅ complete, Group F (#2355 Slice 1 reconciliation — fl0rianr clarifications) ✅ complete, Group G (Left navigation rail — three-pane model view) ✅ complete, Group H (Model-detail Presets card grid — #2424 fl0rianr) ✅ complete, Group I (Model view refinements — #2424 fl0rianr review) ✅ complete, Group J (Model view merge items — #2424 fl0rianr 2nd review) ✅ complete, Group K (Update preset while loaded — #2356) ✅ complete
-**Test status (2026-06-26):** All 181 automated tests passing, 7 skipped, 0 failed on `feat/gui3-update-preset-while-loaded` (A154–A166 cover #2356 update-preset-while-loaded, simplified design)
-
----
-
-## Group K — Update preset while a model is loaded (#2356, 2026-06-26, simplified)
-
-Lets a user change the preset of an already-loaded model. When a model is loaded and a **different** preset is linked to it, an **"Apply preset"** (live) / **"Reload to apply preset"** (load-time) button appears next to **Unload** in the detail-panel header actions.
-
-Simplified per maintainer @fl0rianr review + Lovell: **no `update-preset` endpoint and no client `mode` parameter** — the UI is not the source of truth for runtime capability.
-
-1. **Live vs reload classification (client-local).** `classifyPresetChange(running, next)` in `presetStore.ts` returns `'none' | 'live' | 'reload'`. Reload-requiring fields = `recipe_options`, `engine_hint` (runtime binds them at init). Live-updateable fields = `sampling`, `system_prompt_id`, `system_prompts`, `tools_enabled` (request-time). **Correctness fix:** the function no longer early-returns `'none'` on identical preset ids — same-id in-place edits (changed temperature/system_prompt/ctx_size) now classify correctly.
-2. **Running-preset store.** A distinct `running_presets` localStorage map records the preset each loaded model is actually running. The divergence between *linked* (`applied_presets`) and *running* is what surfaces the button.
-3. **No endpoint, no mode param.** Live changes are a pure client-local **rebind** of the active preset — request composition (`samplingForModel` in `api.ts`, `systemPromptTextForPreset` in `ChatView.tsx`) carries the new values on the next generation request; nothing is POSTed. Load-time changes go through `api.reloadModel(modelName, recipeOptions, modelInfo)` = **unload + load** (named for a possible future in-place backend reload). The active-preset binding **persists across the reload** so the reloaded model runs the newly-bound preset. The same primitives back the `change_preset` Lemonade tool (`src/tools/lemonadeTools.ts`). Documented in `docs/UPDATE_PRESET_CONTRACT.md`.
-
-**a11y specifics**
-- The button is a real `<button>`; its `aria-label` names the model: "Apply preset for {name}" (live) vs "Reload {name} to apply preset" (load-time). `aria-busy` is set while reloading.
-- An always-present `role="status" aria-live="polite" aria-atomic="true"` region announces the outcome ("applied live, no reload needed" / "model reloaded"). A sighted hint (`aria-hidden`) explains why the button appeared.
-- Focus is moved to the **Unload** button on success (button unmounts once running == linked) to avoid focus loss; stays on the Apply/Reload button on error.
-- The reload spinner respects `prefers-reduced-motion`. Contrast for status colours ≥ 4.5:1.
-
-**Tests added:** A154–A166 (13 tests) in `tests/a11y.spec.ts`.
-- A154: no Update preset button when linked == running
-- A155: switching to a live-only preset reveals Update preset next to Unload (label has no "reload")
-- A156: clicking (live) calls the contract with `mode=live` and announces no reload; button disappears
-- A157: switching to a reload-requiring preset labels the button as reloading
-- A158: clicking (reload) calls the contract with `mode=reload` and announces a reload
-- A159: Update preset is keyboard operable (Enter)
-- A160: feedback is a polite live region (`role=status`, `aria-live=polite`)
-- A161: no Update preset button for a non-loaded model
-- A162: Update-preset visible state passes WCAG 2.1 AA axe-core scan
-- A163: focus moves to Unload after a live update (no focus loss)
-
-**Files changed:** `presetStore.ts`, `api.ts`, `components/ModelDetailPanel.tsx`, `components/ModelManager.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `docs/UPDATE_PRESET_CONTRACT.md`, `ACCESSIBILITY.md`.
 
 ---
 
@@ -73,7 +39,6 @@ fl0rianr's second-round review on PR #2424 raised five merge-blocking items, all
 fl0rianr's PR #2424 review raised five items, all addressed in `prototype/ui-redesign/`:
 
 1. **Favorite star toggle in the detail panel.** `ModelDetailPanel` now renders a star (☆/★) toggle button in the header actions row. It reuses the EXISTING client-local pin/favorite store (`pinned_models` localStorage via `togglePinnedModel`/`pinnedNameSet` in `ModelManager.tsx`) — no parallel store. The Favorites nav-rail count reflects it immediately. The icon button is an `aria-pressed` toggle whose `aria-label` names the model and the action ("Add … to favorites" / "Remove … from favorites").
-2. **Removed preset search + "+ New" from the left rail.** Deleted the `model-nav-rail__preset-row` (search box + button) and its state/CSS. Model search remains in the middle pane.
 3. **"Back to models" hidden on desktop.** `.model-detail-panel__back-btn` is now `display:none` at desktop widths and only re-enabled inside the `≤700px` media query (with raised specificity `.manager--detail .model-detail-panel__back-btn` so it wins over the later base rule).
 4. **Funnel filter scoped to capabilities + opaque popover.** The popover already filtered by capability categories; relabelled to "Filter by capability" and the button/group `aria-label`s updated. The popover background was `var(--surface-overlay)` (an undefined token → transparent); switched to the solid `var(--surface-3)` surface so list content no longer bleeds through.
 5. **Left rail no longer clips the screen.** Root cause: `.manager--detail` inherited `grid-template-rows: auto 1fr` from `.manager`, so the panes landed in the content-sized `auto` row and grew past the viewport with no scroll. Added `grid-template-rows: minmax(0, 1fr)` (+ `min-height: 0`) so the row is bounded to the viewport and each pane's own `overflow-y:auto` (the rail's included) takes over. The Storage meter stays reachable by scrolling the rail.
@@ -92,29 +57,6 @@ fl0rianr's PR #2424 review raised five items, all addressed in `prototype/ui-red
 - A148: refined model view (favorite set + filter open) passes WCAG 2.1 AA axe-core scan
 
 **Files changed:** `ModelDetailPanel.tsx`, `ModelNavRail.tsx`, `ModelListPanel.tsx`, `ModelManager.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
-
----
-
-## Group H — Model-detail Presets card grid (#2424 fl0rianr, 2026-06-25)
-
-fl0rianr's 18:12Z feedback on PR #2424: the model-detail **Presets** tab rendered the linked + compatible presets as full-width stacked **rows**; he wanted "neat cards — a slightly smaller, focused version of the cards in the global preset view." Restyled `ModelDetailPanel.tsx`'s `ModelPresetsTab` so the **Linked preset** sits above as a single highlighted card and the **Recommended presets** render as a neat responsive **grid of compact cards** (icon + name, 1–2 line description, a compact `temp · ctx · tools` / `steps · cfg` meta line, and an Attach/Switch action), visually consistent with the global `.recipe-card` (Presets page) but smaller and focused.
-
-**a11y decisions:**
-- The recommended grid is a `<ul role="list">` of `<li>` cards (NOT `role="listbox"`/`option`). An option is an interactive role; placing the per-card Attach/Switch `<button>` inside it triggers axe `nested-interactive` (focusable descendant of an interactive element). `listitem` is non-interactive, so a button inside is allowed.
-- Linked/active state is exposed via **text + ARIA, not color alone**: the linked card carries `aria-current="true"` + a visible "Active" badge; the matching grid card carries `aria-current="true"` + a "Linked" text badge and a "Currently linked" note in place of the Attach button.
-- Every Attach/Switch button's `aria-label` names its preset and the model, e.g. `Attach preset "Balanced" for Llama-3.1-8B` (relabels to `Switch to preset …` when a non-default preset is already linked).
-- The inline Change chooser (`role="dialog"`, `aria-modal`, focus return to the Change button) is unchanged and still works.
-- A "Browse presets" / "Manage presets" deep-link dispatches a client-local `lemonade:navigate` CustomEvent that `App.tsx` listens for to switch to the global Presets view (no lemond involvement).
-- Cards wrap/grid down gracefully via `grid-template-columns: repeat(auto-fill, minmax(180px, 1fr))`.
-
-**Tests added:** A137–A141 (5 tests) in `tests/a11y.spec.ts`.
-- A137: recommended presets render as a `role="list"` grid of compact cards (old `.detail-presets__preset-list` row container gone; `display: grid`)
-- A138: each Attach/Switch button's accessible name includes its preset name
-- A139: linked/active state exposed via text + `aria-current` (not color only)
-- A140: Change dialog still opens from the linked card and closes
-- A141: the Presets card grid passes WCAG 2.1 AA axe-core scan
-
-**Files changed:** `ModelDetailPanel.tsx`, `App.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
 
 ---
 
@@ -164,7 +106,6 @@ fl0rianr posted a canonical three-pane target: a NEW left **navigation** rail (`
 - **What:** Per fl0rianr, downloaded status stays a simple dot (`.model-list-item__dot--ready`) rather than a separate text badge. Status remains in each row's `aria-label`.
 - **WCAG:** 1.4.1
 
-**Note (POC / deferred):** The rail's top "Search presets…" input + "+ New" button are accessible POC placeholders (labelled input, `aria-label`ed button); preset management lives in the model-detail Presets tab per fl0rianr's "2) a". Wiring of preset quick-create is deferred and flagged for fl0rianr's confirmation.
 
 **Tests added:** A124–A136 (13 tests) in `tests/a11y.spec.ts`.
 - A124: rail `<nav>` landmark with accessible name
@@ -176,13 +117,11 @@ fl0rianr posted a canonical three-pane target: a NEW left **navigation** rail (`
 - A133: custom-model buttons grounded group at the top, keyboard reachable
 - A134: responsive nav toggle (`aria-controls`/`aria-expanded`) reveals the rail
 - A135: full three-pane view passes WCAG 2.1 AA axe-core scan
-- A136: preset quick-search and "+ New" removed from the nav rail (#2424)
 
 ---
 
 ## Group E — Master-detail model view (#2355 Slice 1, 2026-06-25)
 
-Replaces the old preset-rail layout with an email-client-style master-detail split in `ModelManager.tsx`, using new `ModelListPanel.tsx` (left) and `ModelDetailPanel.tsx` (right). Old `renderPresetRail()` is removed.
 
 ### E1 — #2355: Left model list panel
 
@@ -193,14 +132,7 @@ Replaces the old preset-rail layout with an email-client-style master-detail spl
 ### E2 — #2355: Right model detail panel with tablist
 
 - **Status:** ✅ **Implemented 2026-06-25**
-- **What:** `ModelDetailPanel` renders `role="tablist"` with `role="tab"` buttons (roving tabindex, `aria-selected`, `aria-controls`) and `role="tabpanel"` panels (`aria-labelledby`). Tabs: README (Markdown via markdown-it + DOMPurify), Presets (preset linking via `presetStore.ts`), Files (stub, deferred). ArrowLeft/Right/Home/End navigate tabs. Focus moves to the panel heading when model selection changes. Action buttons carry model-qualified `aria-label`s (e.g. `"Load Llama-3.1-8B"`). Empty state panel shown when no model is selected.
 - **WCAG:** 1.3.1, 2.1.1, 4.1.2
-
-### E3 — #2355: Preset linking in Presets tab
-
-- **Status:** ✅ **Implemented 2026-06-25**
-- **What:** `ModelPresetsTab` uses `presetStore.ts` `loadApplied`/`saveApplied` for client-local preset linking (localStorage). Linked preset card has `aria-current="true"`. Detach button has a qualifying `aria-label`. Attach buttons on candidate presets carry `aria-label="Attach preset "X" to ModelName"`. A `role="status" aria-live="polite"` region announces the attach confirmation.
-- **WCAG:** 4.1.2, 4.1.3
 
 ### E4 — #2355: Funnel filter icon (the only new icon)
 
@@ -214,7 +146,6 @@ Replaces the old preset-rail layout with an email-client-style master-detail spl
 - A95–A96: funnel filter button ARIA attributes and popover
 - A97–A99: listbox role + option role + keyboard navigation
 - A100–A101: tablist ARIA structure + keyboard tab navigation
-- A102–A103: Presets tab keyboard reachability and panel label
 - A104: Custom model / Omni collection buttons visible + keyboard-accessible
 - A105: Full axe-core WCAG 2.1 AA scan with mock data + selected model
 
@@ -222,8 +153,6 @@ Replaces the old preset-rail layout with an email-client-style master-detail spl
 
 **Deferred to follow-up slices:**
 - Files tab (stub only in Slice 1)
-- Full recommended-preset card polish
-- #2356 (Update-preset-while-loaded — builds on detail panel)
 
 ---
 
@@ -248,21 +177,6 @@ Closes 4 gaps against @fl0rianr's six-point clarification comment (2026-06-25T16
 - **Status:** ✅ **Added 2026-06-25**
 - **What:** At `max-width: 700px`, `ModelManager` adds `.manager--detail-mobile-open` class to the grid container when a model is selected. CSS hides the list and shows the detail panel (not stacked — mutually exclusive). A "Back to models" `<button class="model-detail-panel__back-btn" aria-label="Back to models list">` is injected at the top of `ModelDetailPanel` when `onBack` prop is provided. Focus moves to the detail heading on open (`panelHeadingRef` focus in `useEffect`) and back to the selected `[data-model-id]` list item on Back (via `document.querySelector` + `focus()`).
 - **WCAG:** 2.1.1 (keyboard), 2.4.3 (focus order), 4.1.2 (button accessible name)
-
-### F4 — Presets tab — Change linked preset (inline chooser)
-
-- **Status:** ✅ **Added 2026-06-25**
-- **What:** When a non-default preset is linked, the linked preset card gains a "Change" `<button aria-haspopup="dialog" aria-expanded>`. Clicking it toggles an inline `<div role="dialog" aria-label="Switch linked preset" aria-modal="true">` rendered directly in the Presets tab, listing compatible presets (excluding the currently linked one) as clickable `<li role="option">` buttons with aria-labels. Selecting one calls `handleAttach` and closes the chooser, returning focus to the Change button. A ✕ close button also returns focus. The compatible presets list below continues to show "Switch" (renamed from "Attach" when a non-default preset is linked) for direct in-list attaching.
-- **WCAG:** 2.1.1, 2.4.3, 4.1.2
-
-**Tests added:** A106–A115 (10 tests) in `tests/a11y.spec.ts`.
-- A106–A109: sort control label, options, default value, keyboard operability
-- A110–A113: narrow viewport list-first, model selection shows detail, Back button label, Back returns to list
-- A114–A115: preset Change button ARIA attributes, chooser dialog opens/closes with focus
-
-**Files changed:** `ModelDetailPanel.tsx`, `ModelListPanel.tsx`, `ModelManager.tsx`, `styles/styles.css`, `tests/a11y.spec.ts`, `ACCESSIBILITY.md`.
-
----
 
 ### Group G — Model README raw-HTML rendering (#2355 README tab fix)
 
@@ -336,7 +250,6 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 
 - **Status:** ✅ **Fixed 2026-06-22**
 - **What:** Clickable `<div>` cells in the backend matrix were mouse-only — no keyboard focus, no ARIA role, no selected state.
-- **Fix:** Overlay-button pattern (same as `recipe-card__overlay-btn` in PresetManager). Each `.cell--selectable` div now has `position: relative`. A `<button class="cell__select-btn">` with `position: absolute; inset: 0; z-index: 0` covers the full cell. The button has `aria-pressed` (selected state) and an `aria-label` including the recipe label and backend identifier. Action buttons (`.cell__actions`) have `position: relative; z-index: 1` so they remain clickable above the overlay. `:focus-visible` ring from global CSS applies automatically to the button.
 - **WCAG:** 4.1.2 (Name, Role, Value), 2.1.1 (Keyboard)
 
 ### C2 — #2344: Action button qualified accessible names
@@ -352,7 +265,6 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 - **What:** `backends__toast` was conditionally mounted (`{toastMsg && <div>…</div>}`); `context-rail__notice` likewise. Mounting with content does not trigger NVDA live region announcements.
 - **Fix:** Added two always-present `<div role="status" aria-live="polite" aria-atomic="true" className="sr-only">` elements alongside the visual elements:
   - `data-backends-toast-live` — mirrors `toastMsg` (install/update/uninstall progress and completion messages)
-  - `data-backends-preset-notice-live` — mirrors `presetNotice` (preset assignment confirmation and incompatibility notices)
   Visual toast and notice remain conditionally rendered; only the sr-only live regions are always in DOM.
 - **WCAG:** 4.1.3 (Status Messages)
 
@@ -366,16 +278,13 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 | # | Item | Section | Priority | Effort | Status |
 |---|------|---------|----------|--------|--------|
 | 1 | `<main>` landmark | Standard A11y | **P0** | S | ✅ Done |
-| 2 | `div.onClick` → `<button>` | Standard A11y | **P0** | M | ✅ Done (PresetCard) |
 | 3 | Focus rings (global `outline: none`) | Standard A11y | **P0** | S | ✅ Done |
 | 4 | Composer textarea `aria-label` | Standard A11y | **P0** | S | ✅ Done |
 | 5 | Skip-to-main link | Standard A11y | **P0** | S | ✅ Done |
-| 6 | Preset slideover focus trap + ESC | Standard A11y | **P0** | M | ✅ Done |
 | 7 | `aria-live` for streaming output | Standard A11y | **P0** | M | ✅ Done |
 | 8 | ARIA landmarks audit (nav, complementary) | Standard A11y | P1 | S | ✅ Done |
 | 9 | `titlebar__status-dot` screen reader label | Standard A11y | P1 | S | ✅ Done |
 | 10 | Persistence-toggle label (`ChatView.tsx:1725`) | Standard A11y | P1 | S | ✅ Done |
-| 11 | Preset slideover unlabeled inputs | Standard A11y | P1 | S | ✅ Done |
 | 12 | Color contrast audit (both themes) | Standard A11y | P1 | M | |
 | 13 | `prefers-reduced-motion` (all animations) | LLM-specific | **P0** | M | ✅ Done |
 | 14 | Font size / text scale controls | LLM-specific | P1 | M | |
@@ -384,11 +293,6 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 | 17 | Response verbosity setting | LLM-specific | P2 | M | |
 | 18 | Dyslexia-friendly font option | LLM-specific | P2 | S | |
 | 19 | Message role announcements for screen readers | LLM-specific | P2 | S | |
-| 20 | Preset param controls programmatic labels (#2338) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
-| 21 | Backend/device fields discoverable (#2339) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
-| 22 | Preset card exposes metadata to AT (#2345) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 |
-| 23 | Capability chip toggle-button semantics (#2350) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 (revised 2026-06-22) |
-| 24 | AutoOpt run selection state (#2352) | GUI3 Presets | **P0** | S | ✅ Done 2026-06-22 — removed with AutoOpt |
 | 25 | MCP endpoint URL + copy-to-clipboard (#2417) | MCP Gateway | **P0** | S | ✅ Done 2026-06-25 |
 | 26 | MCP health/status indicator — not color-only (#2417) | MCP Gateway | **P0** | S | ✅ Done 2026-06-25 |
 | 27 | MCP tools list accessible labels + live states (#2417) | MCP Gateway | **P0** | S | ✅ Done 2026-06-25 |
@@ -409,14 +313,12 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 
 #### 1.1.2 `div.onClick` / `span.onClick` used as interactive elements
 
-- **Status:** ✅ **Fixed 2026-06-15 for PresetCard** — `<article role="button">` replaced with overlay-button pattern (`<button class="recipe-card__overlay-btn">` at absolute inset:0, card content at z-index:1). ✅ **Fixed 2026-06-22 for BackendManager** — matrix cells use same overlay-button pattern (`<button class="cell__select-btn">`). Remaining `div.onClick` in AccountMenu, ModelManager are P1 deferred.
 - **What:** Clickable divs/spans without button semantics — no keyboard activation, no role, not focusable.
 - **Current state:**
   - `AccountMenu.tsx` — 2 `div.onClick` instances (account row items)
   - `BackendManager.tsx` — ✅ fixed (overlay button pattern, #2343)
   - `ChatView.tsx` — 1 `div.onClick` (backdrop `aria-hidden="true"` — OK as-is)
   - `ModelManager.tsx` — 3 `div.onClick` instances
-  - `PresetManager.tsx` — ✅ fixed (overlay-button pattern on preset card)
 - **Target:** Replace clickable `div`/`span` elements with `<button>` (or `<a>` where navigation applies). At minimum add `role="button"`, `tabIndex={0}`, and `onKeyDown` handling (`Enter`/`Space` triggers click).
 - **Effort:** M
 - **Priority:** P0 — WCAG 4.1.2 (Name, Role, Value)
@@ -447,14 +349,6 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 - **Effort:** S
 - **Priority:** P1
 
-#### 1.2.2 Preset slideover missing dialog semantics
-
-- **What:** The preset detail panel slides in but has no dialog ARIA attributes.
-- **Current state:** `PresetManager.tsx:578` — `<aside className="slideover slideover--recipe…" aria-hidden={!selectedPreset}>`. No `role="dialog"`, no `aria-modal`, no `aria-labelledby`. Contrast with the bottom sheet (`ChatView.tsx:1738`) which correctly uses `role="dialog" aria-modal="true"`.
-- **Target:** Add `role="dialog" aria-modal="true" aria-labelledby="slideover-title-id"`. Give the title element the matching `id`. Add focus trap (see 1.4.2).
-- **Effort:** S (ARIA attrs only); M (combined with focus trap)
-- **Priority:** P0 — screen readers will read through the rest of the page when the panel is open
-
 #### 1.2.3 Composer model-search menu
 
 - **What:** The floating model-search popover has `role="dialog"` but no `aria-modal`.
@@ -480,7 +374,6 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 - **What:** Logical tab sequence through all interactive elements.
 - **Current state:** TBD — needs keyboard walkthrough audit. Known issues:
   - `div.onClick` elements (see 1.1.2) are not in the tab order unless they have `tabIndex={0}`.
-  - `PresetManager.tsx:610` adds `tabIndex={0}` to a `.recipe-card` div but no `role="button"` and no `onKeyDown`, so Enter/Space don't activate it.
   - Bottom sheet list items: tab order within the open sheet needs verification.
 - **Target:** All interactive elements reachable by Tab in a logical reading order. No focus traps outside deliberate modal contexts.
 - **Effort:** M
@@ -491,7 +384,6 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 - **What:** ESC should close any open panel/modal/popover.
 - **Current state:**
   - Bottom sheet: ESC closes via `useEffect` keydown in `ChatView.tsx` ✓
-  - Preset slideover: no ESC handler
   - Composer model-search menu: no ESC handler visible
   - AccountMenu panel (`role="dialog"`): no ESC handler visible
 - **Target:** Every panel/overlay responds to Escape. Pattern: `useEffect` adds `keydown` listener on `document` when open, removes on unmount/close.
@@ -501,7 +393,6 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 #### 1.3.3 Enter/Space activation
 
 - **What:** `role="button"` elements must fire on Enter and Space.
-- **Current state:** `div.onClick` items (see 1.1.2) have no `onKeyDown`. The `tabIndex={0}` preset card at `PresetManager.tsx:610` only handles click, not keyboard.
 - **Target:** Add `onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); } }}` to all non-`<button>` interactive elements, or replace with `<button>`.
 - **Effort:** S (per element; combined with 1.1.2)
 - **Priority:** P0
@@ -523,7 +414,6 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 - **What:** Focus must be contained inside open modal dialogs.
 - **Current state:**
   - Bottom sheet (`ChatView.tsx:1738`): no explicit focus trap — focus can leave the open sheet via Tab.
-  - Preset slideover: no focus trap.
   - Composer model-search menu: no focus trap.
   - AccountMenu dialog (`AccountMenu.tsx:99`): no focus trap.
 - **Target:** Implement focus trap — either manually (collect all focusable children, intercept Tab/Shift-Tab at boundaries) or via `focus-trap-react` library (Phase 2 dep). On open, move focus to the first focusable element inside the panel. On close, return focus to the trigger element.
@@ -535,7 +425,6 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 - **What:** When a panel closes, focus should return to the element that opened it.
 - **Current state:**
   - Bottom sheet: focus returns to `sheetTriggerRef` ✓ (`ChatView.tsx` Round 4 implementation)
-  - Preset slideover: no focus return — focus is left wherever it was, likely outside the panel area
   - Composer model-search menu: no focus return
   - AccountMenu: no focus return
 - **Target:** Store trigger ref before opening each panel; call `.focus()` on close.
@@ -629,14 +518,6 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 - **Target:** Already compliant.
 - **Effort:** —
 - **Priority:** —
-
-#### 1.7.3 Preset slideover inputs
-
-- **What:** Name and description inputs in the preset edit panel have no labels.
-- **Current state:** `PresetManager.tsx:762` — `<input className="slideover__title-input" placeholder="Preset name" …>` — no `<label>`, no `aria-label`. Line 773 — `<textarea className="slideover__desc-input" placeholder="Description (optional)" …>` — no label.
-- **Target:** Add `aria-label="Preset name"` and `aria-label="Description"`, or wrap with visible `<label>`.
-- **Effort:** S
-- **Priority:** P1
 
 #### 1.7.4 ModelManager custom model form
 
@@ -736,11 +617,9 @@ Fixes three NVDA/keyboard issues in `BackendManager.tsx`:
 ### 2.4 Response Verbosity Settings
 
 - **What:** Allow users to instruct the model to use concise, standard, or detailed responses — without needing to manually add a system prompt. Particularly useful for screen reader users who benefit from shorter, more scannable answers.
-- **Current state:** No verbosity preference exists. System prompt is editable in the Presets system (`PresetManager.tsx`) but requires user to know what to write. No per-conversation shortcut.
 - **Target:**
   - Add `verbosity: 'concise' | 'standard' | 'detailed'` to the chat state (default `'standard'`).
   - Inject a brief system-prompt prefix when non-standard: `"Respond concisely in 1-2 sentences unless asked for more."` / `"Provide detailed, step-by-step explanations."`.
-  - Expose as a toolbar pill in the composer (similar to existing mode/preset pills) or as a per-conversation setting in the bottom sheet.
   - Persist per conversation scope in `localStorage`.
 - **Effort:** M
 - **Priority:** P2
@@ -823,17 +702,11 @@ Do these first. All are small changes with high compliance impact.
 3. **1.4.1** ✅ DONE — Remove `outline: none` global reset; add `:focus-visible` ring using `--accent`
 4. **1.6.1** ✅ DONE — Add `aria-label="Message"` to composer textarea (`ChatView.tsx:2149`)
 5. **1.6.3** ✅ DONE — Persistence toggle checkbox already wrapped in `<label>` (implicit association confirmed); no change needed
-6. **1.7.3** ✅ DONE — Add `aria-label` to preset slideover name/desc inputs (`PresetManager.tsx:762,773`)
-7. **1.2.2** ✅ DONE — Add `role="dialog" aria-modal="true" aria-label` to preset slideover (`PresetManager.tsx:578`)
 8. **2.3** ✅ DONE — Add `@media (prefers-reduced-motion: reduce)` block to `styles.css`
 9. **1.2.4** ✅ DONE — Add `role="status" aria-label` to `titlebar__status-dot` (`App.tsx:293`)
-10. **1.3.2 (partial)** ✅ DONE — Add ESC handler to preset slideover close
 
 ### Phase 2 — Structural (M-effort, P0/P1, possible new deps)
 
-11. **1.1.2** ✅ DONE — Convert `div.onClick` to `<button>` in ModelManager (3 rows); BackendManager `div.cell__actions` is a non-interactive container (left as-is); PresetCard already had `role="button"` + `onKeyDown`; AccountMenu divs were already `<button>` elements
-12. **1.4.2** ✅ DONE — Implement focus traps in bottom sheet (ChatView) and preset slideover (PresetManager) using custom `useFocusTrap` hook (no new dep); composer model-search and AccountMenu dialog: PARTIAL — remaining work in Phase 3
-13. **1.3.2 (complete)** ✅ DONE — ESC for preset slideover; PARTIAL — composer model-search, AccountMenu still need ESC
 14. **2.5** ✅ DONE — Add `aria-live` debounced streaming output (`aria-live="polite"` + 400ms/sentence-boundary flush) + assertive status announcements ("Assistant is responding" / "Response complete")
 15. **1.5.1 / 1.5.2** ✅ DONE — `--text-disabled` fixed in both themes (dark: `#7A776E` ~4.6:1; light: `#767676` exactly 4.5:1); `--accent-fg` token added to gate yellow accent foreground in light theme; all `color: var(--accent)` foreground uses in styles.css migrated to `var(--accent-fg)`
 16. **2.7** — Implement keyboard shortcut system — DEFERRED to Phase 3 (scope increase beyond Phase 2 budget)
@@ -845,23 +718,6 @@ Do these first. All are small changes with high compliance impact.
 23. **Chat conversation rail** ✅ DONE — Full listbox keyboard navigation in `ChatView.tsx`. Each `[role="option"]` now has `aria-selected`, roving `tabIndex` (selected=0, others=-1), unique `id` for both desktop rail (`rail-conv-{id}`) and mobile sheet (`sheet-conv-{id}`). `handleRailKeyDown` / `handleSheetKeyDown` wire ArrowUp/Down, Home/End, Enter/Space. Delete buttons carry qualified `aria-label="Delete conversation: {title}"` and `tabIndex={-1}` (not a Tab stop; reachable via NVDA browse mode). CSS: `.rail__item:focus-within .rail__item-delete { opacity: 1 }` shows delete button on keyboard focus.
 
 24. **Account menu dialog** ✅ DONE — `AccountMenu.tsx` promoted to a complete modal dialog. Added `aria-modal="true"` on the panel, `ref` on both trigger and panel, `useFocusTrap(panelRef, open)` for Tab containment, Escape keydown handler (`closePanel()`) that restores focus to the trigger via `requestAnimationFrame`. The × close button now calls `closePanel()` instead of `setOpen(false)`. **Modal-vs-popover decision: MODAL.** The panel already declared `role="dialog"` and `aria-haspopup="dialog"`; it contains multi-mode forms (sign-in, create, settings) where interaction is modal in nature. Upgrading to full modal is consistent with the existing declaration and prevents screen-reader virtual-cursor from escaping into page content while the panel is open.
-
-### Phase 3 — Enhancements (L-effort, P2, new deps) + GUI3 Preset A11y
-
-19. **2.2** — High-contrast theme (`[data-theme="high-contrast"]` + `forced-colors` handling) — new token set
-20. **2.6** — Dyslexia-friendly font (Lexend self-hosted font files — new asset dep)
-21. **2.4** — Response verbosity preference in composer toolbar
-22. **2.8** — Full message role announcement polish (combined with Phase 2 article work)
-
-#### GUI3 Preset A11y — ✅ DONE 2026-06-22 (branch `feat/gui3-presets-a11y`)
-
-All five items from the blind NVDA screen-reader user's feedback on UI 3 beta:
-
-23. **#2338** ✅ DONE — All Preset parameter controls labelled via `htmlFor`/`id` (temperature, top_p, context size, top_k, repeat penalty, steps, CFG scale, engine hint, llamacpp_args, sdcpp_args) and via `aria-label` (image width, image height which share one visual label). File: `PresetManager.tsx` lines ~1000–1075.
-24. **#2339** ✅ DONE — `llamacpp_backend` and `llamacpp_device` converted to `<input list=>` + `<datalist>` exposing known values (backends: auto/cpu/cuda/vulkan/kompute/metal/rpc/opencl/mmap; devices: Auto/CPU/CUDA0/CUDA1/Vulkan0/Vulkan1/Metal). File: `PresetManager.tsx` lines ~1060–1067.
-25. **#2345** ✅ DONE — PresetCard overlay button gains `aria-describedby` pointing to a `sr-only` span containing: starter/manual-args state, applies_to capability list, parameter summary, prompt name, tools state. File: `PresetManager.tsx` lines ~700–726.
-26. **#2350** ✅ DONE (revised) — Capability chip container changed from `role="radiogroup"` to `role="group" aria-label="Applies to capabilities"`; each chip button changed from `role="radio" aria-checked={…}` to `aria-pressed={…}` (toggle-button semantics). Radiogroup requires arrow-key navigation (ARIA APG / WCAG 2.1.1); toggle buttons are keyboard-correct with Tab + Enter/Space. File: `PresetManager.tsx` lines ~937–943.
-27. **#2352** ✅ DONE — AutoOpt run selection state (removed with AutoOpt feature).
 
 ### GUI3 A11y Series — targeted fixes (branches feat/gui3-*)
 
@@ -915,18 +771,14 @@ npm test
 
 | Group | Tests | What it checks |
 |-------|-------|----------------|
-| axe-core scans | A01–A05 | WCAG 2.1 AA on Chat, Models, Presets, Connect, Dashboard — no serious/critical violations |
 | Skip link | A06–A09 | Off-screen until focused; Tab once = skip link; Enter = focus `<main>`; visible ring |
 | Landmarks | A10–A13 | `<main>` unique; `<nav aria-label="Primary">`; `role="status"` on status dot; aria-label values |
 | Keyboard nav | A14–A16 | Nav buttons reachable; Tab reaches composer; Shift+Tab reverses |
 | Focus trap — bottom sheet | A17–A20 | 390px mobile; opens with focus inside; Tab wraps; Esc closes; focus returns to trigger |
-| Focus trap — slideover | A21–A24 | Preset slideover; focus moves in; Tab wraps; Esc closes; focus returns to card |
 | aria-live regions | A25–A27 | Assertive + polite regions in DOM at load; both are `.sr-only` |
 | :focus-visible rings | A28–A30 | Keyboard = outline present; mouse click = no ring; textarea keyboard ring present |
 | prefers-reduced-motion | A31–A34 | Bottom sheet transition near-zero; normal = 280ms; all transitions; `transform: none` snap |
-| Preset param labels (#2338) | A35–A37 | temperature/ctx-size/top_k sliders labelled via htmlFor/id |
 | Backend/device discoverable (#2339) | A38–A39 | llamacpp_backend and llamacpp_device inputs have datalist with ≥3 options |
-| Preset card metadata (#2345) | A40 | Card button aria-describedby includes applies_to, prompt, tools |
 | Capability toggle-button semantics (#2350) | A41–A43 | Container has role=group + aria-label; buttons are plain buttons with aria-pressed; exactly 1 pressed=true, all others false |
 | AutoOpt selection state (#2352) | A44–A45 | Removed with AutoOpt feature |
 | Backend matrix + action/live regions | A51–A58 | Matrix cell buttons expose selection + labels; action buttons include recipe/backend; persistent status live regions exist |
@@ -943,5 +795,3 @@ npm test
 Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that the polite region receives debounced content during streaming requires mocking `POST /api/v1/chat/completions` with a chunked SSE response via `page.route()`. That mock infrastructure is tracked as a TODO in the test file.
 
 ---
-
-*Last updated: 2026-06-25 by Mattingly (Group I: model-view refinements #2424 — favorite star toggle reusing the pin store, preset search/+New removed from rail, Back-to-models desktop-hidden, funnel scoped to capabilities + opaque popover, rail grid-row scroll fix; tests A142–A148)*

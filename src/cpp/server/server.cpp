@@ -1043,13 +1043,6 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_model_files(req, res);
     });
 
-    // Runtime details must be registered before the generic model-id route.
-    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
-        web_server.Get(std::string(prefix) + R"(/models/(.+)/runtime)", [this](const httplib::Request& req, httplib::Response& res) {
-            handle_model_runtime(req, res);
-        });
-    }
-
     // Model by ID (need to register for both versions with regex, with and without /api prefix)
     web_server.Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
@@ -2648,31 +2641,6 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
         res.set_content(error_response.dump(), "application/json");
-    }
-}
-
-void Server::handle_model_runtime(const httplib::Request& req, httplib::Response& res) {
-    const std::string model_id = req.matches[1];
-    try {
-        const nlohmann::json props = router_->get_model_runtime_props(model_id);
-        const auto settings = props.value("default_generation_settings", nlohmann::json::object());
-        const auto params = settings.value("params", nlohmann::json::object());
-        const auto context_size = params.value("n_ctx", 0LL);
-        if (context_size <= 0) {
-            res.status = 502;
-            res.set_content(R"({"error":"Backend did not report a runtime context size"})", "application/json");
-            return;
-        }
-        res.set_content(nlohmann::json({
-            {"model_name", model_id},
-            {"ctx_size", context_size},
-        }).dump(), "application/json");
-    } catch (const ModelNotLoadedException&) {
-        res.status = 404;
-        res.set_content(create_model_error(model_id, "Model is not loaded").dump(), "application/json");
-    } catch (const std::exception& e) {
-        res.status = 502;
-        res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
     }
 }
 

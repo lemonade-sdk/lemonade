@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import api, { type ModelInfo, type EffectiveLoadCommand, type LoadedModel, friendlyErrorMessage } from '../api';
 import {
-  type Preset,
   type RecipeOptions,
   type SamplingParams,
   type TuningValueSource,
@@ -11,14 +10,12 @@ import {
   backendArgsFieldForRecipe,
   backendSupportsArgs,
   clearSessionArgsOverride,
-  DEFAULT_PRESET,
+  effectiveModelTuningForModel,
   getSessionArgsOverride,
   loadModelTuning,
-  presetMcpDisplayText,
-  resolvedModelTuningForPreset,
   saveModelTuning,
   setSessionArgsOverride,
-} from '../presetStore';
+} from '../modelConfiguration';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
@@ -35,7 +32,7 @@ const RECIPE_OPTION_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
   moonshine_backend: 'Backend',
   moonshine_args: 'Backend args',
   sdcpp_args: 'Backend args',
-  'sd-cpp_backend': 'Backend',
+  'sd_cpp_backend': 'Backend',
   steps: 'Steps',
   cfg_scale: 'CFG scale',
   width: 'Width',
@@ -57,7 +54,7 @@ const SAMPLING_LABELS: Partial<Record<keyof SamplingParams, string>> = {
 function sourceLabel(source: TuningValueSource | undefined): string {
   switch (source) {
     case 'custom': return 'Direct configuration';
-    case 'built-in': return 'Recipe default';
+    case 'built_in': return 'Recipe default';
     case 'optimized': return 'Optimized';
     default: return 'Default';
   }
@@ -66,7 +63,7 @@ function sourceLabel(source: TuningValueSource | undefined): string {
 function sourceClass(source: TuningValueSource | undefined): string {
   switch (source) {
     case 'custom': return 'effective-settings__source--custom';
-    case 'built-in': return 'effective-settings__source--builtin';
+    case 'built_in': return 'effective-settings__source--builtin';
     case 'optimized': return 'effective-settings__source--optimized';
     default: return 'effective-settings__source--generic';
   }
@@ -102,8 +99,9 @@ interface EffectiveSettingsModalProps {
   onClose: () => void;
   modelName: string;
   modelInfo: ModelInfo | null;
-  preset: Preset;
   recipe: string;
+  mcpEnabled: boolean;
+  mcpServerIds: string[];
   fallbackCtxSize?: number;
   loadedModel?: LoadedModel | null;
   isModelLoaded: boolean;
@@ -112,7 +110,7 @@ interface EffectiveSettingsModalProps {
 }
 
 const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
-  open, onClose, modelName, modelInfo, preset, recipe, fallbackCtxSize, loadedModel, isModelLoaded, onReload, onLoad,
+  open, onClose, modelName, modelInfo, recipe, mcpEnabled, mcpServerIds, fallbackCtxSize, loadedModel, isModelLoaded, onReload, onLoad,
 }) => {
   const argsField = backendArgsFieldForRecipe(recipe);
   const canEditArgs = backendSupportsArgs(recipe) && !!argsField;
@@ -142,11 +140,11 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   const resolved = useMemo(() => {
     if (!modelInfo || !open) return null;
     try {
-      return resolvedModelTuningForPreset(modelName, modelInfo, preset, fallbackCtxSize ?? DEFAULT_CONTEXT_SIZE);
+      return effectiveModelTuningForModel(modelName, modelInfo, fallbackCtxSize ?? DEFAULT_CONTEXT_SIZE);
     } catch {
       return null;
     }
-  }, [modelName, modelInfo, preset, fallbackCtxSize, open]);
+  }, [modelName, modelInfo, fallbackCtxSize, open]);
 
   const loadEffective = useCallback(async () => {
     if (!modelName) return;
@@ -172,7 +170,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     setPreview(null);
     setPreviewError(null);
     loadEffective();
-    const savedSampling = loadModelTuning(modelName, DEFAULT_PRESET.id)?.sampling || {};
+    const savedSampling = loadModelTuning(modelName)?.sampling || {};
     setSamplingDraft({
       temperature: savedSampling.temperature === undefined ? '' : String(savedSampling.temperature),
       top_p: savedSampling.top_p === undefined ? '' : String(savedSampling.top_p),
@@ -310,12 +308,12 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       const value = Number(samplingDraft[key]);
       if (samplingDraft[key].trim() && Number.isFinite(value)) sampling[key] = value;
     }
-    const existing = loadModelTuning(modelName, DEFAULT_PRESET.id);
+    const existing = loadModelTuning(modelName);
     saveModelTuning(modelName, {
       ...(existing || {}),
       recipe_options: existing?.recipe_options || {},
       sampling,
-    }, DEFAULT_PRESET.id);
+    });
     setNotice(Object.keys(sampling).length > 0
       ? 'Sampling overrides will be sent with future chat requests.'
       : 'Chat requests will use the backend sampling defaults.');
@@ -367,7 +365,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
               </div>
               <div className="effective-settings__row">
                 <span className="effective-settings__row-label">MCP servers</span>
-                <span className="effective-settings__row-value">{presetMcpDisplayText(preset)}</span>
+                <span className="effective-settings__row-value">{!mcpEnabled ? 'Off' : (mcpServerIds.length > 0 ? mcpServerIds.join(', ') : 'Built-in Lemonade')}</span>
                 <span className="effective-settings__source effective-settings__source--generic">Setting</span>
               </div>
               {resolved && (

@@ -13,7 +13,7 @@ Lovell is the lead and primary reviewer with authority over scope decisions, cod
 ### UI Framework Selection & POC Scope (2026-05-15)
 
 - **Decision:** Rejected Svelte POC; sanctioned React decomposition POC instead
-- **Rationale:** 
+- **Rationale:**
   - Framework choice is secondary to component design problem
   - `ModelManager.tsx` is 75 KB god-component (architecture problem, not framework problem)
   - Svelte POC by strongest advocate still doesn't answer 18-month ROI question
@@ -97,3 +97,32 @@ Lovell is the lead and primary reviewer with authority over scope decisions, cod
 
 **Summary prepared by:** Scribe
 **Full history available in:** `.squad/agents/lovell/history.md`
+
+## Final Review Decision — MCP Parity Rejected & Hold Placed (2026-07-30T09:52:57.950-06:00)
+
+**Verdict:** REJECTED on three critical defects
+1. **Redaction incomplete:** safe_public_text() does not redact ordinary relative paths (e.g., models/foo.gguf) or bare URLs (e.g., github.com)
+2. **Backend mismatch:** lemonade_load_model preflight checks first fallback while Router uses selected backend; allows bypass of unavailable backend, triggering install/download
+3. **Scope contamination:** server.cpp includes unrelated runtime-route removal, commingling concerns
+
+**Test Status:** Static checks passed; live parity testing blocked by stale running lemond process
+
+**Reviewer Lockout — Exhausted:** All three MCP parity lockouts now active; next revisions must be by Mattingly (C++), Swigert (tests), Haise (docs)
+
+**Merge Hold — Active:** No modifications to MCP code/tests/docs by other agents. Mattingly, Swigert, Haise own revisions; Lovell final authority.
+
+## Current Status (2026-07-30T09:52:57.950-06:00)
+
+- **MCP parity rejection finalized:** Three defects documented in Lovell's acceptance criteria
+- **Inbox consolidated:** All 6 decision records moved to archive
+- **Hold in place:** Merge blocked until all defects resolved
+- **Next cycle:** Mattingly (C++), Swigert (tests), Haise (docs) independent revisions
+- **Prerequisites for release:** Process cleanup, live MCP verification, concurrent regression checks, full Lovell re-review
+
+**Stale Process Note:** lemond daemon must be terminated before live parity testing can proceed.
+
+**Enforcement:** Lovell reviews all three revisions independently. No application code/test modifications permitted in MCP scope by non-assigned agents.
+
+---
+
+**Rejection finalized:** 2026-07-30T09:52:57.950-06:00

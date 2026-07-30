@@ -1,12 +1,12 @@
 import { storageKey } from '../../storage';
-import type { RecipeOptions } from '../../presetStore';
+import type { RecipeOptions } from '../../modelConfiguration';
 
 export const TTS_SETTINGS_EVENT = 'lemonade:tts-settings-changed';
 export const DEFAULT_TTS_VOICE = 'coral';
 
 // Lemonade's Kokoro backend exposes an OpenAI-compatible speech contract. Keep
 // this list intentionally small and English-focused; users can still type a
-// custom value through imported presets.
+// custom value through direct model configuration.
 export const TTS_VOICES = [
   { id: 'alloy', label: 'Alloy' },
   { id: 'ash', label: 'Ash' },
@@ -20,13 +20,6 @@ export const TTS_VOICES = [
   { id: 'shimmer', label: 'Shimmer' },
   { id: 'verse', label: 'Verse' },
 ];
-
-export const OPENMOSS_VOICE_PRESETS = [
-  { id: 'Natural multilingual assistant voice', label: 'Natural multilingual' },
-  { id: 'Warm multilingual narrator voice', label: 'Warm narrator' },
-  { id: 'Clear multilingual professional voice', label: 'Clear professional' },
-];
-
 export type TtsPlaybackMode = 'demand' | 'always';
 export type TtsReadMode = 'on-demand' | 'agent' | 'agent-and-user';
 

@@ -106,3 +106,30 @@ owns tests, Kranz owns documentation only). The documentation contract now match
 the implemented allowlists and explicitly names forbidden fields. Lovell will
 re-review all three parallel revisions (Aaron C++, Liebergot tests, Kranz docs)
 as independent components. Handoff complete; awaiting merge.
+
+### 2026-07-30T10:33:43.201-06:00 — MCP no-install and relative-path test safeguards
+
+Revised `test/server_mcp.py` with a runtime-configured missing-backend test that
+blocks executable fetching, requires the standard structured tool error, and
+checks downloaded-model and backend-status invariants before and after the call.
+Extended recursive diagnostic checks to reject nested relative paths,
+slash-separated values, and URL-like strings without a scheme. Python syntax,
+Black, whitespace, isolated redaction probes, and a mocked lifecycle contract
+probe passed; live execution remains blocked by the stale five-tool server.
+
+### 2026-07-30T10:51:42.882-06:00 — MCP effective backend preflight
+
+Changed the MCP load guard to call Router::resolve_effective_recipe_options() before
+loading, then inspect the exact <recipe>_backend selected by request, model recipe
+options, architecture defaults, and server configuration. The guard checks that backend
+against SystemInfo::get_all_recipe_statuses() and returns the existing structured MCP
+tool error unless its state is installed; cloud remains exempt because it has no local
+backend. The Windows lemonade-server-core target built successfully.
+
+### 2026-07-30T09:52:57.950-06:00 — Node typings visibility repair
+
+Investigated the `api.ts` `process.env.LEMONADE_BASE_URL` errors without changing runtime code. `src/app/tsconfig.json` has no restrictive `types` or `typeRoots`, and both `package.json` and `package-lock.json` already declare and lock `@types/node` 22.20.1; the actual blocker was that `src/app/node_modules/@types/node` was missing. Restored the declared dependency tree with `npm install --ignore-scripts --no-audit --no-fund`, with no tracked config or lockfile changes. The initial typecheck also reported the unrelated concurrent missing `historySettings` imports; after the dependency restore and concurrent untracked `historySettings.ts` addition, `npm run typecheck` passed.
+
+### 2026-07-30T12:06:47.516-06:00 — Lossless model tuning migration repair
+
+Repaired `migrateLegacyModelConfigurationStorage()` to group recognized historical suffix records, choose the deterministic `default` > `s_default` > `s__default` winner case-insensitively, keep direct model records authoritative, and archive every differing discarded value. Archive and canonical writes now complete before legacy-key deletion, archive-key collisions receive stable numeric disambiguation, and the v3 marker keeps reruns stable. Added focused runtime coverage for all suffixes, mixed-case recognition, direct conflicts, collision archival, cleanup, and rerun idempotence; the focused test, existing storage migration test, and renderer typecheck passed.

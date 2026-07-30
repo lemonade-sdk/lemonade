@@ -3,7 +3,6 @@
  * Exposes lemonade server management as OpenAI-compatible function calling tools.
  */
 import api, { searchHuggingFace, HFModelResult, PullVariantsResult } from '../api';
-import { allStoredPresets, isCompatible, loadApplied, saveApplied, classifyPresetChange, runningPresetIdForModel, setRunningPreset, activePresetForModel, type Preset } from '../presetStore';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 
 /* ── Tool schemas (OpenAI function calling format) ─────────────── */
@@ -53,7 +52,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'load_model',
-      description: 'Load a downloaded/local model into the server for inference. Use this when the user asks to load/start/use a model. It can also assign a preset before loading via preset, preset_id, or preset_name. A recipe defines the inference backend: llamacpp (GPU/CPU via llama.cpp — backends: vulkan, rocm, metal, cpu), flm (NPU via FastFlowLM), ryzenai-llm (hybrid NPU). Combined forms like "llamacpp-vulkan" or "llamacpp-cpu" select a backend. If the user asks for CPU, pass backend/device=cpu. If multiple recipes are available and the user did not choose, call get_model_info and ask_question first.',
+      description: 'Load a downloaded/local model into the server for inference. A recipe defines the inference backend: llamacpp (GPU/CPU via llama.cpp — backends: vulkan, rocm, metal, cpu), flm (NPU via FastFlowLM), ryzenai-llm (hybrid NPU). Combined forms like "llamacpp-vulkan" or "llamacpp-cpu" select a backend. If the user asks for CPU, pass backend/device=cpu. If multiple recipes are available and the user did not choose, call get_model_info and ask_question first.',
       parameters: {
         type: 'object',
         properties: {
@@ -63,28 +62,8 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
           device: { type: 'string', description: 'Alias for backend. Examples: "cpu", "gpu", "npu".' },
           n_ctx: { type: 'number', description: 'Context window size (e.g. 4096, 8192, 32768). Higher uses more memory.' },
           n_gpu_layers: { type: 'number', description: 'Number of layers to offload to GPU. Higher = faster but uses more VRAM.' },
-          preset: { type: 'string', description: 'Optional preset id or preset name to assign to this model before loading. Examples: Default, Balanced, Quality, Fast, Creative, Long Context, Code, Sharp, Quick.' },
-          preset_id: { type: 'string', description: 'Optional exact preset id to assign before loading.' },
-          preset_name: { type: 'string', description: 'Optional exact preset name to assign before loading.' },
         },
         required: ['model_name'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'change_preset',
-      description: 'Change the active preset of an already-LOADED model (#2356). Use this when the user asks to switch/apply a different preset to a model that is currently loaded (e.g. "use the Creative preset", "make it more deterministic", "give it a bigger context window"). Request-time changes (system prompt, sampling/temperature, tools) apply live on the next message with NO reload. Load-time changes (ctx_size, backend, device, model args) require a reload, which this tool performs automatically (unload + load). Specify the preset via preset, preset_id, or preset_name. If model_name is omitted, the most recently loaded model is used.',
-      parameters: {
-        type: 'object',
-        properties: {
-          model_name: { type: 'string', description: 'The loaded model to re-preset. Optional — uses the most recently loaded model if omitted.' },
-          preset: { type: 'string', description: 'Preset id or name to bind. Examples: Default, Balanced, Quality, Fast, Creative, Long Context, Code.' },
-          preset_id: { type: 'string', description: 'Optional exact preset id to bind.' },
-          preset_name: { type: 'string', description: 'Optional exact preset name to bind.' },
-        },
-        required: [],
       },
     },
   },
@@ -234,25 +213,6 @@ function asString(value: unknown): string {
 function asNumber(value: unknown): number | undefined {
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
-}
-
-function presetSpecifier(args: Record<string, unknown>): string {
-  return asString(args.preset_id) || asString(args.preset_name) || asString(args.preset);
-}
-
-function resolvePreset(specifier: string): Preset | null {
-  const needle = specifier.trim().toLowerCase();
-  if (!needle) return null;
-  const presets = allStoredPresets();
-  return presets.find(preset => preset.id.toLowerCase() === needle)
-    || presets.find(preset => preset.name.toLowerCase() === needle)
-    || presets.find(preset => preset.name.toLowerCase().includes(needle))
-    || null;
-}
-
-function applyPresetBinding(model: string, preset: Preset): void {
-  const current = loadApplied();
-  saveApplied({ ...current, [model]: preset.id });
 }
 
 function modelName(model: AnyModel | null | undefined): string {
@@ -722,28 +682,6 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         if (!targetModelName) {
           return toolPayload(call, { error: 'Missing model_name. Use list_models with a query to resolve a downloaded model first.' }, 'Error: missing model name', true);
         }
-        const requestedPreset = presetSpecifier(args);
-        let appliedPreset: Preset | null = null;
-        if (requestedPreset) {
-          appliedPreset = resolvePreset(requestedPreset);
-          if (!appliedPreset) {
-            const choices = allStoredPresets().map(preset => `${preset.name} (${preset.id})`).slice(0, 12);
-            return toolPayload(call, {
-              error: `Preset not found: ${requestedPreset}`,
-              available_presets: choices,
-              answer_instruction: 'Tell the user the requested preset was not found and ask them to choose one of the available presets.',
-            }, `Preset not found: ${requestedPreset}`, true);
-          }
-          if (resolved && !isCompatible(appliedPreset, resolved as any)) {
-            return toolPayload(call, {
-              error: `Preset ${appliedPreset.name} is not compatible with ${targetModelName}`,
-              preset: { id: appliedPreset.id, name: appliedPreset.name, applies_to: appliedPreset.applies_to },
-              model: modelSummary(resolved, loadedFor(resolved, loaded)),
-              answer_instruction: 'Tell the user the preset is incompatible with the selected model and ask for a compatible preset.',
-            }, `Preset ${appliedPreset.name} is not compatible with ${targetModelName}`, true);
-          }
-          applyPresetBinding(targetModelName, appliedPreset);
-        }
         const opts: Record<string, unknown> = {};
         const recipeArg = typeof args.recipe === 'string' ? args.recipe.trim().toLowerCase() : '';
         const backendArg = typeof args.backend === 'string' ? args.backend.trim().toLowerCase()
@@ -787,113 +725,11 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         const result = {
           status: 'loaded',
           model: targetModelName,
-          preset: appliedPreset ? { id: appliedPreset.id, name: appliedPreset.name, applies_to: appliedPreset.applies_to } : undefined,
           options: opts,
           response,
-          answer_instruction: appliedPreset
-            ? 'Tell the user the preset was assigned and the model was loaded, including the model name and selected recipe/backend if any.'
-            : 'Tell the user the model was loaded, including the model name and selected recipe/backend if any.',
+          answer_instruction: 'Tell the user the model was loaded, including the model name and selected recipe/backend if any.',
         };
-        const presetText = appliedPreset ? ` using preset ${appliedPreset.name}` : '';
-        return toolPayload(call, result, `Loaded ${targetModelName}${presetText}${Object.keys(opts).length ? ` with ${shortJson(opts, 120)}` : ''}`);
-      }
-
-      case 'change_preset': {
-        // #2356 (simplified): re-preset an already-loaded model with the same
-        // primitives as the UI button. No update-preset endpoint, no `mode`
-        // parameter — request-time changes are a pure client-local rebind;
-        // load-time changes go through reloadModel (= unload + load).
-        const health = await api.health().catch(() => null);
-        const loaded = health?.all_models_loaded || [];
-        if (loaded.length === 0) {
-          return toolPayload(call, {
-            error: 'No model is loaded. Load a model first, then change its preset.',
-            answer_instruction: 'Tell the user no model is loaded, so there is nothing to re-preset. Suggest load_model.',
-          }, 'No model loaded', true);
-        }
-        const data = await api.models(true).catch(() => ({ data: [] as AnyModel[] }));
-        // Resolve the target; default to the most-recently-loaded model (last entry).
-        const resolved = args.model_name
-          ? resolveModel(data.data as AnyModel[], loaded, args.model_name)
-          : (data.data as AnyModel[]).find(m => modelName(m).toLowerCase() === asString(loaded[loaded.length - 1]?.model_name).toLowerCase()) || null;
-        const targetModelName = resolved
-          ? modelName(resolved)
-          : (asString(args.model_name) || asString(loaded[loaded.length - 1]?.model_name));
-        if (!targetModelName) {
-          return toolPayload(call, { error: 'Could not determine which loaded model to re-preset.' }, 'Error: missing model name', true);
-        }
-        const loadedTarget = loaded.find(m => asString(m.model_name).toLowerCase() === targetModelName.toLowerCase());
-        if (!loadedTarget) {
-          return toolPayload(call, {
-            error: `Model ${targetModelName} is not currently loaded.`,
-            answer_instruction: 'Tell the user that model is not loaded, so its preset cannot be changed live. Suggest load_model with the preset instead.',
-          }, `Model ${targetModelName} is not loaded`, true);
-        }
-
-        const requestedPreset = presetSpecifier(args);
-        if (!requestedPreset) {
-          const choices = allStoredPresets().map(preset => `${preset.name} (${preset.id})`).slice(0, 12);
-          return toolPayload(call, {
-            error: 'Missing preset. Specify a preset to bind.',
-            available_presets: choices,
-            answer_instruction: 'Ask the user which preset to apply, listing the available presets.',
-          }, 'Error: missing preset', true);
-        }
-        const nextPreset = resolvePreset(requestedPreset);
-        if (!nextPreset) {
-          const choices = allStoredPresets().map(preset => `${preset.name} (${preset.id})`).slice(0, 12);
-          return toolPayload(call, {
-            error: `Preset not found: ${requestedPreset}`,
-            available_presets: choices,
-            answer_instruction: 'Tell the user the requested preset was not found and ask them to choose one of the available presets.',
-          }, `Preset not found: ${requestedPreset}`, true);
-        }
-        if (resolved && !isCompatible(nextPreset, resolved as any)) {
-          return toolPayload(call, {
-            error: `Preset ${nextPreset.name} is not compatible with ${targetModelName}`,
-            preset: { id: nextPreset.id, name: nextPreset.name, applies_to: nextPreset.applies_to },
-            answer_instruction: 'Tell the user the preset is incompatible with the loaded model and ask for a compatible preset.',
-          }, `Preset ${nextPreset.name} is not compatible with ${targetModelName}`, true);
-        }
-
-        // Determine the running preset (what the model is actually running) BEFORE
-        // rebinding, so we can classify the change correctly.
-        const runId = runningPresetIdForModel(targetModelName);
-        const running = runId ? (allStoredPresets().find(p => p.id === runId) ?? null) : (activePresetForModel(targetModelName) ?? null);
-        const kind = classifyPresetChange(running, nextPreset);
-
-        // Rebind the active preset (client-local — invariant #11). For live
-        // changes this is the entire operation; request composition carries the
-        // new values on the next request. The binding PERSISTS across a reload.
-        applyPresetBinding(targetModelName, nextPreset);
-
-        if (kind === 'reload') {
-          await api.reloadModel(targetModelName, nextPreset.recipe_options as Record<string, unknown> | undefined, resolved as any || null);
-          setRunningPreset(targetModelName, nextPreset.id);
-          const result = {
-            status: 'reloaded',
-            model: targetModelName,
-            preset: { id: nextPreset.id, name: nextPreset.name, applies_to: nextPreset.applies_to },
-            change: 'reload',
-            answer_instruction: 'Tell the user the preset was applied and the model was reloaded (load-time settings such as context size/backend require a reload).',
-          };
-          return toolPayload(call, result, `Reloaded ${targetModelName} with preset ${nextPreset.name}`);
-        }
-
-        // 'live' or 'none' — no server round-trip.
-        setRunningPreset(targetModelName, nextPreset.id);
-        const result = {
-          status: kind === 'live' ? 'applied_live' : 'no_change',
-          model: targetModelName,
-          preset: { id: nextPreset.id, name: nextPreset.name, applies_to: nextPreset.applies_to },
-          change: kind,
-          answer_instruction: kind === 'live'
-            ? 'Tell the user the preset was applied live — it takes effect on the next message, no reload needed.'
-            : 'Tell the user the preset was already effectively in use, so nothing changed.',
-        };
-        return toolPayload(call, result, kind === 'live'
-          ? `Applied preset ${nextPreset.name} to ${targetModelName} (live, no reload)`
-          : `Preset ${nextPreset.name} already active on ${targetModelName}`);
+        return toolPayload(call, result, `Loaded ${targetModelName}${Object.keys(opts).length ? ` with ${shortJson(opts, 120)}` : ''}`);
       }
 
       case 'unload_model': {
@@ -1114,4 +950,3 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
     return toolPayload(call, { error: msg, tool: name, args }, `Error: ${msg}`, true);
   }
 }
-

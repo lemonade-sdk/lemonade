@@ -31,18 +31,13 @@ import {
   snapshotFromName,
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
+import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../features/chatHistory/historySettings';
 import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
 import { activeDownloadForModel, downloadsForModel, downloadStore, isDownloadTerminal, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { buildOmniToolRuntime } from '../tools/omniTools';
-import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOLS, MAX_PRESET_MCP_SERVERS, buildSelectedMcpRuntime, composeMcpRuntimes, listMcpServerToolOptions, type McpServerToolOption } from '../tools/mcpRuntime';
-import {
-  DEFAULT_PRESET,
-  PRESET_STORE_EVENT,
-  activePresetForModel,
-  systemPromptTextForPreset,
-  presetMcpServerIds,
-} from '../presetStore';
+import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOLS, MAX_MCP_SERVER_SELECTION, buildSelectedMcpRuntime, composeMcpRuntimes, listMcpServerToolOptions, type McpServerToolOption } from '../tools/mcpRuntime';
+import { loadModelTuning } from '../modelConfiguration';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import {
   LEMONADE_DEFAULT_CHAT_MODELS,
@@ -90,7 +85,6 @@ interface Conversation {
 
 const STORAGE_KEY = 'conversations';
 const ACTIVE_KEY = 'active_conversation';
-const PERSIST_KEY = 'persist_conversations';
 const STORAGE_VERSION = 3;
 
 const CHAT_LOGS_WIDTH_KEY = 'chat_logs_panel_width';
@@ -149,7 +143,7 @@ function saveScopedStringArray(key: string, values: string[] | null): void {
 }
 
 function loadPersistencePreference(): boolean {
-  try { return localStorage.getItem(scopedKey(PERSIST_KEY)) === 'true'; } catch { return false; }
+  return loadChatHistoryPreference();
 }
 
 function normalizeSnapshot(raw: unknown): ModelSnapshot | null {
@@ -511,17 +505,17 @@ function partialImageSettingsFromSource(source?: Record<string, unknown> | null)
   return next;
 }
 
-function imageDefaultsForModel(loadedModel: LoadedModel | null, modelInfo: ModelInfo | null, activePresetRecipeOptions?: Record<string, unknown> | null): ImageGenerationSettings {
+function imageDefaultsForModel(loadedModel: LoadedModel | null, modelInfo: ModelInfo | null, directRecipeOptions?: Record<string, unknown> | null): ImageGenerationSettings {
   const modelImageDefaults = partialImageSettingsFromSource(modelInfo?.image_defaults as Record<string, unknown> | undefined);
   const modelRecipeOptions = partialImageSettingsFromSource(modelInfo?.recipe_options as Record<string, unknown> | undefined);
   const loadedRecipeOptions = partialImageSettingsFromSource(loadedModel?.recipe_options);
-  const presetDefaults = partialImageSettingsFromSource(activePresetRecipeOptions);
+  const directDefaults = partialImageSettingsFromSource(directRecipeOptions);
   return {
     ...DEFAULT_IMAGE_SETTINGS,
     ...modelImageDefaults,
     ...modelRecipeOptions,
     ...loadedRecipeOptions,
-    ...presetDefaults,
+    ...directDefaults,
   };
 }
 
@@ -743,7 +737,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [liveError, setLiveError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
   const [capabilityBusyConvoIds, setCapabilityBusyConvoIds] = useState<Set<string>>(() => new Set());
-  const [presetVersion, setPresetVersion] = useState(0);
   const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings());
   const [globalModelSettings, setGlobalModelSettings] = useState(() => loadGlobalModelSettings());
   const [railExpanded, setRailExpanded] = useState(true);
@@ -767,7 +760,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [mcpOptions, setMcpOptions] = useState<McpServerToolOption[]>([]);
   const [mcpPickerLoading, setMcpPickerLoading] = useState(false);
   const [mcpPickerError, setMcpPickerError] = useState('');
-  const presetMcpSeedRef = useRef('');
   const [showInlineLogs, setShowInlineLogs] = useState(false);
   const [chatLogsWidth, setChatLogsWidth] = useState(() => loadChatLogsWidth());
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -784,6 +776,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const mcpReturnFocusEntryRef = useRef<'lemonade' | 'external'>('lemonade');
+  const mcpBackButtonRef = useRef<HTMLButtonElement | null>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
   const scrollRafRef = useRef<number>(0);
@@ -1024,12 +1018,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }), []);
 
   useEffect(() => {
-    const updatePresetVersion = () => setPresetVersion(v => v + 1);
-    window.addEventListener(PRESET_STORE_EVENT, updatePresetVersion);
-    return () => window.removeEventListener(PRESET_STORE_EVENT, updatePresetVersion);
-  }, []);
-
-  useEffect(() => {
     const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings());
     reloadTtsSettings();
     window.addEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
@@ -1043,14 +1031,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
   }, []);
 
-  const currentPreset = useMemo(
-    () => currentModel ? (currentCapability === 'image' ? DEFAULT_PRESET : activePresetForModel(currentModel)) : null,
-    [currentCapability, currentModel, presetVersion],
-  );
-
   useEffect(() => {
     if (currentCapability !== 'audio-generation') return;
-    const recipeOptions = currentPreset?.recipe_options || {};
+    const recipeOptions = loadModelTuning(currentModel || '')?.recipe_options || {};
     setAudioGenerationSettings(prev => ({
       ...prev,
       duration: isAceStepAudio ? 150 : 10,
@@ -1058,16 +1041,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       cfg: typeof recipeOptions.cfg_scale === 'number' ? recipeOptions.cfg_scale : 4.5,
       lyrics: '',
     }));
-  }, [currentModel, currentCapability, currentPreset, isAceStepAudio]);
+  }, [currentModel, currentCapability, isAceStepAudio]);
 
   useEffect(() => {
     if (!isOpenMossTts) return;
     setOpenMossSettings({
       mode: 'plain',
-      voiceDescription: String(currentPreset?.recipe_options?.voice || ''),
+      voiceDescription: String(loadModelTuning(currentModel || '')?.recipe_options?.voice || ''),
     });
     setPendingAudioFiles([]);
-  }, [currentModel, currentPreset, isOpenMossTts]);
+  }, [currentModel, isOpenMossTts]);
 
   useEffect(() => {
     const keepsAudioAttachments = currentCapability === 'audio'
@@ -1083,29 +1066,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     isOpenMossTts,
     openMossSettings.mode,
   ]);
-
-  useEffect(() => {
-    if (!currentModel || !currentPreset) return;
-    const selectedIds = presetMcpServerIds(currentPreset);
-    const fallbackIds = selectedIds.length > 0 ? selectedIds : DEFAULT_MCP_SERVER_IDS;
-    const next = fallbackIds.length > 0;
-    const seed = `${currentModel}:${currentPreset.id}:${selectedIds.join(',')}:${next ? 'mcp-on' : 'mcp-off'}`;
-    if (presetMcpSeedRef.current === seed) return;
-    presetMcpSeedRef.current = seed;
-    const storedIds = loadScopedStringArray(MCP_SERVER_IDS_KEY);
-    const storedTools = loadScopedStringArray(MCP_TOOL_NAMES_KEY);
-    const nextIds = storedIds && storedIds.length > 0 ? storedIds : fallbackIds;
-    let nextEnabled = nextIds.length > 0;
-    try {
-      const explicit = localStorage.getItem(scopedKey(MCP_ENABLED_KEY));
-      if (explicit !== null && (!storedIds || storedIds.length > 0)) nextEnabled = explicit === 'true';
-    } catch { /* ignore */ }
-    setSelectedMcpServerIds(nextIds);
-    setSelectedMcpToolNames(storedTools);
-    saveScopedStringArray(MCP_SERVER_IDS_KEY, nextIds);
-    setUseMcp(nextEnabled);
-    try { localStorage.setItem(scopedKey(MCP_ENABLED_KEY), String(nextEnabled)); } catch { /* ignore */ }
-  }, [currentModel, currentPreset]);
 
   const hasRealtimeAudio = useMemo(
     () => !!currentModel && modelSupportsRealtimeAudio(currentModel, currentKnownModelInfo, currentLoadedModel),
@@ -1131,9 +1091,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     () => imageDefaultsForModel(
       currentLoadedModel,
       currentKnownModelInfo,
-      currentCapability === 'image' ? (currentPreset?.recipe_options as Record<string, unknown> | undefined) : undefined,
+      currentCapability === 'image'
+        ? (loadModelTuning(currentModel || '')?.recipe_options as Record<string, unknown> | undefined)
+        : undefined,
     ),
-    [currentLoadedModel, currentKnownModelInfo, currentPreset, currentCapability],
+    [currentLoadedModel, currentKnownModelInfo, currentModel, currentCapability],
   );
   const defaultImageSettingsKey = useMemo(() => JSON.stringify(defaultImageSettings), [defaultImageSettings]);
 
@@ -1271,7 +1233,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, []);
 
   const persistMcpSelection = useCallback((serverIds: string[], toolNames: string[] | null) => {
-    const uniqueServerIds = [...new Set(serverIds.filter(Boolean))].slice(0, MAX_PRESET_MCP_SERVERS);
+    const uniqueServerIds = [...new Set(serverIds.filter(Boolean))].slice(0, MAX_MCP_SERVER_SELECTION);
     const uniqueToolNames = toolNames === null ? null : [...new Set(toolNames.filter(Boolean))];
     setSelectedMcpServerIds(uniqueServerIds);
     setSelectedMcpToolNames(uniqueToolNames);
@@ -1324,18 +1286,17 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return () => window.removeEventListener('pointerdown', onPointerDown);
   }, [addMenuOpen]);
 
-  const resetMcpToPreset = useCallback(() => {
-    const presetIds = presetMcpServerIds(currentPreset || DEFAULT_PRESET);
-    const nextIds = presetIds.length > 0 ? presetIds : DEFAULT_MCP_SERVER_IDS;
+  const resetMcpSelection = useCallback(() => {
+    const nextIds = DEFAULT_MCP_SERVER_IDS;
     persistMcpSelection(nextIds, null);
     persistMcpEnabled(nextIds.length > 0);
-  }, [currentPreset, persistMcpEnabled, persistMcpSelection]);
+  }, [persistMcpEnabled, persistMcpSelection]);
 
   const handleMcpServerToggle = useCallback((server: McpServerToolOption) => {
     const selected = selectedMcpServerIdSet.has(server.id);
     const nextIds = selected
       ? selectedMcpServerIds.filter(id => id !== server.id)
-      : [...selectedMcpServerIds, server.id].slice(0, MAX_PRESET_MCP_SERVERS);
+      : [...selectedMcpServerIds, server.id].slice(0, MAX_MCP_SERVER_SELECTION);
     let nextToolNames = selectedMcpToolNames;
     if (nextToolNames !== null) {
       const serverToolNames = new Set(server.toolOptions.map(tool => tool.runtimeName));
@@ -1356,10 +1317,29 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       : [...new Set([...base, runtimeName])];
     const nextIds = selectedMcpServerIdSet.has(server.id)
       ? selectedMcpServerIds
-      : [...selectedMcpServerIds, server.id].slice(0, MAX_PRESET_MCP_SERVERS);
+      : [...selectedMcpServerIds, server.id].slice(0, MAX_MCP_SERVER_SELECTION);
     persistMcpSelection(nextIds, nextToolNames);
     if (!useMcp) persistMcpEnabled(true);
   }, [mcpOptions, persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet, selectedMcpServerIds, selectedMcpToolNames, useMcp]);
+
+  const openMcpPicker = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    mcpReturnFocusEntryRef.current = event.currentTarget.dataset.mcpEntry === 'external' ? 'external' : 'lemonade';
+    setMcpPickerOpen(true);
+  }, []);
+
+  const closeMcpPicker = useCallback(() => {
+    setMcpPickerOpen(false);
+    requestAnimationFrame(() => {
+      addMenuRef.current
+        ?.querySelector<HTMLButtonElement>(`[data-mcp-entry="${mcpReturnFocusEntryRef.current}"]`)
+        ?.focus();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!mcpPickerOpen) return;
+    requestAnimationFrame(() => mcpBackButtonRef.current?.focus());
+  }, [mcpPickerOpen]);
 
   const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
     if (!isLiveRecordingRef.current && liveFinalizeTimerRef.current === null) return;
@@ -1609,10 +1589,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         (modelInfo as any)?.recipe
         || ((Array.isArray(modelInfo?.recipes) && modelInfo?.recipes?.[0]) ? (modelInfo.recipes[0] as any).recipe : ''),
       ).toLowerCase();
-      const presetOptions = activePresetForModel(modelName).recipe_options;
+      const directOptions = loadModelTuning(modelName)?.recipe_options || {};
       const voice = modelRecipe.includes('openmoss')
-        ? String(presetOptions.voice || '')
-        : ttsVoiceFromRecipeOptions(presetOptions);
+        ? String(directOptions.voice || '')
+        : ttsVoiceFromRecipeOptions(directOptions);
       const audio = await api.textToSpeech(modelName, trimmed, voice);
       stopAutoSpeech();
       const player = new Audio(audio.url);
@@ -1627,7 +1607,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     } catch (err) {
       console.warn(`Could not play ${source} text with TTS model:`, err);
     }
-  }, [knownModelInfos, loadModelWithPolicy, loadedModels, presetVersion, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
+  }, [knownModelInfos, loadModelWithPolicy, loadedModels, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
 
   // Streaming hook — owns token buffer, flush interval, abort controllers
   const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => {
@@ -1754,7 +1734,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   // Persist conversations to localStorage only when the user explicitly opted in.
   useEffect(() => {
     saveConversations(conversations, persistHistory);
-    try { localStorage.setItem(scopedKey(PERSIST_KEY), String(persistHistory)); } catch { /* ignore */ }
+    try { localStorage.setItem(storageKey('persist_conversations'), String(persistHistory)); } catch { /* ignore */ }
   }, [conversations, persistHistory]);
 
   // Persist active conversation id
@@ -2186,7 +2166,7 @@ ${finalText}`
       } else if (model.capability === 'tts') {
         if (!text) throw new Error('TTS mode needs text to speak.');
         let targetModel = model.name;
-        let voice = ttsVoiceFromRecipeOptions(activePresetForModel(model.name).recipe_options);
+        let voice = ttsVoiceFromRecipeOptions(loadModelTuning(model.name)?.recipe_options || {});
         let speechOptions: Record<string, unknown> = {};
         let content = 'Generated speech audio from your text.';
         let reloadTargetAfterVoiceDesign = false;
@@ -2278,7 +2258,7 @@ ${finalText}`
     appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings,
     isOpenMossTts, knownModelInfos, loadedModels, model3dSettings, onRefresh,
     loadModelWithPolicy, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
-    presetVersion, speakWithPinnedTts, trackGeneratedMediaUrl,
+    speakWithPinnedTts, trackGeneratedMediaUrl,
   ]);
 
   const startAssistantResponse = useCallback(async (
@@ -2418,8 +2398,6 @@ ${finalText}`
     const chatMessages: ChatMessage[] = [];
 
     const systemPrompts: string[] = [];
-    const presetSystemPrompt = systemPromptTextForPreset(currentPreset);
-    if (presetSystemPrompt) systemPrompts.push(presetSystemPrompt);
     if (toolRuntime?.systemPrompt) systemPrompts.push(toolRuntime.systemPrompt);
 
     if (systemPrompts.length > 0) {
@@ -2470,7 +2448,6 @@ ${finalText}`
     currentKnownModelInfo,
     imageMode,
     currentModel,
-    currentPreset,
     knownModelInfos,
     loadedModels,
     modeSupportsChatCompletions,
@@ -2548,6 +2525,7 @@ ${finalText}`
         model: initialSnapshot,
         isError: true,
       });
+      requestAnimationFrame(() => inputRef.current?.focus());
       return;
     }
 
@@ -2580,6 +2558,7 @@ ${finalText}`
       });
     } finally {
       clearModelPreparation(convoId);
+      requestAnimationFrame(() => inputRef.current?.focus());
     }
   };
 
@@ -2767,8 +2746,12 @@ ${finalText}`
     setPendingAudioFiles([]);
   }, []);
 
-  const handlePersistenceToggle = useCallback(() => {
-    setPersistHistory(prev => !prev);
+  useEffect(() => {
+    const onPreferenceChange = (event: Event) => {
+      setPersistHistory((event as CustomEvent<boolean>).detail);
+    };
+    window.addEventListener(CHAT_HISTORY_PREFERENCE_EVENT, onPreferenceChange);
+    return () => window.removeEventListener(CHAT_HISTORY_PREFERENCE_EVENT, onPreferenceChange);
   }, []);
 
   const handleModelPickerUnload = useCallback(async (modelName: string, e: React.MouseEvent) => {
@@ -3003,13 +2986,6 @@ ${finalText}`
           <p className="rail__empty">No conversations yet</p>
         )}
 
-        <div className="rail__privacy">
-          <label className="rail__privacy-toggle">
-            <input type="checkbox" checked={persistHistory} onChange={handlePersistenceToggle} />
-            <span>Local browser history {persistHistory ? 'ON' : 'OFF'}</span>
-          </label>
-          <span className="rail__privacy-note">Media is never persisted.</span>
-        </div>
       </aside>
 
       {/* Mobile bottom sheet for conversations */}
@@ -3293,9 +3269,10 @@ ${finalText}`
                             className="composer__model-option-unload"
                             onClick={(e) => handleModelPickerUnload(option.name, e)}
                             disabled={!!modelPickerUnloading || !!modelPickerLoading}
-                            aria-label={`Unload ${option.name}`}
+                            aria-label={`Eject model ${option.name}`}
+                            title="Eject model"
                           >
-                            {modelPickerUnloading === option.name ? '…' : '×'}
+                            {modelPickerUnloading === option.name ? '…' : <Icon name="eject" size={16} aria-hidden="true" />}
                           </button>
                         )}
                       </div>
@@ -3308,7 +3285,7 @@ ${finalText}`
               )}
             </div>
           )}
-          {currentPreset && currentModel && currentCapability !== 'image' && (
+          {currentModel && currentCapability !== 'image' && (
             <button
               type="button"
               className="composer__tools-toggle composer__effective-settings"
@@ -3328,14 +3305,15 @@ ${finalText}`
             <Icon name="logs" size={13} /> Logs
           </button>
         </div>
-        {currentModel && currentPreset && (
+        {currentModel && (
           <EffectiveSettingsModal
             open={effectiveSettingsOpen}
             onClose={() => setEffectiveSettingsOpen(false)}
             modelName={currentModel}
             modelInfo={currentKnownModelInfo || currentCustomModelInfo || null}
-            preset={currentPreset}
             recipe={currentRecipe}
+            mcpEnabled={useMcp}
+            mcpServerIds={selectedMcpServerIds}
             loadedModel={currentLoadedModel}
             isModelLoaded={!!currentLoadedModel}
             onReload={async () => {
@@ -3695,12 +3673,12 @@ ${finalText}`
               disabled={!currentModel || isBusy || (!modeSupportsMcp && (!canAttach || imageAttachmentLimitReached))}
               title="Add files, photos, or tools"
               aria-label="Add files, photos, or tools"
-              aria-haspopup="menu"
+              aria-haspopup={mcpPickerOpen ? 'dialog' : 'menu'}
               aria-expanded={addMenuOpen}
             >
               <Icon name="plus" size={18} />
             </button>
-            {addMenuOpen && (
+            {addMenuOpen && !mcpPickerOpen && (
               <div className="composer__add-menu" role="menu" aria-label="Add to chat">
                 <button
                   type="button"
@@ -3732,7 +3710,8 @@ ${finalText}`
                   type="button"
                   className={`composer__add-row${mcpPickerOpen ? ' is-active' : ''}`}
                   role="menuitem"
-                  onClick={() => setMcpPickerOpen(open => !open)}
+                  data-mcp-entry="lemonade"
+                  onClick={openMcpPicker}
                   disabled={!modeSupportsMcp}
                   aria-pressed={mcpPickerOpen}
                 >
@@ -3746,7 +3725,8 @@ ${finalText}`
                   type="button"
                   className={`composer__add-row${mcpPickerOpen ? ' is-active' : ''}`}
                   role="menuitem"
-                  onClick={() => setMcpPickerOpen(open => !open)}
+                  data-mcp-entry="external"
+                  onClick={openMcpPicker}
                   disabled={!modeSupportsMcp}
                   aria-pressed={mcpPickerOpen}
                 >
@@ -3756,81 +3736,103 @@ ${finalText}`
                     <small>Enable connected external tool providers</small>
                   </span>
                 </button>
-                {mcpPickerOpen && (
-                  <div className="composer__mcp-menu composer__mcp-menu--inline" role="dialog" aria-label="Tools for this chat">
-                    <div className="composer__mcp-header">
-                      <label className="composer__mcp-master">
-                        <input
-                          type="checkbox"
-                          checked={useMcp && modeSupportsMcp}
-                          disabled={!modeSupportsMcp}
-                          onChange={event => persistMcpEnabled(event.target.checked)}
-                        />
-                        <span>
-                          <strong>Tools for this chat</strong>
-                          <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
-                        </span>
-                      </label>
-                      <button type="button" className="btn btn--ghost" onClick={resetMcpToPreset}>Preset default</button>
-                    </div>
-                    {mcpPickerLoading ? (
-                      <p className="composer__mcp-empty">Loading MCP tools…</p>
-                    ) : mcpPickerError ? (
-                      <div className="composer__mcp-error" role="alert">{mcpPickerError}</div>
-                    ) : mcpOptions.length === 0 ? (
-                      <p className="composer__mcp-empty">No tools available.</p>
-                    ) : (
-                      <div className="composer__mcp-servers">
-                        {mcpOptions.map(server => {
-                          const serverSelected = selectedMcpServerIdSet.has(server.id);
-                          return (
-                            <section key={server.id} className={`composer__mcp-server${serverSelected ? ' is-selected' : ''}`}>
-                              <label className="composer__mcp-server-row">
-                                <input
-                                  type="checkbox"
-                                  checked={serverSelected}
-                                  disabled={!useMcp || (!serverSelected && selectedMcpServerIds.length >= MAX_PRESET_MCP_SERVERS)}
-                                  onChange={() => handleMcpServerToggle(server)}
-                                />
-                                <span className={`composer__mcp-status${server.connected ? ' is-connected' : ''}`} aria-hidden="true" />
-                                <span className="composer__mcp-server-text">
-                                  <strong>{server.name}</strong>
-                                  <small>{server.transport === 'builtin' ? 'Built in' : `External MCP · ${server.status}`} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
-                                </span>
-                              </label>
-                              {serverSelected && (
-                                <div className="composer__mcp-tools">
-                                  {server.toolOptions.length === 0 ? (
-                                    <p className="composer__mcp-empty">No tools discovered for this server.</p>
-                                  ) : server.toolOptions.map(tool => {
-                                    const toolSelected = selectedMcpToolNameSet === null || selectedMcpToolNameSet.has(tool.runtimeName);
-                                    return (
-                                      <label key={tool.runtimeName} className="composer__mcp-tool" title={tool.description || tool.title || tool.name}>
-                                        <input
-                                          type="checkbox"
-                                          checked={toolSelected}
-                                          disabled={!useMcp}
-                                          onChange={() => handleMcpToolToggle(server, tool.runtimeName)}
-                                        />
-                                        <span>
-                                          <strong>{tool.title || tool.name}</strong>
-                                          {tool.runtimeName !== tool.name && <small>{tool.runtimeName}</small>}
-                                        </span>
-                                      </label>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </section>
-                          );
-                        })}
-                      </div>
-                    )}
-                    <div className="composer__mcp-footer">
-                      <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>Select all tools for selected servers</button>
-                    </div>
+              </div>
+            )}
+            {addMenuOpen && mcpPickerOpen && (
+              <div
+                className="composer__mcp-modal"
+                onMouseDown={event => {
+                  if (event.target === event.currentTarget) closeMcpPicker();
+                }}
+              >
+                <div
+                  className="composer__mcp-menu composer__mcp-menu--modal"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="composer-mcp-dialog-title"
+                  onKeyDown={event => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      closeMcpPicker();
+                    }
+                  }}
+                >
+                  <button ref={mcpBackButtonRef} type="button" className="composer__mcp-back" onClick={closeMcpPicker} aria-label="Back to add to chat options">
+                    <span aria-hidden="true">←</span>
+                    <span>Back</span>
+                  </button>
+                  <div className="composer__mcp-header">
+                    <label className="composer__mcp-master">
+                      <input
+                        type="checkbox"
+                        checked={useMcp && modeSupportsMcp}
+                        disabled={!modeSupportsMcp}
+                        onChange={event => persistMcpEnabled(event.target.checked)}
+                      />
+                      <span>
+                        <strong id="composer-mcp-dialog-title">Tools for this chat</strong>
+                        <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
+                      </span>
+                    </label>
+                    <button type="button" className="btn btn--ghost" onClick={resetMcpSelection}>Built-in default</button>
                   </div>
-                )}
+                  {mcpPickerLoading ? (
+                    <p className="composer__mcp-empty">Loading MCP tools…</p>
+                  ) : mcpPickerError ? (
+                    <div className="composer__mcp-error" role="alert">{mcpPickerError}</div>
+                  ) : mcpOptions.length === 0 ? (
+                    <p className="composer__mcp-empty">No tools available.</p>
+                  ) : (
+                    <div className="composer__mcp-servers">
+                      {mcpOptions.map(server => {
+                        const serverSelected = selectedMcpServerIdSet.has(server.id);
+                        return (
+                          <section key={server.id} className={`composer__mcp-server${serverSelected ? ' is-selected' : ''}`}>
+                            <label className="composer__mcp-server-row">
+                              <input
+                                type="checkbox"
+                                checked={serverSelected}
+                                disabled={!useMcp || (!serverSelected && selectedMcpServerIds.length >= MAX_MCP_SERVER_SELECTION)}
+                                onChange={() => handleMcpServerToggle(server)}
+                              />
+                              <span className={`composer__mcp-status${server.connected ? ' is-connected' : ''}`} aria-hidden="true" />
+                              <span className="composer__mcp-server-text">
+                                <strong>{server.name}</strong>
+                                <small>{server.transport === 'builtin' ? 'Built in' : `External MCP · ${server.status}`} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
+                              </span>
+                            </label>
+                            {serverSelected && (
+                              <div className="composer__mcp-tools">
+                                {server.toolOptions.length === 0 ? (
+                                  <p className="composer__mcp-empty">No tools discovered for this server.</p>
+                                ) : server.toolOptions.map(tool => {
+                                  const toolSelected = selectedMcpToolNameSet === null || selectedMcpToolNameSet.has(tool.runtimeName);
+                                  return (
+                                    <label key={tool.runtimeName} className="composer__mcp-tool" title={tool.description || tool.title || tool.name}>
+                                      <input
+                                        type="checkbox"
+                                        checked={toolSelected}
+                                        disabled={!useMcp}
+                                        onChange={() => handleMcpToolToggle(server, tool.runtimeName)}
+                                      />
+                                      <span>
+                                        <strong>{tool.title || tool.name}</strong>
+                                        {tool.runtimeName !== tool.name && <small>{tool.runtimeName}</small>}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </section>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="composer__mcp-footer">
+                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>Select all tools for selected servers</button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -3906,7 +3908,7 @@ interface EmptyStateProps {
 const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onOpenModelDetails, onUnloadModel, unloadingModel, onChipClick, customModelInfos }) => (
   <>
     <div className="hero">
-      <h1 className="hero__title">Learn Lemonade</h1>
+      <h1 className="hero__title">Get to know Lemonade</h1>
       <p className="hero__subtitle">
         {loadedModels.length > 0
           ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} ready. Ask a question or explore what Lemonade can do.`

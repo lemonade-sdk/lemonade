@@ -29,14 +29,17 @@ const compiled = ts.transpileModule(source, {
   reportDiagnostics: true,
 });
 assert.equal((compiled.diagnostics || []).length, 0);
-const moduleRecord = { exports: {} };
-Function('exports', 'require', 'module', '__filename', '__dirname', compiled.outputText)(
-  moduleRecord.exports,
-  require,
-  moduleRecord,
-  modulePath,
-  path.dirname(modulePath),
-);
+function loadStorageModule() {
+  const moduleRecord = { exports: {} };
+  Function('exports', 'require', 'module', '__filename', '__dirname', compiled.outputText)(
+    moduleRecord.exports,
+    require,
+    moduleRecord,
+    modulePath,
+    path.dirname(modulePath),
+  );
+  return moduleRecord.exports;
+}
 
 values.set('lemonade:user:a:conversations', JSON.stringify({
   version: 3,
@@ -56,7 +59,17 @@ values.set('lemonade:user:b:global_model_settings', JSON.stringify({ autoEvictOn
 values.set('lemonade:user:a:mcp_server_ids', JSON.stringify(['a']));
 values.set('lemonade:user:b:mcp_server_ids', JSON.stringify(['b']));
 
-assert.equal(moduleRecord.exports.storageKey('conversations'), 'lemonade:conversations');
+[
+  'lemonade_user_presets',
+  'lemonade_applied_presets',
+  'lemonade:user_presets',
+  'lemonade:applied_presets',
+  'lemonade:backend_presets',
+  'lemonade:running_presets',
+].forEach(key => values.set(key, 'obsolete'));
+
+const storageModule = loadStorageModule();
+assert.equal(storageModule.storageKey('conversations'), 'lemonade:conversations');
 
 const conversations = JSON.parse(values.get('lemonade:conversations')).conversations;
 assert.equal(conversations.length, 3);
@@ -76,5 +89,32 @@ assert.equal(localStorage.getItem('lemonade:user:a:conversations'), null);
 assert.equal(localStorage.getItem('lemonade:user:b:conversations'), null);
 assert.equal(localStorage.getItem('lemonade:lemonade_storage_migrated_v1'), null);
 assert.equal(values.get('lemonade_storage_migrated_v2'), 'true');
+[
+  'lemonade_user_presets',
+  'lemonade_applied_presets',
+  'lemonade:user_presets',
+  'lemonade:applied_presets',
+  'lemonade:backend_presets',
+  'lemonade:running_presets',
+].forEach(key => assert.equal(localStorage.getItem(key), null));
+
+[
+  'lemonade_user_presets',
+  'lemonade_applied_presets',
+  'lemonade:user_presets',
+  'lemonade:applied_presets',
+  'lemonade:backend_presets',
+  'lemonade:running_presets',
+].forEach(key => values.set(key, 'obsolete-again'));
+const rerunStorageModule = loadStorageModule();
+assert.equal(rerunStorageModule.storageKey('rerun_probe'), 'lemonade:rerun_probe');
+[
+  'lemonade_user_presets',
+  'lemonade_applied_presets',
+  'lemonade:user_presets',
+  'lemonade:applied_presets',
+  'lemonade:backend_presets',
+  'lemonade:running_presets',
+].forEach(key => assert.equal(localStorage.getItem(key), null));
 
 console.log('Client storage migration preserves scoped conversations and merges compatible settings.');

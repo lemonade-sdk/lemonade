@@ -49,6 +49,24 @@ function severityBadge(severity: string): string {
   return 'INF';
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function getDisplayedLogLine(entry: Pick<LogEntry, 'timestamp' | 'severity' | 'tag' | 'line'>): string {
+  const line = String(entry.line || '');
+  const timestamp = entry.timestamp.trim();
+  const severity = entry.severity.trim();
+  const tag = entry.tag.trim();
+  if (!timestamp || !severity || !tag) return line;
+
+  const prefix = new RegExp(
+    `^\\s*${escapeRegExp(timestamp)}\\s+\\[${escapeRegExp(severity)}\\]\\s+\\(${escapeRegExp(tag)}\\)(?:\\s+|$)`,
+    'i',
+  );
+  return line.replace(prefix, '');
+}
+
 /* ── Component ─────────────────────────────────────────────── */
 
 interface LogViewerProps {
@@ -343,7 +361,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
   const renderedLogRows = useMemo(() => {
     const rows: { entry: LogEntry; line: string; partIndex: number }[] = [];
     filteredLogs.forEach(entry => {
-      const parts = String(entry.line || '').split(/\r?\n/);
+      const parts = getDisplayedLogLine(entry).split(/\r?\n/);
       (parts.length ? parts : ['']).forEach((line, partIndex) => {
         rows.push({ entry, line, partIndex });
       });
@@ -415,6 +433,17 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
             <span className="logs-toolbar__count">{logs.length} entries</span>
           </div>
 
+          <div className="logs-rail__search">
+            <input
+              type="text"
+              className="inspect-search-input logs-search"
+              placeholder="Search message, source or severity…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              aria-label="Filter logs"
+            />
+          </div>
+
           <div className="workspace-control-group">
             <span className="workspace-control-group__label">Visibility</span>
             <label className="logs-level">
@@ -478,17 +507,6 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
           title="Live stream"
           subtitle={`${filteredLogs.length} of ${logs.length} entries shown`}
           actions={<div className="logs-main__tools">
-            <div className="logs-main__search">
-              <Icon name="search" size={14} aria-hidden="true" />
-              <input
-                type="text"
-                className="logs-search"
-                placeholder="Search message, source or severity…"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                aria-label="Filter logs"
-              />
-            </div>
             {embedded && (
               <WorkspaceActionButton
                 ref={mobileFilters.triggerRef}

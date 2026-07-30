@@ -62,3 +62,32 @@ Tests are blocking — regressions prevent merge.
 ****** Escalation authority confirmed: narrow scope on ChatView a11y only
 ****** Reviewer gate: Lovell (sync) with lockout policy (different agent revises rejected code)
 ****** Orchestration records created: .squad/orchestration_log/20260730T091124Z_swigert_background.md`n****** Session ledger: .squad/log/20260730T091124Z_scribe_spawn_manifest_session.md`n
+
+## 2026-07-30T10:34:29.051-06:00 — Presets/a11y stale assertion revision
+
+- A76 now reaches the top-level Apps view and verifies the current marketplace search control through its accessible label, `Search apps`.
+- The shared README fixture helper explicitly activates the README tab and checks `aria-selected="true"` before waiting for the README panel; this preserves intentional Configuration-first behavior.
+- Focused A76/A116/A117 and the full 145-test accessibility suite passed. No production source correction or blocker remained.
+
+## 2026-07-30T09:52:57.950-06:00 — Chat history settings module repair
+
+- Restored `src/app/src/features/chatHistory/historySettings.ts` for the existing ChatView and ConnectView imports without changing either caller.
+- The module stores the browser-local `persist_conversations` preference through `storageKey`, defaults safely to `false`, and emits a boolean `CustomEvent` detail for ChatView synchronization.
+- Typecheck no longer reports the missing module; the only remaining errors are the independently assigned `process`/Node typing failures in `src/api.ts`.
+
+## 2026-07-30T11:42:35.327-06:00 — A187d MCP picker menu cleanup
+
+- Added a focused test helper that closes the still-open add-to-chat menu through its accessible trigger after each Back action.
+- The helper asserts the menu is detached and the trigger reports `aria-expanded="false"` before model selection or picker reopening.
+- Preserved all MCP persistence and server/tool selection assertions; targeted A187d and the full accessibility suite passed.
+
+## 2026-07-30T12:06:47.516-06:00 — Final preset storage cleanup
+
+- Removed obsolete preset keys from neutral legacy migration and added idempotent deletion before the migration marker short-circuit.
+- Preserved `clearClientStorage()` cleanup for raw and namespaced historical keys without retaining any preset data or semantics.
+- Added focused first-run and rerun assertions; storage migration, global model settings, and frontend typecheck passed.
+
+
+## Final preset CSS cleanup (2026-07-30)
+
+Removed the unused starter-zone rule from `src/app/src/styles/styles.css`. A focused scan found no remaining `.zone--starters` or `.zone__starters` references under `src/app`; no focused style test existed, and `git diff --check -- src/app/src/styles/styles.css` passed.

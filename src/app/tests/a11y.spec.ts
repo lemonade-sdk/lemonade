@@ -632,8 +632,6 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
     await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
   });
 
-  // ── #2432 — Backend view no longer behaves like a model (preset rail/picker removed) ──
-  // The cell-selection affordance and preset rail were removed; coverage lives in
   // the #2432 describe block below (A167+).
 
   // ── #2344 — action buttons have qualified accessible names ─────────────────
@@ -763,7 +761,7 @@ test.describe('Accessibility — backend argument tuning', () => {
     await page.addInitScript(() => {
       try {
         for (const key of Object.keys(localStorage)) {
-          if (key.includes('backend_tunings') || key.includes('backend_presets')) localStorage.removeItem(key);
+          if (key.includes('backend_tunings')) localStorage.removeItem(key);
         }
       } catch {}
     });
@@ -781,9 +779,8 @@ test.describe('Accessibility — backend argument tuning', () => {
     await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
   }
 
-  test('A167 — args-capable backends expose a small qualified action without restoring the old preset rail', async ({ page }) => {
+  test('A167 — args-capable backends expose a small qualified action without obsolete model controls', async ({ page }) => {
     await gotoBackends(page);
-    await expect(page.locator('.context-rail--presets')).toHaveCount(0);
     await expect(page.locator('[data-backend-args-button="llamacpp:cpu"]')).toBeVisible();
     await expect(page.locator('[data-backend-args-button="llamacpp:vulkan"]')).toBeVisible();
     await expect(page.locator('[data-backend-args-button="llamacpp:cpu"]')).toHaveAttribute(
@@ -1214,12 +1211,12 @@ test.describe('Accessibility — connect and cloud form labels (#2349)', () => {
 
   test('A76 — Marketplace search has accessible name', async ({ page }) => {
     await page.goto('/');
-    await navigateToConnectSection(page, 'App directory');
+    await navigateToView(page, 'Apps');
+    await page.waitForSelector('[data-view="apps"]');
 
-    const searchInput = page.locator('.connect__marketplace-search');
-    const ariaLabel = await searchInput.getAttribute('aria-label');
-    expect(ariaLabel).toBeTruthy();
-    expect(ariaLabel).toBe('Search marketplace apps');
+    const searchInput = page.getByLabel('Search apps');
+    await expect(searchInput).toBeVisible();
+    await expect(searchInput).toHaveAttribute('aria-label', 'Search apps');
   });
 });
 
@@ -1267,7 +1264,15 @@ test.describe('Accessibility — icon-button accessible names (#2353)', () => {
 
 test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
   const MCP_TOOLS = [
-    { name: 'lemonade_list_models', description: 'List all models available on this lemonade server.' },
+    {
+      name: 'lemonade_list_models',
+      description: 'List all models available on this lemonade server.',
+      inputSchema: {
+        type: 'object',
+        properties: { capability: { type: 'string' } },
+        required: [],
+      },
+    },
     { name: 'lemonade_chat', description: 'Send a chat completion request to a lemonade LLM model.' },
     { name: 'lemonade_transcribe_audio', description: 'Transcribe audio to text.' },
     { name: 'lemonade_generate_image', description: 'Generate an image from a text prompt.' },
@@ -1380,16 +1385,23 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     expect(await statusEl.getAttribute('aria-atomic')).toBe('true');
   });
 
-  test('A85 — with mocked MCP server, tools list renders with expected tool names', async ({ page }) => {
+  test('A85 — with mocked MCP server, tools list is collapsible with expected tool names', async ({ page }) => {
     await setupWithMcp(page);
-    await page.waitForSelector('[data-mcp-tools-list]', { timeout: 8000 });
+    await page.waitForSelector('[data-mcp-tools-list]', { state: 'attached', timeout: 8000 });
 
     const toolList = page.locator('[data-mcp-tools-list]');
+    const disclosure = page.locator('.mcp-panel__tool-disclosure').first();
+    await expect(disclosure).not.toHaveAttribute('open', '');
+    await expect(toolList).not.toBeVisible();
+    await disclosure.locator('summary').click();
     await expect(toolList).toBeVisible();
 
     const items = toolList.locator('.mcp-panel__tool-name');
     const count = await items.count();
     expect(count).toBe(MCP_TOOLS.length);
+    await expect(toolList.locator('.mcp-panel__tool-row')).toHaveCount(MCP_TOOLS.length);
+    await expect(toolList.locator('.mcp-panel__tool-meta').first()).toHaveText('1 input');
+    await expect(toolList.locator('.mcp-panel__tool-description').first()).toHaveText(MCP_TOOLS[0].description);
 
     // Verify first expected tool name is present
     await expect(toolList.getByText('lemonade_list_models')).toBeVisible();
@@ -1398,7 +1410,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
 
   test('A86 — tools list element has accessible aria-label', async ({ page }) => {
     await setupWithMcp(page);
-    await page.waitForSelector('[data-mcp-tools-list]', { timeout: 8000 });
+    await page.waitForSelector('[data-mcp-tools-list]', { state: 'attached', timeout: 8000 });
 
     const toolList = page.locator('[data-mcp-tools-list]');
     const label = await toolList.getAttribute('aria-label');
@@ -1507,7 +1519,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToConnectSection(page, 'MCP gateway');
-    await page.waitForSelector('[data-mcp-tools-list]', { timeout: 8000 });
+    await page.waitForSelector('[data-mcp-tools-list]', { state: 'attached', timeout: 8000 });
 
     // Must have at least 3 requests: initialize, notifications/initialized, tools/list.
     expect(captured.length).toBeGreaterThanOrEqual(3);
@@ -1588,7 +1600,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
 // ─── 23. Master-detail model view (#2355 Slice 1) ─────────────────────────────
 //
 // Covers: model list panel, detail panel tablist, funnel filter button,
-// preset attach flow, and keyboard navigation — all added in Slice 1.
 // Range: A91–A105.
 
 test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () => {
@@ -1826,13 +1837,11 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
   });
 });
 
-// ─── 24. #2355 Slice 1 reconciliation — sort, responsive, README derivation, preset change ──
 //
 // Covers the 4 gaps addressed in the fl0rianr 2026-06-25 clarifications:
 //   A: README checkpoint derivation (tightened regex + checkpoints.main fallback)
 //   B: Sort controls (labeled select with 4 options)
 //   C: Responsive list-first (narrow ≤700px shows list only; selecting shows detail + Back)
-//   D: Presets tab Change inline chooser (attach + detach already present)
 // Range: A106–A115.
 
 test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarifications)', () => {
@@ -2005,7 +2014,10 @@ test.describe('Accessibility — model README raw-HTML rendering (#2355)', () =>
     await page.waitForSelector('.manager--detail');
     await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
     await page.locator('.model-list-item').first().click();
-    // README is the default tab; wait for the rendered container.
+    const readmeTab = page.getByRole('tab', { name: 'README', exact: true });
+    await expect(readmeTab).toBeVisible();
+    await readmeTab.click();
+    await expect(readmeTab).toHaveAttribute('aria-selected', 'true');
     await page.waitForSelector('.detail-readme', { timeout: 5000 });
     await page.waitForTimeout(200);
   }
@@ -2394,21 +2406,12 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 
-  test('A136 — preset quick-search and "+ New" are removed from the nav rail (#2424)', async ({ page }) => {
-    await goToModelsWithNavMock(page);
-    await expect(page.locator('.model-nav-rail')).toBeVisible();
-    // The preset search box and "+ New" button no longer belong in the rail.
-    await expect(page.locator('#nav-preset-search')).toHaveCount(0);
-    await expect(page.locator('.model-nav-rail__preset-row')).toHaveCount(0);
-    await expect(page.locator('.model-nav-rail__new-btn')).toHaveCount(0);
-  });
 });
 
 // ─── PR #2424 maintainer refinements (fl0rianr 2026-06-25) ──────────────────
 //
 // Five review items: (1) a favorite STAR toggle in the model DETAIL panel that
 // reuses the existing client-local pin store and updates the Favorites nav
-// count; (2) the preset search + "+ New" removed from the left rail (covered by
 // the updated A136); (3) "Back to models" hidden on desktop, shown on narrow;
 // (4) the funnel filter scoped to CAPABILITIES with a solid opaque popover
 // background; (5) the left rail scrolls independently instead of clipping the
@@ -2688,15 +2691,10 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
 });
 
 
-// ─── 31. Update preset while a model is loaded (#2356, simplified) ────────────
 //
-// When a model is loaded and a DIFFERENT preset is linked to it, an
-// "Apply preset" / "Reload to apply preset" button appears next to "Unload".
-// Simplified design (no update-preset endpoint, no client `mode` param):
 //   • Live changes (sampling / system prompt / tools) are a pure client-local
 //     rebind — NO network call, applied by request composition next request.
 //   • Load-time changes (recipe_options) perform a real reload = unload + load
-//     (api.reloadModel). The active-preset binding persists across the reload.
 // Range: A154–A166.
 
 
@@ -2813,13 +2811,11 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
 });
 
 
-// ─── 32. Chat toolbar — preset picker removed (#GUI3-presets) ────────────────
 //
-// The Preset selector ("Preset: Default" badge and dropdown) was removed from
 // the Chat composer toolbar. The model selector, Effective Settings button,
 // Add menu, tools entry, and Logs toggle must remain accessible. Range: A185–A187.
 
-test.describe('Chat toolbar — no preset picker after GUI3 removal', () => {
+test.describe('Chat toolbar accessibility', () => {
   async function goToChatWithLoadedModel(page: Page): Promise<void> {
     await page.route('**/api/v1/health**', async route =>
       route.fulfill({
@@ -2859,13 +2855,6 @@ test.describe('Chat toolbar — no preset picker after GUI3 removal', () => {
     await page.waitForTimeout(300);
   }
 
-  test('A185 — composer toolbar has no preset badge or preset picker', async ({ page }) => {
-    await goToChatWithLoadedModel(page);
-    await expect(page.locator('.composer__preset__badge')).toHaveCount(0);
-    await expect(page.locator('.composer__preset__picker')).toHaveCount(0);
-    await expect(page.locator('[aria-label="Search presets"]')).toHaveCount(0);
-  });
-
   test('A186 — composer toolbar retains model selector, settings, add menu, and Logs buttons', async ({ page }) => {
     await goToChatWithLoadedModel(page);
     // Model picker button is present (model is loaded so it appears)
@@ -2873,7 +2862,7 @@ test.describe('Chat toolbar — no preset picker after GUI3 removal', () => {
     await expect(page.getByRole('button', { name: /Add files, photos, or tools/i })).toBeVisible();
     // Logs toggle
     await expect(page.getByRole('button', { name: /Logs/i })).toBeVisible();
-    // Effective Settings button (requires currentPreset && currentModel)
+    // Effective Settings button (requires current model)
     await expect(page.getByRole('button', { name: 'Effective settings' })).toBeVisible();
   });
 
@@ -2891,23 +2880,178 @@ test.describe('Chat toolbar — no preset picker after GUI3 removal', () => {
     await expect(lemonadeTools).toBeVisible();
     await lemonadeTools.focus();
     await page.keyboard.press('Space');
+    const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
+    await expect(dialog).toBeVisible();
+    await expect(menu).toHaveCount(0);
+    const back = page.getByRole('button', { name: 'Back to add to chat options' });
+    await expect(back).toBeVisible();
+    await expect(back).toBeFocused();
+    const results = await new AxeBuilder({ page })
+      .include('[role="dialog"]')
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+    await back.focus();
+    await page.keyboard.press('Space');
+    await expect(dialog).toHaveCount(0);
+    await expect(menu).toBeVisible();
+    await expect(lemonadeTools).toBeVisible();
+    await expect(lemonadeTools).toBeFocused();
+  });
+
+  test('A187b — external MCP entry opens the same selectable tools flow', async ({ page }) => {
+    await goToChatWithLoadedModel(page);
+    const addBtn = page.getByRole('button', { name: /Add files, photos, or tools/i });
+    await addBtn.click();
+    const menu = page.getByRole('menu', { name: 'Add to chat' });
+    const externalMcp = page.getByRole('menuitem', { name: /External MCP servers/i });
+    await externalMcp.click();
     await expect(page.getByRole('dialog', { name: 'Tools for this chat' })).toBeVisible();
+    await expect(menu).toHaveCount(0);
+    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+    await expect(menu).toBeVisible();
+    await expect(externalMcp).toBeVisible();
+  });
+
+  test('A187c — MCP enablement selection persists when backing out and reopening the picker', async ({ page }) => {
+    await goToChatWithLoadedModel(page);
+    await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
+    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
+    const enabled = dialog.getByRole('checkbox', { name: /Tools for this chat/i });
+    await expect(enabled).toBeChecked();
+    await enabled.uncheck();
+    await expect(enabled).not.toBeChecked();
+
+    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+    await expect(page.getByRole('dialog', { name: 'Tools for this chat' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Tools for this chat' }).getByRole('checkbox', { name: /Tools for this chat/i })).not.toBeChecked();
+  });
+
+  async function goToChatWithLoadedModels(page: Page, names: string[]): Promise<void> {
+    const models = names.map(name => ({
+      model_name: name,
+      checkpoint: name,
+      recipe: 'llamacpp',
+      device: 'cpu',
+      backend_url: 'http://localhost:11434',
+      pid: 1234,
+      type: 'llm',
+      last_use: Date.now(),
+      labels: ['llm'],
+      capabilities: ['chat'],
+    }));
+    const modelInfos = names.map(name => ({
+      id: name,
+      name,
+      labels: ['llm'],
+      recipe: 'llamacpp',
+      downloaded: true,
+    }));
+    await page.route('**/api/v1/health**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: models }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: modelInfos }) }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+    await page.waitForTimeout(300);
+  }
+
+  test('A187d — MCP selection survives model changes, picker reopen, and reload', async ({ page }) => {
+    await goToChatWithLoadedModels(page, ['model-one', 'model-two']);
+    await page.evaluate(() => {
+      localStorage.setItem('lemonade:mcp_enabled', 'true');
+      localStorage.setItem('lemonade:mcp_server_ids', JSON.stringify(['lemonade', 'external-echo']));
+      localStorage.setItem('lemonade:mcp_tool_names', JSON.stringify(['lemonade_chat', 'external-echo__echo']));
+    });
+    await page.reload();
+    await page.waitForSelector('.chat');
+
+    const openPicker = async () => {
+      await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
+      await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+      return page.getByRole('dialog', { name: 'Tools for this chat' });
+    };
+    const dismissAddMenu = async () => {
+      const addButton = page.getByRole('button', { name: /Add files, photos, or tools/i });
+      const menu = page.getByRole('menu', { name: 'Add to chat' });
+      await expect(menu).toBeVisible();
+      await addButton.click();
+      await expect(menu).toHaveCount(0);
+      await expect(addButton).toHaveAttribute('aria-expanded', 'false');
+    };
+    let dialog = await openPicker();
+    await expect(dialog).toContainText('2 servers');
+    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+    await dismissAddMenu();
+
+    await page.locator('.composer__model-button').click();
+    await page.getByRole('option', { name: /model-two/i }).click();
+    await page.waitForTimeout(250);
+    dialog = await openPicker();
+    await expect(dialog).toContainText('2 servers');
+    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+    await dismissAddMenu();
+
+    const persistedBeforeReload = await page.evaluate(() => ({
+      enabled: localStorage.getItem('lemonade:mcp_enabled'),
+      servers: localStorage.getItem('lemonade:mcp_server_ids'),
+      tools: localStorage.getItem('lemonade:mcp_tool_names'),
+    }));
+    expect(persistedBeforeReload).toEqual({
+      enabled: 'true',
+      servers: JSON.stringify(['lemonade', 'external-echo']),
+      tools: JSON.stringify(['lemonade_chat', 'external-echo__echo']),
+    });
+
+    await page.reload();
+    await page.waitForSelector('.chat');
+    dialog = await openPicker();
+    await expect(dialog).toContainText('2 servers');
+  });
+
+  test('A187e — legacy use_tools is only a fallback when explicit MCP enablement is absent', async ({ page }) => {
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem('mcp-fallback-seeded')) return;
+      localStorage.removeItem('lemonade:mcp_enabled');
+      localStorage.setItem('lemonade:use_tools', 'false');
+      sessionStorage.setItem('mcp-fallback-seeded', 'true');
+    });
+    await goToChatWithLoadedModel(page);
+    await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
+    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+    const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
+    await expect(dialog.getByRole('checkbox', { name: /Tools for this chat/i })).not.toBeChecked();
+    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+
+    await page.evaluate(() => localStorage.setItem('lemonade:mcp_enabled', 'true'));
+    await page.reload();
+    await page.waitForSelector('.chat');
+    await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
+    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+    await expect(page.getByRole('dialog', { name: 'Tools for this chat' }).getByRole('checkbox', { name: /Tools for this chat/i })).toBeChecked();
   });
 });
 
 
-// ─── 33. Effective Settings modal — no preset framing, renamed source badges ──
 //
-// After GUI3 preset cleanup:
-//   - Modal header subtitle must NOT contain "Preset:".
-//   - No dedicated "Preset" source row should appear in Settings by source.
 //   - Built-in tuning source badge is renamed to "Recipe default".
 //   - Local direct-config badge renamed to "Direct configuration".
 //   - An authority note near Settings by source explains that the load command
 //     includes server-applied defaults not shown in the rows table.
 // Range: A188–A192.
 
-test.describe('Effective Settings modal — post-GUI3 preset framing cleanup', () => {
+test.describe('Effective Settings modal accessibility', () => {
   async function openEffectiveSettings(page: Page): Promise<void> {
     await page.route('**/api/v1/health**', async route =>
       route.fulfill({
@@ -2952,26 +3096,6 @@ test.describe('Effective Settings modal — post-GUI3 preset framing cleanup', (
     await page.waitForSelector('[role="dialog"]');
     await page.waitForTimeout(200);
   }
-
-  test('A188 — modal header subtitle does not contain "Preset:"', async ({ page }) => {
-    await openEffectiveSettings(page);
-    const meta = page.locator('.effective-settings__meta');
-    await expect(meta).toBeVisible();
-    await expect(meta).not.toContainText('Preset:');
-  });
-
-  test('A189 — no dedicated "Preset" source row in Settings by source', async ({ page }) => {
-    await openEffectiveSettings(page);
-    const rows = page.locator('.effective-settings__rows .effective-settings__row-label');
-    const labels = await rows.allTextContents();
-    expect(labels).not.toContain('Preset');
-  });
-
-  test('A190 — no "Preset" source badge appears anywhere in the modal', async ({ page }) => {
-    await openEffectiveSettings(page);
-    const presetBadges = page.locator('.effective-settings__source--preset');
-    await expect(presetBadges).toHaveCount(0);
-  });
 
   test('A191 — Settings by source has an authority note referencing the Effective load command', async ({ page }) => {
     await openEffectiveSettings(page);

@@ -6,7 +6,7 @@ import { Icon } from './Icon';
 import { storageKey } from '../storage';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
-import { DEFAULT_CONTEXT_SIZE } from '../presetStore';
+import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
 import { ModelListPanel, modelIsCustom, modelMatchesBackend, modelMatchesFilter, modelMatchesTag } from './ModelListPanel';
 import type { PrimaryFilter } from './ModelListPanel';
@@ -531,7 +531,7 @@ async function loadRemoteVariants(
 }
 type CustomFormMode = 'model' | 'omni-collection';
 type OmniComponentRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
-type OmniCustomToolPreset = 'generic' | 'coder' | 'reviewer' | 'vision' | 'image';
+type OmniCustomToolTemplate = 'generic' | 'coder' | 'reviewer' | 'vision' | 'image';
 type OmniCustomToolDraft = {
   id: string;
   name: string;
@@ -601,8 +601,8 @@ const DEFAULT_CUSTOM_IMAGE_TOOL_PARAMETERS_JSON = JSON.stringify({
   additionalProperties: false,
 }, null, 2);
 
-function targetTypeForOmniToolPreset(preset: OmniCustomToolPreset): CustomOmniToolTargetType {
-  if (preset === 'vision' || preset === 'image') return preset;
+function targetTypeForOmniToolTemplate(template: OmniCustomToolTemplate): CustomOmniToolTargetType {
+  if (template === 'vision' || template === 'image') return template;
   return 'chat';
 }
 
@@ -633,10 +633,10 @@ function nextOmniToolName(existing: OmniCustomToolDraft[], base: string): string
   return `${candidate}_${i}`;
 }
 
-function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset: OmniCustomToolPreset = 'generic', targetModel = ''): OmniCustomToolDraft {
+function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], template: OmniCustomToolTemplate = 'generic', targetModel = ''): OmniCustomToolDraft {
   const id = `custom-tool-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-  const targetType = targetTypeForOmniToolPreset(preset);
-  if (preset === 'coder') {
+  const targetType = targetTypeForOmniToolTemplate(template);
+  if (template === 'coder') {
     const name = nextOmniToolName(existing, 'ask_coder');
     return {
       id,
@@ -650,7 +650,7 @@ function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset:
       maxTokens: '',
     };
   }
-  if (preset === 'reviewer') {
+  if (template === 'reviewer') {
     const name = nextOmniToolName(existing, 'ask_reviewer');
     return {
       id,
@@ -664,7 +664,7 @@ function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset:
       maxTokens: '',
     };
   }
-  if (preset === 'vision') {
+  if (template === 'vision') {
     return {
       id,
       name: nextOmniToolName(existing, 'inspect_image'),
@@ -677,7 +677,7 @@ function createOmniCustomToolDraft(existing: OmniCustomToolDraft[] = [], preset:
       maxTokens: '',
     };
   }
-  if (preset === 'image') {
+  if (template === 'image') {
     return {
       id,
       name: nextOmniToolName(existing, 'render_image'),
@@ -1615,9 +1615,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setLoadingModel(null);
   };
 
-  // #2356 (simplified): a load-time preset change needs a real reload. The
+  // #2356 (simplified): a load-time template change needs a real reload. The
   // detail panel already classifies live-vs-reload and rebinds the active
-  // preset; here we just perform the reload (unload + load via api.reloadModel)
+  // template; here we just perform the reload (unload + load via api.reloadModel)
   // and refresh so the loaded-model snapshot reflects the reinitialization.
   // Live (request-time) changes never reach here — they are a pure client-local
   // rebind handled entirely in the panel (no server round-trip).
@@ -2293,9 +2293,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     return options[0]?.id || '';
   };
 
-  const addOmniCustomTool = (preset: OmniCustomToolPreset = 'generic') => {
-    const targetType = targetTypeForOmniToolPreset(preset);
-    const next = createOmniCustomToolDraft(customDraft.omniCustomTools, preset, defaultCustomToolTarget(targetType));
+  const addOmniCustomTool = (template: OmniCustomToolTemplate = 'generic') => {
+    const targetType = targetTypeForOmniToolTemplate(template);
+    const next = createOmniCustomToolDraft(customDraft.omniCustomTools, template, defaultCustomToolTarget(targetType));
     handleCustomDraftChange({ omniCustomTools: [...customDraft.omniCustomTools, next] });
   };
 

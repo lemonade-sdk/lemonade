@@ -115,7 +115,6 @@ const listSource = fs.readFileSync(path.join(root, 'src/components/ModelListPane
 const managerSource = fs.readFileSync(path.join(root, 'src/components/ModelManager.tsx'), 'utf8');
 const panelSource = fs.readFileSync(path.join(root, 'src/components/GlobalModelSettingsPanel.tsx'), 'utf8');
 const chatSource = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
-const presetSource = fs.readFileSync(path.join(root, 'src/components/PresetManager.tsx'), 'utf8');
 
 assert.match(listSource, /onOpenRouter && \([\s\S]*?icon="router"[\s\S]*?onOpenGlobalSettings && \([\s\S]*?icon="settings"/, 'settings must sit beside the router action');
 assert.match(managerSource, /showGlobalSettings \?[\s\S]*<GlobalModelSettingsPanel/);
@@ -130,9 +129,3 @@ assert.match(chatSource, /defaultThinkingOpen=\{!globalModelSettings\.collapseTh
 assert.match(chatSource, /GLOBAL_MODEL_SETTINGS_EVENT/);
 assert.match(chatSource, /loadModelWithPolicy/);
 assert.match(chatSource, /loadWithGlobalModelPolicy/);
-assert.match(presetSource, /const CAPABILITIES: Capability\[\] = \['chat', 'omni', 'vision', 'code', 'tts'\]/);
-assert.match(presetSource, /TTS_VOICES\.map/);
-assert.match(presetSource, /OPENMOSS_VOICE_PRESETS\.map/);
-assert.match(presetSource, /VISIBLE_STARTERS/);
-
-console.log('GUI3 global model settings, eviction, TTS preset and thinking-default checks passed.');

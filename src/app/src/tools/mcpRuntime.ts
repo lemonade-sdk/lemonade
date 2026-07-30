@@ -22,7 +22,7 @@ import {
 } from './lemonadeTools';
 
 export const LEMONADE_MCP_SERVER_ID = 'lemonade';
-export const MAX_PRESET_MCP_SERVERS = 4;
+export const MAX_MCP_SERVER_SELECTION = 4;
 
 const MODEL3D_REFERENCE_PROMPT =
   'single subject, centered, whole object in frame, three-quarter view from slightly above showing the top and two sides, plain white background, even soft studio lighting, high detail, 3D asset render';
@@ -709,7 +709,7 @@ async function connectSelectedExternalServers(ids: string[]): Promise<McpServerS
   const states = await api.listMcpServers();
   const selected = ids.map(id => {
     const state = states.find(server => server.id === id);
-    if (!state) throw new Error(`Preset references missing MCP server '${id}'. Update the preset or add that server again.`);
+    if (!state) throw new Error(`Selected configuration references missing MCP server '${id}'. Update the MCP selection or add that server again.`);
     return state;
   });
 
@@ -726,7 +726,7 @@ export async function buildSelectedMcpRuntime(
   context: McpRuntimeContext = {},
   allowedToolNames?: string[],
 ): Promise<ChatToolRuntime | null> {
-  const selectedIds = [...new Set(requestedIds.filter(Boolean))].slice(0, MAX_PRESET_MCP_SERVERS);
+  const selectedIds = [...new Set(requestedIds.filter(Boolean))].slice(0, MAX_MCP_SERVER_SELECTION);
   if (selectedIds.length === 0) return null;
 
   const allowed = allowedToolNames ? new Set(allowedToolNames.filter(Boolean)) : undefined;

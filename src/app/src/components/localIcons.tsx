@@ -20,6 +20,10 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"m5 12 7-7 7 7\"></path><path d=\"M12 19V5\"></path>"
   },
+  "eject": {
+    "viewBox": "0 0 24 24",
+    "body": "<path d=\"m5 12 7-7 7 7\"></path><path d=\"M5 19h14\"></path>"
+  },
   "audio": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M2 10v3\"></path><path d=\"M6 6v11\"></path><path d=\"M10 3v18\"></path><path d=\"M14 8v7\"></path><path d=\"M18 5v13\"></path><path d=\"M22 10v3\"></path>"
@@ -60,10 +64,6 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"m18 15-6-6-6 6\"></path>"
   },
-  "citrus": {
-    "viewBox": "0 0 24 24",
-    "body": "<path d=\"M21.66 17.67a1.08 1.08 0 0 1-.04 1.6A12 12 0 0 1 4.73 2.38a1.1 1.1 0 0 1 1.61-.04z\"></path><path d=\"M19.65 15.66A8 8 0 0 1 8.35 4.34\"></path><path d=\"m14 10-5.5 5.5\"></path><path d=\"M14 17.85V10H6.15\"></path>"
-  },
   "brain-off": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"m2 2 20 20\"></path><path d=\"M8.35 2.69A10 10 0 0 1 21.3 15.65\"></path><path d=\"M19.08 19.08A10 10 0 1 1 4.92 4.92\"></path>"
@@ -84,10 +84,6 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"m18 16 4-4-4-4\"></path><path d=\"m6 8-4 4 4 4\"></path><path d=\"m14.5 4-5 16\"></path>"
   },
-  "compass": {
-    "viewBox": "0 0 24 24",
-    "body": "<circle cx=\"12\" cy=\"12\" r=\"10\"></circle><path d=\"m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z\"></path>"
-  },
   "copy": {
     "viewBox": "0 0 24 24",
     "body": "<rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\"></rect><path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\"></path>"
@@ -96,10 +92,6 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M12 20v2\"></path><path d=\"M12 2v2\"></path><path d=\"M17 20v2\"></path><path d=\"M17 2v2\"></path><path d=\"M2 12h2\"></path><path d=\"M2 17h2\"></path><path d=\"M2 7h2\"></path><path d=\"M20 12h2\"></path><path d=\"M20 17h2\"></path><path d=\"M20 7h2\"></path><path d=\"M7 20v2\"></path><path d=\"M7 2v2\"></path><rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2\"></rect><rect x=\"8\" y=\"8\" width=\"8\" height=\"8\" rx=\"1\"></rect>"
   },
-  "crosshair": {
-    "viewBox": "0 0 24 24",
-    "body": "<circle cx=\"12\" cy=\"12\" r=\"10\"></circle><line x1=\"22\" x2=\"18\" y1=\"12\" y2=\"12\"></line><line x1=\"6\" x2=\"2\" y1=\"12\" y2=\"12\"></line><line x1=\"12\" x2=\"12\" y1=\"6\" y2=\"2\"></line><line x1=\"12\" x2=\"12\" y1=\"22\" y2=\"18\"></line>"
-  },
   "download": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M12 15V3\"></path><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"></path><path d=\"m7 10 5 5 5-5\"></path>"
@@ -107,10 +99,6 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
   "compose": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7\"></path><path d=\"M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z\"></path>"
-  },
-  "expand": {
-    "viewBox": "0 0 24 24",
-    "body": "<path d=\"m15 15 6 6\"></path><path d=\"m15 9 6-6\"></path><path d=\"M21 16v5h-5\"></path><path d=\"M21 8V3h-5\"></path><path d=\"M3 16v5h5\"></path><path d=\"m3 21 6-6\"></path><path d=\"M3 8V3h5\"></path><path d=\"M9 9 3 3\"></path>"
   },
   "eye": {
     "viewBox": "0 0 24 24",
@@ -172,10 +160,6 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"m16 6 4 14\"></path><path d=\"M12 6v14\"></path><path d=\"M8 8v12\"></path><path d=\"M4 4v16\"></path>"
   },
-  "lightbulb": {
-    "viewBox": "0 0 24 24",
-    "body": "<path d=\"M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5\"></path><path d=\"M9 18h6\"></path><path d=\"M10 22h4\"></path>"
-  },
   "logs": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M3 5h.01\"></path><path d=\"M3 12h.01\"></path><path d=\"M3 19h.01\"></path><path d=\"M8 5h13\"></path><path d=\"M8 12h13\"></path><path d=\"M8 19h13\"></path>"
@@ -216,10 +200,6 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M15 18h-5\"></path><path d=\"M18 14h-8\"></path><path d=\"M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2\"></path><rect width=\"8\" height=\"4\" x=\"10\" y=\"6\" rx=\"1\"></rect>"
   },
-  "panel-top": {
-    "viewBox": "0 0 24 24",
-    "body": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"></rect><path d=\"M3 9h18\"></path>"
-  },
   "panel-left-close": {
     "viewBox": "0 0 24 24",
     "body": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"></rect><path d=\"M9 3v18\"></path><path d=\"m16 15-3-3 3-3\"></path>"
@@ -235,10 +215,6 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
   "pause": {
     "viewBox": "0 0 24 24",
     "body": "<rect x=\"14\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\"></rect><rect x=\"5\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\"></rect>"
-  },
-  "pen-line": {
-    "viewBox": "0 0 24 24",
-    "body": "<path d=\"M13 21h8\"></path><path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\"></path>"
   },
   "edit": {
     "viewBox": "0 0 24 24",
@@ -272,17 +248,9 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
     "viewBox": "0 0 24 24",
     "body": "<rect width=\"20\" height=\"8\" x=\"2\" y=\"14\" rx=\"2\"></rect><path d=\"M6.01 18H6\"></path><path d=\"M10.01 18H10\"></path><path d=\"M15 10v4\"></path><path d=\"M17.84 7.17a4 4 0 0 0-5.66 0\"></path><path d=\"M20.66 4.34a8 8 0 0 0-11.31 0\"></path>"
   },
-  "scale": {
-    "viewBox": "0 0 24 24",
-    "body": "<path d=\"M12 3v18\"></path><path d=\"m19 8 3 8a5 5 0 0 1-6 0zV7\"></path><path d=\"M3 7h1a17 17 0 0 0 8-2 17 17 0 0 0 8 2h1\"></path><path d=\"m5 8 3 8a5 5 0 0 1-6 0zV7\"></path><path d=\"M7 21h10\"></path>"
-  },
   "scan-eye": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M3 7V5a2 2 0 0 1 2-2h2\"></path><path d=\"M17 3h2a2 2 0 0 1 2 2v2\"></path><path d=\"M21 17v2a2 2 0 0 1-2 2h-2\"></path><path d=\"M7 21H5a2 2 0 0 1-2-2v-2\"></path><circle cx=\"12\" cy=\"12\" r=\"1\"></circle><path d=\"M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0\"></path>"
-  },
-  "scan-text": {
-    "viewBox": "0 0 24 24",
-    "body": "<path d=\"M3 7V5a2 2 0 0 1 2-2h2\"></path><path d=\"M17 3h2a2 2 0 0 1 2 2v2\"></path><path d=\"M21 17v2a2 2 0 0 1-2 2h-2\"></path><path d=\"M7 21H5a2 2 0 0 1-2-2v-2\"></path><path d=\"M7 8h8\"></path><path d=\"M7 12h10\"></path><path d=\"M7 16h6\"></path>"
   },
   "search": {
     "viewBox": "0 0 24 24",
