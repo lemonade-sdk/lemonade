@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import api, { ConnectionStatus, LoadedModel } from './api';
 import { canSelectInComposer, capabilityFromModelInfo, selectPreferredLoadedModel } from './modelCapabilities';
 import { customModelToModelInfo, loadCustomModels } from './features/customModels/customModelStore';
@@ -28,6 +28,20 @@ type AppRoute =
   | { view: SimpleView }
   | { view: 'dashboard'; section: DashboardSection }
   | { view: 'connect'; section: ConnectSection };
+
+const NAVIGATION_DESTINATIONS: Array<{
+  id: View;
+  label: string;
+  keywords: string;
+  icon: Parameters<typeof Icon>[0]['name'];
+}> = [
+  { id: 'chat', label: 'Chat', keywords: 'conversation messages', icon: 'chat' },
+  { id: 'models', label: 'Models', keywords: 'model manager download load', icon: 'hard-drive' },
+  { id: 'backends', label: 'Backends', keywords: 'runtime inference engine', icon: 'box' },
+  { id: 'apps', label: 'Apps', keywords: 'clients integrations', icon: 'layers' },
+  { id: 'dashboard', label: 'Dashboard', keywords: 'monitor system hardware statistics', icon: 'gauge' },
+  { id: 'connect', label: 'Settings', keywords: 'connect configuration preferences server', icon: 'settings' },
+];
 
 /* ── Error boundary ────────────────────────────────────────── */
 
@@ -197,8 +211,12 @@ const App: React.FC = () => {
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
   const [modelDetailsRequest, setModelDetailsRequest] = useState<{ modelName: string; nonce: number } | null>(null);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
+  const [navigationSearch, setNavigationSearch] = useState('');
+  const [navigationSearchOpen, setNavigationSearchOpen] = useState(false);
+  const [navigationSearchIndex, setNavigationSearchIndex] = useState(0);
   const utilityMenuRef = useRef<HTMLDivElement>(null);
   const utilityMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const navigationSearchRef = useRef<HTMLInputElement>(null);
   const [isDesktop, setIsDesktop] = useState(false);
 
   useEffect(() => {
@@ -326,6 +344,32 @@ const App: React.FC = () => {
     }
     navigateToRoute({ view: nextView });
   }, [navigateToRoute]);
+
+  const navigationSearchResults = useMemo(() => {
+    const query = navigationSearch.trim().toLowerCase();
+    if (!query) return NAVIGATION_DESTINATIONS;
+    return NAVIGATION_DESTINATIONS.filter(destination =>
+      `${destination.label} ${destination.keywords}`.toLowerCase().includes(query),
+    );
+  }, [navigationSearch]);
+
+  const selectNavigationDestination = useCallback((destination: typeof NAVIGATION_DESTINATIONS[number]) => {
+    setView(destination.id);
+    setNavigationSearch('');
+    setNavigationSearchOpen(false);
+  }, [setView]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setNavigationSearchOpen(true);
+        requestAnimationFrame(() => navigationSearchRef.current?.focus());
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const openModelDetails = useCallback((modelName: string) => {
     setModelDetailsRequest({ modelName, nonce: Date.now() });
@@ -460,15 +504,66 @@ const App: React.FC = () => {
           />
         </div>
 
+        <div className="titlebar__search" data-tauri-drag-region="false">
+          <Icon name="search" size={15} aria-hidden="true" />
+          <input
+            ref={navigationSearchRef}
+            type="search"
+            value={navigationSearch}
+            placeholder="Search pages"
+            aria-label="Search pages"
+            aria-autocomplete="list"
+            aria-expanded={navigationSearchOpen}
+            aria-controls="titlebar-search-results"
+            onFocus={() => setNavigationSearchOpen(true)}
+            onChange={event => {
+              setNavigationSearch(event.target.value);
+              setNavigationSearchIndex(0);
+              setNavigationSearchOpen(true);
+            }}
+            onKeyDown={event => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (navigationSearchResults.length > 0) {
+                  setNavigationSearchIndex(index => Math.min(index + 1, navigationSearchResults.length - 1));
+                }
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (navigationSearchResults.length > 0) {
+                  setNavigationSearchIndex(index => Math.max(index - 1, 0));
+                }
+              } else if (event.key === 'Enter' && navigationSearchResults[navigationSearchIndex]) {
+                event.preventDefault();
+                selectNavigationDestination(navigationSearchResults[navigationSearchIndex]);
+              } else if (event.key === 'Escape') {
+                setNavigationSearch('');
+                setNavigationSearchOpen(false);
+              }
+            }}
+          />
+          <kbd>Ctrl K</kbd>
+          {navigationSearchOpen && (
+            <div id="titlebar-search-results" className="titlebar__search-results" role="listbox" aria-label="Page search results">
+              {navigationSearchResults.length > 0 ? navigationSearchResults.map((destination, index) => (
+                <button
+                  key={destination.id}
+                  type="button"
+                  role="option"
+                  aria-selected={index === navigationSearchIndex}
+                  className={index === navigationSearchIndex ? 'is-active' : ''}
+                  onMouseDown={event => event.preventDefault()}
+                  onClick={() => selectNavigationDestination(destination)}
+                >
+                  <Icon name={destination.icon} size={14} aria-hidden="true" />
+                  <span>{destination.label}</span>
+                </button>
+              )) : <p>No matching pages.</p>}
+            </div>
+          )}
+        </div>
+
         <nav className="titlebar__nav" data-tauri-drag-region="false" aria-label="Primary">
-          {([
-            { id: 'chat',      label: 'Chat',      icon: 'chat'               },
-            { id: 'models',    label: 'Models',    icon: 'hard-drive'         },
-            { id: 'backends',  label: 'Backends',  icon: 'box'                },
-            { id: 'apps',      label: 'Apps',      icon: 'layers'             },
-            { id: 'dashboard', label: WORKSPACE_NAVIGATION.dashboard.label, icon: 'gauge' },
-            { id: 'connect',   label: WORKSPACE_NAVIGATION.connect.label, icon: 'settings' },
-          ] as { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[]).map(({ id, label, icon }) => (
+          {NAVIGATION_DESTINATIONS.map(({ id, label, icon }) => (
             <button
               key={id}
               className={view === id ? 'is-active' : ''}

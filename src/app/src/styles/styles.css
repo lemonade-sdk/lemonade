@@ -124,7 +124,7 @@ input, textarea {
 /* ---------- Title bar ---------- */
 .titlebar {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) auto;
+  grid-template-columns: 190px minmax(180px, 280px) auto minmax(0, 1fr) auto;
   align-items: center;
   padding: 0 var(--space-3);
   background: var(--surface-1);
@@ -154,6 +154,92 @@ input, textarea {
 
 .titlebar__brand-text {
   line-height: 1;
+}
+
+.titlebar__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+}
+
+.titlebar__search:focus-within {
+  border-color: var(--accent-fg);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.titlebar__search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.titlebar__search input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.titlebar__search kbd {
+  padding: 2px 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.titlebar__search-results {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  width: 100%;
+  overflow: hidden;
+  padding: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+}
+
+.titlebar__search-results button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.titlebar__search-results button:hover,
+.titlebar__search-results button.is-active {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.titlebar__search-results p {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
 }
 
 .titlebar__nav {
@@ -199,6 +285,7 @@ input, textarea {
 }
 
 .titlebar__right {
+  grid-column: 5;
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -366,7 +453,35 @@ input, textarea {
 }
 
 .detail-configuration__autotune input {
-  accent-color: var(--accent-fg);
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.detail-configuration__autotune input:checked {
+  border-color: var(--accent-fg);
+  background: var(--accent-fg);
+}
+
+.detail-configuration__autotune input:checked::after {
+  content: '';
+  display: block;
+  width: 7px;
+  height: 3px;
+  margin: 3px 0 0 3px;
+  border-bottom: 2px solid var(--surface-raised);
+  border-left: 2px solid var(--surface-raised);
+  transform: rotate(-45deg);
+}
+
+.detail-configuration__autotune input:focus-visible {
+  outline: 2px solid var(--accent-fg);
+  outline-offset: 2px;
 }
 
 .detail-configuration__autotune-help {
@@ -11803,7 +11918,7 @@ optgroup {
 
 @media (max-width: 1100px) {
   :root { --workspace-list: 286px; }
-  .titlebar { grid-template-columns: 120px minmax(0, 1fr) auto; }
+  .titlebar { grid-template-columns: 42px minmax(160px, 240px) auto minmax(0, 1fr) auto; }
   .titlebar__nav button { min-width: 42px; padding-inline: var(--space-2); }
   .titlebar__nav .nav-label { display: none; }
   .titlebar__brand-text { display: none; }
@@ -11981,6 +12096,8 @@ optgroup {
 
   .app { grid-template-rows: auto 1fr; }
   .titlebar__brand { grid-area: brand; }
+  .titlebar__search { display: none; }
+  .titlebar__right { grid-area: right; grid-column: auto; }
 
   .titlebar__nav {
     grid-area: nav;
