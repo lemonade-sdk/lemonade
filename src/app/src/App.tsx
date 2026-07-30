@@ -567,8 +567,7 @@ const App: React.FC = () => {
       <div className="app">
         <header className={`titlebar${view === 'chat' ? ' titlebar--chat' : ''}`} data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
-          <span className="titlebar__brand-mark" data-tauri-drag-region aria-hidden="true" />
-          <span className="titlebar__brand-text" data-tauri-drag-region>lemonade</span>
+          <span className="titlebar__brand-logo" data-tauri-drag-region role="img" aria-label="Lemonade" />
           <span className={`titlebar__status-dot titlebar__status-dot--brand ${
             status === 'connected' ? 'titlebar__status-dot--connected' :
             status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
