@@ -1,0 +1,15 @@
+{
+  "version": "1",
+  "model_name": "user.Router-L0a-Trace",
+  "recipe": "collection.router",
+  "components": ["TinyLLM", "BigLLM", "DefaultLLM", "RouterLLM"],
+  "routing": {
+    "candidates": ["TinyLLM", "BigLLM", "DefaultLLM"],
+    "default_model": "DefaultLLM",
+    "router": {
+      "type": "llm",
+      "model": "RouterLLM",
+      "prompt": "Route it."
+    }
+  }
+}
