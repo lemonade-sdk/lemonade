@@ -2490,11 +2490,40 @@ Filtering and reconnect behavior continue to operate on raw server data while th
 
 ---
 
+## 2026-07-30T09:17:15.715-06:00 — Lovell Review: MCP Tools UI Implementation — REJECTED
+
+**Author:** Lovell (Lead Review)
+**Status:** Rejected — Critical a11y violation found
+**Issue:** Aria-required-children violation in add-menu container
+**Related:** 2026-07-30T09:11:24.980Z MCP Tools UI Decision
+
+## Finding
+
+Implementation has critical ARIA structure error:
+- `src/app/src/components/ChatView.tsx:3715` renders `role="menu"` on add-menu container
+- `src/app/src/components/ChatView.tsx:3775` renders only nested `role="dialog"` when MCP picker opens
+- Menu left without required menuitem children → **critical axe `aria-required-children` violation**
+- Targeted tests pass but do NOT scan open picker or verify selection persistence after Back/reopen
+
+## Rejection Reason
+
+The UI-only changes violate WCAG 2.1 AA standards. Menu role requires direct menuitem children, not nested dialog. This is a blocking accessibility issue that will fail automated compliance scanning.
+
+## Next Steps
+
+Mattingly must revise to fix ARIA structure before re-review. Consider:
+1. Remove `role="menu"` from container while picker is open
+2. Ensure proper menuitem/option/dialog nesting
+3. Extend a11y test coverage to include open picker scan and Back/reopen cycle
+
+---
+
 ## 2026-07-30T09:11:24.980-06:00 — MCP Tools UI Decision
 
 **Author:** Mattingly (UI/Frontend)
-**Status:** Decision (implemented)
+**Status:** Decision (implemented but rejected on review)
 **Files:** McpPanel.tsx, ChatView.tsx, styles.css, a11y.spec.ts
+**Review gate:** Lovell (2026-07-30T09:17:15.715Z) — **REJECTED**
 
 ## Decision
 
@@ -2504,11 +2533,15 @@ Keep MCP settings metadata in shared renderer data and present both built-in and
 
 List rows scale to long tool catalogs and expose descriptions/input counts without relying on hover-only chips. A shared submenu preserves the existing selection state and external MCP behavior while making the navigation model clear and keyboard-accessible.
 
-## Validation
+## Initial Validation (Mattingly)
 
 - TypeScript type checking: clean
 - Renderer build: passed
 - Six focused Playwright a11y tests: passed
+
+## Review Outcome
+
+**REJECTED by Lovell** — Critical a11y violation: `aria-required-children` violation in menu/dialog ARIA structure. Targeted tests insufficient to catch open-picker and persistence issues.
 
 ---
 
