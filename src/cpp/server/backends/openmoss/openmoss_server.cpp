@@ -34,6 +34,13 @@ constexpr const char* kVoiceDesignPhrase =
 
 // Opt-in extension field; `voice` keeps its OpenAI-compatible meaning.
 constexpr const char* kVoiceDesignField = "voice_design_description";
+
+// json::value() throws on a type mismatch rather than falling back to the
+// default, which would turn a client's wrong-typed field into a 500.
+std::string string_field(const json& request, const char* key) {
+    const auto it = request.find(key);
+    return (it != request.end() && it->is_string()) ? it->get<std::string>() : std::string();
+}
 }  // namespace
 
 InstallParams OpenMossServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -294,7 +301,7 @@ json OpenMossServer::apply_voice_design(const json& request) {
     // field keeps its OpenAI-compatible meaning and is forwarded as an
     // instruction, so a client sending "voice": "default" gets speech rather
     // than a design run for a voice literally named "default".
-    const std::string description = forwarded.value(kVoiceDesignField, std::string());
+    const std::string description = string_field(forwarded, kVoiceDesignField);
     forwarded.erase(kVoiceDesignField);
     if (description.empty() || forwarded.contains("reference_wav_b64")) {
         return forwarded;
@@ -315,7 +322,7 @@ void OpenMossServer::audio_speech(const json& request, httplib::DataSink& sink) 
     // and emit minutes of audio. Bound it from the text unless the caller said
     // otherwise. ~12.5 frames/s at ~2.5 words/s is ~5 frames per word.
     if (!forwarded.contains("max_audio_frames") && !forwarded.contains("token_count")) {
-        const std::string input = forwarded.value("input", std::string());
+        const std::string input = string_field(forwarded, "input");
         if (!input.empty()) {
             int words = 1;
             for (char c : input) {
@@ -331,7 +338,7 @@ void OpenMossServer::audio_speech(const json& request, httplib::DataSink& sink) 
 
 void OpenMossServer::audio_generations(const json& request, httplib::DataSink& sink) {
     json body;
-    body["prompt"] = request.value("prompt", std::string());
+    body["prompt"] = string_field(request, "prompt");
     for (const char* key : {"seconds", "steps", "cfg_scale", "sigma_shift",
                             "negative_prompt", "seed", "append_duration_suffix",
                             "response_format"}) {
