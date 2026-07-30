@@ -237,6 +237,10 @@ void RecipeOptions::set_option(const std::string& opt, const json& value) {
     options_[opt] = value;
 }
 
+void RecipeOptions::remove_option(const std::string& opt) {
+    options_.erase(opt);
+}
+
 #ifdef LEMONADE_CLI
 // CLI_OPTIONS used only by the lemonade CLI client for add_cli_options.
 // ctx_size/merge_args are the common flags; everything else is derived from

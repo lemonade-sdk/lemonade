@@ -43,6 +43,8 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    SECOND_TEST_MODEL_EVICTION,
+    MULTI_MODEL_TERTIARY,
     get_default_lemond_binary,
     SHARED_REPO_MODEL_A_NAME,
     SHARED_REPO_MODEL_A_CHECKPOINT,
@@ -164,10 +166,12 @@ class EndpointTests(ServerTestBase):
             "completions",
             "embeddings",
             "models",
+            "models/check-updates",
             "responses",
             "pull",
             "registry/search",
             "pull/variants",
+            "routing/validate",
             "delete",
             "load",
             "unload",
@@ -244,6 +248,200 @@ class EndpointTests(ServerTestBase):
 
         print(
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"
+        )
+
+    def test_002_health_streaming_flags(self):
+        """Test is_busy and is_streaming fields in /health response.
+
+        Verifies:
+        1. is_busy and is_streaming fields exist for loaded models
+        2. Both fields are false when model is idle
+        3. is_busy becomes true during inference (background thread polls aggressively)
+        4. Both fields reset to false after streaming completes
+        """
+        import threading
+
+        # Load the model first
+        load_resp = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_resp.status_code, 200)
+
+        # Verify is_busy and is_streaming fields exist in health response
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        loaded_model = None
+        for model in health.get("all_models_loaded", []):
+            if model["model_name"] == ENDPOINT_TEST_MODEL:
+                loaded_model = model
+                break
+
+        self.assertIsNotNone(loaded_model, "Model should be loaded")
+        self.assertIn("is_busy", loaded_model, "is_busy field should exist")
+        self.assertIn("is_streaming", loaded_model, "is_streaming field should exist")
+        self.assertIsInstance(loaded_model["is_busy"], bool)
+        self.assertIsInstance(loaded_model["is_streaming"], bool)
+
+        # When idle, both should be false
+        self.assertFalse(loaded_model["is_busy"], "Model should not be busy when idle")
+        self.assertFalse(
+            loaded_model["is_streaming"], "Model should not be streaming when idle"
+        )
+
+        print("[OK] is_busy and is_streaming fields exist and are false when idle")
+
+        # Background poller - polls aggressively until stopped
+        captured_busy = threading.Event()
+        stop_polling = threading.Event()
+
+        def poll_for_busy():
+            while not stop_polling.is_set():
+                try:
+                    h = requests.get(f"{self.base_url}/health", timeout=1).json()
+                    for m in h.get("all_models_loaded", []):
+                        if m["model_name"] == ENDPOINT_TEST_MODEL and m.get("is_busy"):
+                            captured_busy.set()
+                            return
+                except Exception:
+                    pass
+
+        poll_thread = threading.Thread(target=poll_for_busy, daemon=True)
+        poll_thread.start()
+
+        # Make a streaming request
+        with requests.post(
+            f"{self.base_url}/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Write a haiku about mountains, then another about rivers, then another about clouds.",
+                    }
+                ],
+                "stream": True,
+                "max_tokens": 150,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        ) as resp:
+            self.assertEqual(resp.status_code, 200)
+            for _ in resp.iter_lines():
+                pass
+
+        stop_polling.set()
+        poll_thread.join(timeout=2)
+
+        self.assertTrue(
+            captured_busy.is_set(),
+            "Expected to capture is_busy=True at least once during streaming",
+        )
+        print("[OK] Captured is_busy=True during streaming")
+
+        # After completion, verify flags are reset
+        time.sleep(0.3)  # Brief wait for state to settle
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        for model in health.get("all_models_loaded", []):
+            if model["model_name"] == ENDPOINT_TEST_MODEL:
+                self.assertFalse(
+                    model.get("is_busy", True),
+                    "is_busy should be false after request completes",
+                )
+                self.assertFalse(
+                    model.get("is_streaming", True),
+                    "is_streaming should be false after request completes",
+                )
+                break
+
+        print("[OK] is_busy and is_streaming reset to false after request completes")
+
+    def test_002_health_concurrent_streaming(self):
+        """Test that concurrent streaming requests complete correctly.
+
+        Verifies that after multiple concurrent streaming requests complete,
+        the is_busy and is_streaming flags are correctly reset to false.
+
+        Note: Testing the mid-stream state (is_streaming stays true while
+        one request finishes but another continues) is timing-dependent.
+        The implementation correctness is ensured by the atomic counter in
+        end_backend_request() - we verify the observable end state here.
+        """
+        import threading
+        import queue
+
+        # Load the model
+        load_resp = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_resp.status_code, 200)
+
+        results = queue.Queue()
+
+        def streaming_request(name):
+            """Make a streaming request."""
+            try:
+                with requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json={
+                        "model": ENDPOINT_TEST_MODEL,
+                        "messages": [
+                            {"role": "user", "content": f"Say hi. Request {name}."}
+                        ],
+                        "stream": True,
+                        "max_tokens": 10,
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                    stream=True,
+                ) as resp:
+                    chunk_count = 0
+                    for _ in resp.iter_lines():
+                        chunk_count += 1
+                    results.put((name, "success", chunk_count))
+            except Exception as e:
+                results.put((name, "error", str(e)))
+
+        # Start multiple concurrent streaming requests
+        threads = []
+        for i in range(3):
+            t = threading.Thread(target=streaming_request, args=(f"R{i}",), daemon=True)
+            threads.append(t)
+            t.start()
+
+        # Wait for all to complete
+        for t in threads:
+            t.join(timeout=60)
+
+        # Verify all requests completed
+        completed = []
+        while not results.empty():
+            completed.append(results.get_nowait())
+
+        self.assertEqual(
+            len(completed), 3, f"Expected 3 completed requests, got: {completed}"
+        )
+        for name, status, _ in completed:
+            self.assertEqual(status, "success", f"Request {name} should succeed")
+
+        # After ALL complete, flags should be false
+        time.sleep(0.3)
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        for model in health.get("all_models_loaded", []):
+            if model["model_name"] == ENDPOINT_TEST_MODEL:
+                self.assertFalse(
+                    model.get("is_streaming", True),
+                    "is_streaming should be false after ALL streams complete",
+                )
+                self.assertFalse(
+                    model.get("is_busy", True),
+                    "is_busy should be false after ALL requests complete",
+                )
+                break
+
+        print(
+            "[OK] Concurrent streaming: flags reset correctly after all requests complete"
         )
 
     def test_002a_metrics_endpoint(self):
@@ -917,7 +1115,7 @@ class EndpointTests(ServerTestBase):
         /v1/chat/completions. When `sse_chunks` is provided, the chat
         endpoint emits each chunk as an SSE `data:` line (the caller is
         responsible for shaping each chunk as OpenAI-compat JSON) and
-        terminates with `data: [DONE]\\n\\n`. Otherwise it falls back to
+        terminates with `data: [DONE]\n\n`. Otherwise it falls back to
         the non-streaming chat_handler(body) -> dict shape. Returns
         (base_url, stop_fn). The base URL ends with /v1.
         """
@@ -2338,8 +2536,9 @@ class EndpointTests(ServerTestBase):
     def test_021j_register_user_collection(self):
         """Register a user-defined collection via POST /pull."""
         canonical_name = f"user.TestColl-{uuid.uuid4().hex[:8]}"
-        # Unique `user.<name>` entries are exposed under the bare public name.
-        public_name = canonical_name[5:]
+        # Registered collections list under their canonical `user.` id; the bare
+        # name stays a resolvable alias but is not emitted as a list row.
+        bare_name = canonical_name[5:]
 
         try:
             response = requests.post(
@@ -2360,11 +2559,20 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(models_response.status_code, 200)
-            entry = next(
-                (m for m in models_response.json()["data"] if m["id"] == public_name),
-                None,
+            ids = [m["id"] for m in models_response.json()["data"]]
+            self.assertIn(
+                canonical_name,
+                ids,
+                f"{canonical_name} should appear in /models under its user. id",
             )
-            self.assertIsNotNone(entry, f"{public_name} should appear in /models")
+            self.assertNotIn(
+                bare_name,
+                ids,
+                "Collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in models_response.json()["data"] if m["id"] == canonical_name
+            )
             self.assertEqual(entry.get("recipe"), "collection.omni")
             self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
             self.assertTrue(
@@ -2372,7 +2580,153 @@ class EndpointTests(ServerTestBase):
                 "Collection should report downloaded=true when all components are downloaded",
             )
 
-            print(f"[OK] Registered omni collection: {public_name}")
+            # The plain /models surface (downloaded-only, no show_all) is the one
+            # the PR explicitly promises alongside ?show_all=true — assert the
+            # same prefixed-id contract holds there.
+            plain_response = requests.get(
+                f"{self.base_url}/models",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(plain_response.status_code, 200)
+            plain_ids = [m["id"] for m in plain_response.json()["data"]]
+            self.assertIn(
+                canonical_name,
+                plain_ids,
+                f"{canonical_name} should appear in plain /models under its user. id",
+            )
+            self.assertNotIn(
+                bare_name,
+                plain_ids,
+                "Collection must not be listed under its bare name on plain /models",
+            )
+
+            # Both the bare and prefixed ids still resolve on GET /models/{id}.
+            for lookup in (canonical_name, bare_name):
+                single = requests.get(
+                    f"{self.base_url}/models/{lookup}",
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    single.status_code, 200, f"{lookup} should resolve: {single.text}"
+                )
+                self.assertEqual(single.json().get("id"), canonical_name)
+
+            print(f"[OK] Registered omni collection: {canonical_name}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021j1_register_user_router_collection(self):
+        """A registered router collection lists under its canonical `user.` id.
+
+        Mirrors test_021j for collection.router, so the prefixed-id listing
+        contract is verified for both collection recipes (issue #2788).
+        """
+        canonical_name = f"user.TestRouter-{uuid.uuid4().hex[:8]}"
+        bare_name = canonical_name[5:]
+
+        try:
+            response = self._pull_router_collection(canonical_name)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["status"], "success")
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = [m["id"] for m in models_response.json()["data"]]
+            self.assertIn(
+                canonical_name,
+                ids,
+                f"{canonical_name} should appear in /models under its user. id",
+            )
+            self.assertNotIn(
+                bare_name,
+                ids,
+                "Router collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in models_response.json()["data"] if m["id"] == canonical_name
+            )
+            self.assertEqual(entry.get("recipe"), "collection.router")
+
+            # Both the bare and prefixed ids still resolve on GET /models/{id}.
+            for lookup in (canonical_name, bare_name):
+                single = requests.get(
+                    f"{self.base_url}/models/{lookup}",
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    single.status_code, 200, f"{lookup} should resolve: {single.text}"
+                )
+                self.assertEqual(single.json().get("id"), canonical_name)
+
+            print(f"[OK] Registered router collection: {canonical_name}")
+        finally:
+            self._cleanup_router_collection(canonical_name)
+
+    def test_021j2_collection_lists_prefixed_in_ollama_tags(self):
+        """Ollama /api/tags emits the canonical `user.` collection id (issue #2788).
+
+        The prefixed-id listing contract is global, not OpenAI-only: /api/tags is
+        backed by the same get_downloaded_models() mapping as /v1/models. /api/show
+        and invocation must still accept both the bare and prefixed forms via the
+        resolvable alias.
+        """
+        canonical_name = f"user.OllamaColl-{uuid.uuid4().hex[:8]}"
+        bare_name = canonical_name[5:]
+        ollama_base = f"http://localhost:{PORT}/api"
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            tags = requests.get(f"{ollama_base}/tags", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(tags.status_code, 200, tags.text)
+            # Ollama appends a ":latest" tag to every model id.
+            names = {m["name"] for m in tags.json()["models"]}
+            models = {m["model"] for m in tags.json()["models"]}
+            self.assertIn(
+                f"{canonical_name}:latest",
+                names,
+                f"/api/tags should list the collection as {canonical_name}:latest",
+            )
+            self.assertEqual(names, models)
+            self.assertNotIn(
+                f"{bare_name}:latest",
+                names,
+                "Collection must not also appear under its bare name in /api/tags",
+            )
+
+            # /api/show must resolve both the bare and prefixed forms.
+            for lookup in (canonical_name, bare_name):
+                show = requests.post(
+                    f"{ollama_base}/show",
+                    json={"model": lookup},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    show.status_code,
+                    200,
+                    f"{lookup} should resolve on /api/show: {show.text}",
+                )
+
+            print(f"[OK] /api/tags lists collection prefixed: {canonical_name}")
         finally:
             try:
                 requests.post(
@@ -2431,7 +2785,7 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(listing.status_code, 200)
             entry = next(
-                (m for m in listing.json()["data"] if m["id"] == public_name),
+                (m for m in listing.json()["data"] if m["id"] == canonical_name),
                 None,
             )
             self.assertIsNotNone(entry)
@@ -2556,7 +2910,7 @@ class EndpointTests(ServerTestBase):
                 (
                     m
                     for m in models_response.json()["data"]
-                    if m["id"] == collection_name[5:]
+                    if m["id"] == collection_name
                 ),
                 None,
             )
@@ -2623,7 +2977,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(models_response.status_code, 200)
         ids = {m["id"] for m in models_response.json()["data"]}
         self.assertNotIn(
-            collection_name[5:],
+            collection_name,
             ids,
             "Rejected inline collection must not be persisted",
         )
@@ -2661,9 +3015,7 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(models_response.status_code, 200)
         ids = {m["id"] for m in models_response.json()["data"]}
-        self.assertNotIn(
-            collection_name[5:], ids, "Rejected collection must not persist"
-        )
+        self.assertNotIn(collection_name, ids, "Rejected collection must not persist")
         self.assertNotIn(comp, ids, "Half-defined component must not be registered")
         print("[OK] Inline collection with invalid component def rejected with 400")
 
@@ -2904,9 +3256,7 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
             ).json()["data"]
         }
-        self.assertNotIn(
-            collection_name[5:], ids, "Rejected collection must not persist"
-        )
+        self.assertNotIn(collection_name, ids, "Rejected collection must not persist")
         print("[OK] Nested collection (component is a registered collection) rejected")
 
     def test_021y_reject_nested_collection_inline_def(self):
@@ -2941,9 +3291,7 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
             ).json()["data"]
         }
-        self.assertNotIn(
-            collection_name[5:], ids, "Rejected collection must not persist"
-        )
+        self.assertNotIn(collection_name, ids, "Rejected collection must not persist")
         self.assertNotIn(child, ids, "Nested child collection must not be registered")
         print("[OK] Nested collection (inline collection component def) rejected")
 
@@ -3225,6 +3573,1121 @@ class EndpointTests(ServerTestBase):
             print(f"[OK] collection.router route_trace returned Decision trace")
         finally:
             self._cleanup_router_collection(canonical_name)
+
+    def test_021zs_routing_validate_deterministic_match(self):
+        """/routing/validate runs an ad-hoc (unregistered) policy document and
+        returns the matched rule plus its full trace, without requiring the
+        policy to be attached to a registered model."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "code-to-big",
+                        "match": {
+                            "any": [
+                                {
+                                    "keywords_any": [
+                                        "def ",
+                                        "function",
+                                        "stack trace",
+                                        "compile",
+                                    ]
+                                },
+                                {"regex": "```[a-z]*"},
+                            ]
+                        },
+                        "route_to": "vllm.qwen3-32b",
+                    },
+                    {
+                        "id": "long-context-to-big",
+                        "match": {"min_chars": 4000},
+                        "route_to": "vllm.qwen3-32b",
+                    },
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "please write a def to reverse a list"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "vllm.qwen3-32b")
+        self.assertEqual(decision["matched_rule"], "code-to-big")
+        self.assertFalse(decision["default_used"])
+        trace = decision.get("trace")
+        self.assertIsInstance(trace, list)
+        self.assertTrue(trace)
+        self.assertTrue(
+            any(
+                entry.get("condition") == "keywords_any" and entry.get("result") is True
+                for entry in trace
+            ),
+            f"trace must include the matched keywords condition: {trace}",
+        )
+        print("[OK] /routing/validate matched a deterministic keyword rule")
+
+    def test_021zt_routing_validate_default_fallthrough(self):
+        """A prompt matching no rule falls through to the declared default_model."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "code-to-big",
+                        "match": {"keywords_any": ["def ", "function"]},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "what's the weather like today?"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "Qwen3-8B-GGUF")
+        self.assertTrue(decision["default_used"])
+        print("[OK] /routing/validate fell through to the default model")
+
+    def test_021zu_routing_validate_bad_policy_returns_400(self):
+        """A malformed policy (missing the required 'routing' key) is rejected
+        with a 400 and a clear error message, not a crash."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("error", response.json())
+        print("[OK] /routing/validate rejected a malformed policy with 400")
+
+    def test_021zv_routing_validate_undeclared_component_returns_400(self):
+        """/routing/validate only relaxes live-registry resolution (an
+        identity resolve_component), not internal consistency — a candidate,
+        default_model, rule route_to, or classifier model that isn't listed
+        in collection.components is rejected with a 400, same as the normal
+        collection-registration path would reject it."""
+        policy_undeclared_candidate = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],  # "vllm.qwen3-32b" is not declared
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "code-to-big",
+                        "match": {"keywords_any": ["def "]},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy_undeclared_candidate, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("vllm.qwen3-32b", response.json()["error"])
+
+        policy_undeclared_classifier_model = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "classifiers": [
+                    {
+                        "id": "pii",
+                        "type": "classifier",
+                        # not listed in collection.components
+                        "model": "undeclared-classifier-model",
+                        "labels": ["safe", "unsafe"],
+                    }
+                ],
+                "rules": [
+                    {
+                        "id": "flag-to-big",
+                        "match": {"classifier": "pii", "label": "unsafe"},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy_undeclared_classifier_model, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("undeclared-classifier-model", response.json()["error"])
+        print("[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400")
+
+    def test_021zm_routing_validate_llm_router_fails_open_returns_200(self):
+        """The 'llm' router type is fully implemented: the parser desugars
+        routing.router into one llm classifier plus an identity rule per
+        candidate (__route_0, __route_1, ...), and the engine runs that live.
+        If the router's own model can't run, the classifier fails and its
+        identity rules simply don't match, so the engine fails open to
+        default_model like any other rule miss — this returns 200 with a
+        decision, never a 400."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": [
+                "Qwen3-8B-GGUF",
+                "Qwen3.5-35B-A3B-GGUF",
+                "nonexistent-router-model-021zm",
+            ],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "Qwen3.5-35B-A3B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+                "router": {
+                    "type": "llm",
+                    "model": "nonexistent-router-model-021zm",
+                    "prompt": "Reply with ONLY a model name.",
+                },
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        decision = body["decision"]
+        self.assertTrue(decision["default_used"])
+        self.assertEqual(decision["route_to"], "Qwen3-8B-GGUF")
+
+        # The as-authored policy has routing.router and no routing.rules, so a
+        # client can't resolve a synthesized matched_rule id (e.g. __route_0)
+        # against it. normalized_policy is what the engine actually ran.
+        normalized_routing = body["normalized_policy"]["routing"]
+        self.assertNotIn("router", normalized_routing)
+        self.assertEqual(len(normalized_routing["classifiers"]), 1)
+        self.assertEqual(normalized_routing["classifiers"][0]["id"], "__router")
+        self.assertEqual(normalized_routing["classifiers"][0]["type"], "llm")
+        self.assertEqual(
+            [rule["id"] for rule in normalized_routing["rules"]],
+            ["__route_0", "__route_1"],
+        )
+        print("[OK] /routing/validate ran an llm router live and failed open to the default model")
+
+    def test_021zn_routing_validate_has_images_flag(self):
+        """The has_images request flag flows through to a has_images match
+        condition."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "vision-to-big",
+                        "match": {"has_images": True},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response_without_image = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "describe this", "has_images": False},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_without_image.status_code, 200)
+        self.assertTrue(response_without_image.json()["decision"]["default_used"])
+
+        response_with_image = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "describe this", "has_images": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_with_image.status_code, 200)
+        decision = response_with_image.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "vision-to-big")
+        self.assertFalse(decision["default_used"])
+        print("[OK] /routing/validate honored the has_images flag")
+
+    def test_021zo_routing_validate_has_tools_flag(self):
+        """The has_tools request flag flows through to a has_tools match
+        condition."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "tools-to-big",
+                        "match": {"has_tools": True},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response_without_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "call a function", "has_tools": False},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_without_tools.status_code, 200)
+        self.assertTrue(response_without_tools.json()["decision"]["default_used"])
+
+        response_with_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "call a function", "has_tools": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_with_tools.status_code, 200)
+        decision = response_with_tools.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "tools-to-big")
+        self.assertFalse(decision["default_used"])
+        print("[OK] /routing/validate honored the has_tools flag")
+
+    def test_021zp_routing_validate_metadata_flag(self):
+        """Arbitrary caller-supplied metadata key/value pairs flow through to
+        a metadata match condition."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "tenant-to-big",
+                        "match": {"metadata": {"key": "tenant", "equals": "acme"}},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response_without_metadata = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_without_metadata.status_code, 200)
+        self.assertTrue(response_without_metadata.json()["decision"]["default_used"])
+
+        response_other_tenant = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": {"tenant": "other"}},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_other_tenant.status_code, 200)
+        self.assertTrue(response_other_tenant.json()["decision"]["default_used"])
+
+        response_matching_tenant = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": {"tenant": "acme"}},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_matching_tenant.status_code, 200)
+        decision = response_matching_tenant.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "tenant-to-big")
+        self.assertFalse(decision["default_used"])
+        print("[OK] /routing/validate honored the metadata flag")
+
+    def test_021zq_routing_validate_bad_metadata_returns_400(self):
+        """A malformed 'metadata' field (not an object, or a non-string
+        value) is rejected with a 400 and a clear error message."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+            },
+        }
+        response_not_object = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": "not-an-object"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_not_object.status_code, 400)
+        self.assertIn("error", response_not_object.json())
+
+        response_bad_value = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "metadata": {"tenant": 123}},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_value.status_code, 400)
+        self.assertIn("tenant", response_bad_value.json()["error"])
+        print("[OK] /routing/validate rejected malformed metadata with 400")
+
+    def test_021zr_routing_validate_bad_field_types_return_400(self):
+        """A malformed 'prompt', 'has_images', or 'has_tools' field (wrong
+        JSON type) is rejected with a 400 and a clear error message, not a
+        generic server error from an uncaught nlohmann::json type_error."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+            },
+        }
+        response_bad_prompt = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": 12345},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_prompt.status_code, 400)
+        self.assertIn("prompt", response_bad_prompt.json()["error"])
+
+        response_bad_has_images = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "has_images": "yes"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_has_images.status_code, 400)
+        self.assertIn("has_images", response_bad_has_images.json()["error"])
+
+        response_bad_has_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hello", "has_tools": "yes"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_has_tools.status_code, 400)
+        self.assertIn("has_tools", response_bad_has_tools.json()["error"])
+        print("[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400")
+
+    def test_021zj_router_llm_l0a_live(self):
+        """L0a live path (#2405), deterministic: the router component is a mock
+        cloud model (via _start_mock_cloud_provider) that returns a fixed valid
+        {model, rationale} reply, while the candidate is the real local
+        ENDPOINT_TEST_MODEL. This exercises the complete production path —
+        collection.router -> LlmClassifier -> ClassifierServices::chat ->
+        Router::chat_completion -> CloudServer -> strict structured-reply
+        parser -> rule evaluation and trace -> real candidate auto-load ->
+        candidate completion — without depending on a small local LLM obeying
+        a formatting prompt on every platform. Exhaustive parser behavior is
+        covered by the C++ RoutingPolicyLlmRouterTest suite; this test
+        validates wiring and backend integration, and asserts the live
+        adapter constraints on the captured router request."""
+        provider = "routercloud"
+        upstream_id = "mock/l0a-router"
+        router_model = f"{provider}.{upstream_id}"
+        candidate_model = ENDPOINT_TEST_MODEL
+        pull_model_with_retry(candidate_model)
+
+        fixed_rationale = "The configured candidate handles this request."
+        captured = {}
+
+        def chat_response(req):
+            captured["request"] = req
+            return {
+                "id": "cmpl-l0a-router",
+                "object": "chat.completion",
+                "created": 1,
+                "model": req.get("model", upstream_id),
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(
+                                {
+                                    "model": candidate_model,
+                                    "rationale": fixed_rationale,
+                                }
+                            ),
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+
+        base_url, stop_provider = self._start_mock_cloud_provider(
+            [upstream_id], chat_handler=chat_response
+        )
+
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterL0a-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            # Register + authenticate the mock provider so the router model is
+            # discoverable (same flow as the cloud endpoint tests).
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"install failed: {resp.text}")
+            resp = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"auth failed: {resp.text}")
+            self.assertEqual(resp.json()["models_discovered"], 1)
+
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+            routing = {
+                "candidates": [candidate_model],
+                "default_model": candidate_model,
+                "router": {
+                    "type": "llm",
+                    "model": router_model,
+                    "prompt": "You are a model router. Pick the best model "
+                    "for the user's request.",
+                },
+            }
+            pull_response = self._pull_router_collection(
+                canonical_name,
+                routing=routing,
+                overrides={"components": [router_model, candidate_model]},
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+            self.assertEqual(pull_response.json()["status"], "success")
+
+            user_text = "Explain gradient descent."
+            chat_response_http = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [{"role": "user", "content": user_text}],
+                    "max_tokens": 16,
+                    "route_trace": True,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                chat_response_http.status_code, 200, chat_response_http.text
+            )
+            body = chat_response_http.json()
+            self.assertNotIn("error", body, body)
+
+            # Lemonade's route envelope is the backend-independent source of
+            # truth for the selected candidate. The OpenAI `model` field remains
+            # backend-owned and may contain a checkpoint/path or be omitted.
+            route = body.get("x_lemonade_route")
+            self.assertIsInstance(route, dict)
+            self.assertEqual(route.get("route_to"), candidate_model)
+
+            # The trace carries the structured choice: the winning
+            # classifier:__router entry names the candidate as its label and
+            # records the mock's exact rationale.
+            trace = route.get("trace")
+            self.assertIsInstance(trace, list)
+            router_entry = next(
+                (
+                    e
+                    for e in trace
+                    if e.get("condition") == "classifier:__router"
+                    and e.get("result") is True
+                ),
+                None,
+            )
+            self.assertIsNotNone(
+                router_entry, f"no winning __router trace entry: {trace}"
+            )
+            self.assertEqual(router_entry.get("label"), candidate_model)
+            self.assertEqual(router_entry.get("rationale"), fixed_rationale)
+
+            # Live adapter constraints, asserted on the request the mock
+            # provider actually received from Router::chat_completion.
+            router_request = captured.get("request")
+            self.assertIsNotNone(
+                router_request, "mock provider never received the router call"
+            )
+            self.assertFalse(router_request["stream"])
+            self.assertEqual(router_request["temperature"], 0.0)
+            self.assertLessEqual(router_request["max_tokens"], 256)
+            self.assertTrue(
+                router_request["messages"][-1]["content"].startswith("/no_think\n")
+            )
+            # The user message after the /no_think prefix is the structured
+            # routing-context payload.
+            payload = json.loads(
+                router_request["messages"][-1]["content"][len("/no_think\n") :]
+            )
+            self.assertEqual(payload.get("text"), user_text)
+            self.assertIn("has_tools", payload)
+            self.assertIn("has_images", payload)
+            print(
+                "[OK] L0a live (deterministic): structured choice routed "
+                "through Router::chat_completion -> CloudServer with label + "
+                "rationale in the trace and constrained adapter request"
+            )
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/unload",
+                    json={"model_name": candidate_model},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/uninstall",
+                    json={"backend": "cloud", "provider": provider},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            stop_provider()
+
+    def test_021zk_router_llm_residency_live(self):
+        """Regression coverage for #2725 and direct-use demotion.
+
+        The router and candidate must coexist at max_loaded_models=1. Promotion
+        and demotion reuse live processes, pool-local pinning remains valid, and
+        a later third standard model must not leave two user-facing LLMs resident.
+        """
+        router_model = MULTI_MODEL_TERTIARY
+        candidate_model = ENDPOINT_TEST_MODEL
+        third_model = SECOND_TEST_MODEL_EVICTION
+        for model in (router_model, candidate_model, third_model):
+            pull_model_with_retry(model)
+
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterL0a-{suffix}"
+        public_name = canonical_name[5:]
+
+        try:
+            unload_all = requests.post(
+                f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(unload_all.status_code, 200, unload_all.text)
+
+            warm_router = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": router_model,
+                    "messages": [{"role": "user", "content": "Reply briefly."}],
+                    "max_tokens": 1,
+                    "enable_thinking": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(warm_router.status_code, 200, warm_router.text)
+            warm_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            warm_loaded = {
+                item.get("model_name"): item
+                for item in warm_health.get("all_models_loaded", [])
+            }
+            self.assertEqual(warm_loaded[router_model].get("slot_pool"), "standard/llm")
+            warm_router_pid = int(warm_loaded[router_model]["pid"])
+
+            routing = {
+                "candidates": [candidate_model],
+                "default_model": candidate_model,
+                "router": {
+                    "type": "llm",
+                    "model": router_model,
+                    "prompt": (
+                        "You are a model router. Always choose "
+                        f"{candidate_model} for every request."
+                    ),
+                },
+            }
+            pull_response = self._pull_router_collection(
+                canonical_name,
+                routing=routing,
+                overrides={"components": [router_model, candidate_model]},
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            def routed_request(message):
+                response = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json={
+                        "model": public_name,
+                        "messages": [{"role": "user", "content": message}],
+                        "max_tokens": 1,
+                        "route_trace": True,
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                body = response.json()
+                self.assertNotIn("error", body, body)
+                self.assertEqual(
+                    body.get("x_lemonade_route", {}).get("route_to"),
+                    candidate_model,
+                )
+                return body
+
+            routed_request("Explain gradient descent.")
+            health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(health.get("max_models", {}).get("llm"), 1)
+            loaded = {
+                item.get("model_name"): item
+                for item in health.get("all_models_loaded", [])
+            }
+            self.assertEqual(
+                loaded[router_model].get("slot_pool"), "routing_helper/llm"
+            )
+            self.assertEqual(loaded[candidate_model].get("slot_pool"), "standard/llm")
+            first_pids = {
+                router_model: int(loaded[router_model]["pid"]),
+                candidate_model: int(loaded[candidate_model]["pid"]),
+            }
+            self.assertEqual(
+                first_pids[router_model],
+                warm_router_pid,
+                "promotion must reuse the existing router process",
+            )
+
+            routed_request("Explain gradient descent again.")
+            health_after = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            loaded_after = {
+                item.get("model_name"): item
+                for item in health_after.get("all_models_loaded", [])
+            }
+            self.assertEqual(
+                int(loaded_after[router_model]["pid"]), first_pids[router_model]
+            )
+            self.assertEqual(
+                int(loaded_after[candidate_model]["pid"]),
+                first_pids[candidate_model],
+            )
+
+            pin_candidate = requests.post(
+                f"{self.base_url.replace('/api/v1', '')}/internal/pin",
+                json={"model_name": candidate_model, "pinned": True},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(pin_candidate.status_code, 200, pin_candidate.text)
+            unload_router = requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": router_model},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(unload_router.status_code, 200, unload_router.text)
+
+            routed_request("Explain gradient descent briefly.")
+            pinned_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            pinned_loaded = {
+                item.get("model_name"): item
+                for item in pinned_health.get("all_models_loaded", [])
+            }
+            self.assertTrue(pinned_loaded[candidate_model].get("pinned"))
+            self.assertEqual(pinned_health.get("pinned_models", {}).get("llm"), 1)
+            self.assertEqual(
+                int(pinned_loaded[candidate_model]["pid"]),
+                first_pids[candidate_model],
+            )
+            helper_pid_before_demotion = int(pinned_loaded[router_model]["pid"])
+
+            pin_helper = requests.post(
+                f"{self.base_url.replace('/api/v1', '')}/internal/pin",
+                json={"model_name": router_model, "pinned": True},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(pin_helper.status_code, 200, pin_helper.text)
+            helper_pin_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(
+                helper_pin_health.get("pinned_helper_models", {}).get("llm"), 1
+            )
+            unpin_helper = requests.post(
+                f"{self.base_url.replace('/api/v1', '')}/internal/pin",
+                json={"model_name": router_model, "pinned": False},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(unpin_helper.status_code, 200, unpin_helper.text)
+            unpin_candidate = requests.post(
+                f"{self.base_url.replace('/api/v1', '')}/internal/pin",
+                json={"model_name": candidate_model, "pinned": False},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(unpin_candidate.status_code, 200, unpin_candidate.text)
+
+            direct_router = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": router_model,
+                    "messages": [
+                        {"role": "user", "content": "Reply directly and briefly."}
+                    ],
+                    "max_tokens": 1,
+                    "enable_thinking": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(direct_router.status_code, 200, direct_router.text)
+            demoted_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            demoted_loaded = {
+                item.get("model_name"): item
+                for item in demoted_health.get("all_models_loaded", [])
+            }
+            self.assertNotIn(candidate_model, demoted_loaded)
+            self.assertEqual(
+                demoted_loaded[router_model].get("slot_pool"), "standard/llm"
+            )
+            self.assertEqual(
+                int(demoted_loaded[router_model]["pid"]),
+                helper_pid_before_demotion,
+                "demotion must reuse the live process",
+            )
+
+            third_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": third_model,
+                    "messages": [{"role": "user", "content": "Say hello."}],
+                    "max_tokens": 1,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(third_response.status_code, 200, third_response.text)
+            final_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            final_loaded = {
+                item.get("model_name"): item
+                for item in final_health.get("all_models_loaded", [])
+            }
+            self.assertIn(third_model, final_loaded, final_loaded)
+            self.assertNotIn(router_model, final_loaded, final_loaded)
+            self.assertNotIn(candidate_model, final_loaded, final_loaded)
+            standard_llms = [
+                item
+                for item in final_loaded.values()
+                if item.get("slot_pool") == "standard/llm"
+            ]
+            self.assertEqual(
+                len(standard_llms),
+                1,
+                "three-model sequence must preserve max_loaded_models=1",
+            )
+
+            print(
+                "[OK] residency promotion/demotion, pool-local pinning, and "
+                "three-model standard capacity"
+            )
+        finally:
+            for model in (router_model, candidate_model, third_model):
+                try:
+                    requests.post(
+                        f"{self.base_url}/unload",
+                        json={"model_name": model},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021zl_router_multiple_same_type_helpers_stay_warm(self):
+        """Two distinct local LLM helpers must not share one helper slot."""
+        helper_a = ENDPOINT_TEST_MODEL
+        helper_b = MULTI_MODEL_TERTIARY
+        for model in (helper_a, helper_b):
+            pull_model_with_retry(model)
+
+        provider = "helperpoolcloud"
+        upstream_id = "mock/helper-candidate"
+        candidate_model = f"{provider}.{upstream_id}"
+
+        def chat_response(req):
+            return {
+                "id": "cmpl-helper-pool",
+                "object": "chat.completion",
+                "created": 1,
+                "model": req.get("model", upstream_id),
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+
+        base_url, stop_provider = self._start_mock_cloud_provider(
+            [upstream_id], chat_handler=chat_response
+        )
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterHelpers-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            install = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(install.status_code, 200, install.text)
+            auth = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(auth.status_code, 200, auth.text)
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+            routing = {
+                "candidates": [candidate_model],
+                "default_model": candidate_model,
+                "classifiers": [
+                    {
+                        "id": "helper-a",
+                        "type": "llm",
+                        "model": helper_a,
+                        "prompt": "Choose the configured candidate.",
+                        "labels": [candidate_model],
+                        "on_error": "match_false",
+                    },
+                    {
+                        "id": "helper-b",
+                        "type": "llm",
+                        "model": helper_b,
+                        "prompt": "Choose the configured candidate.",
+                        "labels": [candidate_model],
+                        "on_error": "match_false",
+                    },
+                ],
+                "rules": [
+                    {
+                        "id": "probe-helper-a",
+                        "match": {
+                            "classifier": "helper-a",
+                            "label": candidate_model,
+                            "min_score": 0.5,
+                            "max_score": 0.5,
+                        },
+                        "route_to": candidate_model,
+                    },
+                    {
+                        "id": "probe-helper-b",
+                        "match": {
+                            "classifier": "helper-b",
+                            "label": candidate_model,
+                            "min_score": 0.5,
+                            "max_score": 0.5,
+                        },
+                        "route_to": candidate_model,
+                    },
+                ],
+            }
+            pull = self._pull_router_collection(
+                canonical_name,
+                routing=routing,
+                overrides={"components": [helper_a, helper_b, candidate_model]},
+            )
+            self.assertEqual(pull.status_code, 200, pull.text)
+
+            def request_once(text):
+                response = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json={
+                        "model": public_name,
+                        "messages": [{"role": "user", "content": text}],
+                        "max_tokens": 4,
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+
+            request_once("First helper-pool request")
+            first_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            first_loaded = {
+                item.get("model_name"): item
+                for item in first_health.get("all_models_loaded", [])
+            }
+            for helper in (helper_a, helper_b):
+                self.assertIn(helper, first_loaded, first_loaded)
+                self.assertEqual(
+                    first_loaded[helper].get("slot_pool"), "routing_helper/llm"
+                )
+            first_pids = {
+                helper_a: int(first_loaded[helper_a]["pid"]),
+                helper_b: int(first_loaded[helper_b]["pid"]),
+            }
+
+            request_once("Second helper-pool request")
+            second_health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            second_loaded = {
+                item.get("model_name"): item
+                for item in second_health.get("all_models_loaded", [])
+            }
+            for helper in (helper_a, helper_b):
+                self.assertEqual(
+                    int(second_loaded[helper]["pid"]),
+                    first_pids[helper],
+                    f"{helper} must stay warm across policy evaluations",
+                )
+            print("[OK] two same-type routing helpers retained stable PIDs")
+        finally:
+            for model in (helper_a, helper_b):
+                try:
+                    requests.post(
+                        f"{self.base_url}/unload",
+                        json={"model_name": model},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/uninstall",
+                    json={"backend": "cloud", "provider": provider},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            stop_provider()
+
+    def test_021zm_router_same_model_candidate_demotes_in_request(self):
+        """router.model == candidate must end as one Standard process."""
+        model = ENDPOINT_TEST_MODEL
+        pull_model_with_retry(model)
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterSameModel-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+            routing = {
+                "candidates": [model],
+                "default_model": model,
+                "router": {
+                    "type": "llm",
+                    "model": model,
+                    "prompt": f"Always choose {model}.",
+                },
+            }
+            pull = self._pull_router_collection(
+                canonical_name,
+                routing=routing,
+                overrides={"components": [model]},
+            )
+            self.assertEqual(pull.status_code, 200, pull.text)
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [{"role": "user", "content": "Say hello."}],
+                    "max_tokens": 4,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            loaded = [
+                item
+                for item in health.get("all_models_loaded", [])
+                if item.get("model_name") == model
+            ]
+            self.assertEqual(len(loaded), 1, loaded)
+            self.assertEqual(loaded[0].get("slot_pool"), "standard/llm")
+            print("[OK] router.model == candidate demoted in the same request")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/unload",
+                    json={"model_name": model},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def _pull_router_collection(self, canonical_name, routing=None, overrides=None):
         """Register a collection.router whose single candidate is
@@ -3602,7 +5065,6 @@ class EndpointTests(ServerTestBase):
         isn't dropped on export and rejected on re-import."""
         suffix = uuid.uuid4().hex[:8]
         canonical_name = f"user.RouterExport-{suffix}"
-        public_name = canonical_name[5:]
         reimport_name = f"user.RouterReimport-{suffix}"
         try:
             pull_response = self._pull_router_collection(canonical_name)
@@ -3612,10 +5074,12 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
             ).json()
             exported = next(
-                (m for m in models.get("data", []) if m.get("id") == public_name),
+                (m for m in models.get("data", []) if m.get("id") == canonical_name),
                 None,
             )
-            self.assertIsNotNone(exported, f"{public_name} missing from /models export")
+            self.assertIsNotNone(
+                exported, f"{canonical_name} missing from /models export"
+            )
             self.assertEqual(exported.get("recipe"), "collection.router")
             self.assertIn("routing", exported)
             self.assertEqual(
@@ -3740,7 +5204,7 @@ class EndpointTests(ServerTestBase):
                 (
                     m
                     for m in models_response.json()["data"]
-                    if m["id"] == collection_name[5:]
+                    if m["id"] == collection_name
                 ),
                 None,
             )
@@ -4752,6 +6216,157 @@ class EndpointTests(ServerTestBase):
                         proc.kill()
                         proc.wait(timeout=10)
             shutil.rmtree(cache_dir, ignore_errors=True)
+
+    def test_050_telemetry_trust_incoming_trace_context_config(self):
+        """The opt-in W3C trace-context flag round-trips and validates as boolean."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        prior = (
+            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+            .json()
+            .get("telemetry", {})
+            .get("trust_incoming_trace_context", False)
+        )
+        try:
+            # Enable, then confirm it reads back as True.
+            resp = requests.post(
+                set_url,
+                json={"telemetry": {"trust_incoming_trace_context": True}},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            read_back = (
+                requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+                .json()
+                .get("telemetry", {})
+                .get("trust_incoming_trace_context")
+            )
+            self.assertTrue(read_back)
+
+            # A non-boolean value must be rejected by config validation.
+            bad = requests.post(
+                set_url,
+                json={"telemetry": {"trust_incoming_trace_context": "yes"}},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                bad.status_code,
+                400,
+                f"expected 400 for non-boolean value, got {bad.status_code}: {bad.text}",
+            )
+        finally:
+            requests.post(
+                set_url,
+                json={"telemetry": {"trust_incoming_trace_context": bool(prior)}},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+
+    def test_037_model_update_check_lifecycle(self):
+        """A successful re-pull clears a staged per-model update marker.
+
+        The production fix stores the processed upstream snapshot per model
+        selection in .lemonade_registry.json. Staging only that value as stale
+        exercises the regression without moving refs/main or model files that
+        may be shared by sibling variants in the same repository.
+        """
+        pull_response = requests.post(
+            f"{self.base_url}/pull",
+            json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+        model_response = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(model_response.status_code, 200, model_response.text)
+        model_info = model_response.json()
+        checkpoint = model_info.get("checkpoint") or model_info.get(
+            "checkpoints", {}
+        ).get("main", "")
+        self.assertTrue(checkpoint, "Test model must expose a main checkpoint")
+
+        repo_id = checkpoint.split(":", 1)[0]
+        repo_cache_dir = "models--" + repo_id.replace("/", "--")
+        cache_root = self._server_hf_cache_root(repo_cache_dir)
+        if cache_root is None:
+            self.skipTest(
+                "Cannot locate the server's Hugging Face cache from the test process"
+            )
+
+        provenance_path = os.path.join(
+            cache_root, repo_cache_dir, ".lemonade_registry.json"
+        )
+        self.assertTrue(
+            os.path.isfile(provenance_path),
+            "A successful pull must write per-model registry provenance",
+        )
+
+        with open(provenance_path, "r", encoding="utf-8") as provenance_file:
+            original_provenance = provenance_file.read()
+
+        staged_provenance = json.loads(original_provenance)
+        processed_models = staged_provenance.get("processed_models", {})
+        self.assertIn(
+            ENDPOINT_TEST_MODEL,
+            processed_models,
+            "Pulled model must have a processed snapshot entry",
+        )
+        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get(
+            "snapshot_id", ""
+        )
+        self.assertTrue(original_snapshot, "Processed snapshot must not be empty")
+
+        stale_snapshot = "0" * 40
+        if stale_snapshot == original_snapshot:
+            stale_snapshot = "1" * 40
+        processed_models[ENDPOINT_TEST_MODEL]["snapshot_id"] = stale_snapshot
+
+        try:
+            with open(provenance_path, "w", encoding="utf-8") as provenance_file:
+                json.dump(staged_provenance, provenance_file, indent=2)
+                provenance_file.write("\n")
+
+            stale_response = requests.post(
+                f"{self.base_url}/models/check-updates",
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(stale_response.status_code, 200, stale_response.text)
+            stale_result = stale_response.json()
+            self.assertEqual(stale_result.get("status"), "success")
+            self.assertIn(ENDPOINT_TEST_MODEL, stale_result.get("models", []))
+
+            repull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(repull_response.status_code, 200, repull_response.text)
+
+            fresh_response = requests.post(
+                f"{self.base_url}/models/check-updates",
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(fresh_response.status_code, 200, fresh_response.text)
+            fresh_result = fresh_response.json()
+            self.assertEqual(fresh_result.get("status"), "success")
+            self.assertNotIn(
+                ENDPOINT_TEST_MODEL,
+                fresh_result.get("models", []),
+                "Re-pulling the model must clear its update report",
+            )
+        finally:
+            # Keep the shared test cache exactly as it was before this test, even
+            # when an assertion or network request fails midway through.
+            with open(provenance_path, "w", encoding="utf-8") as provenance_file:
+                provenance_file.write(original_provenance)
+
+        print("[OK] /models/check-updates lifecycle clears after re-pull")
 
 
 if __name__ == "__main__":

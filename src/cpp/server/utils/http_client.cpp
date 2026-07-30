@@ -13,6 +13,7 @@
 #include <cctype>
 #include <fstream>
 #include <memory>
+#include <string_view>
 #include <vector>
 #include <mbedtls/md.h>
 
@@ -253,6 +254,12 @@ static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* st
     return written;
 }
 
+static int cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t, curl_off_t,
+                                    curl_off_t) {
+    auto* flag = static_cast<std::atomic<bool>*>(clientp);
+    return (flag && flag->load()) ? 1 : 0;
+}
+
 struct ProgressData {
     ProgressCallback callback;
     bool cancelled = false;
@@ -372,24 +379,45 @@ bool apply_http_security_policy(
         return curl_easy_setopt(curl, option, value) == CURLE_OK;
     };
 
+    const auto set_proto = [&](CURLoption opt_str, CURLoption opt_bit, const char* str_val, long bit_val) {
+        if (set(opt_str, str_val)) {
+            return true;
+        }
+        return set(opt_bit, bit_val);
+    };
+
     const auto apply_protocols = [&](const char* protocols,
                                      const char* redirect_protocols) {
+        std::string_view p(protocols);
+        std::string_view r(redirect_protocols);
+        bool p_has_https = (p.find("https") != std::string_view::npos || p.find("HTTPS") != std::string_view::npos);
+        bool p_has_http = (p.find("http,") != std::string_view::npos || p.find("HTTP,") != std::string_view::npos ||
+                           p.find(",http") != std::string_view::npos || p.find(",HTTP") != std::string_view::npos ||
+                           p == "http" || p == "HTTP");
+        bool r_has_https = (r.find("https") != std::string_view::npos || r.find("HTTPS") != std::string_view::npos);
+        bool r_has_http = (r.find("http,") != std::string_view::npos || r.find("HTTP,") != std::string_view::npos ||
+                           r.find(",http") != std::string_view::npos || r.find(",HTTP") != std::string_view::npos ||
+                           r == "http" || r == "HTTP");
+
+        long proto_mask = (p_has_https ? 2L : 0L) | (p_has_http ? 1L : 0L);
+        long redir_mask = (r_has_https ? 2L : 0L) | (r_has_http ? 1L : 0L);
+
         if (!set(CURLOPT_FOLLOWLOCATION, follow_redirects ? 1L : 0L) ||
-            !set(CURLOPT_PROTOCOLS_STR, protocols)) {
+            !set_proto(CURLOPT_PROTOCOLS_STR, CURLOPT_PROTOCOLS, protocols, proto_mask)) {
             return false;
         }
         if (!follow_redirects) {
             return true;
         }
         return set(CURLOPT_MAXREDIRS, 5L) &&
-               set(CURLOPT_REDIR_PROTOCOLS_STR, redirect_protocols);
+               set_proto(CURLOPT_REDIR_PROTOCOLS_STR, CURLOPT_REDIR_PROTOCOLS, redirect_protocols, redir_mask);
     };
 
     switch (policy) {
         case HttpSecurityPolicy::TrustedLoopback:
             // Managed loopback backends are plain HTTP and must never redirect.
             return set(CURLOPT_FOLLOWLOCATION, 0L) &&
-                   set(CURLOPT_PROTOCOLS_STR, "http");
+                   set_proto(CURLOPT_PROTOCOLS_STR, CURLOPT_PROTOCOLS, "http", 1L /* CURLPROTO_HTTP */);
         case HttpSecurityPolicy::AllowInsecureHttp:
             return apply_protocols("http,https", "http,https");
         case HttpSecurityPolicy::ExternalHttpsOnly:
@@ -456,7 +484,8 @@ HttpResponse HttpClient::post(const std::string& url,
                               const std::string& body,
                               const std::map<std::string, std::string>& headers,
                               long timeout_seconds,
-                              HttpSecurityPolicy policy) {
+                              HttpSecurityPolicy policy,
+                              std::atomic<bool>* cancel_flag) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -476,6 +505,12 @@ HttpResponse HttpClient::post(const std::string& url,
     }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+
+    if (cancel_flag) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel_flag);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
 
     // Add custom headers
     bool has_content_type = false;

@@ -12,6 +12,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
 | `GET` | [`/v1/downloads`](#get-v1downloads) | List server-owned model download jobs |
 | `POST` | [`/v1/downloads/control`](#post-v1downloadscontrol) | Pause, cancel, or remove server-owned model download jobs |
+| `GET` | [`/v1/registry/search`](#get-v1registrysearch) | Search Hugging Face or ModelScope for model repositories |
 | `GET` | [`/v1/pull/variants`](#get-v1pullvariants) | Enumerate GGUF variants for a Hugging Face checkpoint |
 | `POST` | [`/v1/delete`](#post-v1delete) | Delete a model |
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
@@ -84,6 +85,25 @@ curl -X POST http://localhost:13305/v1/classify   -H "Content-Type: application/
 Label names come from the model's `id2label` — from `config.json`, or from `manifest.json` when one is present to override it; some upstream models only declare generic `LABEL_<n>` names — see the model card for their meaning.
 
 Malformed requests (invalid JSON, missing `input`/`text`, non-string fields, non-positive `top_k`) return `400` with an `error` object before any model is loaded.
+
+## Routing (`collection.router`)
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Naming a registered `collection.router` model in the `model` field of a
+`chat/completions` or `completions` request triggers the routing engine: the
+server picks a candidate by the policy's first-matching rule (fail-open to
+`default_model`) and forwards the request to it. No dedicated endpoint or `"auto"`
+model is involved.
+
+The decision is reported on the response:
+
+- Header **`x-lemonade-route`** — the matched rule id, or `default`.
+- Request field **`route_trace: true`** adds an **`x_lemonade_route`** object to the
+  response body: `{ route_to, matched_rule, default_used, outputs, trace[] }`
+  (`route_to` is the candidate that answered). For streaming responses it is
+  attached to the first SSE event.
+
+See [Router Policies](../dev/router-policy.md) for authoring the policy.
 
 ## `POST /v1/models/check-updates`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -504,6 +524,68 @@ If the job is already missing and `action` is `remove`, the endpoint returns:
 {"status":"ok","missing":true}
 ```
 
+## `GET /v1/registry/search`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Search a remote model registry (Hugging Face or ModelScope) for repositories matching a text query. This endpoint returns **candidate repositories** based on registry metadata; it does not verify that a repository contains servable files. The desktop app's Model Manager follows up with [`/v1/pull/variants`](#get-v1pullvariants) on each candidate and only offers a download for repositories whose file listing passes that validation.
+
+Requires network access: returns 400 with code `lemond_offline` when the server is in offline mode.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `query` | Yes | Search text, minimum 3 characters after trimming. `q` is accepted as an alias. |
+| `source` | No | Registry to search: `huggingface` (default) or `modelscope`. Aliases `hf` and `ms` are accepted; the canonical name is echoed in the response. |
+| `limit` | No | Maximum number of results, an integer from 1 to 50. Default 12. |
+| `format` | No | The only accepted value is `gguf`. Biases search and ranking toward GGUF repositories and echoes `"format": "gguf"` in the response. |
+
+Example request:
+
+```bash
+curl 'http://localhost:13305/v1/registry/search?source=modelscope&query=qwen&format=gguf'
+```
+
+### Response
+
+```json
+{
+  "source": "modelscope",
+  "query": "qwen",
+  "format": "gguf",
+  "total": 128,
+  "results": [
+    {
+      "repository_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+      "display_name": "Qwen2.5-3B-Instruct-GGUF",
+      "source": "modelscope",
+      "repository_type": "model",
+      "description": "GGUF quantizations of Qwen2.5-3B-Instruct",
+      "tags": ["gguf", "chat"],
+      "task": "text-generation",
+      "downloads": 222500,
+      "likes": 12,
+      "has_gguf": true
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `source`, `query` | Echoed input (`source` canonicalized to `huggingface` or `modelscope`). |
+| `format` | Present only when `format=gguf` was requested. |
+| `total` | Total match count reported by the upstream registry; may exceed the number of returned results. |
+| `results[]` | Up to `limit` repositories, each with `repository_id`, `display_name`, `source`, `repository_type`, `description`, `tags`, `task`, `downloads`, `likes`, and `has_gguf`. `has_gguf` is a hint derived from registry metadata, not proof of a servable model — [`/v1/pull/variants`](#get-v1pullvariants) performs the authoritative file-level validation. |
+
+### Error responses
+
+| Status | Cause |
+|--------|-------|
+| 400 | `query` shorter than 3 characters, invalid `source`, `limit`, or `format`, or the server is in offline mode (`code: lemond_offline`). |
+| 429 | The upstream registry rate-limited the request. |
+| 502 | Other upstream transport or parsing failures; the body includes the upstream status code when available. |
+
 ## `GET /v1/pull/variants`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -867,6 +949,7 @@ This endpoint is not part of the OpenAI API, so it is a Lemonade-specific extens
 | `image` | Yes | Base64-encoded input image (optionally a `data:` URL). |
 | `resolution` | No | Cascade resolution: `512`, `1024`, or `1536`. Default: `512`. |
 | `bg_removal` | No | Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with real backgrounds. |
+| `uv` | No | UV atlas method: `xatlas` (default) or `box`. `xatlas` runs a full UV unwrap giving every face unique atlas space — best quality, but chart computation is superlinear in face count. `box` is a faster 6-plane projection with occlusion-aware bucket assignment and depth-tested rasterization; small texture artifacts remain possible in concave regions. |
 | `seed` | No | Random seed for reproducibility. |
 | `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `glb`); other values are rejected with `400 Bad Request`. Default: `glb`. |
 
@@ -979,6 +1062,8 @@ curl http://localhost:13305/v1/health
   - `type` - Model type: `"llm"`, `"embedding"`, `"reranking"`, `"transcription"`, `"image"`, or `"tts"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `pinned` - Boolean indicating if the model is currently pinned to prevent auto-eviction
+  - `is_busy` - Boolean indicating if the model has active requests or maintenance in progress
+  - `is_streaming` - Boolean indicating if the model is actively generating output tokens (true after first chunk arrives, false when all streaming requests complete)
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `pid` - The Process ID (PID) of the backend engine handling this model
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
@@ -1666,6 +1751,24 @@ curl http://localhost:13305/live
 ```json
 {"status":"ok"}
 ```
+
+## Job Engine API
+
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Run client-posted sequences of server operations as durable, background **jobs** — steps that pass data forward, branch on results, and have a pause / interrupt / resume / delete / query lifecycle that survives client disconnect and server restart. Exclusive ops (`load`/`unload`/`chat`) hold a Router slot so normal traffic queues behind a running job.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/v1/jobs` | Create a job from `{name, definition:{steps} \| steps, inputs}`; returns `202 {"id"}`, or `400` on an invalid step graph. |
+| `GET` | `/v1/jobs` | List job summaries. |
+| `GET` | `/v1/jobs/{id}` | Full job record (status, per-step state, context). |
+| `POST` | `/v1/jobs/{id}/pause` | Stop after the current step. |
+| `POST` | `/v1/jobs/{id}/interrupt` | Cancel the current step now; resumable. |
+| `POST` | `/v1/jobs/{id}/resume` | Continue a paused/interrupted job. |
+| `DELETE` | `/v1/jobs/{id}` | Remove a job. |
+
+See [`docs/dev/job-system.md`](../dev/job-system.md) for the step schema, op set, and lifecycle, and [`docs/dev/job-expression-language.md`](../dev/job-expression-language.md) for the `when`/`branch` expression grammar.
 
 ## Internal Endpoints
 

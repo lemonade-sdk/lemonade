@@ -19,6 +19,10 @@ permissions:
   contents: write
   actions: read  # Required for SignPath to read workflow/job details
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
 
@@ -294,16 +298,24 @@ jobs:
           cmake --build --preset default --target test_routing_policy_evaluator
           cmake --build --preset default --target test_routing_policy_registry
           cmake --build --preset default --target test_routing_policy_semantic
+          cmake --build --preset default --target test_routing_policy_llm_router
           cmake --build --preset default --target test_routing_policy_deterministic
           cmake --build --preset default --target test_routing_policy_engine
           cmake --build --preset default --target test_routing_policy_parser
           cmake --build --preset default --target test_routing_policy_store
           cmake --build --preset default --target test_model_manager_collection_validation
           cmake --build --preset default --target test_routing_classifier_services
+          cmake --build --preset default --target test_routing_conformance_corpus
           cmake --build --preset default --target test_network_utils
           cmake --build --preset default --target test_mcp_client_config
+          cmake --build --preset default --target test_job_expr
+          cmake --build --preset default --target test_job_graph
+          cmake --build --preset default --target test_origin_utils
+          cmake --build --preset default --target test_model_residency
+          cmake --build --preset default --target test_custom_args
+          cmake --build --preset default --target test_archive_platform
           cd build
-          ctest --output-on-failure -R "ProcessManagerTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config"
+          ctest --output-on-failure -R "ProcessManagerTest|ArchivePlatformTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|LlmRouter|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|RoutingConformanceCorpusTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest|ModelResidencyTest|CustomArgsTest"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -605,16 +617,24 @@ jobs:
           cmake --build --preset default --target test_routing_policy_evaluator
           cmake --build --preset default --target test_routing_policy_registry
           cmake --build --preset default --target test_routing_policy_semantic
+          cmake --build --preset default --target test_routing_policy_llm_router
           cmake --build --preset default --target test_routing_policy_deterministic
           cmake --build --preset default --target test_routing_policy_engine
           cmake --build --preset default --target test_routing_policy_parser
           cmake --build --preset default --target test_routing_policy_store
           cmake --build --preset default --target test_model_manager_collection_validation
           cmake --build --preset default --target test_routing_classifier_services
+          cmake --build --preset default --target test_routing_conformance_corpus
           cmake --build --preset default --target test_network_utils
           cmake --build --preset default --target test_mcp_client_config
+          cmake --build --preset default --target test_job_expr
+          cmake --build --preset default --target test_job_graph
+          cmake --build --preset default --target test_origin_utils
+          cmake --build --preset default --target test_model_residency
+          cmake --build --preset default --target test_custom_args
+          cmake --build --preset default --target test_archive_platform
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|NetworkUtilsTest|mcp_client_config"
+          ctest --output-on-failure -R "ArchivePlatformTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|LlmRouter|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|RoutingConformanceCorpusTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest|ModelResidencyTest|CustomArgsTest"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
@@ -734,6 +754,12 @@ jobs:
           echo "Running WebSocket auth tests..."
           .venv/bin/python test/server_websocket_auth.py
           echo "WebSocket auth tests PASSED!"
+          echo "Running HTTPS tray smoke test..."
+          .venv/bin/python test/test_tray_https.py
+          echo "HTTPS tray smoke test PASSED!"
+          echo "Running job engine tests..."
+          .venv/bin/python test/server_jobs.py --lemond-binary ./build/lemond
+          echo "Job engine tests PASSED!"
 
       - name: Run web-app path traversal tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -1169,6 +1195,11 @@ jobs:
             runner: [self-hosted, Windows, lemon-prod]
           - name: classify-onnxruntime
             script: server_classify.py
+            extra_args: "--wrapped-server onnxruntime"
+            backends: "cpu"
+            runner: [self-hosted, Windows, lemon-prod]
+          - name: router-onnxruntime
+            script: server_router.py
             extra_args: "--wrapped-server onnxruntime"
             backends: "cpu"
             runner: [self-hosted, Windows, lemon-prod]
@@ -2104,6 +2135,13 @@ jobs:
           .venv/bin/python test/server_websocket_auth.py
           echo "WebSocket auth tests PASSED!"
 
+      - name: Test router
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu router"
+          .venv/bin/python test/server_router.py --cli-binary lemonade
+
       # The full smoke test can be added to a different GPU equipped pipeline
       # as well if needed, but it would significantly add to the pipeline runtime.
       - name: Test mcp
@@ -2139,6 +2177,13 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu streaming-errors"
           .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
+
+      - name: Test jobs
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu jobs"
+          .venv/bin/python test/server_jobs.py --lemond-binary lemond
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
@@ -2371,6 +2416,13 @@ jobs:
           echo "Running WebSocket idle test..."
           $VENV_PYTHON test/test_websocket_idle.py
           echo "WebSocket idle test PASSED!"
+
+      - name: Test router
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
+        shell: bash
+        run: |
+          $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "${{ matrix.os }} router"
+          $VENV_PYTHON test/server_router.py --cli-binary "$CLI_BINARY"
 
       - name: Test web-app path traversal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}

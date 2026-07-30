@@ -1,4 +1,5 @@
 #include "lemon/ollama_api.h"
+#include "lemon/error_types.h"
 #include "lemon/model_types.h"
 #include "lemon/runtime_config.h"
 #include <iostream>
@@ -104,6 +105,18 @@ static bool send_backend_error(const json& response, httplib::Response& res) {
 // Ollama → OpenAI option name mapping (ollama_key → openai_key)
 // Options where both names are the same use identical strings.
 // ============================================================================
+static void set_ollama_residency_conflict_response(
+    const RouterResidencyConflictException& error,
+    httplib::Response& res) {
+    res.status = 409;
+    json body = {
+        {"error", error.what()},
+        {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+        {"code", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+    };
+    res.set_content(body.dump(), "application/json");
+}
+
 struct OptionMapping { const char* ollama_key; const char* openai_key; };
 
 static const OptionMapping OPTION_MAPPINGS[] = {
@@ -227,7 +240,8 @@ std::string OllamaApi::normalize_model_name(const std::string& name) {
 void OllamaApi::auto_load_model(const std::string& model, const json& request_options) {
     std::string name = normalize_model_name(model);
 
-    if (router_->is_model_loaded(name)) {
+    if (router_->ensure_loaded_model_residency(
+            name, LoadPurpose::UserInference)) {
         if (request_options.contains("ctx_size")) {
             auto loaded_ctx = router_->get_model_recipe_options(name).get_option("ctx_size");
             LOG(DEBUG, "OllamaApi")
@@ -731,6 +745,9 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
         // Auto-load the model
         try {
             auto_load_model(model, extract_auto_load_options(request_json));
+        } catch (const RouterResidencyConflictException& e) {
+            set_ollama_residency_conflict_response(e, res);
+            return;
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
@@ -863,6 +880,9 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
 
         try {
             auto_load_model(model, extract_auto_load_options(request_json));
+        } catch (const RouterResidencyConflictException& e) {
+            set_ollama_residency_conflict_response(e, res);
+            return;
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
@@ -1300,6 +1320,9 @@ void OllamaApi::handle_embed(const httplib::Request& req, httplib::Response& res
 
         try {
             auto_load_model(model, extract_auto_load_options(request_json));
+        } catch (const RouterResidencyConflictException& e) {
+            set_ollama_residency_conflict_response(e, res);
+            return;
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found"}};
@@ -1367,6 +1390,9 @@ void OllamaApi::handle_embeddings(const httplib::Request& req, httplib::Response
 
         try {
             auto_load_model(model, extract_auto_load_options(request_json));
+        } catch (const RouterResidencyConflictException& e) {
+            set_ollama_residency_conflict_response(e, res);
+            return;
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found"}};

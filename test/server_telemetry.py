@@ -127,6 +127,8 @@ def parse_span(data):
             span["traceId"] = val.hex()
         elif field_num == 2:
             span["spanId"] = val.hex()
+        elif field_num == 4:
+            span["parentSpanId"] = val.hex()
         elif field_num == 5:
             span["name"] = val.decode("utf-8", errors="replace")
         elif field_num == 6:
@@ -306,12 +308,12 @@ class TelemetryTestBase(ServerTestBase):
         super().tearDownClass()
 
     @classmethod
-    def _auth_post(cls, url, json_body, timeout=TIMEOUT_DEFAULT):
-        headers = {}
+    def _auth_post(cls, url, json_body, timeout=TIMEOUT_DEFAULT, headers=None):
+        req_headers = dict(headers or {})
         api_key = os.environ.get("LEMONADE_API_KEY")
         if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-        return requests.post(url, json=json_body, headers=headers, timeout=timeout)
+            req_headers["Authorization"] = f"Bearer {api_key}"
+        return requests.post(url, json=json_body, headers=req_headers, timeout=timeout)
 
     @classmethod
     def _auth_get(cls, url, timeout=TIMEOUT_DEFAULT):
@@ -332,6 +334,9 @@ class TelemetryTestBase(ServerTestBase):
             "hide_inputs": kwargs.pop("hide_inputs", False),
             "hide_outputs": kwargs.pop("hide_outputs", False),
             "hide_thinking": kwargs.pop("hide_thinking", False),
+            "trust_incoming_trace_context": kwargs.pop(
+                "trust_incoming_trace_context", False
+            ),
             "max_queue_capacity": kwargs.pop("max_queue_capacity", 1000),
         }
         otlp_params = {
@@ -385,7 +390,7 @@ class TelemetryTestBase(ServerTestBase):
         attrs = {a["key"]: a["value"] for a in span["attributes"]}
         return span, attrs
 
-    def _chat_completion(self, content, port=PORT, **extra):
+    def _chat_completion(self, content, port=PORT, request_headers=None, **extra):
         payload = {
             "model": ENDPOINT_TEST_MODEL,
             "messages": [{"role": "user", "content": content}],
@@ -393,7 +398,9 @@ class TelemetryTestBase(ServerTestBase):
             **extra,
         }
         res = self._auth_post(
-            f"http://localhost:{port}/api/v1/chat/completions", payload
+            f"http://localhost:{port}/api/v1/chat/completions",
+            payload,
+            headers=request_headers,
         )
         self.assertEqual(res.status_code, 200, res.text)
         return res
@@ -728,6 +735,89 @@ class CoreTracingTests(TelemetryTestBase):
         self.assertEqual(
             _get_header_value(span_received["headers"], "x-json-header"), "OK"
         )
+
+
+# A fixed, valid W3C traceparent (version 00): non-zero 32-hex trace id and
+# 16-hex parent id with the sampled flag set.
+_TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
+_PARENT_ID = "00f067aa0ba902b7"
+_TRACEPARENT = f"00-{_TRACE_ID}-{_PARENT_ID}-01"
+
+
+class TraceContextTests(TelemetryTestBase):
+    """W3C traceparent ingestion gated by telemetry.trust_incoming_trace_context."""
+
+    _pull_base_model = True
+
+    def test_017_adopts_incoming_trace_context(self):
+        """With the flag enabled, a valid traceparent sets the span's trace id and parent."""
+        self._enable_telemetry(trust_incoming_trace_context=True)
+        self._chat_completion(
+            "Say hello.", request_headers={"traceparent": _TRACEPARENT}
+        )
+
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received, "Telemetry span was not received.")
+        span, _ = self._extract_span(span_received)
+        self.assertEqual(span["traceId"], _TRACE_ID)
+        self.assertEqual(span.get("parentSpanId"), _PARENT_ID)
+
+    def test_018_adopts_incoming_trace_context_json(self):
+        """The http/json OTLP path also adopts the incoming trace context."""
+        self._enable_telemetry(trust_incoming_trace_context=True, protocol="http/json")
+        self._chat_completion(
+            "Say hello.", request_headers={"traceparent": _TRACEPARENT}
+        )
+
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received, "Telemetry span was not received.")
+        span, _ = self._extract_span(span_received)
+        self.assertEqual(span["traceId"], _TRACE_ID)
+        self.assertEqual(span.get("parentSpanId"), _PARENT_ID)
+
+    def test_019_ignores_traceparent_when_disabled(self):
+        """With the flag disabled (default), the traceparent is ignored: fresh root span."""
+        self._enable_telemetry(trust_incoming_trace_context=False)
+        self._chat_completion(
+            "Say hello.", request_headers={"traceparent": _TRACEPARENT}
+        )
+
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received, "Telemetry span was not received.")
+        span, _ = self._extract_span(span_received)
+        self.assertNotEqual(span["traceId"], _TRACE_ID)
+        self.assertNotIn("parentSpanId", span)
+
+    def test_020_malformed_traceparent_falls_back_to_root(self):
+        """Malformed headers are ignored safely; the span starts a fresh root trace."""
+        self._enable_telemetry(trust_incoming_trace_context=True)
+        malformed = {
+            "too_short": "not-a-valid-header",
+            "zero_trace_id": f"00-{'0' * 32}-{_PARENT_ID}-01",
+            "zero_parent_id": f"00-{_TRACE_ID}-{'0' * 16}-01",
+            "forbidden_version": f"ff-{_TRACE_ID}-{_PARENT_ID}-01",
+            "v00_extra_field": f"00-{_TRACE_ID}-{_PARENT_ID}-01-extra",
+        }
+        for label, header in malformed.items():
+            with self.subTest(case=label):
+                self._chat_completion("Hi.", request_headers={"traceparent": header})
+                span_received = self._wait_for_span()
+                self.assertIsNotNone(span_received, "Telemetry span was not received.")
+                span, _ = self._extract_span(span_received)
+                self.assertNotEqual(span["traceId"], _TRACE_ID)
+                self.assertNotIn("parentSpanId", span)
+
+    def test_021_future_version_traceparent_supported(self):
+        """A higher version with a trailing field is parsed using the first four fields."""
+        self._enable_telemetry(trust_incoming_trace_context=True)
+        future = f"01-{_TRACE_ID}-{_PARENT_ID}-01-extra"
+        self._chat_completion("Hi.", request_headers={"traceparent": future})
+
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received, "Telemetry span was not received.")
+        span, _ = self._extract_span(span_received)
+        self.assertEqual(span["traceId"], _TRACE_ID)
+        self.assertEqual(span.get("parentSpanId"), _PARENT_ID)
 
 
 class PrivacyTests(TelemetryTestBase):
@@ -1463,6 +1553,7 @@ if __name__ == "__main__":
         [
             ConfigTests,
             CoreTracingTests,
+            TraceContextTests,
             PrivacyTests,
             ErrorTests,
             ModelTypeTests,

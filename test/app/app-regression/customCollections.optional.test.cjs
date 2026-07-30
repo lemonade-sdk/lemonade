@@ -50,7 +50,7 @@ const tests = [
       const skip = skipIfMissing();
       if (skip) return skip;
       const app = normalizeWhitespace(readSource(APP));
-      assertIncludes(app, 'downloadModelExportFile(request.model_name)', 'Collection export should fetch /models/{id} and save it via the shared export helper.');
+      assertIncludes(app, 'buildModelExportFile(request.model_name)', 'Collection export should fetch /models/{id} and save it via the shared export helper.');
       const modelData = normalizeWhitespace(readSource(MODEL_DATA));
       assertIncludes(modelData, 'EXPORT_KNOWN_KEYS', 'The shared export transform should allow-list keys (mirroring the CLI kKnownKeys).');
       assertMatches(modelData, /normalizeModelExportPayload/, 'The export transform should be a pure, testable function.');

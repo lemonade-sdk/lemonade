@@ -13,14 +13,22 @@ jobs:
   app-regression-tests:
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.workflow }}-app-regression-${{ github.ref }}
-      cancel-in-progress: true
+      group: ${{ github.workflow }}-app-regression-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v5
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: src/app/package-lock.json
+      - name: Install app dependencies
+        working-directory: src/app
+        run: npm ci
+      - name: Type-check application (same strictness as the production Webpack build)
+        working-directory: src/app
+        run: npm run typecheck
       - name: Run app regression tests
         run: node test/app/run-app-regression-tests.cjs
 
@@ -30,8 +38,8 @@ jobs:
     # if the committed doc is stale — the same guarantee a lint provides.
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.workflow }}-backend-docs-${{ github.ref }}
-      cancel-in-progress: true
+      group: ${{ github.workflow }}-backend-docs-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     env:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -58,8 +66,8 @@ jobs:
   markdown-link-check:
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v5
       - name: Setup Node.js

@@ -74,7 +74,16 @@ runs:
           }
         }
 
-        $paths = @($env:CLEANUP_PATHS -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $paths = @($env:CLEANUP_PATHS -split "`r?`n" | ForEach-Object {
+          $trimmed = $_.Trim()
+          if ($trimmed) {
+            $expanded = [System.Environment]::ExpandEnvironmentVariables($trimmed)
+            if ($expanded.StartsWith("~")) {
+              $expanded = Join-Path $env:USERPROFILE $expanded.Substring(1).TrimStart("\/")
+            }
+            $expanded
+          }
+        } | Where-Object { $_ })
         if ($paths.Count -eq 0) {
           Write-Host "No paths provided for cleanup."
           exit 0

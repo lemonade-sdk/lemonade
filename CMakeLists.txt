@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.0.0)
+project(lemon_cpp VERSION 11.5.1)
 
 include(CTest)
 
@@ -343,7 +343,7 @@ endif()
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG 89c932f313c6437c38f2982869beacc89c2f2246  # v0.26.0
+        GIT_TAG fe332fa06bac76a1c6d402c08f414052999347da  # v0.47.0
         GIT_SHALLOW TRUE
     )
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
@@ -620,6 +620,8 @@ include_directories(
 set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/collection_orchestrator.cpp
+    src/cpp/server/jobs/job_ops.cpp
+    src/cpp/server/jobs/job_manager.cpp
     src/cpp/server/router.cpp
     src/cpp/server/global_vram_monitor.cpp
     src/cpp/server/eviction_engine.cpp
@@ -636,6 +638,7 @@ set(SOURCES_CORE
     src/cpp/server/recipe_options.cpp
     src/cpp/server/routing_classifier_services.cpp
     src/cpp/server/routing_classifier_services_router.cpp
+    src/cpp/server/thinking_controls.cpp
     src/cpp/server/routing_policy.cpp
     src/cpp/server/routing_policy_parser.cpp
     src/cpp/server/routing_policy_store.cpp
@@ -649,6 +652,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
     src/cpp/server/utils/path_utils.cpp
+    src/cpp/server/utils/url_utils.cpp
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
@@ -821,6 +825,16 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
     )
     target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
     add_test(NAME vllm_arg_resolver COMMAND test_vllm_arg_resolver)
+endif()
+
+set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_request.cpp")
+if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
+    add_executable(test_llamacpp_request
+        ${LLAMACPP_REQUEST_TEST_SOURCE}
+        src/cpp/server/backends/llamacpp/llamacpp_request.cpp
+    )
+    target_link_libraries(test_llamacpp_request PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME llamacpp_request COMMAND test_llamacpp_request)
 endif()
 
 set(MCP_CLIENT_CONFIG_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mcp_client_config.cpp")
@@ -1314,11 +1328,11 @@ if(APPLE)
     endif()
 endif()
 
-# Add tray application subdirectory
-add_subdirectory(src/cpp/tray)
-
 # Add CLI application subdirectory
 add_subdirectory(src/cpp/cli)
+
+# Add tray application subdirectory
+add_subdirectory(src/cpp/tray)
 
 # Wire WiX installer targets to the binaries and frontend artifacts they package.
 # Doing this after the subdirectories are added ensures MSBuild gets real project refs.
@@ -1855,6 +1869,19 @@ message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
 # C++ Unit Tests
 # ============================================================
 
+set(_ARCHIVE_PLATFORM_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_archive_platform.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ARCHIVE_PLATFORM_TEST_SRC}")
+    add_executable(test_archive_platform
+        test/cpp/test_archive_platform.cpp
+    )
+    target_include_directories(test_archive_platform PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    add_test(NAME ArchivePlatformTest COMMAND test_archive_platform)
+endif()
+
 # ProcessManager zombie detection and non-mutating reap contract.
 if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(_PROCESS_MANAGER_TEST_SRC
@@ -1894,6 +1921,18 @@ if(EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_ARG_RESOLVER_SRC}")
     )
 
     add_test(NAME FlmArgResolverTest COMMAND test_flm_arg_resolver)
+endif()
+
+# Custom arg parsing helpers (header-only utility shared by all arg resolvers).
+set(_CUSTOM_ARGS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_custom_args.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CUSTOM_ARGS_TEST_SRC}")
+    add_executable(test_custom_args ${_CUSTOM_ARGS_TEST_SRC})
+    target_include_directories(test_custom_args PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    add_test(NAME CustomArgsTest COMMAND test_custom_args)
 endif()
 
 set(_DIR_WATCHER_TEST_SRC
@@ -1940,6 +1979,23 @@ if(EXISTS "${_GGUF_CAPS_TEST_SRC}")
     add_test(NAME GgufCapabilitiesTest COMMAND test_gguf_capabilities)
 endif()
 
+# Model residency role/pool contract for router dependencies
+set(_MODEL_RESIDENCY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_residency.cpp"
+)
+if(EXISTS "${_MODEL_RESIDENCY_TEST_SRC}")
+    add_executable(test_model_residency
+        test/cpp/test_model_residency.cpp
+    )
+    target_include_directories(test_model_residency PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    include(CTest)
+    add_test(NAME ModelResidencyTest COMMAND test_model_residency)
+endif()
+
 # Pure version-resolution policy test (lemon::resolve_latest_pin). Header-only
 # logic, so the test links nothing beyond the standard library — regression
 # coverage for #2265 (fall back to the installed binary when the GitHub
@@ -1958,6 +2014,33 @@ if(EXISTS "${_LATEST_FALLBACK_TEST_SRC}")
 
     include(CTest)
     add_test(NAME LatestVersionFallbackTest COMMAND test_latest_version_fallback)
+endif()
+
+# Job engine pure core: the `when`/`branch` expression evaluator + reference
+# resolution, and step-graph validation (forward-only ⇒ no loops). Header-only,
+# so these link only nlohmann/json.
+set(_JOB_EXPR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_expr.cpp")
+if(EXISTS "${_JOB_EXPR_TEST_SRC}")
+    add_executable(test_job_expr test/cpp/test_job_expr.cpp)
+    target_include_directories(test_job_expr PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_job_expr PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_test(NAME JobExprTest COMMAND test_job_expr)
+endif()
+
+set(_JOB_GRAPH_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_graph.cpp")
+if(EXISTS "${_JOB_GRAPH_TEST_SRC}")
+    add_executable(test_job_graph test/cpp/test_job_graph.cpp)
+    target_include_directories(test_job_graph PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_job_graph PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_test(NAME JobGraphTest COMMAND test_job_graph)
 endif()
 
 # Backend install atomicity (staging + verified atomic swap).
@@ -2067,6 +2150,28 @@ if(EXISTS "${_ROUTING_SEMANTIC_TEST_SRC}")
     add_test(NAME RoutingPolicySemanticTest COMMAND test_routing_policy_semantic)
 endif()
 
+# LLM router classifier + routing.router desugaring (issue #2405): the L0a
+# on-ramp. Unit + parser + end-to-end tests against FakeClassifierServices.
+set(_ROUTING_LLM_ROUTER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_llm_router.cpp"
+)
+if(EXISTS "${_ROUTING_LLM_ROUTER_TEST_SRC}")
+    add_executable(test_routing_policy_llm_router
+        test/cpp/test_routing_policy_llm_router.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+    )
+    target_include_directories(test_routing_policy_llm_router PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_llm_router PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RoutingPolicyLlmRouterTest COMMAND test_routing_policy_llm_router)
+endif()
+
 # Routing deterministic leaf conditions (issue #2380): keywords/regex/min_chars/
 # max_chars/has_*/metadata conditions and their leaf-factory map.
 set(_ROUTING_DETERMINISTIC_TEST_SRC
@@ -2138,6 +2243,7 @@ if(EXISTS "${_ROUTING_PARSER_TEST_SRC}")
     add_test(NAME RoutingPolicyParserTest COMMAND test_routing_policy_parser)
 endif()
 
+
 # Routing policy store (issue #2383): directory-backed policy loading and
 # DirectoryWatcher-triggered shared_ptr snapshot swaps.
 set(_ROUTING_STORE_TEST_SRC
@@ -2190,6 +2296,39 @@ if(EXISTS "${_ROUTE_DECISION_RESPONSE_TEST_SRC}")
     add_test(NAME RouteDecisionResponseTest COMMAND test_route_decision_response)
 endif()
 
+# Router back-compat conformance corpus (issue #2425): replays the golden
+# policy -> Decision cases under test/conformance/routing/ through the real
+# engine and asserts each emitted Decision equals its recorded expectation.
+set(_ROUTING_CONFORMANCE_CORPUS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_conformance_corpus.cpp"
+)
+if(EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
+    add_executable(test_routing_conformance_corpus
+        test/cpp/test_routing_conformance_corpus.cpp
+        src/cpp/server/route_decision_response.cpp
+        src/cpp/server/routing_classifier_services.cpp
+        src/cpp/server/thinking_controls.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+    )
+    target_include_directories(test_routing_conformance_corpus PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_conformance_corpus PRIVATE nlohmann_json::nlohmann_json)
+    if(USE_SYSTEM_HTTPLIB)
+        target_link_libraries(test_routing_conformance_corpus PRIVATE lemonade-httplib)
+    else()
+        target_link_libraries(test_routing_conformance_corpus PRIVATE httplib::httplib)
+    endif()
+    target_compile_definitions(test_routing_conformance_corpus PRIVATE
+        CONFORMANCE_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/conformance/routing"
+    )
+
+    include(CTest)
+    add_test(NAME RoutingConformanceCorpusTest COMMAND test_routing_conformance_corpus)
+endif()
+
 # ModelManager collection validation for collection.router registration:
 # /pull-style validation rejects malformed routing and preserves the routing
 # block in ModelInfo::extras after user-model registration.
@@ -2230,6 +2369,7 @@ if(EXISTS "${_ROUTING_CLASSIFIER_SERVICES_TEST_SRC}")
     add_executable(test_routing_classifier_services
         test/cpp/test_routing_classifier_services.cpp
         src/cpp/server/routing_classifier_services.cpp
+        src/cpp/server/thinking_controls.cpp
         src/cpp/server/routing_policy.cpp
     )
     target_include_directories(test_routing_classifier_services PRIVATE
@@ -2305,6 +2445,13 @@ if(EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     add_test(NAME NetworkUtilsTest COMMAND test_network_utils)
 endif()
 
+set(_URL_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_url_utils.cpp")
+if(EXISTS "${_URL_UTILS_TEST_SRC}")
+    add_executable(test_url_utils test/cpp/test_url_utils.cpp)
+    target_link_libraries(test_url_utils PRIVATE lemonade-server-core)
+    add_test(NAME UrlUtilsTest COMMAND test_url_utils)
+endif()
+
 # vLLM CDNA gating: the vllm descriptor support row + asset-family resolution for
 # AMD Instinct (gfx942), alongside the existing RDNA families.
 set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gating.cpp")
@@ -2312,6 +2459,16 @@ if(EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
     target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
     add_test(NAME VllmCdnaGatingTest COMMAND test_vllm_cdna_gating)
+endif()
+
+# llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is
+# published, so the shared Windows/Linux support row must not advertise Windows
+# or nightly installs for gfx950.
+set(_LLAMACPP_GFX950_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_gfx950_gating.cpp")
+if(EXISTS "${_LLAMACPP_GFX950_TEST_SRC}")
+    add_executable(test_llamacpp_gfx950_gating test/cpp/test_llamacpp_gfx950_gating.cpp)
+    target_link_libraries(test_llamacpp_gfx950_gating PRIVATE lemonade-server-core)
+    add_test(NAME LlamacppGfx950GatingTest COMMAND test_llamacpp_gfx950_gating)
 endif()
 
 set(_HTTP_CLIENT_SECURITY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_security.cpp")
@@ -2326,4 +2483,11 @@ if(EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
     target_link_libraries(test_cloud_discovery_policy PRIVATE lemonade-server-core)
     add_test(NAME CloudDiscoveryPolicyTest COMMAND test_cloud_discovery_policy)
+endif()
+
+set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
+if(EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
+    add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
+    target_link_libraries(test_origin_utils PRIVATE lemonade-server-core)
+    add_test(NAME OriginUtilsTest COMMAND test_origin_utils)
 endif()

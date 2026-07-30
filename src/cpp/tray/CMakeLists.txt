@@ -134,6 +134,7 @@ set(TRAY_UI_SOURCES
 if(NOT WIN32)
     list(APPEND TRAY_UI_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/path_utils.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/url_utils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/json_utils.cpp
     )
     # Add platform-specific path implementation
@@ -166,6 +167,14 @@ function(apply_tray_deps target_name)
         target_include_directories(${target_name} PRIVATE ${CLI11_INCLUDE_DIRS})
     else()
         target_link_libraries(${target_name} PRIVATE CLI11::CLI11)
+    endif()
+
+    if(HTTPLIB_SUPPORTS_MBEDTLS)
+        target_link_libraries(${target_name} PRIVATE lemonade-digest-crypto)
+        if(APPLE)
+            find_library(SECURITY_FRAMEWORK Security REQUIRED)
+            target_link_libraries(${target_name} PRIVATE ${SECURITY_FRAMEWORK})
+        endif()
     endif()
 endfunction()
 

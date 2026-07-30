@@ -107,5 +107,9 @@ std::string get_runtime_dir();
  */
 std::string get_downloaded_bin_dir();
 
+bool atomic_replace_file(const std::filesystem::path& src,
+                         const std::filesystem::path& dest,
+                         std::error_code& ec);
+
 } // namespace utils
 } // namespace lemon

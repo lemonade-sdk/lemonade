@@ -7,6 +7,7 @@
 #include "lemon/backends/backend_utils.h"
 #include <string>
 #include <filesystem>
+#include <mutex>
 
 namespace lemon {
 namespace backends {
@@ -65,6 +66,7 @@ private:
 
     std::string model_path_;
     std::filesystem::path temp_dir_;  // Directory for temporary audio files
+    std::mutex inference_mutex_;
 };
 
 namespace whispercpp {

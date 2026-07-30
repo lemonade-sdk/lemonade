@@ -1,6 +1,7 @@
 #include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
+#include "lemon/backends/llamacpp/llamacpp_request.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -11,6 +12,7 @@
 #include <filesystem>
 #include <regex>
 #include <system_error>
+#include <utility>
 #include "lemon/auto_tune.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
@@ -608,14 +610,26 @@ bool LlamaCppServer::downsize() {
     }
 }
 
+json LlamaCppServer::normalize_response_model(json response, const json& request) const {
+    if (response.is_object() && response.contains("model")) {
+        response["model"] = request.value("model", get_model_name());
+    }
+    return response;
+}
+
 json LlamaCppServer::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions",
-                           JsonUtils::with_legacy_max_tokens_alias(request));
+    return normalize_response_model(
+        forward_request("/v1/chat/completions",
+                        llamacpp::sanitize_tool_schema_limits(
+                            JsonUtils::with_legacy_max_tokens_alias(request))),
+        request);
 }
 
 json LlamaCppServer::completion(const json& request) {
-    return forward_request("/v1/completions",
-                           JsonUtils::with_legacy_max_tokens_alias(request));
+    return normalize_response_model(
+        forward_request("/v1/completions",
+                        JsonUtils::with_legacy_max_tokens_alias(request)),
+        request);
 }
 
 json LlamaCppServer::embeddings(const json& request) {
@@ -639,7 +653,31 @@ json LlamaCppServer::tokenize(const json& request_body) {
 }
 
 json LlamaCppServer::responses(const json& request) {
-    return forward_request("/v1/responses", request);
+    return normalize_response_model(
+        forward_request("/v1/responses",
+                        llamacpp::sanitize_tool_schema_limits(request)),
+        request);
+}
+
+void LlamaCppServer::forward_streaming_request(const std::string& endpoint,
+                                               const std::string& request_body,
+                                               httplib::DataSink& sink,
+                                               bool sse,
+                                               long timeout_seconds,
+                                               TelemetryCallback telemetry_callback) {
+    std::string body = request_body;
+    if (endpoint == "/v1/chat/completions" || endpoint == "/v1/responses") {
+        json request = json::parse(request_body, nullptr, false);
+        if (!request.is_discarded()) {
+            if (endpoint == "/v1/chat/completions") {
+                JsonUtils::add_legacy_max_tokens_alias(request);
+            }
+            body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();
+        }
+    }
+
+    WrappedServer::forward_streaming_request(
+        endpoint, body, sink, sse, timeout_seconds, telemetry_callback);
 }
 
 } // namespace backends
@@ -747,8 +785,10 @@ bool is_ggml_hip_plugin_available() {
     std::vector<std::string> possible_paths = {
         // Debian/Ubuntu multiarch path (most common)
         "/usr/lib/x86_64-linux-gnu/ggml/backends0/libggml-hip.so",
-	// Arch AUR path
-	"/usr/lib/libggml-hip.so",
+        // Arch package paths
+        "/usr/lib/libggml-hip.so",
+        "/usr/lib/ggml/libggml-hip.so",
+        "/usr/lib64/ggml/libggml-hip.so",
         // Standard Linux paths
         "/usr/lib/ggml/backends0/libggml-hip.so",
         "/usr/lib64/ggml/backends0/libggml-hip.so"

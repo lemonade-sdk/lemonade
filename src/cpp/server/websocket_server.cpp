@@ -1,5 +1,6 @@
 #include "lemon/router.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/origin_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/websocket_server.h"
 #include "telemetry.h"
@@ -71,60 +72,10 @@ int WebSocketServer::ws_callback(struct lws* wsi,
             auto origin_opt = get_header(wsi, WSI_TOKEN_ORIGIN);
             if (origin_opt && !origin_opt->empty()) {
                 std::string origin = *origin_opt;
-                std::string origin_host = origin;
-                size_t scheme_end = origin.find("://");
-                if (scheme_end != std::string::npos) {
-                    origin_host = origin.substr(scheme_end + 3);
-                }
-                size_t port_pos = std::string::npos;
-                if (!origin_host.empty() && origin_host[0] == '[') {
-                    size_t bracket_end = origin_host.find(']');
-                    if (bracket_end != std::string::npos) {
-                        port_pos = origin_host.find(':', bracket_end);
-                    }
-                } else {
-                    port_pos = origin_host.find(':');
-                }
-                if (port_pos != std::string::npos) {
-                    origin_host = origin_host.substr(0, port_pos);
-                }
-                size_t path_pos = origin_host.find('/');
-                if (path_pos != std::string::npos) {
-                    origin_host = origin_host.substr(0, path_pos);
-                }
+                const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
+                std::string allowed_origins = env_origins ? std::string(env_origins) : "";
 
-                std::string host_header_val;
-                auto host_opt = get_header(wsi, WSI_TOKEN_HOST);
-                if (host_opt && !host_opt->empty()) {
-                    host_header_val = *host_opt;
-                }
-                std::string request_host = host_header_val;
-                size_t r_port_pos = std::string::npos;
-                if (!request_host.empty() && request_host[0] == '[') {
-                    size_t bracket_end = request_host.find(']');
-                    if (bracket_end != std::string::npos) {
-                        r_port_pos = request_host.find(':', bracket_end);
-                    }
-                } else {
-                    r_port_pos = request_host.find(':');
-                }
-                if (r_port_pos != std::string::npos) {
-                    request_host = request_host.substr(0, r_port_pos);
-                }
-                size_t r_path_pos = request_host.find('/');
-                if (r_path_pos != std::string::npos) {
-                    request_host = request_host.substr(0, r_path_pos);
-                }
-
-                // tauri.localhost is the Windows WebView2 origin for the desktop app.
-                bool is_allowed = (origin_host == "localhost" || origin_host == "127.0.0.1" ||
-                                   origin_host == "[::1]" || origin_host == "::1" ||
-                                   origin_host == "tauri.localhost");
-                if (!is_allowed && !request_host.empty() && origin_host == request_host) {
-                    is_allowed = true;
-                }
-
-                if (!is_allowed) {
+                if (!utils::is_websocket_origin_allowed(origin, allowed_origins)) {
                     LOG(WARNING, "WebSocket") << "Rejected connection from unauthorized origin: " << origin << std::endl;
                     return 1;
                 }
@@ -134,8 +85,17 @@ int WebSocketServer::ws_callback(struct lws* wsi,
             if (classify_path(path) == ConnectionKind::invalid) {
                 return 1;
             }
-            if (!server->authenticate_connection(wsi)) {
+            std::string authenticated_token;
+            bool authenticated = false;
+            if (!server->authenticate_connection(wsi, authenticated_token, authenticated)) {
                 return 1;
+            }
+            if (pss) {
+                pss->authenticated = authenticated;
+            }
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                server->pending_authenticated_tokens_[wsi] = authenticated_token;
             }
             break;
         }
@@ -154,13 +114,36 @@ int WebSocketServer::ws_callback(struct lws* wsi,
                                        << " (id: " << pss->connection_id << ")" << std::endl;
             }
 
-            server->handle_connection(pss->connection_id, wsi);
+            std::string token;
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                auto it = server->pending_authenticated_tokens_.find(wsi);
+                if (it != server->pending_authenticated_tokens_.end()) {
+                    token = std::move(it->second);
+                    server->pending_authenticated_tokens_.erase(it);
+                }
+            }
+
+            server->handle_connection(pss->connection_id, wsi, token, pss->authenticated);
             break;
         }
 
-        case LWS_CALLBACK_CLOSED:
+        case LWS_CALLBACK_CLOSED: {
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                server->pending_authenticated_tokens_.erase(wsi);
+            }
             server->handle_close(pss->connection_id);
             break;
+        }
+
+        case LWS_CALLBACK_WSI_DESTROY: {
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                server->pending_authenticated_tokens_.erase(wsi);
+            }
+            break;
+        }
 
         case LWS_CALLBACK_RECEIVE: {
             if (!in || len == 0) {
@@ -289,6 +272,7 @@ void WebSocketServer::stop() {
         connection_websockets_.clear();
         message_queues_.clear();
         receive_buffers_.clear();
+        pending_authenticated_tokens_.clear();
     }
     for (const auto& [_, state] : states) {
         if (!state.realtime_session_id.empty()) {
@@ -394,10 +378,9 @@ std::string WebSocketServer::extract_token_from_wsi(struct lws* wsi) const {
     return token ? strip_bearer_prefix(*token) : "";
 }
 
-bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
-    if (api_key_.empty()) {
-        return true;
-    }
+bool WebSocketServer::authenticate_connection(struct lws* wsi, std::string& out_token, bool& out_authenticated) const {
+    out_token.clear();
+    out_authenticated = false;
 
     auto token = get_header(wsi, WSI_TOKEN_HTTP_AUTHORIZATION);
     if (!token) {
@@ -407,32 +390,40 @@ bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
         token = get_protocol_credential(wsi);
     }
 
+    std::string token_str = token ? strip_bearer_prefix(*token) : "";
+    out_token = token_str;
+
+    if (api_key_.empty()) {
+        out_authenticated = true;
+        return true;
+    }
+
     if (!token) {
         std::string path = get_request_path(wsi);
         ConnectionKind kind = classify_path(path);
         if (kind == ConnectionKind::spans) {
+            out_authenticated = false;
             return true;
         }
         LOG(WARNING, "WebSocket") << "Rejected upgrade for path: " << path << " due to missing credentials" << std::endl;
         return false;
     }
 
-    std::string token_str = strip_bearer_prefix(*token);
-
-    if ((token_str != api_key_) && (admin_api_key_.empty() || (token_str != admin_api_key_))) {
-        LOG(WARNING, "WebSocket") << "Rejected websocket connection with invalid API key for "
-                                  << get_request_path(wsi) << std::endl;
-        return false;
+    if (token_str == api_key_ || (!admin_api_key_.empty() && token_str == admin_api_key_)) {
+        out_authenticated = true;
+        return true;
     }
 
-    return true;
+    LOG(WARNING, "WebSocket") << "Rejected websocket connection with invalid API key for "
+                              << get_request_path(wsi) << std::endl;
+    return false;
 }
 
-void WebSocketServer::handle_connection(const std::string& connection_id, struct lws* wsi) {
+void WebSocketServer::handle_connection(const std::string& connection_id, struct lws* wsi, const std::string& initial_token, bool initial_authenticated) {
     const std::string path = get_request_path(wsi);
     const auto kind = classify_path(path);
 
-    std::string token_str = extract_token_from_wsi(wsi);
+    std::string token_str = initial_token.empty() ? extract_token_from_wsi(wsi) : initial_token;
     auto client_session_id_opt = get_url_arg(wsi, "client_session_id");
     std::string client_session_id = client_session_id_opt ? *client_session_id_opt : "";
 
@@ -444,7 +435,7 @@ void WebSocketServer::handle_connection(const std::string& connection_id, struct
         state.authenticated_token = token_str;
         state.authenticated_token_hash = telemetry::hash_token(token_str);
         state.client_session_id = client_session_id;
-        state.authenticated = api_key_.empty() || (!token_str.empty() && (token_str == api_key_ || token_str == admin_api_key_));
+        state.authenticated = initial_authenticated;
         connection_states_[connection_id] = state;
     }
 

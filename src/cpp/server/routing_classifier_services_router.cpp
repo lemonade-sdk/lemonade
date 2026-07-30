@@ -12,7 +12,9 @@ ClassifierServices make_router_classifier_services(
     return make_classifier_services_from_router_calls(
         [&router](const json& request) { return router.embeddings(request); },
         [&router](const json& request) { return router.chat_completion(request); },
-        std::move(ensure_loaded));
+        std::move(ensure_loaded),
+        [&router](const json& request) { return router.classify(request); },
+        [&router](const std::string& model) { return router.get_model_type(model); });
 }
 
 } // namespace lemon
