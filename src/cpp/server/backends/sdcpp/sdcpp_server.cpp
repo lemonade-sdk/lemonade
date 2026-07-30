@@ -318,6 +318,7 @@ void SDServer::load(const std::string& model_name,
     env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
     if (resolved_backend == "rocm-stable") {
         env_vars.push_back({"AMD_LOG_LEVEL", "4"});
+        env_vars.push_back({"ROCM_KPACK_DEBUG", "1"});
     }
     LOG(DEBUG, "SDServer") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
 #else
@@ -343,6 +344,7 @@ void SDServer::load(const std::string& model_name,
         env_vars.push_back({"PATH", new_path});
         if (resolved_backend == "rocm-stable") {
             env_vars.push_back({"AMD_LOG_LEVEL", "4"});
+            env_vars.push_back({"ROCM_KPACK_DEBUG", "1"});
         }
 
         LOG(INFO, "SDServer") << "ROCm backend: added " << path_to_utf8(exe_dir) << " to PATH" << std::endl;
