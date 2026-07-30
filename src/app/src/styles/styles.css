@@ -277,6 +277,10 @@ input, textarea {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 
+.titlebar--chat .titlebar__nav {
+  left: calc(50% + var(--rail-expanded) / 2);
+}
+
 .titlebar__nav button {
   min-width: 72px;
   height: 30px;
@@ -3599,6 +3603,9 @@ optgroup {
 
 /* ---------- Responsive ---------- */
 @media (max-width: 768px) {
+  .titlebar--chat .titlebar__nav {
+    left: 50%;
+  }
   .chat {
     grid-template-columns: 1fr;
     grid-template-areas:

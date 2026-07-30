@@ -565,7 +565,7 @@ const App: React.FC = () => {
     <>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <header className="titlebar" data-tauri-drag-region>
+        <header className={`titlebar${view === 'chat' ? ' titlebar--chat' : ''}`} data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
           <span className="titlebar__brand-mark" data-tauri-drag-region aria-hidden="true" />
           <span className="titlebar__brand-text" data-tauri-drag-region>lemonade</span>
