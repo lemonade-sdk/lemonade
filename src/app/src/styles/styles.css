@@ -158,6 +158,7 @@ input, textarea {
 
 .titlebar__search {
   grid-column: 3;
+  margin-right: var(--space-3);
   position: relative;
   display: flex;
   align-items: center;
