@@ -112,3 +112,15 @@ Rejected the submitted MCP tools UI because `ChatView.tsx` keeps `role="menu"` o
 ****** .squad/log/20260730T091124Z_scribe_spawn_manifest_session.md (session ledger)
 
 **Review gate status:** Standby pending Swigert's revision submission
+
+## Learnings
+
+### 2026-07-30T09:53:50.152-06:00 — MCP parity design review
+
+The existing MCP gateway is intentionally self-contained in `mcp_server.cpp` with five tools, while lifecycle and diagnostics already have safe read-only or explicit Router/ModelManager/BackendManager APIs. A first parity layer should reject not-downloaded models instead of reusing the auto-load callback, because that callback can download; this keeps MCP lifecycle operations predictable and keeps pull/delete/install/media outside the phase.
+
+Kyle's direct request is a narrow authorization exception to the older frontend-only UI-POC `lemond` restriction. The exception does not authorize GUI changes, new routes, presets, or general server refactors; it authorizes only MCP gateway code, dependency wiring, focused MCP integration tests, and the MCP API documentation.
+
+### 2026-07-30T09:52:57.950-06:00 — MCP parity review
+
+REJECTED the five-tool MCP parity implementation. `lemonade_list_backends` returns raw `BackendManager::get_all_backends_status()`, which includes `action` and `release_url`; this bypasses the local public-data sanitizer and violates the contract forbidding admin controls and backend URLs. The model-info/loaded-state serializers also expose `checkpoint` data even though custom model registration stores checkpoint paths; the sanitizer does not redact checkpoint values, violating the no-filesystem-paths rule. The new tests do not assert either redaction requirement, and the docs should be updated to describe the sanitized backend payload after the implementation is corrected. Revision ownership is locked out: Aaron should revise the C++ MCP implementation, Liebergot should revise `test/server_mcp.py`, and Kranz should revise `docs/api/mcp.md`; none is the original author of the rejected artifact they are assigned.

@@ -4,6 +4,97 @@
 
 
 > Entries older than 2026-07-23 archived to \decisions/archive/2026-07-30.md\.
+# MCP parity implementation
+
+Date: 2026-07-30T09:52:57.950-06:00
+
+## Decision
+
+Implement the first MCP parity phase entirely in the C++ MCP gateway with five
+canonical tools: `lemonade_get_model_info`, `lemonade_load_model`,
+`lemonade_unload_model`, `lemonade_get_server_info`, and
+`lemonade_list_backends`.
+
+## Boundaries
+
+The existing five MCP tools, JSON-RPC batching/notifications/errors, CORS,
+GET-405 behavior, and `/mcp` API-key pre-route remain unchanged. Lifecycle
+operations use public Router and ModelManager APIs, reject unknown,
+unsupported, undownloaded, and virtual models, and do not expose download,
+save-option, delete, install, or admin controls. Backend diagnostics use only
+the read-only BackendManager status API; media and destructive operations remain
+deferred to a later phase.
+
+# Lovell MCP parity review verdict
+
+**Date:** 2026-07-30T09:52:57.950-06:00
+**Verdict:** REJECT
+
+## Blocking defects
+
+1. **Backend diagnostics leak forbidden fields.** `src/cpp/server/mcp_server.cpp:1472-1476` returns the raw result of `BackendManager::get_all_backends_status()`. That API adds `action` and `release_url` (`src/cpp/server/backend_manager.cpp:834-842`). This bypasses the MCP sanitizer and exposes admin-control hints and backend URLs, forbidden by the governing contract. The implementation must whitelist/redact the returned backend fields while retaining the required read-only status API.
+
+2. **Model diagnostics can expose filesystem paths.** `model_info_to_mcp_json()` emits `checkpoint`/`checkpoints` (`src/cpp/server/mcp_server.cpp:167-168`), and `safe_loaded_model()` retains `checkpoint` (`src/cpp/server/mcp_server.cpp:128-134`). `sanitize_public_json()` does not treat checkpoint values as paths. Custom model registration stores checkpoint paths/relative cache paths (`src/cpp/server/server.cpp:5762-5779`), so the MCP contract's prohibition on filesystem paths is not guaranteed. Omit these fields or replace them with a path-safe public representation.
+
+3. **Tests do not enforce the security contract.** `test/server_mcp.py:516-524` checks only the backend list shape, and `test/server_mcp.py:496-514` checks only `pid`/`backend_url` for model info. Add recursive assertions covering `action`, `release_url`, checkpoint/path leakage, and equivalent nested diagnostics.
+
+4. **Documentation must match the corrected public shape.** `docs/api/mcp.md:206-217` describes diagnostics as read-only but does not define the redacted backend payload or the prohibition on control/URL/path fields. Update it with the corrected contract.
+
+## Revision assignments (strict lockout)
+
+- C++ MCP implementation/header and MCP wiring: **Aaron** (not Liebergot).
+- MCP tests: **Liebergot** (not Haise).
+- MCP documentation: **Kranz** (not Liebergot or Haise).
+
+## Verification
+
+`python -m py_compile test/server_mcp.py` and scoped `git diff --check` passed. Live MCP tests were not run because the rebuilt/restarted server was unavailable; the reported core compile does not clear the two contract-level data-exposure defects.
+
+# MCP parity post-rejection retrospective
+
+**Recorded:** 2026-07-30T09:52:57.950-06:00
+**Facilitator:** Lovell
+**Scope:** Retrospective only; no source, test, or documentation artifact was modified.
+
+## Facts established
+
+- `lemonade_list_backends` serializes the raw result of `BackendManager::get_all_backends_status()`. The rejected review identified `action` and `release_url` in that result; both are forbidden in the MCP public contract.
+- `safe_loaded_model()` and `model_info_to_mcp_json()` include `checkpoint` data. The public sanitizer filters selected key names and URL-shaped strings, but does not establish that checkpoint values are safe. Custom model registration can store checkpoint and cache paths.
+- The MCP tests check model-info shape plus `pid` and `backend_url`, check backend-list shape, and check credential-like keys in server diagnostics. They do not recursively reject `action`, `release_url`, checkpoint fields, or filesystem-path leakage.
+- The MCP documentation describes the diagnostic tools as read-only and says that controls, URLs, credentials, and paths are not exposed, but does not define the corrected backend payload or the complete forbidden-field contract.
+- `py_compile` and scoped diff validation passed. The live MCP suite was not run because the rebuilt and restarted server was unavailable.
+- Revision lockout is fixed: Aaron owns the C++ MCP implementation/header and wiring; Liebergot owns the MCP tests; Kranz owns the MCP documentation. Lovell remains the reviewer.
+
+## Facts-only root cause
+
+1. The diagnostic implementation exposed internal backend data directly and relied on a generic sanitizer instead of an explicit public schema for each diagnostic payload.
+2. The model diagnostic serializers retained checkpoint fields without a contract-level guarantee that their values were path-safe.
+3. Test coverage validated shape and selected credential markers, but did not encode the rejected security requirements as recursive assertions.
+4. Documentation covered operation semantics but not the exact safe public payload shape or all forbidden fields.
+5. Verification stopped at static checks because a live server was unavailable; therefore runtime MCP behavior was not demonstrated before rejection.
+
+## Minimal corrective acceptance criteria
+
+1. `lemonade_list_backends` returns only an approved public status shape. `action`, `release_url`, backend URLs, admin/control fields, and equivalent nested data must be absent.
+2. `lemonade_get_model_info` and `lemonade_get_server_info`, including loaded-model state, omit `checkpoint`, `checkpoints`, process IDs, backend URLs, credentials, controls, and filesystem paths or path-bearing values at every nesting level.
+3. Read-only and lifecycle behavior remains unchanged: diagnostics do not mutate state; lifecycle tools do not download, install, delete, or accept arbitrary recipe settings.
+4. `test/server_mcp.py` recursively asserts the forbidden-field and path rules for backend, model, loaded-state, and server diagnostic payloads while retaining existing schema and lifecycle coverage.
+5. `docs/api/mcp.md` documents the approved diagnostic fields and explicitly states the forbidden backend-control, URL, credential, process, checkpoint, and filesystem-path data.
+6. Before re-review, run the targeted C++ build, Python syntax validation, `python test/server_mcp.py` against the rebuilt/restarted server, and scoped diff validation.
+
+## Lockout-compliant action items
+
+- **Aaron:** Revise the C++ MCP implementation/header and wiring. Use explicit public serialization/redaction for backend and model diagnostics. Do not delegate the implementation back to Liebergot.
+- **Liebergot:** Revise `test/server_mcp.py` only. Add recursive assertions for the rejected exposure classes and preserve the existing lifecycle/schema checks. Do not revise the rejected C++ or documentation artifacts.
+- **Kranz:** Revise `docs/api/mcp.md` only, matching the corrected public payload and prohibition contract. Do not revise the rejected C++ or test artifacts.
+- **Lovell:** Re-review the complete corrected set after Aaron, Liebergot, and Kranz submit. Lovell will not modify any implementation, test, or documentation artifact.
+
+## Process decision
+
+For future MCP parity work, every externally visible diagnostic tool must have an explicit public field allowlist, recursive forbidden-data tests, and documentation of the safe payload shape before review. A compile-only or diff-only result cannot close a diagnostic security review; live MCP execution is required when the server is available.
+
+---
+
 
 # Decision: MCP parity — design approval and test scope
 
