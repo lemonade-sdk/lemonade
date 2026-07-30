@@ -124,7 +124,7 @@ input, textarea {
 /* ---------- Title bar ---------- */
 .titlebar {
   display: grid;
-  grid-template-columns: 190px minmax(180px, 280px) minmax(0, 1fr) auto;
+  grid-template-columns: 190px minmax(0, 1fr) minmax(180px, 280px) auto;
   align-items: center;
   padding: 0 var(--space-3);
   background: var(--surface-1);
@@ -157,6 +157,7 @@ input, textarea {
 }
 
 .titlebar__search {
+  grid-column: 3;
   position: relative;
   display: flex;
   align-items: center;
@@ -11947,7 +11948,7 @@ optgroup {
 
 @media (max-width: 1100px) {
   :root { --workspace-list: 286px; }
-  .titlebar { grid-template-columns: 42px minmax(160px, 240px) minmax(0, 1fr) auto; }
+  .titlebar { grid-template-columns: 42px minmax(0, 1fr) minmax(160px, 240px) auto; }
   .titlebar__nav button { min-width: 42px; padding-inline: var(--space-2); }
   .titlebar__nav .nav-label { display: none; }
   .titlebar__brand-text { display: none; }
