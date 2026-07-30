@@ -19,6 +19,10 @@ permissions:
   contents: write
   actions: read  # Required for SignPath to read workflow/job details
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
 
@@ -309,8 +313,9 @@ jobs:
           cmake --build --preset default --target test_origin_utils
           cmake --build --preset default --target test_model_residency
           cmake --build --preset default --target test_custom_args
+          cmake --build --preset default --target test_archive_platform
           cd build
-          ctest --output-on-failure -R "ProcessManagerTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|LlmRouter|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|RoutingConformanceCorpusTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest|ModelResidencyTest|CustomArgsTest"
+          ctest --output-on-failure -R "ProcessManagerTest|ArchivePlatformTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|LlmRouter|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|RoutingConformanceCorpusTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest|ModelResidencyTest|CustomArgsTest"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -627,8 +632,9 @@ jobs:
           cmake --build --preset default --target test_origin_utils
           cmake --build --preset default --target test_model_residency
           cmake --build --preset default --target test_custom_args
+          cmake --build --preset default --target test_archive_platform
           cd build
-          ctest --output-on-failure -R "DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|LlmRouter|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|RoutingConformanceCorpusTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest|ModelResidencyTest|CustomArgsTest"
+          ctest --output-on-failure -R "ArchivePlatformTest|DirectoryWatcher|LatestVersionFallback|RoutingPolicy(Contract|Evaluator|Registry|Semantic|LlmRouter|Deterministic|Engine|Parser|Store)Test|ModelManagerCollectionValidationTest|RoutingClassifierServicesTest|RoutingConformanceCorpusTest|NetworkUtilsTest|mcp_client_config|JobExprTest|JobGraphTest|OriginUtilsTest|ModelResidencyTest|CustomArgsTest"
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
