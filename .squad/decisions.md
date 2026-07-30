@@ -3,7 +3,7 @@
 ## Active Decisions
 
 
-> Entries older than 2026-05-16 archived to `decisions/archive/2026-05-15.md`.
+> Entries older than 2026-07-23 archived to `decisions/archive/2026-07-30.md`.
 
 # Decision: API wiring architecture for UI prototype
 
@@ -52,73 +52,6 @@
 **Enforcement:** Reviewer (Lovell) blocks merges with failing tests. Self-check is expected before requesting review.
 
 ---
-
-### 2026-06-13T19:19:16-06:00: User directive — pause PR creation
-**By:** Kyle (kpoin) via Squad coordinator
-**What:** Stop opening PRs for now. Commit and push to branches only. Kyle will explicitly request PR creation when he's ready.
-**Scope:** Session-level directive. Applies until Kyle lifts it.
-**Why:** User request — Kyle wants to control PR timing.
-
----
-
-# Decision: Phase B MCP Client Host Design
-
-**Agent:** Lovell (Lead)
-**Date:** 2026-06-25
-**Issue:** #2404
-**Comment:** https://github.com/lemonade-sdk/lemonade/issues/2404#issuecomment-4799493443
-**Status:** Awaiting @fl0rianr review
-
-## Decision
-
-Posted Phase B design for GUI3 acting as an MCP client host that connects to external MCP servers and exposes their tools in chat. Design is:
-
-1. **Purely frontend** — no lemond (C++) changes. All state in localStorage per invariant #11.
-2. **Feature-flag gated** — `lemonade_mcp_client_enabled` localStorage key. Zero code paths execute when off.
-3. **Plugs into existing architecture** — merges external tools into `ChatToolRuntime` interface; no parallel execution path needed.
-4. **Namespaced tools** — `mcp_{serverId}_{toolName}` prevents collisions with native `LEMONADE_TOOLS`.
-5. **POST-only Streamable HTTP** — matches lemond's own MCP server transport (`mcp_server.cpp:35`).
-6. **Security-flagged** — prompt injection and tool exfiltration risks documented as unmitigated in POC; explicit user consent required to add servers.
-
-## Invariants checked
-
-- ✓ #1 (quad-prefix): no new routes in lemond.
-- ✓ #11 (many-clients-one-server): config is client-local localStorage, not shared.
-- ✓ #12 (Debian web-app deps): zero new npm dependencies.
-- ✓ #13 (desktop on-demand): no changes to desktop lifecycle.
-
-## Risks
-
-- CORS: web-app users may hit CORS errors with external MCP servers that don't send CORS headers. Desktop (Tauri) unaffected. Documented as known limitation; lemond proxy deferred to Phase C.
-- Prompt injection via tool results: flagged, not mitigated in POC.
-
-## Next steps
-
-- @fl0rianr approves/refines design on #2404.
-- Mattingly implements first PR per §7 delivery slice after Phase A merges.
-
----
-
-# PR Review Session — 2026-06-13
-
-**Reviewer:** Lovell (Lead/Architect)
-**Author:** boclifton-MSFT
-**Target branch:** kpoin/ui-testing
-
-## PR #2223 — Refactor app styles into component partials
-
-**Verdict:** ✅ Approved and merged (squash)
-
-- Split monolithic `styles.css` (7594 lines) into 22 focused partials under `src/app/styles/partials/`
-- Import order in `index.css` is well-documented: foundation (variables, base) → components (alphabetical, order-independent) → feature sheet (last, for overrides)
-- Net +72 lines (comments in index.css + .hintrc config)
-- No selectors renamed or dropped
-- No CI configured for this branch (expected)
-- `.hintrc` addition is reasonable (CSS compat linting config)
-
-## PR #2224 — Add model folders UI (Server Settings)
-
-**Verdict:** ⚠️ Changes requested (not merged)
 
 ### Positives
 - Well-structured `ServerSettings.tsx` and `serverRuntimeConfig.ts`
@@ -1320,34 +1253,6 @@ Do NOT touch `src/cpp/` C++ code. CSS/prototype/squad files only.
 - If a test cannot be fixed within the scope of the change (e.g. flaky for unrelated reason), explicitly call it out — do not silently disable
 **Enforcement:** Reviewer (Lovell) blocks merges with failing tests. Self-check is expected before requesting review.
 
-
-### 2026-06-13T19:19:16-06:00: User directive — pause PR creation
-**By:** Kyle (kpoin) via Squad coordinator
-**What:** Stop opening PRs for now. Commit and push to branches only. Kyle will explicitly request PR creation when he's ready.
-**Scope:** Session-level directive. Applies until Kyle lifts it.
-**Why:** User request — Kyle wants to control PR timing.
-
-
-# PR Review Session — 2026-06-13
-
-**Reviewer:** Lovell (Lead/Architect)
-**Author:** boclifton-MSFT
-**Target branch:** kpoin/ui-testing
-
-## PR #2223 — Refactor app styles into component partials
-
-**Verdict:** ✅ Approved and merged (squash)
-
-- Split monolithic `styles.css` (7594 lines) into 22 focused partials under `src/app/styles/partials/`
-- Import order in `index.css` is well-documented: foundation (variables, base) → components (alphabetical, order-independent) → feature sheet (last, for overrides)
-- Net +72 lines (comments in index.css + .hintrc config)
-- No selectors renamed or dropped
-- No CI configured for this branch (expected)
-- `.hintrc` addition is reasonable (CSS compat linting config)
-
-## PR #2224 — Add model folders UI (Server Settings)
-
-**Verdict:** ⚠️ Changes requested (not merged)
 
 ### Positives
 - Well-structured `ServerSettings.tsx` and `serverRuntimeConfig.ts`
@@ -2830,3 +2735,527 @@ Refine the Logs display component to trim redundant structured-field prefixes (t
 ****** No new npm dependencies
 ****** No changes to desktop lifecycle (GUI3 remains on-demand)
 ****** Many-clients-one-server invariant: client-local UI state only
+
+
+
+# MCP parity layer design review contract
+
+**Author:** Lovell
+**Date:** 2026-07-30T09:53:50.152-06:00
+**Status:** Pre-work contract; no production or test implementation approved yet
+
+## Authorization and scope
+
+This request is an explicit, user-directed exception to the older UI-POC
+`lemond` restriction. The older Phase A decision limited the POC to a
+frontend-only MCP dashboard, but Kyle's current assignment specifically
+authorizes a first server-side MCP parity layer. The exception is narrow:
+only the existing C++ MCP gateway and directly related server wiring,
+integration tests, and MCP documentation may change; no GUI, presets,
+new route, or unrelated `lemond` behavior is in scope.
+
+The existing five tools and JSON-RPC transport must remain unchanged:
+`lemonade_list_models`, `lemonade_chat`,
+`lemonade_transcribe_audio`, `lemonade_generate_image`, and
+`lemonade_omni`. `/mcp` remains the single POST endpoint, with GET 405,
+JSON-RPC 2.0 batching/notifications, and the current MCP result/error
+conventions.
+
+## Canonical tools for this phase
+
+The new canonical names are:
+
+1. `lemonade_get_model_info`
+2. `lemonade_load_model`
+3. `lemonade_unload_model`
+4. `lemonade_get_server_info`
+5. `lemonade_list_backends`
+
+No aliases are required in this first layer. All tool failures, including
+validation, unknown models, unsupported models, not-downloaded models, and
+router/backend failures, return a successful JSON-RPC response whose result
+has `isError: true` and one or more `{ "type": "text", "text": "..." }`
+content blocks. Malformed `tools/call` parameters remain JSON-RPC `-32602`
+errors. Successful read/list tools should follow `lemonade_list_models` by
+returning a human-readable text block followed by a JSON-stringified text
+block.
+
+### `lemonade_get_model_info`
+
+Input schema:
+
+```json
+{
+  "type": "object",
+  "required": ["model"],
+  "properties": {
+    "model": { "type": "string", "minLength": 1 }
+  }
+}
+```
+
+Use `ModelManager::model_exists`, `resolve_model_name`,
+`get_model_info`, and `get_public_model_name`; use
+`Router::get_all_loaded_models` to add current loaded state. The JSON text
+block is a safe public model object based on the existing `/models/{id}`
+shape: `id`, `object: "model"`, `recipe`, `checkpoint`/`checkpoints`,
+`downloaded`, `update_available`, `suggested`, `source`,
+`registry_source`, `labels`, `components`, `recipe_options`, optional
+`size`, `max_context_window`, and the canonical `type`/`device` strings.
+Add `loaded: true|false`; when loaded, expose safe state fields only
+(`status`, `backend_alive`, `backend_health`, `pinned`, `is_busy`,
+`is_streaming`, and residency/slot metadata). Do not expose backend URLs,
+PIDs, resolved filesystem paths, credentials, or internal process controls.
+
+Unknown or filtered-out models must use the existing structured MCP error
+pattern rather than a JSON-RPC error.
+
+### `lemonade_load_model`
+
+Input schema:
+
+```json
+{
+  "type": "object",
+  "required": ["model"],
+  "properties": {
+    "model": { "type": "string", "minLength": 1 },
+    "ctx_size": { "type": "integer" },
+    "pinned": { "type": "boolean" }
+  }
+}
+```
+
+This is a lifecycle operation, not a pull surface. It must accept only a
+known, supported, already-downloaded non-virtual model and must never call
+`download_registered_model`, `download_model`, or the existing auto-load
+callback. Reject not-downloaded models with an `isError: true` result that
+directs the caller to the existing pull API. Reject collection/virtual
+recipes in this phase unless the implementation can prove all components
+are already resident without downloading.
+
+Use `ModelManager::model_exists`, `is_model_downloaded`, and
+`get_model_info`; construct `RecipeOptions` from the bounded MCP input;
+call `Router::load_model` with `LoadPurpose::UserInference`,
+`do_not_upgrade=true`, and `allow_reload_on_option_change=true`. Do not
+expose `save_options`, arbitrary recipe keys, or an `allow_download` flag.
+Success returns text plus JSON such as:
+
+```json
+{
+  "status": "success",
+  "model_name": "public-model-name",
+  "loaded": true,
+  "recipe": "llamacpp",
+  "pinned": false
+}
+```
+
+The exact `pinned` value should reflect the resulting loaded state.
+
+### `lemonade_unload_model`
+
+Input schema:
+
+```json
+{
+  "type": "object",
+  "required": ["model"],
+  "properties": {
+    "model": { "type": "string", "minLength": 1 }
+  }
+}
+```
+
+Require an explicit model name in this phase; do not make omission mean
+“unload all.” Validate that the model is currently loaded, then call
+`Router::unload_model(model)`. There is no force/admin override. Success
+returns:
+
+```json
+{
+  "status": "success",
+  "model_name": "public-model-name",
+  "unloaded": true
+}
+```
+
+The not-loaded case is a structured tool error. An unload operation must
+not delete model files or alter registry/config state.
+
+### `lemonade_get_server_info`
+
+Input schema:
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Return one summary text block and one JSON text block with:
+
+```json
+{
+  "health": {
+    "status": "ok",
+    "version": "...",
+    "model_loaded": null,
+    "all_models_loaded": [],
+    "max_models": {},
+    "pinned_models": {},
+    "pinned_helper_models": {}
+  },
+  "system_info": {}
+}
+```
+
+Build the health portion from `LEMON_VERSION_STRING` and the existing
+`Router` read-only APIs (`get_loaded_model`, `get_all_loaded_models`,
+`get_max_model_limits`, `get_pinned_model_counts`,
+`get_pinned_helper_counts`). Build `system_info` from
+`SystemInfoCache::get_system_info_with_cache()`. Do not include API keys,
+runtime cloud secrets, backend process IDs/URLs, or admin-only controls.
+Do not add system mutation or shutdown behavior. System statistics are
+deferred unless a later contract explicitly adds them.
+
+### `lemonade_list_backends`
+
+Input schema:
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Use `BackendManager::get_all_backends_status()` only. The JSON text block
+must be the returned array, preserving its per-recipe shape:
+
+```json
+[
+  {
+    "recipe": "llamacpp",
+    "backends": [
+      {
+        "name": "vulkan",
+        "state": "supported",
+        "message": "...",
+        "action": "...",
+        "version": "...",
+        "release_url": "..."
+      }
+    ]
+  }
+]
+```
+
+Optional fields remain omitted when empty, matching
+`BackendManager`. The tool is read-only: it must not call install,
+uninstall, release resolution with side effects, or expose install
+parameters. Backend status is diagnostic data, not an authorization grant.
+
+## Safety and authentication boundary
+
+The current `/mcp` pre-routing authentication in `server.cpp` remains the
+only authentication boundary. `/mcp` is a regular API route: when
+`LEMONADE_API_KEY` is configured, the API key (or accepted admin key) is
+required; do not add a second per-tool key check or weaken the existing
+behavior. These tools are regular API capabilities, not internal/admin
+routes. No tool may expose pull, delete, install/uninstall, shutdown,
+cloud-auth, media generation/transcription, filesystem writes, or arbitrary
+backend process controls.
+
+## Implementation file scope
+
+Expected production scope:
+
+* `src/cpp/server/mcp_server.cpp`
+* `src/cpp/include/lemon/mcp_server.h`
+* `src/cpp/server/server.cpp` only for dependency wiring needed to provide
+  `BackendManager`/diagnostic data to `McpServer`
+
+Expected validation/documentation scope:
+
+* `test/server_mcp.py` for focused integration coverage
+* `docs/api/mcp.md` for the ten-tool catalogue and the no-hidden-download
+  lifecycle contract
+
+Do not modify GUI trees, presets, `mcp_client`, backend implementations,
+router/model-manager behavior, or unrelated server routes.
+
+## Focused test contract for Haise
+
+Extend `test/server_mcp.py`; do not add a new test runner:
+
+1. `tools/list` contains all ten canonical tools, every schema is an
+   object, the five existing schemas remain intact, and the new lifecycle
+   schemas require `model` where specified.
+2. `lemonade_get_model_info` returns `isError: true` for an unknown model;
+   for the already-pulled endpoint test model it returns parseable JSON with
+   `id`, `recipe`, `downloaded`, `loaded`, and no `pid`/`backend_url`.
+3. `lemonade_list_backends` returns `isError: false` and a JSON array whose
+   entries contain `recipe` and `backends`; the test must not trigger any
+   install/uninstall action.
+4. `lemonade_get_server_info` returns `isError: false` with `health.status`
+   and a `system_info` object, without credential-like fields.
+5. `lemonade_load_model` rejects missing/unknown/not-downloaded models as
+   structured tool errors; loading the already-pulled endpoint model succeeds
+   and is observable through `get_server_info`.
+6. `lemonade_unload_model` rejects missing/not-loaded models; after a
+   successful load, explicit unload succeeds and the model is no longer in
+   the health loaded list.
+7. Existing JSON-RPC envelope, notification, CORS, auth, and five-tool
+   tests remain green. When the suite runs with `LEMONADE_API_KEY`, verify
+   `/mcp` still rejects a missing/incorrect key and accepts the configured
+   key for both an existing and a new read-only tool.
+
+No live inference, model pull, media operation, backend installation, or
+destructive filesystem test belongs in this phase.
+
+## Evidence reviewed
+
+* `src/cpp/server/mcp_server.cpp:225-248` — existing `/mcp` route and GET
+  behavior; `:367-416` — JSON-RPC/tool error conventions;
+  `:1054-1145` — current list-model result shape; `:1147+` — descriptors.
+* `src/cpp/include/lemon/router.h:74-100,157-160` — lifecycle and
+  read-only router APIs.
+* `src/cpp/include/lemon/model_manager.h:179-245` — model query APIs.
+* `src/cpp/include/lemon/backend_manager.h:24-29` —
+  `get_all_backends_status`.
+* `src/cpp/server/server.cpp:850-917` — existing API-key pre-routing;
+  `:2367-2440` — health payload; `:5833-5960` — system info/stats
+  payloads; `:5152-5268` and `:5321-5375` — existing load/unload
+  semantics.
+* `test/server_mcp.py:221-347` — current MCP integration coverage.
+* `docs/api/mcp.md:1-184` — current transport, auth, tools, and error
+  documentation.
+
+
+# Presets phase 1 removal — implementation contract
+
+**Author:** Lovell
+**Status:** Design review contract; no product implementation approved
+
+## Scope and decision
+
+Remove Presets from the active phase-1 UI and runtime paths while keeping the
+current Chat Tools picker, MCP administration panel, and Model Configuration
+experience intact. `PRESETS_ENABLED` remains `false`. This is a client-only
+change: do not modify `lemond`, server MCP code, Logs/Telemetry, Apps, or the
+web/desktop packaging boundary.
+
+Legacy preset files, stores, and components may remain for staged migration, but
+active readers and writers must not use preset bindings or the `Default` preset
+as a sentinel.
+
+## Storage migration contract
+
+The canonical model-tuning store remains `lemonade:model_tunings`.
+
+* Canonical active key: the model name itself, for example `model-name`.
+* Legacy default sentinel: `model-name@@s-default`.
+* Legacy unscoped key: `model-name`.
+* Non-default legacy keys such as `model-name@@s-balanced` remain preserved in
+  the primary store, but active readers must ignore them.
+* Use a dedicated idempotence marker,
+  `lemonade:model_tunings_migrated_v1`; do not reuse the general
+  `lemonade_storage_migrated_v2` marker.
+* Reuse `lemonade:storage_migration_conflicts_v1` for losing values under a
+  `model_tunings:<encoded-model-name>:<source-key>` namespace. Archive the raw
+  tuning as JSON so a collision never discards browser-local data.
+
+Migration precedence for one model is deterministic:
+
+1. An already-present canonical direct key wins.
+2. An explicit `model@@s-default` value is next.
+3. An older unscoped value is last.
+4. Equal duplicate values need no conflict entry.
+
+When a lower-precedence value differs, archive it before removing its legacy
+key. If the canonical write or archive fails, leave the source records intact
+and do not mark the migration complete. Unknown or malformed keys stay
+untouched. The migration must be idempotent and must not remove
+`user_presets`, `applied_presets`, `backend_presets`, or `running_presets`.
+
+Active model-tuning APIs must use the direct key:
+
+* `loadModelTuning(modelName)` reads only `modelName`.
+* `saveModelTuning(modelName, tuning)` writes only `modelName`.
+* `resetModelTuning(modelName)` removes only `modelName`.
+
+Legacy preset-aware helpers may remain for staged cleanup, but no active caller
+may pass `DEFAULT_PRESET.id`, resolve `activePresetForModel`, or fall back to a
+named preset.
+
+## Runtime and ownership boundaries
+
+Effective load/request composition remains, from least to most specific:
+
+1. Model/server built-in defaults.
+2. Exact backend tuning.
+3. Direct model configuration.
+4. Session backend-argument override.
+5. Explicit load/request options.
+
+`api.ts` must use direct model configuration for load commands, effective-load
+preview, and chat sampling. Explicit request parameters continue to win.
+Preset-derived system prompts, intent translation, thinking settings, MCP
+selection, and preset-specific media/TTS defaults must not enter active Chat
+requests. Existing model/loaded-recipe defaults and direct model recipe
+configuration remain available for image, audio, and TTS flows.
+
+MCP provider/tool selection is independent client-local state:
+
+* `lemonade:mcp_enabled`, `lemonade:mcp_server_ids`, and
+  `lemonade:mcp_tool_names` remain the source of truth.
+* The legacy `lemonade:use_tools` value remains a fallback when the explicit
+  enabled key is absent.
+* With no stored provider selection, built-in Lemonade (`lemonade`) remains the
+  default.
+* A stored external selection must survive model changes, picker close/reopen,
+  and reload; changing models must never reseed it from preset data.
+* The picker’s menu/dialog structure, focus return, keyboard handling,
+  enablement semantics, tool filtering, and MCP runtime composition stay the
+  same. Any preset-specific reset wording should become neutral (for example,
+  “Reset to default”) without changing its behavior.
+
+## Expected implementation files
+
+Production changes are expected only in:
+
+* `src/app/src/presetStore.ts`
+* `src/app/src/api.ts`
+* `src/app/src/components/ChatView.tsx`
+* `src/app/src/components/ModelDetailPanel.tsx`
+* `src/app/src/components/EffectiveSettingsModal.tsx`
+* `src/app/src/tools/lemonadeTools.ts`
+
+`src/app/src/components/McpPanel.tsx` is explicitly out of scope. Do not add
+server changes or move any state out of the client.
+
+Active `ModelConfigurationTab` controls, labels, save/reset/discard behavior,
+load/reload actions, dirty-state confirmation, and accessible tab structure
+must remain unchanged except for switching storage to the direct model key.
+The Effective Settings modal must remain model-only while retaining its
+sampling controls, effective load command, backend-argument session override,
+focus handling, Escape handling, notices, and source labels.
+
+`lemonadeTools.ts` must remove the `change_preset` schema and executor rather
+than merely hiding them behind `PRESETS_ENABLED`. `load_model` must retain its
+existing model resolution and explicit recipe/backend/device/context/GPU-layer
+behavior, without reading or returning preset state.
+
+## Validation contract
+
+Extend the focused tests rather than creating a new runner:
+
+* `src/app/tests/preset-intent.runtime.cjs`
+  * sentinel-to-direct migration;
+  * direct-versus-sentinel collision precedence and conflict archive;
+  * unscoped legacy migration;
+  * preservation but non-use of non-default entries;
+  * direct save/reset and direct load/request precedence.
+* `src/app/tests/a11y.spec.ts`
+  * existing Chat toolbar and Effective Settings coverage remains green;
+  * built-in default and external MCP selection persistence across model changes;
+  * the existing Tools dialog continues to pass the WCAG 2.1 AA axe scan.
+* `src/app/tests/fixtures/mcp-runtime-entry.ts` (through the existing
+  `mcp-runtime.runtime.cjs` runner)
+  * built-in/external MCP runtime composition remains unchanged;
+  * no preset-specific tool is exposed or executable.
+
+Required commands for the implementation batch:
+
+* `npm run typecheck`
+* `npm run test:preset-intent`
+* `npm run test:mcp-runtime`
+* `npm run test:storage`
+* `npm run test:a11y`
+
+Any failure blocks approval. No `lemond` build or server test is needed because
+server code is prohibited from this phase.
+
+## Risks and review gates
+
+The main risks are silently losing a browser-local tuning during key
+normalization, allowing a named preset to override direct configuration, and
+resetting an external MCP selection when the current model changes. Review must
+verify all three with raw localStorage assertions and a second, idempotent load.
+
+Before approval, grep the active paths for `DEFAULT_PRESET`,
+`activePresetForModel`, `presetMcpServerIds`, `systemPromptTextForPreset`, and
+`loadModelTuning(..., DEFAULT_PRESET.id)`. Any remaining reference must be
+isolated to explicitly legacy preset infrastructure and must not affect active
+Chat, Model Configuration, Effective Settings, API composition, or tool
+execution. Confirm the diff contains no `src/cpp/server/` or
+`src/cpp/include/lemon/` changes and no unrelated dirty-worktree changes.
+
+
+# Escalation Decision: Swigert Assignment
+
+**Date:** 2026-07-30T09:25:09.718-06:00
+**Recorded by:** Scribe (Session Logger)
+**Decision type:** Reviewer Escalation (rejection on accessibility)
+
+## Summary
+
+Lovell rejected accessibility review on ChatView menu/dialog ARIA hierarchy. Assigning temporary specialist **Swigert** (React Accessibility Specialist) to narrow revision scope and address WCAG 2.1 AA compliance.
+
+## Escalation Trigger
+
+- **What:** ChatView.tsx menu and dialog ARIA hierarchy
+- **Status:** Rejected by reviewer (Lovell)
+- **Why escalation:** Specialized a11y expertise needed; focused scope limits context overhead
+- **Authority override:** Swigert gains independent revision authority on ChatView.tsx and a11y.spec.ts
+
+## Scope Boundaries
+
+**In scope (Swigert may revise independently):**
+- `src/app/src/components/ChatView.tsx` — ARIA roles, states, properties; focus management; semantic structure
+- `src/app/tests/a11y.spec.ts` — ChatView-focused accessibility test coverage
+
+**Out of scope (NO WORK):**
+- Presets, logs, telemetry, apps catalog, AutoTune
+- Backend/packaging (C++ server, CMake, lemond)
+- Non-a11y UI changes (layout, styling)
+- Components outside ChatView and its menus/dialogs
+
+## Handoff
+
+**From:** Lovell (reviewer, Lead)
+**To:** Swigert (React Accessibility Specialist)
+**Return to:** Lovell (for final review after revision)
+
+**Lockout rule:** Lovell cannot revise ChatView a11y — must wait for Swigert revision.
+
+## Charter
+
+- `.squad/agents/swigert/charter.md` — Full role definition, authority, standards
+- `.squad/agents/swigert/history.md` — Project context seed
+
+## Integration
+
+- Added to `.squad/casting/registry.json` (active, Apollo 13 universe, 2026-07-30)
+- Assignment snapshot recorded in `.squad/casting/history.json`
+- Routing entry added to `.squad/routing.md`
+- Team roster updated (`.squad/team.md`)
+- Status: **Active**
+
+## Definition of Done (for revision)
+
+1. ChatView ARIA hierarchy follows WAI-ARIA Authoring Practices
+2. All ChatView a11y tests pass; no regressions in broader a11y suite
+3. TypeScript typecheck clean (`npm run typecheck` from `src/app`)
+4. Cite specific ARIA patterns in commit message and self-review
+5. Lovell review and approval
+
+
+# Swigert decision: MCP picker uses sibling dialog semantics
+
+**Date:** 2026-07-30
+**Decision:** Keep the add-menu `role="menu"` mounted only while its three top-level `menuitem` choices are displayed. Render the Lemonade tools picker as a sibling `role="dialog"` while those choices are hidden.
+
+**Rationale:** WAI-ARIA menus require menuitem descendants; nesting the picker dialog under the menu creates an invalid hierarchy. The sibling layout preserves the requested Back/reopen flow, keeps external MCP activation intact, and allows explicit focus entry and return without altering tool selection behavior.
