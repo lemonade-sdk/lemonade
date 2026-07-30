@@ -2488,6 +2488,10 @@ Keep `LogEntry.line` untouched and derive a display-only message by removing the
 
 Filtering and reconnect behavior continue to operate on raw server data while the rendered rows reclaim horizontal space and the two telemetry views present equivalent filters consistently.
 
+## Implementation Detail
+
+The display transform requires all structured fields before removing a leading timestamp/severity/source prefix and leaves `LogEntry.line` untouched. Logs search remains in the filter rail using the telemetry search input style, and rail spacing now matches telemetry controls.
+
 ---
 
 ## 2026-07-30T09:17:15.715-06:00 — Lovell Review: MCP Tools UI Implementation — REJECTED
