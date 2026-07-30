@@ -43,6 +43,31 @@ const NAVIGATION_DESTINATIONS: Array<{
   { id: 'connect', label: 'Settings', keywords: 'connect configuration preferences server', icon: 'settings' },
 ];
 
+const BACKEND_DESTINATIONS = [
+  'llama.cpp',
+  'FastFlowLM',
+  'RyzenAI',
+  'vLLM',
+  'whisper.cpp',
+  'stable-diffusion.cpp',
+  'Moonshine',
+  'Kokoro TTS',
+];
+
+type GlobalSearchResult = {
+  id: string;
+  label: string;
+  description: string;
+  icon: Parameters<typeof Icon>[0]['name'];
+  view?: View;
+  route?: AppRoute;
+  modelName?: string;
+};
+
+function modelSearchName(model: Record<string, unknown>): string {
+  return String(model.model_name ?? model.name ?? model.id ?? '').trim();
+}
+
 /* ── Error boundary ────────────────────────────────────────── */
 
 interface ErrorBoundaryProps { view: string; children: ReactNode; }
@@ -345,19 +370,69 @@ const App: React.FC = () => {
     navigateToRoute({ view: nextView });
   }, [navigateToRoute]);
 
-  const navigationSearchResults = useMemo(() => {
+  const navigationSearchResults = useMemo<GlobalSearchResult[]>(() => {
     const query = navigationSearch.trim().toLowerCase();
-    if (!query) return NAVIGATION_DESTINATIONS;
-    return NAVIGATION_DESTINATIONS.filter(destination =>
-      `${destination.label} ${destination.keywords}`.toLowerCase().includes(query),
+    const matches = (value: string) => !query || value.toLowerCase().includes(query);
+    const pages = NAVIGATION_DESTINATIONS
+      .filter(destination => matches(`${destination.label} ${destination.keywords}`))
+      .map(destination => ({
+        id: `page:${destination.id}`,
+        label: destination.label,
+        description: 'Page',
+        icon: destination.icon,
+        view: destination.id,
+      }));
+    if (!query) return pages;
+
+    const settings = Object.entries(WORKSPACE_NAVIGATION).flatMap(([workspace, definition]) =>
+      definition.sections
+        .filter(section => matches(`${section.label} ${section.description}`))
+        .map(section => ({
+          id: `settings:${workspace}:${section.id}`,
+          label: section.label,
+          description: `${definition.label} - ${section.description}`,
+          icon: section.icon,
+          route: { view: workspace as 'dashboard' | 'connect', section: section.id } as AppRoute,
+        })),
     );
+    const models = api.allModels
+      .map(model => {
+        const name = modelSearchName(model as unknown as Record<string, unknown>);
+        return { model, name };
+      })
+      .filter(({ name }) => name && matches(name))
+      .slice(0, 8)
+      .map(({ model, name }) => ({
+        id: `model:${name}`,
+        label: name,
+        description: `${String((model as any).type ?? 'Model')} model`,
+        icon: 'hard-drive' as Parameters<typeof Icon>[0]['name'],
+        modelName: name,
+      }));
+    const backends = BACKEND_DESTINATIONS
+      .filter(backend => matches(backend))
+      .map(backend => ({
+        id: `backend:${backend}`,
+        label: backend,
+        description: 'Backend',
+        icon: 'box' as Parameters<typeof Icon>[0]['name'],
+        view: 'backends' as View,
+      }));
+    return [...models, ...backends, ...settings, ...pages];
   }, [navigationSearch]);
 
-  const selectNavigationDestination = useCallback((destination: typeof NAVIGATION_DESTINATIONS[number]) => {
-    setView(destination.id);
+  const selectNavigationDestination = useCallback((destination: GlobalSearchResult) => {
+    if (destination.modelName) {
+      setModelDetailsRequest({ modelName: destination.modelName, nonce: Date.now() });
+      setView('models');
+    } else if (destination.route) {
+      navigateToRoute(destination.route);
+    } else if (destination.view) {
+      setView(destination.view);
+    }
     setNavigationSearch('');
     setNavigationSearchOpen(false);
-  }, [setView]);
+  }, [navigateToRoute, setView]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -510,8 +585,8 @@ const App: React.FC = () => {
             ref={navigationSearchRef}
             type="search"
             value={navigationSearch}
-            placeholder="Search pages"
-            aria-label="Search pages"
+            placeholder="Search Lemonade"
+            aria-label="Search Lemonade"
             aria-autocomplete="list"
             aria-expanded={navigationSearchOpen}
             aria-controls="titlebar-search-results"
@@ -543,7 +618,7 @@ const App: React.FC = () => {
           />
           <kbd>Ctrl K</kbd>
           {navigationSearchOpen && (
-            <div id="titlebar-search-results" className="titlebar__search-results" role="listbox" aria-label="Page search results">
+            <div id="titlebar-search-results" className="titlebar__search-results" role="listbox" aria-label="Global search results">
               {navigationSearchResults.length > 0 ? navigationSearchResults.map((destination, index) => (
                 <button
                   key={destination.id}
@@ -555,7 +630,10 @@ const App: React.FC = () => {
                   onClick={() => selectNavigationDestination(destination)}
                 >
                   <Icon name={destination.icon} size={14} aria-hidden="true" />
-                  <span>{destination.label}</span>
+                  <span>
+                    <strong>{destination.label}</strong>
+                    <small>{destination.description}</small>
+                  </span>
                 </button>
               )) : <p>No matching pages.</p>}
             </div>

@@ -229,6 +229,25 @@ input, textarea {
   cursor: pointer;
 }
 
+.titlebar__search-results button > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.titlebar__search-results button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-semibold);
+}
+
+.titlebar__search-results button small {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
 .titlebar__search-results button:hover,
 .titlebar__search-results button.is-active {
   background: var(--surface-2);
