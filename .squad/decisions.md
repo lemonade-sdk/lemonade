@@ -3,7 +3,59 @@
 ## Active Decisions
 
 
-> Entries older than 2026-07-23 archived to `decisions/archive/2026-07-30.md`.
+> Entries older than 2026-07-23 archived to \decisions/archive/2026-07-30.md\.
+
+# Decision: MCP parity — design approval and test scope
+
+**Author:** Lovell (Lead), Haise (QA)
+**Date:** 2026-07-30
+**Status:** Approved — C++ implementation and Python test coverage in progress
+
+### 2026-07-30T09:52:57.950Z — MCP parity design review (Lovell)
+
+The existing MCP gateway is intentionally self-contained in \mcp_server.cpp\ with five tools, while lifecycle and diagnostics already have safe read-only or explicit Router/ModelManager/BackendManager APIs. A first parity layer should reject not-downloaded models instead of reusing the auto-load callback, because that callback can download; this keeps MCP lifecycle operations predictable and keeps pull/delete/install/media outside the phase.
+
+Kyle's direct request is a narrow authorization exception to the older frontend-only UI-POC \lemond\ restriction. The exception does not authorize GUI changes, new routes, presets, or general server refactors; it authorizes only MCP gateway code, dependency wiring, focused MCP integration tests, and the MCP API documentation.
+
+**Approved:** Phase-1 MCP server lifecycle parity design, with test scope locked to \	est/server_mcp.py\.
+
+### 2026-07-30T09:52:57.950Z — MCP parity test coverage scope (Haise)
+
+Keep coverage in \	est/server_mcp.py\; no production, GUI, preset, or new test-runner changes.
+
+Validate all ten tool schemas, structured lifecycle errors, safe diagnostic JSON, explicit load/unload state transitions, and \/mcp\ API key enforcement.
+
+Use the existing endpoint test model for lifecycle success. Discover a supported not-downloaded model from \lemonade_list_models\ without pulling it; if none is advertised, retain the rest of the lifecycle coverage.
+
+Live execution is deferred until the C++ MCP parity implementation is built.
+
+**Approved:** Test scope locked to Python integration tests; C++ implementation-driven discovery deferred.
+
+# Decision: MCP parity — design approval and test scope
+
+**Author:** Lovell (Lead), Haise (QA)
+**Date:** 2026-07-30
+**Status:** Approved — C++ implementation and Python test coverage in progress
+
+### 2026-07-30T09:52:57.950Z — MCP parity design review (Lovell)
+
+The existing MCP gateway is intentionally self-contained in 'mcp_server.cpp' with five tools, while lifecycle and diagnostics already have safe read-only or explicit Router/ModelManager/BackendManager APIs. A first parity layer should reject not-downloaded models instead of reusing the auto-load callback, because that callback can download; this keeps MCP lifecycle operations predictable and keeps pull/delete/install/media outside the phase.
+
+Kyle's direct request is a narrow authorization exception to the older frontend-only UI-POC 'lemond' restriction. The exception does not authorize GUI changes, new routes, presets, or general server refactors; it authorizes only MCP gateway code, dependency wiring, focused MCP integration tests, and the MCP API documentation.
+
+**Approved:** Phase-1 MCP server lifecycle parity design, with test scope locked to 'test/server_mcp.py'.
+
+### 2026-07-30T09:52:57.950Z — MCP parity test coverage scope (Haise)
+
+Keep coverage in 'test/server_mcp.py'; no production, GUI, preset, or new test-runner changes.
+
+Validate all ten tool schemas, structured lifecycle errors, safe diagnostic JSON, explicit load/unload state transitions, and '/mcp' API key enforcement.
+
+Use the existing endpoint test model for lifecycle success. Discover a supported not-downloaded model from 'lemonade_list_models' without pulling it; if none is advertised, retain the rest of the lifecycle coverage.
+
+Live execution is deferred until the C++ MCP parity implementation is built.
+
+**Approved:** Test scope locked to Python integration tests; C++ implementation-driven discovery deferred.
 
 # Decision: API wiring architecture for UI prototype
 

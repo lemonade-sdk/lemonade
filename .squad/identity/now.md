@@ -1,9 +1,9 @@
-****
-updated_at: 2026-07-30T09:11:24.861Z
-focus_area: Logs and telemetry UI refinement complete
+----
+updated_at: 2026-07-30T10:00:09.622Z
+focus_area: Phase-1 active Presets decoupling in the frontend
 active_issues: []
-****
+----
 
 # What We're Focused On
 
-Logs and telemetry UI display improved with trimmed redundant prefixes, integrated filter-rail search, and restored dropdown styling. Validation complete. Updated by Scribe at session end.
+Phase-1 Presets decoupling in the frontend — refactoring client-side preset storage, application flow, and UI components. Mattingly implementing, Haise testing. Preserves Chat tool picker/MCP panel UX and model configuration. Launched after MCP parity design approval.
