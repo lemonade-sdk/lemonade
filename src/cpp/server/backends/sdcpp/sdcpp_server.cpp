@@ -333,6 +333,23 @@ void SDServer::load(const std::string& model_name,
                 std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
                 if (!therock_bin.empty()) {
                     new_path = therock_bin + ";" + new_path;
+
+                    // Copy amdhip64_7.dll from TheRock to sd-server.exe directory to override System32 version.
+                    // Windows DLL search order checks System32 BEFORE PATH, so PATH-only approach fails.
+                    // Copying to the application directory ensures highest priority.
+                    fs::path therock_dll = fs::path(therock_bin) / "amdhip64_7.dll";
+                    fs::path target_dll = exe_dir / "amdhip64_7.dll";
+                    if (fs::exists(therock_dll)) {
+                        std::error_code ec;
+                        fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
+                        if (!ec) {
+                            LOG(INFO, "SDServer") << "Copied amdhip64_7.dll from TheRock to " << path_to_utf8(target_dll) << std::endl;
+                        } else {
+                            LOG(WARNING, "SDServer") << "Failed to copy amdhip64_7.dll: " << ec.message() << std::endl;
+                        }
+                    } else {
+                        LOG(DEBUG, "SDServer") << "amdhip64_7.dll not found in TheRock at " << path_to_utf8(therock_dll) << std::endl;
+                    }
                 }
             }
         }
