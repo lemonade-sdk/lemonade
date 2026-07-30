@@ -579,7 +579,15 @@ const App: React.FC = () => {
           />
         </div>
 
-        <div className="titlebar__search" data-tauri-drag-region="false">
+        <div
+          className="titlebar__search"
+          data-tauri-drag-region="false"
+          onBlur={event => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setNavigationSearchOpen(false);
+            }
+          }}
+        >
           <Icon name="search" size={15} aria-hidden="true" />
           <input
             ref={navigationSearchRef}
