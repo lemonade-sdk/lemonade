@@ -382,7 +382,7 @@ const App: React.FC = () => {
         icon: destination.icon,
         view: destination.id,
       }));
-    if (!query) return pages;
+    if (!query) return [];
 
     const settings = Object.entries(WORKSPACE_NAVIGATION).flatMap(([workspace, definition]) =>
       definition.sections
@@ -635,7 +635,7 @@ const App: React.FC = () => {
                     <small>{destination.description}</small>
                   </span>
                 </button>
-              )) : <p>No matching pages.</p>}
+              )) : <p>{navigationSearch.trim() ? 'No matching results.' : 'Search models, backends, apps, and settings.'}</p>}
             </div>
           )}
         </div>
