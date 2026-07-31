@@ -1,0 +1,17 @@
+{
+  "version": "1",
+  "model_name": "user.Semantic-OnError",
+  "recipe": "collection.router",
+  "components": ["MathLLM", "CodingLLM", "DefaultLLM", "EmbedModel"],
+  "routing": {
+    "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+    "default_model": "DefaultLLM",
+    "classifiers": [
+      { "id": "topic", "type": "semantic_similarity", "model": "EmbedModel",
+        "reference_phrases": { "coding": ["writes code"] } }
+    ],
+    "rules": [
+      { "id": "route-CodingLLM", "match": { "classifier": "topic", "label": "coding", "min_score": 0.5 }, "route_to": "CodingLLM" }
+    ]
+  }
+}
