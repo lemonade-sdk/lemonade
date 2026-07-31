@@ -686,7 +686,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         const recipeArg = typeof args.recipe === 'string' ? args.recipe.trim().toLowerCase() : '';
         const backendArg = typeof args.backend === 'string' ? args.backend.trim().toLowerCase()
           : (typeof args.device === 'string' ? args.device.trim().toLowerCase() : '');
-        let recipe = recipeArg;
+        let recipe = recipeArg === 'sd_cpp' ? 'sd-cpp' : recipeArg === 'ryzenai_llm' ? 'ryzenai-llm' : recipeArg;
         let backend = backendArg;
 
         const llamacppMatch = /^llamacpp[-_:](cpu|vulkan|rocm|metal|cuda|gpu)$/i.exec(recipeArg);
@@ -708,7 +708,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
           } else if (recipe.includes('vllm')) {
             opts.vllm_backend = backend;
           } else if (recipe.includes('sd-cpp')) {
-            opts.sd_cpp_backend = backend;
+            opts['sd-cpp_backend'] = backend;
           } else if (recipe.includes('acestep') || recipe.includes('ace-step')) {
             opts.acestep_backend = backend;
           } else if (recipe.includes('thinksound')) {

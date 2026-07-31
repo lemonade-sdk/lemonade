@@ -4,11 +4,11 @@ import { storageKey } from './storage';
 
 export type RecipeName =
   | 'llamacpp'
-  | 'sd_cpp'
+  | 'sd-cpp'
   | 'whispercpp'
   | 'moonshine'
   | 'flm'
-  | 'ryzenai_llm'
+  | 'ryzenai-llm'
   | 'vllm'
   | 'kokoro'
   | 'acestep'
@@ -31,7 +31,7 @@ export interface RecipeOptions {
   height?: number;
   sampling_method?: string;
   flow_shift?: number;
-  'sd_cpp_backend'?: string;
+  'sd-cpp_backend'?: string;
   sdcpp_args?: string;
   whispercpp_backend?: string;
   whispercpp_args?: string;
@@ -99,7 +99,7 @@ const LS_STORAGE_MIGRATION_CONFLICTS = 'storage_migration_conflicts_v1';
 
 const BACKEND_ARGS_FIELD_BY_RECIPE: Partial<Record<RecipeName, keyof RecipeOptions>> = {
   llamacpp: 'llamacpp_args',
-  'sd_cpp': 'sdcpp_args',
+  'sd-cpp': 'sdcpp_args',
   whispercpp: 'whispercpp_args',
   moonshine: 'moonshine_args',
   flm: 'flm_args',
@@ -135,7 +135,8 @@ function emitModelConfigurationEvent(): void {
 }
 
 export function backendArgsFieldForRecipe(recipe: string): keyof RecipeOptions | null {
-  return BACKEND_ARGS_FIELD_BY_RECIPE[String(recipe || '').trim().toLowerCase() as RecipeName] || null;
+  const recipeName = normalizeRecipeName(recipe);
+  return recipeName ? BACKEND_ARGS_FIELD_BY_RECIPE[recipeName] || null : null;
 }
 
 export function backendSupportsArgs(recipe: string): boolean {
@@ -194,7 +195,8 @@ const RECIPE_OPTION_NUMBER_KEYS = new Set<keyof RecipeOptions>([
 export function sanitizeRecipeOptions(options: Partial<RecipeOptions> | null | undefined): RecipeOptions {
   const out: RecipeOptions = {};
   if (!options || typeof options !== 'object') return out;
-  for (const [key, value] of Object.entries(options) as Array<[keyof RecipeOptions, unknown]>) {
+  for (const [rawKey, value] of Object.entries(options)) {
+    const key = rawKey === 'sd_cpp_backend' ? 'sd-cpp_backend' : rawKey as keyof RecipeOptions;
     if (isBlankValue(value)) continue;
     if (key === 'merge_args' || key === 'mmproj_enabled') {
       if (typeof value === 'boolean') (out as Record<string, unknown>)[key] = value;
@@ -245,10 +247,11 @@ function sanitizeTuningValues(raw: TuningValues | null | undefined): TuningValue
 }
 
 function normalizeRecipeName(value: unknown): RecipeName | undefined {
-  const name = String(value || '').trim().toLowerCase();
+  const rawName = String(value || '').trim().toLowerCase();
+  const name = rawName === 'sd_cpp' ? 'sd-cpp' : rawName === 'ryzenai_llm' ? 'ryzenai-llm' : rawName;
   return [
-    'auto', 'llamacpp', 'sd_cpp', 'whispercpp', 'moonshine', 'flm',
-    'ryzenai_llm', 'vllm', 'kokoro', 'acestep', 'thinksound', 'openmoss', 'trellis',
+    'auto', 'llamacpp', 'sd-cpp', 'whispercpp', 'moonshine', 'flm',
+    'ryzenai-llm', 'vllm', 'kokoro', 'acestep', 'thinksound', 'openmoss', 'trellis',
   ].includes(name) ? name as RecipeName : undefined;
 }
 
@@ -560,11 +563,13 @@ function recipesForModel(model: ModelInfo | null | undefined): unknown[] {
 function recipeName(recipe: unknown): string {
   if (!recipe || typeof recipe !== 'object') return '';
   const record = recipe as Record<string, unknown>;
-  return String(record.recipe || record.name || record.id || '').trim().toLowerCase();
+  const name = String(record.recipe || record.name || record.id || '').trim().toLowerCase();
+  return name === 'sd_cpp' ? 'sd-cpp' : name === 'ryzenai_llm' ? 'ryzenai-llm' : name;
 }
 
 function activeRecipeName(model: ModelInfo | null | undefined): string {
-  const direct = String((model as Record<string, unknown> | null | undefined)?.recipe || '').trim().toLowerCase();
+  const rawDirect = String((model as Record<string, unknown> | null | undefined)?.recipe || '').trim().toLowerCase();
+  const direct = rawDirect === 'sd_cpp' ? 'sd-cpp' : rawDirect === 'ryzenai_llm' ? 'ryzenai-llm' : rawDirect;
   if (direct) return direct;
   return recipeName(recipesForModel(model)[0]);
 }
@@ -678,11 +683,11 @@ export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, f
       ['recipe_options', 'vllm_args'], ['options', 'vllm_args'], ['vllm_args'], ['args'],
     ]);
   }
-  if (recipe === 'ryzenai_llm') out.ctx_size = ctx;
+  if (recipe === 'ryzenai-llm') out.ctx_size = ctx;
 
-  if (capability === 'image' || recipe === 'sd_cpp') {
-    out['sd_cpp_backend'] = readStringFromModelOrRecipe(model, [
-      ['recipe_options', 'sd_cpp_backend'], ['options', 'sd_cpp_backend'], ['sd_cpp_backend'],
+  if (capability === 'image' || recipe === 'sd-cpp') {
+    out['sd-cpp_backend'] = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'sd-cpp_backend'], ['options', 'sd-cpp_backend'], ['sd-cpp_backend'],
     ]) ?? backend;
     out.steps = readNumberFromModelOrRecipe(model, [['recipe_options', 'steps'], ['sample_params', 'steps'], ['sample_steps'], ['steps']]);
     out.cfg_scale = readNumberFromModelOrRecipe(model, [['recipe_options', 'cfg_scale'], ['sample_params', 'cfg_scale'], ['sample_params', 'guidance', 'txt_cfg'], ['txt_cfg'], ['cfg_scale']]);
@@ -825,7 +830,7 @@ export function recipeOptionsForCapability(
   if (!options || Object.keys(options).length === 0) return {};
   switch (capability) {
     case 'image':
-      return pickRecipeOptions(options, ['sd_cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
+      return pickRecipeOptions(options, ['sd-cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
     case 'audio':
     case 'transcription':
       return pickRecipeOptions(options, ['whispercpp_backend', 'whispercpp_args', 'moonshine_backend', 'moonshine_args', 'merge_args']);

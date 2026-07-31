@@ -32,7 +32,7 @@ const RECIPE_OPTION_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
   moonshine_backend: 'Backend',
   moonshine_args: 'Backend args',
   sdcpp_args: 'Backend args',
-  'sd_cpp_backend': 'Backend',
+  'sd-cpp_backend': 'Backend',
   steps: 'Steps',
   cfg_scale: 'CFG scale',
   width: 'Width',

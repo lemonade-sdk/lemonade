@@ -135,7 +135,7 @@ const TUNING_FIELD_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
   height: 'Height',
   sampling_method: 'Sampling method',
   flow_shift: 'Flow shift',
-  'sd_cpp_backend': 'Backend',
+  'sd-cpp_backend': 'Backend',
   sdcpp_args: 'Backend args',
   whispercpp_backend: 'Backend',
   whispercpp_args: 'Backend args',
@@ -162,7 +162,7 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   thinksound_backend: 'ThinkSound accelerator backend for sound-effect generation.',
   openmoss_backend: 'OpenMOSS accelerator backend for speech generation.',
   trellis_backend: 'TRELLIS accelerator backend for 3D reconstruction.',
-  'sd_cpp_backend': 'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.',
+  'sd-cpp_backend': 'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.',
   llamacpp_device: 'Optional device selector for the selected backend.',
   llamacpp_args: 'CLI-style flags for llama-server, applied on Load/Reload. E.g. --gpu-layers 35 --threads 8 --batch-size 512. See llama-server --help for all options.',
   sdcpp_args: 'Raw backend args for this image model only.',
@@ -174,13 +174,13 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
 
 const NUMERIC_TUNING_KEYS = new Set<keyof RecipeOptions>(['steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed']);
 const BOOLEAN_TUNING_KEYS = new Set<keyof RecipeOptions>();
-const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'sd_cpp_backend', 'whispercpp_backend', 'moonshine_backend', 'acestep_backend', 'thinksound_backend', 'openmoss_backend', 'trellis_backend']);
+const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'sd-cpp_backend', 'whispercpp_backend', 'moonshine_backend', 'acestep_backend', 'thinksound_backend', 'openmoss_backend', 'trellis_backend']);
 const DEVICE_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_device']);
 const ARGS_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_args', 'sdcpp_args', 'whispercpp_args', 'moonshine_args', 'vllm_args', 'flm_args']);
 const BACKEND_ARGS_KEY: Partial<Record<keyof RecipeOptions, keyof RecipeOptions>> = {
   llamacpp_backend: 'llamacpp_args',
   vllm_backend: 'vllm_args',
-  'sd_cpp_backend': 'sdcpp_args',
+  'sd-cpp_backend': 'sdcpp_args',
   whispercpp_backend: 'whispercpp_args',
   moonshine_backend: 'moonshine_args',
 };
@@ -189,7 +189,7 @@ const LLAMACPP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['llamacpp_backend', 'l
 const VLLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['vllm_backend', 'vllm_args'];
 const FLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['flm_args'];
 const RYZENAI_RECIPE_KEYS: Array<keyof RecipeOptions> = [];
-const IMAGE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['sd_cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args'];
+const IMAGE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['sd-cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args'];
 const WHISPER_RECIPE_KEYS: Array<keyof RecipeOptions> = ['whispercpp_backend', 'whispercpp_args'];
 const MOONSHINE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['moonshine_backend', 'moonshine_args'];
 const TTS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['voice', 'speed'];
@@ -278,7 +278,7 @@ function activeRecipeForBackendKey(key: keyof RecipeOptions, model: ModelInfo): 
   switch (key) {
     case 'llamacpp_backend': return 'llamacpp';
     case 'vllm_backend': return 'vllm';
-    case 'sd_cpp_backend': return 'sd-cpp';
+    case 'sd-cpp_backend': return 'sd-cpp';
     case 'whispercpp_backend': return 'whispercpp';
     case 'moonshine_backend': return 'moonshine';
     case 'acestep_backend': return 'acestep';
