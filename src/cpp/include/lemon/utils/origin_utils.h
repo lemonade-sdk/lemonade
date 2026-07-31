@@ -68,6 +68,11 @@ inline Origin parse_origin(const std::string& origin_str) {
         return Origin{};
     }
 
+    if (to_lower(str) == "null") {
+        out.host = "null";
+        return out;
+    }
+
     size_t scheme_pos = str.find("://");
     std::string host_and_port = str;
     if (scheme_pos != std::string::npos) {
@@ -78,13 +83,17 @@ inline Origin parse_origin(const std::string& origin_str) {
     size_t slash_pos = host_and_port.find('/');
     if (slash_pos != std::string::npos) {
         std::string path_part = host_and_port.substr(slash_pos + 1);
-        if (!path_part.empty()) {
+        if (!path_part.empty() && (out.scheme == "http" || out.scheme == "https" || out.scheme == "ws" || out.scheme == "wss")) {
             return Origin{};
         }
         host_and_port = host_and_port.substr(0, slash_pos);
     }
 
     if (host_and_port.empty()) {
+        if (!out.scheme.empty()) {
+            out.host = out.scheme;
+            return out;
+        }
         return Origin{};
     }
 
@@ -147,7 +156,21 @@ inline Origin parse_origin(const std::string& origin_str) {
 }
 
 inline bool is_loopback_origin(const Origin& origin) {
-    return origin.host == "localhost" || origin.host == "127.0.0.1" || origin.host == "[::1]" || origin.host == "::1" || origin.host == "tauri.localhost";
+    if (origin.host == "localhost" || origin.host == "127.0.0.1" || origin.host == "[::1]" || origin.host == "::1") {
+        return true;
+    }
+
+    if (origin.host.size() >= 10 && origin.host.compare(origin.host.size() - 10, 10, ".localhost") == 0) {
+        return true;
+    }
+
+    if (!origin.scheme.empty() &&
+        origin.scheme != "http" && origin.scheme != "https" &&
+        origin.scheme != "ws" && origin.scheme != "wss") {
+        return true;
+    }
+
+    return false;
 }
 
 inline bool is_origin_allowed(const std::string& origin_str, const std::string& allowed_origins_env) {
@@ -174,6 +197,14 @@ inline bool is_origin_allowed(const std::string& origin_str, const std::string& 
     std::stringstream ss(allowed_origins_env);
     std::string item;
     while (std::getline(ss, item, ',')) {
+        item.erase(0, item.find_first_not_of(" \t\r\n"));
+        if (!item.empty()) {
+            item.erase(item.find_last_not_of(" \t\r\n") + 1);
+        }
+        const bool is_opaque_null = request_origin.scheme.empty() && request_origin.host == "null" && request_origin.port == -1;
+        if (to_lower(item) == "null" && is_opaque_null) {
+            return true;
+        }
         Origin allowed_origin = parse_origin(item);
         if (allowed_origin.is_valid() && !allowed_origin.scheme.empty() && request_origin.matches(allowed_origin)) {
             return true;
@@ -212,6 +243,14 @@ inline bool is_websocket_origin_allowed(const std::string& origin_str, const std
     std::stringstream ss(allowed_origins_env);
     std::string item;
     while (std::getline(ss, item, ',')) {
+        item.erase(0, item.find_first_not_of(" \t\r\n"));
+        if (!item.empty()) {
+            item.erase(item.find_last_not_of(" \t\r\n") + 1);
+        }
+        const bool is_opaque_null = request_origin.scheme.empty() && request_origin.host == "null" && request_origin.port == -1;
+        if (to_lower(item) == "null" && is_opaque_null) {
+            return true;
+        }
         Origin allowed_origin = parse_origin(item);
         if (allowed_origin.is_valid() && !allowed_origin.scheme.empty() && request_origin.matches(allowed_origin)) {
             return true;

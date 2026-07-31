@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.5.0)
+project(lemon_cpp VERSION 11.5.1)
 
 include(CTest)
 
@@ -125,13 +125,14 @@ find_package(nlohmann_json ${MIN_NLOHMANN_JSON_VERSION} QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(CURL QUIET libcurl>=${MIN_CURL_VERSION})
     pkg_check_modules(ZSTD QUIET libzstd>=${MIN_ZSTD_VERSION})
-    # Debian ships the package as `cpp-httplib`, Nixpkgs as `httplib` — search
-    # both. No IMPORTED_TARGET: we build our own interface target below so we
-    # can skip the .pc Cflags (see there for why).
-    pkg_search_module(HTTPLIB QUIET
-        cpp-httplib>=${MIN_HTTPLIB_VERSION}
-        httplib>=${MIN_HTTPLIB_VERSION})
     pkg_check_modules(LWS QUIET libwebsockets>=${MIN_LWS_VERSION})
+endif()
+
+include(${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+if(NOT APPLE)
+    detect_system_httplib(${MIN_HTTPLIB_VERSION})
+else()
+    set(HTTPLIB_FOUND FALSE)
 endif()
 find_path(CLI11_INCLUDE_DIRS "CLI/CLI.hpp")
 # Verify CLI11 version if found
@@ -359,21 +360,183 @@ if(NOT USE_SYSTEM_HTTPLIB)
             ${zstd_SOURCE_DIR}/lib/common
         )
     endif()
+endif()
+
+# ============================================================
+# Download digest verification dependency (mbedTLS)
+# ============================================================
+if(NOT TARGET lemonade-digest-crypto)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(MBEDTLS QUIET mbedtls mbedx509 mbedcrypto)
+    endif()
+
+    add_library(lemonade-digest-crypto INTERFACE)
+
+    if(MBEDTLS_FOUND)
+        message(STATUS "Using system mbedtls for CLI HTTPS and digest verification")
+        if(MBEDTLS_INCLUDE_DIRS)
+            target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_INCLUDE_DIRS})
+        endif()
+        if(MBEDTLS_LIBRARY_DIRS)
+            target_link_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_LIBRARY_DIRS})
+        endif()
+        target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDTLS_LIBRARIES})
+        if(MBEDTLS_CFLAGS_OTHER)
+            target_compile_options(lemonade-digest-crypto INTERFACE ${MBEDTLS_CFLAGS_OTHER})
+        endif()
+    else()
+        find_path(MBEDTLS_INCLUDE_DIR NAMES mbedtls/ssl.h)
+        find_library(MBEDTLS_LIBRARY NAMES mbedtls)
+        find_library(MBEDX509_LIBRARY NAMES mbedx509)
+        find_library(MBEDCRYPTO_LIBRARY NAMES mbedcrypto)
+
+        if(MBEDTLS_INCLUDE_DIR AND MBEDTLS_LIBRARY AND MBEDX509_LIBRARY AND MBEDCRYPTO_LIBRARY)
+            message(STATUS "Using system mbedtls libraries for CLI HTTPS and digest verification")
+            target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_INCLUDE_DIR})
+            target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDTLS_LIBRARY} ${MBEDX509_LIBRARY} ${MBEDCRYPTO_LIBRARY})
+        else()
+            if(FETCHCONTENT_FULLY_DISCONNECTED AND NOT FETCHCONTENT_SOURCE_DIR_MBEDTLS)
+                message(FATAL_ERROR
+                    "System mbedtls was not found and FetchContent is fully disconnected. "
+                    "Install the distro development package (for Debian/Ubuntu: libmbedtls-dev) "
+                    "or provide FETCHCONTENT_SOURCE_DIR_MBEDTLS.")
+            endif()
+
+            message(STATUS "System mbedtls not found; fetching mbedTLS for CLI HTTPS and digest verification")
+            include(FetchContent)
+            FetchContent_Declare(mbedtls
+                GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
+                GIT_TAG 107ea89daaefb9867ea9121002fbbdf926780e98
+                EXCLUDE_FROM_ALL
+            )
+            set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+            set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+            set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+            set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
+            set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
+            FetchContent_MakeAvailable(mbedtls)
+
+            target_include_directories(lemonade-digest-crypto INTERFACE ${mbedtls_SOURCE_DIR}/include)
+            if(TARGET MbedTLS::mbedtls AND TARGET MbedTLS::mbedx509 AND TARGET MbedTLS::mbedcrypto)
+                target_link_libraries(lemonade-digest-crypto INTERFACE MbedTLS::mbedtls MbedTLS::mbedx509 MbedTLS::mbedcrypto)
+            elseif(TARGET mbedtls AND TARGET mbedx509 AND TARGET mbedcrypto)
+                target_link_libraries(lemonade-digest-crypto INTERFACE mbedtls mbedx509 mbedcrypto)
+            else()
+                message(FATAL_ERROR "mbedTLS FetchContent did not create expected targets")
+            endif()
+        endif()
+    endif()
+endif()
+
+if(UNIX AND NOT APPLE)
+    find_package(Threads REQUIRED)
+endif()
+
+# ============================================================
+# lemonade-httplib target (Single Source of Truth for HTTPS)
+# ============================================================
+add_library(lemonade-httplib INTERFACE)
+
+if(NOT USE_SYSTEM_HTTPLIB)
+    # Bundled cpp-httplib path: wraps httplib::httplib and attaches MbedTLS support
+    target_link_libraries(lemonade-httplib INTERFACE httplib::httplib lemonade-digest-crypto)
+    target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_MBEDTLS_SUPPORT)
+    if(APPLE)
+        find_library(SECURITY_FRAMEWORK Security REQUIRED)
+        target_link_libraries(lemonade-httplib INTERFACE ${SECURITY_FRAMEWORK})
+    endif()
 else()
-    # System cpp-httplib: a local interface target carrying the include dirs
-    # and link lib (empty for a header-only install like Nixpkgs, the compiled
-    # .so on Debian). We deliberately skip HTTPLIB_CFLAGS_OTHER: the .pc Cflags
-    # carry cpp-httplib's feature macros (-DCPPHTTPLIB_OPENSSL_SUPPORT, etc.),
-    # which would flip on header features needing link deps (libcrypto) we
-    # don't provide. Created at top level, so it is visible to the cli/tray
-    # subdirs added later.
-    add_library(lemonade-httplib INTERFACE)
-    target_include_directories(lemonade-httplib INTERFACE ${HTTPLIB_INCLUDE_DIRS})
-    if(HTTPLIB_LINK_LIBRARIES)
+    # System cpp-httplib path
+    if(HTTPLIB_INCLUDE_DIRS)
+        target_include_directories(lemonade-httplib INTERFACE ${HTTPLIB_INCLUDE_DIRS})
+    endif()
+
+    if(TARGET httplib::httplib)
+        target_link_libraries(lemonade-httplib INTERFACE httplib::httplib)
+    elseif(HTTPLIB_LINK_LIBRARIES)
         target_link_libraries(lemonade-httplib INTERFACE ${HTTPLIB_LINK_LIBRARIES})
     else()
         target_link_libraries(lemonade-httplib INTERFACE ${HTTPLIB_LIBRARIES})
         target_link_directories(lemonade-httplib INTERFACE ${HTTPLIB_LIBRARY_DIRS})
+    endif()
+
+    if(UNIX AND NOT APPLE AND TARGET Threads::Threads)
+        target_link_libraries(lemonade-httplib INTERFACE Threads::Threads)
+    endif()
+
+    # Propagate compiler options from pkg-config (e.g. -DCPPHTTPLIB_OPENSSL_SUPPORT)
+    if(HTTPLIB_CFLAGS_OTHER)
+        target_compile_options(lemonade-httplib INTERFACE ${HTTPLIB_CFLAGS_OTHER})
+    endif()
+
+    # Determine and propagate the TLS backend configured on system httplib
+    set(SYSTEM_HTTPLIB_HAS_TLS FALSE)
+    set(SYSTEM_HTTPLIB_USES_OPENSSL FALSE)
+    set(SYSTEM_HTTPLIB_USES_MBEDTLS FALSE)
+    set(SYSTEM_HTTPLIB_USES_WOLFSSL FALSE)
+    set(SYSTEM_HTTPLIB_USES_SCHANNEL FALSE)
+
+    # 1. Use exported configuration variables from find_package(httplib)
+    if(HTTPLIB_IS_USING_OPENSSL)
+        set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+        set(SYSTEM_HTTPLIB_USES_OPENSSL TRUE)
+    elseif(HTTPLIB_IS_USING_MBEDTLS)
+        set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+        set(SYSTEM_HTTPLIB_USES_MBEDTLS TRUE)
+    elseif(HTTPLIB_IS_USING_WOLFSSL)
+        set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+        set(SYSTEM_HTTPLIB_USES_WOLFSSL TRUE)
+    endif()
+
+    # 2. Fall back to checking pkg-config flags
+    if(NOT SYSTEM_HTTPLIB_HAS_TLS AND HTTPLIB_CFLAGS_OTHER)
+        if(HTTPLIB_CFLAGS_OTHER MATCHES "CPPHTTPLIB_OPENSSL_SUPPORT")
+            set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+            set(SYSTEM_HTTPLIB_USES_OPENSSL TRUE)
+        elseif(HTTPLIB_CFLAGS_OTHER MATCHES "CPPHTTPLIB_MBEDTLS_SUPPORT")
+            set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+            set(SYSTEM_HTTPLIB_USES_MBEDTLS TRUE)
+        elseif(HTTPLIB_CFLAGS_OTHER MATCHES "CPPHTTPLIB_WOLFSSL_SUPPORT")
+            set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+            set(SYSTEM_HTTPLIB_USES_WOLFSSL TRUE)
+        elseif(HTTPLIB_CFLAGS_OTHER MATCHES "CPPHTTPLIB_SCHANNEL_SUPPORT")
+            set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+            set(SYSTEM_HTTPLIB_USES_SCHANNEL TRUE)
+        endif()
+    endif()
+
+    # 3. Propagate definitions and link requirements
+    if(SYSTEM_HTTPLIB_USES_OPENSSL)
+        target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_OPENSSL_SUPPORT)
+        find_package(OpenSSL REQUIRED)
+        target_link_libraries(lemonade-httplib INTERFACE OpenSSL::SSL OpenSSL::Crypto)
+    elseif(SYSTEM_HTTPLIB_USES_MBEDTLS)
+        target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_MBEDTLS_SUPPORT)
+        target_link_libraries(lemonade-httplib INTERFACE lemonade-digest-crypto)
+        if(APPLE)
+            find_library(SECURITY_FRAMEWORK Security REQUIRED)
+            target_link_libraries(lemonade-httplib INTERFACE ${SECURITY_FRAMEWORK})
+        endif()
+    elseif(SYSTEM_HTTPLIB_USES_WOLFSSL)
+        target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_WOLFSSL_SUPPORT)
+    elseif(SYSTEM_HTTPLIB_USES_SCHANNEL)
+        target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_SCHANNEL_SUPPORT)
+        if(WIN32)
+            target_link_libraries(lemonade-httplib INTERFACE crypt32 secur32)
+        endif()
+    endif()
+
+    # 4. If neither target nor pkg-config explicitly defined a TLS backend, configure MbedTLS fallback for header-only
+    if(NOT SYSTEM_HTTPLIB_HAS_TLS AND NOT HTTPLIB_IS_COMPILED)
+        if(HTTPLIB_VERSION AND NOT HTTPLIB_VERSION VERSION_LESS "0.31.0")
+            target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_MBEDTLS_SUPPORT)
+            target_link_libraries(lemonade-httplib INTERFACE lemonade-digest-crypto)
+            if(APPLE)
+                find_library(SECURITY_FRAMEWORK Security REQUIRED)
+                target_link_libraries(lemonade-httplib INTERFACE ${SECURITY_FRAMEWORK})
+            endif()
+        endif()
     endif()
 endif()
 
@@ -652,6 +815,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
     src/cpp/server/utils/path_utils.cpp
+    src/cpp/server/utils/url_utils.cpp
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
@@ -787,13 +951,10 @@ endif()
 # Server core dependencies (PUBLIC — inherited by consumers)
 # ============================================================
 
-target_link_libraries(lemonade-server-core PUBLIC nlohmann_json::nlohmann_json)
-
-if(USE_SYSTEM_HTTPLIB)
-    target_link_libraries(lemonade-server-core PUBLIC lemonade-httplib)
-else()
-    target_link_libraries(lemonade-server-core PUBLIC httplib::httplib)
-endif()
+target_link_libraries(lemonade-server-core PUBLIC
+    nlohmann_json::nlohmann_json
+    lemonade-httplib
+)
 
 if(USE_SYSTEM_CLI11)
     target_include_directories(lemonade-server-core PUBLIC ${CLI11_INCLUDE_DIRS})
@@ -826,6 +987,16 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
     add_test(NAME vllm_arg_resolver COMMAND test_vllm_arg_resolver)
 endif()
 
+set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_request.cpp")
+if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
+    add_executable(test_llamacpp_request
+        ${LLAMACPP_REQUEST_TEST_SOURCE}
+        src/cpp/server/backends/llamacpp/llamacpp_request.cpp
+    )
+    target_link_libraries(test_llamacpp_request PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME llamacpp_request COMMAND test_llamacpp_request)
+endif()
+
 set(MCP_CLIENT_CONFIG_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mcp_client_config.cpp")
 if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
     find_package(Python3 COMPONENTS Interpreter QUIET)
@@ -835,12 +1006,7 @@ if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
         ${MCP_CLIENT_CONFIG_TEST_SOURCE}
         src/cpp/server/mcp_client.cpp
     )
-    target_link_libraries(test_mcp_client_config PRIVATE nlohmann_json::nlohmann_json Threads::Threads)
-    if(USE_SYSTEM_HTTPLIB)
-        target_link_libraries(test_mcp_client_config PRIVATE lemonade-httplib)
-    else()
-        target_link_libraries(test_mcp_client_config PRIVATE httplib::httplib)
-    endif()
+    target_link_libraries(test_mcp_client_config PRIVATE nlohmann_json::nlohmann_json Threads::Threads lemonade-httplib)
 
     if(Python3_Interpreter_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/mock_mcp_stdio_server.py")
         file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" LEMONADE_TEST_PYTHON_PATH)
@@ -1317,11 +1483,11 @@ if(APPLE)
     endif()
 endif()
 
-# Add tray application subdirectory
-add_subdirectory(src/cpp/tray)
-
 # Add CLI application subdirectory
 add_subdirectory(src/cpp/cli)
+
+# Add tray application subdirectory
+add_subdirectory(src/cpp/tray)
 
 # Wire WiX installer targets to the binaries and frontend artifacts they package.
 # Doing this after the subdirectories are added ensures MSBuild gets real project refs.
@@ -1857,6 +2023,19 @@ message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
 # ============================================================
 # C++ Unit Tests
 # ============================================================
+
+set(_ARCHIVE_PLATFORM_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_archive_platform.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ARCHIVE_PLATFORM_TEST_SRC}")
+    add_executable(test_archive_platform
+        test/cpp/test_archive_platform.cpp
+    )
+    target_include_directories(test_archive_platform PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    add_test(NAME ArchivePlatformTest COMMAND test_archive_platform)
+endif()
 
 # ProcessManager zombie detection and non-mutating reap contract.
 if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -2422,6 +2601,13 @@ if(EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     add_test(NAME NetworkUtilsTest COMMAND test_network_utils)
 endif()
 
+set(_URL_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_url_utils.cpp")
+if(EXISTS "${_URL_UTILS_TEST_SRC}")
+    add_executable(test_url_utils test/cpp/test_url_utils.cpp)
+    target_link_libraries(test_url_utils PRIVATE lemonade-server-core)
+    add_test(NAME UrlUtilsTest COMMAND test_url_utils)
+endif()
+
 # vLLM CDNA gating: the vllm descriptor support row + asset-family resolution for
 # AMD Instinct (gfx942), alongside the existing RDNA families.
 set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gating.cpp")
@@ -2460,4 +2646,21 @@ if(EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
     add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
     target_link_libraries(test_origin_utils PRIVATE lemonade-server-core)
     add_test(NAME OriginUtilsTest COMMAND test_origin_utils)
+endif()
+
+if(BUILD_TESTING)
+    add_test(NAME HttplibDetection_config_only COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_config_only -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=config_only -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_test(NAME HttplibDetection_old_header COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_old_header -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=old_header -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_test(NAME HttplibDetection_modern_header COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_modern_header -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=modern_header -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_test(NAME HttplibDetection_openssl_target COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_openssl_target -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=openssl_target -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_test(NAME HttplibDetection_disabled_generator_expression COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_disabled_generator_expression -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=disabled_generator_expression -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_test(NAME HttplibDetection_too_old_config COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_too_old_config -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=too_old_config -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_test(NAME HttplibDetection_compiled_no_tls COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_compiled_no_tls -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=compiled_no_tls -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_test(NAME HttplibDetection_too_old_config_multiarch COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_too_old_config_multiarch -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=too_old_config_multiarch -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_test(NAME HttplibDetection_header_only_pkgconfig COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_header_only_pkgconfig -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=header_only_pkgconfig -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_test(NAME HttplibDetection_cli_composition_mbedtls_isolation COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_cli_composition_mbedtls_isolation -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=cli_composition_mbedtls_isolation -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_test(NAME HttplibDetection_custom_httplib_dir_precheck COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_custom_httplib_dir_precheck -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=custom_httplib_dir_precheck -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_test(NAME HttplibDetection_polluted_target_fatal COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_polluted_target_fatal -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=polluted_target_fatal -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    set_tests_properties(HttplibDetection_polluted_target_fatal PROPERTIES WILL_FAIL TRUE)
+    add_test(NAME HttplibDetection_wolfssl_target COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_wolfssl_target -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=wolfssl_target -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
 endif()
