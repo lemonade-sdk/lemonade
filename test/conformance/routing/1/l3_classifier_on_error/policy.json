@@ -7,12 +7,12 @@
     "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
     "default_model": "DefaultLLM",
     "classifiers": [
-      { "id": "open",   "type": "classifier", "model": "FailOpenModel",   "labels": ["code"] },
-      { "id": "closed", "type": "classifier", "model": "FailClosedModel", "labels": ["code"], "on_error": "match_true" }
+      { "id": "fail_open",   "type": "classifier", "model": "FailOpenModel",   "labels": ["code"] },
+      { "id": "fail_closed", "type": "classifier", "model": "FailClosedModel", "labels": ["code"], "on_error": "match_true" }
     ],
     "rules": [
-      { "id": "open-rule",   "match": { "classifier": "open",   "label": "code", "min_score": 0.5 }, "route_to": "CodingLLM" },
-      { "id": "closed-rule", "match": { "classifier": "closed", "label": "code", "min_score": 0.5 }, "route_to": "MathLLM" }
+      { "id": "open-rule",   "match": { "classifier": "fail_open",   "label": "code", "min_score": 0.5 }, "route_to": "CodingLLM" },
+      { "id": "closed-rule", "match": { "classifier": "fail_closed", "label": "code", "min_score": 0.5 }, "route_to": "MathLLM" }
     ]
   }
 }
