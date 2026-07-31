@@ -87,7 +87,7 @@ static bool wait_for_server(const std::string& clean_host, int clean_port, bool 
 
     for (int i = 0; i < timeout_seconds * 2; ++i) {
         try {
-#ifndef CPPHTTPLIB_MBEDTLS_SUPPORT
+#ifndef LEMONADE_HTTPLIB_HAS_TLS
             if (is_ssl) {
                 std::cerr << "HTTPS support is not compiled in this client." << std::endl;
                 return false;
@@ -97,7 +97,7 @@ static bool wait_for_server(const std::string& clean_host, int clean_port, bool 
             std::string scheme = is_ssl ? "https" : "http";
             std::string url = scheme + "://" + format_host + ":" + std::to_string(clean_port);
             httplib::Client cli(url);
-#ifdef CPPHTTPLIB_MBEDTLS_SUPPORT
+#ifdef LEMONADE_HTTPLIB_HAS_TLS
             const char* skip_verify = std::getenv("LEMONADE_SKIP_VERIFY");
             if (skip_verify && std::string(skip_verify) == "1") {
                 cli.enable_server_certificate_verification(false);
