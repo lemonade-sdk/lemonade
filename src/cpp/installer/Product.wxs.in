@@ -93,7 +93,7 @@
     <SetProperty Id="INSTALLDIR"
                  Value="[EXISTINGINSTALLDIR]"
                  Before="CostFinalize"
-                 Sequence="both"
+                 Sequence="first"
                  Condition="EXISTINGINSTALLDIR AND (ALLUSERS &lt;&gt; 1)" />
 
     <!-- ============================================ -->
