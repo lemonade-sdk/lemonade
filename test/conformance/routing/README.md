@@ -112,6 +112,7 @@ defines for v1 has exactly one lock, and combinators/resolution are tested once
 | first-match-wins (earlier rule beats a later match) | `l1_resolution/first-match-wins` |
 | later rule fires when earlier misses | `l1_resolution/later-rule-when-earlier-misses` |
 | fail-open to `default_model` | `l1_resolution/fail-open-to-default` |
+| a rule routing to `default_model` keeps `default_used: false` and sets `matched_rule` (distinct from fall-through) | `l1_resolution/explicit-rule-to-default-model` |
 | legacy completions string `prompt` ⇒ routing input | `l1_input_forms/prompt-string-form` |
 | legacy completions array-of-strings `prompt` ⇒ parts joined into routing input | `l1_input_forms/prompt-array-form` |
 | array `prompt` ⇒ non-string parts skipped, not stringified | `l1_input_forms/prompt-array-skips-non-string-parts` |
