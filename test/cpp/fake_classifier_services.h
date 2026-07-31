@@ -67,10 +67,6 @@ public:
 
     void set_chat_failure(const std::string& model) { failing_chats_.insert(model); }
 
-    // Restore a freshly-constructed state. The object keeps its address, so a
-    // ClassifierServices already handed out by make() stays valid.
-    void reset() { *this = FakeClassifierServices{}; }
-
     // Build a ClassifierServices wired to this fake. The returned struct copies
     // `this` by pointer, so keep the FakeClassifierServices alive for the
     // services' lifetime.

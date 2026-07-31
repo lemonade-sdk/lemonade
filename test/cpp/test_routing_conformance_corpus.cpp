@@ -385,17 +385,6 @@ static bool is_blank(const std::string& line) {
 static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
     const std::string rel = rel_label(case_dir, root);
 
-    // Declared before the engine: make() binds services to this object, so it
-    // has to outlive them.
-    lemon::testing::FakeClassifierServices fake;
-
-    std::optional<RoutePolicy> policy = load_case_policy(case_dir, rel);
-    if (!policy) return 0;
-
-    std::optional<RoutingPolicyEngine> engine =
-        compile_engine(std::move(*policy), fake.make(), rel);
-    if (!engine) return 0;
-
     std::ifstream cases(case_dir / "cases.jsonl");
     if (!cases) {
         check(rel + ": cases.jsonl opens", false);
@@ -418,11 +407,24 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
         const lemon::RouteContext request_context =
             lemon::build_route_context(request, request.value("model", ""));
 
-        fake.reset();
+        // Everything per case is fresh: a fake holding only this case's stub
+        // answers, and a new engine. A semantic_similarity classifier caches its
+        // reference-phrase embeddings on the instance (classifiers are
+        // shared_ptr), so sharing one engine across the file would pin every case
+        // to the first case's phrase vectors; a fresh engine embeds each case's
+        // own phrases. The fake is declared before the engine so it outlives the
+        // services make() binds to it.
+        lemon::testing::FakeClassifierServices fake;
         if (row->contains("services") &&
             !apply_row_services(fake, row->at("services"), name + ".services")) {
             continue;
         }
+
+        std::optional<RoutePolicy> policy = load_case_policy(case_dir, rel);
+        if (!policy) return executed;
+        std::optional<RoutingPolicyEngine> engine =
+            compile_engine(std::move(*policy), fake.make(), rel);
+        if (!engine) return executed;
 
         run_case(*engine, request_context, *row, name);
         ++executed;
