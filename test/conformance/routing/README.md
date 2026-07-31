@@ -22,9 +22,17 @@ A `<schema_major>` directory holds case directories and nothing else, and each c
 directory is a leaf. The runner fails on anything else, so a stray file or a broken
 symlink cannot quietly drop cases.
 
-`<schema_major>` is the policy's root `version`. Cases are
-grouped by the **engine behavior they lock**, so the
-corpus reads as a checklist against the v1 semantics table in
+`<schema_major>` is the policy's root `version`, and the runner fails a case whose
+policy declares a different one. It is **not** the `version` inside an expected
+`Decision`: that field is the decision envelope's own major, emitted by
+`route_decision_to_json` and pinned by `decision.schema.json`. The route-policy,
+decision, and request schemas are versioned separately — `schema-lock.json` tracks
+each with its own `released` flag — so a new major of one does not imply a new
+major of the others. Both read `1` today; check which one a change is actually
+bumping.
+
+Cases are grouped by the **engine behavior they lock**, so the corpus reads as a
+checklist against the v1 semantics table in
 `src/cpp/resources/schemas/README.md`.
 
 One directory holds one `policy.json`, so the split follows the **policies**, not
@@ -70,13 +78,14 @@ higher than the count of semantics.
   ...
 ```
 
-The `l1_*` groups are **deterministic** — they replay with an empty
-`ClassifierServices` (no model backend). The `l0a` / `l2` / `l3` groups are
-**model-backed**, but no real model runs: the runner binds the engine to a
-`FakeClassifierServices`, and each case declares the answers it should return in
-a `services` field (see [Model-backed stub answers](#model-backed-stub-answers-services)).
-This locks the engine's threshold, selection, and fail-open logic without
-depending on a real model's floats.
+The `l1_*` groups are **deterministic**: their policies declare no classifiers, so
+nothing they evaluate ever calls a backend and no `l1` case needs a `services`
+field. The `l0a` / `l2` / `l3` groups are **model-backed**, but no real model runs:
+the runner binds every engine to a `FakeClassifierServices` and each case declares
+the answers it should return in a `services` field (see
+[Model-backed stub answers](#model-backed-stub-answers-services)). This locks the
+engine's threshold, selection, and fail-open logic without depending on a real
+model's floats.
 
 All model names in the corpus — `RouterLLM`, `EmbedModel`, `MathLLM`, `TinyLLM`,
 and the rest — are **placeholders for stubbed backends**. They read like real
@@ -140,9 +149,9 @@ will not match:
 One semantic per row → the single case that locks it. The matrix is the
 sufficiency argument: every behavior the engine defines for v1 has exactly one
 lock, and combinators/resolution are tested once (they are op-agnostic) rather
-than across every leaf. Tiers run L0a → L1 → L2 → L3; L1 is deterministic (empty
-`ClassifierServices`), the others are model-backed (stubbed answers, so a real
-backend's numeric drift can never change the recorded `Decision`).
+than across every leaf. Tiers run L0a → L1 → L2 → L3; L1 is deterministic (its
+policies declare no classifiers), the others are model-backed (stubbed answers, so
+a real backend's numeric drift can never change the recorded `Decision`).
 
 ### L0a — `llm` router
 
@@ -166,7 +175,7 @@ backend's numeric drift can never change the recorded `Decision`).
 | `model` must be a string | `l0a_router_reply_contract/model-not-string-falls-open` |
 | `rationale` must be a string | `l0a_router_reply_contract/rationale-not-string-falls-open` |
 | candidate-name match is exact — a superstring of a candidate is not the candidate | `l0a_router_reply_contract/superstring-name-no-exact-match` |
-| candidate-name match is case-sensitive | `l0a_router_reply_contract/case-insensitive-name-no-match` |
+| candidate-name match is case-sensitive | `l0a_router_reply_contract/case-mismatched-name-no-match` |
 | one wrapping code fence is stripped, then the object is parsed | `l0a_router_reply_contract/fenced-reply-routes` |
 | text after the closing fence ⇒ rejected | `l0a_router_reply_contract/fenced-trailing-prose-falls-open` |
 | an opening fence with no closing fence ⇒ rejected | `l0a_router_reply_contract/no-closing-fence-falls-open` |
@@ -243,7 +252,7 @@ path is unreachable: a leaf that omits `label` resolves through `default_label`.
 | array `prompt` ⇒ non-string parts skipped, not stringified | `l1_input_forms/prompt-array-skips-non-string-parts` |
 | `input` bare string ⇒ routing input | `l1_input_forms/input-string-form` |
 | `input` array of role-tagged messages ⇒ last user message's text | `l1_input_forms/input-array-role-tagged` |
-| `input` array with no user role ⇒ role-less parts concatenated (fallback) | `l1_input_forms/input-roleless-fallback` |
+| `input` array with no user role ⇒ role-less **string** items concatenated (fallback). The bare-content-part shape of the same fallback is locked only for images, by `l1_conditions_features/has_images-input-bare-image-part`, not for text collection | `l1_input_forms/input-roleless-fallback` |
 | `messages` ⇒ the routing input is the **latest user turn only**, not the whole conversation | `l1_input_forms/messages-latest-user-turn-only` |
 | field precedence — `messages` is read even when `prompt` and `input` are also present | `l1_input_forms/messages-wins-over-prompt-and-input` |
 | field precedence — `prompt` is read before `input` | `l1_input_forms/prompt-wins-over-input` |
