@@ -402,13 +402,16 @@ const App: React.FC = () => {
       })
       .filter(({ name }) => name && matches(name))
       .slice(0, 8)
-      .map(({ model, name }) => ({
-        id: `model:${name}`,
-        label: name,
-        description: `${String((model as any).type ?? 'Model')} model`,
-        icon: 'hard-drive' as Parameters<typeof Icon>[0]['name'],
-        modelName: name,
-      }));
+      .map(({ model, name }) => {
+        const type = String((model as any).type ?? '').trim();
+        return {
+          id: `model:${name}`,
+          label: name,
+          description: type && type.toLowerCase() !== 'model' ? `${type} model` : 'Model',
+          icon: 'hard-drive' as Parameters<typeof Icon>[0]['name'],
+          modelName: name,
+        };
+      });
     const backends = BACKEND_DESTINATIONS
       .filter(backend => matches(backend))
       .map(backend => ({
