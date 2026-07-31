@@ -110,6 +110,20 @@ docker run -d \
 
 > This will run the server using the ROCm backend as the default for llama.cpp.
 
+> **GPU device permissions on Linux**
+>
+> The container runs as an unprivileged user (UID 10001), so it must belong to
+> the host groups that own `/dev/kfd` and `/dev/dri` (usually `render` and
+> `video`) or ROCm device access is denied. Docker resolves group *names*
+> against the container's `/etc/group`, so if `--group-add render` fails, pass
+> the host's numeric group ID instead. Find it on the host with:
+>
+> ```bash
+> getent group render video
+> ```
+>
+> Then use the numbers, e.g. `--group-add 992 --group-add 44`.
+
 ### Docker Run with AMD GPU Passthrough using ROCm on WSL
 
 Make sure you follow install steps described in [ROCm for WSL](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html)
