@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -416,28 +417,24 @@ static std::vector<BenchScenario> exclude_category(const std::vector<BenchScenar
 }
 
 
-std::vector<BackendDiscovery> discover_backends(lemonade::LemonadeClient& client,
+std::vector<BackendDiscovery> discover_backends(const json& sys_info,
                                                 const std::string& model,
-                                                const std::vector<std::string>& requested) {
+                                                const std::vector<std::string>& requested,
+                                                const json& model_info) {
     std::vector<BackendDiscovery> result;
 
-    try {
-        std::string response = client.make_request("/api/v1/system-info", "GET", "", "", 10000, 10000);
-        auto sys_info = json::parse(response);
+    if (!sys_info.contains("recipes") || !sys_info["recipes"].is_object()) {
+        std::cerr << "Warning: No recipes found in system-info" << std::endl;
+        return result;
+    }
 
-        if (!sys_info.contains("recipes") || !sys_info["recipes"].is_object()) {
-            std::cerr << "Warning: No recipes found in system-info" << std::endl;
-            return result;
-        }
+    // Determine model recipe from pre-fetched model info
+    std::string model_recipe;
+    if (model_info.contains("recipe") && model_info["recipe"].is_string()) {
+        model_recipe = model_info["recipe"].get<std::string>();
+    }
 
-        // Also get model info to find its recipe
-        json model_info = client.get_model_info(model);
-        std::string model_recipe;
-        if (model_info.contains("recipe") && model_info["recipe"].is_string()) {
-            model_recipe = model_info["recipe"].get<std::string>();
-        }
-
-        for (const auto& [recipe_name, recipe_data] : sys_info["recipes"].items()) {
+    for (const auto& [recipe_name, recipe_data] : sys_info["recipes"].items()) {
             // If model has a specific recipe, only consider that recipe
             if (!model_recipe.empty() && recipe_name != model_recipe) {
                 continue;
@@ -463,9 +460,6 @@ std::vector<BackendDiscovery> discover_backends(lemonade::LemonadeClient& client
                 result.push_back({recipe_name, backend_name});
             }
         }
-    } catch (const std::exception& e) {
-        std::cerr << "Warning: Failed to discover backends: " << e.what() << std::endl;
-    }
 
     return result;
 }
@@ -559,6 +553,141 @@ static void query_system_stats(lemonade::LemonadeClient& client, double& vram_gb
     } catch (...) {
         // Best-effort: memory tracking is optional
     }
+}
+
+// Helper: parse "XX.XX GB" or "XX GB" into a double (GB)
+static double parse_gb_string(const std::string& s) {
+    // Strip trailing " GB" and parse the number
+    std::string num_str = s;
+    size_t space_pos = num_str.find(' ');
+    if (space_pos != std::string::npos) {
+        num_str = num_str.substr(0, space_pos);
+    }
+    try {
+        return std::stod(num_str);
+    } catch (...) {
+        return -1.0;
+    }
+}
+
+// Build a hardware profile JSON from system-info + system-stats.
+// Captures OS, CPU, GPU array, RAM, and backend versions for shareable benchmarks.
+static json build_hardware_profile(lemonade::LemonadeClient& client,
+                                   const json& sys_info,
+                                   const std::vector<std::string>& recipes,
+                                   const std::vector<std::string>& backends) {
+    json profile;
+
+    try {
+
+        std::string os_version = sys_info.value("OS Version", "unknown");
+        std::string os;
+        if (os_version.find("Windows") != std::string::npos) os = "windows";
+        else if (os_version.find("macOS") != std::string::npos || os_version.find("Darwin") != std::string::npos) os = "macos";
+        else if (os_version.find("Linux") != std::string::npos) os = "linux";
+        else os = os_version;
+        profile["os"] = os;
+
+        if (sys_info.contains("devices") && sys_info["devices"].contains("cpu")) {
+            profile["cpu"] = sys_info["devices"]["cpu"].value("name", "unknown");
+        } else {
+            profile["cpu"] = sys_info.value("Processor", "unknown");
+        }
+
+        if (sys_info.contains("Physical Memory") && sys_info["Physical Memory"].is_string()) {
+            double ram_gb = parse_gb_string(sys_info["Physical Memory"].get<std::string>());
+            if (ram_gb > 0) {
+                profile["ram_gb"] = ram_gb;
+            }
+        }
+
+        json gpu_array = json::array();
+        if (sys_info.contains("devices")) {
+            const auto& devices = sys_info["devices"];
+
+            if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
+                for (const auto& gpu : devices["amd_gpu"]) {
+                    if (gpu.value("available", false)) {
+                        json gpu_entry;
+                        gpu_entry["name"] = gpu.value("name", "unknown");
+                        gpu_entry["type"] = "amd";
+                        gpu_entry["integrated"] = gpu.value("integrated", false);
+                        if (gpu.contains("vram_gb") && gpu["vram_gb"].is_number()) {
+                            gpu_entry["vram_gb"] = gpu["vram_gb"].get<double>();
+                        }
+                        gpu_array.push_back(gpu_entry);
+                    }
+                }
+            }
+
+            if (devices.contains("nvidia_gpu") && devices["nvidia_gpu"].is_array()) {
+                for (const auto& gpu : devices["nvidia_gpu"]) {
+                    if (gpu.value("available", false)) {
+                        json gpu_entry;
+                        gpu_entry["name"] = gpu.value("name", "unknown");
+                        gpu_entry["type"] = "nvidia";
+                        if (gpu.contains("vram_gb") && gpu["vram_gb"].is_number()) {
+                            gpu_entry["vram_gb"] = gpu["vram_gb"].get<double>();
+                        }
+                        gpu_array.push_back(gpu_entry);
+                    }
+                }
+            }
+
+            if (devices.contains("metal") && devices["metal"].is_object()) {
+                const auto& metal = devices["metal"];
+                if (metal.value("available", false)) {
+                    json gpu_entry;
+                    gpu_entry["name"] = metal.value("name", "unknown");
+                    gpu_entry["type"] = "metal";
+                    if (metal.contains("vram_gb") && metal["vram_gb"].is_number()) {
+                        gpu_entry["vram_gb"] = metal["vram_gb"].get<double>();
+                    }
+                    gpu_array.push_back(gpu_entry);
+                }
+            }
+        }
+        profile["gpu"] = gpu_array;
+
+        json backend_versions = json::object();
+        if (sys_info.contains("recipes") && sys_info["recipes"].is_object()) {
+            for (const auto& [recipe_name, recipe_data] : sys_info["recipes"].items()) {
+                if (!recipes.empty()) {
+                    bool found = std::find(recipes.begin(), recipes.end(), recipe_name) != recipes.end();
+                    if (!found) continue;
+                }
+
+                if (!recipe_data.contains("backends") || !recipe_data["backends"].is_object()) {
+                    continue;
+                }
+
+                for (const auto& [backend_name, backend_data] : recipe_data["backends"].items()) {
+                    if (!backends.empty()) {
+                        bool found = std::find(backends.begin(), backends.end(), backend_name) != backends.end();
+                        if (!found) continue;
+                    }
+
+                    std::string state = backend_data.value("state", "unknown");
+                    if (state != "installed" && state != "update_required" && state != "update_available") {
+                        continue;
+                    }
+
+                    std::string version = backend_data.value("version", "");
+                    if (!version.empty()) {
+                        backend_versions[recipe_name + "/" + backend_name] = version;
+                    }
+                }
+            }
+        }
+        if (!backend_versions.empty()) {
+            profile["backends"] = backend_versions;
+        }
+
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: Failed to build hardware profile: " << e.what() << std::endl;
+    }
+
+    return profile;
 }
 
 static void extract_usage_into_result(const json& usage, BenchRunResult& result) {
@@ -1605,6 +1734,32 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
     std::vector<ModelBenchResult> by_model;
 
+    json sys_info;
+    try {
+        std::string response = client.make_request("/api/v1/system-info", "GET", "", "", 10000, 10000);
+        sys_info = json::parse(response);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Failed to fetch system-info: " << e.what() << std::endl;
+        return 1;
+    }
+
+    std::unordered_set<std::string> test_recipes, test_backends;
+    std::map<std::string, std::vector<BackendDiscovery>> backends_by_model;
+    for (const auto& model : unique_models) {
+        const auto model_it = model_info_by_name.find(model);
+        const json& model_info = (model_it != model_info_by_name.end()) ? model_it->second : json::object();
+        auto backends = discover_backends(sys_info, model, config.backends, model_info);
+        backends_by_model[model] = backends;
+        for (const auto& [recipe, backend] : backends) {
+            test_recipes.insert(recipe);
+            test_backends.insert(backend);
+        }
+    }
+    json hardware_profile = build_hardware_profile(
+        client, sys_info,
+        std::vector<std::string>(test_recipes.begin(), test_recipes.end()),
+        std::vector<std::string>(test_backends.begin(), test_backends.end()));
+
     // 2. Execute benchmark workflow for each model
     for (const auto& model : unique_models) {
         const auto model_it = model_info_by_name.find(model);
@@ -1615,8 +1770,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         const json& model_info = model_it->second;
         const std::string model_timestamp = get_timestamp_iso();
 
-        // Discover backends for this model
-        auto backends = discover_backends(client, model, config.backends);
+        auto backends = backends_by_model[model];
         if (backends.empty()) {
             std::cerr << "Error: No suitable backends found for model '" << model << "'." << std::endl;
             return 1;
@@ -1726,6 +1880,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         if (config.json_output) {
             json output;
             output["timestamp"] = command_timestamp;
+            output["hardware"] = hardware_profile;
             output["models"] = json::array();
             for (const auto& model_result : by_model) {
                 output["models"].push_back(
@@ -1748,6 +1903,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             if (!config.output_file.empty()) {
                 json output;
                 output["timestamp"] = command_timestamp;
+                output["hardware"] = hardware_profile;
                 output["models"] = json::array();
                 for (const auto& model_result : by_model) {
                     output["models"].push_back(
@@ -1830,6 +1986,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             json output;
 
             output["timestamp"] = command_timestamp;
+            output["hardware"] = hardware_profile;
             output["compare_file"] = config.compare_file;
             if (!previous_timestamp.empty()) {
                 output["previous_timestamp"] = previous_timestamp;

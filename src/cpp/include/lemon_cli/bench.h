@@ -107,10 +107,11 @@ struct BackendDiscovery {
     std::string backend;
 };
 
-// Discover available backends for a model
-std::vector<BackendDiscovery> discover_backends(lemonade::LemonadeClient& client,
+// Discover available backends for a model (uses pre-fetched system-info and model-info)
+std::vector<BackendDiscovery> discover_backends(const json& sys_info,
                                                 const std::string& model,
-                                                const std::vector<std::string>& requested);
+                                                const std::vector<std::string>& requested,
+                                                const json& model_info);
 
 // ============================================================
 // Model Load/Unload
