@@ -11,6 +11,25 @@ export interface ImageDefaults {
   flow_shift?: number;
 }
 
+// Per-model sampling defaults the speech panel seeds its controls from.
+export interface SpeechDefaults {
+  audio_temperature?: number;
+  audio_top_p?: number;
+  audio_top_k?: number;
+  audio_repetition_penalty?: number;
+  text_temperature?: number;
+  text_top_p?: number;
+  text_top_k?: number;
+  speed?: number;
+}
+
+export interface AudioDefaults {
+  seconds?: number;
+  steps?: number;
+  cfg_scale?: number;
+  sigma_shift?: number;
+}
+
 export interface ModelInfo {
   checkpoint: string;
   checkpoints?: Record<string, string>;
@@ -33,6 +52,8 @@ export interface ModelInfo {
   downloaded?: boolean;
   update_available?: boolean;
   image_defaults?: ImageDefaults;
+  speech_defaults?: SpeechDefaults;
+  audio_defaults?: AudioDefaults;
   // Per-collection system prompt template (collection.omni only). Overrides the
   // global default in toolDefinitions.json when set. Keeps {tool_list} and
   // {tool_guidance} placeholders so runtime substitution still works.
@@ -47,11 +68,12 @@ export interface ModelsData {
   [key: string]: ModelInfo;
 }
 
-export type TtsVoiceMode = 'fixed' | 'clone' | 'design';
+export type TtsVoiceMode = 'fixed' | 'clone';
 
+// OpenMOSS speech models both clone a sample and design a voice from a
+// description, so there is no separate voice-design model to distinguish.
 export const getTtsVoiceMode = (info?: ModelInfo | null): TtsVoiceMode => {
   if (!info) return 'fixed';
-  if ((info.labels || []).includes('voice-design')) return 'design';
   if (info.recipe === 'openmoss') return 'clone';
   return 'fixed';
 };

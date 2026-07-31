@@ -1,9 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
-import { ModelsData } from '../../utils/modelData';
+import { ModelInfo, ModelsData, SpeechDefaults } from '../../utils/modelData';
 import { AppSettings } from '../../utils/appSettings';
-import { ensureModelReady, DownloadAbortError } from '../../utils/backendInstaller';
 import { readWavFileAsBase64, WAV_FILE_ACCEPT } from '../../utils/wav';
 import { useTTS } from '../../hooks/useTTS';
 import { voiceOptions } from '../../tabs/TTSSettings';
@@ -15,20 +14,27 @@ import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
 import Combobox from '../Combobox';
 
-const VOICE_DESIGN_PHRASE = 'Hello there. This is a short sample of the voice you described.';
+type MossMode = 'describe' | 'clone';
 
-const blobUrlToBase64 = async (url: string): Promise<string> => {
-  const blob = await (await fetch(url)).blob();
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const s = reader.result as string;
-      const comma = s.indexOf(',');
-      resolve(comma >= 0 ? s.slice(comma + 1) : s);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+const MOSS_SPEECH_PARAMS: { key: keyof SpeechDefaults; label: string; min: number; max: number; step: number }[] = [
+  { key: 'audio_temperature', label: 'Audio temp', min: 0, max: 3, step: 0.05 },
+  { key: 'audio_top_p', label: 'Audio top-p', min: 0, max: 1, step: 0.05 },
+  { key: 'audio_top_k', label: 'Audio top-k', min: 0, max: 200, step: 1 },
+  { key: 'audio_repetition_penalty', label: 'Repetition', min: 1, max: 2, step: 0.05 },
+  { key: 'text_temperature', label: 'Text temp', min: 0, max: 3, step: 0.05 },
+  { key: 'text_top_p', label: 'Text top-p', min: 0, max: 1, step: 0.05 },
+  { key: 'text_top_k', label: 'Text top-k', min: 0, max: 200, step: 1 },
+  { key: 'speed', label: 'Speed', min: 0.25, max: 4, step: 0.05 },
+];
+
+const speechDefaultsForModel = (info?: ModelInfo | null): Record<string, number> => {
+  const declared = info?.speech_defaults || {};
+  const defaults: Record<string, number> = {};
+  for (const param of MOSS_SPEECH_PARAMS) {
+    const value = declared[param.key];
+    if (typeof value === 'number') defaults[param.key] = value;
+  }
+  return defaults;
 };
 
 interface TTSPanelProps {
@@ -46,7 +52,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality,
   runPreFlight, reset, showError, appSettings,
 }) => {
-  const { selectedModel, modelsData, downloadedModels } = useModels();
+  const { selectedModel, modelsData } = useModels();
   const tts = useTTS(appSettings, modelsData);
 
   interface TTSClip {
@@ -55,16 +61,17 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
     model: string;
     voice: string;
     referenceWavB64?: string;
+    extra?: Record<string, unknown>;
   }
 
   const [inputValue, setInputValue] = useState('');
   const [ttsMessageHistory, setTTSMessageHistory] = useState<TTSClip[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
-  const [mossMode, setMossMode] = useState<'plain' | 'describe' | 'clone'>('plain');
+  const [mossMode, setMossMode] = useState<MossMode>('describe');
   const [voiceDescription, setVoiceDescription] = useState('');
   const [cloneWav, setCloneWav] = useState<{ b64: string; name: string } | null>(null);
-  const [designingVoice, setDesigningVoice] = useState(false);
+  const [speechParams, setSpeechParams] = useState<Record<string, number>>({});
 
   const inputTextareaRef = useRef<HTMLTextAreaElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -75,18 +82,18 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   const selectedIsTts = (modelsData?.[selectedModel || '']?.labels || []).includes('tts');
   const ttsModel = (selectedIsTts ? selectedModel : '') || appSettings?.tts.model.value || '';
   const isOpenMoss = (modelsData?.[ttsModel]?.recipe || '') === 'openmoss';
-  const selectedIsVoiceDesign = (modelsData?.[ttsModel]?.labels || []).includes('voice-design');
 
-  const voiceDesignModel = selectedIsVoiceDesign ? ttsModel
-    : (downloadedModels.find(m => m.info?.labels?.includes('voice-design'))?.id || '');
-  const cloneModel = (isOpenMoss && !selectedIsVoiceDesign) ? ttsModel
-    : (downloadedModels.find(m => m.info?.recipe === 'openmoss'
-        && !m.info?.labels?.includes('voice-design'))?.id || '');
+  const cloneMissing = isOpenMoss && mossMode === 'clone' && !cloneWav;
+  const describeMissing = isOpenMoss && mossMode === 'describe' && !voiceDescription.trim();
 
-  const cloneMissing  = isOpenMoss && mossMode === 'clone' && (!cloneWav || !cloneModel);
-  const describeMissing = isOpenMoss && mossMode === 'describe' && !voiceDesignModel;
+  const busy = isBusy;
 
-  const busy = isBusy || designingVoice;
+  // Keyed on the declared defaults rather than on modelsData, whose identity
+  // changes on every poll — re-seeding then would discard the user's edits.
+  const speechDefaultsKey = JSON.stringify(modelsData?.[ttsModel]?.speech_defaults || {});
+  useEffect(() => {
+    setSpeechParams(speechDefaultsForModel(modelsData?.[ttsModel]));
+  }, [ttsModel, speechDefaultsKey]);
 
   const adjustTextareaHeight = (textarea: HTMLTextAreaElement) => {
     textarea.style.height = 'auto';
@@ -111,40 +118,33 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   };
 
   const synthAndRecord = async (
-    text: string, model: string, voice: string, referenceWavB64?: string,
+    text: string, model: string, voice: string,
+    referenceWavB64?: string, extra?: Record<string, unknown>,
   ): Promise<boolean> => {
     const ready = await runPreFlight('speech', { modelName: model, modelsData, onError: showError });
     if (!ready) return false;
-    const audioUrl = await tts.synthesizeSpeech(text, voice, { model, referenceWavB64 });
-    setTTSMessageHistory(prev => [...prev, { text, audioUrl, model, voice, referenceWavB64 }]);
+    const audioUrl = await tts.synthesizeSpeech(text, voice, { model, referenceWavB64, extra });
+    setTTSMessageHistory(prev => [...prev, { text, audioUrl, model, voice, referenceWavB64, extra }]);
     return true;
   };
 
   const handleMessageToSpeech = async () => {
-    if (!inputValue.trim() || isBusy || designingVoice || cloneMissing || describeMissing) return;
+    if (!inputValue.trim() || isBusy || cloneMissing || describeMissing) return;
     const text = inputValue;
 
     try {
-      if (isOpenMoss && mossMode === 'describe' && cloneModel) {
-        let referenceWavB64: string;
-        try {
-          setDesigningVoice(true);
-          await ensureModelReady(voiceDesignModel, modelsData);
-          const refUrl = await tts.synthesizeSpeech(VOICE_DESIGN_PHRASE, voiceDescription.trim(), { model: voiceDesignModel });
-          referenceWavB64 = await blobUrlToBase64(refUrl);
-        } catch (e: any) {
-          if (e instanceof DownloadAbortError) return;
-          throw e;
-        } finally {
-          setDesigningVoice(false);
+      if (isOpenMoss) {
+        // Design is opt-in through `voice_design_description`, and the backend
+        // runs the whole cascade itself. `voice` keeps its OpenAI meaning, so a
+        // style note only ever directs delivery.
+        const styleNote = voiceDescription.trim();
+        const extra: Record<string, unknown> = { ...speechParams };
+        if (mossMode === 'describe') {
+          extra.voice_design_description = styleNote;
+          await synthAndRecord(text, ttsModel, '', undefined, extra);
+        } else {
+          await synthAndRecord(text, ttsModel, styleNote, cloneWav?.b64, extra);
         }
-        await synthAndRecord(text, cloneModel, '', referenceWavB64);
-      } else if (isOpenMoss && mossMode === 'describe') {
-        await synthAndRecord(text, voiceDesignModel, voiceDescription.trim());
-      } else if (isOpenMoss && mossMode === 'clone') {
-        await synthAndRecord(text, cloneModel, voiceDescription.trim(), cloneWav?.b64);
-      } else if (isOpenMoss) {
-        await synthAndRecord(text, ttsModel, voiceDescription.trim());
       } else {
         await synthAndRecord(text, ttsModel, tts.currentVoice);
       }
@@ -153,7 +153,6 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
       showError(`Failed to process message: ${error.message || 'Unknown error'}`);
       tts.stopAudio();
     } finally {
-      setDesigningVoice(false);
       reset();
       setInputValue('');
     }
@@ -195,7 +194,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
     const ready = await runPreFlight('speech', { modelName: clip.model, modelsData, onError: showError });
     if (!ready) return;
     try {
-      const audioUrl = await tts.synthesizeSpeech(newText, clip.voice, { model: clip.model, referenceWavB64: clip.referenceWavB64 });
+      const audioUrl = await tts.synthesizeSpeech(newText, clip.voice, { model: clip.model, referenceWavB64: clip.referenceWavB64, extra: clip.extra });
       setTTSMessageHistory(prev => prev.map((c, i) => i === index ? { ...c, text: newText, audioUrl } : c));
     } catch (error: any) {
       console.error('Failed to regenerate message:', error);
@@ -273,15 +272,13 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
           </div>
         ))}
 
-        {designingVoice && (
-          <div className="model-loading-indicator">
-            <span className="model-loading-text">Designing voice from description...</span>
-          </div>
-        )}
-
         {isInferring && activeModality === 'speech' && (
           <div className="model-loading-indicator">
-            <span className="model-loading-text">Converting text to speech...</span>
+            <span className="model-loading-text">
+              {isOpenMoss && mossMode === 'describe'
+                ? 'Designing the voice, then converting text to speech...'
+                : 'Converting text to speech...'}
+            </span>
           </div>
         )}
 
@@ -296,13 +293,9 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
       <div className="chat-input-container">
         <div className="chat-input-voice-selector">
           {isOpenMoss ? (
+            <div className="tts-openmoss-panel">
             <div className="tts-openmoss-controls">
               <div className="tts-mode-toggle">
-                <button
-                  className={`toggle-button${mossMode === 'plain' ? ' active' : ''}`}
-                  onClick={() => setMossMode('plain')}
-                  disabled={busy}
-                >Plain</button>
                 <button
                   className={`toggle-button${mossMode === 'describe' ? ' active' : ''}`}
                   onClick={() => setMossMode('describe')}
@@ -314,23 +307,13 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
                   disabled={busy}
                 >Clone</button>
               </div>
-              {mossMode === 'plain' ? (
+              {mossMode === 'describe' ? (
                 <input
                   className="form-input"
                   value={voiceDescription}
                   onChange={(e) => setVoiceDescription(e.target.value)}
-                  placeholder="Optional style instruction (e.g. cheerful, whispering)"
+                  placeholder="Describe the voice (e.g. warm low female, British accent)"
                   disabled={busy}
-                />
-              ) : mossMode === 'describe' ? (
-                <input
-                  className="form-input"
-                  value={voiceDescription}
-                  onChange={(e) => setVoiceDescription(e.target.value)}
-                  placeholder={describeMissing
-                    ? 'Install MOSS-VoiceGen to design a voice from a description'
-                    : 'Describe the voice (e.g. warm low female, British accent)'}
-                  disabled={busy || describeMissing}
                 />
               ) : (
                 <div className="tts-clone-row">
@@ -354,6 +337,34 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
                 </div>
               )}
             </div>
+            <details className="tts-speech-params">
+              <summary>Generation parameters</summary>
+              <div className="tts-speech-params-grid">
+                {MOSS_SPEECH_PARAMS.map(param => (
+                  <label key={param.key} className="tts-speech-param">
+                    <span>{param.label}</span>
+                    <input
+                      type="number"
+                      min={param.min}
+                      max={param.max}
+                      step={param.step}
+                      value={speechParams[param.key] ?? ''}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setSpeechParams(previous => {
+                          const next = { ...previous };
+                          if (raw === '') delete next[param.key];
+                          else next[param.key] = Number(raw);
+                          return next;
+                        });
+                      }}
+                      disabled={busy}
+                    />
+                  </label>
+                ))}
+              </div>
+            </details>
+            </div>
           ) : (
             <Combobox defaultValue={tts.currentVoice} optionsList={voiceOptions} onChangeFunc={tts.setVoice} position='top' placeholder='Select a voice...'/>
           )}
@@ -376,12 +387,12 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
               <button className="chat-stop-button" onClick={tts.stopAudio} title="Stop audio">
                 <StopIcon />
               </button>
-            ) : (isBusy || designingVoice) ? (
+            ) : isBusy ? (
               <button className="chat-send-button" disabled title="Processing...">
                 <TypingIndicator size="small" />
               </button>
             ) : (
-              <button className="chat-send-button" onClick={handleMessageToSpeech} disabled={!inputValue.trim() || cloneMissing || describeMissing} title={cloneMissing ? 'Upload a voice sample to clone' : describeMissing ? 'Install MOSS-VoiceGen for described voices' : 'Send'}>
+              <button className="chat-send-button" onClick={handleMessageToSpeech} disabled={!inputValue.trim() || cloneMissing || describeMissing} title={cloneMissing ? 'Upload a voice sample to clone' : describeMissing ? 'Describe the voice you want' : 'Send'}>
                 <SendIcon />
               </button>
             )}

@@ -3486,10 +3486,48 @@ input::-webkit-calendar-picker-indicator {
 }
 
 .model3d-source-toggle {
+.tts-openmoss-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+}
+
 .tts-openmoss-controls {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+.tts-speech-params > summary {
+    cursor: pointer;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    user-select: none;
+}
+
+.tts-speech-params-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 6px 10px;
+    padding-top: 6px;
+}
+
+.tts-speech-param {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    min-width: 0;
+}
+
+.tts-speech-param input {
+    width: 100%;
+    min-width: 0;
 }
 
 .tts-openmoss-controls .form-input {

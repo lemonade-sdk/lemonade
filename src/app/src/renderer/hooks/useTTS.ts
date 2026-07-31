@@ -6,6 +6,14 @@ import { ensureModelReady, DownloadAbortError } from '../utils/backendInstaller'
 import { ModelsData, getTtsVoiceMode } from '../utils/modelData';
 import { MessageContent } from '../utils/chatTypes';
 
+// `extra` carries per-request speech fields the panel owns — OpenMOSS voice
+// design and sampling parameters — straight through to /audio/speech.
+export interface SpeechOptions {
+  model?: string;
+  referenceWavB64?: string;
+  extra?: Record<string, unknown>;
+}
+
 export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) {
   const [currentVoice, setVoice] = useState('');
   const [audioState, setAudioState] = useState<number>(0);
@@ -52,7 +60,7 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
   const doTextToSpeech = async (
     message: MessageContent,
     ttsVoice: string,
-    opts?: { model?: string; referenceWavB64?: string },
+    opts?: SpeechOptions,
   ) => {
     setAudioState(LOADING);
 
@@ -68,6 +76,7 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
     };
     if (ttsVoice) requestBody.voice = ttsVoice;
     if (opts?.referenceWavB64) requestBody.reference_wav_b64 = opts.referenceWavB64;
+    if (opts?.extra) Object.assign(requestBody, opts.extra);
 
     const response = await serverFetch('/audio/speech', {
       method: 'POST',
@@ -88,7 +97,7 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
   const synthesizeSpeech = async (
     message: MessageContent,
     ttsVoice: string,
-    opts?: { model?: string; referenceWavB64?: string },
+    opts?: SpeechOptions,
   ): Promise<string> => {
     let textMessage: any = message;
     if (textMessage instanceof Array) {
@@ -99,6 +108,7 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
     const requestBody: any = { model: textToSpeechModel, input: textMessage };
     if (ttsVoice) requestBody.voice = ttsVoice;
     if (opts?.referenceWavB64) requestBody.reference_wav_b64 = opts.referenceWavB64;
+    if (opts?.extra) Object.assign(requestBody, opts.extra);
 
     const response = await serverFetch('/audio/speech', {
       method: 'POST',
