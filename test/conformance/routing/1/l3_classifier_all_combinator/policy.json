@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "model_name": "user.Classifier-AllCombinator",
+  "recipe": "collection.router",
+  "components": ["MathLLM", "CodingLLM", "DefaultLLM", "ModelX", "ModelY", "ModelZ", "ModelW"],
+  "routing": {
+    "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+    "default_model": "DefaultLLM",
+    "classifiers": [
+      { "id": "clsX", "type": "classifier", "model": "ModelX", "labels": ["code"] },
+      { "id": "clsY", "type": "classifier", "model": "ModelY", "labels": ["code"] },
+      { "id": "clsZ", "type": "classifier", "model": "ModelZ", "labels": ["code"], "on_error": "match_true" },
+      { "id": "clsW", "type": "classifier", "model": "ModelW", "labels": ["code"] }
+    ],
+    "rules": [
+      { "id": "all-X-Y", "match": { "all": [ { "classifier": "clsX", "label": "code", "min_score": 0.5 }, { "classifier": "clsY", "label": "code", "min_score": 0.5 } ] }, "route_to": "CodingLLM" },
+      { "id": "all-Z-W", "match": { "all": [ { "classifier": "clsZ", "label": "code", "min_score": 0.5 }, { "classifier": "clsW", "label": "code", "min_score": 0.5 } ] }, "route_to": "MathLLM" }
+    ]
+  }
+}

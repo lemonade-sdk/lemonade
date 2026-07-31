@@ -1,0 +1,19 @@
+{
+  "version": "1",
+  "model_name": "user.Classifier-OnError-Combinator",
+  "recipe": "collection.router",
+  "components": ["MathLLM", "CodingLLM", "DefaultLLM", "ModelA", "ModelB", "ModelC"],
+  "routing": {
+    "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+    "default_model": "DefaultLLM",
+    "classifiers": [
+      { "id": "clsA", "type": "classifier", "model": "ModelA", "labels": ["code"] },
+      { "id": "clsB", "type": "classifier", "model": "ModelB", "labels": ["code"] },
+      { "id": "clsC", "type": "classifier", "model": "ModelC", "labels": ["code"] }
+    ],
+    "rules": [
+      { "id": "not-A", "match": { "not": { "classifier": "clsA", "label": "code", "min_score": 0.5 } }, "route_to": "CodingLLM" },
+      { "id": "any-B-C", "match": { "any": [ { "classifier": "clsB", "label": "code", "min_score": 0.5 }, { "classifier": "clsC", "label": "code", "min_score": 0.5 } ] }, "route_to": "MathLLM" }
+    ]
+  }
+}
