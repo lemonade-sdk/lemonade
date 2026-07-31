@@ -177,7 +177,7 @@ void TrayUI::stop() {
 // ---------------------------------------------------------------------------
 
 httplib::Client TrayUI::make_client(const std::string& host, int port, bool is_ssl) const {
-#ifndef CPPHTTPLIB_MBEDTLS_SUPPORT
+#ifndef LEMONADE_HTTPLIB_HAS_TLS
     if (is_ssl) {
         throw std::runtime_error("HTTPS support is not compiled in this client.");
     }
@@ -186,7 +186,7 @@ httplib::Client TrayUI::make_client(const std::string& host, int port, bool is_s
     std::string scheme = is_ssl ? "https" : "http";
     std::string url = scheme + "://" + format_host + ":" + std::to_string(port);
     auto client = httplib::Client(url);
-#ifdef CPPHTTPLIB_MBEDTLS_SUPPORT
+#ifdef LEMONADE_HTTPLIB_HAS_TLS
     const char* skip_verify = std::getenv("LEMONADE_SKIP_VERIFY");
     if (skip_verify && std::string(skip_verify) == "1") {
         client.enable_server_certificate_verification(false);

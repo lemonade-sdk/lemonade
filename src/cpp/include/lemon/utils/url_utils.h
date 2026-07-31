@@ -3,6 +3,13 @@
 #include <string>
 #include <string_view>
 
+#if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || \
+    defined(CPPHTTPLIB_OPENSSL_SUPPORT) || \
+    defined(CPPHTTPLIB_WOLFSSL_SUPPORT) || \
+    defined(CPPHTTPLIB_SCHANNEL_SUPPORT)
+#  define LEMONADE_HTTPLIB_HAS_TLS 1
+#endif
+
 namespace lemon::utils {
 
 /**
