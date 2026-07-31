@@ -41,7 +41,8 @@ corpus reads as a checklist against the v1 semantics table in
   l1_conditions_metadata/     # metadata equals / any / exists / token-set semantics
   l1_conditions_regex_dialect/  # regex dialect lock: ECMAScript \d digit class (not a literal d)
   l1_conditions_vocab/        # keyword / regex ops + any / all / not / implicit-all
-  l1_input_forms/             # routing-input extraction from the `prompt` and `input` request fields
+  l1_input_forms/             # routing-input extraction: latest user turn, and messages > prompt > input
+  l1_leaf_order/              # multi-key leaf: children run in op-name order and short-circuit there
   l1_outputs/                 # matched rule's nested outputs bag copied verbatim into Decision
   l1_resolution/              # rule-list resolution: first-match-wins, fail-open default, explicit route to default
   l1_trace/                   # route_trace=true: per-leaf trace, accumulation, short-circuit, default
@@ -197,9 +198,13 @@ path is unreachable: a leaf that omits `label` resolves through `default_label`.
 | `not` — child matches ⇒ no match | `l1_conditions_vocab/not-child-present-no-match` |
 | multi-key leaf ⇒ implicit `all` | `l1_conditions_vocab/implicit-all-both-keys` |
 | multi-key leaf ⇒ implicit `all` — one key fails ⇒ no match | `l1_conditions_vocab/implicit-all-one-key-no-match` |
+| multi-key leaf — children run in **op-name** order, not authored order | `l1_leaf_order/all-ops-match-order-is-by-op-name` |
+| multi-key leaf — short-circuits on the first false child in that order | `l1_leaf_order/first-op-false-short-circuits-rest` |
+| multi-key leaf — `min_chars` runs before `regex` (both reached) | `l1_leaf_order/min_chars-runs-before-regex` |
 | `has_tools` — non-empty `tools[]` ⇒ match | `l1_conditions_features/has_tools-present-matches` |
 | `has_tools` — no `tools[]` ⇒ no match | `l1_conditions_features/has_tools-absent-no-match` |
 | `has_tools` — empty `tools[]` counts as absent ⇒ no match | `l1_conditions_features/has_tools-empty-array-no-match` |
+| `has_tools` — `tools` present but not an array ⇒ no match | `l1_conditions_features/has_tools-non-array-no-match` |
 | `has_images` — image content part ⇒ match | `l1_conditions_features/has_images-present-matches` |
 | `has_images` — no image ⇒ no match | `l1_conditions_features/has_images-absent-no-match` |
 | `has_images` — Responses API `input` array, role-tagged item with an `input_image` part ⇒ match | `l1_conditions_features/has_images-input-image-part` |
@@ -220,6 +225,7 @@ path is unreachable: a leaf that omits `label` resolves through `default_label`.
 | `metadata` `exists: true` — key present ⇒ match | `l1_conditions_metadata/metadata-exists-true` |
 | `metadata` — whitespace-only value counts as absent | `l1_conditions_metadata/metadata-whitespace-counts-absent` |
 | `metadata` `any` — comma-separated value, one token listed | `l1_conditions_metadata/metadata-any-comma-separated` |
+| `metadata` — a non-string value is dropped, so it counts as absent (the request schema allows strings only; this locks the defensive handling) | `l1_conditions_metadata/metadata-non-string-value-dropped` |
 | matched rule's non-empty nested `outputs` copied verbatim into `Decision` | `l1_outputs/nested-outputs-verbatim` |
 | first-match-wins (earlier rule beats a later match) | `l1_resolution/first-match-wins` |
 | later rule fires when earlier misses | `l1_resolution/later-rule-when-earlier-misses` |
@@ -231,6 +237,10 @@ path is unreachable: a leaf that omits `label` resolves through `default_label`.
 | `input` bare string ⇒ routing input | `l1_input_forms/input-string-form` |
 | `input` array of role-tagged messages ⇒ last user message's text | `l1_input_forms/input-array-role-tagged` |
 | `input` array with no user role ⇒ role-less parts concatenated (fallback) | `l1_input_forms/input-roleless-fallback` |
+| `messages` ⇒ the routing input is the **latest user turn only**, not the whole conversation | `l1_input_forms/messages-latest-user-turn-only` |
+| field precedence — `messages` is read even when `prompt` and `input` are also present | `l1_input_forms/messages-wins-over-prompt-and-input` |
+| field precedence — `prompt` is read before `input` | `l1_input_forms/prompt-wins-over-input` |
+| `messages` with no user turn ⇒ routing input is empty (`chars` 0) | `l1_conditions_char_bounds/no-user-turn-empty-input` |
 | `route_trace` unset ⇒ Decision carries no `trace` | `l1_trace/trace-omitted-when-not-requested` |
 | `route_trace: false` ⇒ behaves like unset, no `trace` | `l1_trace/trace-omitted-when-explicitly-false` |
 | `route_trace: true` ⇒ one trace entry per evaluated leaf; `any` short-circuits on first true | `l1_trace/trace-any-short-circuits-on-first-true` |
@@ -264,6 +274,7 @@ digit and not a literal `d`, so the cases would break if the engine's
 | cosine well under the band ⇒ miss ⇒ default | `l2_semantic_scoring/weak-similarity-below-threshold` |
 | negative cosine floored to 0, never negative | `l2_semantic_scoring/negative-cosine-floored-to-zero` |
 | cosine exactly at `min_score` ⇒ inclusive match | `l2_semantic_scoring/inclusive-boundary` |
+| one uncomparable phrase fails the whole concept — no fallback to the usable phrases, even when another already scored 1.0 | `l2_semantic_scoring/phrase-dimension-mismatch-fails-whole-concept` |
 | omitted label ⇒ the classifier's `default_label` concept score (not the max concept) | `l2_semantic_implicit_label/default-label-used-when-label-omitted` |
 | omitted label reads `default_label` even when another concept scores higher — proves it is not the max and not `primary()` | `l2_semantic_implicit_label/default-label-read-not-max` |
 | a rule's label reads that concept's own score | `l2_semantic_concepts/coding-label-selects-coding-score` |

@@ -1,0 +1,15 @@
+{
+  "version": "1",
+  "model_name": "user.Leaf-Order",
+  "recipe": "collection.router",
+  "components": ["local", "cloud"],
+  "routing": {
+    "candidates": ["local", "cloud"],
+    "default_model": "local",
+    "rules": [
+      { "id": "multi-op-leaf-rule",
+        "match": { "regex": "delta-[0-9]", "keywords_any": ["delta"], "min_chars": 4 },
+        "route_to": "cloud" }
+    ]
+  }
+}
