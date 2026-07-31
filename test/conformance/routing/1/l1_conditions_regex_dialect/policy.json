@@ -1,0 +1,15 @@
+{
+  "version": "1",
+  "model_name": "user.Conditions-Regex-Dialect",
+  "recipe": "collection.router",
+  "components": ["local", "cloud"],
+  "routing": {
+    "candidates": ["local", "cloud"],
+    "default_model": "local",
+    "rules": [
+      { "id": "digit-class-rule",
+        "match": { "regex": "id-\\d" },
+        "route_to": "cloud" }
+    ]
+  }
+}

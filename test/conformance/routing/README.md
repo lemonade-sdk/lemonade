@@ -38,6 +38,7 @@ corpus reads as a checklist against the v1 semantics table in
   l1_conditions_features/     # boolean request-feature ops: has_tools / has_images
   l1_conditions_features_negated/  # authored has_tools:false — equality, matches when absent
   l1_conditions_metadata/     # metadata equals / any / exists / token-set semantics
+  l1_conditions_regex_dialect/  # regex dialect lock: ECMAScript \d digit class (not a literal d)
   l1_conditions_vocab/        # keyword / regex ops + any / all / not / implicit-all
   l1_input_forms/             # routing-input extraction from the `prompt` and `input` request fields
   l1_outputs/                 # matched rule's nested outputs bag copied verbatim into Decision
@@ -176,6 +177,8 @@ backend's numeric drift can never change the recorded `Decision`).
 | `regex` — pattern searched for anywhere in the input, not matched against all of it | `l1_conditions_vocab/regex-matches-substring` |
 | `regex` — non-matching input ⇒ no match | `l1_conditions_vocab/regex-no-match` |
 | `regex` — case-sensitive (uppercase input misses lowercase pattern) | `l1_conditions_vocab/regex-case-sensitive-no-match` |
+| `regex` — ECMAScript dialect: `\d` is the digit class (matches a digit) | `l1_conditions_regex_dialect/ecmascript-digit-class-matches` |
+| `regex` — ECMAScript `\d` is not a literal `d` ⇒ `id-draft` misses | `l1_conditions_regex_dialect/ecmascript-digit-class-not-literal-d` |
 | `any` — matches if at least one child matches | `l1_conditions_vocab/any-one-child-matches` |
 | `any` — no child matches ⇒ no match | `l1_conditions_vocab/any-no-child-matches` |
 | `all` — matches only if every child matches | `l1_conditions_vocab/all-both-children-match` |
@@ -236,10 +239,11 @@ The one trace-emitting family not in the table above is the classifier band
 (`classifier:<id>`); it is model-backed and is locked by the `l0a` tier above
 and the `l2` / `l3` tiers below.
 
-The regex **dialect** is also not locked. The engine builds patterns with
-`std::regex::ECMAScript`, but the corpus patterns use syntax that every regex grammar
-shares, so the cases would still pass if that setting changed. Locking it needs a
-pattern with ECMAScript-only syntax, such as `\d`.
+The regex **dialect** is locked by `l1_conditions_regex_dialect` (in the table
+above). Most regex cases use grammar-neutral syntax (`[0-9]`) that every dialect
+shares, but that group uses the ECMAScript-only `\d` digit class: `\d` matches a
+digit and not a literal `d`, so the cases would break if the engine's
+`std::regex::ECMAScript` grammar changed.
 
 ### L2 — `semantic_similarity` (embeddings + cosine)
 
