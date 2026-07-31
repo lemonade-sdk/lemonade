@@ -103,7 +103,8 @@ docker run -d \
   -v lemonade-recipe:/opt/lemonade/.cache/lemonade \
   --device=/dev/kfd \
   --device=/dev/dri \
-  --group-add video --group-add 992
+  --group-add video \
+  --group-add render \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
