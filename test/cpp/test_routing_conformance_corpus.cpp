@@ -349,10 +349,15 @@ static std::optional<json> read_case_row(const std::string& line, const std::str
         check(where + " has object request+decision", false);
         return std::nullopt;
     }
+    bool keys_ok = true;
     for (auto it = row.begin(); it != row.end(); ++it) {
         if (kAllowedRowKeys.count(it.key()) == 0) {
             check(where + " unknown key '" + it.key() + "'", false);
+            keys_ok = false;
         }
+    }
+    if (!keys_ok) {
+        return std::nullopt;
     }
     const std::string case_name = row.value("name", "");
     if (case_name.empty()) {
