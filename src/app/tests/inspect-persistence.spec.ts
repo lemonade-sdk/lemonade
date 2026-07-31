@@ -4,7 +4,7 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, PATCH, DELETE',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Session-Id',
   };
 
   // Intercept all API requests to handle CORS preflight OPTIONS

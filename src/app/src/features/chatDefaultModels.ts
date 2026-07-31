@@ -1,6 +1,6 @@
 import type { ModelInfo } from '../api';
 import { capabilityFromModelInfo } from '../modelCapabilities';
-import { scopedStorageKey } from './accounts/accountStore';
+import { storageKey } from '../storage';
 
 export type LemonadeDefaultModelTier = 'tiny' | 'quality';
 export type LemonadeDefaultModelIcon = 'minimize-2' | 'gem';
@@ -43,20 +43,20 @@ function modelName(info: ModelInfo | null | undefined): string {
   return String((info as any)?.model_name || info?.name || info?.id || '').trim();
 }
 
-function safeGet(scope: string, key: string): string | null {
+function safeGet(key: string): string | null {
   if (typeof localStorage === 'undefined') return null;
   try {
-    const value = localStorage.getItem(scopedStorageKey(scope, key));
+    const value = localStorage.getItem(storageKey(key));
     return value?.trim() || null;
   } catch {
     return null;
   }
 }
 
-function safeSet(scope: string, key: string, value: string): void {
+function safeSet(key: string, value: string): void {
   if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem(scopedStorageKey(scope, key), value);
+    localStorage.setItem(storageKey(key), value);
   } catch {
     // Browser storage is best-effort; the in-memory fallback still works.
   }
@@ -82,24 +82,24 @@ export function lemonadeDefaultModelInfo(model: LemonadeDefaultChatModel): Model
   };
 }
 
-export function loadPreferredDefaultModelName(scope: string): string {
-  const stored = safeGet(scope, PREFERRED_DEFAULT_KEY);
+export function loadPreferredDefaultModelName(): string {
+  const stored = safeGet(PREFERRED_DEFAULT_KEY);
   return lemonadeDefaultModel(stored)?.name || INITIAL_LEMONADE_DEFAULT_MODEL.name;
 }
 
-export function savePreferredDefaultModelName(scope: string, name: string): string {
+export function savePreferredDefaultModelName(name: string): string {
   const resolved = lemonadeDefaultModel(name)?.name || INITIAL_LEMONADE_DEFAULT_MODEL.name;
-  safeSet(scope, PREFERRED_DEFAULT_KEY, resolved);
+  safeSet(PREFERRED_DEFAULT_KEY, resolved);
   return resolved;
 }
 
-export function loadLastReadyModelName(scope: string): string | null {
-  return safeGet(scope, LAST_READY_MODEL_KEY);
+export function loadLastReadyModelName(): string | null {
+  return safeGet(LAST_READY_MODEL_KEY);
 }
 
-export function saveLastReadyModelName(scope: string, name: string): void {
+export function saveLastReadyModelName(name: string): void {
   const normalized = name.trim();
-  if (normalized) safeSet(scope, LAST_READY_MODEL_KEY, normalized);
+  if (normalized) safeSet(LAST_READY_MODEL_KEY, normalized);
 }
 
 export function modelIsDownloaded(info: ModelInfo | null | undefined): boolean {

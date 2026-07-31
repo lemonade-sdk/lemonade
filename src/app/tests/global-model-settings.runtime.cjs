@@ -23,7 +23,7 @@ function installBrowserShim() {
 function loadSettingsModule() {
   const filename = path.join(root, 'src/features/modelSettings/globalModelSettings.ts');
   const source = fs.readFileSync(filename, 'utf8')
-    .replace("import { scopedStorageKey } from '../accounts/accountStore';", "const scopedStorageKey = (scope: string, key: string) => `lemonade:${scope}:${key}`;");
+    .replace("import { storageKey } from '../../storage';", "const storageKey = (key: string) => `lemonade:${key}`;");
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       target: ts.ScriptTarget.ES2020,
@@ -56,18 +56,16 @@ assert.equal(settings.DEFAULT_GLOBAL_MODEL_SETTINGS.automaticModelUpdates, false
 assert.equal(settings.DEFAULT_GLOBAL_MODEL_SETTINGS.autoEvictOnPressure, false, 'pressure eviction must be opt-in');
 assert.equal(settings.DEFAULT_GLOBAL_MODEL_SETTINGS.collapseThinkingByDefault, true);
 
-const savedA = settings.saveGlobalModelSettings('account-a', {
+const saved = settings.saveGlobalModelSettings({
   ...settings.DEFAULT_GLOBAL_MODEL_SETTINGS,
   resourceBudgetMode: 'vram',
   resourceBudgetGb: 23.456,
   loadingPolicy: 'budget-aware',
   autoEvictOnPressure: true,
 });
-assert.equal(savedA.resourceBudgetGb, 23.5);
-assert.equal(settings.loadGlobalModelSettings('account-a').loadingPolicy, 'budget-aware');
-assert.equal(settings.loadGlobalModelSettings('account-b').resourceBudgetMode, 'server', 'settings must remain account scoped');
-assert.ok([...storage.keys()].some(key => key.includes('account-a') && key.endsWith('global_model_settings')));
-
+assert.equal(saved.resourceBudgetGb, 23.5);
+assert.equal(settings.loadGlobalModelSettings().loadingPolicy, 'budget-aware');
+assert.ok(storage.has('lemonade:global_model_settings'));
 const sanitized = settings.sanitizeGlobalModelSettings({
   resourceBudgetMode: 'invalid',
   resourceBudgetGb: -4,
@@ -117,7 +115,6 @@ const listSource = fs.readFileSync(path.join(root, 'src/components/ModelListPane
 const managerSource = fs.readFileSync(path.join(root, 'src/components/ModelManager.tsx'), 'utf8');
 const panelSource = fs.readFileSync(path.join(root, 'src/components/GlobalModelSettingsPanel.tsx'), 'utf8');
 const chatSource = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
-const presetSource = fs.readFileSync(path.join(root, 'src/components/PresetManager.tsx'), 'utf8');
 
 assert.match(listSource, /onOpenRouter && \([\s\S]*?icon="router"[\s\S]*?onOpenGlobalSettings && \([\s\S]*?icon="settings"/, 'settings must sit beside the router action');
 assert.match(managerSource, /showGlobalSettings \?[\s\S]*<GlobalModelSettingsPanel/);
@@ -132,9 +129,3 @@ assert.match(chatSource, /defaultThinkingOpen=\{!globalModelSettings\.collapseTh
 assert.match(chatSource, /GLOBAL_MODEL_SETTINGS_EVENT/);
 assert.match(chatSource, /loadModelWithPolicy/);
 assert.match(chatSource, /loadWithGlobalModelPolicy/);
-assert.match(presetSource, /const CAPABILITIES: Capability\[\] = \['chat', 'omni', 'vision', 'code', 'tts'\]/);
-assert.match(presetSource, /TTS_VOICES\.map/);
-assert.match(presetSource, /OPENMOSS_VOICE_PRESETS\.map/);
-assert.match(presetSource, /VISIBLE_STARTERS/);
-
-console.log('GUI3 global model settings, eviction, TTS preset and thinking-default checks passed.');

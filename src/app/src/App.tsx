@@ -1,15 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import api, { ConnectionStatus, LoadedModel } from './api';
 import { canSelectInComposer, capabilityFromModelInfo, selectPreferredLoadedModel } from './modelCapabilities';
-import AccountMenu from './features/accounts/AccountMenu';
-import { AccountSession, currentSession, subscribeAccountSessionChanges } from './features/accounts/accountStore';
-import { setPresetStorageScope } from './presetStore';
 import { customModelToModelInfo, loadCustomModels } from './features/customModels/customModelStore';
 import { findModelInfoByName, isCollectionFullyLoaded, isCollectionModel, withVirtualLoadedCollections } from './features/collections/collectionModels';
 import ChatView from './components/ChatView';
 import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
-import PresetManager from './components/PresetManager';
+import AppsView from './components/AppsView';
 import BackendManager from './components/BackendManager';
 import DownloadManager from './components/DownloadManager';
 import MonitorView from './components/MonitorView';
@@ -25,12 +22,55 @@ import {
   workspaceRouteFromPath,
 } from './features/navigation/workspaceNavigation';
 
-type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'connect';
+type View = 'chat' | 'models' | 'backends' | 'apps' | 'dashboard' | 'connect';
 type SimpleView = Exclude<View, 'dashboard' | 'connect'>;
 type AppRoute =
   | { view: SimpleView }
   | { view: 'dashboard'; section: DashboardSection }
   | { view: 'connect'; section: ConnectSection };
+
+const NAVIGATION_DESTINATIONS: Array<{
+  id: View;
+  label: string;
+  keywords: string;
+  icon: Parameters<typeof Icon>[0]['name'];
+}> = [
+  { id: 'chat', label: 'Chat', keywords: 'conversation messages', icon: 'chat' },
+  { id: 'models', label: 'Models', keywords: 'model manager download load', icon: 'hard-drive' },
+  { id: 'backends', label: 'Backends', keywords: 'runtime inference engine', icon: 'box' },
+  { id: 'apps', label: 'Apps', keywords: 'clients integrations', icon: 'layers' },
+  { id: 'dashboard', label: 'Dashboard', keywords: 'monitor system hardware statistics', icon: 'gauge' },
+  { id: 'connect', label: 'Settings', keywords: 'connect configuration preferences server', icon: 'settings' },
+];
+
+const BACKEND_DESTINATIONS = [
+  'llama.cpp',
+  'FastFlowLM',
+  'RyzenAI',
+  'vLLM',
+  'whisper.cpp',
+  'stable-diffusion.cpp',
+  'Moonshine',
+  'Kokoro TTS',
+];
+
+type GlobalSearchResult = {
+  id: string;
+  label: string;
+  description: string;
+  icon: Parameters<typeof Icon>[0]['name'];
+  view?: View;
+  route?: AppRoute;
+  modelName?: string;
+};
+
+function modelSearchName(model: Record<string, unknown>): string {
+  return String(model.model_name ?? model.name ?? model.id ?? '').trim();
+}
+
+function searchKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
 
 /* ── Error boundary ────────────────────────────────────────── */
 
@@ -73,7 +113,7 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   }
 }
 
-const SIMPLE_VIEWS: SimpleView[] = ['chat', 'models', 'presets', 'backends'];
+const SIMPLE_VIEWS: SimpleView[] = ['chat', 'models', 'backends', 'apps'];
 
 
 type HostNavigationPayload = string | URL | {
@@ -101,6 +141,7 @@ declare global {
 
 function routeFromValue(raw: unknown): AppRoute | null {
   const value = String(raw || '').trim().replace(/^\//, '').toLowerCase();
+  if (value === 'connect/app-directory') return { view: 'apps' };
   const workspaceRoute = workspaceRouteFromPath(value);
   if (workspaceRoute) return { view: workspaceRoute.workspace, section: workspaceRoute.section } as AppRoute;
   return SIMPLE_VIEWS.includes(value as SimpleView) ? { view: value as SimpleView } : null;
@@ -195,17 +236,16 @@ const App: React.FC = () => {
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [theme, setTheme] = useState<Theme>(loadTheme);
-  const [accountSession, setAccountSession] = useState<AccountSession>(() => {
-    const session = currentSession();
-    setPresetStorageScope(session.storageScope);
-    return session;
-  });
-  const [accountResetNonce, setAccountResetNonce] = useState(0);
-  const accountSessionRef = useRef(accountSession);
+  const [clientDataResetNonce, setClientDataResetNonce] = useState(0);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
+  const [modelDetailsRequest, setModelDetailsRequest] = useState<{ modelName: string; nonce: number } | null>(null);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
+  const [navigationSearch, setNavigationSearch] = useState('');
+  const [navigationSearchOpen, setNavigationSearchOpen] = useState(false);
+  const [navigationSearchIndex, setNavigationSearchIndex] = useState(0);
   const utilityMenuRef = useRef<HTMLDivElement>(null);
   const utilityMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const navigationSearchRef = useRef<HTMLInputElement>(null);
   const [isDesktop, setIsDesktop] = useState(false);
 
   useEffect(() => {
@@ -225,34 +265,11 @@ const App: React.FC = () => {
     dashboard: route.view === 'dashboard' ? route.section : WORKSPACE_NAVIGATION.dashboard.defaultSection,
     connect: route.view === 'connect' ? route.section : WORKSPACE_NAVIGATION.connect.defaultSection,
   });
-  useEffect(() => {
-    accountSessionRef.current = accountSession;
-    setPresetStorageScope(accountSession.storageScope);
-  }, [accountSession]);
-
   useEffect(() => downloadStore.subscribe(items => {
     const nextCount = items.filter(isDownloadActive).length;
     if (nextCount === activeDownloadCountRef.current) return;
     activeDownloadCountRef.current = nextCount;
     setActiveDownloadCount(nextCount);
-  }), []);
-
-  const handleAccountSessionChange = useCallback((next: AccountSession) => {
-    setPresetStorageScope(next.storageScope);
-    setAccountSession(next);
-  }, []);
-
-  const handleAccountDataReset = useCallback(() => {
-    setAccountResetNonce(n => n + 1);
-  }, []);
-
-  useEffect(() => subscribeAccountSessionChanges((next) => {
-    const prev = accountSessionRef.current;
-    const changed = prev.id !== next.id || prev.name !== next.name || prev.role !== next.role || prev.storageScope !== next.storageScope;
-    if (!changed) return;
-    accountSessionRef.current = next;
-    setAccountSession(next);
-    setAccountResetNonce(n => n + 1);
   }), []);
 
   useEffect(() => {
@@ -264,13 +281,17 @@ const App: React.FC = () => {
     setTheme(t => t === 'dark' ? 'light' : 'dark');
   }, []);
 
+  const handleLocalDataReset = useCallback(() => {
+    setClientDataResetNonce(n => n + 1);
+  }, []);
+
   useEffect(() => {
     if (!utilityMenuOpen) return;
     const onPointerDown = (event: PointerEvent) => {
       if (!utilityMenuRef.current?.contains(event.target as Node)) setUtilityMenuOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || (event.target as Element | null)?.closest('.account-menu__panel')) return;
+      if (event.key !== 'Escape') return;
       setUtilityMenuOpen(false);
       requestAnimationFrame(() => utilityMenuTriggerRef.current?.focus());
     };
@@ -287,7 +308,7 @@ const App: React.FC = () => {
   }, [view]);
 
   const applyLoadedModels = useCallback((loaded: LoadedModel[]) => {
-    const customInfos = loadCustomModels(accountSession.storageScope).map(customModelToModelInfo);
+    const customInfos = loadCustomModels().map(customModelToModelInfo);
     const knownInfos = [...customInfos, ...api.allModels];
     const enriched = withVirtualLoadedCollections(loaded, knownInfos).map(model => {
       const info = findModelInfoByName(knownInfos, model.model_name);
@@ -328,7 +349,7 @@ const App: React.FC = () => {
         || enriched.find(m => customSelectable(m.model_name) || infoSelectable(m.model_name))?.model_name
         || null;
     });
-  }, [accountSession.storageScope]);
+  }, []);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
     if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
@@ -352,6 +373,92 @@ const App: React.FC = () => {
     }
     navigateToRoute({ view: nextView });
   }, [navigateToRoute]);
+
+  const navigationSearchResults = useMemo<GlobalSearchResult[]>(() => {
+    const query = navigationSearch.trim().toLowerCase();
+    const normalizedQuery = searchKey(query);
+    const matches = (value: string) =>
+      !query || value.toLowerCase().includes(query) || searchKey(value).includes(normalizedQuery);
+    const pages = NAVIGATION_DESTINATIONS
+      .filter(destination => matches(`${destination.label} ${destination.keywords}`))
+      .map(destination => ({
+        id: `page:${destination.id}`,
+        label: destination.label,
+        description: 'Page',
+        icon: destination.icon,
+        view: destination.id,
+      }));
+    if (!query) return [];
+
+    const settings = Object.entries(WORKSPACE_NAVIGATION).flatMap(([workspace, definition]) =>
+      definition.sections
+        .filter(section => matches(`${section.label} ${section.description}`))
+        .map(section => ({
+          id: `settings:${workspace}:${section.id}`,
+          label: section.label,
+          description: `${definition.label} - ${section.description}`,
+          icon: section.icon,
+          route: { view: workspace as 'dashboard' | 'connect', section: section.id } as AppRoute,
+        })),
+    );
+    const models = api.allModels
+      .map(model => {
+        const name = modelSearchName(model as unknown as Record<string, unknown>);
+        return { model, name };
+      })
+      .filter(({ name }) => name && matches(name))
+      .slice(0, 8)
+      .map(({ model, name }) => {
+        const type = String((model as any).type ?? '').trim();
+        return {
+          id: `model:${name}`,
+          label: name,
+          description: type && type.toLowerCase() !== 'model' ? `${type} model` : 'Model',
+          icon: 'hard-drive' as Parameters<typeof Icon>[0]['name'],
+          modelName: name,
+        };
+      });
+    const backends = BACKEND_DESTINATIONS
+      .filter(backend => matches(backend))
+      .map(backend => ({
+        id: `backend:${backend}`,
+        label: backend,
+        description: 'Backend',
+        icon: 'box' as Parameters<typeof Icon>[0]['name'],
+        view: 'backends' as View,
+      }));
+    return [...models, ...backends, ...settings, ...pages];
+  }, [navigationSearch]);
+
+  const selectNavigationDestination = useCallback((destination: GlobalSearchResult) => {
+    if (destination.modelName) {
+      setModelDetailsRequest({ modelName: destination.modelName, nonce: Date.now() });
+      setView('models');
+    } else if (destination.route) {
+      navigateToRoute(destination.route);
+    } else if (destination.view) {
+      setView(destination.view);
+    }
+    setNavigationSearch('');
+    setNavigationSearchOpen(false);
+  }, [navigateToRoute, setView]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setNavigationSearchOpen(true);
+        requestAnimationFrame(() => navigationSearchRef.current?.focus());
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const openModelDetails = useCallback((modelName: string) => {
+    setModelDetailsRequest({ modelName, nonce: Date.now() });
+    setView('models');
+  }, [setView]);
 
   // Desktop host deep-links use the same canonical routes as browser navigation.
   useEffect(() => {
@@ -467,9 +574,12 @@ const App: React.FC = () => {
     <>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <header className="titlebar" data-tauri-drag-region>
+        <header className={`titlebar${view === 'chat' ? ' titlebar--chat' : ''}`} data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
-          <span data-tauri-drag-region>lemonade</span>
+          <span className="titlebar__brand-logo" data-tauri-drag-region>
+            <span className="titlebar__brand-icon" aria-hidden="true" />
+            <span className="titlebar__brand-name">Lemonade</span>
+          </span>
           <span className={`titlebar__status-dot titlebar__status-dot--brand ${
             status === 'connected' ? 'titlebar__status-dot--connected' :
             status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
@@ -480,15 +590,77 @@ const App: React.FC = () => {
           />
         </div>
 
+        <div
+          className="titlebar__search"
+          data-tauri-drag-region="false"
+          onBlur={event => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setNavigationSearchOpen(false);
+            }
+          }}
+        >
+          <Icon name="search" size={15} aria-hidden="true" />
+          <input
+            ref={navigationSearchRef}
+            type="search"
+            value={navigationSearch}
+            placeholder="Search Lemonade"
+            aria-label="Search Lemonade"
+            aria-autocomplete="list"
+            aria-expanded={navigationSearchOpen}
+            aria-controls="titlebar-search-results"
+            onFocus={() => setNavigationSearchOpen(true)}
+            onChange={event => {
+              setNavigationSearch(event.target.value);
+              setNavigationSearchIndex(0);
+              setNavigationSearchOpen(true);
+            }}
+            onKeyDown={event => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (navigationSearchResults.length > 0) {
+                  setNavigationSearchIndex(index => Math.min(index + 1, navigationSearchResults.length - 1));
+                }
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (navigationSearchResults.length > 0) {
+                  setNavigationSearchIndex(index => Math.max(index - 1, 0));
+                }
+              } else if (event.key === 'Enter' && navigationSearchResults[navigationSearchIndex]) {
+                event.preventDefault();
+                selectNavigationDestination(navigationSearchResults[navigationSearchIndex]);
+              } else if (event.key === 'Escape') {
+                setNavigationSearch('');
+                setNavigationSearchOpen(false);
+              }
+            }}
+          />
+          <kbd>Ctrl K</kbd>
+          {navigationSearchOpen && (
+            <div id="titlebar-search-results" className="titlebar__search-results" role="listbox" aria-label="Global search results">
+              {navigationSearchResults.length > 0 ? navigationSearchResults.map((destination, index) => (
+                <button
+                  key={destination.id}
+                  type="button"
+                  role="option"
+                  aria-selected={index === navigationSearchIndex}
+                  className={index === navigationSearchIndex ? 'is-active' : ''}
+                  onMouseDown={event => event.preventDefault()}
+                  onClick={() => selectNavigationDestination(destination)}
+                >
+                  <Icon name={destination.icon} size={14} aria-hidden="true" />
+                  <span>
+                    <strong>{destination.label}</strong>
+                    <small>{destination.description}</small>
+                  </span>
+                </button>
+              )) : <p>{navigationSearch.trim() ? 'No matching results.' : 'Search models, backends, apps, and settings.'}</p>}
+            </div>
+          )}
+        </div>
+
         <nav className="titlebar__nav" data-tauri-drag-region="false" aria-label="Primary">
-          {([
-            { id: 'chat',      label: 'Chat',      icon: 'chat'               },
-            { id: 'models',    label: 'Models',    icon: 'hard-drive'         },
-            { id: 'presets',   label: 'Presets',   icon: 'sliders-horizontal' },
-            { id: 'backends',  label: 'Backends',  icon: 'box'                },
-            { id: 'dashboard', label: WORKSPACE_NAVIGATION.dashboard.label, icon: 'gauge' },
-            { id: 'connect',   label: WORKSPACE_NAVIGATION.connect.label, icon: 'plug' },
-          ] as { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[]).map(({ id, label, icon }) => (
+          {NAVIGATION_DESTINATIONS.map(({ id, label, icon }) => (
             <button
               key={id}
               className={view === id ? 'is-active' : ''}
@@ -521,11 +693,6 @@ const App: React.FC = () => {
               <Icon name="settings" size={17} aria-hidden="true" />
             </button>
             <div id="titlebar-utility-menu" className="titlebar__utility-menu" aria-label="App controls">
-              <AccountMenu
-                session={accountSession}
-                onSessionChange={handleAccountSessionChange}
-                onDataReset={handleAccountDataReset}
-              />
               <div
                 className="titlebar__utility-status"
                 role="status"
@@ -602,11 +769,11 @@ const App: React.FC = () => {
         <div className="view-slot" hidden={view !== 'chat'}>
           <ViewErrorBoundary view="chat">
             <ChatView
-              key={`${accountSession.storageScope}:${accountResetNonce}`}
+              key={clientDataResetNonce}
               currentModel={currentModel}
               loadedModels={loadedModels}
-              accountSession={accountSession}
               onModelSelect={handleModelSelect}
+              onOpenModelDetails={openModelDetails}
               onRefresh={handleRefreshModels}
             />
           </ViewErrorBoundary>
@@ -614,14 +781,10 @@ const App: React.FC = () => {
         <div className="view-slot" hidden={view !== 'models'}>
           <ViewErrorBoundary view="models">
             <ModelManager
+              key={clientDataResetNonce}
               onModelSelect={handleModelSelect}
-              accountSession={accountSession}
+              openModelRequest={modelDetailsRequest}
             />
-          </ViewErrorBoundary>
-        </div>
-        <div className="view-slot" hidden={view !== 'presets'}>
-          <ViewErrorBoundary view="presets">
-            <PresetManager key={accountSession.storageScope} loadedModels={loadedModels} />
           </ViewErrorBoundary>
         </div>
         <div className="view-slot" hidden={view !== 'backends'}>
@@ -629,10 +792,14 @@ const App: React.FC = () => {
             <BackendManager isActive={view === 'backends'} />
           </ViewErrorBoundary>
         </div>
+        <div className="view-slot" hidden={view !== 'apps'}>
+          <ViewErrorBoundary view="apps">
+            <AppsView isActive={view === 'apps'} />
+          </ViewErrorBoundary>
+        </div>
         <div className="view-slot" hidden={view !== 'dashboard'}>
           <ViewErrorBoundary view="dashboard">
             <MonitorView
-              accountSession={accountSession}
               activeSection={route.view === 'dashboard' ? route.section : lastWorkspaceSectionsRef.current.dashboard}
               isActive={view === 'dashboard'}
               onSectionChange={section => navigateToRoute({ view: 'dashboard', section })}
@@ -646,9 +813,7 @@ const App: React.FC = () => {
               isActive={view === 'connect'}
               activeSection={route.view === 'connect' ? route.section : lastWorkspaceSectionsRef.current.connect}
               onSectionChange={section => navigateToRoute({ view: 'connect', section })}
-              accountSession={accountSession}
-              onLocalDataReset={handleAccountDataReset}
-              onSessionChange={handleAccountSessionChange}
+              onLocalDataReset={handleLocalDataReset}
             />
           </ViewErrorBoundary>
         </div>

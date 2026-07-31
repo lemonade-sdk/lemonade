@@ -6,7 +6,7 @@
  *   - Skip link behaviour (hidden until focused, activates #main-content)
  *   - ARIA landmarks (<main>, <nav>, role="status")
  *   - Keyboard navigation order and completeness
- *   - Focus traps: bottom sheet (mobile 390px) and preset slideover
+ *   - Focus traps: bottom sheet (mobile 390px)
  *   - aria-live streaming regions (assertive + polite)
  *   - :focus-visible rings (keyboard vs. mouse)
  *   - prefers-reduced-motion (animations/transitions disabled)
@@ -43,7 +43,7 @@ async function navigateToMonitorSection(page: Page, label: 'Performance' | 'Tele
 }
 
 async function navigateToConnectSection(page: Page, label: string): Promise<void> {
-  await navigateToView(page, 'Connect');
+  await navigateToView(page, 'Settings');
   await page.waitForSelector('.connect');
   await page.locator('.connect .workspace-nav').getByText(new RegExp(`^${label}$`, 'i')).click();
 }
@@ -132,25 +132,10 @@ test.describe('Accessibility — axe-core automated scans', () => {
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 
-  test('A03 — Presets view passes WCAG 2.1 AA', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Presets');
-    await page.waitForSelector('[data-view="presets"]');
-
-    const results = await new AxeBuilder({ page })
-      .withTags([...WCAG_TAGS])
-      .analyze();
-    const critical = results.violations.filter(
-      v => v.impact === 'critical' || v.impact === 'serious',
-    );
-    expect(critical, formatViolations(critical)).toHaveLength(0);
-  });
-
   test('A04 — Connect view passes WCAG 2.1 AA', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Connect');
+    await navigateToView(page, 'Settings');
     await page.waitForSelector('.connect');
 
     const results = await new AxeBuilder({ page })
@@ -287,7 +272,7 @@ test.describe('Accessibility — keyboard navigation', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    const knownNavLabels = ['Chat', 'Models', 'Presets', 'Backends', 'Dashboard', 'Connect'];
+    const knownNavLabels = ['Chat', 'Models', 'Backends', 'Dashboard', 'Settings'];
     const encountered: string[] = [];
 
     for (let i = 0; i < 12; i++) {
@@ -410,77 +395,6 @@ test.describe('Accessibility — focus trap (bottom sheet mobile)', () => {
       () => (document.activeElement as HTMLElement | null)?.className ?? '',
     );
     expect(activeClass).toContain('workspace-mobile-menu-button');
-  });
-});
-
-// ─── 6. Focus trap — preset slideover ────────────────────────────────────────
-
-test.describe('Accessibility — focus trap (preset slideover)', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Presets');
-    await page.waitForSelector('.recipe-card', { timeout: 5000 });
-  });
-
-  test('A21 — opening preset slideover moves focus inside it (useFocusTrap activates)', async ({ page }) => {
-    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
-    await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
-
-    const activeIsInSlideover = await page.evaluate(() => {
-      const slideover = document.querySelector('.slideover.is-open');
-      return slideover?.contains(document.activeElement) ?? false;
-    });
-    expect(activeIsInSlideover).toBe(true);
-  });
-
-  test('A22 — Tab from last focusable inside slideover wraps back to first (never escapes)', async ({ page }) => {
-    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
-    await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
-
-    const count = await page.locator(
-      '.slideover.is-open :is(a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]))',
-    ).evaluateAll(els =>
-      els.filter(el => !el.closest('[aria-hidden="true"]')).length,
-    );
-
-    for (let i = 0; i < count; i++) {
-      await page.keyboard.press('Tab');
-    }
-
-    const activeIsInSlideover = await page.evaluate(() => {
-      const slideover = document.querySelector('.slideover.is-open');
-      return slideover?.contains(document.activeElement) ?? false;
-    });
-    expect(activeIsInSlideover, 'Focus should still be inside the slideover after wrapping').toBe(true);
-  });
-
-  test('A23 — pressing Escape closes the preset slideover', async ({ page }) => {
-    await page.locator('.recipe-card').first().locator('.recipe-card__overlay-btn').click();
-    await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
-
-    await page.keyboard.press('Escape');
-
-    // .is-open class is removed; element stays in DOM (CSS transform moves it off-screen)
-    await expect(page.locator('.slideover')).not.toHaveClass(/is-open/, { timeout: 3000 });
-  });
-
-  test('A24 — focus returns to the preset card that opened the slideover (via Escape)', async ({ page }) => {
-    const card = page.locator('.recipe-card').first();
-    await card.click();
-    await page.waitForSelector('.slideover.is-open', { timeout: 5000 });
-
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(200); // requestAnimationFrame in closeSlideover
-
-    const activeIsOnCard = await page.evaluate(() => {
-      const el = document.activeElement as HTMLElement | null;
-      return (
-        el?.classList.contains('recipe-card') ||
-        el?.closest('.recipe-card') !== null
-      );
-    });
-    expect(activeIsOnCard).toBe(true);
   });
 });
 
@@ -685,282 +599,6 @@ test.describe('Accessibility — prefers-reduced-motion', () => {
   });
 });
 
-// ─── 10. Preset intent controls — intent refactor ────────────────────────────
-
-test.describe('Accessibility — preset intent controls', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Presets');
-    await page.waitForSelector('.recipe-card');
-    // nth(1) skips DEFAULT_PRESET and opens the first chat starter.
-    await page.locator('.recipe-card').nth(1).locator('.recipe-card__overlay-btn').click();
-    await page.waitForSelector('.slideover.is-open');
-  });
-
-  test('A35 — temperature intent is grouped and exposes all four levels', async ({ page }) => {
-    const group = page.locator('[data-preset-intent="temperature"]');
-    await expect(group.locator('legend')).toContainText('Temperature');
-    await expect(group.locator('[data-intent-value]')).toHaveCount(4);
-    await expect(group.locator('[data-intent-value="precise"]')).toHaveAttribute('title', /precise/i);
-  });
-
-  test('A36 — context intent is grouped and exposes all four levels', async ({ page }) => {
-    const group = page.locator('[data-preset-intent="context"]');
-    await expect(group.locator('legend')).toContainText('Context');
-    await expect(group.locator('[data-intent-value]')).toHaveCount(4);
-    await expect(group.locator('[data-intent-value="max"]')).toBeVisible();
-  });
-
-  test('A37 — thinking modes expose native help and future modes are disabled', async ({ page }) => {
-    const group = page.locator('[data-preset-intent="thinking"]');
-    await expect(group.locator('[data-intent-value]')).toHaveCount(4);
-    await expect(group.locator('[data-intent-value="normal"]')).toHaveAttribute('title', 'Default model thinking');
-    await expect(group.locator('[data-intent-value="smart"]')).toBeDisabled();
-    await expect(group.locator('[data-intent-value="smart-extra"]')).toBeDisabled();
-  });
-});
-
-// ─── 11. Concrete runtime fields stay out of Presets ─────────────────────────
-
-test.describe('Accessibility — preset/runtime separation', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Presets');
-    await page.waitForSelector('.recipe-card');
-    await page.locator('.recipe-card').nth(1).locator('.recipe-card__overlay-btn').click();
-    await page.waitForSelector('.slideover.is-open');
-  });
-
-  test('A38 — preset editor does not expose concrete sampling or context inputs', async ({ page }) => {
-    await expect(page.locator('[data-recipe-temp], [data-recipe-ctx], [data-recipe-top-k], .slideover .slider')).toHaveCount(0);
-  });
-
-  test('A39 — preset editor omits backend assignment and concrete tuning inputs', async ({ page }) => {
-    await expect(page.locator('.preset-advanced')).toHaveCount(0);
-    await expect(page.locator('#preset-field-llamacpp-backend, #preset-field-llamacpp-device')).toHaveCount(0);
-  });
-});
-
-// ─── 12. Preset card accessible description — issue #2345 ────────────────────
-
-test.describe('Accessibility — preset card metadata accessible (#2345)', () => {
-  test('A40 — card button has aria-describedby pointing to metadata description', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Presets');
-    await page.waitForSelector('.recipe-card');
-
-    const { descId, descText } = await page.locator('.recipe-card').first().evaluate(card => {
-      const btn = card.querySelector('.recipe-card__overlay-btn') as HTMLElement | null;
-      const id = btn?.getAttribute('aria-describedby') ?? '';
-      const descEl = id ? document.getElementById(id) : null;
-      return { descId: id, descText: descEl?.textContent?.trim() ?? '' };
-    });
-
-    expect(descId, 'card overlay button must have aria-describedby').toBeTruthy();
-    expect(descText, 'description element must have non-empty text').toBeTruthy();
-    expect(descText, 'description must include applies_to metadata').toMatch(/Applies to:/i);
-    expect(descText, 'description must include prompt metadata').toMatch(/Prompt:/i);
-    expect(descText, 'description must include MCP metadata').toMatch(/MCP:/i);
-  });
-});
-
-// ─── 13. Capability chip toggle-button semantics — issue #2350 (revised) ─────
-
-test.describe('Accessibility — capability chip toggle-button semantics (#2350)', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Presets');
-    await page.waitForSelector('.recipe-card');
-    await page.locator('.recipe-card').nth(1).locator('.recipe-card__overlay-btn').click();
-    await page.waitForSelector('.slideover.is-open');
-  });
-
-  test('A41 — capability chip container has role="group" with accessible label', async ({ page }) => {
-    const container = page.locator('[data-preset-capabilities]');
-    const role = await container.getAttribute('role');
-    expect(role).toBe('group');
-    const label = await container.getAttribute('aria-label');
-    expect(label).toBeTruthy();
-  });
-
-  test('A42 — each capability chip is a plain button with aria-pressed', async ({ page }) => {
-    const capButtons = page.locator('[data-preset-capabilities] .preset-cap-button');
-    const count = await capButtons.count();
-    expect(count).toBeGreaterThan(0);
-
-    for (let i = 0; i < count; i++) {
-      const btn = capButtons.nth(i);
-      // Must NOT have role="radio" — plain button semantics
-      const role = await btn.getAttribute('role');
-      expect(role, 'chip must not have role="radio"').not.toBe('radio');
-      // Must expose aria-pressed as "true" or "false"
-      const pressed = await btn.getAttribute('aria-pressed');
-      expect(['true', 'false'], `aria-pressed must be "true" or "false", got "${pressed}"`).toContain(pressed);
-    }
-  });
-
-  test('A43 — exactly one capability chip has aria-pressed="true"; all others are "false"', async ({ page }) => {
-    const { trueCount, falseCount, total } = await page
-      .locator('[data-preset-capabilities] .preset-cap-button')
-      .evaluateAll(buttons => ({
-        trueCount: buttons.filter(b => b.getAttribute('aria-pressed') === 'true').length,
-        falseCount: buttons.filter(b => b.getAttribute('aria-pressed') === 'false').length,
-        total: buttons.length,
-      }));
-    expect(trueCount).toBe(1);
-    expect(falseCount).toBe(total - 1);
-  });
-});
-
-// ─── 14. AutoOpt run selection state — issue #2352 ───────────────────────────
-
-test.describe('Accessibility — AutoOpt run selection state (#2352)', () => {
-  const mockAutoOpt = async (page: Page) => {
-    await page.route('**/api/v1/health**', route => route.fulfill({
-      json: { status: 'ok', version: 'test', all_models_loaded: [] },
-    }));
-    // AutoOpt runs are client-persisted and scoped to the server's base URL.
-    await page.addInitScript(() => {
-      const base = {
-        checkpoint: '', answers: { parallel: { mode: 'single' }, kv_cache_quant: 'none', ram_headroom: 'normal', allow_network: true },
-        allow_unload: false, stages: [], measurements: { fit: [], bench: [] },
-      };
-      localStorage.setItem('lemonade_autoopt_runs_v2::http://127.0.0.1:13305', JSON.stringify({
-        version: 2,
-        runs: [
-          { ...base, id: 'run-b', model: 'org/model-b', status: 'completed', budget: 'standard', created_at: '2026-07-02T10:00:00Z', finished_at: '2026-07-02T10:12:00Z' },
-          { ...base, id: 'run-a', model: 'org/model-a', status: 'completed', budget: 'quick', created_at: '2026-07-01T10:00:00Z', finished_at: '2026-07-01T10:01:00Z' },
-        ],
-      }));
-    });
-  };
-
-  test('A44 — AutoOpt run buttons expose selected state via aria-pressed', async ({ page }) => {
-    await mockAutoOpt(page);
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Presets');
-    await page.waitForSelector('.auto-run-card__main', { timeout: 10000 });
-
-    const buttons = page.locator('.auto-run-card__main');
-    const count = await buttons.count();
-    expect(count).toBeGreaterThan(0);
-
-    // Exactly one button should be aria-pressed="true" on initial render
-    const pressedCount = await buttons.evaluateAll(btns =>
-      btns.filter(b => b.getAttribute('aria-pressed') === 'true').length,
-    );
-    expect(pressedCount).toBe(1);
-  });
-
-  test('A45 — clicking a different AutoOpt run updates aria-pressed to true on that button', async ({ page }) => {
-    await mockAutoOpt(page);
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Presets');
-    await page.waitForSelector('.auto-run-card__main', { timeout: 10000 });
-
-    const buttons = page.locator('.auto-run-card__main');
-    // Click the second button (index 1) to change selection
-    await buttons.nth(1).click();
-    await page.waitForTimeout(100);
-
-    const secondPressed = await buttons.nth(1).getAttribute('aria-pressed');
-    expect(secondPressed).toBe('true');
-
-    // First button must now be false
-    const firstPressed = await buttons.nth(0).getAttribute('aria-pressed');
-    expect(firstPressed).toBe('false');
-  });
-
-  test('A45b — AutoOpt rail exposes a polite live region for run completion announcements', async ({ page }) => {
-    await mockAutoOpt(page);
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Presets');
-
-    const liveRegion = page.locator('[data-autoopt-announcement]');
-    await expect(liveRegion).toHaveAttribute('role', 'status');
-    await expect(liveRegion).toHaveAttribute('aria-live', 'polite');
-  });
-});
-
-// ─── 14b. AutoOpt wizard dialog — semantics, focus trap, fieldsets ─────────────
-
-test.describe('Accessibility — AutoOpt wizard dialog', () => {
-  const openWizard = async (page: Page) => {
-    await page.route('**/api/v1/health**', route => route.fulfill({
-      json: { status: 'ok', version: 'test', all_models_loaded: [] },
-    }));
-    await page.route('**/api/v1/models**', route => route.fulfill({
-      json: { data: [{ id: 'org/chat-model', name: 'org/chat-model', labels: ['llm'], recipe: 'llamacpp', downloaded: true }] },
-    }));
-    await page.route('**/api/v1/system-info**', route => route.fulfill({
-      json: { 'Physical Memory': '64.0 GB', recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed' } } } } },
-    }));
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Presets');
-    await page.locator('[data-autoopt-run-optimizer]').click();
-    await page.waitForSelector('[data-autoopt-wizard]', { timeout: 5000 });
-  };
-
-  test('A46 — wizard is a modal dialog and moves focus inside', async ({ page }) => {
-    await openWizard(page);
-
-    const wizard = page.locator('[data-autoopt-wizard]');
-    await expect(wizard).toHaveAttribute('role', 'dialog');
-    await expect(wizard).toHaveAttribute('aria-modal', 'true');
-
-    const activeIsInWizard = await page.evaluate(() => {
-      const dialog = document.querySelector('[data-autoopt-wizard]');
-      return dialog?.contains(document.activeElement) ?? false;
-    });
-    expect(activeIsInWizard).toBe(true);
-  });
-
-  test('A47 — Tab never escapes the wizard dialog', async ({ page }) => {
-    await openWizard(page);
-
-    const count = await page.locator(
-      '[data-autoopt-wizard] :is(a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]))',
-    ).evaluateAll(els => els.filter(el => !el.closest('[aria-hidden="true"]')).length);
-
-    for (let i = 0; i < count + 2; i++) {
-      await page.keyboard.press('Tab');
-    }
-
-    const activeIsInWizard = await page.evaluate(() => {
-      const dialog = document.querySelector('[data-autoopt-wizard]');
-      return dialog?.contains(document.activeElement) ?? false;
-    });
-    expect(activeIsInWizard, 'Focus should stay inside the wizard after wrapping').toBe(true);
-  });
-
-  test('A48 — every wizard step is a fieldset with a legend', async ({ page }) => {
-    await openWizard(page);
-
-    await page.locator('[data-autoopt-model-select]').selectOption('org/chat-model');
-    const stepOrder = ['model', 'parallel', 'kv', 'ram', 'budget', 'review'];
-    for (const step of stepOrder) {
-      const fieldset = page.locator(`fieldset[data-autoopt-step="${step}"]`);
-      await expect(fieldset).toBeVisible();
-      await expect(fieldset.locator('legend')).toBeVisible();
-      if (step !== 'review') await page.locator('[data-autoopt-next]').click();
-    }
-  });
-
-  test('A49 — Escape closes the wizard', async ({ page }) => {
-    await openWizard(page);
-    await page.keyboard.press('Escape');
-    await expect(page.locator('[data-autoopt-wizard]')).toHaveCount(0);
-  });
-});
-
 // ─── 15. Backend Manager — matrix cells, action labels, live regions ──────────
 //        Covers: #2343 (keyboard-operable cells), #2344 (qualified action names),
 //                #2351 (live-region toasts/notices).
@@ -994,8 +632,6 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
     await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
   });
 
-  // ── #2432 — Backend view no longer behaves like a model (preset rail/picker removed) ──
-  // The cell-selection affordance and preset rail were removed; coverage lives in
   // the #2432 describe block below (A167+).
 
   // ── #2344 — action buttons have qualified accessible names ─────────────────
@@ -1125,7 +761,7 @@ test.describe('Accessibility — backend argument tuning', () => {
     await page.addInitScript(() => {
       try {
         for (const key of Object.keys(localStorage)) {
-          if (key.includes('backend_tunings') || key.includes('backend_presets')) localStorage.removeItem(key);
+          if (key.includes('backend_tunings')) localStorage.removeItem(key);
         }
       } catch {}
     });
@@ -1143,9 +779,8 @@ test.describe('Accessibility — backend argument tuning', () => {
     await page.waitForSelector('[data-backends-matrix]', { timeout: 5000 });
   }
 
-  test('A167 — args-capable backends expose a small qualified action without restoring the old preset rail', async ({ page }) => {
+  test('A167 — args-capable backends expose a small qualified action without obsolete model controls', async ({ page }) => {
     await gotoBackends(page);
-    await expect(page.locator('.context-rail--presets')).toHaveCount(0);
     await expect(page.locator('[data-backend-args-button="llamacpp:cpu"]')).toBeVisible();
     await expect(page.locator('[data-backend-args-button="llamacpp:vulkan"]')).toBeVisible();
     await expect(page.locator('[data-backend-args-button="llamacpp:cpu"]')).toHaveAttribute(
@@ -1194,38 +829,6 @@ test.describe('Accessibility — backend argument tuning', () => {
       return null;
     });
     expect(stored).toMatchObject({ args: '--threads 8 --ctx-size 65536', source: 'user' });
-    expect(stored?.auto_opt_run_id).toBeUndefined();
-  });
-
-  test('A170 — editing an AutoOpt-owned entry clearly warns and converts it to a manual override', async ({ page }) => {
-    await page.evaluate(() => {
-      localStorage.setItem('lemonade:guest:shared:backend_tunings', JSON.stringify({
-        'llamacpp:cpu': {
-          args: '--autoopt-old',
-          source: 'optimized',
-          auto_opt_run_id: 'run-123',
-          updated_at: '2026-01-01T00:00:00.000Z',
-        },
-      }));
-    });
-    await gotoBackends(page);
-    await expect(page.locator('[data-cell="llamacpp:cpu"] [data-cell-backend-args="optimized"]')).toContainText('Args · AutoOpt');
-    await page.locator('[data-backend-args-button="llamacpp:cpu"]').click();
-    const dialog = page.locator('[data-backend-args-dialog="llamacpp:cpu"]');
-    await expect(dialog.getByRole('status')).toContainText('AutoOpt last replaced this backend entry');
-    await dialog.locator('[data-backend-args-input]').fill('--manual-replacement');
-    await dialog.locator('[data-backend-args-save]').click();
-
-    const stored = await page.evaluate(() => {
-      for (const key of Object.keys(localStorage)) {
-        if (!key.includes('backend_tunings')) continue;
-        const entries = JSON.parse(localStorage.getItem(key) || '{}');
-        if (entries['llamacpp:cpu']) return entries['llamacpp:cpu'];
-      }
-      return null;
-    });
-    expect(stored).toMatchObject({ args: '--manual-replacement', source: 'user' });
-    expect(stored?.auto_opt_run_id).toBeUndefined();
   });
 
   test('A171 — Escape closes the modal editor and restores focus to its backend action', async ({ page }) => {
@@ -1240,7 +843,7 @@ test.describe('Accessibility — backend argument tuning', () => {
 
   test('A172 — saved backend args can be cleared without affecting another backend entry', async ({ page }) => {
     await page.evaluate(() => {
-      localStorage.setItem('lemonade:guest:shared:backend_tunings', JSON.stringify({
+      localStorage.setItem('lemonade:backend_tunings', JSON.stringify({
         'llamacpp:cpu': { args: '--cpu', source: 'user' },
         'llamacpp:vulkan': { args: '--vulkan', source: 'user' },
       }));
@@ -1486,9 +1089,9 @@ test.describe('Accessibility — conversation rail listbox', () => {
       localStorage.setItem(data.convKey, JSON.stringify({ version: 3, conversations: data.convos }));
       localStorage.setItem(data.activeKey, 'rc1');
     }, {
-      persistKey: 'lemonade:guest:shared:persist_conversations',
-      convKey: 'lemonade:guest:shared:conversations',
-      activeKey: 'lemonade:guest:shared:active_conversation',
+      persistKey: 'lemonade:persist_conversations',
+      convKey: 'lemonade:conversations',
+      activeKey: 'lemonade:active_conversation',
       convos: RAIL_CONVOS,
     });
     await page.goto('/');
@@ -1525,67 +1128,6 @@ test.describe('Accessibility — conversation rail listbox', () => {
     expect(label).toBeTruthy();
     expect(label!.toLowerCase()).toContain('delete');
     expect(label).toContain('Alpha conversation');
-  });
-});
-
-// ─── 18. Account menu — modal dialog semantics ────────────────────────────────
-
-test.describe('Accessibility — account menu dialog', () => {
-  test('A67 — account menu trigger has aria-haspopup="dialog" and aria-expanded="false" on load', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.account-menu__trigger');
-
-    const trigger = page.locator('.account-menu__trigger');
-    expect(await trigger.getAttribute('aria-haspopup')).toBe('dialog');
-    expect(await trigger.getAttribute('aria-expanded')).toBe('false');
-  });
-
-  test('A68 — opening account menu: panel has role="dialog" + aria-modal="true", trigger aria-expanded="true"', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.account-menu__trigger');
-
-    await page.locator('.account-menu__trigger').click();
-    await page.waitForSelector('.account-menu__panel');
-
-    const panel = page.locator('.account-menu__panel');
-    expect(await panel.getAttribute('role')).toBe('dialog');
-    expect(await panel.getAttribute('aria-modal')).toBe('true');
-
-    const trigger = page.locator('.account-menu__trigger');
-    expect(await trigger.getAttribute('aria-expanded')).toBe('true');
-  });
-
-  test('A69 — opening account menu moves focus inside the panel (useFocusTrap activates)', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.account-menu__trigger');
-
-    await page.locator('.account-menu__trigger').click();
-    await page.waitForSelector('.account-menu__panel');
-
-    const activeIsInPanel = await page.evaluate(() => {
-      const panel = document.querySelector('.account-menu__panel');
-      return panel?.contains(document.activeElement) ?? false;
-    });
-    expect(activeIsInPanel).toBe(true);
-  });
-
-  test('A70 — Escape closes account menu and restores focus to the trigger', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('.account-menu__trigger');
-
-    await page.locator('.account-menu__trigger').click();
-    await page.waitForSelector('.account-menu__panel');
-
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(100); // allow rAF focus restore
-
-    await expect(page.locator('.account-menu__panel')).not.toBeVisible({ timeout: 3000 });
-
-    const activeClass = await page.evaluate(
-      () => (document.activeElement as HTMLElement | null)?.className ?? '',
-    );
-    expect(activeClass).toContain('account-menu__trigger');
-
   });
 });
 
@@ -1669,12 +1211,12 @@ test.describe('Accessibility — connect and cloud form labels (#2349)', () => {
 
   test('A76 — Marketplace search has accessible name', async ({ page }) => {
     await page.goto('/');
-    await navigateToConnectSection(page, 'App directory');
+    await navigateToView(page, 'Apps');
+    await page.waitForSelector('[data-view="apps"]');
 
-    const searchInput = page.locator('.connect__marketplace-search');
-    const ariaLabel = await searchInput.getAttribute('aria-label');
-    expect(ariaLabel).toBeTruthy();
-    expect(ariaLabel).toBe('Search marketplace apps');
+    const searchInput = page.getByLabel('Search apps');
+    await expect(searchInput).toBeVisible();
+    await expect(searchInput).toHaveAttribute('aria-label', 'Search apps');
   });
 });
 
@@ -1722,7 +1264,15 @@ test.describe('Accessibility — icon-button accessible names (#2353)', () => {
 
 test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
   const MCP_TOOLS = [
-    { name: 'lemonade_list_models', description: 'List all models available on this lemonade server.' },
+    {
+      name: 'lemonade_list_models',
+      description: 'List all models available on this lemonade server.',
+      inputSchema: {
+        type: 'object',
+        properties: { capability: { type: 'string' } },
+        required: [],
+      },
+    },
     { name: 'lemonade_chat', description: 'Send a chat completion request to a lemonade LLM model.' },
     { name: 'lemonade_transcribe_audio', description: 'Transcribe audio to text.' },
     { name: 'lemonade_generate_image', description: 'Generate an image from a text prompt.' },
@@ -1835,16 +1385,23 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     expect(await statusEl.getAttribute('aria-atomic')).toBe('true');
   });
 
-  test('A85 — with mocked MCP server, tools list renders with expected tool names', async ({ page }) => {
+  test('A85 — with mocked MCP server, tools list is collapsible with expected tool names', async ({ page }) => {
     await setupWithMcp(page);
-    await page.waitForSelector('[data-mcp-tools-list]', { timeout: 8000 });
+    await page.waitForSelector('[data-mcp-tools-list]', { state: 'attached', timeout: 8000 });
 
     const toolList = page.locator('[data-mcp-tools-list]');
+    const disclosure = page.locator('.mcp-panel__tool-disclosure').first();
+    await expect(disclosure).not.toHaveAttribute('open', '');
+    await expect(toolList).not.toBeVisible();
+    await disclosure.locator('summary').click();
     await expect(toolList).toBeVisible();
 
     const items = toolList.locator('.mcp-panel__tool-name');
     const count = await items.count();
     expect(count).toBe(MCP_TOOLS.length);
+    await expect(toolList.locator('.mcp-panel__tool-row')).toHaveCount(MCP_TOOLS.length);
+    await expect(toolList.locator('.mcp-panel__tool-meta').first()).toHaveText('1 input');
+    await expect(toolList.locator('.mcp-panel__tool-description').first()).toHaveText(MCP_TOOLS[0].description);
 
     // Verify first expected tool name is present
     await expect(toolList.getByText('lemonade_list_models')).toBeVisible();
@@ -1853,7 +1410,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
 
   test('A86 — tools list element has accessible aria-label', async ({ page }) => {
     await setupWithMcp(page);
-    await page.waitForSelector('[data-mcp-tools-list]', { timeout: 8000 });
+    await page.waitForSelector('[data-mcp-tools-list]', { state: 'attached', timeout: 8000 });
 
     const toolList = page.locator('[data-mcp-tools-list]');
     const label = await toolList.getAttribute('aria-label');
@@ -1962,7 +1519,7 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToConnectSection(page, 'MCP gateway');
-    await page.waitForSelector('[data-mcp-tools-list]', { timeout: 8000 });
+    await page.waitForSelector('[data-mcp-tools-list]', { state: 'attached', timeout: 8000 });
 
     // Must have at least 3 requests: initialize, notifications/initialized, tools/list.
     expect(captured.length).toBeGreaterThanOrEqual(3);
@@ -2043,7 +1600,6 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
 // ─── 23. Master-detail model view (#2355 Slice 1) ─────────────────────────────
 //
 // Covers: model list panel, detail panel tablist, funnel filter button,
-// preset attach flow, and keyboard navigation — all added in Slice 1.
 // Range: A91–A105.
 
 test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () => {
@@ -2178,7 +1734,7 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
 
     const tabs = page.locator('[role="tab"]');
     const tabCount = await tabs.count();
-    expect(tabCount).toBeGreaterThanOrEqual(2); // README + Presets at minimum
+    expect(tabCount).toBeGreaterThanOrEqual(2); // README + Configuration at minimum
 
     // Each tab must have aria-selected
     for (let i = 0; i < tabCount; i++) {
@@ -2211,27 +1767,27 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     expect(secondSelected).not.toBe(initialLabel?.trim());
   });
 
-  // ── Preset tab attach flow ────────────────────────────────────────────────────
+  // ── Configuration tab ───────────────────────────────────────────────────────
 
-  test('A102 — Presets tab in detail panel is keyboard-reachable and focusable', async ({ page }) => {
+  test('A102 — Configuration tab in detail panel is keyboard-reachable and focusable', async ({ page }) => {
     await goToModelsWithMock(page);
     await page.locator('.model-list-item').first().click();
     await page.waitForTimeout(200);
 
-    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
-    await expect(presetsTab).toBeVisible();
-    await presetsTab.click();
+    const configTab = page.locator('[role="tab"]').filter({ hasText: /Configuration/i });
+    await expect(configTab).toBeVisible();
+    await configTab.click();
     await page.waitForTimeout(100);
-    await expect(presetsTab).toHaveAttribute('aria-selected', 'true');
+    await expect(configTab).toHaveAttribute('aria-selected', 'true');
   });
 
-  test('A103 — Presets tab panel has accessible heading or label', async ({ page }) => {
+  test('A103 — Configuration tab panel has accessible heading or label', async ({ page }) => {
     await goToModelsWithMock(page);
     await page.locator('.model-list-item').first().click();
     await page.waitForTimeout(200);
 
-    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
-    await presetsTab.click();
+    const configTab = page.locator('[role="tab"]').filter({ hasText: /Configuration/i });
+    await configTab.click();
     await page.waitForTimeout(100);
 
     const tabpanel = page.locator('[role="tabpanel"]:visible');
@@ -2281,13 +1837,11 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
   });
 });
 
-// ─── 24. #2355 Slice 1 reconciliation — sort, responsive, README derivation, preset change ──
 //
 // Covers the 4 gaps addressed in the fl0rianr 2026-06-25 clarifications:
 //   A: README checkpoint derivation (tightened regex + checkpoints.main fallback)
 //   B: Sort controls (labeled select with 4 options)
 //   C: Responsive list-first (narrow ≤700px shows list only; selecting shows detail + Back)
-//   D: Presets tab Change inline chooser (attach + detach already present)
 // Range: A106–A115.
 
 test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarifications)', () => {
@@ -2419,130 +1973,6 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
     await expect(page.locator('.model-list-panel')).toBeVisible();
     await expect(page.locator('.model-detail-panel')).not.toBeVisible();
   });
-
-  // ── D: Preset Change inline chooser ──────────────────────────────────────────
-
-  test('A114 — preset Change button has aria-expanded and aria-haspopup="dialog"', async ({ page }) => {
-    // Inject a user preset via localStorage before page load
-    await page.addInitScript(() => {
-      // Seed a user preset compatible with LLM (chat), using scoped key
-      const preset = {
-        id: 'test-preset-1',
-        name: 'Test Chat Preset',
-        description: 'Seed preset for testing',
-        applies_to: ['chat'],
-        recipe_options: {},
-        sampling: {},
-        engine_hint: 'auto',
-        starter: false,
-        auto_opt_run_id: null,
-        auto_opt_enabled: true,
-        system_prompt_id: 'none',
-        system_prompts: [],
-        tools_enabled: false,
-      };
-      localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify([preset]));
-      // Link the preset to Llama-3.1-8B
-      localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ 'Llama-3.1-8B': 'test-preset-1' }));
-    });
-
-    await page.route('**/api/v1/health', async route =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
-      }),
-    );
-    await page.route('**/api/v1/models**', async route =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({
-          data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
-          ],
-        }),
-      }),
-    );
-    await goToModels(page);
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
-    await page.locator('.model-list-item').first().click();
-    await page.waitForTimeout(200);
-
-    // Navigate to Presets tab
-    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
-    await presetsTab.click();
-    await page.waitForTimeout(100);
-
-    // Change button should be visible (non-default preset is linked)
-    const changeBtn = page.locator('.detail-presets__change-btn');
-    await expect(changeBtn).toBeVisible();
-    await expect(changeBtn).toHaveAttribute('aria-haspopup', 'dialog');
-    const expanded = await changeBtn.getAttribute('aria-expanded');
-    expect(expanded).toBe('false');
-  });
-
-  test('A115 — preset Change chooser opens as role=dialog when Change clicked', async ({ page }) => {
-    await page.addInitScript(() => {
-      const preset = {
-        id: 'test-preset-2',
-        name: 'Alt Chat Preset',
-        description: 'Another preset',
-        applies_to: ['chat'],
-        recipe_options: {},
-        sampling: {},
-        engine_hint: 'auto',
-        starter: false,
-        auto_opt_run_id: null,
-        auto_opt_enabled: true,
-        system_prompt_id: 'none',
-        system_prompts: [],
-        tools_enabled: false,
-      };
-      localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify([preset]));
-      localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ 'Llama-3.1-8B': 'test-preset-2' }));
-    });
-
-    await page.route('**/api/v1/health', async route =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
-      }),
-    );
-    await page.route('**/api/v1/models**', async route =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({
-          data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
-          ],
-        }),
-      }),
-    );
-    await goToModels(page);
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
-    await page.locator('.model-list-item').first().click();
-    await page.waitForTimeout(200);
-
-    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
-    await presetsTab.click();
-    await page.waitForTimeout(100);
-
-    const changeBtn = page.locator('.detail-presets__change-btn');
-    await changeBtn.click();
-    await page.waitForTimeout(100);
-
-    // Chooser dialog should be visible
-    const chooser = page.locator('.detail-presets__change-chooser');
-    await expect(chooser).toBeVisible();
-    await expect(chooser).toHaveAttribute('role', 'dialog');
-    await expect(changeBtn).toHaveAttribute('aria-expanded', 'true');
-
-    // Close chooser
-    const closeBtn = page.locator('.detail-presets__chooser-close');
-    await closeBtn.click();
-    await page.waitForTimeout(100);
-    await expect(chooser).not.toBeVisible();
-    await expect(changeBtn).toHaveAttribute('aria-expanded', 'false');
-  });
 });
 
 // ─── 25. Model README raw-HTML rendering (#2355 README tab fix) ───────────────
@@ -2584,7 +2014,10 @@ test.describe('Accessibility — model README raw-HTML rendering (#2355)', () =>
     await page.waitForSelector('.manager--detail');
     await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
     await page.locator('.model-list-item').first().click();
-    // README is the default tab; wait for the rendered container.
+    const readmeTab = page.getByRole('tab', { name: 'README', exact: true });
+    await expect(readmeTab).toBeVisible();
+    await readmeTab.click();
+    await expect(readmeTab).toHaveAttribute('aria-selected', 'true');
     await page.waitForSelector('.detail-readme', { timeout: 5000 });
     await page.waitForTimeout(200);
   }
@@ -2973,157 +2406,12 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 
-  test('A136 — preset quick-search and "+ New" are removed from the nav rail (#2424)', async ({ page }) => {
-    await goToModelsWithNavMock(page);
-    await expect(page.locator('.model-nav-rail')).toBeVisible();
-    // The preset search box and "+ New" button no longer belong in the rail.
-    await expect(page.locator('#nav-preset-search')).toHaveCount(0);
-    await expect(page.locator('.model-nav-rail__preset-row')).toHaveCount(0);
-    await expect(page.locator('.model-nav-rail__new-btn')).toHaveCount(0);
-  });
-});
-
-// ─── 28. Model-detail Presets tab — neat compact card grid (#2424 fl0rianr) ───
-//
-// fl0rianr asked for the model-detail Presets tab to render presets as a neat
-// grid of small focused cards (matching the global Presets-page cards), not
-// full-width stacked rows. The linked preset sits above as a single highlighted
-// card; recommended presets render in a responsive grid. Each Attach/Switch
-// button names its preset, linked/active state is exposed via text + aria (not
-// color only), and the inline Change dialog still works.
-// Range: A137–A141.
-
-test.describe('Accessibility — model-detail Presets card grid (#2424)', () => {
-  async function goToPresetsTab(
-    page: Page,
-    opts: { applied?: Record<string, string> } = {},
-  ): Promise<void> {
-    const applied = opts.applied ?? {};
-    await page.addInitScript((appliedJson: string) => {
-      const presets = [
-        {
-          id: 'p-balanced', name: 'Balanced', description: 'Reliable defaults for everyday chat and general use.',
-          applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: false,
-          auto_opt_run_id: null, auto_opt_enabled: true, system_prompt_id: 'none', system_prompts: [], tools_enabled: true,
-        },
-        {
-          id: 'p-thorough', name: 'Thorough', description: 'Careful answers for analysis, planning, and debugging.',
-          applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: false,
-          auto_opt_run_id: null, auto_opt_enabled: true, system_prompt_id: 'none', system_prompts: [], tools_enabled: true,
-        },
-        {
-          id: 'p-creative', name: 'Creative', description: 'Higher creativity for brainstorming and writing.',
-          applies_to: ['chat'], recipe_options: {}, sampling: {}, engine_hint: 'auto', starter: false,
-          auto_opt_run_id: null, auto_opt_enabled: true, system_prompt_id: 'none', system_prompts: [], tools_enabled: false,
-        },
-      ];
-      localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify(presets));
-      localStorage.setItem('lemonade:guest:shared:applied_presets', appliedJson);
-    }, JSON.stringify(applied));
-
-    await page.route('**/api/v1/health', async route =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
-      }),
-    );
-    await page.route('**/api/v1/models**', async route =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({
-          data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
-          ],
-        }),
-      }),
-    );
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Models');
-    await page.waitForSelector('.manager--detail');
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
-    await page.locator('.model-list-item').first().click();
-    await page.waitForTimeout(200);
-    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
-    await presetsTab.click();
-    await page.waitForTimeout(150);
-  }
-
-  test('A137 — recommended presets render as a grid of compact cards (not full-width rows)', async ({ page }) => {
-    await goToPresetsTab(page);
-    // The old row container is gone; the new grid is present.
-    await expect(page.locator('.detail-presets__preset-list')).toHaveCount(0);
-    const grid = page.locator('.detail-presets__preset-grid');
-    await expect(grid).toBeVisible();
-    await expect(grid).toHaveAttribute('role', 'list');
-    // Multiple compact cards rendered as a grid.
-    const cards = grid.locator('.detail-presets__preset-card');
-    expect(await cards.count()).toBeGreaterThanOrEqual(2);
-    const display = await grid.evaluate(el => getComputedStyle(el).display);
-    expect(display).toBe('grid');
-  });
-
-  test('A138 — each Attach/Switch button has an accessible name that includes its preset name', async ({ page }) => {
-    await goToPresetsTab(page);
-    const attachButtons = page.locator('.detail-presets__attach-btn');
-    const count = await attachButtons.count();
-    expect(count).toBeGreaterThanOrEqual(2);
-    for (let i = 0; i < count; i++) {
-      const label = await attachButtons.nth(i).getAttribute('aria-label');
-      expect(label).toMatch(/(Attach|Switch to) preset ".+" for /);
-    }
-  });
-
-  test('A139 — linked/active state is exposed via text + aria, not color alone', async ({ page }) => {
-    // Link "Balanced" so it is both the active linked card and the selected option.
-    await goToPresetsTab(page, { applied: { 'Llama-3.1-8B': 'p-balanced' } });
-
-    // Linked card above carries aria-current + visible "Active" badge text.
-    const linkedCard = page.locator('.detail-presets__linked-card');
-    await expect(linkedCard).toHaveAttribute('aria-current', 'true');
-    await expect(linkedCard.locator('.detail-presets__card-badge--linked')).toHaveText(/Active/i);
-
-    // The matching card in the grid exposes aria-current + a text "Linked" badge.
-    const selected = page.locator('.detail-presets__preset-card--selected');
-    await expect(selected).toHaveAttribute('aria-current', 'true');
-    await expect(selected).toContainText(/Linked/i);
-    // Selected card shows a text note instead of an Attach button (state not by color only).
-    await expect(selected.locator('.detail-presets__card-linked-note')).toBeVisible();
-  });
-
-  test('A140 — Change dialog still opens from the linked card and closes', async ({ page }) => {
-    await goToPresetsTab(page, { applied: { 'Llama-3.1-8B': 'p-balanced' } });
-    const changeBtn = page.locator('.detail-presets__change-btn');
-    await expect(changeBtn).toBeVisible();
-    await changeBtn.click();
-    await page.waitForTimeout(100);
-    const chooser = page.locator('.detail-presets__change-chooser');
-    await expect(chooser).toBeVisible();
-    await expect(chooser).toHaveAttribute('role', 'dialog');
-    await expect(changeBtn).toHaveAttribute('aria-expanded', 'true');
-    await page.locator('.detail-presets__chooser-close').click();
-    await page.waitForTimeout(100);
-    await expect(chooser).not.toBeVisible();
-  });
-
-  test('A141 — the Presets card grid passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
-    await goToPresetsTab(page, { applied: { 'Llama-3.1-8B': 'p-balanced' } });
-    await expect(page.locator('.detail-presets__preset-grid')).toBeVisible();
-    const results = await new AxeBuilder({ page })
-      .withTags([...WCAG_TAGS])
-      .analyze();
-    const critical = results.violations.filter(
-      v => v.impact === 'critical' || v.impact === 'serious',
-    );
-    expect(critical, formatViolations(critical)).toHaveLength(0);
-  });
 });
 
 // ─── PR #2424 maintainer refinements (fl0rianr 2026-06-25) ──────────────────
 //
 // Five review items: (1) a favorite STAR toggle in the model DETAIL panel that
 // reuses the existing client-local pin store and updates the Favorites nav
-// count; (2) the preset search + "+ New" removed from the left rail (covered by
 // the updated A136); (3) "Back to models" hidden on desktop, shown on narrow;
 // (4) the funnel filter scoped to CAPABILITIES with a solid opaque popover
 // background; (5) the left rail scrolls independently instead of clipping the
@@ -3403,267 +2691,12 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
 });
 
 
-// ─── 31. Update preset while a model is loaded (#2356, simplified) ────────────
 //
-// When a model is loaded and a DIFFERENT preset is linked to it, an
-// "Apply preset" / "Reload to apply preset" button appears next to "Unload".
-// Simplified design (no update-preset endpoint, no client `mode` param):
 //   • Live changes (sampling / system prompt / tools) are a pure client-local
 //     rebind — NO network call, applied by request composition next request.
 //   • Load-time changes (recipe_options) perform a real reload = unload + load
-//     (api.reloadModel). The active-preset binding persists across the reload.
 // Range: A154–A166.
 
-test.describe('Accessibility — update preset while loaded (#2356)', () => {
-  const MODEL = 'Llama-3.1-8B';
-
-  function preset(id: string, name: string, extra: Record<string, unknown> = {}) {
-    return {
-      id, name,
-      description: `${name} preset`,
-      applies_to: ['chat'],
-      recipe_options: { ctx_size: 4096 },
-      sampling: { temperature: 0.7, top_p: 0.9, top_k: 40, repeat_penalty: 1.05 },
-      engine_hint: 'auto',
-      starter: false,
-      auto_opt_run_id: null,
-      auto_opt_enabled: true,
-      system_prompt_id: 'none',
-      system_prompts: [],
-      tools_enabled: false,
-      ...extra,
-    };
-  }
-
-  // p-base: running baseline. p-live: only sampling differs (live).
-  // p-reload: recipe_options differ (reload).
-  const PRESETS = [
-    preset('p-base', 'Base'),
-    preset('p-live', 'Live Tweaks', { sampling: { temperature: 0.2, top_p: 0.9, top_k: 40, repeat_penalty: 1.05 } }),
-    preset('p-reload', 'Big Context', { recipe_options: { ctx_size: 8192 } }),
-  ];
-
-  type ReloadCall = { kind: 'unload' | 'load'; model_name?: string };
-
-  /**
-   * Seed presets, mark the model loaded (health.all_models_loaded), capture
-   * unload/load calls (the only server round-trip — for load-time reloads),
-   * navigate to Models, and select the loaded model.
-   * Returns the captured-calls array (mutated as requests arrive).
-   */
-  async function setup(page: Page, appliedPresetId: string): Promise<ReloadCall[]> {
-    const calls: ReloadCall[] = [];
-    await page.addInitScript(
-      ({ presets, applied, model }) => {
-        localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify(presets));
-        localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ [model]: applied }));
-        localStorage.removeItem('lemonade:guest:shared:running_presets');
-      },
-      { presets: PRESETS, applied: appliedPresetId, model: MODEL },
-    );
-
-    await page.route('**/api/v1/health', async route =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({
-          status: 'ok', version: 'test',
-          all_models_loaded: [
-            { model_name: MODEL, recipe: 'llamacpp', device: 'gpu', type: 'llm', backend_url: 'http://x', pid: 1 },
-          ],
-        }),
-      }),
-    );
-    await page.route('**/api/v1/models**', async route =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ data: [{ id: MODEL, name: MODEL, labels: ['llm'], recipe: 'llamacpp', downloaded: true }] }),
-      }),
-    );
-    await page.route('**/api/v1/unload', async route => {
-      let model_name: string | undefined;
-      try { model_name = (route.request().postDataJSON() as any)?.model_name; } catch { /* ignore */ }
-      calls.push({ kind: 'unload', model_name });
-      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) });
-    });
-    await page.route('**/api/v1/load', async route => {
-      let model_name: string | undefined;
-      try { model_name = (route.request().postDataJSON() as any)?.model_name; } catch { /* ignore */ }
-      calls.push({ kind: 'load', model_name });
-      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) });
-    });
-
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await page.locator('.titlebar__nav').getByText('Models').click();
-    await page.waitForSelector('.manager--detail');
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
-    await page.locator('.model-list-item').first().click();
-    await page.waitForTimeout(200);
-    return calls;
-  }
-
-  /** Switch the linked preset via the Presets-tab Change chooser. */
-  async function switchLinkedPreset(page: Page, presetName: string): Promise<void> {
-    const presetsTab = page.locator('[role="tab"]').filter({ hasText: /Preset/i });
-    await presetsTab.click();
-    await page.waitForTimeout(100);
-    await page.locator('.detail-presets__change-btn').click();
-    await page.waitForTimeout(100);
-    await page.locator(`.detail-presets__chooser-option[aria-label*="${presetName}"]`).click();
-    await page.waitForTimeout(150);
-  }
-
-  const updateBtn = '.model-detail-panel__update-preset-btn';
-
-  test('A154 — no Apply preset button when the loaded model already runs its linked preset', async ({ page }) => {
-    await setup(page, 'p-base');
-    // Model is loaded (Unload button present); linked == running (p-base).
-    await expect(page.locator('.model-detail-panel__actions').getByRole('button', { name: /Unload/i })).toBeVisible();
-    await expect(page.locator(updateBtn)).toHaveCount(0);
-  });
-
-  test('A155 — switching to a live-only preset reveals "Apply preset" next to Unload', async ({ page }) => {
-    await setup(page, 'p-base');
-    await switchLinkedPreset(page, 'Live Tweaks');
-    const btn = page.locator(updateBtn);
-    await expect(btn).toBeVisible();
-    // Sits in the same actions group as Unload.
-    await expect(page.locator('.model-detail-panel__actions').locator(updateBtn)).toBeVisible();
-    await expect(btn).toContainText(/apply preset/i);
-    const label = await btn.getAttribute('aria-label');
-    expect(label).toMatch(/apply preset/i);
-    expect(label).not.toMatch(/reload/i);
-  });
-
-  test('A156 — clicking Apply preset (live) is a pure rebind: no reload call, announces no reload', async ({ page }) => {
-    const calls = await setup(page, 'p-base');
-    await switchLinkedPreset(page, 'Live Tweaks');
-    await page.locator(updateBtn).click();
-    await page.waitForTimeout(300);
-    // Live op makes NO server round-trip (no unload/load).
-    expect(calls.length).toBe(0);
-    const status = page.locator('.model-detail-panel__preset-update');
-    await expect(status).toContainText(/applied live|no reload/i);
-    // Button disappears once running == linked again.
-    await expect(page.locator(updateBtn)).toHaveCount(0);
-  });
-
-  test('A157 — switching to a reload-requiring preset labels the button as reloading', async ({ page }) => {
-    await setup(page, 'p-base');
-    await switchLinkedPreset(page, 'Big Context');
-    const btn = page.locator(updateBtn);
-    await expect(btn).toBeVisible();
-    await expect(btn).toContainText(/reload to apply preset/i);
-    const label = await btn.getAttribute('aria-label');
-    expect(label).toMatch(/reload/i);
-  });
-
-  test('A158 — clicking Reload to apply preset performs a real reload (unload + load) and announces it', async ({ page }) => {
-    const calls = await setup(page, 'p-base');
-    await switchLinkedPreset(page, 'Big Context');
-    await page.locator(updateBtn).click();
-    await page.waitForTimeout(500);
-    // Reload = unload followed by load, both targeting the model.
-    expect(calls.map(c => c.kind)).toEqual(['unload', 'load']);
-    expect(calls.every(c => c.model_name === MODEL)).toBe(true);
-    const status = page.locator('.model-detail-panel__preset-update');
-    await expect(status).toContainText(/reload/i);
-    await expect(page.locator(updateBtn)).toHaveCount(0);
-  });
-
-  test('A159 — Apply preset button is keyboard operable (Enter triggers the rebind)', async ({ page }) => {
-    const calls = await setup(page, 'p-base');
-    await switchLinkedPreset(page, 'Live Tweaks');
-    const btn = page.locator(updateBtn);
-    await btn.focus();
-    await expect(btn).toBeFocused();
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(300);
-    // Live rebind: no reload call; affordance clears.
-    expect(calls.length).toBe(0);
-    await expect(page.locator(updateBtn)).toHaveCount(0);
-  });
-
-  test('A160 — preset update feedback is a polite live region', async ({ page }) => {
-    await setup(page, 'p-base');
-    await switchLinkedPreset(page, 'Live Tweaks');
-    const status = page.locator('.model-detail-panel__preset-update');
-    await expect(status).toHaveAttribute('role', 'status');
-    await expect(status).toHaveAttribute('aria-live', 'polite');
-  });
-
-  test('A161 — no Apply preset button for a non-loaded model even with a non-default preset linked', async ({ page }) => {
-    // Model NOT in all_models_loaded → not loaded.
-    await page.addInitScript(
-      ({ presets, model }) => {
-        localStorage.setItem('lemonade:guest:shared:user_presets', JSON.stringify(presets));
-        localStorage.setItem('lemonade:guest:shared:applied_presets', JSON.stringify({ [model]: 'p-live' }));
-        localStorage.removeItem('lemonade:guest:shared:running_presets');
-      },
-      { presets: PRESETS, model: MODEL },
-    );
-    await page.route('**/api/v1/health', async route =>
-      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }) }),
-    );
-    await page.route('**/api/v1/models**', async route =>
-      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [{ id: MODEL, name: MODEL, labels: ['llm'], recipe: 'llamacpp', downloaded: true }] }) }),
-    );
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await page.locator('.titlebar__nav').getByText('Models').click();
-    await page.waitForSelector('.manager--detail');
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
-    await page.locator('.model-list-item').first().click();
-    await page.waitForTimeout(200);
-    await expect(page.locator(updateBtn)).toHaveCount(0);
-  });
-
-  test('A162 — Apply/Reload preset visible state passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
-    await setup(page, 'p-base');
-    await switchLinkedPreset(page, 'Big Context');
-    await expect(page.locator(updateBtn)).toBeVisible();
-    const results = await new AxeBuilder({ page }).withTags([...WCAG_TAGS]).analyze();
-    const critical = results.violations.filter(v => v.impact === 'critical' || v.impact === 'serious');
-    expect(critical, formatViolations(critical)).toHaveLength(0);
-  });
-
-  test('A163 — after a live apply, focus moves to the Unload button (no focus loss)', async ({ page }) => {
-    await setup(page, 'p-base');
-    await switchLinkedPreset(page, 'Live Tweaks');
-    await page.locator(updateBtn).click();
-    await page.waitForTimeout(300);
-    const unload = page.locator('.model-detail-panel__actions').getByRole('button', { name: /Unload/i });
-    await expect(unload).toBeFocused();
-  });
-
-  test('A164 — live Apply preset button accessible name names the target model', async ({ page }) => {
-    await setup(page, 'p-base');
-    await switchLinkedPreset(page, 'Live Tweaks');
-    const label = await page.locator(updateBtn).getAttribute('aria-label');
-    expect(label).toMatch(new RegExp(`apply preset for ${MODEL}`, 'i'));
-  });
-
-  test('A165 — reload Apply preset button accessible name names the target model', async ({ page }) => {
-    await setup(page, 'p-base');
-    await switchLinkedPreset(page, 'Big Context');
-    const label = await page.locator(updateBtn).getAttribute('aria-label');
-    expect(label).toMatch(new RegExp(`reload ${MODEL} to apply preset`, 'i'));
-  });
-
-  test('A166 — after a reload apply, focus moves to the Unload button (no focus loss)', async ({ page }) => {
-    const calls = await setup(page, 'p-base');
-    await switchLinkedPreset(page, 'Big Context');
-    await page.locator(updateBtn).click();
-
-    // Wait for the actual reload contract instead of relying on a fixed delay.
-    await expect.poll(() => calls.map(c => c.kind).join(','), { timeout: 5000 }).toBe('unload,load');
-    await expect(page.locator(updateBtn)).toHaveCount(0);
-
-    const unload = page.locator('.model-detail-panel__actions').getByRole('button', { name: /Unload/i });
-    await expect(unload).toBeEnabled();
-    await expect(unload).toBeFocused();
-  });
-});
 
 // ─── 29. Model-detail Files tab — model file listing (#2428 Slice 2) ──────────
 //
@@ -3777,34 +2810,310 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
   });
 });
 
-// ─── MCP failure recovery ────────────────────────────────────────────────────
 
-test.describe('MCP failure recovery', () => {
-  test('preset editing does not probe the fail-closed MCP admin endpoint without credentials', async ({ page }) => {
-    let adminRequests = 0;
-    await page.route('**/api/v1/health**', route => route.fulfill({
-      json: { status: 'ok', version: 'test', all_models_loaded: [] },
-    }));
-    await page.route('**/api/v1/models**', route => route.fulfill({ json: { data: [] } }));
-    await page.route('**/internal/mcp/servers**', route => {
-      adminRequests += 1;
-      return route.fulfill({
-        status: 403,
+//
+// the Chat composer toolbar. The model selector, Effective Settings button,
+// Add menu, tools entry, and Logs toggle must remain accessible. Range: A185–A187.
+
+test.describe('Chat toolbar accessibility', () => {
+  async function goToChatWithLoadedModel(page: Page): Promise<void> {
+    await page.route('**/api/v1/health**', async route =>
+      route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify({ error: 'MCP administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY' }),
-      });
+        body: JSON.stringify({
+          status: 'ok',
+          version: 'test',
+          all_models_loaded: [
+            {
+              model_name: 'Llama-3.1-8B-Instruct',
+              checkpoint: 'Llama-3.1-8B-Instruct',
+              recipe: 'llamacpp',
+              device: 'cpu',
+              backend_url: 'http://localhost:11434',
+              pid: 1234,
+              type: 'llm',
+              last_use: Date.now(),
+              labels: ['llm'],
+              capabilities: ['chat'],
+            },
+          ],
+        }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B-Instruct', name: 'Llama-3.1-8B-Instruct', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+    await page.waitForTimeout(300);
+  }
+
+  test('A186 — composer toolbar retains model selector, settings, add menu, and Logs buttons', async ({ page }) => {
+    await goToChatWithLoadedModel(page);
+    // Model picker button is present (model is loaded so it appears)
+    await expect(page.locator('.composer__model-button')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Add files, photos, or tools/i })).toBeVisible();
+    // Logs toggle
+    await expect(page.getByRole('button', { name: /Logs/i })).toBeVisible();
+    // Effective Settings button (requires current model)
+    await expect(page.getByRole('button', { name: 'Effective settings' })).toBeVisible();
+  });
+
+  test('A187 — add menu exposes Lemonade tools and is keyboard-operable', async ({ page }) => {
+    await goToChatWithLoadedModel(page);
+    const addBtn = page.getByRole('button', { name: /Add files, photos, or tools/i });
+    await expect(addBtn).toBeVisible();
+    await expect(addBtn).toHaveAttribute('aria-expanded', 'false');
+    await addBtn.focus();
+    await page.keyboard.press('Space');
+    await expect(addBtn).toHaveAttribute('aria-expanded', 'true');
+    const menu = page.getByRole('menu', { name: 'Add to chat' });
+    await expect(menu).toBeVisible();
+    const lemonadeTools = page.getByRole('menuitem', { name: /Lemonade tools/i });
+    await expect(lemonadeTools).toBeVisible();
+    await lemonadeTools.focus();
+    await page.keyboard.press('Space');
+    const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
+    await expect(dialog).toBeVisible();
+    await expect(menu).toHaveCount(0);
+    const back = page.getByRole('button', { name: 'Back to add to chat options' });
+    await expect(back).toBeVisible();
+    await expect(back).toBeFocused();
+    const results = await new AxeBuilder({ page })
+      .include('[role="dialog"]')
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
+    await back.focus();
+    await page.keyboard.press('Space');
+    await expect(dialog).toHaveCount(0);
+    await expect(menu).toBeVisible();
+    await expect(lemonadeTools).toBeVisible();
+    await expect(lemonadeTools).toBeFocused();
+  });
+
+  test('A187b — external MCP entry opens the same selectable tools flow', async ({ page }) => {
+    await goToChatWithLoadedModel(page);
+    const addBtn = page.getByRole('button', { name: /Add files, photos, or tools/i });
+    await addBtn.click();
+    const menu = page.getByRole('menu', { name: 'Add to chat' });
+    const externalMcp = page.getByRole('menuitem', { name: /External MCP servers/i });
+    await externalMcp.click();
+    await expect(page.getByRole('dialog', { name: 'Tools for this chat' })).toBeVisible();
+    await expect(menu).toHaveCount(0);
+    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+    await expect(menu).toBeVisible();
+    await expect(externalMcp).toBeVisible();
+  });
+
+  test('A187c — MCP enablement selection persists when backing out and reopening the picker', async ({ page }) => {
+    await goToChatWithLoadedModel(page);
+    await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
+    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
+    const enabled = dialog.getByRole('checkbox', { name: /Tools for this chat/i });
+    await expect(enabled).toBeChecked();
+    await enabled.uncheck();
+    await expect(enabled).not.toBeChecked();
+
+    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+    await expect(page.getByRole('dialog', { name: 'Tools for this chat' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Tools for this chat' }).getByRole('checkbox', { name: /Tools for this chat/i })).not.toBeChecked();
+  });
+
+  async function goToChatWithLoadedModels(page: Page, names: string[]): Promise<void> {
+    const models = names.map(name => ({
+      model_name: name,
+      checkpoint: name,
+      recipe: 'llamacpp',
+      device: 'cpu',
+      backend_url: 'http://localhost:11434',
+      pid: 1234,
+      type: 'llm',
+      last_use: Date.now(),
+      labels: ['llm'],
+      capabilities: ['chat'],
+    }));
+    const modelInfos = names.map(name => ({
+      id: name,
+      name,
+      labels: ['llm'],
+      recipe: 'llamacpp',
+      downloaded: true,
+    }));
+    await page.route('**/api/v1/health**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: models }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: modelInfos }) }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+    await page.waitForTimeout(300);
+  }
+
+  test('A187d — MCP selection survives model changes, picker reopen, and reload', async ({ page }) => {
+    await goToChatWithLoadedModels(page, ['model-one', 'model-two']);
+    await page.evaluate(() => {
+      localStorage.setItem('lemonade:mcp_enabled', 'true');
+      localStorage.setItem('lemonade:mcp_server_ids', JSON.stringify(['lemonade', 'external-echo']));
+      localStorage.setItem('lemonade:mcp_tool_names', JSON.stringify(['lemonade_chat', 'external-echo__echo']));
+    });
+    await page.reload();
+    await page.waitForSelector('.chat');
+
+    const openPicker = async () => {
+      await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
+      await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+      return page.getByRole('dialog', { name: 'Tools for this chat' });
+    };
+    const dismissAddMenu = async () => {
+      const addButton = page.getByRole('button', { name: /Add files, photos, or tools/i });
+      const menu = page.getByRole('menu', { name: 'Add to chat' });
+      await expect(menu).toBeVisible();
+      await addButton.click();
+      await expect(menu).toHaveCount(0);
+      await expect(addButton).toHaveAttribute('aria-expanded', 'false');
+    };
+    let dialog = await openPicker();
+    await expect(dialog).toContainText('2 servers');
+    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+    await dismissAddMenu();
+
+    await page.locator('.composer__model-button').click();
+    await page.getByRole('option', { name: /model-two/i }).click();
+    await page.waitForTimeout(250);
+    dialog = await openPicker();
+    await expect(dialog).toContainText('2 servers');
+    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+    await dismissAddMenu();
+
+    const persistedBeforeReload = await page.evaluate(() => ({
+      enabled: localStorage.getItem('lemonade:mcp_enabled'),
+      servers: localStorage.getItem('lemonade:mcp_server_ids'),
+      tools: localStorage.getItem('lemonade:mcp_tool_names'),
+    }));
+    expect(persistedBeforeReload).toEqual({
+      enabled: 'true',
+      servers: JSON.stringify(['lemonade', 'external-echo']),
+      tools: JSON.stringify(['lemonade_chat', 'external-echo__echo']),
     });
 
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await navigateToView(page, 'Presets');
-    await page.getByRole('button', { name: 'New preset', exact: true }).first().click();
+    await page.reload();
+    await page.waitForSelector('.chat');
+    dialog = await openPicker();
+    await expect(dialog).toContainText('2 servers');
+  });
 
-    const none = page.locator('[data-preset-mcp-none]');
-    await expect(none).toBeVisible();
-    await expect(none).toBeEnabled();
-    await none.click();
-    await expect(none).toHaveAttribute('aria-pressed', 'true');
-    expect(adminRequests).toBe(0);
+  test('A187e — legacy use_tools is only a fallback when explicit MCP enablement is absent', async ({ page }) => {
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem('mcp-fallback-seeded')) return;
+      localStorage.removeItem('lemonade:mcp_enabled');
+      localStorage.setItem('lemonade:use_tools', 'false');
+      sessionStorage.setItem('mcp-fallback-seeded', 'true');
+    });
+    await goToChatWithLoadedModel(page);
+    await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
+    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+    const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
+    await expect(dialog.getByRole('checkbox', { name: /Tools for this chat/i })).not.toBeChecked();
+    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+
+    await page.evaluate(() => localStorage.setItem('lemonade:mcp_enabled', 'true'));
+    await page.reload();
+    await page.waitForSelector('.chat');
+    await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
+    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+    await expect(page.getByRole('dialog', { name: 'Tools for this chat' }).getByRole('checkbox', { name: /Tools for this chat/i })).toBeChecked();
+  });
+});
+
+
+//
+//   - Built-in tuning source badge is renamed to "Recipe default".
+//   - Local direct-config badge renamed to "Direct configuration".
+//   - An authority note near Settings by source explains that the load command
+//     includes server-applied defaults not shown in the rows table.
+// Range: A188–A192.
+
+test.describe('Effective Settings modal accessibility', () => {
+  async function openEffectiveSettings(page: Page): Promise<void> {
+    await page.route('**/api/v1/health**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          version: 'test',
+          all_models_loaded: [
+            {
+              model_name: 'Llama-3.1-8B-Instruct',
+              checkpoint: 'Llama-3.1-8B-Instruct',
+              recipe: 'llamacpp',
+              device: 'cpu',
+              backend_url: 'http://localhost:11434',
+              pid: 1234,
+              type: 'llm',
+              last_use: Date.now(),
+              labels: ['llm'],
+              capabilities: ['chat'],
+            },
+          ],
+        }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { id: 'Llama-3.1-8B-Instruct', name: 'Llama-3.1-8B-Instruct', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+          ],
+        }),
+      }),
+    );
+    await page.route('**/api/v1/load**', async route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ args: ['--threads', '8'], options: {}, backend: 'llamacpp' }) }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: 'Effective settings' }).click();
+    await page.waitForSelector('[role="dialog"]');
+    await page.waitForTimeout(200);
+  }
+
+  test('A191 — Settings by source has an authority note referencing the Effective load command', async ({ page }) => {
+    await openEffectiveSettings(page);
+    const note = page.locator('.effective-settings__section').first().locator('.effective-settings__note');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('Effective load command');
+    await expect(note).toContainText('authoritative');
+  });
+
+  test('A192 — modal passes a WCAG 2.1 AA axe-core scan with no critical/serious violations', async ({ page }) => {
+    await openEffectiveSettings(page);
+    const results = await new AxeBuilder({ page })
+      .include('[role="dialog"]')
+      .withTags([...WCAG_TAGS])
+      .analyze();
+    const critical = results.violations.filter(
+      v => v.impact === 'critical' || v.impact === 'serious',
+    );
+    expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 });

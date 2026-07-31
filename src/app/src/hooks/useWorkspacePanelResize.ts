@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MOBILE_BREAKPOINT } from '../styles/breakpoints';
 
 const DEFAULT_RAIL_WIDTH = 248;
@@ -9,7 +9,11 @@ const DETAIL_PANEL_MIN_WIDTH = 420;
 
 interface WorkspacePanelResizeOptions {
   storageKey: string;
-  railCollapsed: boolean;
+  railCollapsed?: boolean;
+  /** Pass true when the workspace has no rail element at all (two-panel layouts).
+   *  Prevents the hook from falling back to DEFAULT_RAIL_WIDTH when the rail
+   *  DOM query returns nothing, which would otherwise over-clamp the list panel. */
+  noRail?: boolean;
 }
 
 interface WorkspacePanelWidthState {
@@ -31,9 +35,9 @@ function layoutWidths(containerWidth: number, railWidth: number) {
   return { balancedWidth, maxWidth };
 }
 
-function initialPanelWidth(storageKey: string, railCollapsed: boolean): WorkspacePanelWidthState {
+function initialPanelWidth(storageKey: string, railCollapsed: boolean, noRail: boolean): WorkspacePanelWidthState {
   const containerWidth = typeof window === 'undefined' ? 1440 : window.innerWidth;
-  const railWidth = railCollapsed ? COLLAPSED_RAIL_WIDTH : DEFAULT_RAIL_WIDTH;
+  const railWidth = noRail ? 0 : (railCollapsed ? COLLAPSED_RAIL_WIDTH : DEFAULT_RAIL_WIDTH);
   const { balancedWidth, maxWidth } = layoutWidths(containerWidth, railWidth);
   if (typeof window === 'undefined') return { width: balancedWidth, maxWidth, customized: false };
 
@@ -53,9 +57,9 @@ function initialPanelWidth(storageKey: string, railCollapsed: boolean): Workspac
   return { width: balancedWidth, maxWidth, customized: false };
 }
 
-export function useWorkspacePanelResize<T extends HTMLElement = HTMLElement>({ storageKey, railCollapsed }: WorkspacePanelResizeOptions) {
+export function useWorkspacePanelResize<T extends HTMLElement = HTMLElement>({ storageKey, railCollapsed = false, noRail = false }: WorkspacePanelResizeOptions) {
   const containerRef = useRef<T>(null);
-  const [panelWidth, setPanelWidth] = useState<WorkspacePanelWidthState>(() => initialPanelWidth(storageKey, railCollapsed));
+  const [panelWidth, setPanelWidth] = useState<WorkspacePanelWidthState>(() => initialPanelWidth(storageKey, railCollapsed, noRail));
   const panelWidthRef = useRef(panelWidth);
   panelWidthRef.current = panelWidth;
   const stopResizeRef = useRef<(() => void) | null>(null);
@@ -72,12 +76,15 @@ export function useWorkspacePanelResize<T extends HTMLElement = HTMLElement>({ s
   const measureLayout = useCallback(() => {
     const container = containerRef.current;
     const containerWidth = container?.getBoundingClientRect().width || window.innerWidth;
-    const railWidth = container
-      ?.querySelector<HTMLElement>(':scope > .workspace-rail')
-      ?.getBoundingClientRect().width
-      || (railCollapsed ? COLLAPSED_RAIL_WIDTH : DEFAULT_RAIL_WIDTH);
+    const railFallback = noRail ? 0 : (railCollapsed ? COLLAPSED_RAIL_WIDTH : DEFAULT_RAIL_WIDTH);
+    const railWidth = noRail
+      ? 0
+      : (container
+          ?.querySelector<HTMLElement>(':scope > .workspace-rail')
+          ?.getBoundingClientRect().width
+          ?? railFallback);
     return layoutWidths(containerWidth, railWidth);
-  }, [railCollapsed]);
+  }, [railCollapsed, noRail]);
 
   useLayoutEffect(() => {
     const updateForLayout = () => {

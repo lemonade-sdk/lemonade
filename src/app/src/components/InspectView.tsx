@@ -12,16 +12,14 @@ import ReplayTab from './inspect/ReplayTab';
 import ImproveTab from './inspect/ImproveTab';
 import CreateModal from './inspect/CreateModal';
 import CurlModal from './inspect/CurlModal';
-import { type AccountSession } from '../features/accounts/accountStore';
 import { WorkspaceActionButton, WorkspaceDetailEmpty } from './WorkspacePanels';
 import { isMobileLayout } from '../styles/breakpoints';
 
 interface InspectViewProps {
-  accountSession: AccountSession;
   embedded?: boolean;
 }
 
-export default function InspectView({ accountSession, embedded = false }: InspectViewProps) {
+export default function InspectView({ embedded = false }: InspectViewProps) {
   const { traces, selectedTraceId, capturing, captureReady, searchQuery, filterKind, toast } = useInspectStore();
   const [activeTab, setActiveTab] = useState<'overview' | 'messages' | 'replay' | 'improve'>('overview');
   const [railCollapsed, setRailCollapsed] = useState(false);

@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import api, { type ModelInfo, type EffectiveLoadCommand, friendlyErrorMessage } from '../api';
+import api, { type ModelInfo, type EffectiveLoadCommand, type LoadedModel, friendlyErrorMessage } from '../api';
 import {
-  type Preset,
   type RecipeOptions,
   type SamplingParams,
   type TuningValueSource,
@@ -11,12 +10,12 @@ import {
   backendArgsFieldForRecipe,
   backendSupportsArgs,
   clearSessionArgsOverride,
+  effectiveModelTuningForModel,
   getSessionArgsOverride,
-  presetMcpDisplayText,
-  resolvedModelTuningForPreset,
+  loadModelTuning,
+  saveModelTuning,
   setSessionArgsOverride,
-  systemPromptNameForPreset,
-} from '../presetStore';
+} from '../modelConfiguration';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
@@ -34,8 +33,6 @@ const RECIPE_OPTION_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
   moonshine_args: 'Backend args',
   sdcpp_args: 'Backend args',
   'sd-cpp_backend': 'Backend',
-  mmproj_enabled: 'Multimodal projector',
-  merge_args: 'Merge args',
   steps: 'Steps',
   cfg_scale: 'CFG scale',
   width: 'Width',
@@ -56,9 +53,9 @@ const SAMPLING_LABELS: Partial<Record<keyof SamplingParams, string>> = {
 
 function sourceLabel(source: TuningValueSource | undefined): string {
   switch (source) {
-    case 'custom': return 'Model tuning';
-    case 'built-in': return 'Built-in tuning';
-    case 'optimized': return 'AutoOpt optimized';
+    case 'custom': return 'Direct configuration';
+    case 'built_in': return 'Recipe default';
+    case 'optimized': return 'Optimized';
     default: return 'Default';
   }
 }
@@ -66,7 +63,7 @@ function sourceLabel(source: TuningValueSource | undefined): string {
 function sourceClass(source: TuningValueSource | undefined): string {
   switch (source) {
     case 'custom': return 'effective-settings__source--custom';
-    case 'built-in': return 'effective-settings__source--builtin';
+    case 'built_in': return 'effective-settings__source--builtin';
     case 'optimized': return 'effective-settings__source--optimized';
     default: return 'effective-settings__source--generic';
   }
@@ -102,16 +99,18 @@ interface EffectiveSettingsModalProps {
   onClose: () => void;
   modelName: string;
   modelInfo: ModelInfo | null;
-  preset: Preset;
   recipe: string;
+  mcpEnabled: boolean;
+  mcpServerIds: string[];
   fallbackCtxSize?: number;
+  loadedModel?: LoadedModel | null;
   isModelLoaded: boolean;
   onReload: () => Promise<void>;
   onLoad: () => Promise<void>;
 }
 
 const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
-  open, onClose, modelName, modelInfo, preset, recipe, fallbackCtxSize, isModelLoaded, onReload, onLoad,
+  open, onClose, modelName, modelInfo, recipe, mcpEnabled, mcpServerIds, fallbackCtxSize, loadedModel, isModelLoaded, onReload, onLoad,
 }) => {
   const argsField = backendArgsFieldForRecipe(recipe);
   const canEditArgs = backendSupportsArgs(recipe) && !!argsField;
@@ -126,17 +125,26 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [samplingDraft, setSamplingDraft] = useState<Record<keyof SamplingParams, string>>({
+    temperature: '',
+    top_p: '',
+    top_k: '',
+    min_p: '',
+    repeat_penalty: '',
+  });
+  const [loadedContextSize, setLoadedContextSize] = useState<number | null>(null);
+  const [resolvingContextSize, setResolvingContextSize] = useState(false);
 
   const hasOverride = !!getSessionArgsOverride(modelName);
 
   const resolved = useMemo(() => {
     if (!modelInfo || !open) return null;
     try {
-      return resolvedModelTuningForPreset(modelName, modelInfo, preset, fallbackCtxSize ?? DEFAULT_CONTEXT_SIZE);
+      return effectiveModelTuningForModel(modelName, modelInfo, fallbackCtxSize ?? DEFAULT_CONTEXT_SIZE);
     } catch {
       return null;
     }
-  }, [modelName, modelInfo, preset, fallbackCtxSize, open]);
+  }, [modelName, modelInfo, fallbackCtxSize, open]);
 
   const loadEffective = useCallback(async () => {
     if (!modelName) return;
@@ -162,7 +170,43 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     setPreview(null);
     setPreviewError(null);
     loadEffective();
+    const savedSampling = loadModelTuning(modelName)?.sampling || {};
+    setSamplingDraft({
+      temperature: savedSampling.temperature === undefined ? '' : String(savedSampling.temperature),
+      top_p: savedSampling.top_p === undefined ? '' : String(savedSampling.top_p),
+      top_k: savedSampling.top_k === undefined ? '' : String(savedSampling.top_k),
+      min_p: savedSampling.min_p === undefined ? '' : String(savedSampling.min_p),
+      repeat_penalty: savedSampling.repeat_penalty === undefined ? '' : String(savedSampling.repeat_penalty),
+    });
   }, [open, loadEffective]);
+
+  useEffect(() => {
+    if (!open || !loadedModel) {
+      setLoadedContextSize(null);
+      setResolvingContextSize(false);
+      return;
+    }
+    let cancelled = false;
+    let settled = false;
+    setLoadedContextSize(null);
+    setResolvingContextSize(true);
+    const timeout = window.setTimeout(() => {
+      if (cancelled || settled) return;
+      settled = true;
+      setResolvingContextSize(false);
+    }, 5000);
+    void api.loadedModelContextSize(loadedModel).then(contextSize => {
+      if (cancelled || settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      setLoadedContextSize(contextSize);
+      setResolvingContextSize(false);
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [open, loadedModel]);
 
   useEffect(() => {
     if (!open || !unlocked || !argsField) { setPreview(null); return; }
@@ -247,6 +291,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     if (!resolved) return [];
     const rows: SourceRow[] = [];
     for (const [key, value] of Object.entries(resolved.tuning.recipe_options || {})) {
+      if (key === 'merge_args' || key === 'mmproj_enabled' || key === 'ctx_size') continue;
       rows.push({
         key: `ro-${key}`,
         label: RECIPE_OPTION_LABELS[key as keyof RecipeOptions] || key,
@@ -254,16 +299,25 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
         source: resolved.sources.recipe_options[key as keyof RecipeOptions],
       });
     }
-    for (const [key, value] of Object.entries(resolved.tuning.sampling || {})) {
-      rows.push({
-        key: `sp-${key}`,
-        label: SAMPLING_LABELS[key as keyof SamplingParams] || key,
-        value: displayValue(value),
-        source: resolved.sources.sampling[key as keyof SamplingParams],
-      });
-    }
     return rows;
   }, [resolved]);
+
+  const saveSampling = () => {
+    const sampling: SamplingParams = {};
+    for (const key of Object.keys(samplingDraft) as Array<keyof SamplingParams>) {
+      const value = Number(samplingDraft[key]);
+      if (samplingDraft[key].trim() && Number.isFinite(value)) sampling[key] = value;
+    }
+    const existing = loadModelTuning(modelName);
+    saveModelTuning(modelName, {
+      ...(existing || {}),
+      recipe_options: existing?.recipe_options || {},
+      sampling,
+    });
+    setNotice(Object.keys(sampling).length > 0
+      ? 'Sampling overrides will be sent with future chat requests.'
+      : 'Chat requests will use the backend sampling defaults.');
+  };
 
   if (!open) return null;
 
@@ -297,26 +351,22 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
         <div className="inspect-modal-body effective-settings__body">
           <p className="effective-settings__model">
             <strong>{modelName}</strong>
-            <span className="effective-settings__meta">Preset: {preset.name} · Backend: {backendLabel}</span>
+            <span className="effective-settings__meta">Backend: {backendLabel}</span>
           </p>
 
           <section className="effective-settings__section">
             <h5 className="effective-settings__section-title">Settings by source</h5>
+            <p className="effective-settings__note"><Icon name="info" size={12} /> These rows show known sources for individual settings. The <strong>Effective load command</strong> below is authoritative — it includes architecture and global defaults applied by the server that may not appear here.</p>
             <div className="effective-settings__rows">
               <div className="effective-settings__row">
-                <span className="effective-settings__row-label">Preset</span>
-                <span className="effective-settings__row-value">{preset.name}</span>
-                <span className="effective-settings__source effective-settings__source--preset">Preset</span>
-              </div>
-              <div className="effective-settings__row">
-                <span className="effective-settings__row-label">System prompt</span>
-                <span className="effective-settings__row-value">{systemPromptNameForPreset(preset)}</span>
-                <span className="effective-settings__source effective-settings__source--preset">Preset</span>
+                <span className="effective-settings__row-label">Context size</span>
+                <span className="effective-settings__row-value">{loadedContextSize ? loadedContextSize.toLocaleString() : (loadedModel ? (resolvingContextSize ? 'Resolving…' : 'Unavailable') : 'Not loaded')}</span>
+                <span className="effective-settings__source effective-settings__source--generic">Runtime</span>
               </div>
               <div className="effective-settings__row">
                 <span className="effective-settings__row-label">MCP servers</span>
-                <span className="effective-settings__row-value">{presetMcpDisplayText(preset)}</span>
-                <span className="effective-settings__source effective-settings__source--preset">Preset</span>
+                <span className="effective-settings__row-value">{!mcpEnabled ? 'Off' : (mcpServerIds.length > 0 ? mcpServerIds.join(', ') : 'Built-in Lemonade')}</span>
+                <span className="effective-settings__source effective-settings__source--generic">Setting</span>
               </div>
               {resolved && (
                 <div className="effective-settings__row">
@@ -335,6 +385,32 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
               {sourceRows.length === 0 && !resolved && (
                 <p className="effective-settings__empty">Model tuning details are unavailable for this model.</p>
               )}
+            </div>
+          </section>
+
+          <section className="effective-settings__section">
+            <h5 className="effective-settings__section-title">Chat sampling</h5>
+            <p className="effective-settings__note"><Icon name="info" size={12} /> Leave fields empty to use the backend defaults. Saved values are sent with future chat requests for this model.</p>
+            <div className="effective-settings__sampling">
+              {(Object.keys(SAMPLING_LABELS) as Array<keyof SamplingParams>).map(key => (
+                <label key={key} className="effective-settings__sampling-field">
+                  <span>{SAMPLING_LABELS[key]}</span>
+                  <input
+                    className="input"
+                    type="number"
+                    step={key === 'top_k' ? 1 : 0.01}
+                    min={key === 'repeat_penalty' ? 0 : 0}
+                    value={samplingDraft[key]}
+                    placeholder="Backend default"
+                    onChange={event => setSamplingDraft(current => ({ ...current, [key]: event.target.value }))}
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="effective-settings__actions">
+              <WorkspaceActionButton appearance="secondary" size="small" onClick={saveSampling}>
+                Save sampling
+              </WorkspaceActionButton>
             </div>
           </section>
 
@@ -397,9 +473,9 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
                   </WorkspaceActionButton>
                 </div>
               )}
-              {notice && <p className="effective-settings__notice">{notice}</p>}
             </section>
           )}
+          {notice && <p className="effective-settings__notice" role="status">{notice}</p>}
         </div>
       </div>
     </div>

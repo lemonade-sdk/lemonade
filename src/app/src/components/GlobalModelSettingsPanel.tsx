@@ -33,7 +33,6 @@ export interface UpdateAllModelsResult {
 }
 
 interface GlobalModelSettingsPanelProps {
-  scope: string;
   models: ModelInfo[];
   loadedModels: LoadedModel[];
   pinnedModels: string[];
@@ -66,7 +65,6 @@ const READ_MODES: Array<{ value: TtsReadMode; title: string; description: string
 ];
 
 const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
-  scope,
   models,
   loadedModels,
   pinnedModels,
@@ -74,22 +72,22 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
   onUpdateAllModels,
   onClose,
 }) => {
-  const [draft, setDraft] = useState<GlobalModelSettings>(() => loadGlobalModelSettings(scope));
-  const [ttsModel, setTtsModel] = useState<string | null>(() => loadTtsPlaybackSettings(scope).modelName);
-  const [ttsReadMode, setTtsReadMode] = useState<TtsReadMode>(() => ttsReadModeFromSettings(loadTtsPlaybackSettings(scope)));
+  const [draft, setDraft] = useState<GlobalModelSettings>(() => loadGlobalModelSettings());
+  const [ttsModel, setTtsModel] = useState<string | null>(() => loadTtsPlaybackSettings().modelName);
+  const [ttsReadMode, setTtsReadMode] = useState<TtsReadMode>(() => ttsReadModeFromSettings(loadTtsPlaybackSettings()));
   const [pinCandidate, setPinCandidate] = useState('');
   const [saved, setSaved] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [updateNotice, setUpdateNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    setDraft(loadGlobalModelSettings(scope));
-    const speech = loadTtsPlaybackSettings(scope);
+    setDraft(loadGlobalModelSettings());
+    const speech = loadTtsPlaybackSettings();
     setTtsModel(speech.modelName);
     setTtsReadMode(ttsReadModeFromSettings(speech));
     setSaved(false);
     setUpdateNotice(null);
-  }, [scope]);
+  }, []);
 
   const pinnedSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
   const sortedModels = useMemo(() => [...models]
@@ -113,9 +111,9 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
   };
 
   const handleSave = () => {
-    saveGlobalModelSettings(scope, draft);
-    saveActiveTtsModel(scope, ttsModel);
-    saveTtsReadMode(scope, ttsReadMode);
+    saveGlobalModelSettings(draft);
+    saveActiveTtsModel(ttsModel);
+    saveTtsReadMode(ttsReadMode);
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1600);
   };

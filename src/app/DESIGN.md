@@ -95,7 +95,7 @@ Do not reuse the same icon for unrelated commands in one context. Text labels ac
 
 - `.titlebar` is 52 px high. `.titlebar__nav` is centered independently of brand and utility widths and uses a rounded segmented-control treatment.
 - On compact/mobile layouts the Lemonade brand is hidden, the contextual `menu` control occupies the left slot, the tab selector remains centered, and account/theme/download/server controls live under the `settings` menu.
-- The top-level tabs are Chat, Models, Presets, Backends, Dashboard, and Connect. Performance/Telemetry/Logs are Dashboard views, not independent primary tabs.
+- The top-level tabs are Chat, Models, Backends, Dashboard, and Connect. Performance/Telemetry/Logs are Dashboard views, not independent primary tabs.
 - Active state is expressed with surface, text, and a restrained border; no active item should jump in size or position.
 
 ### Workspace layouts
@@ -143,15 +143,7 @@ The labels below are normative boundaries, not backlog states. **Justified speci
 
 **Justified specialization:** dense model availability rows, provider search results, download progress, backend identity marks, README/files/tuning tabs, and the resizer reflect model-management data.
 
-**Prohibited variation:** custom list/detail backgrounds, headings, action buttons, metadata order, editor shells, or filter sizing. Model and preset list/detail panels share the workspace grammar. Custom model, router, and global-settings editors occupy the same detail shell.
-
-### Presets
-
-**Layout:** three panels: `.context-rail--autoopt` filter/optimization rail, `.preset-list-panel.workspace-list-panel`, and `.preset-detail-panel.workspace-detail-panel`.
-
-**Justified specialization:** intent chips, linked-model state, AutoOpt progress, and parameter editors communicate preset-specific concepts.
-
-**Prohibited variation:** card-grid presentation in the list, modal-like detail styling on desktop, or unique creation-form hierarchy. The library is a single-column list matching Models; creation and editing use the shared detail shell. `compose` creates, while `file-up` imports.
+**Prohibited variation:** custom list/detail backgrounds, headings, action buttons, metadata order, editor shells, or filter sizing. Model list/detail panels share the workspace grammar. Custom model, router, and global-settings editors occupy the same detail shell.
 
 ### Backends
 
@@ -186,9 +178,7 @@ The implementation was audited against every boundary above on 2026-07-20. The c
 | Area | Implemented boundary |
 | --- | --- |
 | App chrome | One centered rounded primary selector; one contextual mobile menu position; compact utilities live under the settings control; the decorative lemon icon is not rendered. |
-| Rails and mobile context | Chat, Models, Presets, Backends, Dashboard, and Connect use `WorkspaceRailHeader` and `WorkspaceMobileMenuButton`. Mobile panels share the same dialog, backdrop, focus-return, Escape, and toggle behavior. |
-| Lists and details | Models and Presets use `WorkspaceListPanel`, `WorkspaceResourceRow`, `WorkspaceDetailPanel`, ordered `WorkspaceMetadataChip` groups, and shared empty states. Both libraries are single-column scrolling lists. |
-| Editors | Preset creation, custom models, Router, and Global Model Settings use the shared detail header, metadata, action bar, button appearances, and form controls. Specialized editors retain only task-specific fields and content structures. |
+| Rails and mobile context | Chat, Models, Backends, Dashboard, and Connect use `WorkspaceRailHeader` and `WorkspaceMobileMenuButton`. Mobile panels share the same dialog, backdrop, focus-return, Escape, and toggle behavior. |
 | Backends | The filter rail, pane header, status actions, and buttons use workspace components. Only the device × capability matrix and compact backend identity marks remain specialized. |
 | Dashboard | Performance retains charts and gauges without ornamental glow. Telemetry and Logs retain diagnostic artifacts while their navigation, filters, forms, and actions use the workspace grammar. |
 | Connect | Settings navigation, pane headers, fields, actions, provider/help/app rows, and bounded content use shared components and control sizing. |
@@ -206,4 +196,3 @@ Before merging a GUI change:
 - Light and dark themes both preserve hierarchy and contrast.
 - The compact and mobile layouts expose every rail function through the same menu pattern.
 - Keyboard focus, accessible names, reduced motion, empty/loading/error states, and label truncation were verified.
-- Models and Presets were compared side by side; Dashboard and Connect rails were compared side by side.

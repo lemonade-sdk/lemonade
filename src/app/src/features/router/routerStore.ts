@@ -1,5 +1,5 @@
 import type { ModelInfo } from '../../api';
-import { scopedStorageKey } from '../accounts/accountStore';
+import { storageKey } from '../../storage';
 import {
   ROUTER_RECIPE,
   type RouterDraft,
@@ -30,9 +30,9 @@ function isRouterRecord(value: unknown): value is RouterRecord {
     && value.request.recipe === ROUTER_RECIPE;
 }
 
-export function loadRouterRecords(scope: string): RouterRecord[] {
+export function loadRouterRecords(): RouterRecord[] {
   try {
-    const raw = localStorage.getItem(scopedStorageKey(scope, ROUTER_STORE_KEY));
+    const raw = localStorage.getItem(storageKey(ROUTER_STORE_KEY));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return (Array.isArray(parsed?.routers) ? parsed.routers : []).filter(isRouterRecord);
@@ -41,13 +41,13 @@ export function loadRouterRecords(scope: string): RouterRecord[] {
   }
 }
 
-function saveRouterRecords(scope: string, records: RouterRecord[]): void {
-  localStorage.setItem(scopedStorageKey(scope, ROUTER_STORE_KEY), JSON.stringify({ version: 1, routers: records }));
+function saveRouterRecords(records: RouterRecord[]): void {
+  localStorage.setItem(storageKey(ROUTER_STORE_KEY), JSON.stringify({ version: 1, routers: records }));
 }
 
-export function upsertRouterRecord(scope: string, draft: RouterDraft): RouterRecord {
+export function upsertRouterRecord(draft: RouterDraft): RouterRecord {
   const request = buildRouterPullRequest(draft);
-  const current = loadRouterRecords(scope);
+  const current = loadRouterRecords();
   const previous = current.find(item => item.model_name.toLowerCase() === request.model_name.toLowerCase());
   const now = Date.now();
   const record: RouterRecord = {
@@ -57,12 +57,12 @@ export function upsertRouterRecord(scope: string, draft: RouterDraft): RouterRec
     createdAt: previous?.createdAt || now,
     updatedAt: now,
   };
-  saveRouterRecords(scope, [record, ...current.filter(item => item.model_name.toLowerCase() !== request.model_name.toLowerCase())]);
+  saveRouterRecords([record, ...current.filter(item => item.model_name.toLowerCase() !== request.model_name.toLowerCase())]);
   return record;
 }
 
-export function deleteRouterRecord(scope: string, modelName: string): void {
-  saveRouterRecords(scope, loadRouterRecords(scope).filter(item => item.model_name.toLowerCase() !== modelName.toLowerCase()));
+export function deleteRouterRecord(modelName: string): void {
+  saveRouterRecords(loadRouterRecords().filter(item => item.model_name.toLowerCase() !== modelName.toLowerCase()));
 }
 
 export function routerRecordToModelInfo(record: RouterRecord): ModelInfo {
@@ -88,15 +88,15 @@ export function routerRecordToDraft(record: RouterRecord): RouterDraft {
   return { ...draft, name: record.display_name };
 }
 
-export function exportRouterRecordsPayload(scope: string): Record<string, unknown> {
+export function exportRouterRecordsPayload(): Record<string, unknown> {
   return {
     version: 1,
     exportedAt: new Date().toISOString(),
-    routers: loadRouterRecords(scope).map(record => record.request),
+    routers: loadRouterRecords().map(record => record.request),
   };
 }
 
-export function importRouterRecords(scope: string, payload: unknown): { imported: number; errors: string[] } {
+export function importRouterRecords(payload: unknown): { imported: number; errors: string[] } {
   const items = Array.isArray(payload)
     ? payload
     : isRecord(payload) && Array.isArray(payload.routers)
@@ -106,7 +106,7 @@ export function importRouterRecords(scope: string, payload: unknown): { imported
   for (let index = 0; index < items.length; index += 1) {
     try {
       const draft = parseRouterPayload(items[index]);
-      upsertRouterRecord(scope, draft);
+      upsertRouterRecord(draft);
       result.imported += 1;
     } catch (error) {
       result.errors.push(`Entry ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);

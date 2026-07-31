@@ -28,7 +28,7 @@ function loadModule() {
   const source = fs.readFileSync(modulePath, 'utf8')
     .replace("import type { ModelInfo } from '../api';", 'type ModelInfo = Record<string, any>;')
     .replace("import { capabilityFromModelInfo } from '../modelCapabilities';", `const capabilityFromModelInfo = ${capabilityFromModelInfo.toString()};`)
-    .replace("import { scopedStorageKey } from './accounts/accountStore';", "const scopedStorageKey = (scope: string, key: string) => `lemonade:${scope}:${key}`;");
+    .replace("import { storageKey } from '../storage';", "const storageKey = (key: string) => `lemonade:${key}`;");
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       target: ts.ScriptTarget.ES2020,
@@ -63,12 +63,12 @@ assert.deepEqual(
   ],
   'the two replaceable Lemonade defaults and their hover roles must stay centralized',
 );
-assert.equal(defaults.loadPreferredDefaultModelName('guest'), 'Bonsai-8B-gguf');
-assert.equal(defaults.savePreferredDefaultModelName('guest', 'Qwen3.5-4B-GGUF'), 'Qwen3.5-4B-GGUF');
-assert.equal(defaults.loadPreferredDefaultModelName('guest'), 'Qwen3.5-4B-GGUF');
+assert.equal(defaults.loadPreferredDefaultModelName(), 'Bonsai-8B-gguf');
+assert.equal(defaults.savePreferredDefaultModelName('Qwen3.5-4B-GGUF'), 'Qwen3.5-4B-GGUF');
+assert.equal(defaults.loadPreferredDefaultModelName(), 'Qwen3.5-4B-GGUF');
 
-defaults.saveLastReadyModelName('guest', 'local-last');
-assert.equal(defaults.loadLastReadyModelName('guest'), 'local-last');
+defaults.saveLastReadyModelName('local-last');
+assert.equal(defaults.loadLastReadyModelName(), 'local-last');
 
 const registry = [
   { id: 'older', recipe: 'llamacpp', labels: ['chat'], downloaded: true, last_used: 10 },

@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, PATCH, DELETE',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Session-Id',
 };
 
 test.beforeEach(async ({ page }) => {

@@ -12,6 +12,22 @@ interface GatewayTool {
   inputSchema?: Record<string, unknown>;
 }
 
+function toolInputMetadata(inputSchema?: Record<string, unknown>): string {
+  if (!inputSchema) return 'Input schema unavailable';
+  const properties = inputSchema.properties;
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
+    return 'No input parameters';
+  }
+
+  const inputCount = Object.keys(properties).length;
+  if (inputCount === 0) return 'No input parameters';
+
+  const required = Array.isArray(inputSchema.required)
+    ? inputSchema.required.filter(value => typeof value === 'string').length
+    : 0;
+  return `${inputCount} input${inputCount === 1 ? '' : 's'}${required ? ` · ${required} required` : ''}`;
+}
+
 interface ServerDraft {
   id: string;
   name: string;
@@ -295,9 +311,20 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
           <div className="sr-only" role="status" aria-live="polite" aria-atomic="true" data-mcp-copy-live>{copyNotice}</div>
           {gatewayError && <div className="connect__error" role="alert" data-mcp-tools-error>Could not load MCP tools: {gatewayError}</div>}
           {gatewayStatus === 'connected' && gatewayTools.length > 0 ? (
-            <div className="mcp-panel__tool-chips" aria-label="Lemon-Tools MCP tools" data-mcp-tools-list>
-              {gatewayTools.map(tool => <span key={tool.name} className="mcp-panel__tool-name" title={tool.description || tool.name}>{tool.name}</span>)}
-            </div>
+            <details className="mcp-panel__tool-disclosure">
+              <summary>Tools ({gatewayTools.length})</summary>
+              <ul className="mcp-panel__tool-list" aria-label="Lemon-Tools MCP tools" data-mcp-tools-list>
+                {gatewayTools.map(tool => (
+                  <li key={tool.name} className="mcp-panel__tool-row">
+                    <div className="mcp-panel__tool-heading">
+                      <code className="mcp-panel__tool-name">{tool.name}</code>
+                      <span className="mcp-panel__tool-meta">{toolInputMetadata(tool.inputSchema)}</span>
+                    </div>
+                    {tool.description && <p className="mcp-panel__tool-description">{tool.description}</p>}
+                  </li>
+                ))}
+              </ul>
+            </details>
           ) : gatewayStatus === 'connected' ? <p className="connect__empty">No tools returned.</p> : null}
         </section>
 
@@ -305,7 +332,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
           <div className="mcp-panel__card-header">
             <div>
               <h3 id="external-mcp-title">External MCP servers</h3>
-              <p>{connectedExternal}/{servers.length} connected · stdio transport · select up to four per preset.</p>
+              <p>{connectedExternal}/{servers.length} connected · stdio transport · select up to four for Chat.</p>
             </div>
             {secure === true && adminAccess === 'ok' && (
               <button
@@ -377,7 +404,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
 
           {hostError && <div className="connect__error" role="alert">{hostError}</div>}
           {hostLoading ? <p className="connect__empty">Loading MCP servers…</p> : servers.length === 0 ? (
-            <p className="connect__empty">No external MCP server configured. Lemon-Tools MCP remains available in presets.</p>
+            <p className="connect__empty">No external MCP server configured. Built-in Lemonade tools remain available in Chat.</p>
           ) : (
             <div className="mcp-server-list">
               {servers.map(server => (
@@ -390,7 +417,23 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                       <small>{server.connected ? `${server.tools?.length || 0} tools · protocol ${server.protocol_version || 'unknown'}` : server.last_error || server.status}</small>
                     </div>
                   </div>
-                  {server.tools && server.tools.length > 0 && <div className="mcp-panel__tool-chips">{server.tools.map(tool => <span key={tool.name}>{tool.name}</span>)}</div>}
+                  {server.tools && server.tools.length > 0 && (
+                    <details className="mcp-panel__tool-disclosure">
+                      <summary>Tools ({server.tools.length})</summary>
+                      <ul className="mcp-panel__tool-list" aria-label={`${server.name} tools`}>
+                        {server.tools.map(tool => (
+                          <li key={tool.name} className="mcp-panel__tool-row">
+                            <div className="mcp-panel__tool-heading">
+                              <code className="mcp-panel__tool-name">{tool.name}</code>
+                              <span className="mcp-panel__tool-meta">{toolInputMetadata(tool.inputSchema)}</span>
+                            </div>
+                            {tool.title && tool.title !== tool.name && <strong className="mcp-panel__tool-title">{tool.title}</strong>}
+                            {tool.description && <p className="mcp-panel__tool-description">{tool.description}</p>}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
                   <div className="mcp-server-card__actions">
                     <button type="button" className="btn btn--ghost" onClick={() => { setDraft(draftFromServer(server)); setShowForm(true); setFormError(''); }}>Edit</button>
                     {server.connected ? (

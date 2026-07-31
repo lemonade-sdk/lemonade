@@ -4,7 +4,7 @@
  * and model downloads, and health polling.
  */
 
-import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './presetStore';
+import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './modelConfiguration';
 import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
 
 function detectDefaultBaseUrl(): string {
@@ -966,22 +966,6 @@ class LemonadeAPI {
     if (includeSessionHeaders && this.sessionHeadersEnabled) {
       h['X-Client-Session-Id'] = this.clientSessionId;
 
-      // Add current account session token or guest ID to scope model caches
-      try {
-        const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
-        if (raw) {
-          const parsed = JSON.parse(raw) as { id?: string };
-          if (parsed.id) {
-            h['X-Account-Session-Id'] = parsed.id;
-          } else {
-            h['X-Account-Session-Id'] = 'guest';
-          }
-        } else {
-          h['X-Account-Session-Id'] = 'guest';
-        }
-      } catch {
-        h['X-Account-Session-Id'] = 'guest';
-      }
     }
 
     return h;
@@ -1064,9 +1048,13 @@ class LemonadeAPI {
       err.status = resp.status;
       err.url = url;
       err.endpoint = endpoint;
-      err.userMessage = resp.status === 403 && serverMessage.toLowerCase() === 'origin not allowed'
-        ? originNotAllowedMessage(this.baseUrl)
-        : `${url} returned ${resp.status} ${statusText}${serverMessage ? ` — ${serverMessage}` : ''}`;
+      err.userMessage = resp.status === 401
+        ? auth === 'admin'
+          ? 'The server rejected the admin API key. Enter the matching admin key in the MCP panel.'
+          : 'The server requires an API key or rejected the current one. Enter the matching key in Settings, then reconnect.'
+        : resp.status === 403 && serverMessage.toLowerCase() === 'origin not allowed'
+          ? originNotAllowedMessage(this.baseUrl)
+          : `${url} returned ${resp.status} ${statusText}${serverMessage ? ` — ${serverMessage}` : ''}`;
       throw err;
     }
     return resp;
@@ -1086,21 +1074,6 @@ class LemonadeAPI {
     const params = new URLSearchParams(query);
     if (this.apiKey) params.set('api_key', this.apiKey);
     params.set('client_session_id', this.clientSessionId);
-    try {
-      const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
-      if (raw) {
-        const parsed = JSON.parse(raw) as { id?: string };
-        if (parsed.id) {
-          params.set('account_session_id', parsed.id);
-        } else {
-          params.set('account_session_id', 'guest');
-        }
-      } else {
-        params.set('account_session_id', 'guest');
-      }
-    } catch {
-      params.set('account_session_id', 'guest');
-    }
     url.search = params.toString();
     return url.toString();
   }
@@ -1324,24 +1297,20 @@ class LemonadeAPI {
     return result;
   }
 
-  /**
-   * Apply a *load-time* preset change to an already-loaded model (#2356).
-   *
-   * Simplified design (per @fl0rianr review + Lovell): there is NO dedicated
-   * update-preset endpoint and NO client-provided `mode` parameter — the UI is
-   * not the source of truth for runtime capability. Load-time fields (ctx_size,
-   * backend, device, model args via recipe_options) require a real reload, which
-   * today is literally an unload followed by a load, exactly as `main` does.
-   *
-   * This helper is named `reloadModel` (rather than inlining unload→load at every
-   * call site) so that if a real in-place backend reload ever lands, only this
-   * method's body changes; callers and tests stay identical.
-   *
-   * Request-time fields (system_prompt, sampling/temperature, tools) are NOT
-   * handled here — rebinding the active preset is the whole "live" operation and
-   * request composition (`samplingForModel`, `systemPromptTextForPreset`) carries
-   * the new values on the next generation request; nothing is POSTed.
-   */
+  async loadedModelContextSize(model: LoadedModel): Promise<number | null> {
+    const configured = Number(model.recipe_options?.ctx_size);
+    if (Number.isFinite(configured) && configured > 0) return configured;
+    try {
+      const runtime = await this._json<{ ctx_size?: unknown }>(
+        `/api/v1/models/${encodeURIComponent(model.model_name)}/runtime`,
+      );
+      const contextSize = Number(runtime.ctx_size);
+      return Number.isFinite(contextSize) && contextSize > 0 ? contextSize : null;
+    } catch {
+      return null;
+    }
+  }
+
   async reloadModel(
     modelName: string,
     recipeOptions?: Record<string, unknown>,
@@ -1448,7 +1417,7 @@ class LemonadeAPI {
 
   async listMcpServers(): Promise<McpServerState[]> {
     // External MCP administration is deliberately fail-closed on the server.
-    // Do not probe /internal/mcp/servers from ordinary preset/chat rendering
+    // Do not probe /internal/mcp/servers from ordinary chat rendering
     // when the app has no admin-capable credential: on a default keyless server
     // that request is guaranteed to be rejected and only produces noisy 403 logs.
     // The dedicated MCP panel prompts for a key before calling this method.
