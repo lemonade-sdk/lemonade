@@ -1,0 +1,19 @@
+{
+  "version": "1",
+  "model_name": "user.Router-L0a-ImplicitLabel",
+  "recipe": "collection.router",
+  "components": ["TinyLLM", "BigLLM", "DefaultLLM", "RouterLLM"],
+  "routing": {
+    "candidates": ["TinyLLM", "BigLLM", "DefaultLLM"],
+    "default_model": "DefaultLLM",
+    "classifiers": [
+      { "id": "router", "type": "llm", "model": "RouterLLM",
+        "prompt": "Route everyday questions to TinyLLM; hard reasoning to BigLLM.",
+        "labels": ["TinyLLM", "BigLLM", "DefaultLLM"],
+        "default_label": "TinyLLM" }
+    ],
+    "rules": [
+      { "id": "implicit-label-rule", "match": { "classifier": "router", "min_score": 1.0 }, "route_to": "TinyLLM" }
+    ]
+  }
+}

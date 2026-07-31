@@ -31,6 +31,7 @@ corpus reads as a checklist against the v1 semantics table in
 1/
   l0a_desugaring_core_form/   # llm router in core form (llm classifier + identity rules): reply picks a candidate
   l0a_desugaring_sugar_form/  # llm router in routing.router sugar form; desugars to an llm classifier + identity rules: reply picks a candidate
+  l0a_llm_implicit_label/     # omitted label => llm classifier's default_label score (never the picked candidate, never primary())
   l0a_llm_on_error/           # llm router on_error: match_true fires only on a failed call, not a normal miss
   l0a_router_reply_contract/  # what counts as a valid router reply: strict {model, rationale}, code-fence stripping
   l0a_router_trace/           # router trace: only the picked candidate carries a rationale; fail-open scores 0
@@ -45,6 +46,7 @@ corpus reads as a checklist against the v1 semantics table in
   l1_resolution/              # rule-list resolution: first-match-wins, fail-open default, explicit route to default
   l1_trace/                   # route_trace=true: per-leaf trace, accumulation, short-circuit, default
   l2_semantic_concepts/       # semantic_similarity: each label reads its own concept's score; first-match over rules
+  l2_semantic_implicit_label/ # omitted label => classifier's default_label concept score (never the max concept, never primary())
   l2_semantic_on_error/       # undefined cosine (empty / zero / mismatched-length input) => classifier fails
   l2_semantic_on_error_match_true/  # on_error match_true fires the band only on a failed embed, not a real miss
   l2_semantic_scoring/        # max cosine over a concept's phrases, floored at 0, inclusive band boundary
@@ -163,6 +165,14 @@ backend's numeric drift can never change the recorded `Decision`).
 | an opening fence with no newline ⇒ rejected | `l0a_router_reply_contract/no-newline-fence-falls-open` |
 | trace: only the picked candidate's entry carries the rationale | `l0a_router_trace/winner-carries-rationale-loser-does-not` |
 | trace: an unmatched reply leaves every candidate scored 0 with no rationale; the default carries the trace | `l0a_router_trace/fail-open-trace-scores-zero` |
+| omitted label ⇒ the llm classifier's `default_label` score (the reply picks that candidate ⇒ fires) | `l0a_llm_implicit_label/default-label-used-when-label-omitted` |
+| omitted label reads `default_label` even when the reply picks another candidate — proves it is not the picked label and not `primary()` | `l0a_llm_implicit_label/default-label-read-not-primary` |
+
+An `llm` classifier requires at least one label (candidate), so — like
+`semantic_similarity` — its labels are never empty and the label-less `primary()`
+path is unreachable: a leaf that omits `label` resolves through `default_label`.
+`primary()` (lone-score and multi-entry) is reachable and locked only for the
+`classifier` type (`l3_classifier_implicit_label`).
 
 ### L1 — deterministic conditions
 
@@ -254,6 +264,8 @@ digit and not a literal `d`, so the cases would break if the engine's
 | cosine well under the band ⇒ miss ⇒ default | `l2_semantic_scoring/weak-similarity-below-threshold` |
 | negative cosine floored to 0, never negative | `l2_semantic_scoring/negative-cosine-floored-to-zero` |
 | cosine exactly at `min_score` ⇒ inclusive match | `l2_semantic_scoring/inclusive-boundary` |
+| omitted label ⇒ the classifier's `default_label` concept score (not the max concept) | `l2_semantic_implicit_label/default-label-used-when-label-omitted` |
+| omitted label reads `default_label` even when another concept scores higher — proves it is not the max and not `primary()` | `l2_semantic_implicit_label/default-label-read-not-max` |
 | a rule's label reads that concept's own score | `l2_semantic_concepts/coding-label-selects-coding-score` |
 | each rule selects its own concept's score | `l2_semantic_concepts/math-label-selects-math-score` |
 | first-match over rules wins, not the highest-scoring concept | `l2_semantic_concepts/best-match-loses-to-rule-order` |
@@ -263,6 +275,13 @@ digit and not a literal `d`, so the cases would break if the engine's
 | input vector length ≠ phrase length ⇒ undefined ⇒ fails | `l2_semantic_on_error/dimension-mismatch-fails-open` |
 | embed failure + `on_error: match_true` ⇒ band counts as matched (trace score absent, result true) | `l2_semantic_on_error_match_true/failure-fires-via-match-true` |
 | `on_error` acts only on failure; a real low score still misses | `l2_semantic_on_error_match_true/success-below-threshold-misses` |
+
+A `semantic_similarity` classifier always declares at least one concept
+(`reference_phrases` is non-empty), so its labels are never empty: a leaf that
+omits `label` resolves through `default_label`, never through the label-less
+`primary()` path. The `primary()` lone-score and multi-entry behaviors are
+therefore reachable only for the `classifier` type and are locked there
+(`l3_classifier_implicit_label`).
 
 ### L3 — `classifier` (label scores + band)
 
