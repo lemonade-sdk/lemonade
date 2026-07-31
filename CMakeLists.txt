@@ -2593,6 +2593,13 @@ if(EXISTS "${_ROCM_ROOT_TEST_SRC}")
     add_test(NAME RocmRootResolutionTest COMMAND test_rocm_root_resolution)
 endif()
 
+set(_GPU_ENV_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_gpu_env.cpp")
+if(EXISTS "${_GPU_ENV_TEST_SRC}")
+    add_executable(test_backend_utils_gpu_env test/cpp/test_backend_utils_gpu_env.cpp)
+    target_link_libraries(test_backend_utils_gpu_env PRIVATE lemonade-server-core)
+    add_test(NAME BackendUtilsGpuEnvTest COMMAND test_backend_utils_gpu_env)
+endif()
+
 set(_NETWORK_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_network_utils.cpp")
 if(EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     add_executable(test_network_utils test/cpp/test_network_utils.cpp)
