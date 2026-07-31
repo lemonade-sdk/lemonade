@@ -553,10 +553,6 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (!value.is_string()) {
             throw std::invalid_argument("'log_file' must be a string");
         }
-        std::string mode = value.get<std::string>();
-        if (mode != "auto" && mode != "enabled" && mode != "disabled") {
-            throw std::invalid_argument("'log_file' must be one of: auto, enabled, disabled");
-        }
     } else if (key == "log_max_file_size_mb") {
         if (!value.is_number_integer()) {
             throw std::invalid_argument("'log_max_file_size_mb' must be an integer");

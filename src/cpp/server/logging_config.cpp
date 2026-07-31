@@ -191,26 +191,30 @@ LoggingTargets resolve_logging_targets(LoggingMode mode, const LogRotationConfig
     switch (mode) {
     case LoggingMode::direct_server:
         targets.console = true;
-        if (rotation.file_mode == "disabled") {
-            targets.file = false;
-        } else if (rotation.file_mode == "enabled") {
+        if (rotation.file_mode == "enabled") {
             targets.file = true;
+        } else if (rotation.file_mode == "disabled" || rotation.file_mode == "auto" || rotation.file_mode.empty()) {
+            targets.file = false;
         } else {
-            targets.file = !SystemInfo::is_running_under_systemd() && !SystemInfo::is_running_under_launchd();
+            targets.file = true;
         }
         break;
     case LoggingMode::embedded_tray_server:
         targets.console = false;
-        targets.file = (rotation.file_mode != "disabled");
+        targets.file = (rotation.file_mode == "enabled" || (!rotation.file_mode.empty() && rotation.file_mode != "disabled" && rotation.file_mode != "auto"));
         break;
     }
 
     if (targets.file) {
+        if (rotation.file_mode != "enabled" && rotation.file_mode != "disabled" && rotation.file_mode != "auto" && !rotation.file_mode.empty()) {
+            targets.file_path = rotation.file_mode;
+        } else {
 #ifdef _WIN32
-        targets.file_path = utils::get_runtime_dir() + "lemonade-server.log";
+            targets.file_path = utils::get_runtime_dir() + "lemonade-server.log";
 #else
-        targets.file_path = utils::get_runtime_dir() + "/lemonade-server.log";
+            targets.file_path = utils::get_runtime_dir() + "/lemonade-server.log";
 #endif
+        }
     }
 
     return targets;

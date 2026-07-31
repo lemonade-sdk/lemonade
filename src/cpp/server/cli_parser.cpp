@@ -25,7 +25,7 @@ CLIParser::CLIParser()
     app_.add_option("--host", config_.host, "Address to bind for connections (overrides config.json)")
         ->type_name("HOST");
 
-    app_.add_option("--log-file", config_.log_file, "File logging mode: auto, enabled, or disabled (overrides config.json)")
+    app_.add_option("--log-file", config_.log_file, "File logging mode: disabled (default), enabled, or custom file path (overrides config.json)")
         ->type_name("MODE");
 
     app_.add_option("--log-max-size-mb", config_.log_max_file_size_mb, "Max active log file size in MB before rotation (overrides config.json)")

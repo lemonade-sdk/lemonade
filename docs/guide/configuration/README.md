@@ -173,7 +173,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `port` | int | 13305 | Port number for the HTTP server |
 | `host` | string | "localhost" | Address to bind for connections |
 | `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
-| `log_file` | string | "auto" | File logging mode: "auto" (disabled under systemd/launchd, enabled otherwise), "enabled", or "disabled" |
+| `log_file` | string | "disabled" | File logging mode: "disabled" (default: console stdout/stderr only), "enabled", or custom target file path |
 | `log_max_file_size_mb` | int | 10 | Max active log file size in MB before triggering log rotation |
 | `log_max_files` | int | 5 | Max number of rotated log backup files to retain (.1 through .N) |
 | `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
