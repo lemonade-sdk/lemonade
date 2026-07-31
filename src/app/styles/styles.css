@@ -3485,7 +3485,6 @@ input::-webkit-calendar-picker-indicator {
     box-sizing: border-box;
 }
 
-.model3d-source-toggle {
 .tts-openmoss-panel {
     display: flex;
     flex-direction: column;
@@ -3547,9 +3546,6 @@ input::-webkit-calendar-picker-indicator {
 .model3d-source-toggle .toggle-button {
     flex: 0 0 auto;
     white-space: nowrap;
-}
-
-    flex: 0 0 auto;
 }
 
 .tts-clone-row {
