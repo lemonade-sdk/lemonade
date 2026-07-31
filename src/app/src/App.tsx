@@ -68,6 +68,10 @@ function modelSearchName(model: Record<string, unknown>): string {
   return String(model.model_name ?? model.name ?? model.id ?? '').trim();
 }
 
+function searchKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
 /* ── Error boundary ────────────────────────────────────────── */
 
 interface ErrorBoundaryProps { view: string; children: ReactNode; }
@@ -372,7 +376,9 @@ const App: React.FC = () => {
 
   const navigationSearchResults = useMemo<GlobalSearchResult[]>(() => {
     const query = navigationSearch.trim().toLowerCase();
-    const matches = (value: string) => !query || value.toLowerCase().includes(query);
+    const normalizedQuery = searchKey(query);
+    const matches = (value: string) =>
+      !query || value.toLowerCase().includes(query) || searchKey(value).includes(normalizedQuery);
     const pages = NAVIGATION_DESTINATIONS
       .filter(destination => matches(`${destination.label} ${destination.keywords}`))
       .map(destination => ({
@@ -570,7 +576,10 @@ const App: React.FC = () => {
       <div className="app">
         <header className={`titlebar${view === 'chat' ? ' titlebar--chat' : ''}`} data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
-          <span className="titlebar__brand-logo" data-tauri-drag-region role="img" aria-label="Lemonade" />
+          <span className="titlebar__brand-logo" data-tauri-drag-region>
+            <span className="titlebar__brand-icon" aria-hidden="true" />
+            <span className="titlebar__brand-name">Lemonade</span>
+          </span>
           <span className={`titlebar__status-dot titlebar__status-dot--brand ${
             status === 'connected' ? 'titlebar__status-dot--connected' :
             status === 'connecting' ? 'titlebar__status-dot--connecting' : ''

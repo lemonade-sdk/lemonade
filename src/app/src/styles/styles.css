@@ -145,14 +145,28 @@ input, textarea {
 }
 
 .titlebar__brand-logo {
-  width: 100px;
   height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
   flex: 0 0 auto;
-  background: url('../../assets/lemonade-logo-dark-128h.png') center / contain no-repeat;
+  color: #F2EFE5;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: none;
+}
+
+.titlebar__brand-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  background: url('../../assets/logo.svg') center / contain no-repeat;
 }
 
 [data-theme="light"] .titlebar__brand-logo {
-  background-image: url('../../assets/lemonade-logo-light-128h.png');
+  color: #18181B;
 }
 
 .titlebar__search {
@@ -11949,7 +11963,7 @@ optgroup {
   .titlebar { grid-template-columns: 42px minmax(0, 1fr) minmax(160px, 240px) auto; }
   .titlebar__nav button { min-width: 42px; padding-inline: var(--space-2); }
   .titlebar__nav .nav-label { display: none; }
-  .titlebar__brand-logo { width: 24px; background-position: left center; }
+  .titlebar__brand-name { display: none; }
   .workspace-nav__copy small { display: none; }
   .workspace-nav button { min-height: 44px; }
   .workspace-pane__header { padding-inline: var(--space-4); }
