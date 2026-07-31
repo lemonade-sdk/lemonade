@@ -178,13 +178,13 @@ services:
       # Persist model options and other backend binaries
       - lemonade-recipe:/opt/lemonade/.cache/lemonade
     restart: unless-stopped
-    # Needed if using rocm using linux
-    devices:
-      - /dev/dri:/dev/dri
-      - /dev/kfd:/dev/kfd
-    group_add:
-      - video
-      - "992"
+    # For AMD GPU (ROCm) on Linux only, also add:
+    # devices:
+    #   - /dev/kfd:/dev/kfd
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - video
+    #   - render
 
 volumes:
   lemonade-cache:
@@ -202,6 +202,9 @@ volumes:
 > ```
 
 > You can add more services as needed, or add host devices for the ROCM backend.
+> The `devices`/`group_add` block above is only needed for the ROCm backend on
+> Linux. If Docker cannot resolve the `render`/`video` group names, replace them
+> with the host's numeric group IDs from `getent group render video`.
 
 3. Run the following command in the directory containing your docker-compose.yml:
 
