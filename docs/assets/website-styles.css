@@ -280,6 +280,19 @@ body.install-options {
   color: var(--text-nav);
 }
 
+/* GitHub/Discord live in the socials pill on desktop; these in-menu rows only
+   appear once the navbar collapses to the hamburger (see the mobile media query). */
+.navbar-links a.navbar-links-social {
+  display: none;
+}
+
+.navbar-links a.navbar-links-social svg {
+  width: 1.15em;
+  height: 1.15em;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
 .navbar-brand .brand-title a {
   color: var(--text-primary);
 }
@@ -2700,8 +2713,15 @@ body.install-options {
     gap: 0.4rem;
   }
 
+  /* The socials pill collapses on mobile; GitHub/Discord instead ride along as
+     their own rows inside the hamburger menu (.navbar-links-social). */
   .navbar-socials {
     display: none;
+  }
+
+  .navbar-links a.navbar-links-social {
+    display: inline-flex;
+    gap: 0.6rem;
   }
 
   .navbar-persona-option {
@@ -4255,6 +4275,48 @@ body.install-options {
   font-style: normal;
 }
 
+/* Slim community links, read as a caption line under the promise subtitle. The
+   promise is a centered flex column (gap: 2rem); the negative margin tucks this
+   row up close to the subtitle so it doesn't read as a separate stacked block. */
+.hp-community-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 1.5rem;
+  margin-top: -1.25rem;
+}
+
+.hp-community-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.hp-community-chip:hover,
+.hp-community-chip:focus {
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.hp-community-chip svg {
+  width: 1.1em;
+  height: 1.1em;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+.hp-community-chip-stat {
+  color: inherit;
+  font-weight: 500;
+}
+
 /* Demo panel — glassmorphic light theme per DESIGN.md */
 .hp-demo-panel {
   width: 100%;
@@ -5274,10 +5336,6 @@ body.install-options {
 
 /* --- Homepage responsive --- */
 @media (max-width: 1180px) {
-  .navbar-social-link:not(.navbar-social-link-count) {
-    display: none;
-  }
-
   .navbar-links {
     gap: 0.95rem;
   }

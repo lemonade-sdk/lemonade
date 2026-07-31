@@ -1,0 +1,18 @@
+{
+  "version": "1",
+  "model_name": "user.Resolution",
+  "recipe": "collection.router",
+  "components": ["local", "cloud", "edge"],
+  "routing": {
+    "candidates": ["local", "cloud", "edge"],
+    "default_model": "local",
+    "rules": [
+      { "id": "first-rule",
+        "match": { "keywords_any": ["shared", "only1"] },
+        "route_to": "cloud" },
+      { "id": "second-rule",
+        "match": { "keywords_any": ["shared", "only2"] },
+        "route_to": "edge" }
+    ]
+  }
+}

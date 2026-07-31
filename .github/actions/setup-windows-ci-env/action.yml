@@ -1,0 +1,63 @@
+name: 'Setup Windows CI Environment'
+description: 'Set cache/install paths, cleanup legacy workspace paths, prune transient directories, and terminate stale processes.'
+inputs:
+  matrix-name:
+    description: 'Name of the current matrix leg or job to isolate caches/temp folders.'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set Windows CI cache and install paths
+      shell: PowerShell
+      run: |
+        $ErrorActionPreference = "Stop"
+        $normalizedMatrix = "${{ inputs.matrix-name }}" -replace '[^A-Za-z0-9_.-]', '-'
+        $runKey = "${{ github.run_id }}-${{ github.run_attempt }}-$normalizedMatrix"
+
+        $ciRoot = "C:\lemonade-ci"
+        $cacheRoot = Join-Path $ciRoot "cache"
+        $installRoot = Join-Path $ciRoot "install"
+        $tmpRoot = Join-Path $ciRoot "tmp"
+
+        $hfHome = Join-Path $ciRoot "hf"
+        $cacheDir = Join-Path $cacheRoot $normalizedMatrix
+        $installPath = Join-Path $installRoot $runKey
+        $tmpDir = Join-Path $tmpRoot $runKey
+
+        foreach ($path in @($ciRoot, $hfHome, $cacheDir, $installPath, $tmpDir)) {
+          New-Item -ItemType Directory -Force -Path $path | Out-Null
+        }
+
+        # Set environment variables for the current job context
+        echo "HF_HOME=$hfHome" >> $Env:GITHUB_ENV
+        echo "LEMONADE_CACHE_DIR=$cacheDir" >> $Env:GITHUB_ENV
+        echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+        echo "TEMP=$tmpDir" >> $Env:GITHUB_ENV
+        echo "TMP=$tmpDir" >> $Env:GITHUB_ENV
+
+        Write-Host "HF_HOME=$hfHome" -ForegroundColor Gray
+        Write-Host "LEMONADE_CACHE_DIR=$cacheDir" -ForegroundColor Gray
+        Write-Host "LEMONADE_INSTALL_PATH=$installPath" -ForegroundColor Gray
+        Write-Host "TEMP/TMP=$tmpDir" -ForegroundColor Gray
+
+    - name: Cleanup processes
+      uses: ./.github/actions/cleanup-processes-windows
+
+    - name: Cleanup legacy workspace cache dirs
+      uses: ./.github/actions/cleanup-ci-paths-windows
+      with:
+        paths: |
+          ${{ github.workspace }}\ci-cache
+          ${{ github.workspace }}\hf-cache
+          ${{ github.workspace }}\lemonade_server_install
+        expected-root: ${{ github.workspace }}
+
+    - name: Prune old transient Windows CI directories
+      uses: ./.github/actions/cleanup-ci-paths-windows
+      with:
+        paths: |
+          C:\lemonade-ci\install
+          C:\lemonade-ci\tmp
+        expected-root: C:\lemonade-ci
+        prune-children-older-than-days: '2'

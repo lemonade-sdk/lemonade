@@ -441,7 +441,11 @@ class OmniTests(ServerTestBase):
 
         messages = [{"role": "user", "content": self.APP_TOOL_PROMPT}]
         completion = client.chat.completions.create(
-            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=False
+            model=model,
+            messages=messages,
+            tools=self.WEATHER_TOOL,
+            temperature=0.0,
+            stream=False,
         )
         choice = completion.choices[0]
         self.assertEqual(choice.finish_reason, "tool_calls")
@@ -477,7 +481,11 @@ class OmniTests(ServerTestBase):
         )
 
         completion = client.chat.completions.create(
-            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=False
+            model=model,
+            messages=messages,
+            tools=self.WEATHER_TOOL,
+            temperature=0.0,
+            stream=False,
         )
         choice = completion.choices[0]
         self._assert_resume_answer(choice.finish_reason, choice.message.content or "")
@@ -496,7 +504,11 @@ class OmniTests(ServerTestBase):
 
         messages = [{"role": "user", "content": self.APP_TOOL_PROMPT}]
         stream = client.chat.completions.create(
-            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=True
+            model=model,
+            messages=messages,
+            tools=self.WEATHER_TOOL,
+            temperature=0.0,
+            stream=True,
         )
         content, finish_reason, calls = self._collect_stream(stream)
         self.assertEqual(finish_reason, "tool_calls")
@@ -533,7 +545,11 @@ class OmniTests(ServerTestBase):
         )
 
         stream = client.chat.completions.create(
-            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=True
+            model=model,
+            messages=messages,
+            tools=self.WEATHER_TOOL,
+            temperature=0.0,
+            stream=True,
         )
         content, finish_reason, _ = self._collect_stream(stream)
         self._assert_resume_answer(finish_reason, content)

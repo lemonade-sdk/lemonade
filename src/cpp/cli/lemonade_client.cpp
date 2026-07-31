@@ -1,4 +1,5 @@
 #include "lemon_cli/lemonade_client.h"
+#include "lemon/utils/url_utils.h"
 #include <httplib.h>
 #include <iostream>
 #include <algorithm>
@@ -84,50 +85,7 @@ const std::string& HttpError::response_body() const {
 }
 
 void LemonadeClient::parse_target_url(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl) {
-    std::string remaining = input_host;
-    bool has_scheme = false;
-
-    if (remaining.rfind("https://", 0) == 0) {
-        out_is_ssl = true;
-        remaining = remaining.substr(8);
-        has_scheme = true;
-    } else if (remaining.rfind("http://", 0) == 0) {
-        out_is_ssl = false;
-        remaining = remaining.substr(7);
-        has_scheme = true;
-    }
-
-    // Strip path if present (anything starting with '/')
-    size_t path_pos = remaining.find('/');
-    if (path_pos != std::string::npos) {
-        remaining = remaining.substr(0, path_pos);
-    }
-
-    // Parse port
-    size_t close_bracket = remaining.find(']');
-    size_t colon_pos = std::string::npos;
-    if (remaining.rfind("[", 0) == 0 && close_bracket != std::string::npos) {
-        size_t post_bracket_colon = remaining.find(':', close_bracket);
-        if (post_bracket_colon != std::string::npos) {
-            colon_pos = post_bracket_colon;
-        }
-    } else {
-        colon_pos = remaining.rfind(':');
-    }
-
-    if (colon_pos != std::string::npos) {
-        out_clean_host = remaining.substr(0, colon_pos);
-        std::string port_str = remaining.substr(colon_pos + 1);
-        try {
-            out_port = std::stoi(port_str);
-        } catch (...) {
-        }
-    } else {
-        out_clean_host = remaining;
-        if (has_scheme) {
-            out_port = out_is_ssl ? 443 : 80;
-        }
-    }
+    lemon::utils::parse_target_url(input_host, out_clean_host, out_port, out_is_ssl);
 }
 
 LemonadeClient::LemonadeClient(const std::string& host, int port, const std::string& api_key, bool is_ssl)
@@ -147,13 +105,14 @@ std::string LemonadeClient::normalize_host(const std::string& host) const {
 // Helper to create and configure httplib::Client (timeouts in milliseconds)
 static httplib::Client make_client(const std::string& host, int port, const std::string& api_key, bool is_ssl,
                                     time_t connection_timeout_ms = DEFAULT_CONNECTION_TIMEOUT_MS, time_t read_timeout_ms = DEFAULT_READ_TIMEOUT_MS) {
-#ifndef CPPHTTPLIB_MBEDTLS_SUPPORT
+#ifndef LEMONADE_HTTPLIB_HAS_TLS
     if (is_ssl) {
         throw std::runtime_error("HTTPS support is not compiled in this client.");
     }
 #endif
+    std::string format_host = lemon::utils::bracket_host_if_ipv6(host);
     std::string scheme = is_ssl ? "https" : "http";
-    std::string url = scheme + "://" + host + ":" + std::to_string(port);
+    std::string url = scheme + "://" + format_host + ":" + std::to_string(port);
     httplib::Client cli(url);
     cli.set_connection_timeout(connection_timeout_ms / 1000, (connection_timeout_ms % 1000) * 1000);
     cli.set_read_timeout(read_timeout_ms / 1000, (read_timeout_ms % 1000) * 1000);

@@ -293,6 +293,30 @@ static void test_desugar_shape() {
               policy.rules[1].route_to == "Qwen3.5-35B-A3B-GGUF");
 }
 
+// The `out_normalized_routing` out-param is how callers like /routing/validate
+// recover a `routing.rules` array to match a synthesized `__route_N` id
+// against, since the as-authored policy only has `routing.router`.
+static void test_desugar_normalized_routing_out_param() {
+    RoutingPolicyParseOptions options;
+    options.resolve_component = [](const std::string& c) {
+        return std::optional<std::string>(c);
+    };
+    json normalized;
+    lemon::parse_route_policy_collection(l0a_collection(), options, &normalized);
+
+    check("desugar: normalized routing drops router", !normalized.contains("router"));
+    check("desugar: normalized routing carries the synthesized classifier",
+          normalized.contains("classifiers") && normalized["classifiers"].size() == 1 &&
+              normalized["classifiers"][0]["id"] == "__router" &&
+              normalized["classifiers"][0]["type"] == "llm");
+    check("desugar: normalized routing carries one identity rule per candidate",
+          normalized.contains("rules") && normalized["rules"].size() == 2 &&
+              normalized["rules"][0]["id"] == "__route_0" &&
+              normalized["rules"][0]["route_to"] == "Qwen3-8B-GGUF" &&
+              normalized["rules"][1]["id"] == "__route_1" &&
+              normalized["rules"][1]["route_to"] == "Qwen3.5-35B-A3B-GGUF");
+}
+
 static void test_desugar_rejects_router_plus_rules() {
     json bad = l0a_collection();
     bad["routing"]["rules"] = json::array({json{
@@ -363,6 +387,7 @@ int main() {
     test_classifier_backend_failure();
     test_classifier_residency_conflict_propagates();
     test_desugar_shape();
+    test_desugar_normalized_routing_out_param();
     test_desugar_rejects_router_plus_rules();
     test_e2e_routes_to_chosen();
     test_e2e_invalid_falls_back();
