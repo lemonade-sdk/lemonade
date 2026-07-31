@@ -26,6 +26,9 @@ public:
     std::string host() const;
     int websocket_port() const;
     std::string log_level() const;
+    std::string log_file() const;
+    int log_max_file_size_mb() const;
+    int log_max_files() const;
     std::string extra_models_dir() const;
     bool no_broadcast() const;
     long global_timeout() const;

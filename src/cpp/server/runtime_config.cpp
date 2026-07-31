@@ -214,6 +214,18 @@ std::string RuntimeConfig::log_level() const {
     return config_["log_level"].get<std::string>();
 }
 
+std::string RuntimeConfig::log_file() const {
+    return get_string_opt(nullptr, {"log_file"}, "auto");
+}
+
+int RuntimeConfig::log_max_file_size_mb() const {
+    return get_int_opt(nullptr, {"log_max_file_size_mb"}, 10);
+}
+
+int RuntimeConfig::log_max_files() const {
+    return get_int_opt(nullptr, {"log_max_files"}, 5);
+}
+
 std::string RuntimeConfig::extra_models_dir() const {
     std::shared_lock lock(mutex_);
     return config_["extra_models_dir"].get<std::string>();
@@ -536,6 +548,30 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             == valid_log_levels_.end()) {
             throw std::invalid_argument(
                 "'log_level' must be one of: trace, debug, info, warning, error, fatal, none");
+        }
+    } else if (key == "log_file") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'log_file' must be a string");
+        }
+        std::string mode = value.get<std::string>();
+        if (mode != "auto" && mode != "enabled" && mode != "disabled") {
+            throw std::invalid_argument("'log_file' must be one of: auto, enabled, disabled");
+        }
+    } else if (key == "log_max_file_size_mb") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'log_max_file_size_mb' must be an integer");
+        }
+        int sz = value.get<int>();
+        if (sz < 1 || sz > 2048) {
+            throw std::invalid_argument("'log_max_file_size_mb' must be between 1 and 2048");
+        }
+    } else if (key == "log_max_files") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'log_max_files' must be an integer");
+        }
+        int n = value.get<int>();
+        if (n < 0 || n > 100) {
+            throw std::invalid_argument("'log_max_files' must be between 0 and 100");
         }
     } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {
