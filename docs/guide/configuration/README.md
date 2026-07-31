@@ -70,7 +70,10 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_args": "",
     "vulkan_bin": "builtin"
   },
+  "log_file": "auto",
   "log_level": "info",
+  "log_max_file_size_mb": 10,
+  "log_max_files": 5,
   "max_loaded_models": 1,
   "models_dir": "auto",
   "moonshine": {
@@ -170,6 +173,9 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `port` | int | 13305 | Port number for the HTTP server |
 | `host` | string | "localhost" | Address to bind for connections |
 | `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
+| `log_file` | string | "auto" | File logging mode: "auto" (disabled under systemd/launchd, enabled otherwise), "enabled", or "disabled" |
+| `log_max_file_size_mb` | int | 10 | Max active log file size in MB before triggering log rotation |
+| `log_max_files` | int | 5 | Max number of rotated log backup files to retain (.1 through .N) |
 | `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
 | `no_broadcast` | bool | false | Disable UDP broadcasting for server discovery |
