@@ -432,13 +432,18 @@ sys.exit(0)
                 or "No models available" in line
             ):
                 continue
-            parts = line.split()
-            if len(parts) >= 2:
-                name = parts[0]
-                downloaded = parts[1] == "Yes"
-                details = parts[2] if len(parts) > 2 else ""
+
+            match = re.search(
+                r"^(.*?)\s*(Yes|No)\s+(\d+(?:\.\d+)?|N/A)(?:\s+[KMG]?B)?(?:\s+(.*))?$",
+                line,
+            )
+            if match:
                 parsed_models.append(
-                    {"name": name, "downloaded": downloaded, "details": details}
+                    {
+                        "name": match.group(1).strip(),
+                        "downloaded": match.group(2) == "Yes",
+                        "details": match.group(4).strip() if match.group(4) else "",
+                    }
                 )
         return parsed_models
 
@@ -518,6 +523,93 @@ sys.exit(0)
                     downloaded_names,
                     f"Non-downloaded model {name} should not be in --downloaded list",
                 )
+
+    def test_022_list_json_format(self):
+        """Test list --json flag output and structure."""
+        result = self.assertCommandSucceeds(["list", "--json"])
+        output = result.stdout + result.stderr
+        try:
+            models_list = json.loads(output)
+        except Exception as e:
+            self.fail(f"list --json did not output valid JSON: {e}")
+
+        self.assertIsInstance(models_list, list)
+        if len(models_list) > 0:
+            first_model = models_list[0]
+            self.assertIn("id", first_model)
+            self.assertIn("checkpoint", first_model)
+            self.assertIn("recipe", first_model)
+            self.assertIn("downloaded", first_model)
+            self.assertIn("suggested", first_model)
+            self.assertIn("labels", first_model)
+            self.assertIn("source", first_model)
+            self.assertIn("type", first_model)
+            self.assertIn("device", first_model)
+            self.assertIn("recipe_options", first_model)
+            self.assertIn("size_gb", first_model)
+
+    def test_023_list_filters(self):
+        """Test list filtering by type, source, device, suggested, labels, and backend."""
+        # Query JSON list to analyze models
+        all_models = json.loads(self.assertCommandSucceeds(["list", "--json"]).stdout)
+
+        # Test --type filter
+        types = set(m["type"] for m in all_models if m.get("type"))
+        for t in types:
+            filtered = json.loads(
+                self.assertCommandSucceeds(["list", "--type", t, "--json"]).stdout
+            )
+            for m in filtered:
+                self.assertEqual(m["type"], t)
+
+        # Test --source filter
+        sources = set(m["source"] for m in all_models if m.get("source"))
+        for s in sources:
+            filtered = json.loads(
+                self.assertCommandSucceeds(["list", "--source", s, "--json"]).stdout
+            )
+            for m in filtered:
+                self.assertEqual(m["source"], s)
+
+        # Test --device filter
+        devices = set(m["device"] for m in all_models if m.get("device"))
+        for d in devices:
+            filtered = json.loads(
+                self.assertCommandSucceeds(["list", "--device", d, "--json"]).stdout
+            )
+            for m in filtered:
+                self.assertIn(d, m["device"])
+
+        # Test --suggested filter
+        filtered_suggested = json.loads(
+            self.assertCommandSucceeds(["list", "--suggested", "--json"]).stdout
+        )
+        for m in filtered_suggested:
+            self.assertTrue(m["suggested"])
+
+        # Test --backend filter
+        backends = set(m["recipe"] for m in all_models if m.get("recipe"))
+        for b in backends:
+            filtered = json.loads(
+                self.assertCommandSucceeds(["list", "--backend", b, "--json"]).stdout
+            )
+            for m in filtered:
+                self.assertEqual(m["recipe"], b)
+
+        # Test --label filter
+        labels = set()
+        for m in all_models:
+            if m.get("labels"):
+                labels.update(m["labels"])
+        if labels:
+            test_label = list(labels)[0]
+            filtered = json.loads(
+                self.assertCommandSucceeds(
+                    ["list", "--label", test_label, "--json"]
+                ).stdout
+            )
+            for m in filtered:
+                self.assertIn(test_label, m["labels"])
 
     # =============================================================================
     # Export Tests
@@ -639,6 +731,19 @@ sys.exit(0)
                 )
                 if response.status_code < 400:
                     print("[OK] Restored host to localhost")
+                    # Wait for server to finish rebinding back to localhost/127.0.0.1
+                    for i in range(30):
+                        try:
+                            resp = requests.get(
+                                f"http://127.0.0.1:{PORT}/api/v1/health",
+                                headers=_auth_headers(),
+                                timeout=2,
+                            )
+                            if resp.status_code == 200:
+                                break
+                        except requests.ConnectionError:
+                            pass
+                        time.sleep(1)
                 else:
                     print(
                         "Warning: Failed to restore host to localhost: "
