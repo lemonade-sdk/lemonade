@@ -652,6 +652,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
     src/cpp/server/utils/path_utils.cpp
+    src/cpp/server/utils/url_utils.cpp
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
@@ -1327,11 +1328,11 @@ if(APPLE)
     endif()
 endif()
 
-# Add tray application subdirectory
-add_subdirectory(src/cpp/tray)
-
 # Add CLI application subdirectory
 add_subdirectory(src/cpp/cli)
+
+# Add tray application subdirectory
+add_subdirectory(src/cpp/tray)
 
 # Wire WiX installer targets to the binaries and frontend artifacts they package.
 # Doing this after the subdirectories are added ensures MSBuild gets real project refs.
@@ -2442,6 +2443,13 @@ if(EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     add_executable(test_network_utils test/cpp/test_network_utils.cpp)
     target_link_libraries(test_network_utils PRIVATE lemonade-server-core)
     add_test(NAME NetworkUtilsTest COMMAND test_network_utils)
+endif()
+
+set(_URL_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_url_utils.cpp")
+if(EXISTS "${_URL_UTILS_TEST_SRC}")
+    add_executable(test_url_utils test/cpp/test_url_utils.cpp)
+    target_link_libraries(test_url_utils PRIVATE lemonade-server-core)
+    add_test(NAME UrlUtilsTest COMMAND test_url_utils)
 endif()
 
 # vLLM CDNA gating: the vllm descriptor support row + asset-family resolution for

@@ -93,6 +93,7 @@ set(COMMON_SOURCES
     ../server/recipe_options.cpp
     ../server/utils/process_manager.cpp
     ../server/utils/path_utils.cpp
+    ../server/utils/url_utils.cpp
     ../server/utils/json_utils.cpp
     ../server/utils/http_client.cpp
     # recipe_import.cpp persists and validates remote registry provenance.
@@ -187,18 +188,18 @@ if(WIN32)
     )
 endif()
 
-set(HTTPLIB_SUPPORTS_MBEDTLS FALSE)
+set(HTTPLIB_SUPPORTS_MBEDTLS FALSE CACHE INTERNAL "mbedtls support in httplib")
 if(NOT USE_SYSTEM_HTTPLIB)
-    set(HTTPLIB_SUPPORTS_MBEDTLS TRUE)
+    set(HTTPLIB_SUPPORTS_MBEDTLS TRUE CACHE INTERNAL "mbedtls support in httplib")
 elseif(HTTPLIB_VERSION AND NOT HTTPLIB_VERSION VERSION_LESS "0.31.0")
-    set(HTTPLIB_SUPPORTS_MBEDTLS TRUE)
+    set(HTTPLIB_SUPPORTS_MBEDTLS TRUE CACHE INTERNAL "mbedtls support in httplib")
 endif()
 
 if(HTTPLIB_SUPPORTS_MBEDTLS)
-    target_compile_definitions(lemonade PRIVATE LEMONADE_CLI CPPHTTPLIB_MBEDTLS_SUPPORT)
-else()
-    target_compile_definitions(lemonade PRIVATE LEMONADE_CLI)
+    target_compile_definitions(lemonade-digest-crypto INTERFACE CPPHTTPLIB_MBEDTLS_SUPPORT)
 endif()
+
+target_compile_definitions(lemonade PRIVATE LEMONADE_CLI)
 
 # Platform-specific settings
 if(WIN32)
