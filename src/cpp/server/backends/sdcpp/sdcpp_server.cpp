@@ -430,7 +430,7 @@ void SDServer::load(const std::string& model_name,
         process_exe_path,
         args,
         working_dir,
-        is_debug(),  // inherit_output
+        true,  // inherit_output: always stream sd-server stderr so crashes surface in logs
         false,  // filter_health_logs
         env_vars
     );
@@ -443,6 +443,15 @@ void SDServer::load(const std::string& model_name,
     LOG(INFO, "SDServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
     if (!wait_for_ready("/")) {
+        // Check if the process has already exited and surface the exit code
+        const ProcessHandle handle = get_process_handle_snapshot();
+        if (has_process_handle(handle) && !utils::ProcessManager::is_running(handle)) {
+            ProcessHandle exited = consume_process_handle_for_cleanup();
+            if (has_process_handle(exited)) {
+                int exit_code = utils::ProcessManager::reap_process(exited);
+                LOG(ERROR, "SDServer") << "sd-server process terminated with exit code: " << exit_code;
+            }
+        }
         unload();
         throw std::runtime_error("sd-server failed to start or become ready");
     }
