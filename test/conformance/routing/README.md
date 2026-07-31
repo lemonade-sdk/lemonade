@@ -27,14 +27,21 @@ grouped by the **engine behavior they lock**, so the
 corpus reads as a checklist against the v1 semantics table in
 `src/cpp/resources/schemas/README.md`.
 
+One directory holds one `policy.json`, so the split follows the **policies**, not
+the topics. Behaviors that differ only in the policy need their own directory —
+`l2_semantic_on_error` and `l2_semantic_on_error_match_true` differ by one
+`on_error` value and cannot share one. Conversely, anything a request can vary
+(`route_trace`, the input, `metadata`) belongs in the directory whose policy it
+exercises, not in a directory of its own. That is why the count of directories is
+higher than the count of semantics.
+
 ```
 1/
   l0a_desugaring_core_form/   # llm router in core form (llm classifier + identity rules): reply picks a candidate
   l0a_desugaring_sugar_form/  # llm router in routing.router sugar form; desugars to an llm classifier + identity rules: reply picks a candidate
   l0a_llm_implicit_label/     # omitted label => llm classifier's default_label score (never the picked candidate, never primary())
   l0a_llm_on_error/           # llm router on_error: match_true fires only on a failed call, not a normal miss
-  l0a_router_reply_contract/  # what counts as a valid router reply: strict {model, rationale}, code-fence stripping
-  l0a_router_trace/           # router trace: only the picked candidate carries a rationale; fail-open scores 0
+  l0a_router_reply_contract/  # what counts as a valid router reply: strict {model, rationale}, code-fence stripping, and how the reply surfaces in the trace
   l1_conditions_char_bounds/  # min_chars / max_chars (own policy: length rules are greedy)
   l1_conditions_features/     # boolean request-feature ops: has_tools / has_images
   l1_conditions_features_negated/  # authored has_tools:false — equality, matches when absent
@@ -164,8 +171,8 @@ backend's numeric drift can never change the recorded `Decision`).
 | text after the closing fence ⇒ rejected | `l0a_router_reply_contract/fenced-trailing-prose-falls-open` |
 | an opening fence with no closing fence ⇒ rejected | `l0a_router_reply_contract/no-closing-fence-falls-open` |
 | an opening fence with no newline ⇒ rejected | `l0a_router_reply_contract/no-newline-fence-falls-open` |
-| trace: only the picked candidate's entry carries the rationale | `l0a_router_trace/winner-carries-rationale-loser-does-not` |
-| trace: an unmatched reply leaves every candidate scored 0 with no rationale; the default carries the trace | `l0a_router_trace/fail-open-trace-scores-zero` |
+| trace: only the picked candidate's entry carries the rationale | `l0a_router_reply_contract/winner-carries-rationale-loser-does-not` |
+| trace: an unmatched reply leaves every candidate scored 0 with no rationale; the default carries the trace | `l0a_router_reply_contract/fail-open-trace-scores-zero` |
 | omitted label ⇒ the llm classifier's `default_label` score (the reply picks that candidate ⇒ fires) | `l0a_llm_implicit_label/default-label-used-when-label-omitted` |
 | omitted label reads `default_label` even when the reply picks another candidate — proves it is not the picked label and not `primary()` | `l0a_llm_implicit_label/default-label-read-not-primary` |
 
