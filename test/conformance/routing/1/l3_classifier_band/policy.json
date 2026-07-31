@@ -7,11 +7,12 @@
     "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
     "default_model": "DefaultLLM",
     "classifiers": [
-      { "id": "topic", "type": "classifier", "model": "TopicModel", "labels": ["code", "math"] }
+      { "id": "topic", "type": "classifier", "model": "TopicModel", "labels": ["code", "math", "algebra"] }
     ],
     "rules": [
       { "id": "code-band",         "match": { "classifier": "topic", "label": "code", "min_score": 0.4, "max_score": 0.7 }, "route_to": "CodingLLM" },
-      { "id": "math-default-band", "match": { "classifier": "topic", "label": "math" }, "route_to": "MathLLM" }
+      { "id": "math-default-band", "match": { "classifier": "topic", "label": "math" }, "route_to": "MathLLM" },
+      { "id": "algebra-point",     "match": { "classifier": "topic", "label": "algebra", "min_score": 0.8, "max_score": 0.8 }, "route_to": "MathLLM" }
     ]
   }
 }
