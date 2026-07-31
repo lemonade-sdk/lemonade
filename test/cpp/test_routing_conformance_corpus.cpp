@@ -291,23 +291,6 @@ static void report_mismatch(const json& expected, const json& produced) {
         std::printf("    %s: expected: %s, produced: %s\n", op.value("path", "").c_str(),
                     exp.c_str(), prod.c_str());
     }
-    // TODO: maybe delete the trace piece, think about it
-    if (!expected.contains("trace") || !produced.contains("trace")) return;
-    const json& expected_trace = expected["trace"];
-    const json& produced_trace = produced["trace"];
-    if (!expected_trace.is_array() || !produced_trace.is_array()) return;
-    for (std::size_t i = 0; i < expected_trace.size() && i < produced_trace.size(); ++i) {
-        const json& e = expected_trace[i];
-        const json& p = produced_trace[i];
-        if (!e.is_object() || !p.is_object()) continue;
-        if (!e.contains("score") || !p.contains("score")) continue;
-        if (!e["score"].is_number() || !p["score"].is_number()) continue;
-        const double delta = std::fabs(e["score"].get<double>() - p["score"].get<double>());
-        if (delta > kScoreTolerance) {
-            std::printf("    /trace/%zu/score: |delta| %.3g exceeds tolerance %.3g\n", i, delta,
-                        kScoreTolerance);
-        }
-    }
 }
 
 // The case dir name is the schema major the policy must declare, so a policy
