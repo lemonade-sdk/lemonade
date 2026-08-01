@@ -778,7 +778,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
-  const mcpReturnFocusEntryRef = useRef<'lemonade' | 'external'>('lemonade');
+  const mcpReturnFocusEntryRef = useRef<'tools'>('tools');
   const mcpBackButtonRef = useRef<HTMLButtonElement | null>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
@@ -1350,9 +1350,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     if (!useMcp) persistMcpEnabled(true);
   }, [mcpOptions, persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet, selectedMcpServerIds, selectedMcpToolNames, useMcp]);
 
-  const openMcpPicker = useCallback((tab: 'lemonade' | 'external') => {
-    mcpReturnFocusEntryRef.current = tab;
-    setMcpPickerTab(tab);
+  const openMcpPicker = useCallback(() => {
+    mcpReturnFocusEntryRef.current = 'tools';
     setMcpPickerOpen(true);
   }, []);
 
@@ -3738,32 +3737,20 @@ ${finalText}`
                 </button>
                 <button
                   type="button"
-                  className="composer__add-row"
+                  className={`composer__add-row${mcpPickerOpen ? ' is-active' : ''}`}
                   role="menuitem"
-                  data-mcp-entry="lemonade"
-                  onClick={() => openMcpPicker('lemonade')}
+                  data-mcp-entry="tools"
+                  onClick={openMcpPicker}
                   disabled={!modeSupportsMcp}
-                  aria-label="Lemonade tools"
+                  aria-label="Tools"
+                  aria-haspopup="dialog"
                 >
                   <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Lemonade tools</strong>
-                    <small>{useMcp ? `${selectedMcpToolCount} selected tool${selectedMcpToolCount === 1 ? '' : 's'}` : 'Built-in tools for this chat'}</small>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="composer__add-row"
-                  role="menuitem"
-                  data-mcp-entry="external"
-                  onClick={() => openMcpPicker('external')}
-                  disabled={!modeSupportsMcp}
-                  aria-label="External MCP servers"
-                >
-                  <span className="composer__add-icon"><Icon name="plug" size={16} /></span>
-                  <span className="composer__add-text">
-                    <strong>External MCP servers</strong>
-                    <small>Connected tool servers</small>
+                    <strong>Tools</strong>
+                    <small>{useMcp
+                      ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
+                      : 'Lemonade tools and external MCP servers'}</small>
                   </span>
                 </button>
               </div>
@@ -3850,7 +3837,9 @@ ${finalText}`
                               <span className={`composer__mcp-status${server.connected ? ' is-connected' : ''}`} aria-hidden="true" />
                               <span className="composer__mcp-server-text">
                                 <strong>{server.name}</strong>
-                                <small>{server.transport === 'builtin' ? 'Built in' : `External MCP · ${server.status}`} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
+                                <small>{server.transport === 'builtin'
+                                  ? 'Built in'
+                                  : `${server.transport === 'streamable-http' ? 'HTTP endpoint' : 'Local process'} · ${server.status}`} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
                               </span>
                             </label>
                             {serverSelected && (

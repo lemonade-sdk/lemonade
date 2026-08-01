@@ -554,7 +554,7 @@ export interface RealtimeTranscriptionHandle {
 }
 
 
-export type McpTransport = 'stdio' | 'builtin';
+export type McpTransport = 'streamable-http' | 'stdio' | 'builtin';
 
 export interface McpToolDefinition {
   name: string;
@@ -567,6 +567,9 @@ export interface McpServerConfig {
   id: string;
   name: string;
   transport: McpTransport;
+  url?: string;
+  bearer_token?: string;
+  allow_insecure_http?: boolean;
   command?: string;
   args?: string[];
   env?: Record<string, string>;
@@ -1442,11 +1445,30 @@ class LemonadeAPI {
     }
   }
 
-  async saveMcpServer(server: Omit<McpServerConfig, 'transport' | 'id'> & { id?: string; transport?: 'stdio' }): Promise<McpServerConfig> {
+  async saveMcpServer(
+    server: Omit<McpServerConfig, 'id' | 'transport'> & {
+      id?: string;
+      transport: Exclude<McpTransport, 'builtin'>;
+    },
+  ): Promise<McpServerConfig> {
     const data = await this._json<{ server: McpServerConfig }>('/internal/mcp/servers', {
       method: 'POST',
       auth: 'admin',
-      body: { server: { ...server, transport: 'stdio' } },
+      body: { server },
+    });
+    return data.server;
+  }
+
+  async testMcpServer(
+    server: Omit<McpServerConfig, 'id' | 'transport'> & {
+      id?: string;
+      transport: Exclude<McpTransport, 'builtin'>;
+    },
+  ): Promise<McpServerState> {
+    const data = await this._json<{ server: McpServerState }>('/internal/mcp/servers/test', {
+      method: 'POST',
+      auth: 'admin',
+      body: { server },
     });
     return data.server;
   }

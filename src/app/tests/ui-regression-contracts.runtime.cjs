@@ -9,9 +9,14 @@ const files = {
   chat: path.join(root, 'src/components/ChatView.tsx'),
   connect: path.join(root, 'src/components/ConnectView.tsx'),
   apps: path.join(root, 'src/components/AppsView.tsx'),
+  mcpPanel: path.join(root, 'src/components/McpPanel.tsx'),
+  api: path.join(root, 'src/api.ts'),
+  mcpRuntime: path.join(root, 'src/tools/mcpRuntime.ts'),
   navigation: path.join(root, 'src/features/navigation/workspaceNavigation.ts'),
 };
 const sources = Object.fromEntries(Object.entries(files).map(([key, filename]) => [key, fs.readFileSync(filename, 'utf8')]));
+const mcpClientHeader = fs.readFileSync(path.join(root, '../cpp/include/lemon/mcp_client.h'), 'utf8');
+const mcpClientSource = fs.readFileSync(path.join(root, '../cpp/server/mcp_client.cpp'), 'utf8');
 
 for (const [key, filename] of Object.entries(files)) {
   const compiled = ts.transpileModule(sources[key], {
@@ -31,13 +36,37 @@ assert.match(sources.app, /<span className="titlebar__brand-name">lemonade<\/spa
 assert.match(sources.app, /type="search"[\s\S]*?role="combobox"[\s\S]*?aria-expanded=\{navigationSearchOpen\}/);
 assert.match(sources.app, /aria-activedescendant=/);
 
-assert.match(sources.chat, /role="menuitem"[\s\S]*?data-mcp-entry="lemonade"[\s\S]*?aria-label="Lemonade tools"/);
-assert.match(sources.chat, /role="menuitem"[\s\S]*?data-mcp-entry="external"[\s\S]*?aria-label="External MCP servers"/);
-assert.match(sources.chat, /openMcpPicker\('lemonade'\)/);
-assert.match(sources.chat, /openMcpPicker\('external'\)/);
+assert.match(sources.chat, /role="menuitem"[\s\S]*?data-mcp-entry="tools"[\s\S]*?aria-label="Tools"/);
+assert.doesNotMatch(sources.chat, /data-mcp-entry="(?:lemonade|external)"/);
+assert.match(sources.chat, /const openMcpPicker = useCallback\(\(\) => \{[\s\S]*?setMcpPickerOpen\(true\)/);
+assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?Lemonade tools[\s\S]*?<\/button>/);
+assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?External MCP servers[\s\S]*?<\/button>/);
 
 assert.match(sources.navigation, /defineSection\('app-directory', 'Compatible clients and integrations', 'layers'\)/);
 assert.match(sources.connect, /activeSection === 'app-directory'[\s\S]*?<AppsView isActive=\{isActive\} embedded \/>/);
 assert.match(sources.apps, /embedded\?: boolean/);
+
+assert.match(sources.mcpPanel, /transport: 'streamable-http'/);
+assert.match(sources.mcpPanel, />HTTP endpoint</);
+assert.match(sources.mcpPanel, />Local process</);
+assert.match(sources.mcpPanel, /placeholder="http:\/\/127\.0\.0\.1:3000\/mcp"/);
+assert.match(sources.mcpPanel, />Bearer token from environment</);
+assert.match(sources.mcpPanel, /Test connection/);
+assert.match(sources.mcpPanel, /api\.testMcpServer\(serverPayload\(draft\)\)/);
+assert.match(sources.api, /export type McpTransport = 'streamable-http' \| 'stdio' \| 'builtin'/);
+assert.match(sources.api, /async testMcpServer\(/);
+assert.doesNotMatch(sources.api, /body: \{ server: \{ \.\.\.server, transport: 'stdio' \} \}/);
+assert.match(sources.mcpRuntime, /server\.transport === 'streamable-http'/);
+
+assert.match(mcpClientHeader, /std::string url;/);
+assert.match(mcpClientHeader, /std::string bearer_token;/);
+assert.match(mcpClientSource, /kStreamableHttpTransport = "streamable-http"/);
+assert.match(mcpClientSource, /server\.Post\("\/internal\/mcp\/servers\/test"/);
+assert.match(mcpClientSource, /enable_server_certificate_verification\(true\)/);
+assert.match(mcpClientSource, /Plain HTTP is allowed only for localhost/);
+assert.match(mcpClientSource, /connect_http\(new_config\)/);
+assert.match(mcpClientSource, /httplib::stream::Post\(/);
+assert.match(mcpClientSource, /class SseJsonDecoder/);
+assert.doesNotMatch(mcpClientSource, /Mcp-Method|Mcp-Name/);
 
 console.log('UI regression contract checks passed.');
