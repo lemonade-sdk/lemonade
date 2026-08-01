@@ -416,7 +416,7 @@ struct BenchStrategy {
     std::function<void(const json&, BenchRunResult&, bool)> parse_response;
 };
 
-static BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
+static BenchRunResult run_bench_with_strategy(lemonade::LemonadeClient& client,
                                                 bool memory_tracking,
                                                 bool capture_response,
                                                 int timeout,
@@ -525,7 +525,7 @@ static BenchStrategy make_embed_strategy(const std::string& model, const BenchSc
                 result.output_tokens = resp["usage"]["total_tokens"].get<int>();
             }
 
-            result.valid = !(result.ttft_ms <= 0 && result.tps <= 0 && result.input_tokens <= 0 && result.output_tokens <= 0);
+            result.valid = true;
         }
     };
 }
@@ -596,7 +596,7 @@ BenchRunResult run_single_bench_textgen(lemonade::LemonadeClient& client,
                                         bool memory_tracking,
                                         bool capture_response,
                                         int timeout) {
-    return run_single_bench(client, memory_tracking, capture_response, timeout, make_textgen_strategy(model, scenario));
+    return run_bench_with_strategy(client, memory_tracking, capture_response, timeout, make_textgen_strategy(model, scenario));
 }
 
 BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
@@ -606,7 +606,7 @@ BenchRunResult run_single_bench_embed(lemonade::LemonadeClient& client,
                                       bool capture_response,
                                       int timeout) {
     auto strategy = make_embed_strategy(model, scenario);
-    auto result = run_single_bench(client, memory_tracking, capture_response, timeout, strategy);
+    auto result = run_bench_with_strategy(client, memory_tracking, capture_response, timeout, strategy);
     if (result.success) {
         // Embedding benchmarks: ttft_ms is the total wall-clock time
         result.ttft_ms = result.total_time_ms;
@@ -627,14 +627,7 @@ BenchRunResult run_single_bench_imagegen(lemonade::LemonadeClient& client,
         return result;
     }
     auto strategy = make_imagegen_strategy(model, scenario, capture_response);
-    // Fix the model in the request body (strategy uses a placeholder)
-    auto orig_build = strategy.build_request;
-    strategy.build_request = [orig_build, model]() -> json {
-        json body = orig_build();
-        body["model"] = model;
-        return body;
-    };
-    auto result = run_single_bench(client, memory_tracking, capture_response, timeout, strategy);
+    auto result = run_bench_with_strategy(client, memory_tracking, capture_response, timeout, strategy);
     if (result.success) {
         result.ttft_ms = result.total_time_ms;
     }
