@@ -16,6 +16,10 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
@@ -285,6 +289,19 @@ jobs:
     if: always() && !failure() && !cancelled()
     runs-on: windows-latest
     steps:
+      - name: Prepare Windows runner for long paths and stale workspace caches
+        if: runner.os == 'Windows'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          # 1. Kill any running/orphaned processes to release file locks
+          $patterns = @("lemonade", "lemond", "llama-server", "llama", "flm", "ort-server", "moonshine-server", "wscript", "LemonadeServer")
+          foreach ($p in $patterns) {
+              Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
+
       - uses: actions/checkout@v5
         with:
           clean: true
@@ -405,6 +422,19 @@ jobs:
           # - backend: cuda
           #   runner: [self-hosted, Windows, 128gb, cuda]
     steps:
+      - name: Prepare Windows runner for long paths and stale workspace caches
+        if: runner.os == 'Windows'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          # 1. Kill any running/orphaned processes to release file locks
+          $patterns = @("lemonade", "lemond", "llama-server", "llama", "flm", "ort-server", "moonshine-server", "wscript", "LemonadeServer")
+          foreach ($p in $patterns) {
+              Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
+
       - uses: actions/checkout@v5
         with:
           clean: true
