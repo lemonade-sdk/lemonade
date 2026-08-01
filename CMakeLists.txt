@@ -2051,6 +2051,16 @@ if(BUILD_TESTING AND EXISTS "${_ARCHIVE_PLATFORM_TEST_SRC}")
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     )
     add_test(NAME ArchivePlatformTest COMMAND test_archive_platform)
+
+    set_tests_properties(
+        ArchivePlatformTest
+        PROPERTIES
+            LABELS "cpp-ci"
+    )
+    add_dependencies(
+        cpp-ci-tests
+        test_archive_platform
+    )
 endif()
 
 # ProcessManager zombie detection and non-mutating reap contract.
