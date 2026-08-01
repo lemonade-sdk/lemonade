@@ -105,13 +105,14 @@ std::string LemonadeClient::normalize_host(const std::string& host) const {
 // Helper to create and configure httplib::Client (timeouts in milliseconds)
 static httplib::Client make_client(const std::string& host, int port, const std::string& api_key, bool is_ssl,
                                     time_t connection_timeout_ms = DEFAULT_CONNECTION_TIMEOUT_MS, time_t read_timeout_ms = DEFAULT_READ_TIMEOUT_MS) {
-#ifndef CPPHTTPLIB_MBEDTLS_SUPPORT
+#ifndef LEMONADE_HTTPLIB_HAS_TLS
     if (is_ssl) {
         throw std::runtime_error("HTTPS support is not compiled in this client.");
     }
 #endif
+    std::string format_host = lemon::utils::bracket_host_if_ipv6(host);
     std::string scheme = is_ssl ? "https" : "http";
-    std::string url = scheme + "://" + host + ":" + std::to_string(port);
+    std::string url = scheme + "://" + format_host + ":" + std::to_string(port);
     httplib::Client cli(url);
     cli.set_connection_timeout(connection_timeout_ms / 1000, (connection_timeout_ms % 1000) * 1000);
     cli.set_read_timeout(read_timeout_ms / 1000, (read_timeout_ms % 1000) * 1000);

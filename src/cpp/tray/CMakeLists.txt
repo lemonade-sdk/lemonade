@@ -155,26 +155,15 @@ function(apply_tray_deps target_name)
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
     )
 
-    target_link_libraries(${target_name} PRIVATE nlohmann_json::nlohmann_json)
-
-    if(USE_SYSTEM_HTTPLIB)
-        target_link_libraries(${target_name} PRIVATE lemonade-httplib)
-    else()
-        target_link_libraries(${target_name} PRIVATE httplib::httplib)
-    endif()
+    target_link_libraries(${target_name} PRIVATE
+        nlohmann_json::nlohmann_json
+        lemonade-httplib
+    )
 
     if(USE_SYSTEM_CLI11)
         target_include_directories(${target_name} PRIVATE ${CLI11_INCLUDE_DIRS})
     else()
         target_link_libraries(${target_name} PRIVATE CLI11::CLI11)
-    endif()
-
-    if(HTTPLIB_SUPPORTS_MBEDTLS)
-        target_link_libraries(${target_name} PRIVATE lemonade-digest-crypto)
-        if(APPLE)
-            find_library(SECURITY_FRAMEWORK Security REQUIRED)
-            target_link_libraries(${target_name} PRIVATE ${SECURITY_FRAMEWORK})
-        endif()
     endif()
 endfunction()
 
