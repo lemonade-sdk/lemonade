@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult } from '../api';
+import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow } from '../api';
 import api from '../api';
 import { capabilityFromModelInfo, capabilityLabel } from '../modelCapabilities';
 import {
@@ -26,6 +26,11 @@ import {
 } from './WorkspacePanels';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 import { TTS_VOICES } from '../features/audio/ttsSettings';
+import {
+  describeRouterModelConnection,
+  providerEndpointNeedsInsecureOptIn,
+  validateProviderEndpoint,
+} from '../features/router/routerConnections';
 
 /* ── Helpers (local copies to keep component self-contained) ──── */
 
@@ -1582,7 +1587,200 @@ const COLLECTION_ROLE_LABELS: Record<string, string> = {
   speech: 'Text to speech',
 };
 
-const CustomCollectionSettingsTab: React.FC<{ model: ModelInfo; onEdit?: (model: ModelInfo) => void }> = ({ model, onEdit }) => {
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+const RouterCollectionSettingsTab: React.FC<{
+  model: ModelInfo;
+  models: ModelInfo[];
+  onEdit?: (model: ModelInfo) => void;
+}> = ({ model, models, onEdit }) => {
+  const [providers, setProviders] = useState<CloudProviderRow[]>([]);
+  const [providerError, setProviderError] = useState<string | null>(null);
+  const [editingProvider, setEditingProvider] = useState<string | null>(null);
+  const [editingConnectionModel, setEditingConnectionModel] = useState<string | null>(null);
+  const [endpointDraft, setEndpointDraft] = useState('');
+  const [allowInsecureDraft, setAllowInsecureDraft] = useState(false);
+  const [savingProvider, setSavingProvider] = useState(false);
+
+  const refreshProviders = useCallback(async () => {
+    try {
+      setProviders(await api.cloudProviders());
+      setProviderError(null);
+    } catch (error) {
+      setProviderError(error instanceof Error ? error.message : 'Could not load external providers.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshProviders();
+  }, [refreshProviders]);
+
+  const routing = recordValue((model as any).routing);
+  const candidates = Array.isArray(routing.candidates)
+    ? routing.candidates.filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
+    : [];
+  const defaultModel = String(routing.default_model || '').trim();
+  const nlRouter = recordValue(routing.router);
+  const classifiers = Array.isArray(routing.classifiers)
+    ? routing.classifiers.filter(item => item && typeof item === 'object') as Array<Record<string, unknown>>
+    : [];
+  const connectedRoles = new Map<string, string[]>();
+  const addRole = (nameValue: unknown, role: string) => {
+    const name = String(nameValue || '').trim();
+    if (!name) return;
+    const current = connectedRoles.get(name) || [];
+    if (!current.includes(role)) current.push(role);
+    connectedRoles.set(name, current);
+  };
+  candidates.forEach(name => addRole(name, 'Routing target'));
+  if (String(nlRouter.type || '').toLowerCase() === 'llm') {
+    addRole(nlRouter.model, 'Natural-language router');
+  }
+  classifiers.forEach(classifier => addRole(classifier.model, `Classifier · ${String(classifier.id || classifier.type || 'model')}`));
+  getCollectionComponents(model).forEach(name => addRole(name, 'Collection component'));
+
+  const connections = [...connectedRoles.keys()].map(name =>
+    describeRouterModelConnection(name, models, providers)
+  );
+  const mode = Object.keys(nlRouter).length ? 'Natural-language router' : 'Ordered rules';
+
+  const saveEndpoint = async () => {
+    if (!editingProvider) return;
+    const validationError = validateProviderEndpoint(endpointDraft, allowInsecureDraft);
+    if (validationError) {
+      setProviderError(validationError);
+      return;
+    }
+    setSavingProvider(true);
+    setProviderError(null);
+    try {
+      const provider = editingProvider;
+      await api.installCloudProvider(provider, endpointDraft.trim(), undefined, allowInsecureDraft);
+      await refreshProviders();
+      setEditingProvider(null);
+      setEditingConnectionModel(null);
+      setEndpointDraft('');
+      setAllowInsecureDraft(false);
+    } catch (error) {
+      setProviderError(error instanceof Error ? error.message : 'Could not update provider endpoint.');
+    } finally {
+      setSavingProvider(false);
+    }
+  };
+
+  return (
+    <div className="detail-tab-content custom-collection-settings router-collection-settings">
+      <div className="custom-collection-settings__intro">
+        <div>
+          <h3>Router settings</h3>
+          <p>Review every model connected to this virtual model, including provider endpoints used by external candidates.</p>
+        </div>
+        {onEdit && (
+          <button
+            type="button"
+            className="btn btn--primary btn--sm custom-collection-settings__edit-button"
+            aria-label="Edit router settings"
+            title="Edit router settings"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onEdit(model);
+            }}
+          >
+            <Icon name="edit" size={13} aria-hidden="true" />
+            <span>Edit router</span>
+          </button>
+        )}
+      </div>
+
+      <section className="custom-collection-settings__section" aria-label="Router strategy summary">
+        <h4>Routing</h4>
+        <div className="custom-collection-settings__summary">
+          <span>Strategy</span><strong>{mode}</strong>
+          <span>Default model</span><strong>{defaultModel || 'Not set'}</strong>
+          <span>Routing targets</span><strong>{candidates.length}</strong>
+        </div>
+      </section>
+
+      <section className="custom-collection-settings__section" aria-label="Connected router models">
+        <h4>Connected models</h4>
+        <p className="router-collection-settings__scope-note">Endpoint changes are provider-wide and apply to all models registered through that provider.</p>
+        <div className="router-collection-settings__connections">
+          {connections.map(connection => (
+            <article className="router-collection-settings__connection" key={connection.modelName}>
+              <div className="router-collection-settings__identity">
+                <div>
+                  <strong>{connection.displayName}</strong>
+                  {connection.modelName === defaultModel && <span className="router-editor__default-badge">Default</span>}
+                </div>
+                <small>{connection.modelName}</small>
+                <small>{(connectedRoles.get(connection.modelName) || []).join(' · ')}</small>
+              </div>
+              <div className="router-collection-settings__source">
+                <span className={`router-editor__source-badge router-editor__source-badge--${connection.kind}`}>
+                  {connection.kind === 'external' ? 'External' : connection.kind === 'internal' ? 'Internal' : 'Unresolved'}
+                </span>
+                <small>{connection.kind === 'external' ? (connection.provider || 'Unknown provider') : (connection.backend || connection.recipe || 'Local model')}</small>
+              </div>
+              <div className="router-collection-settings__endpoint">
+                {connection.kind === 'external' ? (
+                  editingProvider === connection.provider && editingConnectionModel === connection.modelName ? (
+                    <div className="router-editor__endpoint-editor">
+                      <input
+                        className="input"
+                        value={endpointDraft}
+                        aria-label={`${connection.provider} endpoint`}
+                        onChange={event => setEndpointDraft(event.target.value)}
+                      />
+                      {providerEndpointNeedsInsecureOptIn(endpointDraft) && (
+                        <label className="router-editor__insecure-opt-in">
+                          <input type="checkbox" checked={allowInsecureDraft} onChange={event => setAllowInsecureDraft(event.target.checked)} />
+                          <span>Allow insecure HTTP</span>
+                        </label>
+                      )}
+                      <WorkspaceActionButton appearance="primary" size="small" disabled={savingProvider} onClick={() => { void saveEndpoint(); }}>
+                        {savingProvider ? 'Saving…' : 'Save'}
+                      </WorkspaceActionButton>
+                      <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setAllowInsecureDraft(false); setProviderError(null); }}>Cancel</WorkspaceActionButton>
+                    </div>
+                  ) : (
+                    <>
+                      <span title={connection.endpoint || 'Endpoint unavailable'}>{connection.endpoint || 'Endpoint not configured'}</span>
+                      <small>{connection.authConfigured ? 'Authentication configured' : 'Authentication required'}</small>
+                      {connection.provider && (
+                        <WorkspaceActionButton size="small" icon="edit" onClick={() => { setEditingProvider(connection.provider); setEditingConnectionModel(connection.modelName); setEndpointDraft(connection.endpoint); setAllowInsecureDraft(connection.allowInsecureHttp); setProviderError(null); }}>
+                          Edit endpoint
+                        </WorkspaceActionButton>
+                      )}
+                    </>
+                  )
+                ) : (
+                  <><span>Managed by Lemonade</span><small>Local registered model</small></>
+                )}
+              </div>
+            </article>
+          ))}
+          {connections.length === 0 && <div className="router-editor__empty">No connected models were found in this router definition.</div>}
+        </div>
+        {providerError && connections.some(connection => connection.kind === 'external') && <div className="router-editor__message router-editor__message--error"><Icon name="alert" size={14} /> {providerError}</div>}
+      </section>
+    </div>
+  );
+};
+
+const CustomCollectionSettingsTab: React.FC<{
+  model: ModelInfo;
+  models: ModelInfo[];
+  onEdit?: (model: ModelInfo) => void;
+}> = ({ model, models, onEdit }) => {
+  if (activeRecipeForModel(model) === 'collection.router') {
+    return <RouterCollectionSettingsTab model={model} models={models} onEdit={onEdit} />;
+  }
+
   const roles = ((model as any).component_roles || {}) as Record<string, string>;
   const components = getCollectionComponents(model);
   const displayRoles: Record<string, string> = { ...roles, llm: roles.llm || components[0] || '' };
@@ -1651,6 +1849,8 @@ const CustomCollectionSettingsTab: React.FC<{ model: ModelInfo; onEdit?: (model:
 
 export interface ModelDetailPanelProps {
   model: ModelInfo | null;
+  /** Registry models used to resolve collection component sources. */
+  models?: ModelInfo[];
   loadedModel: LoadedModel | null;
   loadingModel: string | null;
   pulling: Record<string, number>;
@@ -1715,6 +1915,7 @@ const IMAGE_MODEL_TABS: Array<{ id: DetailTab; label: string }> = TABS;
 
 export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   model,
+  models = [],
   loadedModel,
   loadingModel,
   pulling,
@@ -1748,7 +1949,8 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const [configHasUnsavedChanges, setConfigHasUnsavedChanges] = useState(false);
 
   const detailName = model ? mdName(model) : '';
-  const isCustomCollection = Boolean(model && modelIsCustom(model) && isCollectionModel(model));
+  const isRouterCollection = Boolean(model && activeRecipeForModel(model) === 'collection.router');
+  const isCustomCollection = Boolean(model && modelIsCustom(model) && (isCollectionModel(model) || isRouterCollection));
   const imageOnly = isImageOnlyModel(model);
   const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS);
 
@@ -2022,7 +2224,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           hidden={activeTab !== tab.id}
         >
           {tab.id === 'settings' && model && (
-            <CustomCollectionSettingsTab model={model} onEdit={onEditCustomCollection} />
+            <CustomCollectionSettingsTab model={model} models={models} onEdit={onEditCustomCollection} />
           )}
           {tab.id === 'readme' && (
             <ModelReadmeTab model={model} isActive={activeTab === 'readme'} />

@@ -23,6 +23,7 @@
     "test:mcp-external": "node scripts/test-external-mcp.mjs",
     "test:mcp-mock": "node tests/mock-mcp-server.runtime.cjs",
     "test:mcp-runtime": "node tests/mcp-runtime.runtime.cjs",
+    "test:mcp-cpp-compat": "node tests/mcp-cpp-httplib-compat.runtime.cjs",
     "test:router-editor": "node tests/router-editor.runtime.cjs",
     "test:router-store": "node tests/router-store.runtime.cjs",
     "test:global-model-settings": "node tests/global-model-settings.runtime.cjs",

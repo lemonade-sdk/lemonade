@@ -38,22 +38,31 @@ const listPath = path.join(root, 'src/components/ModelListPanel.tsx');
 const editorPath = path.join(root, 'src/components/RouterEditorPanel.tsx');
 const nodeEditorPath = path.join(root, 'src/components/RouterNodeEditor.tsx');
 const capabilityPath = path.join(root, 'src/modelCapabilities.ts');
+const connectionPath = path.join(root, 'src/features/router/routerConnections.ts');
+const detailPath = path.join(root, 'src/components/ModelDetailPanel.tsx');
+const apiPath = path.join(root, 'src/api.ts');
 
 const router = loadTypeScriptModule(routerTypesPath);
+const connections = loadTypeScriptModule(connectionPath);
 const managerSource = fs.readFileSync(managerPath, 'utf8');
 const listSource = fs.readFileSync(listPath, 'utf8');
 const editorSource = fs.readFileSync(editorPath, 'utf8');
 const nodeEditorSource = fs.readFileSync(nodeEditorPath, 'utf8');
 const capabilitySource = fs.readFileSync(capabilityPath, 'utf8');
+const detailSource = fs.readFileSync(detailPath, 'utf8');
+const apiSource = fs.readFileSync(apiPath, 'utf8');
 
 const draft = {
   name: 'Fast or smart',
   candidates: ['user.fast', 'user.smart'],
   defaultModel: 'user.smart',
+  mode: 'rules',
+  llmRouter: { model: '', prompt: '' },
   classifiers: [{
     id: 'topic',
     type: 'semantic_similarity',
     model: 'user.embed',
+    prompt: '',
     labels: [],
     referencePhrases: {
       code: ['write code', 'debug this'],
@@ -109,13 +118,49 @@ assert.deepEqual(payload.routing.classifiers[0].reference_phrases, draft.classif
 
 const parsed = router.parseRouterPayload(payload);
 assert.equal(parsed.rules.length, 2);
+assert.equal(parsed.mode, 'rules');
 assert.equal(parsed.classifiers[0].type, 'semantic_similarity');
 assert.equal(parsed.rules[0].condition.operator, 'all');
 
-assert.throws(() => router.parseRouterPayload({
-  version: '1', model_name: 'user.bad', recipe: 'collection.router', components: ['a'],
-  routing: { candidates: ['a'], default_model: 'a', router: { type: 'llm', model: 'a', prompt: 'route' } },
-}), /not supported/i);
+const nlPayload = {
+  version: '1', model_name: 'user.nl', recipe: 'collection.router', components: ['a', 'router-model'],
+  routing: {
+    candidates: ['a'],
+    default_model: 'a',
+    router: { type: 'llm', model: 'router-model', prompt: 'Use a for routine requests.' },
+  },
+};
+const nlDraft = router.parseRouterPayload(nlPayload);
+assert.equal(nlDraft.mode, 'llm');
+assert.equal(nlDraft.llmRouter.model, 'router-model');
+assert.equal(nlDraft.llmRouter.prompt, 'Use a for routine requests.');
+assert.deepEqual(router.validateRouterDraft(nlDraft), []);
+const rebuiltNl = router.buildRouterPullRequest(nlDraft);
+assert.deepEqual(rebuiltNl.routing.router, nlPayload.routing.router);
+assert.equal('rules' in rebuiltNl.routing, false);
+assert.equal('classifiers' in rebuiltNl.routing, false);
+assert.deepEqual(rebuiltNl.components.sort(), ['a', 'router-model']);
+assert.throws(
+  () => router.parseRouterPayload({ ...nlPayload, routing: { ...nlPayload.routing, router: 'llm' } }),
+  /must be an object/,
+);
+assert.throws(
+  () => router.parseRouterPayload({ ...nlPayload, routing: { ...nlPayload.routing, rules: [] } }),
+  /cannot be combined/,
+);
+
+const llmClassifierDraft = structuredClone(draft);
+llmClassifierDraft.classifiers.push({
+  id: 'risk', type: 'llm', model: 'user.fast', prompt: 'Choose SAFE or RISKY.',
+  labels: ['SAFE', 'RISKY'], defaultLabel: 'SAFE', referencePhrases: {}, onError: 'match_false',
+});
+llmClassifierDraft.rules.push({
+  id: 'risky', routeTo: 'user.smart', outputsText: '',
+  condition: { id: 'risk-condition', kind: 'leaf', type: 'classifier', classifierId: 'risk', label: 'RISKY', minScore: 0.5 },
+});
+assert.deepEqual(router.validateRouterDraft(llmClassifierDraft), []);
+const llmClassifierPayload = router.buildRouterPullRequest(llmClassifierDraft);
+assert.equal(llmClassifierPayload.routing.classifiers.find(item => item.id === 'risk').prompt, 'Choose SAFE or RISKY.');
 
 const staleLabel = structuredClone(draft);
 staleLabel.rules[1].condition.label = 'removed';
@@ -147,11 +192,51 @@ assert.match(managerSource, /showRouterEditor \?/);
 assert.match(managerSource, /await onRegister|handleRegisterRouter/);
 assert.match(editorSource, /Save & register/);
 assert.match(editorSource, /await onRegister\(nextRequest\)[\s\S]*upsertRouterRecord/, 'local persistence must happen only after server registration succeeds');
-assert.match(editorSource, /NL Router and LLM classifiers remain hidden/);
+assert.match(editorSource, /Natural-language router/);
+assert.match(editorSource, /addClassifier\('llm'\)/);
+assert.doesNotMatch(editorSource, /issue #2405|remain hidden/i);
 assert.match(nodeEditorSource, /metadataComparator/);
 assert.match(nodeEditorSource, /normalizeRouterNode/);
 assert.match(nodeEditorSource, />AND<|>AND<\/button>/, 'a leaf must be wrappable into a compound rule');
 assert.match(capabilitySource, /collection\.router[^\n]+return 'chat'/);
-assert.doesNotMatch(editorSource, /routingMode|quick rules|advanced rules/i, 'one lossless rule model replaces destructive mode conversion');
+assert.match(editorSource, /Switching modes keeps the other configuration intact/);
+
+
+const providerRows = [{
+  name: 'fireworks',
+  base_url: 'https://api.fireworks.ai/inference/v1',
+  env_var: 'LEMONADE_FIREWORKS_API_KEY',
+  env_var_set: false,
+  runtime_key_set: true,
+  models_discovered: 3,
+  allow_insecure_http: false,
+}];
+const connectionModels = [
+  { id: 'Qwen3-8B-GGUF', model_name: 'Qwen3-8B-GGUF', recipe: 'llamacpp', display_name: 'Qwen 3 8B' },
+  { id: 'fireworks.kimi-k2p5', model_name: 'fireworks.kimi-k2p5', recipe: 'cloud', display_name: 'Kimi K2.5' },
+];
+const localConnection = connections.describeRouterModelConnection('Qwen3-8B-GGUF', connectionModels, providerRows);
+assert.equal(localConnection.kind, 'internal');
+assert.equal(localConnection.backend, 'llamacpp');
+const cloudConnection = connections.describeRouterModelConnection('fireworks.kimi-k2p5', connectionModels, providerRows);
+assert.equal(cloudConnection.kind, 'external');
+assert.equal(cloudConnection.provider, 'fireworks');
+assert.equal(cloudConnection.endpoint, providerRows[0].base_url);
+assert.equal(cloudConnection.authConfigured, true);
+assert.equal(connections.validateProviderEndpoint('https://server.example/v1'), null);
+assert.equal(connections.validateProviderEndpoint('http://127.0.0.1:8000/v1'), null);
+assert.match(connections.validateProviderEndpoint('http://server.example/v1') || '', /explicit insecure HTTP opt-in/);
+assert.equal(connections.validateProviderEndpoint('http://server.example/v1', true), null);
+assert.match(connections.validateProviderEndpoint('file:///tmp/model') || '', /http/);
+assert.match(connections.validateProviderEndpoint('https://user:secret@example.com/v1') || '', /credentials/);
+
+assert.match(editorSource, /Connected model topology/, 'router editor must expose connected model sources');
+assert.match(editorSource, /Edit endpoint/, 'external provider endpoints must be editable from the router editor');
+assert.match(editorSource, /api\.installCloudProvider/, 'endpoint edits must use the provider registry API');
+assert.match(apiSource, /allow_insecure_http: allowInsecureHttp/, 'provider endpoint edits must preserve explicit insecure HTTP policy');
+assert.match(detailSource, /Router settings/, 'saved routers need a router-specific settings summary');
+assert.match(detailSource, /Connected models/, 'saved routers must show connected model topology');
+assert.match(detailSource, /isRouterCollection[\s\S]*collection\.router/, 'router collections must use the persistent settings tab');
+assert.match(managerSource, /openRouterEditor\(model\)/, 'editing a saved router must reopen the router editor');
 
 console.log('GUI3 router editor contract checks passed.');

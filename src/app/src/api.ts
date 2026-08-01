@@ -278,6 +278,7 @@ export interface CloudProviderRow {
   env_var_set: boolean;
   runtime_key_set: boolean;
   models_discovered: number;
+  allow_insecure_http: boolean;
 }
 
 export interface DirectorySettings {
@@ -722,6 +723,7 @@ function normalizeCloudProviderRow(value: unknown): CloudProviderRow | null {
     env_var_set: value.env_var_set === true,
     runtime_key_set: value.runtime_key_set === true,
     models_discovered: typeof value.models_discovered === 'number' ? value.models_discovered : 0,
+    allow_insecure_http: value.allow_insecure_http === true,
   };
 }
 
@@ -1382,11 +1384,17 @@ class LemonadeAPI {
     return providers.map(normalizeCloudProviderRow).filter((row): row is CloudProviderRow => Boolean(row));
   }
 
-  async installCloudProvider(provider: string, baseUrl: string, apiKey?: string): Promise<Record<string, unknown>> {
-    const body: Record<string, string> = {
+  async installCloudProvider(
+    provider: string,
+    baseUrl: string,
+    apiKey?: string,
+    allowInsecureHttp = false,
+  ): Promise<Record<string, unknown>> {
+    const body: Record<string, string | boolean> = {
       backend: 'cloud',
       provider: provider.trim(),
       base_url: baseUrl.trim(),
+      allow_insecure_http: allowInsecureHttp,
     };
     if (apiKey?.trim()) body.api_key = apiKey.trim();
     const result = await this._json<Record<string, unknown>>('/api/v1/install', { method: 'POST', body });

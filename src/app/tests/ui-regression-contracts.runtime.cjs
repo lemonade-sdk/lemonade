@@ -65,7 +65,10 @@ assert.match(mcpClientSource, /server\.Post\("\/internal\/mcp\/servers\/test"/);
 assert.match(mcpClientSource, /enable_server_certificate_verification\(true\)/);
 assert.match(mcpClientSource, /Plain HTTP is allowed only for localhost/);
 assert.match(mcpClientSource, /connect_http\(new_config\)/);
-assert.match(mcpClientSource, /httplib::stream::Post\(/);
+assert.doesNotMatch(mcpClientSource, /httplib::stream/);
+assert.match(mcpClientSource, /httplib::Request request;/);
+assert.match(mcpClientSource, /client\.send\(request\)/);
+assert.match(mcpClientSource, /kMaxMessageBytes - received/);
 assert.match(mcpClientSource, /class SseJsonDecoder/);
 assert.doesNotMatch(mcpClientSource, /Mcp-Method|Mcp-Name/);
 

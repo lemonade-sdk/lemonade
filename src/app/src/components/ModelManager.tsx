@@ -3186,6 +3186,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       ) : (
         <ModelDetailPanel
           model={selectedDetailModel}
+          models={allModels}
           loadedModel={selectedDetailModelId
             ? (displayLoadedModels.find(m => m.model_name === selectedDetailModelId) ?? null)
             : null}
@@ -3203,7 +3204,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           serverDefaultCtxSize={serverDefaultCtxSize}
           isFavorite={selectedDetailModelId ? favoriteNameSet.has(selectedDetailModelId.toLowerCase()) : false}
           onToggleFavorite={toggleFavoriteModel}
-          onEditCustomCollection={openCustomCollectionEditor}
+          onEditCustomCollection={(model) => {
+            if (String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) openRouterEditor(model);
+            else openCustomCollectionEditor(model);
+          }}
           noModelsAvailable={allModels.length === 0}
           hfModel={selectedRemoteModel}
           hfProvider={selectedRemoteProvider}

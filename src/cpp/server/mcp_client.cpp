@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cwchar>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -538,7 +539,6 @@ void configure_http_client(httplib::Client& client, int timeout_ms) {
     client.set_write_timeout(seconds, microseconds);
     client.set_follow_location(false);
     client.set_keep_alive(false);
-    client.set_payload_max_length(kMaxMessageBytes);
 }
 
 httplib::Headers make_http_mcp_headers(const McpServerConfig& raw_config,
@@ -558,23 +558,6 @@ httplib::Headers make_http_mcp_headers(const McpServerConfig& raw_config,
     return headers;
 }
 
-std::string read_http_stream_body(httplib::stream::Result& response,
-                                  std::size_t limit = kMaxMessageBytes) {
-    std::string body;
-    while (response.next()) {
-        if (response.size() > limit - body.size()) {
-            throw std::runtime_error("MCP HTTP response exceeded the size limit");
-        }
-        body.append(response.data(), response.size());
-    }
-    if (response.has_read_error()) {
-        throw std::runtime_error(
-            "Could not read MCP HTTP response (" +
-            httplib::to_string(response.read_error()) + ")");
-    }
-    return body;
-}
-
 HttpMcpReply http_mcp_post(const McpServerConfig& config,
                            const std::string& session_id,
                            const std::string& protocol_version,
@@ -588,17 +571,105 @@ HttpMcpReply http_mcp_post(const McpServerConfig& config,
         client.enable_server_certificate_verification(true);
     }
 
-    const httplib::Headers headers =
+    HttpMcpReply reply;
+    int status = 0;
+    std::string content_type;
+    std::string body;
+    std::size_t received = 0;
+    bool notification_complete = false;
+    bool matching_response_received = false;
+    bool size_limit_exceeded = false;
+    std::exception_ptr receiver_error;
+    SseJsonDecoder sse_decoder;
+
+    httplib::Request request;
+    request.method = "POST";
+    request.path = endpoint.path;
+    request.headers =
         make_http_mcp_headers(config, session_id, protocol_version);
-    auto response = httplib::stream::Post(
-        client, endpoint.path, headers, message.dump(), "application/json");
-    if (!response) {
+    request.headers.emplace("Content-Type", "application/json");
+    request.body = message.dump();
+
+    request.response_handler = [&](const httplib::Response& response) {
+        status = response.status;
+        content_type =
+            lower_ascii(response.get_header_value("Content-Type"));
+        reply.session_id = response.get_header_value("Mcp-Session-Id");
+
+        // Notifications normally return 202 without a body. Some servers keep
+        // an SSE response open for unrelated messages, so stop after receiving
+        // a successful response header rather than waiting for that stream.
+        if (!expected_id && status >= 200 && status < 300) {
+            notification_complete = true;
+            return false;
+        }
+        return true;
+    };
+
+    request.content_receiver =
+        [&](const char* data, std::size_t size, std::size_t,
+            std::size_t) {
+            if (size > kMaxMessageBytes - received) {
+                size_limit_exceeded = true;
+                return false;
+            }
+            received += size;
+
+            try {
+                if (expected_id &&
+                    content_type.find("text/event-stream") !=
+                        std::string::npos) {
+                    for (const auto& candidate :
+                         sse_decoder.feed(data, size)) {
+                        if (json_rpc_id_matches(candidate, *expected_id)) {
+                            reply.message = candidate;
+                            matching_response_received = true;
+                            return false;
+                        }
+                    }
+                } else {
+                    body.append(data, size);
+                }
+            } catch (...) {
+                receiver_error = std::current_exception();
+                return false;
+            }
+            return true;
+        };
+
+    auto response = client.send(request);
+
+    if (receiver_error) std::rethrow_exception(receiver_error);
+    if (size_limit_exceeded) {
+        throw std::runtime_error("MCP HTTP response exceeded the size limit");
+    }
+
+    if (status == 0 && response) {
+        status = response->status;
+        content_type =
+            lower_ascii(response->get_header_value("Content-Type"));
+        reply.session_id = response->get_header_value("Mcp-Session-Id");
+    }
+
+    const bool intentional_cancel =
+        notification_complete || matching_response_received;
+    if (!response && !intentional_cancel) {
         throw std::runtime_error(
             "Could not reach MCP endpoint " + config.url + " (" +
             httplib::to_string(response.error()) + ")");
     }
+    if (response.error() != httplib::Error::Success &&
+        response.error() != httplib::Error::Canceled) {
+        throw std::runtime_error(
+            "Could not read MCP HTTP response (" +
+            httplib::to_string(response.error()) + ")");
+    }
+    if (response.error() == httplib::Error::Canceled &&
+        !intentional_cancel) {
+        throw std::runtime_error(
+            "MCP HTTP response was cancelled before completion");
+    }
 
-    const int status = response.status();
     if (status == 401) {
         throw std::runtime_error(
             "MCP endpoint rejected authentication (HTTP 401)");
@@ -607,54 +678,23 @@ HttpMcpReply http_mcp_post(const McpServerConfig& config,
         throw std::runtime_error("MCP endpoint denied access (HTTP 403)");
     }
     if (status < 200 || status >= 300) {
-        std::string detail = trim(read_http_stream_body(response));
+        std::string detail = trim(body);
         if (detail.size() > 512) detail.resize(512);
         throw std::runtime_error(
             "MCP endpoint returned HTTP " + std::to_string(status) +
             (detail.empty() ? std::string() : ": " + detail));
     }
 
-    HttpMcpReply reply;
-    reply.session_id = response.get_header_value("Mcp-Session-Id");
-    if (!expected_id) {
-        // Notifications normally return 202 with no body. Closing a response
-        // stream here is also correct if a server chooses to keep an SSE stream
-        // open for unrelated server messages.
-        return reply;
-    }
+    if (!expected_id || matching_response_received) return reply;
 
-    const std::string content_type =
-        lower_ascii(response.get_header_value("Content-Type"));
     if (content_type.find("text/event-stream") != std::string::npos) {
-        SseJsonDecoder decoder;
-        std::size_t received = 0;
-        while (response.next()) {
-            if (response.size() > kMaxMessageBytes - received) {
-                throw std::runtime_error(
-                    "MCP HTTP response exceeded the size limit");
-            }
-            received += response.size();
-            for (const auto& candidate :
-                 decoder.feed(response.data(), response.size())) {
-                if (json_rpc_id_matches(candidate, *expected_id)) {
-                    reply.message = candidate;
-                    return reply;
-                }
-            }
-        }
-        if (response.has_read_error()) {
-            throw std::runtime_error(
-                "Could not read MCP SSE response (" +
-                httplib::to_string(response.read_error()) + ")");
-        }
-        for (const auto& candidate : decoder.feed(nullptr, 0, true)) {
+        for (const auto& candidate : sse_decoder.feed(nullptr, 0, true)) {
             if (json_rpc_id_matches(candidate, *expected_id)) {
                 reply.message = candidate;
                 return reply;
             }
         }
     } else {
-        const std::string body = read_http_stream_body(response);
         for (const auto& candidate :
              parse_http_mcp_messages(content_type, body)) {
             if (json_rpc_id_matches(candidate, *expected_id)) {
