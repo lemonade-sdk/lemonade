@@ -18,7 +18,6 @@ Usage:
 
 import json as _json
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import requests
@@ -124,8 +123,8 @@ SEMANTIC_CODING_PROMPT = (
 )
 SEMANTIC_OTHER_PROMPT = "What are some good recipes for a summer picnic by the lake?"
 SEMANTIC_MIN_SCORE = 0.6
-SEMANTIC_WARMUP_ATTEMPTS = 3
-SEMANTIC_ROUTE_ATTEMPTS = 2
+SEMANTIC_CTX_SIZE = 2048
+SEMANTIC_BACKEND = "cpu"
 
 COLLECTION_NAME = "user.Test-Router-Local"
 
@@ -250,113 +249,63 @@ class RouterTests(ServerTestBase):
                 return entry.get("score")
         return None
 
-    def _warm_semantic_model(self):
-        """Prove the semantic dependency can complete an embedding inference.
-
-        A successful `/load` response alone is not a readiness guarantee: the
-        backend may still fail or be evicted before the classifier's first
-        embedding call. Probe the exact endpoint used by semantic routing and
-        require a non-empty vector before making routing assertions.
-        """
-        last_error = "no warmup attempt completed"
-        for attempt in range(1, SEMANTIC_WARMUP_ATTEMPTS + 1):
-            try:
-                load_resp = requests.post(
-                    f"{self.base_url}/load",
-                    json={"model_name": EMBED_MODEL},
-                    timeout=600,
-                )
-            except requests.RequestException as exc:
-                last_error = f"load probe raised {exc!r}"
-            else:
-                if load_resp.status_code != 200:
-                    last_error = (
-                        f"load returned {load_resp.status_code}: "
-                        f"{load_resp.text[:500]}"
-                    )
-                else:
-                    try:
-                        embed_resp = requests.post(
-                            f"{self.base_url}/embeddings",
-                            json={
-                                "model": EMBED_MODEL,
-                                "input": SEMANTIC_CODING_PROMPT,
-                            },
-                            timeout=600,
-                        )
-                    except requests.RequestException as exc:
-                        last_error = f"embedding probe raised {exc!r}"
-                    else:
-                        if embed_resp.status_code == 200:
-                            try:
-                                payload = embed_resp.json()
-                            except ValueError as exc:
-                                last_error = (
-                                    "embedding probe returned invalid JSON: "
-                                    f"{exc}"
-                                )
-                            else:
-                                if not isinstance(payload, dict):
-                                    last_error = (
-                                        "embedding probe returned a non-object "
-                                        f"payload: {payload}"
-                                    )
-                                else:
-                                    data = payload.get("data", [])
-                                    embedding = (
-                                        data[0].get("embedding")
-                                        if isinstance(data, list)
-                                        and data
-                                        and isinstance(data[0], dict)
-                                        else payload.get("embedding")
-                                    )
-                                    if isinstance(embedding, list) and embedding:
-                                        return
-                                    last_error = (
-                                        "embedding probe returned 200 without a "
-                                        f"non-empty embedding: {payload}"
-                                    )
-                        else:
-                            last_error = (
-                                "embedding probe returned "
-                                f"{embed_resp.status_code}: "
-                                f"{embed_resp.text[:500]}"
-                            )
-
-            if attempt < SEMANTIC_WARMUP_ATTEMPTS:
-                time.sleep(1)
-
-        self.fail(
-            f"failed to warm semantic model {EMBED_MODEL} after "
-            f"{SEMANTIC_WARMUP_ATTEMPTS} attempts: {last_error}"
+    def _load_semantic_model(self):
+        """Load the embedding dependency with deterministic test settings."""
+        resp = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": EMBED_MODEL,
+                "ctx_size": SEMANTIC_CTX_SIZE,
+                "llamacpp_backend": SEMANTIC_BACKEND,
+                "pinned": True,
+                "save_options": False,
+            },
+            timeout=600,
+        )
+        self.assertEqual(
+            resp.status_code,
+            200,
+            "failed to load semantic model with deterministic settings "
+            f"(backend={SEMANTIC_BACKEND}, ctx_size={SEMANTIC_CTX_SIZE}): "
+            f"{resp.text}",
         )
 
-    def _route_semantic_with_recovery(self, prompt, collection):
-        """Retry only the known transient classifier-service failure.
+        resp = requests.post(
+            f"{self.base_url}/embeddings",
+            json={"model": EMBED_MODEL, "input": SEMANTIC_CODING_PROMPT},
+            timeout=600,
+        )
+        self.assertEqual(
+            resp.status_code,
+            200,
+            f"semantic embedding readiness probe failed: {resp.text}",
+        )
+        try:
+            payload = resp.json()
+        except ValueError as exc:
+            self.fail(f"semantic embedding probe returned invalid JSON: {exc}")
+        data = payload.get("data", []) if isinstance(payload, dict) else []
+        embedding = (
+            data[0].get("embedding")
+            if data and isinstance(data[0], dict)
+            else payload.get("embedding") if isinstance(payload, dict) else None
+        )
+        self.assertTrue(
+            isinstance(embedding, list) and embedding,
+            f"semantic embedding probe returned no vector: {payload}",
+        )
 
-        SemanticSimilarityClassifier represents an embedding exception as a
-        trace entry with no numeric score and then falls through according to
-        `on_error`. A numeric score, even an unexpected one, is a real routing
-        result and must never be retried or hidden by this helper.
-        """
-        last_decision = None
-        for attempt in range(1, SEMANTIC_ROUTE_ATTEMPTS + 1):
-            _, decision, data = self._route(prompt, collection=collection)
-            score = self._classifier_score(decision, "topic")
-            if score is not None:
-                return decision, data, score
-
-            last_decision = decision
-            if attempt < SEMANTIC_ROUTE_ATTEMPTS:
-                print(
-                    "[WARN] semantic classifier produced no score; "
-                    "re-warming its embedding dependency and retrying once"
-                )
-                self._warm_semantic_model()
-
-        self.fail(
-            "semantic classifier produced no numeric score after targeted "
-            f"recovery; last decision: {last_decision}"
+    def _unload_semantic_model(self):
+        """Release the pinned embedding model after each semantic test."""
+        resp = requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": EMBED_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn(
+            resp.status_code,
+            (200, 404),
+            f"failed to unload semantic model {EMBED_MODEL}: {resp.text}",
         )
 
     def test_600_default_fallthrough(self):
@@ -559,7 +508,6 @@ class RouterTests(ServerTestBase):
         this test measures routing behavior rather than cold-start lifecycle.
         """
         pull_model_with_retry(EMBED_MODEL)
-        self._warm_semantic_model()
         collection = "user.Test-Router-Semantic"
         policy = {
             "version": "1",
@@ -592,16 +540,22 @@ class RouterTests(ServerTestBase):
                 ],
             },
         }
-        resp = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
-        )
-        self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
-
         try:
+            self._load_semantic_model()
+            resp = requests.post(
+                f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
+            )
+            self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
+
             # A semantically coding prompt -> capable.
-            decision, _, coding_score = self._route_semantic_with_recovery(
+            _, decision, _ = self._route(
                 SEMANTIC_CODING_PROMPT,
-                collection,
+                collection=collection,
+            )
+            coding_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                coding_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
             )
             self.assertGreaterEqual(
                 coding_score,
@@ -620,9 +574,14 @@ class RouterTests(ServerTestBase):
             )
 
             # An unrelated prompt scores below threshold -> default.
-            decision, _, other_score = self._route_semantic_with_recovery(
+            _, decision, _ = self._route(
                 SEMANTIC_OTHER_PROMPT,
-                collection,
+                collection=collection,
+            )
+            other_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                other_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
             )
             self.assertLess(
                 other_score,
@@ -640,7 +599,10 @@ class RouterTests(ServerTestBase):
                 f"-> {DEFAULT_MODEL}"
             )
         finally:
-            self._delete_collection(collection)
+            try:
+                self._delete_collection(collection)
+            finally:
+                self._unload_semantic_model()
 
     def test_621_semantic_similarity_cloud_candidate(self):
         """A `semantic_similarity` match routes to a *cloud* candidate.
@@ -651,7 +613,6 @@ class RouterTests(ServerTestBase):
         query goes to the cloud model; an unrelated query stays local.
         """
         pull_model_with_retry(EMBED_MODEL)
-        self._warm_semantic_model()
         provider = "testsemcloud"
         upstream_id = "vendor/sem-cloud-model"
         marker = "answered-by-cloud-provider"
@@ -659,6 +620,7 @@ class RouterTests(ServerTestBase):
 
         base_url, stop_provider = start_mock_cloud_provider([upstream_id], marker)
         try:
+            self._load_semantic_model()
             resp = requests.post(
                 f"{self.base_url}/install",
                 json={
@@ -731,9 +693,14 @@ class RouterTests(ServerTestBase):
             self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
 
             # Semantically coding -> cloud candidate, answered by the mock provider.
-            decision, data, coding_score = self._route_semantic_with_recovery(
+            _, decision, data = self._route(
                 SEMANTIC_CODING_PROMPT,
-                collection,
+                collection=collection,
+            )
+            coding_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                coding_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
             )
             self.assertGreaterEqual(
                 coding_score,
@@ -757,9 +724,14 @@ class RouterTests(ServerTestBase):
             )
 
             # Unrelated -> stays local (default).
-            decision, _, other_score = self._route_semantic_with_recovery(
+            _, decision, _ = self._route(
                 SEMANTIC_OTHER_PROMPT,
-                collection,
+                collection=collection,
+            )
+            other_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                other_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
             )
             self.assertLess(
                 other_score,
@@ -777,7 +749,10 @@ class RouterTests(ServerTestBase):
                 f"-> {DEFAULT_MODEL} (local default)"
             )
         finally:
-            self._delete_collection(collection)
+            try:
+                self._delete_collection(collection)
+            finally:
+                self._unload_semantic_model()
             requests.delete(
                 f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
             )
