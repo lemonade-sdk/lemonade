@@ -37,7 +37,7 @@ import { activeDownloadForModel, downloadsForModel, downloadStore, isDownloadTer
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { buildOmniToolRuntime } from '../tools/omniTools';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOLS, MAX_MCP_SERVER_SELECTION, buildSelectedMcpRuntime, composeMcpRuntimes, listMcpServerToolOptions, type McpServerToolOption } from '../tools/mcpRuntime';
-import { loadModelTuning } from '../modelConfiguration';
+import { DEFAULT_CONTEXT_SIZE, loadModelTuning } from '../modelConfiguration';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import {
   LEMONADE_DEFAULT_CHAT_MODELS,
@@ -772,12 +772,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const downloadAvailabilityKeyRef = useRef(chatBlockingDownloadsKey(downloadItems));
   const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
   const [effectiveSettingsOpen, setEffectiveSettingsOpen] = useState(false);
+  const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState(DEFAULT_CONTEXT_SIZE);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
-  const mcpReturnFocusEntryRef = useRef<'tools'>('tools');
+  const mcpReturnFocusEntryRef = useRef<'lemonade' | 'external'>('lemonade');
   const mcpBackButtonRef = useRef<HTMLButtonElement | null>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
@@ -805,6 +806,28 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   useEffect(() => () => {
     generatedMediaUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
     generatedMediaUrlsRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshDefaultContextSize = async () => {
+      try {
+        const value = await api.getDefaultContextSize();
+        if (!cancelled) setServerDefaultCtxSize(typeof value === 'number' ? value : DEFAULT_CONTEXT_SIZE);
+      } catch {
+        if (!cancelled) setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
+      }
+    };
+
+    void refreshDefaultContextSize();
+    const unsubscribe = api.onStatusChange(status => {
+      if (status === 'connected') void refreshDefaultContextSize();
+      else if (!cancelled) setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -1327,9 +1350,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     if (!useMcp) persistMcpEnabled(true);
   }, [mcpOptions, persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet, selectedMcpServerIds, selectedMcpToolNames, useMcp]);
 
-  const openMcpPicker = useCallback(() => {
-    mcpReturnFocusEntryRef.current = 'tools';
-    setMcpPickerTab('lemonade');
+  const openMcpPicker = useCallback((tab: 'lemonade' | 'external') => {
+    mcpReturnFocusEntryRef.current = tab;
+    setMcpPickerTab(tab);
     setMcpPickerOpen(true);
   }, []);
 
@@ -3320,6 +3343,7 @@ ${finalText}`
             recipe={currentRecipe}
             mcpEnabled={useMcp}
             mcpServerIds={selectedMcpServerIds}
+            fallbackCtxSize={serverDefaultCtxSize}
             loadedModel={currentLoadedModel}
             isModelLoaded={!!currentLoadedModel}
             onReload={async () => {
@@ -3714,17 +3738,32 @@ ${finalText}`
                 </button>
                 <button
                   type="button"
-                  className={`composer__add-row${mcpPickerOpen ? ' is-active' : ''}`}
+                  className="composer__add-row"
                   role="menuitem"
-                  data-mcp-entry="tools"
-                  onClick={openMcpPicker}
+                  data-mcp-entry="lemonade"
+                  onClick={() => openMcpPicker('lemonade')}
                   disabled={!modeSupportsMcp}
-                  aria-pressed={mcpPickerOpen}
+                  aria-label="Lemonade tools"
                 >
                   <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Configure tools</strong>
-                    <small>{useMcp ? `${selectedMcpToolCount} selected tool${selectedMcpToolCount === 1 ? '' : 's'}` : 'Lemonade tools and external MCP servers'}</small>
+                    <strong>Lemonade tools</strong>
+                    <small>{useMcp ? `${selectedMcpToolCount} selected tool${selectedMcpToolCount === 1 ? '' : 's'}` : 'Built-in tools for this chat'}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="composer__add-row"
+                  role="menuitem"
+                  data-mcp-entry="external"
+                  onClick={() => openMcpPicker('external')}
+                  disabled={!modeSupportsMcp}
+                  aria-label="External MCP servers"
+                >
+                  <span className="composer__add-icon"><Icon name="plug" size={16} /></span>
+                  <span className="composer__add-text">
+                    <strong>External MCP servers</strong>
+                    <small>Connected tool servers</small>
                   </span>
                 </button>
               </div>

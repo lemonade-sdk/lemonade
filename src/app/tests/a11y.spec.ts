@@ -34,10 +34,10 @@ async function navigateToView(page: Page, label: string): Promise<void> {
 }
 
 async function navigateToMonitorSection(page: Page, label: 'Performance' | 'Telemetry' | 'Logs'): Promise<void> {
-  await navigateToView(page, 'Dashboard');
+  await navigateToView(page, 'Monitor');
   await page.waitForSelector('[data-view="dashboard"]');
   if (label !== 'Performance') {
-    await page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: label, exact: true }).click();
+    await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: label, exact: true }).click();
     await page.waitForTimeout(300);
   }
 }
@@ -147,7 +147,7 @@ test.describe('Accessibility — axe-core automated scans', () => {
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 
-  test('A05 — Dashboard performance passes WCAG 2.1 AA', async ({ page }) => {
+  test('A05 — Monitor performance passes WCAG 2.1 AA', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToMonitorSection(page, 'Performance');
@@ -272,7 +272,7 @@ test.describe('Accessibility — keyboard navigation', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    const knownNavLabels = ['Chat', 'Models', 'Backends', 'Dashboard', 'Settings'];
+    const knownNavLabels = ['Chat', 'Models', 'Backends', 'Monitor', 'Settings'];
     const encountered: string[] = [];
 
     for (let i = 0; i < 12; i++) {

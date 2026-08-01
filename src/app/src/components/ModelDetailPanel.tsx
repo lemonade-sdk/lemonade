@@ -25,6 +25,7 @@ import {
   WorkspaceMetadataChip,
 } from './WorkspacePanels';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
+import { TTS_VOICES } from '../features/audio/ttsSettings';
 
 /* ── Helpers (local copies to keep component self-contained) ──── */
 
@@ -92,6 +93,68 @@ function recipesForDisplay(model: ModelInfo | null | undefined): string[] {
     if (name && !out.includes(name)) out.push(name);
   }
   return out;
+}
+
+interface VoiceOption {
+  id: string;
+  label: string;
+}
+
+function voiceOptionsFromValue(value: unknown): VoiceOption[] {
+  const isArray = Array.isArray(value);
+  const rawEntries: Array<[string, unknown]> = isArray
+    ? value.map((item, index) => [String(index), item])
+    : value && typeof value === 'object'
+      ? Object.entries(value as Record<string, unknown>)
+      : [];
+
+  const options: VoiceOption[] = [];
+  for (const [fallbackId, item] of rawEntries) {
+    if (typeof item === 'string') {
+      const text = item.trim();
+      if (!text) continue;
+      options.push(isArray ? { id: text, label: text } : { id: fallbackId, label: text });
+      continue;
+    }
+    if (!item || typeof item !== 'object') continue;
+    const entry = item as Record<string, unknown>;
+    const id = String(entry.id ?? entry.value ?? entry.name ?? fallbackId).trim();
+    if (!id) continue;
+    const label = String(entry.label ?? entry.display_name ?? entry.name ?? id).trim() || id;
+    options.push({ id, label });
+  }
+  return options;
+}
+
+function knownVoiceOptionsForModel(model: ModelInfo): VoiceOption[] {
+  const modelRecord = model as Record<string, unknown>;
+  const recipes = Array.isArray(model.recipes) ? model.recipes : [];
+  const records = [
+    modelRecord,
+    modelRecord.recipe_options,
+    modelRecord.options,
+    modelRecord.tts,
+    ...recipes,
+  ].filter((value): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value));
+
+  const discovered: VoiceOption[] = [];
+  for (const record of records) {
+    for (const key of ['voices', 'available_voices', 'voice_options']) {
+      discovered.push(...voiceOptionsFromValue(record[key]));
+    }
+  }
+
+  if (discovered.length === 0 && recipesForDisplay(model).includes('kokoro')) {
+    discovered.push(...TTS_VOICES);
+  }
+
+  const seen = new Set<string>();
+  return discovered.filter(option => {
+    const normalized = option.id.toLowerCase();
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
 }
 
 function tuningValue(value: unknown): string {
@@ -948,9 +1011,12 @@ const ModelConfigurationTab: React.FC<{
     [model, serverDefaultCtxSize],
   );
   const recipeKeys = useMemo(() => tuningKeysForModel(model), [model]);
+  const knownVoiceOptions = useMemo(() => knownVoiceOptionsForModel(model), [model]);
+  const knownVoiceIds = useMemo(() => new Set(knownVoiceOptions.map(option => option.id.toLowerCase())), [knownVoiceOptions]);
 
   const [ctxSizeDraft, setCtxSizeDraft] = useState('');
   const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
+  const [customVoiceMode, setCustomVoiceMode] = useState(false);
 
   const loadSettingsDraftFromStore = useCallback(() => {
     const userTuning = loadModelTuning(name);
@@ -969,7 +1035,9 @@ const ModelConfigurationTab: React.FC<{
     const next = loadSettingsDraftFromStore();
     setCtxSizeDraft(next.ctxSize);
     setRecipeDraft(next.recipe);
-  }, [loadSettingsDraftFromStore]);
+    const storedVoice = next.recipe.voice || '';
+    setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
+  }, [knownVoiceIds, loadSettingsDraftFromStore]);
 
   useEffect(() => { loadFromStore(); }, [loadFromStore]);
   useEffect(() => { setNotice(null); }, [name]);
@@ -991,7 +1059,9 @@ const ModelConfigurationTab: React.FC<{
     const n = parseNumberOrUndefined(String(value ?? ''));
     return n !== undefined && n >= ctxMin ? n : undefined;
   };
-  const baseCtxSize = positiveCtxValue(baseTuning.recipe_options.ctx_size)
+  const loadedCtxSize = positiveCtxValue(loadedModel?.recipe_options?.ctx_size);
+  const baseCtxSize = loadedCtxSize
+    ?? positiveCtxValue(baseTuning.recipe_options.ctx_size)
     ?? positiveCtxValue(serverDefaultCtxSize)
     ?? 4096;
   const isAutoTuning = ctxSizeDraft === '-1';
@@ -1001,6 +1071,14 @@ const ModelConfigurationTab: React.FC<{
     currentCtxSize,
     Number(model?.max_context_window) || 131072,
   );
+  const stepContextSize = (direction: -1 | 1) => {
+    if (isAutoTuning) return;
+    const nextValue = Math.min(
+      ctxMax,
+      Math.max(ctxMin, currentCtxSize + direction * ctxStep),
+    );
+    setCtxSizeDraft(String(nextValue));
+  };
   const selectorKeys = recipeKeys.filter(key => BACKEND_TUNING_KEYS.has(key) || DEVICE_TUNING_KEYS.has(key));
   const argsKeys = recipeKeys.filter(key => ARGS_TUNING_KEYS.has(key));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
@@ -1046,6 +1124,7 @@ const ModelConfigurationTab: React.FC<{
     }
     setCtxSizeDraft('');
     setRecipeDraft({});
+    setCustomVoiceMode(false);
     setNotice('Load settings reset to built-in defaults.');
   };
 
@@ -1127,6 +1206,57 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
+    if (key === 'voice' && knownVoiceOptions.length > 0) {
+      const customVoiceSentinel = '__custom_voice__';
+      const isUnknownDraft = Boolean(draftValue && !knownVoiceIds.has(draftValue.toLowerCase()));
+      const showCustomVoice = customVoiceMode || isUnknownDraft;
+      const defaultVoice = optionalDisplayValue(baseValue);
+      return (
+        <div key={String(key)} className="detail-tuning__field detail-configuration__field">
+          <span id={`${fieldId}-label`}>{label}</span>
+          <select
+            id={fieldId}
+            className="select detail-configuration__select"
+            value={showCustomVoice ? customVoiceSentinel : draftValue}
+            aria-labelledby={`${fieldId}-label`}
+            onChange={event => {
+              const value = event.target.value;
+              if (value === customVoiceSentinel) {
+                setCustomVoiceMode(true);
+                setRecipeDraft(previous => ({
+                  ...previous,
+                  [String(key)]: previous[String(key)] && !knownVoiceIds.has(previous[String(key)].toLowerCase())
+                    ? previous[String(key)]
+                    : '',
+                }));
+                return;
+              }
+              setCustomVoiceMode(false);
+              setRecipeDraft(previous => ({ ...previous, [String(key)]: value }));
+            }}
+          >
+            <option value="">{defaultVoice ? `Model default (${defaultVoice})` : 'Model default'}</option>
+            {knownVoiceOptions.map(option => (
+              <option key={option.id} value={option.id}>{option.label}</option>
+            ))}
+            <option value={customVoiceSentinel}>Custom voice…</option>
+          </select>
+          {showCustomVoice && (
+            <input
+              id={`${fieldId}-custom`}
+              className="input detail-configuration__voice-custom"
+              type="text"
+              value={isUnknownDraft ? draftValue : ''}
+              placeholder="Enter custom voice ID"
+              aria-label="Custom voice ID"
+              onChange={event => setRecipeDraft(previous => ({ ...previous, [String(key)]: event.target.value }))}
+            />
+          )}
+          <small>Choose a known voice, or use a custom voice ID when the backend supports one.</small>
+        </div>
+      );
+    }
+
     if (ARGS_TUNING_KEYS.has(key)) {
       const hint = TUNING_FIELD_HINTS[key];
       const defaultPlaceholders: Partial<Record<keyof RecipeOptions, string>> = {
@@ -1196,19 +1326,39 @@ const ModelConfigurationTab: React.FC<{
             <div className="detail-configuration__context-card">
               <div className="detail-configuration__control-head">
                 <label htmlFor={ctxSliderId}>Context size</label>
-                <input
-                  id={ctxSizeId}
-                  className="input detail-configuration__context-input"
-                  type="number"
-                  min={ctxMin}
-                  max={ctxMax}
-                  step={ctxStep}
-                  value={ctxSizeDraft}
-                  placeholder={String(baseCtxSize)}
-                  onChange={e => setCtxSizeDraft(e.target.value)}
-                  aria-label="Context size tokens"
-                  disabled={isAutoTuning}
-                />
+                <div className="detail-configuration__context-number">
+                  <input
+                    id={ctxSizeId}
+                    className="input detail-configuration__context-input"
+                    type="number"
+                    min={ctxMin}
+                    max={ctxMax}
+                    step={ctxStep}
+                    value={ctxSizeDraft}
+                    placeholder={String(baseCtxSize)}
+                    onChange={e => setCtxSizeDraft(e.target.value)}
+                    aria-label="Context size tokens"
+                    disabled={isAutoTuning}
+                  />
+                  <span className="detail-configuration__context-stepper">
+                    <button
+                      type="button"
+                      onClick={() => stepContextSize(1)}
+                      disabled={isAutoTuning || currentCtxSize >= ctxMax}
+                      aria-label={`Increase context size by ${ctxStep} tokens`}
+                    >
+                      <Icon name="chevron-up" size={11} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => stepContextSize(-1)}
+                      disabled={isAutoTuning || currentCtxSize <= ctxMin}
+                      aria-label={`Decrease context size by ${ctxStep} tokens`}
+                    >
+                      <Icon name="chevron-down" size={11} aria-hidden="true" />
+                    </button>
+                  </span>
+                </div>
               </div>
               <label
                 className="detail-configuration__autotune"

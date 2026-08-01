@@ -39,7 +39,7 @@ const NAVIGATION_DESTINATIONS: Array<{
   { id: 'models', label: 'Models', keywords: 'model manager download load', icon: 'hard-drive' },
   { id: 'backends', label: 'Backends', keywords: 'runtime inference engine', icon: 'box' },
   { id: 'apps', label: 'Apps', keywords: 'clients integrations', icon: 'layers' },
-  { id: 'dashboard', label: 'Dashboard', keywords: 'monitor system hardware statistics', icon: 'gauge' },
+  { id: 'dashboard', label: 'Monitor', keywords: 'dashboard monitor system hardware statistics', icon: 'gauge' },
   { id: 'connect', label: 'Settings', keywords: 'connect configuration preferences server', icon: 'settings' },
 ];
 
@@ -550,7 +550,7 @@ const App: React.FC = () => {
     return () => { unsubStatus(); unsubModels(); };
   }, [applyLoadedModels]);
 
-  // App-level health polling: skip when Dashboard is active (it polls every 2s)
+  // App-level health polling: skip when Monitor is active (it polls every 2s)
   useEffect(() => {
     if (view === 'dashboard') {
       api.stopPolling();
@@ -574,11 +574,11 @@ const App: React.FC = () => {
     <>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <header className={`titlebar${view === 'chat' ? ' titlebar--chat' : ''}`} data-tauri-drag-region>
+        <header className="titlebar" data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
           <span className="titlebar__brand-logo" data-tauri-drag-region>
             <span className="titlebar__brand-icon" aria-hidden="true" />
-            <span className="titlebar__brand-name">Lemonade</span>
+            <span className="titlebar__brand-name">lemonade</span>
           </span>
           <span className={`titlebar__status-dot titlebar__status-dot--brand ${
             status === 'connected' ? 'titlebar__status-dot--connected' :
@@ -606,9 +606,14 @@ const App: React.FC = () => {
             value={navigationSearch}
             placeholder="Search Lemonade"
             aria-label="Search Lemonade"
+            role="combobox"
             aria-autocomplete="list"
+            aria-haspopup="listbox"
             aria-expanded={navigationSearchOpen}
-            aria-controls="titlebar-search-results"
+            aria-controls={navigationSearchOpen ? 'titlebar-search-results' : undefined}
+            aria-activedescendant={navigationSearchOpen && navigationSearchResults[navigationSearchIndex]
+              ? `titlebar-search-result-${navigationSearchResults[navigationSearchIndex].id.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+              : undefined}
             onFocus={() => setNavigationSearchOpen(true)}
             onChange={event => {
               setNavigationSearch(event.target.value);
@@ -641,6 +646,7 @@ const App: React.FC = () => {
               {navigationSearchResults.length > 0 ? navigationSearchResults.map((destination, index) => (
                 <button
                   key={destination.id}
+                  id={`titlebar-search-result-${destination.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`}
                   type="button"
                   role="option"
                   aria-selected={index === navigationSearchIndex}

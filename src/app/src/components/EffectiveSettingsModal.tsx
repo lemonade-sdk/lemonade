@@ -76,6 +76,15 @@ function displayValue(value: unknown): string {
   return String(value);
 }
 
+function positiveContextSize(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+}
+
+function isAutoContextSize(value: unknown): boolean {
+  return value === 'auto' || Number(value) === -1;
+}
+
 function shellQuote(token: string): string {
   if (token === '') return "''";
   if (/^[A-Za-z0-9_\-./:=@]+$/.test(token)) return token;
@@ -287,6 +296,37 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     }
   }, [modelName, isModelLoaded, onReload, loadEffective]);
 
+  const contextSetting = useMemo(() => {
+    const runtimeContext = positiveContextSize(loadedContextSize);
+    if (runtimeContext !== null) {
+      return { value: runtimeContext.toLocaleString(), source: 'Runtime' };
+    }
+
+    const effectiveContext = positiveContextSize(effective?.options?.ctx_size);
+    if (effectiveContext !== null) {
+      return {
+        value: effectiveContext.toLocaleString(),
+        source: effective?.ctx_size_auto_resolved ? 'Auto estimate' : 'Effective load',
+      };
+    }
+
+    const resolvedContextRaw = resolved?.tuning.recipe_options?.ctx_size;
+    const resolvedContext = positiveContextSize(resolvedContextRaw);
+    if (resolvedContext !== null) {
+      return {
+        value: resolvedContext.toLocaleString(),
+        source: sourceLabel(resolved?.sources.recipe_options.ctx_size),
+      };
+    }
+
+    if (isAutoContextSize(effective?.options?.ctx_size) || isAutoContextSize(resolvedContextRaw)) {
+      return { value: 'Auto (resolved on load)', source: 'Auto tune' };
+    }
+
+    if (loadedModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
+    return { value: 'Unavailable', source: 'Configuration' };
+  }, [effective, loadedContextSize, loadedModel, resolved, resolvingContextSize]);
+
   const sourceRows = useMemo<SourceRow[]>(() => {
     if (!resolved) return [];
     const rows: SourceRow[] = [];
@@ -360,8 +400,8 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <div className="effective-settings__rows">
               <div className="effective-settings__row">
                 <span className="effective-settings__row-label">Context size</span>
-                <span className="effective-settings__row-value">{loadedContextSize ? loadedContextSize.toLocaleString() : (loadedModel ? (resolvingContextSize ? 'Resolving…' : 'Unavailable') : 'Not loaded')}</span>
-                <span className="effective-settings__source effective-settings__source--generic">Runtime</span>
+                <span className="effective-settings__row-value">{contextSetting.value}</span>
+                <span className="effective-settings__source effective-settings__source--generic">{contextSetting.source}</span>
               </div>
               <div className="effective-settings__row">
                 <span className="effective-settings__row-label">MCP servers</span>

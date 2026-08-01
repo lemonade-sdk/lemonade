@@ -245,8 +245,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
               icon={paused ? 'play' : 'pause'}
               className={`dash2-bar__btn${paused ? ' is-paused' : ''}`}
               onClick={() => setPaused(p => !p)}
-              title={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
-              aria-label={paused ? 'Resume dashboard updates' : 'Pause dashboard updates'}
+              title={paused ? 'Resume monitor updates' : 'Pause monitor updates'}
+              aria-label={paused ? 'Resume monitor updates' : 'Pause monitor updates'}
               data-dashboard-poll-toggle>
               {paused ? 'Resume' : 'Pause'}
             </WorkspaceActionButton>

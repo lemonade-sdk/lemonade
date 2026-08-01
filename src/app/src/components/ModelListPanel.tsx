@@ -19,7 +19,7 @@ import type { IconName } from './Icon';
 import type { CapabilityIconTarget } from './Icon';
 import { activeDownloadForModel, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceListPanel } from './WorkspacePanels';
-import { backendColor, backendCompactLabel } from '../modelPresentation';
+import { backendColor, backendCompactLabel, backendLabel } from '../modelPresentation';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -39,6 +39,10 @@ function listFmtSize(gb: number): string {
 }
 
 export const listRecipeBadgeText = backendCompactLabel;
+
+function modelListBackendLabel(recipe: string): string {
+  return backendCompactLabel(recipe).toUpperCase();
+}
 
 type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
 
@@ -823,6 +827,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           const mId = listModelName(model);
           const displayName = listModelDisplayName(model);
           const recipe = String((model as any).recipe || '');
+          const displayedBackend = recipe ? modelListBackendLabel(recipe) : '';
           const isSelected = mId === selectedModelId;
           const capTags = modelCapabilityTags(model);
 
@@ -837,20 +842,9 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               className={`model-list-item${isSelected ? ' model-list-item--selected' : ''}${pinned ? ' model-list-item--pinned' : ''} model-list-item--${status}`}
               onClick={() => onSelectModel(mId)}
               onKeyDown={e => handleItemKeyDown(e, mId)}
-              aria-label={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${recipe ? `, ${listRecipeBadgeText(recipe)}` : ''}`}
+              aria-label={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${displayedBackend ? `, ${displayedBackend}` : ''}`}
             >
-              {/* Backend badge */}
-              {recipe && (
-                <span
-                  className="model-list-item__backend"
-                  style={{ '--list-backend-color': backendColor(recipe) } as React.CSSProperties}
-                  aria-hidden="true"
-                >
-                  {listRecipeBadgeText(recipe)}
-                </span>
-              )}
-
-              {/* Name + meta */}
+              {/* Name + meta stay left-aligned across every row. */}
               <span className="model-list-item__body">
                 <span className="model-list-item__name">{displayName}</span>
                 <span className="model-list-item__meta">
@@ -866,6 +860,18 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                   </span>
                 </span>
               </span>
+
+              {/* Compact backend plate in a controlled right-hand column. */}
+              {recipe && (
+                <span
+                  className="model-list-item__backend"
+                  style={{ '--list-backend-color': backendColor(recipe) } as React.CSSProperties}
+                  title={backendLabel(recipe)}
+                  aria-hidden="true"
+                >
+                  {displayedBackend}
+                </span>
+              )}
 
               {/* Status indicator */}
               <span className="model-list-item__status" aria-hidden="true">

@@ -35,7 +35,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(nav.getByText('Chat')).toBeVisible();
     await expect(nav.getByText('Models')).toBeVisible();
     await expect(nav.getByText('Backends')).toBeVisible();
-    await expect(nav.getByText('Dashboard')).toBeVisible();
+    await expect(nav.getByText('Monitor')).toBeVisible();
     await expect(nav.getByText('Settings')).toBeVisible();
 
     // Status dot visible
@@ -46,11 +46,11 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
   // The tray and CLI deep-link into the app with `?view=<workspace>/<section>`
   // (tray_ui.cpp on_show_logs, cli/main.cpp logs). Those routes must resolve.
-  test('01a0 — host deep links address Dashboard sections directly', async ({ page }) => {
+  test('01a0 — host deep links address Monitor sections directly', async ({ page }) => {
     await page.goto('/?view=dashboard/logs');
     await page.waitForSelector('[data-view="dashboard"]');
     await expect(page).toHaveURL(/#\/dashboard\/logs$/);
-    await expect(page.getByRole('navigation', { name: 'Dashboard sections' })
+    await expect(page.getByRole('navigation', { name: 'Monitor sections' })
       .getByRole('button', { name: 'Logs', exact: true })).toHaveAttribute('aria-current', 'page');
 
     await page.goto('/?view=dashboard/telemetry');
@@ -58,20 +58,20 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
   });
 
-  test('01a — Dashboard labels and URL sections stay aligned', async ({ page }) => {
+  test('01a — Monitor labels and URL sections stay aligned', async ({ page }) => {
     await page.goto('/#/dashboard/telemetry');
     await page.waitForSelector('[data-view="dashboard"]');
 
     await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
-    await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toBeVisible();
+    await expect(page.locator('.titlebar__nav').getByText('Monitor')).toBeVisible();
     await expect(page.locator('.monitor-rail .workspace-rail__title')).toHaveText('Views');
-    const dashboardSections = page.getByRole('navigation', { name: 'Dashboard sections' });
+    const dashboardSections = page.getByRole('navigation', { name: 'Monitor sections' });
     await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
     await dashboardSections.getByRole('button', { name: 'Performance', exact: true }).click();
     await expect(page).toHaveURL(/#\/dashboard\/performance$/);
     await dashboardSections.getByRole('button', { name: 'Logs', exact: true }).click();
     await expect(page).toHaveURL(/#\/dashboard\/logs$/);
-    await expect(page.locator('.titlebar__nav').getByText('Monitor')).toHaveCount(0);
+    await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toHaveCount(0);
     await expect(page.locator('.titlebar__nav').getByText('Inspect')).toHaveCount(0);
     await expect(page.locator('.titlebar__nav').getByText('Logs')).toHaveCount(0);
 
@@ -79,7 +79,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page).toHaveURL(/#\/dashboard\/logs$/);
   });
 
-  test('01b — Dashboard and Connect share routed section navigation', async ({ page }) => {
+  test('01b — Monitor and Settings share routed section navigation', async ({ page }) => {
     await page.goto('/#/connect/cloud-providers');
     await page.waitForSelector('[data-view="connect"]');
 
@@ -101,8 +101,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
       await expect(page.locator('#connect-pane-title')).toHaveText(label);
     }
 
-    await page.locator('.titlebar__nav').getByRole('button', { name: 'Dashboard', exact: true }).click();
-    const dashboardSections = page.getByRole('navigation', { name: 'Dashboard sections' });
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Monitor', exact: true }).click();
+    const dashboardSections = page.getByRole('navigation', { name: 'Monitor sections' });
     await dashboardSections.getByRole('button', { name: 'Telemetry', exact: true }).click();
     await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
 
@@ -508,7 +508,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
         visibleControls: ['All Models', 'Downloaded', 'My Models', 'Favorites'],
       },
       { tab: 'Backends', trigger: 'Open backend filters', dialog: 'Backend filters' },
-      { tab: 'Dashboard', trigger: 'Open dashboard views', dialog: 'Dashboard navigation' },
+      { tab: 'Monitor', trigger: 'Open monitor views', dialog: 'Monitor navigation' },
       { tab: 'Settings', trigger: 'Open connection settings', dialog: 'Connection settings' },
     ];
 
@@ -619,20 +619,20 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/14-backends-view.png', fullPage: true });
   });
 
-  test('15 — Dashboard performance shows system gauges and scrollable graphs', async ({ page }) => {
+  test('15 — Monitor performance shows system gauges and scrollable graphs', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    // Dashboard nav button exists
-    await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toBeVisible();
+    // Monitor nav button exists
+    await expect(page.locator('.titlebar__nav').getByText('Monitor')).toBeVisible();
 
-    // Navigate to Dashboard performance
-    await page.locator('.titlebar__nav').getByText('Dashboard').click();
+    // Navigate to Monitor performance
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
     await page.waitForSelector('[data-view="dashboard"]');
 
     // Performance header and navigation visible
     await expect(page.locator('.dashboard-header').getByRole('heading', { name: 'Performance' })).toBeVisible();
-    await expect(page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: 'Performance', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Performance', exact: true })).toHaveAttribute('aria-current', 'page');
 
     // Connection indicator dot
     await expect(page.locator('.dash2-bar__dot')).toBeVisible();
@@ -679,14 +679,14 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/15-dashboard.png', fullPage: true });
   });
 
-  test('16 — Dashboard logs shows filters and live output', async ({ page }) => {
+  test('16 — Monitor logs shows filters and live output', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    await page.locator('.titlebar__nav').getByText('Dashboard').click();
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
     await page.waitForSelector('[data-view="dashboard"]');
 
-    await page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
     await page.waitForSelector('[data-view="logs"]');
 
     // Filter panel visible with controls
@@ -751,10 +751,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    // Navigate to Dashboard logs
-    await page.locator('.titlebar__nav').getByText('Dashboard').click();
+    // Navigate to Monitor logs
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
     await page.waitForSelector('[data-view="dashboard"]');
-    await page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
     await page.waitForSelector('.logs-output', { state: 'visible' });
 
     // Inject enough content to make the container scrollable, then scroll to bottom
@@ -795,8 +795,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.titlebar__nav').getByText('Models').click();
     await page.waitForTimeout(500);
 
-    // Switch back to Dashboard, which preserves the active Logs section
-    await page.locator('.titlebar__nav').getByText('Dashboard').click();
+    // Switch back to Monitor, which preserves the active Logs section
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
     await page.waitForSelector('.logs-output', { state: 'visible' });
     await page.waitForTimeout(500);
 

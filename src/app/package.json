@@ -28,7 +28,10 @@
     "test:global-model-settings": "node tests/global-model-settings.runtime.cjs",
     "test:icons": "node tests/icon-library.runtime.cjs",
     "test:default-chat-model": "node tests/default-chat-model.runtime.cjs",
-    "test:storage": "node tests/storage.runtime.cjs"
+    "test:storage": "node tests/storage.runtime.cjs",
+    "test:configuration-consistency": "node tests/configuration-consistency.runtime.cjs",
+    "test:model-list-backends": "node tests/model-list-backend-layout.runtime.cjs",
+    "test:ui-regressions": "node tests/ui-regression-contracts.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
