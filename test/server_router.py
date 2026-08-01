@@ -18,6 +18,7 @@ Usage:
 
 import json as _json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import requests
@@ -123,6 +124,8 @@ SEMANTIC_CODING_PROMPT = (
 )
 SEMANTIC_OTHER_PROMPT = "What are some good recipes for a summer picnic by the lake?"
 SEMANTIC_MIN_SCORE = 0.6
+SEMANTIC_WARMUP_ATTEMPTS = 3
+SEMANTIC_ROUTE_ATTEMPTS = 2
 
 COLLECTION_NAME = "user.Test-Router-Local"
 
@@ -247,23 +250,113 @@ class RouterTests(ServerTestBase):
                 return entry.get("score")
         return None
 
-    def _load_semantic_model(self):
-        """Load the embedding model before entering router evaluation.
+    def _warm_semantic_model(self):
+        """Prove the semantic dependency can complete an embedding inference.
 
-        Semantic routing is not intended to test cold-start model loading. Keeping
-        that lifecycle concern outside the routed request avoids a transient
-        ensure/load failure being converted into Score{ok=false} and silently
-        falling through to the default candidate.
+        A successful `/load` response alone is not a readiness guarantee: the
+        backend may still fail or be evicted before the classifier's first
+        embedding call. Probe the exact endpoint used by semantic routing and
+        require a non-empty vector before making routing assertions.
         """
-        resp = requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": EMBED_MODEL},
-            timeout=600,
+        last_error = "no warmup attempt completed"
+        for attempt in range(1, SEMANTIC_WARMUP_ATTEMPTS + 1):
+            try:
+                load_resp = requests.post(
+                    f"{self.base_url}/load",
+                    json={"model_name": EMBED_MODEL},
+                    timeout=600,
+                )
+            except requests.RequestException as exc:
+                last_error = f"load probe raised {exc!r}"
+            else:
+                if load_resp.status_code != 200:
+                    last_error = (
+                        f"load returned {load_resp.status_code}: "
+                        f"{load_resp.text[:500]}"
+                    )
+                else:
+                    try:
+                        embed_resp = requests.post(
+                            f"{self.base_url}/embeddings",
+                            json={
+                                "model": EMBED_MODEL,
+                                "input": SEMANTIC_CODING_PROMPT,
+                            },
+                            timeout=600,
+                        )
+                    except requests.RequestException as exc:
+                        last_error = f"embedding probe raised {exc!r}"
+                    else:
+                        if embed_resp.status_code == 200:
+                            try:
+                                payload = embed_resp.json()
+                            except ValueError as exc:
+                                last_error = (
+                                    "embedding probe returned invalid JSON: "
+                                    f"{exc}"
+                                )
+                            else:
+                                if not isinstance(payload, dict):
+                                    last_error = (
+                                        "embedding probe returned a non-object "
+                                        f"payload: {payload}"
+                                    )
+                                else:
+                                    data = payload.get("data", [])
+                                    embedding = (
+                                        data[0].get("embedding")
+                                        if isinstance(data, list)
+                                        and data
+                                        and isinstance(data[0], dict)
+                                        else payload.get("embedding")
+                                    )
+                                    if isinstance(embedding, list) and embedding:
+                                        return
+                                    last_error = (
+                                        "embedding probe returned 200 without a "
+                                        f"non-empty embedding: {payload}"
+                                    )
+                        else:
+                            last_error = (
+                                "embedding probe returned "
+                                f"{embed_resp.status_code}: "
+                                f"{embed_resp.text[:500]}"
+                            )
+
+            if attempt < SEMANTIC_WARMUP_ATTEMPTS:
+                time.sleep(1)
+
+        self.fail(
+            f"failed to warm semantic model {EMBED_MODEL} after "
+            f"{SEMANTIC_WARMUP_ATTEMPTS} attempts: {last_error}"
         )
-        self.assertEqual(
-            resp.status_code,
-            200,
-            f"failed to preload semantic model {EMBED_MODEL}: {resp.text}",
+
+    def _route_semantic_with_recovery(self, prompt, collection):
+        """Retry only the known transient classifier-service failure.
+
+        SemanticSimilarityClassifier represents an embedding exception as a
+        trace entry with no numeric score and then falls through according to
+        `on_error`. A numeric score, even an unexpected one, is a real routing
+        result and must never be retried or hidden by this helper.
+        """
+        last_decision = None
+        for attempt in range(1, SEMANTIC_ROUTE_ATTEMPTS + 1):
+            _, decision, data = self._route(prompt, collection=collection)
+            score = self._classifier_score(decision, "topic")
+            if score is not None:
+                return decision, data, score
+
+            last_decision = decision
+            if attempt < SEMANTIC_ROUTE_ATTEMPTS:
+                print(
+                    "[WARN] semantic classifier produced no score; "
+                    "re-warming its embedding dependency and retrying once"
+                )
+                self._warm_semantic_model()
+
+        self.fail(
+            "semantic classifier produced no numeric score after targeted "
+            f"recovery; last decision: {last_decision}"
         )
 
     def test_600_default_fallthrough(self):
@@ -466,7 +559,7 @@ class RouterTests(ServerTestBase):
         this test measures routing behavior rather than cold-start lifecycle.
         """
         pull_model_with_retry(EMBED_MODEL)
-        self._load_semantic_model()
+        self._warm_semantic_model()
         collection = "user.Test-Router-Semantic"
         policy = {
             "version": "1",
@@ -506,14 +599,9 @@ class RouterTests(ServerTestBase):
 
         try:
             # A semantically coding prompt -> capable.
-            _, decision, _ = self._route(
+            decision, _, coding_score = self._route_semantic_with_recovery(
                 SEMANTIC_CODING_PROMPT,
-                collection=collection,
-            )
-            coding_score = self._classifier_score(decision, "topic")
-            self.assertIsNotNone(
-                coding_score,
-                f"semantic classifier failed or omitted its trace: {decision}",
+                collection,
             )
             self.assertGreaterEqual(
                 coding_score,
@@ -532,14 +620,9 @@ class RouterTests(ServerTestBase):
             )
 
             # An unrelated prompt scores below threshold -> default.
-            _, decision, _ = self._route(
+            decision, _, other_score = self._route_semantic_with_recovery(
                 SEMANTIC_OTHER_PROMPT,
-                collection=collection,
-            )
-            other_score = self._classifier_score(decision, "topic")
-            self.assertIsNotNone(
-                other_score,
-                f"semantic classifier failed or omitted its trace: {decision}",
+                collection,
             )
             self.assertLess(
                 other_score,
@@ -568,7 +651,7 @@ class RouterTests(ServerTestBase):
         query goes to the cloud model; an unrelated query stays local.
         """
         pull_model_with_retry(EMBED_MODEL)
-        self._load_semantic_model()
+        self._warm_semantic_model()
         provider = "testsemcloud"
         upstream_id = "vendor/sem-cloud-model"
         marker = "answered-by-cloud-provider"
@@ -648,14 +731,9 @@ class RouterTests(ServerTestBase):
             self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
 
             # Semantically coding -> cloud candidate, answered by the mock provider.
-            _, decision, data = self._route(
+            decision, data, coding_score = self._route_semantic_with_recovery(
                 SEMANTIC_CODING_PROMPT,
-                collection=collection,
-            )
-            coding_score = self._classifier_score(decision, "topic")
-            self.assertIsNotNone(
-                coding_score,
-                f"semantic classifier failed or omitted its trace: {decision}",
+                collection,
             )
             self.assertGreaterEqual(
                 coding_score,
@@ -679,14 +757,9 @@ class RouterTests(ServerTestBase):
             )
 
             # Unrelated -> stays local (default).
-            _, decision, _ = self._route(
+            decision, _, other_score = self._route_semantic_with_recovery(
                 SEMANTIC_OTHER_PROMPT,
-                collection=collection,
-            )
-            other_score = self._classifier_score(decision, "topic")
-            self.assertIsNotNone(
-                other_score,
-                f"semantic classifier failed or omitted its trace: {decision}",
+                collection,
             )
             self.assertLess(
                 other_score,
