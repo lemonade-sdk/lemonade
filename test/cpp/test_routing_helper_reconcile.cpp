@@ -349,6 +349,43 @@ static void test_deferred_reclaim_waits_for_slot(Router& router) {
           acquired && blocked_during_session && reclaimed_after_session);
 }
 
+// Reviewer's lost-wakeup ask: a request that rescues the helper between the first
+// release and the eviction commit must not strand it. The dispatched reclaim
+// consumed the pending intent; when its commit is refused because a request is
+// still in flight, it must re-arm so that request's release reclaims the helper
+// WITHOUT another reconcile.
+static void test_reclaim_rearms_when_rescued_before_commit(Router& router) {
+    StubWrappedServer* helper =
+        RoutingHelperTestHook::add_server(router, make_helper("rescue.helper"));
+
+    // A request is in flight and the policy drops the helper: prune arms the
+    // release-triggered reclaim.
+    helper->acquire_for_inference();
+    RoutingHelperTestHook::reconcile(router, {});
+    bool armed_survives = RoutingHelperTestHook::has_helper(router, "rescue.helper");
+
+    // The reclaim reaches its eviction commit while the request still holds the
+    // helper (models a second request arriving before the commit). The commit is
+    // refused; the intent must be re-armed, not lost.
+    RoutingHelperTestHook::reclaim_now(router, "rescue.helper");
+    bool survives_refused_commit = RoutingHelperTestHook::has_helper(router, "rescue.helper");
+
+    // Releasing that request now reclaims the helper on its own — no second
+    // reconcile — proving the intent survived the refused commit.
+    helper->release_inference();
+    bool reclaimed = false;
+    for (int i = 0; i < 200; ++i) {
+        if (!RoutingHelperTestHook::has_helper(router, "rescue.helper")) {
+            reclaimed = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    check("reclaim re-arms on a refused commit; the rescuer's release evicts it",
+          armed_survives && survives_refused_commit && reclaimed);
+}
+
 // Reviewer's ask #4: router shutdown while a deferred reclaim is pending. The
 // reclaim is posted to the router-owned executor and left blocked on the slot;
 // destroying the Router must wake it, join the worker, and not hang or crash.
@@ -396,6 +433,7 @@ int main() {
         test_mark_pending_stale_atomic_decision(router);
         test_maintenance_completion_reclaims_helper(router);
         test_deferred_reclaim_waits_for_slot(router);
+        test_reclaim_rearms_when_rescued_before_commit(router);
     }
 
     test_shutdown_with_pending_reclaim(config);

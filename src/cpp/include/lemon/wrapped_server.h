@@ -252,7 +252,9 @@ public:
     // reclaim is pending, extract and clear it so the caller can dispatch it
     // after releasing the lock. Shared by every busy->idle transition
     // (release_inference and finish_downsize) so a helper that was busy only
-    // because of a maintenance downsize is reclaimed too.
+    // because of a maintenance downsize is reclaimed too. Clearing here is safe:
+    // if the dispatched reclaim's eviction commit is later refused (a request
+    // rescued the helper), the reclaim re-arms this pending intent.
     std::function<void()> take_pending_reclaim_if_idle_locked() {
         if (pending_stale_ && active_request_count_ == 0 && !maintenance_in_progress_) {
             pending_stale_ = false;

@@ -432,42 +432,54 @@ std::function<void()> Router::make_helper_reclaim_dispatch(const std::string& mo
 void Router::reclaim_stale_helper_if_idle(const std::string& model_name) {
     std::unique_lock<std::mutex> lock(load_mutex_);
 
-    // Wait for the residency slot to clear rather than giving up and relying on a
-    // later prune (not guaranteed to run when the load / exclusive session ends).
-    // The wait is broken on shutdown so the executor worker can drain and join.
-    load_cv_.wait(lock, [&] {
-        return reclaim_shutdown_ ||
-               (!is_loading_ &&
-                (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id()));
-    });
-    if (reclaim_shutdown_) {
-        return;
-    }
+    while (true) {
+        // Wait for the residency slot to clear rather than giving up and relying
+        // on a later prune (not guaranteed to run when the load / exclusive
+        // session ends). The wait is broken on shutdown so the executor worker
+        // can drain and join.
+        load_cv_.wait(lock, [&] {
+            return reclaim_shutdown_ ||
+                   (!is_loading_ &&
+                    (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id()));
+        });
+        if (reclaim_shutdown_) {
+            return;
+        }
 
-    WrappedServer* server = find_server_by_model_name(model_name);
-    if (!server || !server->is_backend_alive() ||
-        server->get_residency_class() != ResidencyClass::RoutingHelper) {
-        return;
-    }
+        WrappedServer* server = find_server_by_model_name(model_name);
+        if (!server || !server->is_backend_alive() ||
+            server->get_residency_class() != ResidencyClass::RoutingHelper) {
+            return;
+        }
 
-    // Rescued by a pin or referenced again by a policy change since we marked it.
-    if (!routing_helper_no_longer_needed(model_name, ResidencyClass::RoutingHelper,
-                                         server->is_pinned())) {
-        server->clear_pending_stale();
-        return;
-    }
+        // Rescued by a pin or referenced again by a policy change since we marked it.
+        if (!routing_helper_no_longer_needed(model_name, ResidencyClass::RoutingHelper,
+                                             server->is_pinned())) {
+            server->clear_pending_stale();
+            return;
+        }
 
-    // Mark EVICTING then atomically confirm still idle. A request that slipped in
-    // between the release and here rescues the model (try_commit_eviction returns
-    // false), leaving it loaded and still pending-stale for the next release.
-    server->set_state(ModelState::EVICTING);
-    if (!server->try_commit_eviction()) {
-        return;
+        // Mark EVICTING then atomically confirm still idle.
+        server->set_state(ModelState::EVICTING);
+        if (server->try_commit_eviction()) {
+            server->clear_pending_stale();
+            LOG(INFO, "Router") << "Routing helper " << model_name
+                                << " released and referenced by no active policy, evicting"
+                                << std::endl;
+            evict_server(server);
+            return;
+        }
+
+        // A request slipped in between the release and this commit and rescued the
+        // model. This reclaim already consumed the pending intent when it was
+        // dispatched, so we must restore it rather than drop it: re-arm the
+        // release-triggered reclaim if the helper is busy again. If it went idle
+        // within this window, mark_pending_stale_if_busy reports so and we retry
+        // the commit immediately instead of opening a fresh check/install gap.
+        if (server->mark_pending_stale_if_busy(make_helper_reclaim_dispatch(model_name))) {
+            return;
+        }
     }
-    server->clear_pending_stale();
-    LOG(INFO, "Router") << "Routing helper " << model_name
-                        << " released and referenced by no active policy, evicting" << std::endl;
-    evict_server(server);
 }
 
 bool Router::routing_helper_no_longer_needed(const std::string& canonical_model_name,
