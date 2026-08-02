@@ -420,6 +420,45 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         pull_model_with_retry(ENDPOINT_TEST_MODEL, port=PORT)
         cls._model_pulled = True
 
+    def _capture_forwarded_chat_request(self, filename, payload):
+        self._write_llama_server(MOCK_LLAMA_SERVER_PYTHON)
+        self._add_dummy_llama_server_to_path()
+
+        capture_path = os.path.join(self.temp_bin_dir, filename)
+        os.environ["MOCK_LLAMA_REQUEST_PATH"] = capture_path
+        self.addCleanup(os.environ.pop, "MOCK_LLAMA_REQUEST_PATH", None)
+
+        _stop_server()
+        _start_server(wrapped_server="llamacpp", backend="system")
+        self._ensure_model_pulled()
+
+        load_response = requests.post(
+            f"http://localhost:{PORT}/api/v1/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_backend": "system"},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        is_streaming = payload.get("stream", False)
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/chat/completions",
+            json=payload,
+            stream=is_streaming,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        if is_streaming:
+            lines = [
+                raw.decode("utf-8") if isinstance(raw, bytes) else raw
+                for raw in response.iter_lines()
+                if raw
+            ]
+            self.assertTrue(any("[DONE]" in line for line in lines))
+
+        with open(capture_path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+
     @unittest.skipUnless(
         sys.platform.startswith("linux"), "System backend only supported on Linux"
     )
@@ -619,47 +658,16 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
     )
     def test_006_thinking_false_maps_to_no_think_for_chat_streams(self):
         """Verify thinking:false is mapped to /no_think prefix on the last user message."""
-        self._write_llama_server(MOCK_LLAMA_SERVER_PYTHON)
-        self._add_dummy_llama_server_to_path()
-
-        capture_path = os.path.join(self.temp_bin_dir, "captured_chat_request.json")
-        os.environ["MOCK_LLAMA_REQUEST_PATH"] = capture_path
-        self.addCleanup(os.environ.pop, "MOCK_LLAMA_REQUEST_PATH", None)
-
-        _stop_server()
-        _start_server(wrapped_server="llamacpp", backend="system")
-        self._ensure_model_pulled()
-
-        load_response = requests.post(
-            f"http://localhost:{PORT}/api/v1/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_backend": "system"},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(load_response.status_code, 200)
-
-        response = requests.post(
-            f"http://localhost:{PORT}/api/v1/chat/completions",
-            json={
+        forwarded_request = self._capture_forwarded_chat_request(
+            "captured_chat_request.json",
+            {
                 "model": ENDPOINT_TEST_MODEL,
                 "messages": [{"role": "user", "content": "Say hello."}],
                 "stream": True,
                 "thinking": False,
                 "max_tokens": 8,
             },
-            stream=True,
-            timeout=TIMEOUT_DEFAULT,
         )
-        self.assertEqual(response.status_code, 200)
-
-        lines = [
-            raw.decode("utf-8") if isinstance(raw, bytes) else raw
-            for raw in response.iter_lines()
-            if raw
-        ]
-        self.assertTrue(any("[DONE]" in line for line in lines))
-
-        with open(capture_path, "r", encoding="utf-8") as handle:
-            forwarded_request = json.load(handle)
 
         self.assertEqual(
             forwarded_request["messages"][-1]["content"],
@@ -673,41 +681,16 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
     )
     def test_006a_thinking_false_maps_to_no_think_for_non_streaming_chat(self):
         """Verify non-streaming chat preserves thinking-control normalization."""
-        self._write_llama_server(MOCK_LLAMA_SERVER_PYTHON)
-        self._add_dummy_llama_server_to_path()
-
-        capture_path = os.path.join(
-            self.temp_bin_dir, "captured_chat_request_non_streaming.json"
-        )
-        os.environ["MOCK_LLAMA_REQUEST_PATH"] = capture_path
-        self.addCleanup(os.environ.pop, "MOCK_LLAMA_REQUEST_PATH", None)
-
-        _stop_server()
-        _start_server(wrapped_server="llamacpp", backend="system")
-        self._ensure_model_pulled()
-
-        load_response = requests.post(
-            f"http://localhost:{PORT}/api/v1/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_backend": "system"},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(load_response.status_code, 200)
-
-        response = requests.post(
-            f"http://localhost:{PORT}/api/v1/chat/completions",
-            json={
+        forwarded_request = self._capture_forwarded_chat_request(
+            "captured_chat_request_non_streaming.json",
+            {
                 "model": ENDPOINT_TEST_MODEL,
                 "messages": [{"role": "user", "content": "Say hello."}],
                 "stream": False,
                 "thinking": False,
                 "max_tokens": 8,
             },
-            timeout=TIMEOUT_DEFAULT,
         )
-        self.assertEqual(response.status_code, 200)
-
-        with open(capture_path, "r", encoding="utf-8") as handle:
-            forwarded_request = json.load(handle)
 
         self.assertEqual(
             forwarded_request["messages"][-1]["content"],
@@ -721,29 +704,9 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
     )
     def test_007_enable_thinking_takes_precedence_over_thinking_false(self):
         """Verify enable_thinking:true takes precedence over thinking:false."""
-        self._write_llama_server(MOCK_LLAMA_SERVER_PYTHON)
-        self._add_dummy_llama_server_to_path()
-
-        capture_path = os.path.join(
-            self.temp_bin_dir, "captured_chat_request_precedence.json"
-        )
-        os.environ["MOCK_LLAMA_REQUEST_PATH"] = capture_path
-        self.addCleanup(os.environ.pop, "MOCK_LLAMA_REQUEST_PATH", None)
-
-        _stop_server()
-        _start_server(wrapped_server="llamacpp", backend="system")
-        self._ensure_model_pulled()
-
-        load_response = requests.post(
-            f"http://localhost:{PORT}/api/v1/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_backend": "system"},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(load_response.status_code, 200)
-
-        response = requests.post(
-            f"http://localhost:{PORT}/api/v1/chat/completions",
-            json={
+        forwarded_request = self._capture_forwarded_chat_request(
+            "captured_chat_request_precedence.json",
+            {
                 "model": ENDPOINT_TEST_MODEL,
                 "messages": [{"role": "user", "content": "Say hello."}],
                 "stream": False,
@@ -751,12 +714,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
                 "thinking": False,
                 "max_tokens": 8,
             },
-            timeout=TIMEOUT_DEFAULT,
         )
-        self.assertEqual(response.status_code, 200)
-
-        with open(capture_path, "r", encoding="utf-8") as handle:
-            forwarded_request = json.load(handle)
 
         self.assertEqual(forwarded_request["messages"][-1]["content"], "Say hello.")
         self.assertNotIn("thinking", forwarded_request)
