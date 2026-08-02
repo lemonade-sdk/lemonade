@@ -3067,6 +3067,40 @@ if(BUILD_TESTING AND EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
     add_cpp_ci_test(OriginUtilsTest CI ON COMMAND test_origin_utils)
 endif()
 
+set(_GLIBC_MALLOPT_PROBE_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/glibc_mallopt_probe.cpp"
+)
+set(_GLIBC_ALLOCATOR_POLICY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/test_glibc_allocator_policy.py"
+)
+if(BUILD_TESTING AND
+   CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+   EXISTS "${_GLIBC_MALLOPT_PROBE_SRC}" AND
+   EXISTS "${_GLIBC_ALLOCATOR_POLICY_TEST_SRC}")
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_library(test_glibc_mallopt_probe SHARED
+            ${_GLIBC_MALLOPT_PROBE_SRC}
+        )
+        add_cpp_ci_test(
+            GlibcAllocatorPolicyTest
+            CI ON
+            COMMAND
+                ${Python3_EXECUTABLE}
+                ${_GLIBC_ALLOCATOR_POLICY_TEST_SRC}
+                --lemond $<TARGET_FILE:${EXECUTABLE_NAME}>
+                --probe $<TARGET_FILE:test_glibc_mallopt_probe>
+            DEPENDS
+                ${EXECUTABLE_NAME}
+                test_glibc_mallopt_probe
+        )
+        set_tests_properties(
+            GlibcAllocatorPolicyTest
+            PROPERTIES SKIP_RETURN_CODE 77
+        )
+    endif()
+endif()
+
 if(BUILD_TESTING)
     add_cpp_ci_test(HttplibDetection_config_only CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_config_only -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=config_only -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
     add_cpp_ci_test(HttplibDetection_old_header CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_old_header -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=old_header -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
