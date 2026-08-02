@@ -111,6 +111,12 @@ struct RoutingHelperTestHook {
         }
         return false;
     }
+
+    // Drive the private release-triggered reclaim directly (as the executor
+    // worker would), so a test can observe it waiting for the residency slot.
+    static void reclaim_now(Router& r, const std::string& model_name) {
+        r.reclaim_stale_helper_if_idle(model_name);
+    }
 };
 
 }  // namespace lemon
@@ -267,6 +273,107 @@ static void test_concurrent_policy_update(Router& router) {
           reclaimed_after_race);
 }
 
+// Reviewer's TOCTOU concern: the final request finishing between the busy check
+// and the callback registration. mark_pending_stale_if_busy fuses one lock to
+// both decide and install, so an idle helper returns false (caller evicts now)
+// and a busy one returns true (self-reclaims later) — no lost wakeup.
+static void test_mark_pending_stale_atomic_decision(Router& router) {
+    StubWrappedServer* idle =
+        RoutingHelperTestHook::add_server(router, make_helper("atomic.idle"));
+    bool idle_deferred = idle->mark_pending_stale_if_busy([] {});
+
+    StubWrappedServer* busy =
+        RoutingHelperTestHook::add_server(router, make_helper("atomic.busy"));
+    busy->acquire_for_inference();
+    bool busy_deferred = busy->mark_pending_stale_if_busy([] {});
+    busy->release_inference();
+    busy->clear_pending_stale();
+
+    check("mark_pending_stale_if_busy defers only a busy helper (no check/install race)",
+          !idle_deferred && busy_deferred);
+}
+
+// Reviewer's ask #3: a stale helper becoming idle through maintenance completion
+// (not just request release) must fire the deferred reclaim. Marked pending
+// while a downsize is in flight, it self-reclaims when finish_downsize lands.
+static void test_maintenance_completion_reclaims_helper(Router& router) {
+    StubWrappedServer* helper =
+        RoutingHelperTestHook::add_server(router, make_helper("downsize.helper"));
+    helper->set_busy(true);
+
+    RoutingHelperTestHook::reconcile(router, {});
+    bool survived_during_maintenance =
+        RoutingHelperTestHook::has_helper(router, "downsize.helper");
+
+    // Maintenance finishes; the busy->idle edge dispatches the reclaim.
+    helper->finish_downsize(true);
+
+    bool reclaimed = false;
+    for (int i = 0; i < 200; ++i) {
+        if (!RoutingHelperTestHook::has_helper(router, "downsize.helper")) {
+            reclaimed = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    check("stale helper self-reclaims when maintenance completes",
+          survived_during_maintenance && reclaimed);
+}
+
+// Reviewer's ask #5: a deferred reclaim firing during a load / exclusive session
+// must not give up — it waits for the residency slot to clear, then evicts. Here
+// the reclaim runs on a worker thread while the main thread holds an exclusive
+// session; it blocks until end_exclusive, then completes.
+static void test_deferred_reclaim_waits_for_slot(Router& router) {
+    StubWrappedServer* helper =
+        RoutingHelperTestHook::add_server(router, make_helper("slot.helper"));
+    helper->set_busy(true);
+    RoutingHelperTestHook::reconcile(router, {});  // marks pending-stale (busy)
+    helper->set_busy(false);                       // idle + pending-stale, not needed
+
+    bool acquired = router.begin_exclusive();
+
+    std::thread worker(
+        [&] { RoutingHelperTestHook::reclaim_now(router, "slot.helper"); });
+
+    // The reclaim must block while the exclusive session owns the slot.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    bool blocked_during_session = RoutingHelperTestHook::has_helper(router, "slot.helper");
+
+    router.end_exclusive();
+    worker.join();
+    bool reclaimed_after_session = !RoutingHelperTestHook::has_helper(router, "slot.helper");
+
+    check("deferred reclaim waits for the exclusive slot, then evicts",
+          acquired && blocked_during_session && reclaimed_after_session);
+}
+
+// Reviewer's ask #4: router shutdown while a deferred reclaim is pending. The
+// reclaim is posted to the router-owned executor and left blocked on the slot;
+// destroying the Router must wake it, join the worker, and not hang or crash.
+static void test_shutdown_with_pending_reclaim(RuntimeConfig& config) {
+    bool completed = false;
+    {
+        Router router(&config, nullptr, nullptr);
+        StubWrappedServer* helper =
+            RoutingHelperTestHook::add_server(router, make_helper("shutdown.helper"));
+        helper->set_busy(true);
+        RoutingHelperTestHook::reconcile(router, {});  // marks pending-stale
+        helper->set_busy(false);                       // idle + pending-stale
+
+        // Hold the slot so the dispatched reclaim blocks on the executor worker.
+        router.begin_exclusive();
+        helper->finish_downsize(true);  // busy->idle edge posts the reclaim
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        // Scope exit destroys the Router without end_exclusive: it must wake the
+        // blocked reclaim, join the executor, and tear down cleanly.
+    }
+    completed = true;
+    check("router shutdown wakes and joins a pending deferred reclaim", completed);
+}
+
 int main() {
     json cfg = json::object();
     cfg["max_loaded_models"] = 4;
@@ -286,7 +393,12 @@ int main() {
         test_busy_helper_reclaimed_when_idle(router);
         test_busy_helper_reclaimed_on_release(router);
         test_concurrent_policy_update(router);
+        test_mark_pending_stale_atomic_decision(router);
+        test_maintenance_completion_reclaims_helper(router);
+        test_deferred_reclaim_waits_for_slot(router);
     }
+
+    test_shutdown_with_pending_reclaim(config);
 
     RuntimeConfig::set_global(nullptr);
 

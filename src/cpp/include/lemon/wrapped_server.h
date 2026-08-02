@@ -213,32 +213,31 @@ public:
             if (--active_request_count_ == 0) {
                 state_ = ModelState::READY;
                 state_cv_.notify_all();
-                // A routing helper dropped by a policy change while it was busy was
-                // left resident (evicting it then would block on this very request).
-                // Now idle, hand it to the reclaim callback.
-                if (pending_stale_) {
-                    on_idle = pending_stale_reclaim_;
-                }
+                on_idle = take_pending_reclaim_if_idle_locked();
             }
         }
-        // Run the reclaim on a detached thread, never on this release call stack:
-        // reclaim may unload and destroy this very object, which must not happen
-        // while a member function of it is still executing. The callback re-looks
-        // the server up by name and re-validates under the router lock, so a raced
-        // concurrent eviction or a new request is a safe no-op.
+        // Dispatch outside state_mutex_. The callback hands the reclaim to the
+        // router's executor thread; it must not run the actual unload on this
+        // release call stack (that would destroy this very object mid-method).
         if (on_idle) {
-            std::thread(std::move(on_idle)).detach();
+            on_idle();
         }
     }
 
-    // Mark this routing helper as no longer referenced by any active policy while
-    // it is busy. The stored callback is invoked (on a separate thread) the moment
-    // the last in-flight request releases the model, so a busy helper is still
-    // reclaimed without a follow-up reconcile. Idempotent.
-    void mark_pending_stale(std::function<void()> on_idle_reclaim) {
+    // Atomically decide, under one state lock, whether this routing helper is
+    // still busy. If so, install the reclaim callback (fired on the next
+    // busy->idle edge) and return true. If it already went idle, return false so
+    // the caller reclaims it now — closing the check-then-install lost-wakeup
+    // race where the last request could release between a separate is_busy() call
+    // and the install.
+    bool mark_pending_stale_if_busy(std::function<void()> on_idle_reclaim) {
         std::lock_guard<std::mutex> lock(state_mutex_);
+        if (active_request_count_ == 0 && !maintenance_in_progress_) {
+            return false;
+        }
         pending_stale_ = true;
         pending_stale_reclaim_ = std::move(on_idle_reclaim);
+        return true;
     }
 
     // Cancel a pending release-triggered reclaim, e.g. because a policy change
@@ -247,6 +246,21 @@ public:
         std::lock_guard<std::mutex> lock(state_mutex_);
         pending_stale_ = false;
         pending_stale_reclaim_ = nullptr;
+    }
+
+    // Caller holds state_mutex_. If the server is now idle and a policy-drop
+    // reclaim is pending, extract and clear it so the caller can dispatch it
+    // after releasing the lock. Shared by every busy->idle transition
+    // (release_inference and finish_downsize) so a helper that was busy only
+    // because of a maintenance downsize is reclaimed too.
+    std::function<void()> take_pending_reclaim_if_idle_locked() {
+        if (pending_stale_ && active_request_count_ == 0 && !maintenance_in_progress_) {
+            pending_stale_ = false;
+            std::function<void()> callback = std::move(pending_stale_reclaim_);
+            pending_stale_reclaim_ = nullptr;
+            return callback;
+        }
+        return nullptr;
     }
 
     // Called by the eviction engine (under the router lock) to atomically claim an
@@ -273,12 +287,19 @@ public:
     // DOWNSIZED on success or back to READY on failure so a failed backend
     // operation never leaves a model falsely marked as downsized.
     void finish_downsize(bool success) {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        maintenance_in_progress_ = false;
-        if (state_ == ModelState::DOWNSIZING) {
-            state_ = success ? ModelState::DOWNSIZED : ModelState::READY;
+        std::function<void()> on_idle;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            maintenance_in_progress_ = false;
+            if (state_ == ModelState::DOWNSIZING) {
+                state_ = success ? ModelState::DOWNSIZED : ModelState::READY;
+            }
+            state_cv_.notify_all();
+            on_idle = take_pending_reclaim_if_idle_locked();
         }
-        state_cv_.notify_all();
+        if (on_idle) {
+            on_idle();
+        }
     }
 
     bool is_busy() const {

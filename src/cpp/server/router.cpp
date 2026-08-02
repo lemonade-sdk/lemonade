@@ -66,6 +66,7 @@ Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManage
     vram_monitor_ = std::make_unique<GlobalVramMonitor>();
     eviction_engine_ = std::make_unique<EvictionEngine>(this, vram_monitor_.get());
     suspend_inhibitor_ = create_suspend_inhibitor();
+    reclaim_executor_ = std::make_shared<RoutingHelperReclaimExecutor>();
 
     // Always start the monitor/engine threads; they are cheap no-ops until the
     // user opts in. The monitor skips the VRAM poll when auto_evict is disabled,
@@ -80,6 +81,14 @@ Router::~Router() {
     LOG(DEBUG, "Router") << "Destructor: stopping monitors and unloading all models" << std::endl;
     if (eviction_engine_) eviction_engine_->stop();
     if (vram_monitor_) vram_monitor_->stop();
+    // Wake any reclaim task blocked waiting for the residency slot, then join the
+    // executor before we tear down the state its tasks touch.
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        reclaim_shutdown_ = true;
+    }
+    load_cv_.notify_all();
+    if (reclaim_executor_) reclaim_executor_->stop();
     unload_model("");  // Unload all
 }
 
@@ -394,10 +403,11 @@ void Router::prune_stale_routing_helpers_locked() {
             server->clear_pending_stale();
             continue;
         }
-        if (server->is_busy()) {
-            // Evicting now would block on the request drain; instead arrange for
-            // the helper to self-reclaim the moment its last request releases.
-            server->mark_pending_stale([this, name] { reclaim_stale_helper_if_idle(name); });
+        // Atomically: if the helper is still busy, install the release-triggered
+        // reclaim (evicting now would block on the request drain); if it went
+        // idle in the meantime, fall through to evict it directly. Doing both
+        // under one state lock closes the check-then-install lost-wakeup race.
+        if (server->mark_pending_stale_if_busy(make_helper_reclaim_dispatch(name))) {
             continue;
         }
         stale.push_back(server.get());
@@ -410,12 +420,27 @@ void Router::prune_stale_routing_helpers_locked() {
     }
 }
 
-void Router::reclaim_stale_helper_if_idle(const std::string& model_name) {
-    std::lock_guard<std::mutex> lock(load_mutex_);
+std::function<void()> Router::make_helper_reclaim_dispatch(const std::string& model_name) {
+    std::weak_ptr<RoutingHelperReclaimExecutor> weak_executor = reclaim_executor_;
+    return [this, weak_executor, model_name] {
+        if (auto executor = weak_executor.lock()) {
+            executor->post([this, model_name] { reclaim_stale_helper_if_idle(model_name); });
+        }
+    };
+}
 
-    // A load or exclusive session owns residency decisions right now; leave the
-    // helper marked pending-stale so the subsequent prune reclaims it instead.
-    if (is_loading_ || exclusive_active_) {
+void Router::reclaim_stale_helper_if_idle(const std::string& model_name) {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+
+    // Wait for the residency slot to clear rather than giving up and relying on a
+    // later prune (not guaranteed to run when the load / exclusive session ends).
+    // The wait is broken on shutdown so the executor worker can drain and join.
+    load_cv_.wait(lock, [&] {
+        return reclaim_shutdown_ ||
+               (!is_loading_ &&
+                (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id()));
+    });
+    if (reclaim_shutdown_) {
         return;
     }
 

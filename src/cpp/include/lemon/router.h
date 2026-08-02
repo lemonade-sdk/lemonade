@@ -3,6 +3,8 @@
 #include <atomic>
 #include <string>
 #include <memory>
+#include <deque>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <set>
@@ -27,6 +29,66 @@ namespace lemon {
 using json = nlohmann::json;
 
 class CloudProviderRegistry;
+
+// Single-thread executor that runs routing-helper reclaim tasks off the request
+// / maintenance threads that trigger them. Owned by Router as a shared_ptr so a
+// scheduled task holds only a weak reference and safely no-ops if the Router
+// (and this executor) are torn down first. stop() joins the worker before the
+// router destroys the state those tasks touch, so a task can never outlive it.
+class RoutingHelperReclaimExecutor {
+public:
+    RoutingHelperReclaimExecutor() : worker_([this] { run(); }) {}
+    ~RoutingHelperReclaimExecutor() { stop(); }
+
+    RoutingHelperReclaimExecutor(const RoutingHelperReclaimExecutor&) = delete;
+    RoutingHelperReclaimExecutor& operator=(const RoutingHelperReclaimExecutor&) = delete;
+
+    void post(std::function<void()> task) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (stop_) return;
+            queue_.push_back(std::move(task));
+        }
+        cv_.notify_one();
+    }
+
+    // Idempotent. Any still-queued tasks are dropped; the in-flight one (if any)
+    // is allowed to finish, then the worker is joined.
+    void stop() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (stop_) return;
+            stop_ = true;
+        }
+        cv_.notify_all();
+        if (worker_.joinable()) {
+            worker_.join();
+        }
+    }
+
+private:
+    void run() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        while (true) {
+            cv_.wait(lock, [this] { return stop_ || !queue_.empty(); });
+            if (stop_) return;
+            std::function<void()> task = std::move(queue_.front());
+            queue_.pop_front();
+            lock.unlock();
+            try {
+                task();
+            } catch (...) {
+            }
+            lock.lock();
+        }
+    }
+
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::deque<std::function<void()>> queue_;
+    bool stop_ = false;
+    std::thread worker_;
+};
 
 namespace telemetry {
 class InferenceSpan;
@@ -217,6 +279,9 @@ private:
     // Highest policy-notification generation applied to needed_helper_models_.
     // Guarded by load_mutex_; an out-of-order (older) reconcile is ignored.
     uint64_t last_reconcile_generation_ = 0;
+    // Set during ~Router (under load_mutex_) so a reclaim task waiting for the
+    // residency slot to clear wakes and returns instead of blocking teardown.
+    bool reclaim_shutdown_ = false;
 
     bool exclusive_active_ = false;
     std::thread::id exclusive_owner_;
@@ -226,6 +291,10 @@ private:
     std::unique_ptr<GlobalVramMonitor> vram_monitor_;
     std::unique_ptr<EvictionEngine> eviction_engine_;
     std::unique_ptr<SuspendInhibitor> suspend_inhibitor_;
+    // Runs release-triggered routing-helper reclaims off the request/maintenance
+    // threads. shared_ptr so a scheduled task holds a weak_ptr and no-ops if the
+    // router is gone; stop()ped and joined in ~Router before state teardown.
+    std::shared_ptr<RoutingHelperReclaimExecutor> reclaim_executor_;
 
     // Helper methods for multi-model management
     WrappedServer* find_server_by_model_name(const std::string& model_name) const;
@@ -270,9 +339,15 @@ private:
                                          bool pinned) const;
     // Release-triggered reclaim: unload a pending-stale routing helper once its
     // last request drains. Looks the server up by name (never a captured raw
-    // pointer) and re-validates staleness under load_mutex_, so it is safe to
-    // call from a thread other than the one that ran release_inference.
+    // pointer) and re-validates staleness under load_mutex_. Waits for the
+    // residency slot to clear (a load / exclusive session) rather than relying on
+    // a later prune, so it is guaranteed to run and is safe to call from a thread
+    // other than the one that ran release_inference / finish_downsize.
     void reclaim_stale_helper_if_idle(const std::string& model_name);
+    // Build the busy->idle callback stored on a helper marked pending-stale. It
+    // schedules reclaim_stale_helper_if_idle on reclaim_executor_ via a weak_ptr,
+    // so it never runs on the release call stack and no-ops if the router is gone.
+    std::function<void()> make_helper_reclaim_dispatch(const std::string& model_name);
     // Whether a freshly loaded backend may be committed to loaded_servers_. A
     // routing helper whose backend finished starting after a policy change
     // dropped it must be discarded rather than leaked; shared by the initial
