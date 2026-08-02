@@ -273,22 +273,68 @@ The `recipe` field defines which software framework and device will be used to l
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | Namespaced [Lemonade Server model name](https://lemonade-server.ai/models.html) to register and install. |
-| `checkpoint` | Yes | HuggingFace checkpoint to install. |
 | `recipe` | Yes | Lemonade API recipe to load the model with. |
+| `checkpoint` | Yes`*` | HuggingFace "main" checkpoint to install. |
+| `checkpoints` | No | HuggingFace checkpoints to install, for multi-checkpoint models. |
 | `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). Adds 'reasoning' label. |
 | `vision` | No | Whether the model has vision capabilities for processing images (default: false). Adds 'vision' label. |
 | `embedding` | No | Whether the model is an embedding model (default: false). Adds 'embeddings' label. |
 | `reranking` | No | Whether the model is a reranking model (default: false). Adds 'reranking' label. |
 | `mmproj` | No | Multimodal Projector (mmproj) file to use for vision models. |
 
+A model definition requires at least a `main` checkpoint. This can be either
+be specified with the `checkpoint` parameter, or a `main` key in the
+`checkpoints` dict.
+
+Other checkpoint types may also be specified depending on the model type.
+This list is not exhaustive, and may change or grow over time as models
+and backends evolve:
+* `mmproj` - used by vision models, if not already embedded in `main`
+* `draft` - used by dflash, eagle, and multitoken-prediction, if not already embedded in `main`
+* `text_encoder` - text-to-token encoder used by image generation
+* `vae` - variational autoencoder used by image generation
+
 Example request:
 
 ```bash
+# Single checkpoint
 curl -X POST http://localhost:13305/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "user.Phi-4-Mini-GGUF",
     "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M",
+    "recipe": "llamacpp"
+  }'
+```
+
+Instead of defining a model by `checkpoint` and `mmproj`, a model can also
+be defined with a dict of checkpoint types and paths. These requests do the
+same thing, but the syntax for pulling the mmproj differs.
+
+```bash
+# Multi-checkpoint
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.My-Gemma3",
+    "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+    "mmproj": "mmproj-model-f16.gguf",
+	"vision": true,
+    "recipe": "llamacpp"
+  }'
+```
+
+```bash
+# Multi-checkpoint
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.My-Gemma3",
+    "checkpoints": {
+        "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+        "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"
+    },
+	"vision": true,
     "recipe": "llamacpp"
   }'
 ```

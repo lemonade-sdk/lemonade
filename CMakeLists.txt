@@ -9,6 +9,33 @@ project(lemon_cpp VERSION 11.5.1)
 
 include(CTest)
 
+# Aggregate build target for the C++ tests selected by packaging CI.
+# Platform-specific tests add themselves only inside their existing if() block.
+if(NOT TARGET cpp-ci-tests)
+    add_custom_target(cpp-ci-tests)
+endif()
+
+# Register a CTest test for the packaging CI and make the aggregate build
+# target depend on every executable/helper target needed by that test.
+#
+# Usage:
+#   register_cpp_ci_test(TestName test_target [additional_target...])
+function(register_cpp_ci_test test_name)
+    set_tests_properties(
+        ${test_name}
+        PROPERTIES
+            LABELS "cpp-ci"
+    )
+
+    if(ARGN)
+        add_dependencies(
+            cpp-ci-tests
+            ${ARGN}
+        )
+    endif()
+endfunction()
+
+
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -1017,6 +1044,7 @@ if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
     endif()
 
     add_test(NAME mcp_client_config COMMAND test_mcp_client_config)
+    register_cpp_ci_test(mcp_client_config test_mcp_client_config)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
@@ -2035,6 +2063,8 @@ if(BUILD_TESTING AND EXISTS "${_ARCHIVE_PLATFORM_TEST_SRC}")
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     )
     add_test(NAME ArchivePlatformTest COMMAND test_archive_platform)
+
+    register_cpp_ci_test(ArchivePlatformTest test_archive_platform)
 endif()
 
 # ProcessManager zombie detection and non-mutating reap contract.
@@ -2055,6 +2085,7 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
         find_package(Threads REQUIRED)
         target_link_libraries(test_process_manager PRIVATE Threads::Threads)
         add_test(NAME ProcessManagerTest COMMAND test_process_manager)
+        register_cpp_ci_test(ProcessManagerTest test_process_manager)
     endif()
 endif()
 
@@ -2088,6 +2119,7 @@ if(BUILD_TESTING AND EXISTS "${_CUSTOM_ARGS_TEST_SRC}")
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     )
     add_test(NAME CustomArgsTest COMMAND test_custom_args)
+    register_cpp_ci_test(CustomArgsTest test_custom_args)
 endif()
 
 set(_DIR_WATCHER_TEST_SRC
@@ -2113,6 +2145,7 @@ if(EXISTS "${_DIR_WATCHER_TEST_SRC}" AND EXISTS "${_DIR_WATCHER_LIB_SRC}")
     # Enable testing and register the test with CTest
     include(CTest)
     add_test(NAME DirectoryWatcherTest COMMAND test_directory_watcher)
+    register_cpp_ci_test(DirectoryWatcherTest test_directory_watcher)
 endif()
 
 # GGUF capability detection (MTP / vision / tool-calling label logic).
@@ -2149,6 +2182,7 @@ if(EXISTS "${_MODEL_RESIDENCY_TEST_SRC}")
 
     include(CTest)
     add_test(NAME ModelResidencyTest COMMAND test_model_residency)
+    register_cpp_ci_test(ModelResidencyTest test_model_residency)
 endif()
 
 # Pure version-resolution policy test (lemon::resolve_latest_pin). Header-only
@@ -2169,6 +2203,7 @@ if(EXISTS "${_LATEST_FALLBACK_TEST_SRC}")
 
     include(CTest)
     add_test(NAME LatestVersionFallbackTest COMMAND test_latest_version_fallback)
+    register_cpp_ci_test(LatestVersionFallbackTest test_latest_version_fallback)
 endif()
 
 # Job engine pure core: the `when`/`branch` expression evaluator + reference
@@ -2184,6 +2219,7 @@ if(EXISTS "${_JOB_EXPR_TEST_SRC}")
     target_link_libraries(test_job_expr PRIVATE nlohmann_json::nlohmann_json)
     include(CTest)
     add_test(NAME JobExprTest COMMAND test_job_expr)
+    register_cpp_ci_test(JobExprTest test_job_expr)
 endif()
 
 set(_JOB_GRAPH_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_graph.cpp")
@@ -2196,6 +2232,7 @@ if(EXISTS "${_JOB_GRAPH_TEST_SRC}")
     target_link_libraries(test_job_graph PRIVATE nlohmann_json::nlohmann_json)
     include(CTest)
     add_test(NAME JobGraphTest COMMAND test_job_graph)
+    register_cpp_ci_test(JobGraphTest test_job_graph)
 endif()
 
 # Backend install atomicity (staging + verified atomic swap).
@@ -2240,6 +2277,7 @@ if(EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyContractTest COMMAND test_routing_policy_contract)
+    register_cpp_ci_test(RoutingPolicyContractTest test_routing_policy_contract)
 endif()
 
 # Routing match evaluator (issue #2378): composite Condition nodes,
@@ -2260,6 +2298,7 @@ if(EXISTS "${_ROUTING_EVALUATOR_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyEvaluatorTest COMMAND test_routing_policy_evaluator)
+    register_cpp_ci_test(RoutingPolicyEvaluatorTest test_routing_policy_evaluator)
 endif()
 
 # Routing classifier/condition registry (issue #2379): classifier JSON
@@ -2281,6 +2320,7 @@ if(EXISTS "${_ROUTING_REGISTRY_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyRegistryTest COMMAND test_routing_policy_registry)
+    register_cpp_ci_test(RoutingPolicyRegistryTest test_routing_policy_registry)
 endif()
 
 # Routing semantic_similarity classifier (issue #2381): max-cosine scoring over
@@ -2303,6 +2343,7 @@ if(EXISTS "${_ROUTING_SEMANTIC_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicySemanticTest COMMAND test_routing_policy_semantic)
+    register_cpp_ci_test(RoutingPolicySemanticTest test_routing_policy_semantic)
 endif()
 
 # LLM router classifier + routing.router desugaring (issue #2405): the L0a
@@ -2325,6 +2366,7 @@ if(EXISTS "${_ROUTING_LLM_ROUTER_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyLlmRouterTest COMMAND test_routing_policy_llm_router)
+    register_cpp_ci_test(RoutingPolicyLlmRouterTest test_routing_policy_llm_router)
 endif()
 
 # Routing deterministic leaf conditions (issue #2380): keywords/regex/min_chars/
@@ -2346,6 +2388,7 @@ if(EXISTS "${_ROUTING_DETERMINISTIC_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyDeterministicTest COMMAND test_routing_policy_deterministic)
+    register_cpp_ci_test(RoutingPolicyDeterministicTest test_routing_policy_deterministic)
 endif()
 
 # Routing engine assembly (issue #2382): RoutingPolicyEngine constructor rule
@@ -2370,6 +2413,7 @@ if(EXISTS "${_ROUTING_ENGINE_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyEngineTest COMMAND test_routing_policy_engine)
+    register_cpp_ci_test(RoutingPolicyEngineTest test_routing_policy_engine)
 endif()
 
 # Routing policy parser (issue #2383): collection.router JSON -> RoutePolicy,
@@ -2396,6 +2440,7 @@ if(EXISTS "${_ROUTING_PARSER_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyParserTest COMMAND test_routing_policy_parser)
+    register_cpp_ci_test(RoutingPolicyParserTest test_routing_policy_parser)
 endif()
 
 
@@ -2426,6 +2471,7 @@ if(EXISTS "${_ROUTING_STORE_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingPolicyStoreTest COMMAND test_routing_policy_store)
+    register_cpp_ci_test(RoutingPolicyStoreTest test_routing_policy_store)
 endif()
 
 set(_ROUTE_DECISION_RESPONSE_TEST_SRC
@@ -2482,6 +2528,7 @@ if(EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingConformanceCorpusTest COMMAND test_routing_conformance_corpus)
+    register_cpp_ci_test(RoutingConformanceCorpusTest test_routing_conformance_corpus)
 endif()
 
 # ModelManager collection validation for collection.router registration:
@@ -2499,6 +2546,7 @@ if(EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
 
     include(CTest)
     add_test(NAME ModelManagerCollectionValidationTest COMMAND test_model_manager_collection_validation)
+    register_cpp_ci_test(ModelManagerCollectionValidationTest test_model_manager_collection_validation)
 endif()
 
 # Remote model registry source parsing, cache namespaces, snapshot fingerprints,
@@ -2535,6 +2583,7 @@ if(EXISTS "${_ROUTING_CLASSIFIER_SERVICES_TEST_SRC}")
 
     include(CTest)
     add_test(NAME RoutingClassifierServicesTest COMMAND test_routing_classifier_services)
+    register_cpp_ci_test(RoutingClassifierServicesTest test_routing_classifier_services)
 endif()
 
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
@@ -2593,11 +2642,19 @@ if(EXISTS "${_ROCM_ROOT_TEST_SRC}")
     add_test(NAME RocmRootResolutionTest COMMAND test_rocm_root_resolution)
 endif()
 
+set(_GPU_ENV_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_gpu_env.cpp")
+if(EXISTS "${_GPU_ENV_TEST_SRC}")
+    add_executable(test_backend_utils_gpu_env test/cpp/test_backend_utils_gpu_env.cpp)
+    target_link_libraries(test_backend_utils_gpu_env PRIVATE lemonade-server-core)
+    add_test(NAME BackendUtilsGpuEnvTest COMMAND test_backend_utils_gpu_env)
+endif()
+
 set(_NETWORK_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_network_utils.cpp")
 if(EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     add_executable(test_network_utils test/cpp/test_network_utils.cpp)
     target_link_libraries(test_network_utils PRIVATE lemonade-server-core)
     add_test(NAME NetworkUtilsTest COMMAND test_network_utils)
+    register_cpp_ci_test(NetworkUtilsTest test_network_utils)
 endif()
 
 set(_URL_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_url_utils.cpp")
@@ -2645,6 +2702,7 @@ if(EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
     add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
     target_link_libraries(test_origin_utils PRIVATE lemonade-server-core)
     add_test(NAME OriginUtilsTest COMMAND test_origin_utils)
+    register_cpp_ci_test(OriginUtilsTest test_origin_utils)
 endif()
 
 if(BUILD_TESTING)
