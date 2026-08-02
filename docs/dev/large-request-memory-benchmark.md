@@ -7,12 +7,13 @@ kernel, host load, and allocator history.
 
 ## What the allocator setting changes
 
-At process startup, glibc's `M_MMAP_THRESHOLD` is fixed at 1 MiB. This is a
-process-wide allocator policy, not an HTTP-only setting. Eligible allocations
-throughout `lemond` may become mmap-backed, including large registry, cache,
-telemetry, and JSON allocations. The threshold does not guarantee that every
-allocation above 1 MiB uses mmap; glibc can reuse suitable free blocks and is
-also subject to its mmap limits.
+Unless an operator override is present, `lemond` attempts to fix glibc's
+`M_MMAP_THRESHOLD` at 1 MiB during startup. This is a process-wide allocator
+policy, not an HTTP-only setting. Eligible allocations throughout `lemond` may
+become mmap-backed, including large registry, cache, telemetry, and JSON
+allocations. The threshold does not guarantee that every allocation above
+1 MiB uses mmap; glibc can reuse suitable free blocks and is also subject to its
+mmap limits.
 
 The call must happen before `Server` construction because `JobManager` starts a
 worker thread in its constructor and glibc documents `mallopt()` as MT-Unsafe.
@@ -22,6 +23,13 @@ built-in 1 MiB threshold without rebuilding by setting either
 `MALLOC_MMAP_THRESHOLD_` or `glibc.malloc.mmap_threshold` in `GLIBC_TUNABLES`;
 `lemond` does not overwrite either value. Non-glibc builds do not compile or
 call this code.
+
+This targets glibc's dynamically increasing mmap threshold directly.
+`MALLOC_ARENA_MAX` limits arena proliferation but does not prevent that
+threshold from increasing, while `malloc_trim(0)` only releases releasable
+arena pages and would add process-wide work after selected requests. A static
+threshold gives deterministic release behaviour for the affected allocations,
+while the environment overrides retain an operator-controlled escape hatch.
 
 The second change avoids creating a serialized copy of parsed JSON in
 non-streaming chat, completions, and responses handlers. Streaming handlers
