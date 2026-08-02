@@ -1,8 +1,8 @@
 # Cloud Offload
 
-Lemonade can route inference to any OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, Together, etc.) alongside locally-loaded models. Cloud-routed models show up in `/v1/models` like any other recipe, so every client connecting to your `lemond` — the desktop app, the CLI, third-party SDKs, and agents launched via `lemonade launch` — sees the same catalog without per-client configuration.
+Lemonade can route inference to any OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, OrcaRouter, Together, etc.) alongside locally-loaded models. Cloud-routed models show up in `/v1/models` like any other recipe, so every client connecting to your `lemond` — the desktop app, the CLI, third-party SDKs, and agents launched via `lemonade launch` — sees the same catalog without per-client configuration.
 
-> **Status: experimental.** Cloud routing has been validated with Fireworks, OpenAI, OpenRouter, and Together. Other OpenAI-compatible providers should work; report problems with `lemond` logs and the provider's `/v1/models` response.
+> **Status: experimental.** Cloud routing has been validated with Fireworks, OpenAI, OpenRouter, OrcaRouter, and Together. Other OpenAI-compatible providers should work; report problems with `lemond` logs and the provider's `/v1/models` response.
 
 ## Quickstart
 
@@ -47,6 +47,17 @@ lemonade cloud install fireworks \
 ```
 
 Runtime keys live in `lemond`'s process memory only — they're never written to disk and they vanish on restart. To make them survive a restart, switch to Option A.
+
+### OrcaRouter
+
+[OrcaRouter](https://www.orcarouter.ai) serves OpenAI, Anthropic, and Google models from a single OpenAI-compatible endpoint.
+
+```bash
+export LEMONADE_ORCAROUTER_API_KEY=sk-orca-XXXXX
+lemonade cloud install orcarouter --base-url https://api.orcarouter.ai/v1
+```
+
+Discovered models appear under the `orcarouter.` namespace, e.g. `orcarouter.auto` or `orcarouter.anthropic/claude-fable-5`. Get a key at the [OrcaRouter console](https://www.orcarouter.ai/console).
 
 ## Using cloud models
 
