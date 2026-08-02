@@ -871,7 +871,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             <label className={`router-mode-option${draft.routingMode === 'llm' ? ' router-mode-option--selected' : ''}`}>
               <input type="radio" name="routingMode" value="llm" checked={draft.routingMode === 'llm'}
                 onChange={() => {
-                  if ((draft.routingMode === 'quick' || draft.routingMode === 'rules') && (draft.rules ?? []).length > 0) {
+                  if ((draft.routingMode === 'quick' || draft.routingMode === 'rules') && ((draft.rules ?? []).length > 0 || (draft.classifiers ?? []).length > 0)) {
                     setConfirmLlmTarget(null);
                     setConfirmLlm(true);
                   } else {
@@ -884,7 +884,7 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             <label className={`router-mode-option${draft.routingMode === 'quick' ? ' router-mode-option--selected' : ''}`}>
               <input type="radio" name="routingMode" value="quick" checked={draft.routingMode === 'quick'}
                 onChange={() => {
-                  if (draft.routingMode === 'llm' && (draft.routerModel || draft.routerPrompt?.trim())) {
+                  if (draft.routingMode === 'llm' && draft.routerPrompt?.trim() && draft.routerPrompt.trim() !== DEFAULT_ROUTER_PROMPT) {
                     setConfirmLlmTarget('quick');
                     setConfirmLlm(true);
                   } else if (draft.routingMode === 'rules' && (draft.rules ?? []).length > 0) {
