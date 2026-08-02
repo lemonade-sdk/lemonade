@@ -1,0 +1,81 @@
+{
+  "scenarios": [
+    {
+      "name": "the-corona-story",
+      "category": "vision",
+      "image_path": "corona.jpg",
+	  "messages": [ {"role": "user", "content":"transcribe this image"} ],
+	  "max_tokens": 4096
+    },
+    {
+      "name": "declaration-of-independence",
+      "category": "vision",
+      "image_path": "declaration.jpg",
+	  "messages": [ {"role": "user", "content":"transcribe this image"} ],
+	  "max_tokens": 4096
+    },
+    {
+      "name": "formulas-of-sputnik-1",
+      "category": "vision",
+      "image_path": "formulas_sputnik_1.jpg",
+	  "messages": [ {"role": "user", "content":"transcribe this image"} ],
+	  "max_tokens": 4096
+    },
+    {
+      "name": "formulas-of-sputnik-2",
+      "category": "vision",
+      "image_path": "formulas_sputnik_2.jpg",
+	  "messages": [ {"role": "user", "content":"transcribe this image"} ],
+	  "max_tokens": 4096
+    },
+    {
+      "name": "hexagon_1",
+      "category": "vision",
+      "image_path": "hexagon_1.jpg",
+	  "messages": [ {"role": "user", "content":"transcribe this image"} ],
+	  "max_tokens": 4096
+    },
+    {
+      "name": "hexagon_3",
+      "category": "vision",
+      "image_path": "hexagon_3.jpg",
+	  "messages": [ {"role": "user", "content":"transcribe this image"} ],
+	  "max_tokens": 4096
+    },
+    {
+      "name": "pamd_akm_0",
+      "category": "vision",
+      "image_path": "pamd_akm_0.jpg",
+	  "messages": [ {"role": "user", "content":"transcribe this image"} ],
+	  "max_tokens": 4096
+    },
+    {
+      "name": "pamd_akm_4",
+      "category": "vision",
+      "image_path": "pamd_akm_4.jpg",
+	  "messages": [ {"role": "user", "content":"transcribe this image"} ],
+	  "max_tokens": 4096
+    },
+    {
+      "name": "pamd_akm_6",
+      "category": "vision",
+      "image_path": "pamd_akm_6.jpg",
+	  "messages": [ {"role": "user", "content":"transcribe this image"} ],
+	  "max_tokens": 4096
+    },
+    {
+      "name": "pamd_akm_7",
+      "category": "vision",
+      "image_path": "pamd_akm_7.jpg",
+	  "messages": [ {"role": "user", "content":"transcribe this image"} ],
+	  "max_tokens": 4096
+    },
+    {
+      "name": "tiros",
+      "category": "vision",
+      "image_path": "tiros.jpg",
+	  "messages": [ {"role": "user", "content":"transcribe this image"} ],
+	  "max_tokens": 4096
+    }
+  ]
+}

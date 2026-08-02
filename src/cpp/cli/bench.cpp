@@ -6,6 +6,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/model_types.h"
 #include <CLI/CLI.hpp>
+#include <lemon/utils/json_utils.h>
 #include <lemon/utils/path_utils.h>
 #include <algorithm>
 #include <chrono>
@@ -91,6 +92,70 @@ std::string BenchBackendResult::label() const {
     return s;
 }
 
+static bool is_vision_scenario(const BenchScenario& scenario) {
+    std::string category = scenario.category;
+    std::transform(category.begin(), category.end(), category.begin(), ::tolower);
+    return category == "vision";
+}
+
+static std::filesystem::path resolve_image_path(const BenchScenario& scenario) {
+    if (scenario.image_path.empty()) return {};
+    std::filesystem::path source_dir = std::filesystem::path(scenario.source_file).parent_path();
+    std::filesystem::path image_file(scenario.image_path);
+    if (image_file.is_absolute()) return image_file;
+    return source_dir / image_file;
+}
+
+static void embed_image_into_message(json& message, const BenchScenario& scenario) {
+    auto abs_path = resolve_image_path(scenario);
+    if (!std::filesystem::exists(abs_path)) {
+        throw std::runtime_error("Image file not found: " + abs_path.string());
+    }
+
+    std::string image_data;
+    {
+        std::ifstream file(abs_path, std::ios::binary);
+        image_data.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    }
+    std::string b64_data = lemon::utils::JsonUtils::base64_encode(image_data);
+
+    auto detect_mime_type = [](const std::filesystem::path& p) -> std::string {
+        std::string ext = p.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
+        if (ext == ".png") return "image/png";
+        if (ext == ".webp") return "image/webp";
+        if (ext == ".gif") return "image/gif";
+        throw std::runtime_error("Unsupported image format: " + ext);
+    };
+
+    std::string mime_type = detect_mime_type(abs_path);
+
+    if (!message.contains("role") || message["role"] != "user") return;
+
+    json content_array = json::array();
+    if (message.contains("content")) {
+        if (message["content"].is_string()) {
+            content_array.push_back({{"type", "text"}, {"text", message["content"].get<std::string>()}});
+        } else if (message["content"].is_array()) {
+            for (const auto& part : message["content"]) {
+                content_array.push_back(part);
+            }
+        }
+    }
+
+    content_array.push_back({{"type", "image_url"}, {"image_url", {{ "url", "data:" + mime_type + ";base64," + b64_data }}}});
+    message["content"] = content_array;
+}
+
+static bool model_has_vision_label(const json& model_info) {
+    if (!model_info.contains("labels") || !model_info["labels"].is_array()) return false;
+    for (const auto& label : model_info["labels"]) {
+        if (label.is_string() && label.get<std::string>() == "vision") return true;
+    }
+    return false;
+}
+
 static std::string extract_user_content(const std::vector<json>& messages) {
     for (const auto& msg : messages) {
         if (msg.contains("role") && msg["role"] == "user" && msg.contains("content")) {
@@ -145,6 +210,7 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
     for (const auto& item : data["scenarios"]) {
         BenchScenario scenario;
         if (!item.contains("name") || !item["name"].is_string()) continue;
+        scenario.source_file = path;
         scenario.name = item["name"].get<std::string>();
         scenario.category = item.value("category", "general");
         scenario.measurement_runs = item.value("measurement_runs", 3);
@@ -154,6 +220,16 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
         } else if (scenario.category == "imagegen") {
             scenario.warmup_runs = 0;
             if (item.contains("prompt")) scenario.imgconfig = item.get<json>();
+        } else if (scenario.category == "vision") {
+            scenario.warmup_runs = 0;
+
+            if (item.contains("image_path") && item["image_path"].is_string())
+                scenario.image_path = item["image_path"].get<std::string>();
+
+            if (item.contains("messages") && item["messages"].is_array())
+                scenario.messages = item["messages"].get<std::vector<json>>();
+
+            scenario.max_tokens = item.value("max_tokens", 1024);
         } else {
             if (item.contains("messages") && item["messages"].is_array())
                 scenario.messages = item["messages"].get<std::vector<json>>();
@@ -465,9 +541,15 @@ static BenchStrategy make_textgen_strategy(const std::string& model, const Bench
     return BenchStrategy{
         "/api/v1/chat/completions",
         [&model, &scenario]() -> json {
+            std::vector<json> messages = scenario.messages;
+            if (is_vision_scenario(scenario)) {
+                for (auto& msg : messages) {
+                    embed_image_into_message(msg, scenario);
+                }
+            }
             json body;
             body["model"] = model;
-            body["messages"] = scenario.messages;
+            body["messages"] = std::move(messages);
             body["max_completion_tokens"] = scenario.max_tokens;
             body["temperature"] = 0;
             return body;
@@ -973,6 +1055,9 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                             backend_suitable = model_has_embeddings_label(model_info);
                         } else if (scenario.category == "imagegen") {
                             backend_suitable = backend_supports_capability(recipe, backend, lemon::ModelType::IMAGE);
+                        } else if (scenario.category == "vision") {
+                            backend_suitable = model_has_vision_label(model_info) &&
+                                               backend_supports_capability(recipe, backend, lemon::ModelType::LLM);
                         } else {
                             backend_suitable = backend_supports_capability(recipe, backend, required_type);
                             if (model_has_embeddings_label(model_info))
