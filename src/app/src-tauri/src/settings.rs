@@ -513,6 +513,18 @@ mod tests {
     }
 
     #[test]
+    fn left_panel_view_rejects_removed_prompt_debugger_value() {
+        // Prompt Debugger was removed as a standalone view (folded into the
+        // Router Builder's Test Prompt tab instead) - a stale settings file
+        // still naming it must fall back to the default, not crash or persist it.
+        let incoming = json!({
+            "layout": { "leftPanelView": "prompt-debugger" }
+        });
+        let sanitized = sanitize_app_settings(&incoming);
+        assert_eq!(sanitized.layout.left_panel_view, "models", "prompt-debugger view no longer exists");
+    }
+
+    #[test]
     fn model_manager_show_downloaded_only_accepts_boolean_only() {
         let enabled = sanitize_app_settings(&json!({
             "modelManager": { "showDownloadedOnly": true }

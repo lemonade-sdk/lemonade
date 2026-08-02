@@ -638,7 +638,8 @@ sys.exit(0)
                     timeout=10,
                 )
                 if response.status_code < 400:
-                    print("[OK] Restored host to localhost")
+                    wait_for_server(port=PORT, timeout=30)
+                    print("[OK] Restored host to localhost and server is reachable")
                 else:
                     print(
                         "Warning: Failed to restore host to localhost: "
@@ -681,6 +682,7 @@ sys.exit(0)
                 "set",
                 "telemetry.otlp.endpoint=http://127.0.0.1:4444/v1/traces",
                 "telemetry.otlp.protocol=http/json",
+                'telemetry.otlp.semantics=["openinference"]',
             ]
         )
         print(f"Config set output: {result.stdout}")
@@ -697,6 +699,7 @@ sys.exit(0)
             telemetry.get("otlp", {}).get("endpoint"), "http://127.0.0.1:4444/v1/traces"
         )
         self.assertEqual(telemetry.get("otlp", {}).get("protocol"), "http/json")
+        self.assertEqual(telemetry.get("otlp", {}).get("semantics"), ["openinference"])
 
     # =============================================================================
     # Pull Tests
@@ -800,8 +803,9 @@ sys.exit(0)
     def test_055_pull_components_omni_collection(self):
         """Test pull command with --components flag registers an omni collection."""
         collection_name = f"user.CliColl-{uuid.uuid4().hex[:8]}"
-        # Unique user.<name> entries surface under the bare public name.
-        public_name = collection_name[5:]
+        # Registered collections list under their canonical `user.` id (matching
+        # registration/fetch/chat); the bare name is a resolvable alias only.
+        bare_name = collection_name[5:]
         try:
             result = run_cli_pull_command_with_retry(
                 [
@@ -832,13 +836,34 @@ sys.exit(0)
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(response.status_code, 200)
-            entry = next(
-                (m for m in response.json()["data"] if m["id"] == public_name),
-                None,
+            ids = [m["id"] for m in response.json()["data"]]
+            self.assertIn(
+                collection_name,
+                ids,
+                f"{collection_name} should appear in /models under its user. id",
             )
-            self.assertIsNotNone(entry, f"{public_name} should appear in /models")
+            self.assertNotIn(
+                bare_name,
+                ids,
+                "Collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in response.json()["data"] if m["id"] == collection_name
+            )
             self.assertEqual(entry.get("recipe"), "collection.omni")
             self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
+
+            # Both the bare and prefixed ids still resolve on GET /models/{id}.
+            for lookup in (collection_name, bare_name):
+                single = requests.get(
+                    f"http://localhost:{PORT}/api/v1/models/{lookup}",
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    single.status_code, 200, f"{lookup} should resolve: {single.text}"
+                )
+                self.assertEqual(single.json().get("id"), collection_name)
         finally:
             try:
                 requests.post(

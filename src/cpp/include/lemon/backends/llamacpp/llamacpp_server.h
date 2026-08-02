@@ -35,6 +35,13 @@ public:
     json completion(const json& request) override;
     json responses(const json& request) override;
 
+    void forward_streaming_request(const std::string& endpoint,
+                                   const std::string& request_body,
+                                   httplib::DataSink& sink,
+                                   bool sse = true,
+                                   long timeout_seconds = 0,
+                                   TelemetryCallback telemetry_callback = nullptr) override;
+
     // IEmbeddingsServer implementation
     json embeddings(const json& request) override;
 
@@ -47,6 +54,12 @@ public:
 
     // ITokenizerServer implementation
     json tokenize(const json& request) override;
+
+private:
+    // llama-server echoes the local .gguf path it was launched with (`-m <path>`)
+    // in the OpenAI `model` field. Rewrite it to the client-facing model id so
+    // responses don't leak absolute filesystem paths (and usernames).
+    json normalize_response_model(json response, const json& request) const;
 };
 
 namespace llamacpp {
