@@ -18,6 +18,7 @@ Usage:
 
 import json as _json
 import threading
+import platform
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import requests
@@ -124,7 +125,7 @@ SEMANTIC_CODING_PROMPT = (
 SEMANTIC_OTHER_PROMPT = "What are some good recipes for a summer picnic by the lake?"
 SEMANTIC_MIN_SCORE = 0.6
 SEMANTIC_CTX_SIZE = 2048
-SEMANTIC_BACKEND = "cpu"
+SEMANTIC_BACKEND = "metal" if platform.system() == "Darwin" else "cpu"
 
 COLLECTION_NAME = "user.Test-Router-Local"
 
