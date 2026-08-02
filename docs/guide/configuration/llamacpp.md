@@ -5,9 +5,13 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 ## Available Backends
 
 ### CPU
-- **Platform**: Windows, Linux, macOS
+> **macOS:** Lemonade uses the Metal-enabled llama.cpp build as the unified
+> runtime. The same build can run CPU-only when GPU offload is disabled, so a
+> separate `llamacpp:cpu` backend is not required on macOS.
+
+- **Platform**: Windows, Linux
 - **Hardware**: x86_64 processors (Windows and Linux); ARM64/aarch64 processors (Linux)
-- **Use Case**: Universal fallback, no GPU required
+- **Use Case**: CPU-only execution and universal fallback on Windows and Linux
 - **Performance**: Slowest option, suitable for small models or testing
 - **Installation**: Automatically available via upstream llama.cpp releases
 
@@ -42,9 +46,10 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 ### Metal
 - **Platform**: macOS only
 - **Hardware**: Apple Silicon (M1/M2/M3/M4) and Intel Macs with Metal support
-- **Use Case**: macOS GPU acceleration
+- **Use Case**: Accelerated llama.cpp inference on macOS
 - **Performance**: Optimized for Apple Silicon
 - **Installation**: Automatically available via upstream llama.cpp releases
+- **Notes**: The Metal-enabled build can also run CPU-only when GPU offload is disabled
 
 ### System
 - **Platform**: Linux only
@@ -176,11 +181,12 @@ lemonade config set llamacpp.rocm_bin=b1260
 3. **Do you have an Intel GPU or older NVIDIA GPU?**
    - Use **Vulkan**
 
-4. **Do you have Apple Silicon?**
+4. **Are you using macOS?**
    - Use **Metal**
+   - The Metal-enabled build can also run CPU-only when GPU offload is disabled; no separate CPU backend selection is required
 
-5. **No GPU or unsupported GPU?**
-   - Use **CPU**
+5. **No supported GPU backend available?**
+   - On Windows and Linux, use **CPU**
 
 ### ROCm Channel Selection
 
@@ -211,5 +217,6 @@ lemonade config set llamacpp.rocm_bin=b1260
 - No system backend support
 
 ### macOS
-- Supported: CPU, Metal
-- Metal recommended for all Macs with Metal support
+- Supported: Metal
+- The Metal-enabled llama.cpp build provides both accelerated and CPU-only execution
+- A separate `llamacpp:cpu` selection is not required
