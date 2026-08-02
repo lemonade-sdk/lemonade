@@ -364,14 +364,27 @@ static void test_reclaim_rearms_when_rescued_before_commit(Router& router) {
     RoutingHelperTestHook::reconcile(router, {});
     bool armed_survives = RoutingHelperTestHook::has_helper(router, "rescue.helper");
 
-    // The reclaim reaches its eviction commit while the request still holds the
-    // helper (models a second request arriving before the commit). The commit is
-    // refused; the intent must be re-armed, not lost.
+    // Consume the original pending intent WITHOUT reclaiming, so the helper is in
+    // the exact state the bug required: the reclaim task has been dispatched (the
+    // callback was extracted and cleared by take_pending_reclaim_if_idle_locked)
+    // but has not committed yet. Overwriting the stored callback with a no-op and
+    // draining it on release reproduces that consumed-and-cleared state; the old
+    // code, which left the original callback installed, would not have failed.
+    helper->mark_pending_stale_if_busy([] {});
+    helper->release_inference();
+    bool consumed_stays_resident = RoutingHelperTestHook::has_helper(router, "rescue.helper");
+
+    // A second request arrives before that dispatched reclaim reaches its commit.
+    helper->acquire_for_inference();
+
+    // The reclaim's commit is refused (request in flight). With the pending intent
+    // already consumed, only the re-arm keeps the reclaim alive.
     RoutingHelperTestHook::reclaim_now(router, "rescue.helper");
     bool survives_refused_commit = RoutingHelperTestHook::has_helper(router, "rescue.helper");
 
-    // Releasing that request now reclaims the helper on its own — no second
-    // reconcile — proving the intent survived the refused commit.
+    // Releasing the second request must now reclaim the helper on its own — no
+    // second reconcile — which only happens if the refused commit re-armed the
+    // intent (the old code left it consumed and the helper would leak).
     helper->release_inference();
     bool reclaimed = false;
     for (int i = 0; i < 200; ++i) {
@@ -383,7 +396,7 @@ static void test_reclaim_rearms_when_rescued_before_commit(Router& router) {
     }
 
     check("reclaim re-arms on a refused commit; the rescuer's release evicts it",
-          armed_survives && survives_refused_commit && reclaimed);
+          armed_survives && consumed_stays_resident && survives_refused_commit && reclaimed);
 }
 
 // Reviewer's ask #4: router shutdown while a deferred reclaim is pending. The

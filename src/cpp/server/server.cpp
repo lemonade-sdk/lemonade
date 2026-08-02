@@ -381,9 +381,15 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
 
     // Seed the router's needed-helper set from policies already present at
     // startup so a helper loaded before the first policy change still validates
-    // against an authoritative set (see Router::load_model).
-    router_->reconcile_routing_helpers(active_policy_helper_models(),
-                                       model_manager_->next_notify_generation());
+    // against an authoritative set (see Router::load_model). Reserve the
+    // generation BEFORE snapshotting the policies: the directory watcher may
+    // already be publishing newer snapshots, and evaluating next_notify_generation()
+    // after computing the snapshot (argument evaluation order is unspecified in
+    // C++) could stamp this stale snapshot with a newer generation and clobber
+    // the watcher's authoritative state.
+    const uint64_t seed_generation = model_manager_->next_notify_generation();
+    const std::set<std::string> seed_needed = active_policy_helper_models();
+    router_->reconcile_routing_helpers(seed_needed, seed_generation);
 
     {
         lemon::jobs::OpProviders providers;
