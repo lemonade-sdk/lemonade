@@ -462,6 +462,54 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
     @unittest.skipUnless(
         sys.platform.startswith("linux"), "System backend only supported on Linux"
     )
+    def test_006a_thinking_false_maps_to_no_think_for_non_streaming_chat(self):
+        """Verify non-streaming chat preserves thinking-control normalization."""
+        self._write_llama_server(MOCK_LLAMA_SERVER_PYTHON)
+        self._add_dummy_llama_server_to_path()
+
+        capture_path = os.path.join(
+            self.temp_bin_dir, "captured_chat_request_non_streaming.json"
+        )
+        os.environ["MOCK_LLAMA_REQUEST_PATH"] = capture_path
+        self.addCleanup(os.environ.pop, "MOCK_LLAMA_REQUEST_PATH", None)
+
+        _stop_server()
+        _start_server(wrapped_server="llamacpp", backend="system")
+        self._ensure_model_pulled()
+
+        load_response = requests.post(
+            f"http://localhost:{PORT}/api/v1/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_backend": "system"},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "Say hello."}],
+                "stream": False,
+                "thinking": False,
+                "max_tokens": 8,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        with open(capture_path, "r", encoding="utf-8") as handle:
+            forwarded_request = json.load(handle)
+
+        self.assertEqual(
+            forwarded_request["messages"][-1]["content"],
+            "/no_think\nSay hello.",
+        )
+        self.assertNotIn("thinking", forwarded_request)
+        self.assertNotIn("enable_thinking", forwarded_request)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
     def test_007_enable_thinking_takes_precedence_over_thinking_false(self):
         """Verify enable_thinking:true takes precedence over thinking:false."""
         response = requests.post(
