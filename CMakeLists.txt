@@ -55,9 +55,19 @@ endfunction()
 function(add_cpp_ci_test test_name)
     cmake_parse_arguments(ACT "" "CI" "COMMAND;DEPENDS" ${ARGN})
 
+    if(ACT_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR
+            "add_cpp_ci_test(${test_name}): unexpected argument(s) '${ACT_UNPARSED_ARGUMENTS}' "
+            "(check for a misspelled CI/COMMAND/DEPENDS keyword)")
+    endif()
     if(NOT DEFINED ACT_CI)
         message(FATAL_ERROR
             "add_cpp_ci_test(${test_name}): required 'CI <ON|OFF>' argument is missing")
+    endif()
+    string(TOUPPER "${ACT_CI}" _act_ci)
+    if(NOT _act_ci STREQUAL "ON" AND NOT _act_ci STREQUAL "OFF")
+        message(FATAL_ERROR
+            "add_cpp_ci_test(${test_name}): CI must be exactly ON or OFF, got '${ACT_CI}'")
     endif()
     if(NOT ACT_COMMAND)
         message(FATAL_ERROR
@@ -68,7 +78,7 @@ function(add_cpp_ci_test test_name)
     # helper stays exempt from the direct-add_test() ban it enforces.
     _add_test(NAME ${test_name} COMMAND ${ACT_COMMAND})
 
-    if(ACT_CI)
+    if(_act_ci STREQUAL "ON")
         if(ACT_DEPENDS)
             register_cpp_ci_test(${test_name} ${ACT_DEPENDS})
         else()
