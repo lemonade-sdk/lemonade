@@ -30,11 +30,11 @@ inline const BackendDescriptor descriptor = {
     },
     /*support*/ {
         {"npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+        {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
+        {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}}, "x86_64 CPU"},
         {"rocm", {"windows", "linux"},
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
-        {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}}, "x86_64 CPU"},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
-        {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
     },
     /*default_labels*/  {"transcription", "realtime-transcription"},
     /*required_checkpoints*/ {"main"},  // npu_cache validated in load() (npu variant only)

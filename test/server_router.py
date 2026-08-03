@@ -111,6 +111,19 @@ EMBED_MODEL = "nomic-embed-text-v1-GGUF"
 # Real encoder classifier (onnxruntime backend) for the `classifier` condition.
 CLASSIFIER_MODEL = "Phishing-Email-Detection-ONNX"
 
+SEMANTIC_REFERENCE_PHRASES = [
+    "write a function",
+    "fix this bug",
+    "refactor this code",
+    "debug a stack trace",
+    "time complexity of an algorithm",
+]
+SEMANTIC_CODING_PROMPT = (
+    "How do I refactor this recursive function to lower its time complexity?"
+)
+SEMANTIC_OTHER_PROMPT = "What are some good recipes for a summer picnic by the lake?"
+SEMANTIC_MIN_SCORE = 0.6
+
 COLLECTION_NAME = "user.Test-Router-Local"
 
 POLICY = {
@@ -142,6 +155,7 @@ POLICY = {
         ],
     },
 }
+
 
 
 class RouterTests(ServerTestBase):
@@ -224,6 +238,33 @@ class RouterTests(ServerTestBase):
 
     def _trace_map(self, decision):
         return {t["condition"]: t["result"] for t in decision.get("trace", [])}
+
+    @staticmethod
+    def _classifier_score(decision, classifier_id):
+        condition = f"classifier:{classifier_id}"
+        for entry in decision.get("trace", []):
+            if entry.get("condition") == condition:
+                return entry.get("score")
+        return None
+
+    def _load_semantic_model(self):
+        """Load the embedding model before entering router evaluation.
+
+        Semantic routing is not intended to test cold-start model loading. Keeping
+        that lifecycle concern outside the routed request avoids a transient
+        ensure/load failure being converted into Score{ok=false} and silently
+        falling through to the default candidate.
+        """
+        resp = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": EMBED_MODEL},
+            timeout=600,
+        )
+        self.assertEqual(
+            resp.status_code,
+            200,
+            f"failed to preload semantic model {EMBED_MODEL}: {resp.text}",
+        )
 
     def test_600_default_fallthrough(self):
         """A prompt matching no rule falls open to default_model."""
@@ -421,11 +462,11 @@ class RouterTests(ServerTestBase):
 
         This is the first *model-backed* condition in the suite: it embeds the
         input (via `Router::embeddings`) and scores it against labelled
-        reference phrases. Scores are deterministic for a fixed model, so the
-        0.6 threshold reliably separates a coding query (~0.74) from an
-        unrelated one (~0.47).
+        reference phrases. The embedding model is explicitly loaded first so
+        this test measures routing behavior rather than cold-start lifecycle.
         """
         pull_model_with_retry(EMBED_MODEL)
+        self._load_semantic_model()
         collection = "user.Test-Router-Semantic"
         policy = {
             "version": "1",
@@ -441,13 +482,7 @@ class RouterTests(ServerTestBase):
                         "type": "semantic_similarity",
                         "model": EMBED_MODEL,
                         "reference_phrases": {
-                            "coding": [
-                                "write a function",
-                                "fix this bug",
-                                "refactor this code",
-                                "debug a stack trace",
-                                "time complexity of an algorithm",
-                            ]
+                            "coding": SEMANTIC_REFERENCE_PHRASES,
                         },
                     }
                 ],
@@ -457,7 +492,7 @@ class RouterTests(ServerTestBase):
                         "match": {
                             "classifier": "topic",
                             "label": "coding",
-                            "min_score": 0.6,
+                            "min_score": SEMANTIC_MIN_SCORE,
                         },
                         "route_to": CAPABLE_MODEL,
                     }
@@ -470,36 +505,57 @@ class RouterTests(ServerTestBase):
         self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
 
         try:
-
-            def classify_score(decision):
-                for t in decision.get("trace", []):
-                    if t["condition"] == "classifier:topic":
-                        return t.get("score")
-                return None
-
-            # A semantically coding prompt (no literal rule keyword) -> capable.
+            # A semantically coding prompt -> capable.
             _, decision, _ = self._route(
-                "How do I refactor this recursive function to lower its time complexity?",
+                SEMANTIC_CODING_PROMPT,
                 collection=collection,
             )
-            self.assertEqual(decision.get("route_to"), CAPABLE_MODEL)
+            coding_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                coding_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
+            )
+            self.assertGreaterEqual(
+                coding_score,
+                SEMANTIC_MIN_SCORE,
+                f"coding score {coding_score:.6f} fell below {SEMANTIC_MIN_SCORE:.6f}",
+            )
+            self.assertEqual(
+                decision.get("route_to"),
+                CAPABLE_MODEL,
+                f"unexpected semantic coding decision: {decision}",
+            )
             self.assertEqual(decision.get("matched_rule"), "coding-to-capable")
-            coding_score = classify_score(decision)
-            self.assertIsNotNone(coding_score)
-            self.assertGreaterEqual(coding_score, 0.6)
-            print(f"[OK] semantic coding ({coding_score:.3f}) -> {CAPABLE_MODEL}")
+            print(
+                f"[OK] semantic coding ({coding_score:.3f} >= {SEMANTIC_MIN_SCORE:.3f}) "
+                f"-> {CAPABLE_MODEL}"
+            )
 
             # An unrelated prompt scores below threshold -> default.
             _, decision, _ = self._route(
-                "What are some good recipes for a summer picnic by the lake?",
+                SEMANTIC_OTHER_PROMPT,
                 collection=collection,
             )
-            self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+            other_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                other_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
+            )
+            self.assertLess(
+                other_score,
+                SEMANTIC_MIN_SCORE,
+                f"unrelated score {other_score:.6f} reached {SEMANTIC_MIN_SCORE:.6f}",
+            )
+            self.assertEqual(
+                decision.get("route_to"),
+                DEFAULT_MODEL,
+                f"unexpected semantic non-coding decision: {decision}",
+            )
             self.assertTrue(decision.get("default_used"))
-            other_score = classify_score(decision)
-            self.assertIsNotNone(other_score)
-            self.assertLess(other_score, 0.6)
-            print(f"[OK] semantic non-coding ({other_score:.3f}) -> {DEFAULT_MODEL}")
+            print(
+                f"[OK] semantic non-coding ({other_score:.3f} < {SEMANTIC_MIN_SCORE:.3f}) "
+                f"-> {DEFAULT_MODEL}"
+            )
         finally:
             self._delete_collection(collection)
 
@@ -512,6 +568,7 @@ class RouterTests(ServerTestBase):
         query goes to the cloud model; an unrelated query stays local.
         """
         pull_model_with_retry(EMBED_MODEL)
+        self._load_semantic_model()
         provider = "testsemcloud"
         upstream_id = "vendor/sem-cloud-model"
         marker = "answered-by-cloud-provider"
@@ -567,13 +624,7 @@ class RouterTests(ServerTestBase):
                             "type": "semantic_similarity",
                             "model": EMBED_MODEL,
                             "reference_phrases": {
-                                "coding": [
-                                    "write a function",
-                                    "fix this bug",
-                                    "refactor this code",
-                                    "debug a stack trace",
-                                    "time complexity of an algorithm",
-                                ]
+                                "coding": SEMANTIC_REFERENCE_PHRASES,
                             },
                         }
                     ],
@@ -583,7 +634,7 @@ class RouterTests(ServerTestBase):
                             "match": {
                                 "classifier": "topic",
                                 "label": "coding",
-                                "min_score": 0.6,
+                                "min_score": SEMANTIC_MIN_SCORE,
                             },
                             "route_to": cloud_model,
                             "outputs": {"route_category": "cloud"},
@@ -598,26 +649,60 @@ class RouterTests(ServerTestBase):
 
             # Semantically coding -> cloud candidate, answered by the mock provider.
             _, decision, data = self._route(
-                "How do I refactor this recursive function to lower its time complexity?",
+                SEMANTIC_CODING_PROMPT,
                 collection=collection,
             )
-            self.assertEqual(decision.get("route_to"), cloud_model)
+            coding_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                coding_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
+            )
+            self.assertGreaterEqual(
+                coding_score,
+                SEMANTIC_MIN_SCORE,
+                f"coding score {coding_score:.6f} fell below {SEMANTIC_MIN_SCORE:.6f}",
+            )
+            self.assertEqual(
+                decision.get("route_to"),
+                cloud_model,
+                f"unexpected semantic cloud decision: {decision}",
+            )
             self.assertEqual(decision.get("matched_rule"), "coding-to-cloud")
             self.assertEqual(
                 data["choices"][0]["message"]["content"],
                 marker,
                 "coding prompt should be answered by the cloud provider",
             )
-            print(f"[OK] semantic coding -> {cloud_model} (cloud), answered by mock")
+            print(
+                f"[OK] semantic coding ({coding_score:.3f} >= {SEMANTIC_MIN_SCORE:.3f}) "
+                f"-> {cloud_model} (cloud), answered by mock"
+            )
 
             # Unrelated -> stays local (default).
             _, decision, _ = self._route(
-                "What are some good recipes for a summer picnic by the lake?",
+                SEMANTIC_OTHER_PROMPT,
                 collection=collection,
             )
-            self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+            other_score = self._classifier_score(decision, "topic")
+            self.assertIsNotNone(
+                other_score,
+                f"semantic classifier failed or omitted its trace: {decision}",
+            )
+            self.assertLess(
+                other_score,
+                SEMANTIC_MIN_SCORE,
+                f"unrelated score {other_score:.6f} reached {SEMANTIC_MIN_SCORE:.6f}",
+            )
+            self.assertEqual(
+                decision.get("route_to"),
+                DEFAULT_MODEL,
+                f"unexpected semantic non-coding decision: {decision}",
+            )
             self.assertTrue(decision.get("default_used"))
-            print(f"[OK] semantic non-coding -> {DEFAULT_MODEL} (local default)")
+            print(
+                f"[OK] semantic non-coding ({other_score:.3f} < {SEMANTIC_MIN_SCORE:.3f}) "
+                f"-> {DEFAULT_MODEL} (local default)"
+            )
         finally:
             self._delete_collection(collection)
             requests.delete(
