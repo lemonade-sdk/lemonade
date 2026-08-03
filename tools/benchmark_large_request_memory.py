@@ -20,7 +20,6 @@ import time
 from typing import Any
 from urllib.parse import urlparse
 
-
 EXPECTED_VARIANTS = {
     "baseline",
     "serialization-only",
@@ -156,6 +155,13 @@ def free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def lemonade_api_key() -> str | None:
+    """Return the credential accepted by both regular and internal routes."""
+    return os.environ.get("LEMONADE_ADMIN_API_KEY") or os.environ.get(
+        "LEMONADE_API_KEY"
+    )
+
+
 def request_json(
     base_url: str,
     method: str,
@@ -172,6 +178,9 @@ def request_json(
     connection = connection_class(parsed.hostname, parsed.port, timeout=timeout)
     try:
         headers = {"Content-Type": "application/json"} if body is not None else {}
+        api_key = lemonade_api_key()
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         connection.request(method, f"{parsed.path.rstrip('/')}{path}", body, headers)
         response = connection.getresponse()
         payload = response.read()

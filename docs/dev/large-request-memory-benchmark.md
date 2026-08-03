@@ -53,6 +53,11 @@ the JSON body, it isolates allocator behaviour: baseline and
 serialization-only should match, as should allocator-only and combined. Use a
 mock or real inference route to measure serialization and end-to-end effects.
 
+Both modes authenticate requests with `LEMONADE_ADMIN_API_KEY` when it is set,
+falling back to `LEMONADE_API_KEY`. Stress-mode subprocesses inherit the same
+environment, and the selected credential is also used for their internal
+shutdown request. Credential values are never written to the result JSON.
+
 ## Backend-free RSS run
 
 Run three fresh-process repetitions per variant:
