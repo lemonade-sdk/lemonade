@@ -185,8 +185,8 @@ lemonade config set llamacpp.rocm_bin=b1260
    - Use **Metal**
    - The Metal-enabled build can also run CPU-only when GPU offload is disabled; no separate CPU backend selection is required
 
-5. **No supported GPU backend available?**
-   - On Windows and Linux, use **CPU**
+5. **No GPU or unsupported GPU?**
+   - Use **CPU**
 
 ### ROCm Channel Selection
 
