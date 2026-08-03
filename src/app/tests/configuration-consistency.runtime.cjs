@@ -8,6 +8,7 @@ const appPath = path.join(root, 'src/App.tsx');
 const chatPath = path.join(root, 'src/components/ChatView.tsx');
 const effectivePath = path.join(root, 'src/components/EffectiveSettingsModal.tsx');
 const detailPath = path.join(root, 'src/components/ModelDetailPanel.tsx');
+const apiPath = path.join(root, 'src/api.ts');
 const stylesPath = path.join(root, 'src/styles/styles.css');
 
 const sources = new Map([
@@ -15,6 +16,7 @@ const sources = new Map([
   [chatPath, fs.readFileSync(chatPath, 'utf8')],
   [effectivePath, fs.readFileSync(effectivePath, 'utf8')],
   [detailPath, fs.readFileSync(detailPath, 'utf8')],
+  [apiPath, fs.readFileSync(apiPath, 'utf8')],
 ]);
 const styles = fs.readFileSync(stylesPath, 'utf8');
 
@@ -42,6 +44,7 @@ const appSource = sources.get(appPath);
 const chatSource = sources.get(chatPath);
 const effectiveSource = sources.get(effectivePath);
 const detailSource = sources.get(detailPath);
+const apiSource = sources.get(apiPath);
 
 assert.match(appSource, /<header className="titlebar" data-tauri-drag-region>/);
 assert.doesNotMatch(appSource, /titlebar--chat/);
@@ -79,5 +82,11 @@ assert.match(detailSource, /import \{ TTS_VOICES \}/);
 assert.match(detailSource, /knownVoiceOptionsForModel/);
 assert.match(detailSource, /<option value=\{customVoiceSentinel\}>Custom voice…<\/option>/);
 assert.match(detailSource, /placeholder="Enter custom voice ID"/);
+
+assert.match(apiSource, /const body: Record<string, unknown> = \{[\s\S]*model_name: modelName,[\s\S]*save_options: true,[\s\S]*\.\.\.recipeOptions,[\s\S]*\};/);
+const saveDefaultPosition = apiSource.indexOf('save_options: true');
+const callerOverridePosition = apiSource.indexOf('...recipeOptions', saveDefaultPosition);
+assert.ok(saveDefaultPosition >= 0 && callerOverridePosition > saveDefaultPosition,
+  'GUI3 loads must persist recipe options by default while preserving explicit save_options: false overrides');
 
 console.log('GUI3 configuration consistency contract checks passed.');

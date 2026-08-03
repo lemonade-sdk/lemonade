@@ -1375,7 +1375,12 @@ class LemonadeAPI {
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
-    const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
+    const body: Record<string, unknown> = {
+      model_name: modelName,
+      save_options: true,
+      ...(stagedOptions || {}),
+      ...recipeOptions,
+    };
     const result = await this._json('/api/v1/load', { method: 'POST', body });
     this._notifyModelsChanged();
     return result;
