@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <map>
 #include <set>
 #include <string>
@@ -45,8 +46,10 @@ inline std::vector<std::string> parse_custom_args(const std::string& custom_args
     return result;
 }
 
-inline std::map<std::string, std::vector<std::string>> build_custom_args_map(const std::vector<std::string>& tokens) {
-    std::map<std::string, std::vector<std::string>> result;
+using CustomArgsMap = std::map<std::string, std::vector<std::vector<std::string>>>;
+
+inline CustomArgsMap build_custom_args_map(const std::vector<std::string>& tokens) {
+    CustomArgsMap result;
     std::string last_flag;  // Track the most recently seen flag independently of map ordering
 
     // Detect a complete negative number so it's treated as a value, not a flag.
@@ -90,11 +93,11 @@ inline std::map<std::string, std::vector<std::string>> build_custom_args_map(con
     for (const auto& token : tokens) {
         if (!token.empty() && token[0] == '-' && !is_negative_number(token)) {
             // This is a flag; start a new entry
-            result[token] = {};
+            result[token].push_back({});
             last_flag = token;
         } else if (!last_flag.empty()) {
             // Append to the most recently seen flag
-            result[last_flag].push_back(token);
+            result[last_flag].back().push_back(token);
         }
     }
 
@@ -128,15 +131,17 @@ inline std::string validate_custom_args(const std::string& custom_args_str, cons
     return "";
 }
 
-inline std::string map_to_args_string(const std::map<std::string, std::vector<std::string>>& m) {
+inline std::string map_to_args_string(const CustomArgsMap& m) {
     std::string result;
     bool first = true;
-    for (const auto& [flag, values] : m) {
-        if (!first) result += " ";
-        first = false;
-        result += flag;
-        for (const auto& v : values) {
-            result += " " + v;
+    for (const auto& [flag, occurrences] : m) {
+        for (const auto& values : occurrences) {
+            if (!first) result += " ";
+            first = false;
+            result += flag;
+            for (const auto& v : values) {
+                result += " " + v;
+            }
         }
     }
     return result;
@@ -154,15 +159,20 @@ inline std::string negate_flag(const std::string& flag) {
     return "";
 }
 
-inline std::map<std::string, std::vector<std::string>> merge_args_maps(
-    const std::map<std::string, std::vector<std::string>>& target,
-    const std::map<std::string, std::vector<std::string>>& incoming) {
-    std::map<std::string, std::vector<std::string>> merged = target;
+inline CustomArgsMap merge_args_maps(
+    const CustomArgsMap& target,
+    const CustomArgsMap& incoming) {
+    CustomArgsMap merged = target;
 
     // Remove binary-flag negations from incoming that conflict with target.
     // Only flags without arguments are considered binary flags.
-    for (const auto& [flag, values] : incoming) {
-        if (values.empty()) {
+    for (const auto& [flag, occurrences] : incoming) {
+        bool is_binary = std::all_of(
+            occurrences.begin(), occurrences.end(),
+            [](const std::vector<std::string>& values) {
+                return values.empty();
+            });
+        if (is_binary) {
             std::string neg = negate_flag(flag);
             if (!neg.empty() && merged.count(neg)) {
                 // Target has the opposite binary flag — skip this incoming flag
@@ -170,7 +180,7 @@ inline std::map<std::string, std::vector<std::string>> merge_args_maps(
             }
         }
         if (!merged.count(flag)) {
-            merged[flag] = values;
+            merged[flag] = occurrences;
         }
     }
     return merged;
