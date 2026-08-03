@@ -247,6 +247,7 @@ const App: React.FC = () => {
   const utilityMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const navigationSearchRef = useRef<HTMLInputElement>(null);
   const [isDesktop, setIsDesktop] = useState(false);
+  const navigationSearchShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl K';
 
   useEffect(() => {
     import('./tauriShim').then(({ tauriReady }) => {
@@ -441,12 +442,14 @@ const App: React.FC = () => {
     }
     setNavigationSearch('');
     setNavigationSearchOpen(false);
+    setUtilityMenuOpen(false);
   }, [navigateToRoute, setView]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
+        if (window.matchMedia('(max-width: 768px)').matches) setUtilityMenuOpen(true);
         setNavigationSearchOpen(true);
         requestAnimationFrame(() => navigationSearchRef.current?.focus());
       }
@@ -574,7 +577,7 @@ const App: React.FC = () => {
     <>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <header className={`titlebar${view === 'chat' ? ' titlebar--chat' : ''}`} data-tauri-drag-region>
+        <header className="titlebar" data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
           <span className="titlebar__brand-logo" data-tauri-drag-region>
             <span className="titlebar__brand-icon" aria-hidden="true" />
@@ -588,75 +591,6 @@ const App: React.FC = () => {
             aria-label={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
             title={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
           />
-        </div>
-
-        <div
-          className="titlebar__search"
-          data-tauri-drag-region="false"
-          onBlur={event => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              setNavigationSearchOpen(false);
-            }
-          }}
-        >
-          <Icon name="search" size={15} aria-hidden="true" />
-          <input
-            ref={navigationSearchRef}
-            type="search"
-            value={navigationSearch}
-            placeholder="Search Lemonade"
-            aria-label="Search Lemonade"
-            aria-autocomplete="list"
-            aria-expanded={navigationSearchOpen}
-            aria-controls="titlebar-search-results"
-            onFocus={() => setNavigationSearchOpen(true)}
-            onChange={event => {
-              setNavigationSearch(event.target.value);
-              setNavigationSearchIndex(0);
-              setNavigationSearchOpen(true);
-            }}
-            onKeyDown={event => {
-              if (event.key === 'ArrowDown') {
-                event.preventDefault();
-                if (navigationSearchResults.length > 0) {
-                  setNavigationSearchIndex(index => Math.min(index + 1, navigationSearchResults.length - 1));
-                }
-              } else if (event.key === 'ArrowUp') {
-                event.preventDefault();
-                if (navigationSearchResults.length > 0) {
-                  setNavigationSearchIndex(index => Math.max(index - 1, 0));
-                }
-              } else if (event.key === 'Enter' && navigationSearchResults[navigationSearchIndex]) {
-                event.preventDefault();
-                selectNavigationDestination(navigationSearchResults[navigationSearchIndex]);
-              } else if (event.key === 'Escape') {
-                setNavigationSearch('');
-                setNavigationSearchOpen(false);
-              }
-            }}
-          />
-          <kbd>Ctrl K</kbd>
-          {navigationSearchOpen && (
-            <div id="titlebar-search-results" className="titlebar__search-results" role="listbox" aria-label="Global search results">
-              {navigationSearchResults.length > 0 ? navigationSearchResults.map((destination, index) => (
-                <button
-                  key={destination.id}
-                  type="button"
-                  role="option"
-                  aria-selected={index === navigationSearchIndex}
-                  className={index === navigationSearchIndex ? 'is-active' : ''}
-                  onMouseDown={event => event.preventDefault()}
-                  onClick={() => selectNavigationDestination(destination)}
-                >
-                  <Icon name={destination.icon} size={14} aria-hidden="true" />
-                  <span>
-                    <strong>{destination.label}</strong>
-                    <small>{destination.description}</small>
-                  </span>
-                </button>
-              )) : <p>{navigationSearch.trim() ? 'No matching results.' : 'Search models, backends, apps, and settings.'}</p>}
-            </div>
-          )}
         </div>
 
         <nav className="titlebar__nav" data-tauri-drag-region="false" aria-label="Primary">
@@ -690,9 +624,96 @@ const App: React.FC = () => {
               title="App controls"
               onClick={() => setUtilityMenuOpen(open => !open)}
             >
-              <Icon name="settings" size={17} aria-hidden="true" />
+              <Icon name="sliders-horizontal" size={17} aria-hidden="true" />
             </button>
             <div id="titlebar-utility-menu" className="titlebar__utility-menu" aria-label="App controls">
+              <div
+                className={`titlebar__search${navigationSearchOpen ? ' is-open' : ''}`}
+                onBlur={event => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setNavigationSearchOpen(false);
+                  }
+                }}
+              >
+                <Icon name="search" size={15} className="titlebar__search-leading-icon" aria-hidden="true" />
+                <button
+                  type="button"
+                  className="titlebar__search-toggle"
+                  aria-label="Search Lemonade"
+                  aria-expanded={navigationSearchOpen}
+                  aria-controls="titlebar-search-results"
+                  title="Search"
+                  onClick={() => {
+                    setNavigationSearchOpen(true);
+                    requestAnimationFrame(() => navigationSearchRef.current?.focus());
+                  }}
+                >
+                  <Icon name="search" size={16} aria-hidden="true" />
+                </button>
+                <div className="titlebar__search-popover">
+                  <div className="titlebar__search-entry">
+                    <input
+                      ref={navigationSearchRef}
+                      type="search"
+                      value={navigationSearch}
+                      placeholder="Search"
+                      aria-label="Search Lemonade"
+                      aria-autocomplete="list"
+                      aria-expanded={navigationSearchOpen}
+                      aria-controls="titlebar-search-results"
+                      onFocus={() => setNavigationSearchOpen(true)}
+                      onChange={event => {
+                        setNavigationSearch(event.target.value);
+                        setNavigationSearchIndex(0);
+                        setNavigationSearchOpen(true);
+                      }}
+                      onKeyDown={event => {
+                        if (event.key === 'ArrowDown') {
+                          event.preventDefault();
+                          if (navigationSearchResults.length > 0) {
+                            setNavigationSearchIndex(index => Math.min(index + 1, navigationSearchResults.length - 1));
+                          }
+                        } else if (event.key === 'ArrowUp') {
+                          event.preventDefault();
+                          if (navigationSearchResults.length > 0) {
+                            setNavigationSearchIndex(index => Math.max(index - 1, 0));
+                          }
+                        } else if (event.key === 'Enter' && navigationSearchResults[navigationSearchIndex]) {
+                          event.preventDefault();
+                          selectNavigationDestination(navigationSearchResults[navigationSearchIndex]);
+                        } else if (event.key === 'Escape') {
+                          setNavigationSearch('');
+                          setNavigationSearchOpen(false);
+                        }
+                      }}
+                    />
+                    <kbd aria-label={navigationSearchShortcut === '⌘ K' ? 'Command K' : 'Control K'}>
+                      {navigationSearchShortcut}
+                    </kbd>
+                  </div>
+                  {navigationSearchOpen && (
+                    <div id="titlebar-search-results" className="titlebar__search-results" role="listbox" aria-label="Global search results">
+                      {navigationSearchResults.length > 0 ? navigationSearchResults.map((destination, index) => (
+                        <button
+                          key={destination.id}
+                          type="button"
+                          role="option"
+                          aria-selected={index === navigationSearchIndex}
+                          className={index === navigationSearchIndex ? 'is-active' : ''}
+                          onMouseDown={event => event.preventDefault()}
+                          onClick={() => selectNavigationDestination(destination)}
+                        >
+                          <Icon name={destination.icon} size={14} aria-hidden="true" />
+                          <span>
+                            <strong>{destination.label}</strong>
+                            <small>{destination.description}</small>
+                          </span>
+                        </button>
+                      )) : <p>{navigationSearch.trim() ? 'No matching results.' : 'Search models, backends, apps, and settings.'}</p>}
+                    </div>
+                  )}
+                </div>
+              </div>
               <div
                 className="titlebar__utility-status"
                 role="status"
