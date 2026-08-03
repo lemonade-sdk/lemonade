@@ -1105,6 +1105,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [customDraft, setCustomDraft] = useState<CustomModelDraftState>(() => createEmptyCustomDraft());
   const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
   const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
+  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModelNames());
   const [favoriteModels, setFavoriteModels] = useState<string[]>(() => loadFavoriteModels());
   // Multi-select functional capability filter driven by the funnel popover.
@@ -1167,15 +1168,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (!api.isConnected) {
       setDynamicRecipeOptions({});
       setCustomRecipeAvailabilityLoaded(false);
+      setSystemInfo(null);
       return;
     }
 
     try {
       const info = await api.systemInfo();
       const hasRecipeData = Boolean(systemRecipeEntries(info));
+      setSystemInfo(info);
       setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
       setCustomRecipeAvailabilityLoaded(hasRecipeData);
     } catch {
+      setSystemInfo(null);
       setDynamicRecipeOptions({});
       setCustomRecipeAvailabilityLoaded(false);
     }
@@ -2839,6 +2843,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         registryZoneTop={hasRemoteActivity && !hasLocalMatches ? renderRegistryZones() : undefined}
         registryZone={hasRemoteActivity && hasLocalMatches ? renderRegistryZones() : undefined}
         registryResultCount={remoteResultCount}
+        systemInfo={systemInfo}
       />
 
       <WorkspacePanelResizer label="Resize model list panel" {...panelResize.resizerProps} />

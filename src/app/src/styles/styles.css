@@ -7493,97 +7493,39 @@ optgroup {
 
 /* Model list items */
 .model-list-item {
-  min-height: 54px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 82px auto auto;
-  align-items: center;
-  column-gap: 10px;
-  padding: var(--space-2) var(--space-2);
+  --model-list-row-bg: var(--surface-base);
+  --model-list-line: color-mix(in srgb, var(--border-strong) 72%, transparent);
+  position: relative;
+  min-height: 58px;
+  display: block;
+  padding: var(--space-2) calc(var(--space-2) + 22px) 19px var(--space-2);
   border-radius: var(--radius-md);
   cursor: pointer;
   border: 1px solid transparent;
+  background: var(--model-list-row-bg);
   user-select: none;
 }
 
-.model-list-item:hover { background: var(--surface-1); }
-.model-list-item:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 0; }
+.model-list-item:hover {
+  --model-list-row-bg: var(--surface-1);
+}
+
+.model-list-item:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 0;
+}
 
 .model-list-item--selected {
-  background: color-mix(in srgb, var(--accent-fg) 12%, transparent);
+  --model-list-row-bg: color-mix(in srgb, var(--accent-fg) 12%, var(--surface-base));
+  --model-list-line: color-mix(in srgb, var(--accent-fg) 34%, var(--border-strong));
   border-color: color-mix(in srgb, var(--accent-fg) 30%, transparent);
 }
 
 .model-list-item--selected:hover {
-  background: color-mix(in srgb, var(--accent-fg) 18%, transparent);
-}
-
-.model-list-item__backend {
-  --model-backend-notch: 9px;
-  position: relative;
-  grid-column: 2;
-  width: 82px;
-  min-width: 82px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 7px 0 9px;
-  color: var(--text-secondary);
-  background: transparent;
-  clip-path: polygon(
-    0 0,
-    calc(100% - var(--model-backend-notch)) 0,
-    100% var(--model-backend-notch),
-    100% 100%,
-    0 100%
-  );
-  font-size: 9px;
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.055em;
-  line-height: 1;
-  text-align: center;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.model-list-item__backend::before {
-  content: '';
-  position: absolute;
-  z-index: 1;
-  inset-block: 5px;
-  inset-inline-start: 0;
-  width: 2px;
-  border-radius: var(--radius-pill);
-  background: var(--list-backend-color, var(--text-tertiary));
-  box-shadow: 0 0 7px color-mix(in srgb, var(--list-backend-color, var(--text-tertiary)) 28%, transparent);
-}
-
-.model-list-item__backend::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  padding: 1px;
-  pointer-events: none;
-  background: var(--border-strong);
-  clip-path: inherit;
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-}
-
-.model-list-item--selected .model-list-item__backend {
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--surface-base) 28%, transparent);
+  --model-list-row-bg: color-mix(in srgb, var(--accent-fg) 18%, var(--surface-base));
 }
 
 .model-list-item__body {
-  grid-column: 1;
-  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -7603,39 +7545,162 @@ optgroup {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   font-size: var(--type-overline-size);
   color: var(--text-tertiary);
 }
 
-.model-list-item__status {
-  grid-column: 3;
-  flex-shrink: 0;
-  display: flex;
+/* Lower guide: a restrained backend-color lead-in merges into the standard
+   one-pixel rule. The label sits on that rule and the status ring terminates it. */
+.model-list-item__footer {
+  position: absolute;
+  z-index: 1;
+  inset-inline: var(--space-2);
+  inset-block-end: 5px;
+  height: 13px;
+  pointer-events: none;
+}
+
+.model-list-item__footer::before,
+.model-list-item__footer::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 6px;
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+}
+
+.model-list-item__footer::before {
+  inset-inline-end: 5px;
+  height: 1px;
+  background: var(--model-list-line);
+  opacity: 0.72;
+}
+
+.model-list-item__footer::after {
+  width: 44%;
+  height: 2px;
+  transform: translateY(-0.5px);
+  background: linear-gradient(
+    90deg,
+    var(--list-backend-color, var(--text-tertiary)) 0%,
+    var(--list-backend-color, var(--text-tertiary)) 58%,
+    color-mix(in srgb, var(--list-backend-color, var(--text-tertiary)) 48%, var(--model-list-line)) 80%,
+    transparent 100%
+  );
+  box-shadow: 0 0 5px color-mix(in srgb, var(--list-backend-color, var(--text-tertiary)) 15%, transparent);
+}
+
+.model-list-item__footer-info {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 0;
+  inset-inline-end: 16px;
+  display: inline-flex;
   align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  background: var(--model-list-row-bg);
+  font-size: var(--type-overline-size);
+  font-weight: var(--weight-regular);
+  line-height: 13px;
+  white-space: nowrap;
+}
+
+.model-list-item__backend {
+  color: var(--text-secondary);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.model-list-item__pct {
+  color: var(--accent-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The ring is the physical end of the lower rule. Its inner light reports the
+   joined model/backend readiness state; a hollow ring means remote/available. */
+.model-list-item__status {
+  position: absolute;
+  z-index: 3;
+  inset-block-start: 1px;
+  inset-inline-end: 0;
+  width: 11px;
+  height: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--model-list-line);
+  border-radius: 50%;
+  background: var(--model-list-row-bg);
+  box-shadow: 0 0 0 2px var(--model-list-row-bg);
 }
 
 .model-list-item__dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
 }
 
-.model-list-item__dot--ready { background: var(--status-ok); }
-
-.model-list-item__pct {
-  font-size: var(--type-overline-size);
-  color: var(--accent-fg);
+.model-list-item__dot--ready,
+.model-list-item__dot--running {
+  background: var(--status-ok);
 }
 
-/* Pin / favorite affordance — compact, revealed on hover/selection or when pinned */
+.model-list-item__dot--running {
+  animation: dotPulse 2s ease-in-out infinite;
+}
+
+.model-list-item__dot--attention {
+  background: var(--status-warning);
+}
+
+.model-list-item__dot--unknown {
+  background: var(--text-disabled);
+}
+
+.model-list-item__dot--downloading {
+  background: var(--accent-fg);
+  animation: dotPulse 1.4s ease-in-out infinite;
+}
+
+.model-list-item__status--attention {
+  border-color: color-mix(in srgb, var(--status-warning) 48%, var(--model-list-line));
+}
+
+.model-list-item__status--running,
+.model-list-item__status--ready {
+  border-color: color-mix(in srgb, var(--status-ok) 42%, var(--model-list-line));
+}
+
+.model-list-item__status--downloading {
+  border-color: color-mix(in srgb, var(--accent-fg) 48%, var(--model-list-line));
+}
+
+/* Pin / favorite: a single compact icon above the status terminus, without a
+   second list column or a badge-like container. */
 .model-list-item__pin {
-  grid-column: 4;
-  width: 20px;
-  height: 20px;
-  min-width: 20px;
-  flex-shrink: 0;
+  position: absolute;
+  z-index: 4;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+  pointer-events: auto;
+}
+
+.model-list-item__pin:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
 .model-list-item:hover .model-list-item__pin,
@@ -7646,7 +7711,17 @@ optgroup {
 }
 
 .model-list-item__pin--active {
+  color: var(--accent-fg);
+  background: color-mix(in srgb, var(--accent-fg) 10%, transparent);
   opacity: 1;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .model-list-item__pin { opacity: 0.72; }
+}
+
+@media (max-width: 520px) {
+  .model-list-item__footer::after { width: 36%; }
 }
 
 .model-list-panel__empty {

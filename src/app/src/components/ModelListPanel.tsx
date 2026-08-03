@@ -41,7 +41,197 @@ function listFmtSize(gb: number): string {
 export const listRecipeBadgeText = backendCompactLabel;
 
 function modelListBackendLabel(recipe: string): string {
-  return backendCompactLabel(recipe).toUpperCase();
+  return backendCompactLabel(recipe);
+}
+
+type BackendReadinessTone = 'ready' | 'attention' | 'unknown';
+
+export interface ModelBackendReadiness {
+  tone: BackendReadinessTone;
+  label: string;
+  backend?: string;
+  state?: string;
+}
+
+const BACKEND_MANAGED_RECIPES = new Set([
+  'llamacpp',
+  'vllm',
+  'flm',
+  'ryzenai-llm',
+  'sd-cpp',
+  'whispercpp',
+  'moonshine',
+  'kokoro',
+  'acestep',
+  'thinksound',
+  'openmoss',
+  'trellis',
+]);
+
+const BACKEND_OPTION_FIELD: Record<string, string> = {
+  llamacpp: 'llamacpp_backend',
+  vllm: 'vllm_backend',
+  'sd-cpp': 'sd-cpp_backend',
+  whispercpp: 'whispercpp_backend',
+  moonshine: 'moonshine_backend',
+  acestep: 'acestep_backend',
+  thinksound: 'thinksound_backend',
+  openmoss: 'openmoss_backend',
+  trellis: 'trellis_backend',
+};
+
+function asRecord(value: unknown): Record<string, any> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, any>
+    : null;
+}
+
+function normalizedBackend(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function configuredBackendForModel(model: ModelInfo, recipe: string, recipeInfo: Record<string, any>): string {
+  const raw = model as any;
+  const recipeOptions = asRecord(raw.recipe_options);
+  const options = asRecord(raw.options);
+  const field = BACKEND_OPTION_FIELD[recipe];
+  const configured = normalizedBackend(
+    (field ? recipeOptions?.[field] : undefined)
+      ?? recipeOptions?.backend
+      ?? (field ? options?.[field] : undefined)
+      ?? options?.backend
+      ?? (field ? raw[field] : undefined)
+      ?? raw.backend
+      ?? raw.default_backend
+      ?? raw.recommended_backend,
+  );
+  if (configured && configured !== 'auto') return configured;
+  return normalizedBackend(recipeInfo.default_backend);
+}
+
+/**
+ * A downloaded model is only ready when its selected/default backend is also
+ * installed and usable. Missing or updateable backends deliberately surface as
+ * attention instead of presenting the model as fully ready.
+ */
+export function modelBackendReadiness(
+  model: ModelInfo,
+  systemInfo?: Record<string, unknown> | null,
+): ModelBackendReadiness {
+  const recipe = normalizedBackend((model as any).recipe);
+  if (!recipe) {
+    return { tone: 'unknown', label: 'Model downloaded; backend could not be determined.' };
+  }
+
+  const recipes = asRecord(systemInfo?.recipes);
+  if (!recipes) {
+    return { tone: 'unknown', label: 'Model downloaded; backend status is not available.' };
+  }
+
+  const recipeInfo = asRecord(recipes[recipe]);
+  if (!recipeInfo && !BACKEND_MANAGED_RECIPES.has(recipe)) {
+    return { tone: 'ready', label: 'Model downloaded and ready.' };
+  }
+  if (!recipeInfo) {
+    return {
+      tone: 'attention',
+      label: `${backendLabel(recipe)} backend is not installed on this server.`,
+      state: 'missing',
+    };
+  }
+
+  const backends = asRecord(recipeInfo.backends);
+  if (!backends || Object.keys(backends).length === 0) {
+    return {
+      tone: 'attention',
+      label: `${backendLabel(recipe)} backend must be installed before loading this model.`,
+      state: 'missing',
+    };
+  }
+
+  const configuredBackend = configuredBackendForModel(model, recipe, recipeInfo);
+  let backend = configuredBackend;
+  let backendInfo: Record<string, any> | null = null;
+
+  if (backend) {
+    const match = Object.entries(backends).find(([name]) => normalizedBackend(name) === backend);
+    if (match) {
+      backend = match[0];
+      backendInfo = asRecord(match[1]);
+    } else {
+      return {
+        tone: 'attention',
+        backend,
+        state: 'missing',
+        label: `${backendLabel(recipe)} backend “${backend}” must be installed before loading this model.`,
+      };
+    }
+  } else {
+    const entries = Object.entries(backends);
+    const preferred = entries.find(([, info]) => normalizedBackend((info as any)?.state) === 'installed')
+      ?? entries.find(([, info]) => ['update_required', 'update_available'].includes(normalizedBackend((info as any)?.state)))
+      ?? entries[0];
+    backend = preferred?.[0] || '';
+    backendInfo = preferred ? asRecord(preferred[1]) : null;
+  }
+
+  const state = normalizedBackend(backendInfo?.state);
+  const backendSuffix = backend ? ` (${backend})` : '';
+  if (state === 'installed') {
+    return {
+      tone: 'ready',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} is installed; model is ready.`,
+    };
+  }
+  if (state === 'update_required') {
+    return {
+      tone: 'attention',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} requires an update before use.`,
+    };
+  }
+  if (state === 'update_available') {
+    return {
+      tone: 'attention',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} has an update available.`,
+    };
+  }
+  if (state === 'installable') {
+    return {
+      tone: 'attention',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} must be downloaded before loading this model.`,
+    };
+  }
+  if (state === 'action_required') {
+    return {
+      tone: 'attention',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} needs attention before loading this model.`,
+    };
+  }
+  if (state === 'unsupported') {
+    return {
+      tone: 'attention',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} is not supported on this system.`,
+    };
+  }
+
+  return {
+    tone: 'unknown',
+    backend,
+    state: state || undefined,
+    label: `${backendLabel(recipe)}${backendSuffix} status could not be verified.`,
+  };
 }
 
 type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
@@ -297,6 +487,8 @@ export interface ModelListPanelProps {
   registryZoneTop?: React.ReactNode;
   /** Total visible remote-provider results for the anchor bar. */
   registryResultCount?: number;
+  /** Latest /system-info snapshot used to join model and backend readiness. */
+  systemInfo?: Record<string, unknown> | null;
 }
 
 /* ── ModelListPanel ──────────────────────────────────────────── */
@@ -327,6 +519,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   registryZone,
   registryZoneTop,
   registryResultCount = 0,
+  systemInfo = null,
 }) => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterPopoverStyle, setFilterPopoverStyle] = useState<FilterPopoverStyle | null>(null);
@@ -830,6 +1023,26 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           const displayedBackend = recipe ? modelListBackendLabel(recipe) : '';
           const isSelected = mId === selectedModelId;
           const capTags = modelCapabilityTags(model);
+          const backendStyle = recipe
+            ? ({ '--list-backend-color': backendColor(recipe) } as React.CSSProperties)
+            : undefined;
+          const backendReadiness = status === 'downloaded'
+            ? modelBackendReadiness(model, systemInfo)
+            : null;
+          const readinessLabel = status === 'running'
+            ? 'Backend active; model is running.'
+            : status === 'downloading'
+              ? `Model download in progress${downloadPct != null ? ` (${downloadPct.toFixed(0)}%).` : '.'}`
+              : status === 'available'
+                ? 'Model is available to download.'
+                : backendReadiness?.label;
+          const statusTone = status === 'running'
+            ? 'running'
+            : status === 'downloading'
+              ? 'downloading'
+              : status === 'downloaded'
+                ? backendReadiness?.tone || 'unknown'
+                : 'available';
 
           return (
             <li
@@ -838,11 +1051,12 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               tabIndex={isSelected ? 0 : -1}
               aria-selected={isSelected}
               data-model-id={mId}
+              style={backendStyle}
               aria-keyshortcuts={onTogglePin ? 'P' : undefined}
-              className={`model-list-item${isSelected ? ' model-list-item--selected' : ''}${pinned ? ' model-list-item--pinned' : ''} model-list-item--${status}`}
+              className={`model-list-item${isSelected ? ' model-list-item--selected' : ''}${pinned ? ' model-list-item--pinned' : ''}${recipe ? ' model-list-item--has-backend' : ''} model-list-item--${status}`}
               onClick={() => onSelectModel(mId)}
               onKeyDown={e => handleItemKeyDown(e, mId)}
-              aria-label={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${displayedBackend ? `, ${displayedBackend}` : ''}`}
+              aria-label={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
             >
               {/* Name + meta stay left-aligned across every row. */}
               <span className="model-list-item__body">
@@ -861,32 +1075,36 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                 </span>
               </span>
 
-              {/* Compact backend plate in a controlled right-hand column. */}
-              {recipe && (
-                <span
-                  className="model-list-item__backend"
-                  style={{ '--list-backend-color': backendColor(recipe) } as React.CSSProperties}
-                  title={backendLabel(recipe)}
-                  aria-hidden="true"
-                >
-                  {displayedBackend}
+              {/* The backend identity now lives on the lower guide line instead
+                  of in a separate badge. The line terminates in the compact
+                  readiness ring; the pin sits directly above it. */}
+              <span className="model-list-item__footer" aria-hidden="true">
+                <span className="model-list-item__footer-info">
+                  {status === 'downloading' && downloadPct != null && (
+                    <span className="model-list-item__pct">{downloadPct.toFixed(0)}%</span>
+                  )}
+                  {recipe && (
+                    <span
+                      className="model-list-item__backend"
+                      title={backendLabel(recipe)}
+                    >
+                      {displayedBackend}
+                    </span>
+                  )}
                 </span>
-              )}
-
-              {/* Status indicator */}
-              <span className="model-list-item__status" aria-hidden="true">
-                {status === 'running' && <span className="row__pulse" />}
-                {status === 'downloading' && downloadPct != null && (
-                  <span className="model-list-item__pct">{downloadPct.toFixed(0)}%</span>
-                )}
-                {status === 'downloaded' && <span className="model-list-item__dot model-list-item__dot--ready" />}
+                <span
+                  className={`model-list-item__status model-list-item__status--${statusTone}`}
+                  title={readinessLabel}
+                  data-backend-state={backendReadiness?.state || statusTone}
+                >
+                  {status !== 'available' && (
+                    <span className={`model-list-item__dot model-list-item__dot--${statusTone}`} />
+                  )}
+                </span>
               </span>
 
-              {/* Pin / favorite (client-local). Rendered as a non-button so it
-                  does not nest an interactive control inside role="option"
-                  (axe nested-interactive). Pointer users click it; keyboard/AT
-                  users toggle via the "P" shortcut on the focused row, and the
-                  pinned state is exposed in the row's aria-label. */}
+              {/* Pointer users click the compact pin above the status terminus;
+                  keyboard and assistive-technology users retain the P shortcut. */}
               {onTogglePin && (
                 <span
                   className={`model-list-item__pin row__pin${pinned ? ' row__pin--active model-list-item__pin--active' : ''}`}
