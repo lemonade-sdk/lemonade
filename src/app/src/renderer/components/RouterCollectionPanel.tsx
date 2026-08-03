@@ -884,7 +884,10 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             <label className={`router-mode-option${draft.routingMode === 'quick' ? ' router-mode-option--selected' : ''}`}>
               <input type="radio" name="routingMode" value="quick" checked={draft.routingMode === 'quick'}
                 onChange={() => {
-                  if (draft.routingMode === 'llm' && draft.routerPrompt?.trim() && draft.routerPrompt.trim() !== DEFAULT_ROUTER_PROMPT) {
+                  const hasNaturalLanguageProgress =
+                    Boolean(draft.routerModel) ||
+                    Boolean(draft.routerPrompt?.trim() && draft.routerPrompt.trim() !== DEFAULT_ROUTER_PROMPT);
+                  if (draft.routingMode === 'llm' && hasNaturalLanguageProgress) {
                     setConfirmLlmTarget('quick');
                     setConfirmLlm(true);
                   } else if (draft.routingMode === 'rules' && (draft.rules ?? []).length > 0) {
@@ -899,7 +902,10 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
             <label className={`router-mode-option${draft.routingMode === 'rules' ? ' router-mode-option--selected' : ''}`}>
               <input type="radio" name="routingMode" value="rules" checked={draft.routingMode === 'rules'}
                 onChange={() => {
-                  if (draft.routingMode === 'llm' && (draft.routerModel || draft.routerPrompt?.trim())) {
+                  const hasNaturalLanguageProgress =
+                    Boolean(draft.routerModel) ||
+                    Boolean(draft.routerPrompt?.trim() && draft.routerPrompt.trim() !== DEFAULT_ROUTER_PROMPT);
+                  if (draft.routingMode === 'llm' && hasNaturalLanguageProgress) {
                     setConfirmLlmTarget('rules');
                     setConfirmLlm(true);
                   } else if (draft.routingMode === 'quick' && (draft.rules ?? []).length > 0) {
