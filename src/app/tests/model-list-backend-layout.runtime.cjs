@@ -48,7 +48,8 @@ for (const state of ['installed', 'update_required', 'update_available', 'instal
 }
 assert.match(component, /tone: 'attention',[\s\S]*backend is not installed on this server/);
 assert.match(component, /className="model-list-item__footer"/);
-assert.match(component, /className="model-list-item__footer-info"[\s\S]*className="model-list-item__backend"[\s\S]*\{displayedBackend\}/);
+assert.match(component, /const neutralCollectionGuide = modelIsOmni\(model\) \|\| modelIsRouter\(model\);/);
+assert.match(component, /className="model-list-item__footer-info"[\s\S]*recipe && !neutralCollectionGuide[\s\S]*className="model-list-item__backend"[\s\S]*\{displayedBackend\}/);
 assert.match(component, /model-list-item__status model-list-item__status--\$\{statusTone\}/);
 assert.match(component, /model-list-item__dot model-list-item__dot--\$\{statusTone\}/);
 assert.match(component, /data-backend-state=\{backendReadiness\?\.state \|\| statusTone\}/);
@@ -71,8 +72,10 @@ for (const expected of ['llama.cpp', 'vLLM', 'FLM', 'SD.cpp', 'Moonshine', 'Open
 
 assert.match(styles, /\.model-list-item\s*\{[^}]*position:\s*relative;[^}]*display:\s*block;[^}]*padding:[^;]*19px/s);
 assert.match(styles, /\.model-list-item__footer\s*\{[^}]*position:\s*absolute;[^}]*inset-block-end:\s*5px;/s);
-assert.match(styles, /\.model-list-item__footer::before\s*\{[^}]*height:\s*1px;[^}]*background:\s*var\(--model-list-line\);/s);
-assert.match(styles, /\.model-list-item__footer::after\s*\{[^}]*height:\s*2px;[^}]*var\(--list-backend-color[^}]*transparent 100%/s);
+assert.match(styles, /\.model-list-item__footer::before\s*\{[^}]*inset-inline:\s*0 5px;[^}]*height:\s*1px;[^}]*linear-gradient\([^}]*var\(--list-backend-color[^}]*var\(--model-list-line\) 100%/s);
+assert.match(styles, /\.model-list-item--neutral-guide \.model-list-item__footer::before\s*\{[^}]*background:\s*var\(--model-list-line\);/s);
+assert.doesNotMatch(styles, /\.model-list-item__footer::after/,
+  'backend and neutral guide colors must share one one-pixel paint layer');
 assert.match(styles, /\.model-list-item__footer-info\s*\{[^}]*inset-inline-end:\s*16px;[^}]*display:\s*inline-flex;[^}]*font-weight:\s*var\(--weight-regular\);/s);
 assert.match(styles, /\.model-list-item__backend\s*\{[^}]*text-transform:\s*none;/s);
 assert.match(styles, /\.model-list-item__status\s*\{[^}]*inset-inline-end:\s*0;[^}]*width:\s*11px;[^}]*border-radius:\s*50%;/s);

@@ -234,12 +234,13 @@ export function modelBackendReadiness(
   };
 }
 
-type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
+type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
 
 const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> = [
   { key: 'all', label: 'All', iconName: 'globe' },
-  { key: 'llm', label: 'LLM', iconName: 'chat' },
+  { key: 'llm', label: 'Chat', iconName: 'chat' },
   { key: 'omni', label: 'Omni', iconName: 'omni' },
+  { key: 'router', label: 'Router', iconName: 'router' },
   { key: 'image', label: 'Image', iconName: 'image' },
   { key: 'audio', label: 'Audio', iconName: 'audio' },
   { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio' },
@@ -356,18 +357,45 @@ function modelMatchesTextFilters(m: ModelInfo, status: ModelStatus, filters: Tex
   return true;
 }
 
+function modelRecipe(m: ModelInfo): string {
+  return String((m as any).recipe || '').trim().toLowerCase();
+}
+
+export function modelIsRouter(m: ModelInfo): boolean {
+  const recipe = modelRecipe(m);
+  return recipe === 'collection.router' || recipe.startsWith('collection.router.');
+}
+
+export function modelIsOmniCollection(m: ModelInfo): boolean {
+  const recipe = modelRecipe(m);
+  return recipe === 'collection.omni' || recipe.startsWith('collection.omni.') || recipe === 'collection';
+}
+
+/** Omni is a task identity, not a concrete backend identity. */
+export function modelIsOmni(m: ModelInfo): boolean {
+  return modelIsOmniCollection(m) || capabilityFromModelInfo(m) === 'omni';
+}
+
 export function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
   if (filter === 'all') return true;
+  if (filter === 'router') return modelIsRouter(m);
+  if (filter === 'omni') return modelIsOmni(m);
+
   const cap = capabilityFromModelInfo(m);
-  if (filter === 'omni') {
-    const recipe = String((m as any).recipe || '').toLowerCase();
-    return cap === 'omni' || recipe === 'collection.omni' || recipe === 'collection';
-  }
   if (filter === 'embedding') return cap === 'embedding' || cap === 'reranking';
-  // Unknown remote rows stay visible under All, but must not be presented as
-  // proven LLM/chat capability merely because they are GGUF/llama.cpp models.
-  if (filter === 'llm') return cap === 'chat';
+  // Router collections intentionally have their own task and must not also be
+  // counted as Chat even though they ultimately route chat-capable models.
+  if (filter === 'llm') return cap === 'chat' && !modelIsRouter(m);
   return (cap as string) === filter;
+}
+
+/** Empty task selection means "all". Multiple selected tasks are OR-ed. */
+export function modelMatchesTasks(m: ModelInfo, tasks?: ReadonlySet<FilterTab>): boolean {
+  if (!tasks || tasks.size === 0 || tasks.has('all')) return true;
+  for (const task of tasks) {
+    if (modelMatchesFilter(m, task)) return true;
+  }
+  return false;
 }
 
 /* ── Left-nav-rail filter dimensions ─────────────────────────────
@@ -419,23 +447,57 @@ export function capabilityTagIconTarget(tag: CapabilityTag): CapabilityIconTarge
   return tag as CapabilityIconTarget;
 }
 
-/** Backend filter — `backend` is 'all' or a lowercased recipe id. */
+/** A backend group is not meaningful for virtual Omni/Router collections. */
+export function modelHasFilterableBackend(m: ModelInfo): boolean {
+  return !modelIsOmni(m) && !modelIsRouter(m) && Boolean(modelRecipe(m));
+}
+
+/** Empty backend selection means "all". Multiple selected backends are OR-ed. */
+export function modelMatchesBackends(m: ModelInfo, backends?: ReadonlySet<string>): boolean {
+  if (!backends || backends.size === 0 || backends.has('all')) return true;
+  return backends.has(modelRecipe(m));
+}
+
+/** Compatibility helper for callers that still need a single backend check. */
 export function modelMatchesBackend(m: ModelInfo, backend: string): boolean {
-  if (!backend || backend === 'all') return true;
-  return String((m as any).recipe || '').toLowerCase() === backend;
+  return modelMatchesBackends(m, backend && backend !== 'all' ? new Set([backend]) : new Set());
 }
 
 /** Curated tag chips (model families + size hints) shown in the left rail. */
-export const TAG_CHIPS: string[] = ['Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
+export const TAG_CHIPS: string[] = ['Recommended', 'Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
 
-/** A tag matches when it appears in the model's labels OR its name/family. */
+export function modelIsRecommended(m: ModelInfo): boolean {
+  const raw = m as any;
+  if (raw.recommended === true || raw.is_recommended === true || raw.featured === true || raw.suggested === true) return true;
+  const labels = [
+    ...(Array.isArray(raw.labels) ? raw.labels : []),
+    ...(Array.isArray(raw.tags) ? raw.tags : []),
+  ].map(value => String(value).trim().toLowerCase());
+  return labels.some(label => ['recommended', 'featured', 'suggested'].includes(label));
+}
+
+/** A tag matches model metadata, labels, or its name/family. */
 export function modelMatchesTag(m: ModelInfo, tag: string | null): boolean {
   if (!tag) return true;
-  const t = tag.toLowerCase();
-  const labels = (m.labels || []).map(l => String(l).toLowerCase());
+  const t = tag.trim().toLowerCase();
+  if (!t) return true;
+  if (t === 'recommended') return modelIsRecommended(m);
+  const labels = [
+    ...(Array.isArray(m.labels) ? m.labels : []),
+    ...(Array.isArray((m as any).tags) ? (m as any).tags : []),
+  ].map(value => String(value).trim().toLowerCase());
   if (labels.includes(t)) return true;
   const hay = `${listModelName(m)} ${m.display_name || ''}`.toLowerCase();
   return hay.includes(t);
+}
+
+/** Empty tag selection means "all". Multiple selected tags are OR-ed. */
+export function modelMatchesTags(m: ModelInfo, tags?: ReadonlySet<string>): boolean {
+  if (!tags || tags.size === 0) return true;
+  for (const tag of tags) {
+    if (modelMatchesTag(m, tag)) return true;
+  }
+  return false;
 }
 
 /* ── Types ───────────────────────────────────────────────────── */
@@ -460,17 +522,17 @@ export interface ModelListPanelProps {
   onSelectModel: (id: string) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
-  filterTab: FilterTab;
-  onFilterChange: (tab: FilterTab) => void;
+  /** Selected left-rail tasks. Empty means all; selections are OR-ed. */
+  taskFilters?: ReadonlySet<FilterTab>;
   /** Selected functional capability tags (multi-select funnel). Empty = no filter. */
   capabilityFilter?: Set<string>;
   onCapabilityFilterChange?: (next: Set<string>) => void;
   /** Primary nav bucket selected in the left rail. */
   primaryFilter?: PrimaryFilter;
-  /** Backend filter ('all' or lowercased recipe id) from the left rail. */
-  backendFilter?: string;
-  /** Active tag chip from the left rail (null = no tag filter). */
-  tagFilter?: string | null;
+  /** Selected backend recipes. Empty means all; selections are OR-ed. */
+  backendFilters?: ReadonlySet<string>;
+  /** Selected built-in/custom tags. Empty means all; selections are OR-ed. */
+  tagFilters?: ReadonlySet<string>;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
   onOpenCustomModels?: () => void;
   onOpenRouter?: () => void;
@@ -502,13 +564,12 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   onSelectModel,
   searchQuery,
   onSearchChange,
-  filterTab,
-  onFilterChange,
+  taskFilters,
   capabilityFilter,
   onCapabilityFilterChange,
   primaryFilter = 'all',
-  backendFilter = 'all',
-  tagFilter = null,
+  backendFilters,
+  tagFilters,
   searchInputRef,
   onOpenCustomModels,
   onOpenRouter,
@@ -541,13 +602,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       const mName = listModelName(m);
       if (!mName) continue;
 
-      // Filter by type
-      if (!modelMatchesFilter(m, filterTab)) continue;
-
-      // Left-rail filter dimensions (primary bucket / backend / tag)
+      // Left-rail dimensions: OR within Task/Backend/Tags, AND across groups.
+      if (!modelMatchesTasks(m, taskFilters)) continue;
       if (!modelMatchesPrimary(m, primaryFilter, loadedNames, favoriteNames)) continue;
-      if (!modelMatchesBackend(m, backendFilter)) continue;
-      if (!modelMatchesTag(m, tagFilter)) continue;
+      if (!modelMatchesBackends(m, backendFilters)) continue;
+      if (!modelMatchesTags(m, tagFilters)) continue;
 
       // Funnel: functional capability tags (multi-select). Empty = no filter.
       if (!modelMatchesCapabilityTags(m, capabilityFilter ?? new Set())) continue;
@@ -623,7 +682,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     }
 
     return result;
-  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab, sortBy, pinnedNames, favoriteNames, primaryFilter, backendFilter, tagFilter, capabilityFilter, activeTextFilters]);
+  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, taskFilters, sortBy, pinnedNames, favoriteNames, primaryFilter, backendFilters, tagFilters, capabilityFilter, activeTextFilters]);
 
   // Funnel options: the union of functional capability tags present across the
   // models, in canonical order. Derived client-side from the model labels —
@@ -999,7 +1058,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
 
       <span className="sr-only model-list-panel__count" aria-live="polite" aria-atomic="true">
         {flatList.length} model{flatList.length !== 1 ? 's' : ''}
-        {filterTab !== 'all' && ` (${FILTER_TABS.find(t => t.key === filterTab)?.label})`}
+        {taskFilters && taskFilters.size > 0 && ` (${Array.from(taskFilters).map(task => FILTER_TABS.find(item => item.key === task)?.label || task).join(', ')})`}
       </span>
 
       {/* Scrollable area: model list + optional inline registry result zones */}
@@ -1020,10 +1079,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           const mId = listModelName(model);
           const displayName = listModelDisplayName(model);
           const recipe = String((model as any).recipe || '');
-          const displayedBackend = recipe ? modelListBackendLabel(recipe) : '';
+          const neutralCollectionGuide = modelIsOmni(model) || modelIsRouter(model);
+          const displayedBackend = recipe && !neutralCollectionGuide ? modelListBackendLabel(recipe) : '';
           const isSelected = mId === selectedModelId;
           const capTags = modelCapabilityTags(model);
-          const backendStyle = recipe
+          const backendStyle = recipe && !neutralCollectionGuide
             ? ({ '--list-backend-color': backendColor(recipe) } as React.CSSProperties)
             : undefined;
           const backendReadiness = status === 'downloaded'
@@ -1053,7 +1113,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               data-model-id={mId}
               style={backendStyle}
               aria-keyshortcuts={onTogglePin ? 'P' : undefined}
-              className={`model-list-item${isSelected ? ' model-list-item--selected' : ''}${pinned ? ' model-list-item--pinned' : ''}${recipe ? ' model-list-item--has-backend' : ''} model-list-item--${status}`}
+              className={`model-list-item${isSelected ? ' model-list-item--selected' : ''}${pinned ? ' model-list-item--pinned' : ''}${neutralCollectionGuide ? ' model-list-item--neutral-guide' : ''} model-list-item--${status}`}
               onClick={() => onSelectModel(mId)}
               onKeyDown={e => handleItemKeyDown(e, mId)}
               aria-label={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
@@ -1083,7 +1143,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                   {status === 'downloading' && downloadPct != null && (
                     <span className="model-list-item__pct">{downloadPct.toFixed(0)}%</span>
                   )}
-                  {recipe && (
+                  {recipe && !neutralCollectionGuide && (
                     <span
                       className="model-list-item__backend"
                       title={backendLabel(recipe)}

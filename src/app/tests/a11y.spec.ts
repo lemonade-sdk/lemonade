@@ -2261,7 +2261,7 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
 // fl0rianr (2026-06-25) posted a canonical 3-pane target: a NEW left NAVIGATION
 // rail (ModelNavRail) + the existing ModelListPanel (middle) + ModelDetailPanel
 // (right). The left rail surfaces filter dimensions — primary nav (All/
-// Downloaded/My Models/Favorites), collapsible Categories, a Backends select,
+// Downloaded/My Models/Favorites), collapsible Task chips, multi-select Backend chips,
 // collapsible Tags, and a Storage meter — all derived CLIENT-SIDE from the model
 // list (no lemond). Selecting any of them filters the middle list.
 // Range: A124–A136.
@@ -2279,7 +2279,7 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', downloaded: true, size: 8 },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
             { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
             { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
             { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },
@@ -2339,48 +2339,53 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect(await fav.getAttribute('aria-current')).toBe('true');
   });
 
-  // ── Categories (collapsible) ─────────────────────────────────────────────
+  // ── Task chips (collapsible multi-select) ─────────────────────────────────
 
-  test('A128 — Categories section header is a button with aria-expanded that toggles the list', async ({ page }) => {
+  test('A128 — Task section header is a button with aria-expanded that toggles the list', async ({ page }) => {
     await goToModelsWithNavMock(page);
-    const toggle = page.locator('.model-nav-rail__section-toggle').filter({ hasText: 'Categories' });
+    const toggle = page.locator('.model-nav-rail__section-toggle').filter({ hasText: 'Task' });
     expect(await toggle.getAttribute('aria-expanded')).toBe('true');
-    await expect(page.locator('#nav-categories')).toBeVisible();
+    await expect(page.locator('#nav-tasks')).toBeVisible();
     await toggle.click();
     await page.waitForTimeout(100);
     expect(await toggle.getAttribute('aria-expanded')).toBe('false');
-    await expect(page.locator('#nav-categories')).toBeHidden();
+    await expect(page.locator('#nav-tasks')).toBeHidden();
   });
 
-  test('A129 — selecting a category filters the middle list (Audio → whisper only)', async ({ page }) => {
+  test('A129 — selecting tasks is multi-select and filters the middle list', async ({ page }) => {
     await goToModelsWithNavMock(page);
-    const audio = page.locator('.model-nav-rail__cat-item').filter({ hasText: 'Audio' });
+    const audio = page.locator('.model-nav-rail__task-chip').filter({ hasText: /^Audio/ });
+    const image = page.locator('.model-nav-rail__task-chip').filter({ hasText: /^Image/ });
     await audio.click();
+    await image.click();
     await page.waitForTimeout(150);
-    expect(await audio.getAttribute('aria-current')).toBe('true');
+    expect(await audio.getAttribute('aria-pressed')).toBe('true');
+    expect(await image.getAttribute('aria-pressed')).toBe('true');
     const rows = page.locator('.model-list-item');
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText('Whisper');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.filter({ hasText: 'Whisper' })).toHaveCount(1);
+    await expect(rows.filter({ hasText: 'SDXL' })).toHaveCount(1);
   });
 
-  // ── Backends select ──────────────────────────────────────────────────────
+  // ── Backends multi-select chips ──────────────────────────────────────────
 
-  test('A130 — Backends select is labelled and filters the list by recipe', async ({ page }) => {
+  test('A130 — Backend chips support independent multi-selection', async ({ page }) => {
     await goToModelsWithNavMock(page);
-    const select = page.locator('#nav-backend-select');
-    // Associated label.
-    const labelText = await page.locator('label[for="nav-backend-select"]').textContent();
-    expect((labelText ?? '').toLowerCase()).toContain('backend');
-    await select.selectOption('whispercpp');
+    const llama = page.locator('.model-nav-rail__backend-chip').filter({ hasText: 'llama.cpp' });
+    const whisper = page.locator('.model-nav-rail__backend-chip').filter({ hasText: 'Whisper' });
+    await llama.click();
+    await whisper.click();
+    expect(await llama.getAttribute('aria-pressed')).toBe('true');
+    expect(await whisper.getAttribute('aria-pressed')).toBe('true');
     await page.waitForTimeout(150);
-    await expect(page.locator('.model-list-item')).toHaveCount(1);
+    await expect(page.locator('.model-list-item')).toHaveCount(3);
   });
 
   // ── Tags (collapsible chips) ─────────────────────────────────────────────
 
   test('A131 — Tags section uses aria-pressed chips that filter the list', async ({ page }) => {
     await goToModelsWithNavMock(page);
-    const llamaTag = page.locator('.model-nav-rail__tag').filter({ hasText: /^Llama$/ });
+    const llamaTag = page.locator('.model-nav-rail__tag-chip').filter({ hasText: /^Llama/ });
     await expect(llamaTag).toBeVisible();
     expect(await llamaTag.getAttribute('aria-pressed')).toBe('false');
     await llamaTag.click();
@@ -2389,6 +2394,31 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     const rows = page.locator('.model-list-item');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('Llama');
+  });
+
+
+  test('A131b — Recommended is a real metadata filter', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const recommended = page.locator('.model-nav-rail__tag-chip').filter({ hasText: /^Recommended/ });
+    await recommended.click();
+    await page.waitForTimeout(150);
+    expect(await recommended.getAttribute('aria-pressed')).toBe('true');
+    await expect(page.locator('.model-list-item')).toHaveCount(1);
+    await expect(page.locator('.model-list-item').first()).toContainText('Llama');
+  });
+
+  test('A131c — custom tags can be added, selected, and removed', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const input = page.locator('#nav-custom-tag');
+    await input.fill('tools');
+    await page.getByRole('button', { name: 'Add custom tag' }).click();
+    const custom = page.locator('.model-nav-rail__tag-chip').filter({ hasText: /^tools/ });
+    await expect(custom).toBeVisible();
+    expect(await custom.getAttribute('aria-pressed')).toBe('true');
+    await expect(page.locator('.model-list-item')).toHaveCount(1);
+    await expect(page.locator('.model-list-item').first()).toContainText('Llama');
+    await page.getByRole('button', { name: 'Remove custom tag tools' }).click();
+    await expect(custom).toHaveCount(0);
   });
 
   // ── Storage meter ────────────────────────────────────────────────────────
@@ -2493,7 +2523,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', downloaded: true, size: 8 },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
             { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
             { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
             { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },

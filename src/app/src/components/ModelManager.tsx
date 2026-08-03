@@ -8,8 +8,8 @@ import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, c
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
-import { ModelListPanel, modelIsCustom, modelMatchesBackend, modelMatchesFilter, modelMatchesTag } from './ModelListPanel';
-import type { PrimaryFilter } from './ModelListPanel';
+import { ModelListPanel, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
+import type { FilterTab, PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
 import { ModelDetailPanel } from './ModelDetailPanel';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
@@ -471,7 +471,6 @@ function saveFavoriteModels(names: string[]): void {
 
 /* ── Filter / search types ─────────────────────────────────── */
 
-type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
 type ProviderEnabledState = Record<ModelRegistryProvider, boolean>;
 
 const REMOTE_SEARCH_CACHE = new Map<string, HFModelResult[]>();
@@ -1060,11 +1059,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [selectedDetailModelId, setSelectedDetailModelId] = useState<string | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterTab, setFilterTab] = useState<FilterTab>('all');
-  // Left nav-rail filter dimensions (client-local, derived from the model list).
+  // Left nav-rail dimensions. Empty sets mean "all"; values within a group
+  // are OR-ed while Task, Backend, Tags and the primary bucket are AND-ed.
+  const [taskFilters, setTaskFilters] = useState<Set<FilterTab>>(() => new Set());
   const [primaryFilter, setPrimaryFilter] = useState<PrimaryFilter>('all');
-  const [backendFilter, setBackendFilter] = useState<string>('all');
-  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [backendFilters, setBackendFilters] = useState<Set<string>>(() => new Set());
+  const [tagFilters, setTagFilters] = useState<Set<string>>(() => new Set());
   const mobileRail = useWorkspaceMobileRail();
   const [navRailCollapsed, setNavRailCollapsed] = useState(false);
   const panelResize = useWorkspacePanelResize<HTMLDivElement>({
@@ -2419,13 +2419,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     return results.filter(result => {
       if (localRegistryRefs.has(result.id.toLowerCase())) return false;
       const info = remoteResultAsModelInfo(result, remoteVariants[providerKey(provider, result.id)]);
-      if (!modelMatchesFilter(info, filterTab)) return false;
+      if (!modelMatchesTasks(info, taskFilters)) return false;
       if (!modelMatchesCapabilityTags(info, capabilityFilter)) return false;
-      if (!modelMatchesBackend(info, backendFilter)) return false;
-      if (!modelMatchesTag(info, tagFilter)) return false;
+      if (!modelMatchesBackends(info, backendFilters)) return false;
+      if (!modelMatchesTags(info, tagFilters)) return false;
       return true;
     });
-  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, filterTab, capabilityFilter, backendFilter, tagFilter]);
+  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, taskFilters, capabilityFilter, backendFilters, tagFilters]);
 
   const filteredHfResults = useMemo(
     () => filterRemoteResults('huggingface', hfResults),
@@ -2465,10 +2465,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setSelectedRemoteModel(null);
     setMobileDetailOpen(true);
     setSearchQuery('');
-    setFilterTab('all');
+    setTaskFilters(new Set());
     setPrimaryFilter('all');
-    setBackendFilter('all');
-    setTagFilter(null);
+    setBackendFilters(new Set());
+    setTagFilters(new Set());
     setCapabilityFilter(new Set());
     if (showCustomForm) closeCustomForm();
     if (showRouterEditor) closeRouterEditor();
@@ -2708,7 +2708,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     handleCustomDraftChange({ [`${role}Component`]: value } as Partial<CustomModelDraftState>);
   };
   const searchHuggingFaceFromPicker = (query: string) => {
-    setFilterTab('all');
+    setTaskFilters(new Set());
     setSearchQuery(query);
   };
 
@@ -2792,12 +2792,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         favoriteNames={favoriteNameSet}
         primaryFilter={primaryFilter}
         onPrimaryFilterChange={handlePrimaryFilterChange}
-        categoryFilter={filterTab}
-        onCategoryFilterChange={(f) => { setFilterTab(f); mobileRail.close(); }}
-        backendFilter={backendFilter}
-        onBackendFilterChange={(backend) => { setBackendFilter(backend); mobileRail.close(); }}
-        tagFilter={tagFilter}
-        onTagFilterChange={(t) => { setTagFilter(t); mobileRail.close(); }}
+        taskFilters={taskFilters}
+        onTaskFiltersChange={setTaskFilters}
+        backendFilters={backendFilters}
+        onBackendFiltersChange={setBackendFilters}
+        tagFilters={tagFilters}
+        onTagFiltersChange={setTagFilters}
         providerEnabled={providerEnabled}
         providerCounts={providerCounts}
         onToggleProvider={toggleProvider}
@@ -2826,13 +2826,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        filterTab={filterTab}
-        onFilterChange={setFilterTab}
+        taskFilters={taskFilters}
         capabilityFilter={capabilityFilter}
         onCapabilityFilterChange={setCapabilityFilter}
         primaryFilter={primaryFilter}
-        backendFilter={backendFilter}
-        tagFilter={tagFilter}
+        backendFilters={backendFilters}
+        tagFilters={tagFilters}
         searchInputRef={searchRef}
         onOpenRouter={() => openRouterEditor(selectedDetailModel)}
         onOpenGlobalSettings={openGlobalSettings}
