@@ -18,6 +18,9 @@ const std::vector<const BackendDescriptor*>& all_descriptors();
 // Descriptor for a recipe, or nullptr if the recipe has no registered backend.
 const BackendDescriptor* descriptor_for(const std::string& recipe);
 
+// Shared descriptor for a recipe, preserving shared ownership for dynamic descriptors.
+std::shared_ptr<const BackendDescriptor> descriptor_shared_for(const std::string& recipe);
+
 // True if the recipe is backed by a registered descriptor.
 bool has_backend(const std::string& recipe);
 
@@ -25,6 +28,15 @@ bool has_backend(const std::string& recipe);
 // "rocm" backend resolves to a channel-specific artifact. False for recipes whose
 // rocm build is a single artifact (or that have no rocm build at all).
 bool recipe_has_rocm_channels(const std::string& recipe);
+
+// Force a refresh of dynamic descriptors from search paths.
+void refresh_descriptors();
+
+// Start a background file-watcher thread that polls descriptor directories for changes.
+void start_file_watcher();
+
+// Stop the background file-watcher thread.
+void stop_file_watcher();
 
 } // namespace backends
 } // namespace lemon

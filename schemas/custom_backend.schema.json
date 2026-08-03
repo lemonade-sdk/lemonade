@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Lemonade Dynamic Backend Descriptor Schema",
+  "description": "Defines a dynamic custom backend descriptor. Backend binaries or containers must serve OpenAI-compatible REST API endpoints under /v1/*.",
+  "type": "object",
+  "required": [
+    "recipe",
+    "display_name",
+    "capabilities",
+    "platforms"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "recipe": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "description": "Unique identifier for the backend recipe (e.g. 'dflash-rocm')."
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Human-readable display name for the backend."
+    },
+    "modality": {
+      "type": "string",
+      "description": "Primary inference modality (e.g. 'Text generation', 'Speech-to-text')."
+    },
+    "slot_policy": {
+      "type": "string",
+      "enum": ["standard", "exclusive_npu", "coexist_by_type", "unmetered"],
+      "description": "LRU slot and resource allocation policy."
+    },
+    "default_device": {
+      "type": "string",
+      "description": "Default accelerator device (e.g. 'gpu', 'cpu', 'npu')."
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "description": "Supported inference capabilities (e.g. 'chat_completion', 'completion', 'embeddings')."
+    },
+    "endpoints": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Optional custom REST API endpoint path overrides for non-OpenAI third-party runners (e.g. chat_completion -> '/api/v1/chat')."
+    },
+    "protected_flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional list of protected CLI flags (e.g. ['--port', '--host']) that user custom_args cannot override."
+    },
+    "health_probe": {
+      "type": "object",
+      "description": "Configuration for server readiness health checking.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["http", "tcp", "process"]
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "expected_status": {
+          "type": "integer"
+        },
+        "timeout_seconds": {
+          "type": "integer"
+        },
+        "poll_interval_ms": {
+          "type": "integer"
+        }
+      }
+    },
+    "health_endpoint": {
+      "type": "string",
+      "description": "Legacy fallback health endpoint path (prefer health_probe.endpoint)."
+    },
+    "health_timeout_seconds": {
+      "type": "integer",
+      "description": "Legacy fallback health timeout in seconds (prefer health_probe.timeout_seconds)."
+    },
+    "downsize_endpoint": {
+      "type": "string",
+      "description": "Optional REST endpoint for VRAM/RAM downsizing."
+    },
+    "custom_options": {
+      "type": "array",
+      "description": "Custom configuration options exposed to CLI and config files.",
+      "items": {
+        "type": "object",
+        "required": ["name", "cli_flag", "default_value", "help"],
+        "properties": {
+          "name": { "type": "string" },
+          "cli_flag": { "type": "string" },
+          "default_value": {},
+          "type_name": { "type": "string" },
+          "help": { "type": "string" },
+          "group": { "type": "string" }
+        }
+      }
+    },
+    "platforms": {
+      "type": "object",
+      "description": "Platform-specific execution specifications (e.g. 'rocm', 'cuda', 'cpu', 'metal'). Supported token replacements in args, stop_command_args, and env values include: {recipe}, {port}, {host}, {log_level}, {model_name}, {resolved_path}, {model_dir}, {exe_dir}, {hf_cache}, {model_relative_path}, {checkpoint:<name>}, {checkpoint_relative:<name>}, {rocm_arch}, {cuda_arch}, {cuda_visible_devices}, {hip_visible_devices}, {ggml_vk_visible_devices}, {custom:<opt>[:-default]}, {env:<var>[:-default]}, {custom_args}.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["command", "args"],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Executable or container manager binary (e.g. 'podman', 'docker', '/path/to/binary')."
+          },
+          "args": {
+            "type": "array",
+            "description": "Command line arguments, supporting runtime token replacements.",
+            "items": { "type": "string" }
+          },
+          "stop_command": {
+            "type": "string",
+            "description": "Optional executable for stopping container/process (defaults to 'command' if omitted)."
+          },
+          "stop_command_args": {
+            "type": "array",
+            "description": "Command line arguments executed during backend unload to gracefully stop and clean up containers.",
+            "items": { "type": "string" }
+          },
+          "env": {
+            "type": "object",
+            "description": "Environment variables passed to the spawned process or container.",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
