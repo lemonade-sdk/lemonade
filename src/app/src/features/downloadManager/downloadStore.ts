@@ -591,10 +591,13 @@ class DownloadStore {
 
   async refresh(): Promise<void> {
     if (this.refreshInFlight) return this.refreshInFlight;
+
+    // A manual/focus refresh supersedes a pending scheduled poll. Cancelling it
+    // here prevents the timer from firing while the same request is in flight.
+    this.clearPollTimer();
     this.refreshInFlight = (async () => {
       if (!api.isConnected) {
         this.mergeDownloads([], true);
-        this.scheduleNext();
         return;
       }
       try {
@@ -605,16 +608,15 @@ class DownloadStore {
         this.mergeDownloads(normalized, true, true);
       } catch {
         // A failed poll is not an empty authoritative snapshot. Preserve local
-        // state and retry instead of deleting rows during a transient outage.
+        // state and retry only while an active/local-pending download exists.
         this.mergeDownloads([], true);
-      } finally {
-        this.scheduleNext();
       }
     })();
     try {
       await this.refreshInFlight;
     } finally {
       this.refreshInFlight = null;
+      this.syncPolling();
     }
   }
 
@@ -723,6 +725,7 @@ class DownloadStore {
     this.downloads = this.downloads.filter(download => !idSet.has(download.id));
     writeStored(this.downloads);
     this.emit();
+    this.syncPolling();
   }
 
   private findExisting(raw: DownloadProgressEvent): DownloadListItem | undefined {
@@ -807,6 +810,7 @@ class DownloadStore {
     this.downloads = sortDownloads(prune(Array.from(map.values()), timestamp));
     writeStored(this.downloads);
     this.emit();
+    this.syncPolling();
   }
 
   private emit(): void {
@@ -814,10 +818,31 @@ class DownloadStore {
     this.listeners.forEach(listener => listener(snapshot));
   }
 
-  private scheduleNext(): void {
-    if (!this.started) return;
-    if (this.pollTimer) clearTimeout(this.pollTimer);
-    this.pollTimer = setTimeout(() => void this.refresh(), POLL_MS);
+  private hasActiveDownloads(): boolean {
+    return this.downloads.some(isDownloadActive);
+  }
+
+  private clearPollTimer(): void {
+    if (!this.pollTimer) return;
+    clearTimeout(this.pollTimer);
+    this.pollTimer = null;
+  }
+
+  private syncPolling(): void {
+    // The initial start()/explicit refresh is enough to discover server-owned
+    // work. Once the authoritative snapshot is idle, do not keep hitting
+    // /downloads. Local pull events, cross-tab storage updates, focus/online,
+    // and an explicitly opened download manager can wake the store again.
+    if (!this.started || !this.hasActiveDownloads()) {
+      this.clearPollTimer();
+      return;
+    }
+    if (this.refreshInFlight || this.pollTimer) return;
+
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = null;
+      void this.refresh();
+    }, POLL_MS);
   }
 }
 
