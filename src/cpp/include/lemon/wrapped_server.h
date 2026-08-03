@@ -223,6 +223,7 @@ public:
     // router lock with only a raw pointer to it.
     bool try_begin_downsize() {
         std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!supports_downsize()) return false;
         if (state_ == ModelState::READY && active_request_count_ == 0) {
             state_ = ModelState::DOWNSIZING;
             maintenance_in_progress_ = true;
@@ -331,6 +332,17 @@ public:
     static void set_request_cancel_flag(std::atomic<bool>* f);
     static std::atomic<bool>* current_request_cancel();
 
+    // Dynamic capability query (overridden by ExternalBackendServer)
+    virtual bool has_capability(const std::string& cap_name) const override {
+        (void)cap_name;
+        return true;
+    }
+
+    // Downsize availability query
+    virtual bool supports_downsize() const {
+        return true;
+    }
+
     // Downsize the model on soft idle (e.g., clear KV cache). Returns true if the
     // downsize succeeded (or was a no-op), false if the backend operation failed.
     // The default is a successful no-op: backends that cannot downsize transition
@@ -361,7 +373,15 @@ public:
     // effective_* hooks below default to the descriptor's declared values; a
     // backend whose device or eviction rule depends on the chosen backend
     // variant overrides them (e.g. whisper on npu vs cpu, llamacpp on cpu vs gpu).
-    void set_descriptor(const BackendDescriptor* descriptor) { descriptor_ = descriptor; }
+    void set_descriptor(const BackendDescriptor* descriptor) {
+        descriptor_ = descriptor;
+        descriptor_shared_.reset();
+    }
+    void set_descriptor(std::shared_ptr<const BackendDescriptor> descriptor) {
+        descriptor_shared_ = descriptor;
+        descriptor_ = descriptor.get();
+    }
+    std::shared_ptr<const BackendDescriptor> get_descriptor_shared() const { return descriptor_shared_; }
     const BackendDescriptor* get_descriptor() const { return descriptor_; }
 
     // Effective accelerator device for this load. The router calls this after it
@@ -518,6 +538,7 @@ protected:
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
     const BackendDescriptor* descriptor_ = nullptr;  // Non-owning; set by the backend registry at create()
+    std::shared_ptr<const BackendDescriptor> descriptor_shared_; // Shared ownership for dynamic descriptors
 
     // Multi-model support fields
     std::string model_name_;

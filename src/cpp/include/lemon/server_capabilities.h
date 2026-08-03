@@ -10,6 +10,10 @@ using json = nlohmann::json;
 class ICapability {
 public:
     virtual ~ICapability() = default;
+    virtual bool has_capability(const std::string& cap_name) const {
+        (void)cap_name;
+        return true;
+    }
 };
 
 class ICompletionServer : public virtual ICapability {
@@ -104,8 +108,31 @@ public:
 };
 
 template<typename T>
+inline const char* capability_name_for_type() { return ""; }
+
+template<> inline const char* capability_name_for_type<ICompletionServer>() { return "completion"; }
+template<> inline const char* capability_name_for_type<IEmbeddingsServer>() { return "embeddings"; }
+template<> inline const char* capability_name_for_type<IRerankingServer>() { return "reranking"; }
+template<> inline const char* capability_name_for_type<ITranscriptionServer>() { return "audio_transcription"; }
+template<> inline const char* capability_name_for_type<IStreamingTranscriptionServer>() { return "audio_transcription"; }
+template<> inline const char* capability_name_for_type<ITextToSpeechServer>() { return "text_to_speech"; }
+template<> inline const char* capability_name_for_type<IClassificationServer>() { return "classification"; }
+template<> inline const char* capability_name_for_type<IImageServer>() { return "image_generation"; }
+template<> inline const char* capability_name_for_type<IAudioGenerationServer>() { return "audio_generation"; }
+template<> inline const char* capability_name_for_type<IModel3DServer>() { return "model_3d"; }
+template<> inline const char* capability_name_for_type<ISlotsServer>() { return "slots"; }
+template<> inline const char* capability_name_for_type<ITokenizerServer>() { return "tokenize"; }
+
+template<typename T>
 bool supports_capability(ICapability* server) {
-    return dynamic_cast<T*>(server) != nullptr;
+    if (!server) return false;
+    T* casted = dynamic_cast<T*>(server);
+    if (!casted) return false;
+    const char* name = capability_name_for_type<T>();
+    if (name && name[0] != '\0' && !server->has_capability(name)) {
+        return false;
+    }
+    return true;
 }
 
 } // namespace lemon

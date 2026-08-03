@@ -17,11 +17,49 @@
 #include <thread>
 #include <chrono>
 #include <algorithm>
-#include <cctype>
+#include <unordered_set>
 
 extern char** environ;
 
 namespace lemon::utils {
+
+static std::vector<std::string> build_sanitized_env(const std::vector<std::pair<std::string, std::string>>& extra_env_vars = {}) {
+    std::unordered_set<std::string> explicit_keys;
+    for (const auto& kv : extra_env_vars) {
+        explicit_keys.insert(kv.first);
+    }
+
+    std::vector<std::string> result;
+    for (char** env = environ; *env != nullptr; ++env) {
+        std::string env_str(*env);
+        size_t eq_pos = env_str.find('=');
+        if (eq_pos != std::string::npos) {
+            std::string key = env_str.substr(0, eq_pos);
+            if (explicit_keys.find(key) == explicit_keys.end()) {
+                if (key.rfind("LEMONADE_", 0) == 0 ||
+                    key.find("API_KEY") != std::string::npos ||
+                    key.find("TOKEN") != std::string::npos ||
+                    key.find("SECRET") != std::string::npos ||
+                    key.find("PASS") != std::string::npos ||
+                    key.find("AUTH") != std::string::npos ||
+                    key == "CUDA_VISIBLE_DEVICES" ||
+                    key == "HIP_VISIBLE_DEVICES" ||
+                    key == "ROCR_VISIBLE_DEVICES" ||
+                    key == "GGML_VK_VISIBLE_DEVICES" ||
+                    key == "ZE_AFFINITY_MASK") {
+                    continue;
+                }
+            }
+        }
+        result.push_back(env_str);
+    }
+
+    for (const auto& kv : extra_env_vars) {
+        result.push_back(kv.first + "=" + kv.second);
+    }
+
+    return result;
+}
 
 // Reuse helper functions from Unix implementation
 static bool should_filter_line(const std::string& line) {
@@ -628,18 +666,101 @@ int MacOSProcessPlatform::find_free_port(int start_port) {
 
 int MacOSProcessPlatform::run_command(const std::string& command, std::string& output, int timeout_seconds) {
     output.clear();
-
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
+    if (command.empty()) {
         return -1;
     }
 
-    char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) {
-        output += buf;
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
+        return -1;
     }
 
-    return pclose(pipe);
+    std::vector<std::string> sanitized_env_strings = build_sanitized_env({});
+    std::vector<char*> envp_ptrs;
+    envp_ptrs.reserve(sanitized_env_strings.size() + 1);
+    for (auto& s : sanitized_env_strings) {
+        envp_ptrs.push_back(const_cast<char*>(s.c_str()));
+    }
+    envp_ptrs.push_back(nullptr);
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    }
+
+    if (pid == 0) {
+        setpgid(0, 0);
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        dup2(pipefd[1], STDERR_FILENO);
+        close(pipefd[1]);
+
+        environ = envp_ptrs.data();
+        execl("/bin/sh", "sh", "-c", command.c_str(), (char*)nullptr);
+        execlp("sh", "sh", "-c", command.c_str(), (char*)nullptr);
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+
+    int flags = fcntl(pipefd[0], F_GETFL, 0);
+    if (flags != -1) {
+        fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+    }
+
+    char buffer[4096];
+    ssize_t bytes_read;
+    auto start_time = std::chrono::steady_clock::now();
+    bool timed_out = false;
+
+    while (true) {
+        if (timeout_seconds > 0) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start_time).count();
+            if (elapsed > timeout_seconds) {
+                timed_out = true;
+                break;
+            }
+        }
+
+        bytes_read = read(pipefd[0], buffer, sizeof(buffer) - 1);
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0';
+            output += buffer;
+        } else if (bytes_read == 0) {
+            break;
+        } else {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                int status = 0;
+                pid_t result = waitpid(pid, &status, WNOHANG);
+                if (result > 0) {
+                    while ((bytes_read = read(pipefd[0], buffer, sizeof(buffer) - 1)) > 0) {
+                        buffer[bytes_read] = '\0';
+                        output += buffer;
+                    }
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            } else {
+                break;
+            }
+        }
+    }
+
+    close(pipefd[0]);
+
+    if (timed_out) {
+        killpg(pid, SIGKILL);
+        int status = 0;
+        waitpid(pid, &status, 0);
+        return -1;
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
 std::unique_ptr<ProcessPlatform> create_process_platform() {

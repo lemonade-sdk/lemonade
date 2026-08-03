@@ -1,4 +1,5 @@
 #include <lemon/utils/process_platform.h>
+#include <lemon/utils/shell_utils.h>
 #include <lemon/utils/aixlog.hpp>
 
 #include <stdexcept>
@@ -20,7 +21,9 @@
 #include <algorithm>
 #include <cctype>
 
+#include <unordered_set>
 #include <sys/prctl.h>
+#include <poll.h>
 
 #ifdef HAVE_LIBCAP
 #include <sys/capability.h>
@@ -135,6 +138,54 @@ protected:
         int stderr_pipe[2]);
 };
 
+static std::vector<std::string> build_sanitized_env(const std::vector<std::pair<std::string, std::string>>& extra_env_vars = {}) {
+    std::unordered_set<std::string> explicit_keys;
+    for (const auto& kv : extra_env_vars) {
+        explicit_keys.insert(kv.first);
+    }
+
+    std::vector<std::string> result;
+    for (char** env = environ; *env != nullptr; ++env) {
+        std::string env_str(*env);
+        size_t eq_pos = env_str.find('=');
+        if (eq_pos != std::string::npos) {
+            std::string key = env_str.substr(0, eq_pos);
+            if (explicit_keys.find(key) == explicit_keys.end()) {
+                if (key.rfind("LEMONADE_", 0) == 0 ||
+                    key.find("API_KEY") != std::string::npos ||
+                    key.find("TOKEN") != std::string::npos ||
+                    key.find("SECRET") != std::string::npos ||
+                    key.find("PASS") != std::string::npos ||
+                    key.find("AUTH") != std::string::npos ||
+                    key == "CUDA_VISIBLE_DEVICES" ||
+                    key == "HIP_VISIBLE_DEVICES" ||
+                    key == "ROCR_VISIBLE_DEVICES" ||
+                    key == "GGML_VK_VISIBLE_DEVICES" ||
+                    key == "ZE_AFFINITY_MASK") {
+                    continue;
+                }
+            }
+        }
+        result.push_back(env_str);
+    }
+
+    for (const auto& kv : extra_env_vars) {
+        result.push_back(kv.first + "=" + kv.second);
+    }
+
+    return result;
+}
+
+static std::vector<char*> to_envp(const std::vector<std::string>& env_strings) {
+    std::vector<char*> envp;
+    envp.reserve(env_strings.size() + 1);
+    for (const auto& s : env_strings) {
+        envp.push_back(const_cast<char*>(s.c_str()));
+    }
+    envp.push_back(nullptr);
+    return envp;
+}
+
 // Linux implementation using fork/exec
 pid_t LinuxProcessPlatform::spawn_process(
     const std::string& executable,
@@ -146,6 +197,9 @@ pid_t LinuxProcessPlatform::spawn_process(
     int stdout_pipe[2],
     int stderr_pipe[2]) {
 
+    std::vector<std::string> sanitized_env_strings = build_sanitized_env(env_vars);
+    std::vector<char*> envp_ptrs = to_envp(sanitized_env_strings);
+
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -153,17 +207,14 @@ pid_t LinuxProcessPlatform::spawn_process(
     }
 
     if (pid == 0) {
-        // Child process
+        // Child process — zero heap allocations here!
         prctl(PR_SET_PDEATHSIG, SIGTERM);
 
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
         }
 
-        // Set environment variables
-        for (const auto& env_pair : env_vars) {
-            setenv(env_pair.first.c_str(), env_pair.second.c_str(), 1);
-        }
+        environ = envp_ptrs.data();
 
         // Redirect stdout/stderr to pipes if filtering
         if (inherit_output && filter_health_logs) {
@@ -675,18 +726,102 @@ int LinuxProcessPlatform::find_free_port(int start_port) {
 
 int LinuxProcessPlatform::run_command(const std::string& command, std::string& output, int timeout_seconds) {
     output.clear();
-
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
+    if (command.empty()) {
         return -1;
     }
 
-    char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) {
-        output += buf;
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
+        return -1;
     }
 
-    return pclose(pipe);
+    std::vector<std::string> sanitized_env_strings = build_sanitized_env({});
+    std::vector<char*> envp_ptrs = to_envp(sanitized_env_strings);
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    }
+
+    if (pid == 0) {
+        setpgid(0, 0);
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        dup2(pipefd[1], STDERR_FILENO);
+        close(pipefd[1]);
+
+#ifdef __linux__
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
+
+        environ = envp_ptrs.data();
+
+        execl("/bin/sh", "sh", "-c", command.c_str(), (char*)nullptr);
+        execlp("sh", "sh", "-c", command.c_str(), (char*)nullptr);
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+
+    int flags = fcntl(pipefd[0], F_GETFL, 0);
+    if (flags != -1) {
+        fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+    }
+
+    int timeout_ms = (timeout_seconds > 0) ? (timeout_seconds * 1000) : 30000;
+    auto start_time = std::chrono::steady_clock::now();
+    bool timed_out = false;
+
+    char buf[4096];
+    struct pollfd pfd;
+    pfd.fd = pipefd[0];
+    pfd.events = POLLIN | POLLHUP | POLLERR;
+
+    while (true) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_time).count();
+        int remaining_ms = timeout_ms - static_cast<int>(elapsed);
+        if (remaining_ms <= 0) {
+            timed_out = true;
+            break;
+        }
+
+        int poll_res = poll(&pfd, 1, std::min<int>(remaining_ms, 200));
+        if (poll_res > 0) {
+            ssize_t bytes = read(pipefd[0], buf, sizeof(buf) - 1);
+            if (bytes > 0) {
+                buf[bytes] = '\0';
+                output.append(buf, bytes);
+            } else if (bytes == 0) {
+                break;
+            } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                break;
+            }
+        } else if (poll_res == 0) {
+            continue;
+        } else {
+            if (errno != EINTR) break;
+        }
+    }
+
+    close(pipefd[0]);
+
+    if (timed_out) {
+        LOG(ERROR, "LinuxProcessPlatform") << "Command timed out after " << timeout_seconds << "s, killing process group " << pid << ": " << utils::sanitize_log_string(command);
+        killpg(pid, SIGKILL);
+        int status = 0;
+        waitpid(pid, &status, 0);
+        return -1;
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    return -1;
 }
 
 std::unique_ptr<ProcessPlatform> create_process_platform() {
