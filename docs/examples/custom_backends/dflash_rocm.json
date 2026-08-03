@@ -1,0 +1,70 @@
+{
+  "recipe": "dflash-rocm",
+  "display_name": "DFlash Speculative Decoding Server (ROCm Podman)",
+  "slot_policy": "standard",
+  "capabilities": [
+    "chat_completion",
+    "completion"
+  ],
+  "health_probe": {
+    "type": "http",
+    "endpoint": "/health",
+    "expected_status": 200,
+    "timeout_seconds": 300,
+    "poll_interval_ms": 500
+  },
+  "platforms": {
+    "rocm": {
+      "command": "podman",
+      "args": [
+        "run",
+        "--rm",
+        "--init",
+        "-i",
+        "--name",
+        "lemonade-{recipe}-{port}",
+        "--device",
+        "/dev/kfd",
+        "--device",
+        "/dev/dri",
+        "--group-add",
+        "video",
+        "--group-add",
+        "render",
+        "--security-opt",
+        "seccomp=unconfined",
+        "--security-opt",
+        "label=disable",
+        "-v",
+        "{hf_cache}:/models:ro",
+        "--network",
+        "host",
+        "--entrypoint",
+        "/opt/lucebox-hub/server/build/dflash_server",
+        "ghcr.io/luce-org/lucebox-hub:rocm-7.2",
+        "/models/{checkpoint_relative:main}",
+        "--target-device={target_device}",
+        "--model-name={model_name}",
+        "--host={host}",
+        "--port={port}",
+        "--max-ctx={ctx_size}",
+        "--cache-type-k={cache_type_k}",
+        "--cache-type-v={cache_type_v}",
+        "--draft=/models/{checkpoint_relative:draft}",
+        "{custom_args}"
+      ],
+      "stop_command": "podman",
+      "stop_command_args": [
+        "rm",
+        "-f",
+        "-t",
+        "0",
+        "lemonade-{recipe}-{port}"
+      ],
+      "env": {
+        "DFLASH_DRAFT_SWA": "{custom:draft_swa:-2048}",
+        "DFLASH_PREFILL_UBATCH": "{custom:prefill_ubatch:-512}"
+      }
+    }
+  }
+}

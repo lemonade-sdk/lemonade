@@ -20,17 +20,17 @@ const RECIPE_PRIORITY = [
 ];
 
 const RECIPE_DISPLAY_NAMES = {
+  openmoss: 'OpenMOSS TTS',
   llamacpp: 'llama.cpp GPU',
-  whispercpp: 'whisper.cpp',
-  'sd-cpp': 'stable-diffusion.cpp',
-  flm: 'FastFlowLM NPU',
-  'ryzenai-llm': 'Ryzen AI SW NPU',
-  vllm: 'vLLM ROCm (experimental)',
-  thinksound: 'ThinkSound',
-  acestep: 'ACE-Step',
-  onnxruntime: 'ONNX Runtime',
   trellis: 'TRELLIS.2',
-  openmoss: 'OpenMOSS TTS'
+  flm: 'FastFlowLM NPU',
+  'sd-cpp': 'stable-diffusion.cpp',
+  vllm: 'vLLM ROCm (experimental)',
+  acestep: 'ACE-Step',
+  thinksound: 'ThinkSound',
+  whispercpp: 'whisper.cpp',
+  'ryzenai-llm': 'Ryzen AI SW NPU',
+  onnxruntime: 'ONNX Runtime'
 };
 /* END GENERATED: models-js-recipes */
 

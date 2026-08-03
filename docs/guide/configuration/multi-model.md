@@ -63,7 +63,7 @@ backend's hardware slot policy:
 ## Device Constraints
 
 <!-- BEGIN GENERATED: npu-exclusivity -->
-- **NPU Exclusivity:** `whispercpp`, `flm`, and `ryzenai-llm` are mutually exclusive on the NPU.
+- **NPU Exclusivity:** `flm`, `whispercpp`, and `ryzenai-llm` are mutually exclusive on the NPU.
 <!-- END GENERATED: npu-exclusivity -->
     - Loading a model from one of these backends will automatically evict all NPU models from the other backends.
     - `flm` supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.
