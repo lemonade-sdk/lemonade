@@ -251,6 +251,19 @@ export interface ModelsData {
   data: ModelInfo[];
 }
 
+/**
+ * Canonical renderer-side snapshot of the server model registry and loaded
+ * model state. Components subscribe to this instead of maintaining independent
+ * copies and issuing their own startup requests.
+ */
+export interface ModelStateSnapshot {
+  status: ConnectionStatus;
+  health: HealthData | null;
+  models: ModelsData | null;
+  refreshing: boolean;
+  error: string | null;
+}
+
 /** One physical file backing a model (from GET /api/v1/models/{id}/files). */
 export interface ModelFileInfo {
   name: string;
@@ -634,6 +647,7 @@ export interface ChatMessage {
 }
 
 type StatusListener = (status: ConnectionStatus) => void;
+type ModelStateListener = () => void;
 
 
 type HostSettingsApi = {
@@ -735,10 +749,27 @@ class LemonadeAPI {
   private _status: ConnectionStatus = 'disconnected';
   private _lastConnectionError: string | null = null;
   private _listeners: StatusListener[] = [];
+  private _modelStateListeners = new Set<ModelStateListener>();
   private _modelsChangedListeners: Array<() => void> = [];
   private _healthData: HealthData | null = null;
+  private _healthDataSignature = '';
   private _modelsData: ModelsData | null = null;
+  private _modelsDataSignature = '';
+  private _modelsFetchRevision = 0;
   private _systemInfoData: Record<string, unknown> | null = null;
+  private _modelStateSnapshot: ModelStateSnapshot = {
+    status: 'disconnected',
+    health: null,
+    models: null,
+    refreshing: false,
+    error: null,
+  };
+  private _modelsRequestInFlight = new Map<boolean, Promise<ModelsData>>();
+  private _refreshInFlight: Promise<{ health: HealthData; models: ModelsData } | null> | null = null;
+  private _refreshGenerationInFlight = -1;
+  private _connectInFlight: Promise<boolean> | null = null;
+  private _refreshQueued = false;
+  private _modelStateGeneration = 0;
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionApiKey = '';
   private _sessionAdminApiKey = '';
@@ -928,6 +959,7 @@ class LemonadeAPI {
   get highSecurity(): boolean | undefined { return this._healthData?.high_security; }
   get modelsData(): ModelsData | null { return this._modelsData; }
   get systemInfoData(): Record<string, unknown> | null { return this._systemInfoData; }
+  get modelStateSnapshot(): ModelStateSnapshot { return this._modelStateSnapshot; }
 
   get loadedModels(): LoadedModel[] {
     return Array.isArray(this._healthData?.all_models_loaded) ? this._healthData!.all_models_loaded : [];
@@ -942,19 +974,53 @@ class LemonadeAPI {
     return () => { this._listeners = this._listeners.filter(f => f !== fn); };
   }
 
+  onModelStateChange(fn: ModelStateListener): () => void {
+    this._modelStateListeners.add(fn);
+    return () => { this._modelStateListeners.delete(fn); };
+  }
+
   onModelsChanged(fn: () => void): () => void {
     this._modelsChangedListeners.push(fn);
     return () => { this._modelsChangedListeners = this._modelsChangedListeners.filter(f => f !== fn); };
   }
 
   private _notifyModelsChanged(): void {
+    this._modelStateGeneration += 1;
     this._modelsChangedListeners.forEach(fn => { try { fn(); } catch {} });
+    if (this.isConnected) void this.refresh();
   }
 
   private _setStatus(s: ConnectionStatus): void {
-    if (this._status === s) return;
+    const changed = this._status !== s;
     this._status = s;
-    this._listeners.forEach(fn => { try { fn(s); } catch {} });
+    if (changed) this._listeners.forEach(fn => { try { fn(s); } catch {} });
+    this._publishModelState();
+  }
+
+  private _setModelStateRefreshing(refreshing: boolean): void {
+    if (this._modelStateSnapshot.refreshing === refreshing) return;
+    this._modelStateSnapshot = { ...this._modelStateSnapshot, refreshing };
+    this._modelStateListeners.forEach(fn => { try { fn(); } catch {} });
+  }
+
+  private _publishModelState(): void {
+    const next: ModelStateSnapshot = {
+      status: this._status,
+      health: this._healthData,
+      models: this._modelsData,
+      refreshing: this._modelStateSnapshot.refreshing,
+      error: this._lastConnectionError,
+    };
+    const current = this._modelStateSnapshot;
+    if (
+      current.status === next.status
+      && current.health === next.health
+      && current.models === next.models
+      && current.refreshing === next.refreshing
+      && current.error === next.error
+    ) return;
+    this._modelStateSnapshot = next;
+    this._modelStateListeners.forEach(fn => { try { fn(); } catch {} });
   }
 
   // ── Fetch wrapper ───────────────────────────────────────────────
@@ -1242,17 +1308,45 @@ class LemonadeAPI {
 
   async health(): Promise<HealthData> {
     const data = normalizeHealth(await this._json<unknown>('/api/v1/health'));
-    this._healthData = data;
+    const signature = JSON.stringify(data);
+    if (!this._healthData || signature !== this._healthDataSignature) {
+      this._healthData = data;
+      this._healthDataSignature = signature;
+    }
     this._lastConnectionError = null;
     this._setStatus('connected');
-    return data;
+    return this._healthData;
   }
 
   async models(showAll = true): Promise<ModelsData> {
-    const qs = showAll ? '?show_all=true' : '';
-    const data = normalizeModels(await this._json<unknown>(`/api/v1/models${qs}`));
-    this._modelsData = data;
-    return data;
+    const existing = this._modelsRequestInFlight.get(showAll);
+    if (existing) return existing;
+
+    const request = (async () => {
+      const qs = showAll ? '?show_all=true' : '';
+      const data = normalizeModels(await this._json<unknown>(`/api/v1/models${qs}`));
+      if (showAll) {
+        const signature = JSON.stringify(data);
+        if (!this._modelsData || signature !== this._modelsDataSignature) {
+          this._modelsData = data;
+          this._modelsDataSignature = signature;
+        }
+        this._modelsFetchRevision += 1;
+        this._lastConnectionError = null;
+        this._publishModelState();
+        return this._modelsData;
+      }
+      return data;
+    })();
+
+    this._modelsRequestInFlight.set(showAll, request);
+    try {
+      return await request;
+    } finally {
+      if (this._modelsRequestInFlight.get(showAll) === request) {
+        this._modelsRequestInFlight.delete(showAll);
+      }
+    }
   }
 
   async modelDetail(id: string): Promise<ModelInfo> {
@@ -2388,15 +2482,15 @@ class LemonadeAPI {
   // ── Connection management ───────────────────────────────────────
 
   async connect(): Promise<boolean> {
+    if (this._connectInFlight) return this._connectInFlight;
+
     this._setStatus('connecting');
+    const request = (async () => Boolean(await this.refresh()))();
+    this._connectInFlight = request;
     try {
-      await this.health();
-      return true;
-    } catch (err) {
-      this._lastConnectionError = friendlyErrorMessage(err);
-      this._setStatus('disconnected');
-      this._healthData = null;
-      return false;
+      return await request;
+    } finally {
+      if (this._connectInFlight === request) this._connectInFlight = null;
     }
   }
 
@@ -2415,33 +2509,82 @@ class LemonadeAPI {
       return true;
     } catch (err) {
       this._lastConnectionError = friendlyErrorMessage(err);
-      this._setStatus('disconnected');
       this._healthData = null;
+      this._healthDataSignature = '';
+      this._setStatus('disconnected');
       return false;
     }
   }
 
+  async ensureModelState(): Promise<{ health: HealthData; models: ModelsData } | null> {
+    if (this._healthData && this._modelsData) {
+      return { health: this._healthData, models: this._modelsData };
+    }
+    return this.refresh();
+  }
+
   async refresh(): Promise<{ health: HealthData; models: ModelsData } | null> {
-    try {
-      const health = await this.health();
-      let models: ModelsData;
-      try {
-        models = await this.models(true);
-      } catch (err) {
-        // Health is the connection source of truth. Some tests and lightweight
-        // servers expose health/MCP before the model registry is available; do
-        // not flip the whole app back to disconnected merely because /models
-        // failed after /health succeeded. Keep the previous registry if present,
-        // otherwise use an empty one until the next refresh.
-        this._lastConnectionError = friendlyErrorMessage(err);
-        models = this._modelsData || { data: [] };
+    if (this._refreshInFlight) {
+      if (this._refreshGenerationInFlight !== this._modelStateGeneration) {
+        this._refreshQueued = true;
       }
-      return { health, models };
-    } catch (err) {
-      this._lastConnectionError = friendlyErrorMessage(err);
-      this._setStatus('disconnected');
-      this._healthData = null;
-      return null;
+      const current = this._refreshInFlight;
+      const result = await current;
+      const followUp = this._refreshInFlight;
+      if (followUp && followUp !== current) return followUp;
+      if (this._refreshQueued && this._refreshInFlight === null) {
+        this._refreshQueued = false;
+        return this.refresh();
+      }
+      return result;
+    }
+
+    const generationAtStart = this._modelStateGeneration;
+    const modelsRevisionAtStart = this._modelsFetchRevision;
+    this._refreshGenerationInFlight = generationAtStart;
+    this._setModelStateRefreshing(true);
+    const request = (async (): Promise<{ health: HealthData; models: ModelsData } | null> => {
+      try {
+        const health = await this.health();
+        let models: ModelsData;
+        try {
+          models = this._modelsData && this._modelsFetchRevision > modelsRevisionAtStart
+            ? this._modelsData
+            : await this.models(true);
+        } catch (err) {
+          // Health is the connection source of truth. Some tests and lightweight
+          // servers expose health/MCP before the model registry is available; do
+          // not flip the whole app back to disconnected merely because /models
+          // failed after /health succeeded. Keep the previous registry if present,
+          // otherwise use an empty one until the next refresh.
+          this._lastConnectionError = friendlyErrorMessage(err);
+          models = this._modelsData || { data: [] };
+          if (!this._modelsData) {
+            this._modelsData = models;
+            this._modelsDataSignature = JSON.stringify(models);
+          }
+          this._publishModelState();
+        }
+        return { health, models };
+      } catch (err) {
+        this._lastConnectionError = friendlyErrorMessage(err);
+        this._healthData = null;
+        this._healthDataSignature = '';
+        this._setStatus('disconnected');
+        return null;
+      }
+    })();
+
+    this._refreshInFlight = request;
+    try {
+      return await request;
+    } finally {
+      if (this._refreshInFlight === request) this._refreshInFlight = null;
+      if (this._refreshGenerationInFlight === generationAtStart) this._refreshGenerationInFlight = -1;
+      const needsFollowUp = this._refreshQueued || generationAtStart !== this._modelStateGeneration;
+      this._refreshQueued = false;
+      if (needsFollowUp) void this.refresh();
+      else this._setModelStateRefreshing(false);
     }
   }
 

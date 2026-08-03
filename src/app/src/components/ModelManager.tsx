@@ -33,8 +33,12 @@ import {
   type GlobalModelSettings,
 } from '../features/modelSettings/globalModelSettings';
 import { backendLabel } from '../modelPresentation';
+import { useServerModelState } from '../features/models/modelState';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
+
+const EMPTY_MODELS: ModelInfo[] = [];
+const EMPTY_LOADED_MODELS: LoadedModel[] = [];
 
 function modelName(m: ModelInfo | null | undefined): string {
   if (!m) return '';
@@ -1047,10 +1051,11 @@ interface ModelManagerProps {
 }
 
 const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelRequest }) => {
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState(api.status);
-  const [modelsLoading, setModelsLoading] = useState(api.isConnected && api.allModels.length === 0);
+  const serverModelState = useServerModelState();
+  const models = serverModelState.models?.data ?? EMPTY_MODELS;
+  const loadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
+  const connectionStatus = serverModelState.status;
+  const modelsLoading = serverModelState.refreshing && models.length === 0;
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
@@ -1117,13 +1122,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const customJsonInputRef = useRef<HTMLInputElement>(null);
 
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
-  const hasVisibleModelsRef = useRef(false);
-  const modelsSnapshotRef = useRef<string>('');
-  const loadedSnapshotRef = useRef<string>('');
-
-  useEffect(() => {
-    hasVisibleModelsRef.current = models.length > 0 || loadedModels.length > 0 || customModels.length > 0 || routerModels.length > 0;
-  }, [models.length, loadedModels.length, customModels.length, routerModels.length]);
 
   useEffect(() => downloadStore.subscribe(setDownloadItems), []);
 
@@ -1190,41 +1188,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   }, [connectionStatus, refreshCustomRecipeAvailability]);
 
   const refresh = useCallback(async () => {
-    if (!api.isConnected) {
-      setModelsLoading(false);
-      if (!hasVisibleModelsRef.current) {
-        modelsSnapshotRef.current = '[]';
-        loadedSnapshotRef.current = '[]';
-        setModels([]);
-        setLoadedModels([]);
-      }
-      return;
-    }
-    if (!hasVisibleModelsRef.current) setModelsLoading(true);
+    if (!api.isConnected) return;
     try {
-      const result = await api.refresh();
-      if (result) {
-        const nextModels = Array.isArray(result.models.data) ? result.models.data.filter((m): m is ModelInfo => !!m && !!modelName(m)) : [];
-        const nextLoaded = Array.isArray(result.health.all_models_loaded) ? result.health.all_models_loaded.filter(m => !!m?.model_name) : [];
-        const nextModelsSig = JSON.stringify(nextModels);
-        const nextLoadedSig = JSON.stringify(nextLoaded);
-        if (modelsSnapshotRef.current !== nextModelsSig) {
-          modelsSnapshotRef.current = nextModelsSig;
-          setModels(nextModels);
-        }
-        if (loadedSnapshotRef.current !== nextLoadedSig) {
-          loadedSnapshotRef.current = nextLoadedSig;
-          setLoadedModels(nextLoaded);
-        }
-      }
+      await api.refresh();
     } catch (err) {
       console.warn('Failed to refresh model list:', err);
-    } finally {
-      setModelsLoading(false);
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  // App owns startup connection. This fallback supports isolated mounts without
+  // creating a second request when the global refresh is already in flight.
+  useEffect(() => {
+    if (connectionStatus !== 'connected' || serverModelState.models || serverModelState.refreshing) return;
+    void api.ensureModelState();
+  }, [connectionStatus, serverModelState.models, serverModelState.refreshing]);
 
   const refreshServerDefaultCtxSize = useCallback(async () => {
     if (!api.isConnected) {
@@ -1243,23 +1220,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (connectionStatus === 'connected') refreshServerDefaultCtxSize();
     else setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
   }, [connectionStatus, refreshServerDefaultCtxSize]);
-
-  // Re-fetch when server connection status changes (e.g. connects after initial mount)
-  useEffect(() => {
-    const unsub = api.onStatusChange((status) => {
-      setConnectionStatus(status);
-      if (status === 'connected') {
-        refresh();
-        refreshServerDefaultCtxSize();
-      }
-    });
-    return unsub;
-  }, [refresh, refreshServerDefaultCtxSize]);
-
-  // Re-fetch when models are loaded/unloaded/deleted via any path (tools, other views)
-  useEffect(() => {
-    return api.onModelsChanged(() => { refresh(); });
-  }, [refresh]);
 
   /* ── Remote registry search ────────────────────────────────
      Deliberately keyed ONLY by the text query and provider switch. Changing
