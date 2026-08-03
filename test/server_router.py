@@ -18,6 +18,7 @@ Usage:
 
 import json as _json
 import threading
+import platform
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import requests
@@ -123,6 +124,8 @@ SEMANTIC_CODING_PROMPT = (
 )
 SEMANTIC_OTHER_PROMPT = "What are some good recipes for a summer picnic by the lake?"
 SEMANTIC_MIN_SCORE = 0.6
+SEMANTIC_CTX_SIZE = 2048
+SEMANTIC_BACKEND = "metal" if platform.system() == "Darwin" else "cpu"
 
 COLLECTION_NAME = "user.Test-Router-Local"
 
@@ -248,22 +251,62 @@ class RouterTests(ServerTestBase):
         return None
 
     def _load_semantic_model(self):
-        """Load the embedding model before entering router evaluation.
-
-        Semantic routing is not intended to test cold-start model loading. Keeping
-        that lifecycle concern outside the routed request avoids a transient
-        ensure/load failure being converted into Score{ok=false} and silently
-        falling through to the default candidate.
-        """
+        """Load the embedding dependency with deterministic test settings."""
         resp = requests.post(
             f"{self.base_url}/load",
-            json={"model_name": EMBED_MODEL},
+            json={
+                "model_name": EMBED_MODEL,
+                "ctx_size": SEMANTIC_CTX_SIZE,
+                "llamacpp_backend": SEMANTIC_BACKEND,
+                "pinned": True,
+                "save_options": False,
+            },
             timeout=600,
         )
         self.assertEqual(
             resp.status_code,
             200,
-            f"failed to preload semantic model {EMBED_MODEL}: {resp.text}",
+            "failed to load semantic model with deterministic settings "
+            f"(backend={SEMANTIC_BACKEND}, ctx_size={SEMANTIC_CTX_SIZE}): "
+            f"{resp.text}",
+        )
+
+        resp = requests.post(
+            f"{self.base_url}/embeddings",
+            json={"model": EMBED_MODEL, "input": SEMANTIC_CODING_PROMPT},
+            timeout=600,
+        )
+        self.assertEqual(
+            resp.status_code,
+            200,
+            f"semantic embedding readiness probe failed: {resp.text}",
+        )
+        try:
+            payload = resp.json()
+        except ValueError as exc:
+            self.fail(f"semantic embedding probe returned invalid JSON: {exc}")
+        data = payload.get("data", []) if isinstance(payload, dict) else []
+        embedding = (
+            data[0].get("embedding")
+            if data and isinstance(data[0], dict)
+            else payload.get("embedding") if isinstance(payload, dict) else None
+        )
+        self.assertTrue(
+            isinstance(embedding, list) and embedding,
+            f"semantic embedding probe returned no vector: {payload}",
+        )
+
+    def _unload_semantic_model(self):
+        """Release the pinned embedding model after each semantic test."""
+        resp = requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": EMBED_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn(
+            resp.status_code,
+            (200, 404),
+            f"failed to unload semantic model {EMBED_MODEL}: {resp.text}",
         )
 
     def test_600_default_fallthrough(self):
@@ -466,7 +509,6 @@ class RouterTests(ServerTestBase):
         this test measures routing behavior rather than cold-start lifecycle.
         """
         pull_model_with_retry(EMBED_MODEL)
-        self._load_semantic_model()
         collection = "user.Test-Router-Semantic"
         policy = {
             "version": "1",
@@ -499,12 +541,13 @@ class RouterTests(ServerTestBase):
                 ],
             },
         }
-        resp = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
-        )
-        self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
-
         try:
+            self._load_semantic_model()
+            resp = requests.post(
+                f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
+            )
+            self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
+
             # A semantically coding prompt -> capable.
             _, decision, _ = self._route(
                 SEMANTIC_CODING_PROMPT,
@@ -557,7 +600,10 @@ class RouterTests(ServerTestBase):
                 f"-> {DEFAULT_MODEL}"
             )
         finally:
-            self._delete_collection(collection)
+            try:
+                self._delete_collection(collection)
+            finally:
+                self._unload_semantic_model()
 
     def test_621_semantic_similarity_cloud_candidate(self):
         """A `semantic_similarity` match routes to a *cloud* candidate.
@@ -568,7 +614,6 @@ class RouterTests(ServerTestBase):
         query goes to the cloud model; an unrelated query stays local.
         """
         pull_model_with_retry(EMBED_MODEL)
-        self._load_semantic_model()
         provider = "testsemcloud"
         upstream_id = "vendor/sem-cloud-model"
         marker = "answered-by-cloud-provider"
@@ -576,6 +621,7 @@ class RouterTests(ServerTestBase):
 
         base_url, stop_provider = start_mock_cloud_provider([upstream_id], marker)
         try:
+            self._load_semantic_model()
             resp = requests.post(
                 f"{self.base_url}/install",
                 json={
@@ -704,7 +750,10 @@ class RouterTests(ServerTestBase):
                 f"-> {DEFAULT_MODEL} (local default)"
             )
         finally:
-            self._delete_collection(collection)
+            try:
+                self._delete_collection(collection)
+            finally:
+                self._unload_semantic_model()
             requests.delete(
                 f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
             )
