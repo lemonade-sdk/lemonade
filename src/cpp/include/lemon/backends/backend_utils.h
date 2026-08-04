@@ -201,5 +201,14 @@ namespace lemon::backends {
             std::vector<std::pair<std::string, std::string>>& env_vars,
             const std::string& log_tag,
             bool skip_visible_devices = false);
+
+        /**
+         * Validates that the device selection string prefix matches the selected backend.
+         * Throws std::invalid_argument if a device prefix contradicts the backend choice
+         * (e.g. passing target_device "ROCm2" to a "vulkan" or "cuda" backend).
+         */
+        static void validate_device_backend_match(
+            const std::string& backend,
+            const std::string& target_device);
     };
 } // namespace lemon::backends

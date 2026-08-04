@@ -22,6 +22,9 @@ set(COMMON_SOURCES
     recipe_import.cpp
     hf_pull.cpp
     bench.cpp
+    bench_output.cpp
+    bench_comparison.cpp
+    bench_sysinfo.cpp
     chat_repl.cpp
     ../server/recipe_options.cpp
     ../server/utils/process_manager.cpp

@@ -340,7 +340,8 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
 
-    if (llamacpp_device != "") {
+    if (!llamacpp_device.empty()) {
+        BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
         push_arg(args, reserved_flags, "--device", llamacpp_device);
     }
     push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
@@ -503,8 +504,8 @@ void LlamaCppServer::load(const std::string& model_name,
 #endif
 
     if (is_llamacpp_cuda_backend(llamacpp_backend)) {
-        const char* existing_llama_device = std::getenv("LLAMA_ARG_DEVICE");
-        const bool has_llama_device_override = existing_llama_device && existing_llama_device[0] != '\0';
+        std::string existing_llama_device = utils::get_environment_variable_utf8("LLAMA_ARG_DEVICE");
+        const bool has_llama_device_override = !existing_llama_device.empty();
 
         bool skip_visible_devices = false;
         if (!llamacpp_device.empty()) {
