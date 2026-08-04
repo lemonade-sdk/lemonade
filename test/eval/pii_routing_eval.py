@@ -6,12 +6,25 @@ case from cases.jsonl, compares the actual routing decision to the expected one,
 and prints a confusion matrix with leak rate, over-route rate, and Fbeta score.
 
 Usage:
-    python test/eval/pii_routing_eval.py [--base-url URL] [--corpus-dir DIR] [--beta FLOAT] [--verbose]
+    python test/eval/pii_routing_eval.py [--base-url URL] [--corpus-dir DIR] [--policy FILE] [--beta FLOAT] [--verbose]
 
 Defaults:
     --base-url   http://localhost:13305
     --corpus-dir test/conformance/routing/1/l2_pii_regex
+    --policy     policy.json  (relative to --corpus-dir, or an absolute path)
     --beta       2.0  (recall-weighted: missing PII is more costly than over-routing)
+
+Examples:
+    # Regex policy against hand-crafted corpus
+    python test/eval/pii_routing_eval.py --verbose
+
+    # LLM policy against the same hand-crafted corpus
+    python test/eval/pii_routing_eval.py --policy policy_llm.json --verbose
+
+    # LLM policy against Nemotron corpus
+    python test/eval/pii_routing_eval.py \\
+        --corpus-dir test/conformance/routing/1/l2_pii_nemotron \\
+        --policy ../l2_pii_regex/policy_llm.json --verbose
 """
 
 import argparse
@@ -48,6 +61,12 @@ def parse_args() -> argparse.Namespace:
         help="Directory containing policy.json and cases.jsonl",
     )
     p.add_argument(
+        "--policy",
+        default="policy.json",
+        help="Policy file name (relative to --corpus-dir) or absolute path. "
+        "Defaults to policy.json. Use policy_llm.json for the LLM router.",
+    )
+    p.add_argument(
         "--beta",
         type=float,
         default=2.0,
@@ -55,7 +74,11 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--verbose", action="store_true", help="Print per-case results")
     p.add_argument(
-        "--timeout", type=int, default=60, help="HTTP timeout per request (seconds)"
+        "--timeout",
+        type=int,
+        default=60,
+        help="HTTP timeout per request in seconds. "
+        "Increase for LLM policy (router LLM generates before routing).",
     )
     return p.parse_args()
 
@@ -113,12 +136,24 @@ def is_risk_case(case: dict) -> bool:
     return any(m in note for m in RISK_NOTE_MARKERS)
 
 
+def is_llm_policy(policy: dict) -> bool:
+    """True when the policy uses an LLM router (routing.router.type == 'llm')."""
+    return policy.get("routing", {}).get("router", {}).get("type") == "llm"
+
+
 def privacy_route(policy: dict) -> str:
-    """Return the candidate that PII rules route to (the local/private model)."""
+    """Return the candidate that PII should route to (the local/private model).
+
+    For rules-based policy: the route_to of the 'pii-detected' rule.
+    For LLM policy: default_model (the LLM defaults to local when uncertain,
+    so the private model is the default, not the exception).
+    """
+    if is_llm_policy(policy):
+        return policy.get("routing", {}).get("default_model", "")
     for rule in policy.get("routing", {}).get("rules", []):
         if rule.get("id") == "pii-detected":
             return rule["route_to"]
-    # Fall back to any non-default candidate
+    # Fallback: any non-default candidate
     routing = policy.get("routing", {})
     default = routing.get("default_model", "")
     candidates = routing.get("candidates", [])
@@ -158,11 +193,12 @@ def classify_case(case: dict, local_model: str) -> str:
 
 def evaluate(args: argparse.Namespace) -> None:
     corpus_dir = Path(args.corpus_dir)
-    policy_path = corpus_dir / "policy.json"
+    policy_arg = Path(args.policy)
+    policy_path = policy_arg if policy_arg.is_absolute() else corpus_dir / policy_arg
     cases_path = corpus_dir / "cases.jsonl"
 
     if not policy_path.exists():
-        print(f"ERROR: policy.json not found at {policy_path}", file=sys.stderr)
+        print(f"ERROR: policy file not found at {policy_path}", file=sys.stderr)
         sys.exit(1)
     if not cases_path.exists():
         print(f"ERROR: cases.jsonl not found at {cases_path}", file=sys.stderr)
@@ -176,6 +212,7 @@ def evaluate(args: argparse.Namespace) -> None:
     ]
 
     print(f"Corpus : {corpus_dir}")
+    print(f"Policy : {policy_path.name}")
     print(f"Cases  : {len(cases)}")
     print(f"Server : {args.base_url}")
     print(f"Beta   : {args.beta}")
@@ -187,6 +224,8 @@ def evaluate(args: argparse.Namespace) -> None:
     print(f"Policy '{policy['model_name']}' registered.")
     print(f"Privacy route target: '{local_model}'\n")
 
+    llm_policy = is_llm_policy(policy)
+
     # Counters
     counts: dict[str, int] = {
         "TP": 0,
@@ -196,9 +235,11 @@ def evaluate(args: argparse.Namespace) -> None:
         "RISK_FN": 0,
         "RISK_FP": 0,
         "ERROR": 0,
+        "LLM_FALLBACK": 0,  # LLM policy only: router LLM produced bad output, server fell back
     }
     wrong_cases: list[dict] = []
     risk_cases: list[dict] = []
+    llm_fallback_cases: list[dict] = []
 
     for case in cases:
         name = case.get("name", "?")
@@ -217,6 +258,27 @@ def evaluate(args: argparse.Namespace) -> None:
         actual_decision = resp.get("x_lemonade_route", {})
         actual_route = actual_decision.get("route_to", "")
         actual_rule = actual_decision.get("matched_rule", "")
+        actual_default_used = actual_decision.get("default_used", False)
+
+        # Detect silent LLM fallback: default_used=true but the __router
+        # classifier trace entry is absent, meaning the LLM produced malformed
+        # JSON or an unrecognised candidate name and the engine fell open.
+        llm_fallback = False
+        if llm_policy and actual_default_used:
+            trace = actual_decision.get("trace", [])
+            router_fired = any(t.get("condition") == "__router" for t in trace)
+            if not router_fired:
+                llm_fallback = True
+                counts["LLM_FALLBACK"] += 1
+                llm_fallback_cases.append(
+                    {"name": name, "kind": kind, "actual_route": actual_route}
+                )
+                if args.verbose:
+                    print(
+                        f"  [LLM_FALLBACK] {name}: router LLM produced bad output, fell open to default"
+                    )
+                continue
+
         passed = actual_route == expected_route
 
         if kind in ("RISK_FN", "RISK_FP"):
@@ -252,13 +314,27 @@ def evaluate(args: argparse.Namespace) -> None:
                 }
             )
             if args.verbose:
+                rationale = ""
+                if llm_policy:
+                    trace = actual_decision.get("trace", [])
+                    for t in trace:
+                        if t.get("condition") == "__router" and t.get("rationale"):
+                            rationale = f" rationale='{t['rationale']}'"
+                            break
                 print(
-                    f"  [FAIL][{kind}] {name}: expected={expected_route} actual={actual_route}"
+                    f"  [FAIL][{kind}] {name}: expected={expected_route} actual={actual_route}{rationale}"
                 )
         else:
             if args.verbose:
+                rationale = ""
+                if llm_policy:
+                    trace = actual_decision.get("trace", [])
+                    for t in trace:
+                        if t.get("condition") == "__router" and t.get("rationale"):
+                            rationale = f" rationale='{t['rationale']}'"
+                            break
                 print(
-                    f"  [PASS][{kind}] {name}: route={actual_route} rule={actual_rule or 'default'}"
+                    f"  [PASS][{kind}] {name}: route={actual_route} rule={actual_rule or 'default'}{rationale}"
                 )
 
     # For counts we need totals per class regardless of pass/fail
@@ -280,8 +356,8 @@ def evaluate(args: argparse.Namespace) -> None:
     # how many actually went local (correct) vs cloud (leak).
     # And of benign cases (TN class expected cloud), how many over-routed to local.
 
-    total_sensitive = class_totals["TP"]  # true PII cases — should go local
-    total_benign = class_totals["TN"]  # clean cases — should go cloud
+    total_sensitive = class_totals["TP"]  # true PII cases - should go local
+    total_benign = class_totals["TN"]  # clean cases - should go cloud
 
     # A "leaked" case is a TP case that the router sent to cloud
     leaked = class_totals["TP"] - tp_pass  # TP class but failed = went cloud
@@ -310,6 +386,8 @@ def evaluate(args: argparse.Namespace) -> None:
     print(f"  benign → cloud (TN, correct)   : {tn_pass:3d} / {total_benign}")
     print(f"  benign → local (FP, over-route): {over_routed:3d} / {total_benign}")
     print(f"  errors (HTTP/parse)            : {counts['ERROR']}")
+    if llm_policy:
+        print(f"  LLM fallbacks (bad JSON/name)  : {counts['LLM_FALLBACK']}")
     print()
     print("METRICS")
     print("-" * 40)
@@ -324,7 +402,7 @@ def evaluate(args: argparse.Namespace) -> None:
 
     if risk_cases:
         print(
-            f"RISK CASES ({len(risk_cases)} documented gaps — not counted in metrics)"
+            f"RISK CASES ({len(risk_cases)} documented gaps - not counted in metrics)"
         )
         print("-" * 40)
         for rc in risk_cases:
@@ -348,9 +426,18 @@ def evaluate(args: argparse.Namespace) -> None:
             print(f"    note: {wc['note']}")
         print()
 
+    if llm_policy and llm_fallback_cases:
+        print(
+            f"LLM FALLBACKS ({len(llm_fallback_cases)} - router LLM produced bad output)"
+        )
+        print("-" * 40)
+        for lf in llm_fallback_cases:
+            print(f"  [{lf['kind']}] {lf['name']}: fell open to {lf['actual_route']}")
+        print()
+
     print("=" * 60)
-    overall = leaked == 0 and counts["ERROR"] == 0
-    result = "PASS — zero leaks" if overall else "FAIL — see above"
+    overall = leaked == 0 and counts["ERROR"] == 0 and counts["LLM_FALLBACK"] == 0
+    result = "PASS - zero leaks" if overall else "FAIL - see above"
     print(f"RESULT: {result}")
     print("=" * 60)
 
