@@ -21,6 +21,7 @@
 #include "runtime_config.h"
 #include "router.h"
 #include "routing_policy.h"
+#include "alias_manager.h"
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "cloud_provider_registry.h"
@@ -145,6 +146,11 @@ private:
     void handle_pin(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
+    void handle_aliases_get(const httplib::Request& req, httplib::Response& res);
+    void handle_aliases_add(const httplib::Request& req, httplib::Response& res);
+    void handle_aliases_remove(const httplib::Request& req, httplib::Response& res);
+    std::string resolve_alias_target(const std::string& model_name) const;
+    void normalize_and_resolve_request_model(nlohmann::json& request_json) const;
 
     // Cloud auth (public, all four prefixes).
     //   POST /v1/cloud/auth   body: {provider, api_key}
@@ -324,6 +330,7 @@ private:
     std::unique_ptr<UpgradableFrontServer> http_front_v6_;
 
     std::unique_ptr<Router> router_;
+    std::unique_ptr<AliasManager> alias_manager_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<CloudProviderRegistry> cloud_registry_;
