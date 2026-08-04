@@ -40,6 +40,7 @@ Requirements:
 """
 
 import argparse
+import ast
 import json
 import random
 import re
@@ -127,6 +128,21 @@ def normalize_text(text: str, max_chars: int) -> str:
     return text
 
 
+def parse_spans(raw) -> list[dict]:
+    """Nemotron-PII's `spans` column round-trips through parquet as a Python
+    repr string (single-quoted, e.g. "[{'start': 0, ..., 'label': 'x'}]" or
+    "[]" for no entities), not an actual list or valid JSON."""
+    if isinstance(raw, list):
+        return raw
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    try:
+        parsed = ast.literal_eval(raw)
+    except (ValueError, SyntaxError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
 def pii_types_from_spans(spans: list) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -183,7 +199,7 @@ def build_corpus(args: argparse.Namespace) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(
-        f"Loading nvidia/Nemotron-PII ({args.split} split, streaming={args.streaming})…"
+        f"Loading nvidia/Nemotron-PII ({args.split} split, streaming={args.streaming})..."
     )
     ds = load_dataset(
         "nvidia/Nemotron-PII",
@@ -201,9 +217,9 @@ def build_corpus(args: argparse.Namespace) -> None:
     target_benign = args.n_benign * 4
     scanned = 0
 
-    print(f"Scanning dataset (target: {args.n_pii} PII + {args.n_benign} benign)…")
+    print(f"Scanning dataset (target: {args.n_pii} PII + {args.n_benign} benign)...")
     for row in ds:
-        spans = row.get("spans") or []
+        spans = parse_spans(row.get("spans"))
         text = row.get("text", "")
         if not text or not text.strip():
             continue
@@ -217,7 +233,7 @@ def build_corpus(args: argparse.Namespace) -> None:
         scanned += 1
         if scanned % 10000 == 0:
             print(
-                f"  scanned {scanned:,} rows — PII pool: {len(pii_pool):,}, benign pool: {len(benign_pool):,}"
+                f"  scanned {scanned:,} rows - PII pool: {len(pii_pool):,}, benign pool: {len(benign_pool):,}"
             )
 
         if len(pii_pool) >= target_pii and len(benign_pool) >= target_benign:
@@ -253,7 +269,7 @@ def build_corpus(args: argparse.Namespace) -> None:
 
     for i, row in enumerate(selected_pii):
         text = normalize_text(row["text"], args.max_chars)
-        spans = row.get("spans") or []
+        spans = parse_spans(row.get("spans"))
         types = pii_types_from_spans(spans)
         domain = row.get("domain", "unknown")
         doc_type = row.get("document_type", "unknown")
@@ -326,8 +342,8 @@ def build_corpus(args: argparse.Namespace) -> None:
         json.dumps(stats, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 
-    print(f"\nWrote {len(cases):,} cases → {cases_path}")
-    print(f"Wrote stats        → {stats_path}")
+    print(f"\nWrote {len(cases):,} cases -> {cases_path}")
+    print(f"Wrote stats        -> {stats_path}")
     print(f"\nTop PII types:")
     for label, count in type_counter.most_common(10):
         print(f"  {label:<35} {count:>5}")

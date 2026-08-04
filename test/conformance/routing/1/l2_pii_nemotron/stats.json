@@ -1,0 +1,175 @@
+{
+  "source": "nvidia/Nemotron-PII",
+  "split": "test",
+  "seed": 42,
+  "n_pii": 2500,
+  "n_benign": 1,
+  "total": 2501,
+  "privacy_model": "Qwen3.5-9B-NoThinking",
+  "cloud_model": "fireworks.kimi-k2p6",
+  "max_chars": 2000,
+  "top_pii_types": [
+    [
+      "first_name",
+      1195
+    ],
+    [
+      "date",
+      1080
+    ],
+    [
+      "email",
+      929
+    ],
+    [
+      "url",
+      893
+    ],
+    [
+      "last_name",
+      890
+    ],
+    [
+      "company_name",
+      672
+    ],
+    [
+      "occupation",
+      587
+    ],
+    [
+      "phone_number",
+      490
+    ],
+    [
+      "time",
+      441
+    ],
+    [
+      "street_address",
+      429
+    ],
+    [
+      "account_number",
+      380
+    ],
+    [
+      "country",
+      370
+    ],
+    [
+      "state",
+      367
+    ],
+    [
+      "customer_id",
+      356
+    ],
+    [
+      "city",
+      317
+    ],
+    [
+      "credit_debit_card",
+      313
+    ],
+    [
+      "date_of_birth",
+      312
+    ],
+    [
+      "county",
+      297
+    ],
+    [
+      "medical_record_number",
+      292
+    ],
+    [
+      "health_plan_beneficiary_number",
+      246
+    ]
+  ],
+  "top_domains": [
+    [
+      "Brokerage",
+      102
+    ],
+    [
+      "Investment",
+      102
+    ],
+    [
+      "Human Resources",
+      98
+    ],
+    [
+      "Health",
+      97
+    ],
+    [
+      "User Account and Transaction Services",
+      97
+    ],
+    [
+      "Life",
+      96
+    ],
+    [
+      "Disability",
+      94
+    ],
+    [
+      "Credit",
+      94
+    ],
+    [
+      "Access Control Systems",
+      93
+    ],
+    [
+      "Banking",
+      92
+    ],
+    [
+      "Services",
+      92
+    ],
+    [
+      "Marketing",
+      91
+    ],
+    [
+      "Advertising",
+      88
+    ],
+    [
+      "Automobile",
+      88
+    ],
+    [
+      "Consulting",
+      88
+    ],
+    [
+      "Information Technology",
+      87
+    ],
+    [
+      "Travel",
+      86
+    ],
+    [
+      "Social Science",
+      85
+    ],
+    [
+      "Elections",
+      85
+    ],
+    [
+      "Sports",
+      83
+    ]
+  ]
+}

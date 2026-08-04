@@ -130,6 +130,24 @@ def chat_completion(base_url: str, request_body: dict, timeout: int) -> dict:
 
 RISK_NOTE_MARKERS = ("RISK",)
 
+# Canonical-ID prefixes the router resolves candidate/route_to names to at
+# policy-registration time (see src/cpp/include/lemon/canonical_id.h). Fixture
+# files author bare names, but a live server reports the canonical form (e.g.
+# "user.Qwen3.5-9B-NoThinking") once the target model is resolved, so model
+# names must be compared prefix-insensitively.
+CANONICAL_PREFIXES = ("user.", "extra.", "builtin.")
+
+
+def strip_canonical_prefix(name: str) -> str:
+    for prefix in CANONICAL_PREFIXES:
+        if name.startswith(prefix):
+            return name[len(prefix) :]
+    return name
+
+
+def same_model(a: str, b: str) -> bool:
+    return strip_canonical_prefix(a) == strip_canonical_prefix(b)
+
 
 def is_risk_case(case: dict) -> bool:
     note = case.get("note", "")
@@ -279,7 +297,7 @@ def evaluate(args: argparse.Namespace) -> None:
                     )
                 continue
 
-        passed = actual_route == expected_route
+        passed = same_model(actual_route, expected_route)
 
         if kind in ("RISK_FN", "RISK_FP"):
             risk_cases.append(
