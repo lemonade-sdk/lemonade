@@ -277,6 +277,196 @@ class WebSocketAuthTests(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_011_desktop_app_origins_accepted(self):
+        """Desktop app webview origins (file://, app://., jan://) upgrade and subscribe."""
+
+        async def run():
+            uri = f"ws://localhost:{self.port}/logs/stream"
+            for test_origin in ["file://", "app://.", "jan://app"]:
+                async with websockets.connect(
+                    uri,
+                    subprotocols=auth_subprotocols(API_KEY),
+                    origin=test_origin,
+                ) as ws:
+                    await ws.send(
+                        json.dumps({"type": "logs.subscribe", "after_seq": None})
+                    )
+                    msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
+                    self.assertEqual(msg.get("type"), "logs.snapshot")
+
+            # Verify sandboxed iframe 'null' origin is rejected for security (CSWSH prevention)
+            with self.assertRaises(
+                (
+                    websockets.exceptions.InvalidStatus,
+                    websockets.exceptions.InvalidHandshake,
+                )
+            ):
+                async with websockets.connect(
+                    uri,
+                    subprotocols=auth_subprotocols(API_KEY),
+                    origin="null",
+                ):
+                    pass
+
+        asyncio.run(run())
+
+    def test_012_spans_anonymous_connection_gate(self):
+        """Spans stream upgrades anonymously but rejects messages before authentication."""
+
+        async def run():
+            uri = f"ws://localhost:{self.port}/spans/stream"
+            # Note: Do not pass any subprotocols or credentials
+            async with websockets.connect(uri) as ws:
+                # 1. Verify it upgraded successfully (anonymous is accepted)
+                # Let's send a non-auth message
+                await ws.send(json.dumps({"type": "logs.subscribe"}))
+
+                # 2. Verify it is rejected
+                msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
+                self.assertEqual(msg.get("type"), "error")
+                self.assertIn(
+                    "Unauthorized. Please authenticate first",
+                    msg.get("error", {}).get("message", ""),
+                )
+
+                # 3. Now authenticate
+                await ws.send(json.dumps({"type": "auth", "token": API_KEY}))
+                auth_resp = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
+                self.assertEqual(auth_resp.get("type"), "auth.ok")
+
+        asyncio.run(run())
+
+    def test_013_admin_only_auth(self):
+        """Under admin-only auth configuration (LEMONADE_API_KEY empty, LEMONADE_ADMIN_API_KEY set),
+        verify that WebSocket connection retains admin token and can authenticate."""
+        temp_dir = tempfile.mkdtemp(prefix="lemond_admin_only_")
+        port = find_free_port()
+        env = os.environ.copy()
+        env.pop("LEMONADE_API_KEY", None)
+        env["LEMONADE_ADMIN_API_KEY"] = "admin_secret"
+
+        proc = subprocess.Popen(
+            [self.lemond_bin, temp_dir, "--port", str(port)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+        )
+
+        try:
+            # Wait for startup
+            ws_port = None
+            for _ in range(60):
+                try:
+                    res = requests.get(f"http://localhost:{port}/live", timeout=0.2)
+                    if res.status_code == 200:
+                        # Since api_key is empty, health is public
+                        health = requests.get(
+                            f"http://localhost:{port}/api/v1/health", timeout=0.5
+                        )
+                        ws_port = health.json().get("websocket_port")
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.05)
+
+            self.assertIsNotNone(ws_port, "Failed to start server for admin-only test")
+
+            # Now let's connect to /spans/stream with the admin subprotocol
+            async def run():
+                uri = f"ws://localhost:{port}/v1/spans/stream"
+                async with websockets.connect(
+                    uri,
+                    subprotocols=auth_subprotocols("admin_secret"),
+                ) as ws:
+                    # Connection should upgrade successfully
+                    self.assertEqual(ws.subprotocol, APP_PROTOCOL)
+
+                    # Now trigger a span from a public request without an Authorization token
+                    def trigger():
+                        payload = {
+                            "model": "nonexistent-model",
+                            "messages": [{"role": "user", "content": "hello"}],
+                        }
+                        requests.post(
+                            f"http://localhost:{port}/api/v1/chat/completions",
+                            json=payload,
+                            timeout=5,
+                        )
+
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, trigger)
+
+                    # Assert that the admin WebSocket receives the span
+                    msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
+                    self.assertIn("name", msg)
+                    self.assertEqual(msg.get("name"), "chat.completions")
+
+            asyncio.run(run())
+
+        finally:
+            proc.terminate()
+            proc.wait()
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_014_null_origin_explicit_allowlist(self):
+        """Verify that Origin: null is accepted when allowed origins config contains 'null'."""
+        temp_dir = tempfile.mkdtemp(prefix="lemond_null_origin_")
+        port = find_free_port()
+        env = os.environ.copy()
+        env.pop("LEMONADE_ADMIN_API_KEY", None)
+        env["LEMONADE_API_KEY"] = API_KEY
+        env["LEMONADE_ALLOWED_ORIGINS"] = "null"
+
+        proc = subprocess.Popen(
+            [self.lemond_bin, temp_dir, "--port", str(port)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+        )
+
+        try:
+            # Wait for startup
+            ws_port = None
+            for _ in range(60):
+                try:
+                    res = requests.get(f"http://localhost:{port}/live", timeout=0.2)
+                    if res.status_code == 200:
+                        health = requests.get(
+                            f"http://localhost:{port}/api/v1/health",
+                            headers={"Authorization": f"Bearer {API_KEY}"},
+                            timeout=0.5,
+                        )
+                        ws_port = health.json().get("websocket_port")
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.05)
+
+            self.assertIsNotNone(ws_port, "Failed to start server for null origin test")
+
+            # Connect with Origin: null
+            async def run():
+                uri = f"ws://localhost:{ws_port}/logs/stream"
+                async with websockets.connect(
+                    uri,
+                    subprotocols=auth_subprotocols(API_KEY),
+                    origin="null",
+                ) as ws:
+                    await ws.send(json.dumps({"type": "logs.subscribe"}))
+                    msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
+                    self.assertEqual(msg.get("type"), "logs.snapshot")
+
+            asyncio.run(run())
+
+        finally:
+            proc.terminate()
+            proc.wait()
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

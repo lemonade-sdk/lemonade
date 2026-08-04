@@ -473,7 +473,7 @@ export async function deleteModel(modelName: string): Promise<void> {
  * - Custom model registration data
  *
  * The streaming download path dispatches `modelsUpdated` on success. The
- * `registrationOnly` fast path does not — it transfers no bytes, so its
+ * `registrationOnly` fast path does not - it transfers no bytes, so its
  * callers are responsible for refreshing the models context.
  *
  * @throws DownloadAbortError if the user pauses or cancels via Download Manager
@@ -519,7 +519,7 @@ export async function pullModel(
     });
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(errorText || response.statusText);
+      throw new Error(extractServerErrorMessage(errorText, response.statusText));
     }
     return;
   }
@@ -665,7 +665,7 @@ function extractExplicitBackend(loadBody?: Record<string, unknown>): { recipe: s
 
 /**
  * Universal pre-flight check for all inference requests.
- * Ensures backend is installed, model is downloaded, and model is loaded —
+ * Ensures backend is installed, model is downloaded, and model is loaded -
  * all through tracked SSE paths visible in the Download Manager.
  *
  * Steps:
@@ -730,11 +730,11 @@ async function ensureModelReadyInternal(
             (m: any) => m.model_name === modelName
           );
           if (isLoaded) {
-            return; // Model is already loaded — fast path
+            return; // Model is already loaded - fast path
           }
         }
       } catch {
-        // Health check failed — continue with the full pre-flight
+        // Health check failed - continue with the full pre-flight
       }
     }
 
@@ -786,7 +786,7 @@ async function ensureModelReadyInternal(
           isDownloaded = freshModel?.downloaded === true;
         }
       } catch {
-        // If re-check fails, proceed — pull will be a no-op if already downloaded
+        // If re-check fails, proceed - pull will be a no-op if already downloaded
       }
     }
 

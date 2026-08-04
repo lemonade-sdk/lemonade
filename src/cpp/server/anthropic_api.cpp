@@ -1,4 +1,5 @@
 #include "lemon/ollama_api.h"
+#include "lemon/error_types.h"
 #include <iostream>
 #include <sstream>
 #include <chrono>
@@ -145,6 +146,20 @@ static json parse_openai_tool_arguments(const json& tool_call, std::vector<std::
 
     add_warning(warnings, "Tool arguments had unsupported type; using empty object");
     return json::object();
+}
+
+static void set_anthropic_residency_conflict_response(
+    const RouterResidencyConflictException& error,
+    httplib::Response& res) {
+    res.status = 409;
+    json body = {
+        {"type", "error"},
+        {"error", {
+            {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+            {"message", error.what()},
+        }},
+    };
+    res.set_content(body.dump(), "application/json");
 }
 
 }  // namespace
@@ -890,6 +905,9 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
 
         try {
             auto_load_model(model, extract_auto_load_options(request_json));
+        } catch (const RouterResidencyConflictException& e) {
+            set_anthropic_residency_conflict_response(e, res);
+            return;
         } catch (const std::exception&) {
             res.status = 404;
             json error = {

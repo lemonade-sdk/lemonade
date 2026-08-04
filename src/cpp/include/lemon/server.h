@@ -135,6 +135,11 @@ private:
     void handle_pull(const httplib::Request& req, httplib::Response& res);
     void handle_registry_search(const httplib::Request& req, httplib::Response& res);
     void handle_pull_variants(const httplib::Request& req, httplib::Response& res);
+    // Runs the routing policy engine against an ad-hoc (unregistered) policy
+    // document + prompt, for the Router Builder's Test Prompt tab. Unlike
+    // route_collection_request, the policy isn't attached to a registered
+    // model, so it's parsed fresh from the request body each call.
+    void handle_routing_validate(const httplib::Request& req, httplib::Response& res);
     void handle_load(const httplib::Request& req, httplib::Response& res);
     void handle_unload(const httplib::Request& req, httplib::Response& res);
     void handle_pin(const httplib::Request& req, httplib::Response& res);
@@ -268,8 +273,10 @@ private:
     // if the model is already loaded they are ignored so explicit /v1/load settings win.
     // Callers must pass only load-level options from extract_auto_load_options() — never
     // the raw request body — to keep request-scoped fields out of persistent recipe options.
-    void auto_load_model_if_needed(const std::string& model_name,
-                                   const json& request_options = json::object());
+    void auto_load_model_if_needed(
+        const std::string& model_name,
+        const json& request_options = json::object(),
+        LoadPurpose load_purpose = LoadPurpose::UserInference);
 
     // Helper: persist the registry's installed-providers list into config.json
     // by overlaying onto the current runtime-config snapshot. Called after

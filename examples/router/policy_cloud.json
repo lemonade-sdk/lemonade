@@ -1,0 +1,29 @@
+{
+  "version": "1",
+  "model_name": "user.Demo-Router-Cloud",
+  "recipe": "collection.router",
+  "components": ["Qwen3-0.6B-GGUF", "fireworks.REPLACE-WITH-A-MODEL-FROM-lemonade-list"],
+  "routing": {
+    "candidates": ["Qwen3-0.6B-GGUF", "fireworks.REPLACE-WITH-A-MODEL-FROM-lemonade-list"],
+    "default_model": "Qwen3-0.6B-GGUF",
+    "rules": [
+      {
+        "id": "sensitive-stays-local",
+        "match": { "metadata": { "key": "consent", "equals": "denied" } },
+        "route_to": "Qwen3-0.6B-GGUF",
+        "outputs": { "reason": "privacy" }
+      },
+      {
+        "id": "coding-or-long-to-cloud",
+        "match": {
+          "any": [
+            { "keywords_any": ["def ", "function", "stack trace", "compile", "```"] },
+            { "min_chars": 4000 }
+          ]
+        },
+        "route_to": "fireworks.REPLACE-WITH-A-MODEL-FROM-lemonade-list",
+        "outputs": { "reason": "complex-or-long", "route_category": "cloud" }
+      }
+    ]
+  }
+}

@@ -39,8 +39,9 @@ RUN echo "=== Build directory contents ===" && \
 # # ============================================================
 FROM ubuntu:24.04
 
-# Install runtime dependencies only
+# vLLM/Triton JIT-compiles native launcher modules at runtime.
 RUN apt-get update && apt-get install -y \
+    build-essential \
     libcurl4 \
     curl \
     libssl3 \

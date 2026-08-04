@@ -6,6 +6,7 @@
     "dev:renderer": "webpack serve --mode development",
     "build:renderer": "webpack --mode development",
     "build:renderer:prod": "webpack --mode production",
+    "typecheck": "tsc --noEmit",
     "watch:renderer": "webpack --watch --mode development",
     "tauri": "tauri",
     "dev": "tauri dev",
@@ -14,7 +15,8 @@
     "build:mac": "tauri build --bundles app",
     "test:custom-collections": "node ../../test/app/customCollections.test.cjs",
     "test:downloaded-only-settings": "node ../../test/app/downloadedOnlySettings.test.cjs",
-    "test:app-settings": "node ../../test/app/appSettings.test.cjs"
+    "test:app-settings": "node ../../test/app/appSettings.test.cjs",
+    "test:router-collections": "node ../../test/app/routerCollections.test.cjs"
   },
   "keywords": [
     "tauri",

@@ -536,6 +536,109 @@
         "suggested": true,
         "size": 13.4
     },
+    "MiniCPM5-1B-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "hot",
+            "reasoning"
+        ],
+        "size": 0.69
+    },
+    "MiniCPM4.1-8B-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM4.1-8B-GGUF:MiniCPM4.1-8B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "reasoning"
+        ],
+        "size": 4.97
+    },
+    "MiniCPM4-8B-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM4-8B-GGUF:MiniCPM4-8B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 4.97
+    },
+    "MiniCPM3-4B-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM3-4B-GGUF:minicpm3-4b-q4_k_m.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 2.47
+    },
+    "MiniCPM-V-4.6-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "hot",
+            "vision"
+        ],
+        "size": 1.64
+    },
+    "MiniCPM-V-4.6-Thinking-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-V-4.6-Thinking-gguf:MiniCPM-V-4_6-Thinking-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "vision"
+        ],
+        "size": 1.64
+    },
+    "MiniCPM-V-4.5-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-V-4_5-gguf:MiniCPM-V-4_5-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 6.12
+    },
+    "MiniCPM-V-4-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-V-4-gguf:ggml-model-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 3.15
+    },
+    "MiniCPM-o-4.5-Vision-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-o-4_5-gguf:MiniCPM-o-4_5-Q4_K_M.gguf",
+        "mmproj": "vision/MiniCPM-o-4_5-vision-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 6.12
+    },
+    "MiniCPM-o-2.6-Vision-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-o-2_6-gguf:Model-7.6B-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 5.73
+    },
     "Qwen3-0.6B-GGUF": {
         "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
         "recipe": "llamacpp",

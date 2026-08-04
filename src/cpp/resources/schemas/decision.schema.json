@@ -49,6 +49,14 @@
         "result": {
           "description": "The leaf's boolean outcome.",
           "type": "boolean"
+        },
+        "label": {
+          "description": "Optional; the label the classifier band tested — i.e. which candidate this score belongs to. Emitted by label-scoped bands such as the identity rules synthesized from routing.router.",
+          "type": "string"
+        },
+        "rationale": {
+          "description": "Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.",
+          "type": "string"
         }
       },
       "additionalProperties": false
