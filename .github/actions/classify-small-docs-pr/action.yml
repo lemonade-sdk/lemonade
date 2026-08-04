@@ -1,0 +1,148 @@
+name: Classify small docs PR
+description: Fail-closed classification for small Markdown-only pull requests
+
+inputs:
+  max-files:
+    description: Maximum number of changed Markdown files eligible for reduced CI
+    required: false
+    default: "5"
+  force-full-ci-paths:
+    description: Newline-separated exact paths that must always receive full CI
+    required: false
+    default: ""
+
+outputs:
+  docs_only:
+    description: "true only for an eligible small Markdown-only pull request"
+    value: ${{ steps.classify.outputs.docs_only }}
+  changed_file_count:
+    description: Number of files returned by the paginated pull-request files API
+    value: ${{ steps.classify.outputs.changed_file_count }}
+  force_full_ci_path_changed:
+    description: Whether a protected current or previous path was changed
+    value: ${{ steps.classify.outputs.force_full_ci_path_changed }}
+  reason:
+    description: Human-readable classification reason
+    value: ${{ steps.classify.outputs.reason }}
+
+runs:
+  using: composite
+  steps:
+    - name: Inspect pull request files
+      id: classify
+      uses: actions/github-script@v7
+      env:
+        MAX_FILES: ${{ inputs.max-files }}
+        FORCE_FULL_CI_PATHS: ${{ inputs.force-full-ci-paths }}
+      with:
+        github-token: ${{ github.token }}
+        script: |
+          const maxFiles = Number.parseInt(process.env.MAX_FILES ?? "", 10);
+          const forceFullCiPaths = new Set(
+            (process.env.FORCE_FULL_CI_PATHS ?? "")
+              .split(/\r?\n/)
+              .map((path) => path.trim())
+              .filter(Boolean),
+          );
+
+          let docsOnly = false;
+          let changedFileCount = 0;
+          let forceFullCiPathChanged = false;
+          let reason = "Full CI is required by default";
+
+          try {
+            if (!Number.isInteger(maxFiles) || maxFiles < 1) {
+              throw new Error(`Invalid max-files value: ${process.env.MAX_FILES}`);
+            }
+
+            // Pushes, tags, manual runs, and merge-queue merge groups always get
+            // the complete pipeline. Only ordinary pull_request events qualify.
+            if (context.eventName !== "pull_request") {
+              reason = `${context.eventName} events always run full CI`;
+            } else {
+              const pullNumber = context.payload.pull_request?.number;
+              if (!pullNumber) {
+                throw new Error("pull_request event did not contain a PR number");
+              }
+
+              // github.paginate avoids GitHub's 30/100-file page boundary and
+              // the 300-file limitation of native workflow path filters.
+              const files = await github.paginate(
+                github.rest.pulls.listFiles,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pullNumber,
+                  per_page: 100,
+                },
+              );
+
+              changedFileCount = files.length;
+
+              const isMarkdown = (path) =>
+                typeof path === "string" && path.toLowerCase().endsWith(".md");
+
+              const allPaths = files.flatMap((file) =>
+                [file.filename, file.previous_filename].filter(Boolean),
+              );
+
+              // Checking previous_filename makes renames fail closed. For
+              // example, renaming source.cpp to source.md still runs full CI.
+              const allPathsAreMarkdown = allPaths.every(isMarkdown);
+              forceFullCiPathChanged = allPaths.some((path) =>
+                forceFullCiPaths.has(path),
+              );
+
+              docsOnly =
+                changedFileCount >= 1 &&
+                changedFileCount <= maxFiles &&
+                allPathsAreMarkdown &&
+                !forceFullCiPathChanged;
+
+              if (changedFileCount === 0) {
+                reason = "No changed files were returned; failing closed";
+              } else if (changedFileCount > maxFiles) {
+                reason = `${changedFileCount} files exceed the ${maxFiles}-file limit`;
+              } else if (!allPathsAreMarkdown) {
+                reason = "At least one current or previous path is not Markdown";
+              } else if (forceFullCiPathChanged) {
+                reason = "A path configured to require full CI was changed";
+              } else {
+                reason = `${changedFileCount} Markdown file(s) qualify for reduced CI`;
+              }
+
+              for (const file of files) {
+                const previous = file.previous_filename
+                  ? ` (from ${file.previous_filename})`
+                  : "";
+                core.info(`${file.status}: ${file.filename}${previous}`);
+              }
+            }
+          } catch (error) {
+            // API, parsing, and configuration failures must never suppress CI.
+            docsOnly = false;
+            reason = `Classification failed; running full CI: ${error.message}`;
+            core.warning(reason);
+          }
+
+          core.setOutput("docs_only", String(docsOnly));
+          core.setOutput("changed_file_count", String(changedFileCount));
+          core.setOutput(
+            "force_full_ci_path_changed",
+            String(forceFullCiPathChanged),
+          );
+          core.setOutput("reason", reason);
+
+          await core.summary
+            .addHeading("Small docs PR classification", 3)
+            .addTable([
+              [
+                { data: "Reduced CI", header: true },
+                { data: "Changed files", header: true },
+                { data: "Reason", header: true },
+              ],
+              [String(docsOnly), String(changedFileCount), reason],
+            ])
+            .write();
+
+          core.info(`docs_only=${docsOnly}: ${reason}`);
