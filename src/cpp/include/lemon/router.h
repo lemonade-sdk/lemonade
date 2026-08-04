@@ -125,15 +125,15 @@ public:
     // Returns empty string if the backend does not support streaming transcription.
     std::string get_streaming_transcription_address(const std::string& model_name) const;
 
-    json chat_completion(const json& request, std::atomic<bool>* cancel = nullptr);
-    json completion(const json& request);
+    json chat_completion(const json& request, std::atomic<bool>* cancel = nullptr, std::function<bool()> cancel_checker = nullptr);
+    json completion(const json& request, std::atomic<bool>* cancel = nullptr, std::function<bool()> cancel_checker = nullptr);
     json embeddings(const json& request);
     json reranking(const json& request);
     json classify(const json& request);
     json get_slots();
     json slots_action(int slot_id, const std::string& action, const json& request_body);
     json tokenize(const json& request);
-    json responses(const json& request);
+    json responses(const json& request, std::atomic<bool>* cancel = nullptr, std::function<bool()> cancel_checker = nullptr);
 
     json audio_transcriptions(const json& request);
     void audio_speech(const json& request, httplib::DataSink& sink);

@@ -28,6 +28,7 @@
 #include "telemetry.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
+#include <csignal>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
@@ -708,6 +709,10 @@ void Server::setup_http_servers() {
     http_front_v6_->new_task_queue = task_queue_factory;
     http_server_->new_task_queue = task_queue_factory;
     http_server_v6_->new_task_queue = task_queue_factory;
+
+#ifndef _WIN32
+    ::signal(SIGPIPE, SIG_IGN);
+#endif
 
     // Bound how long a single connection can tie up a worker thread. Without a
     // read timeout a client that opens a socket and never finishes its request
@@ -2269,7 +2274,8 @@ nlohmann::json Server::extract_auto_load_options(const json& request) {
 void Server::auto_load_model_if_needed(
     const std::string& requested_model,
     const json& request_options,
-    LoadPurpose load_purpose) {
+    LoadPurpose load_purpose,
+    std::atomic<bool>* cancel_flag) {
     // A live process follows its current use without a reload: routing work
     // promotes it to RoutingHelper, while direct inference demotes it into the
     // counted Standard pool. Destination-pool admission remains authoritative.
@@ -2290,6 +2296,11 @@ void Server::auto_load_model_if_needed(
                 << " (loaded ctx_size=" << loaded_ctx << ")" << std::endl;
         }
         return;
+    }
+
+    if (cancel_flag && cancel_flag->load()) {
+        LOG(WARNING, "Server") << "Client disconnected before model load started: " << requested_model << std::endl;
+        throw std::runtime_error("Client disconnected before model load");
     }
 
     // Log the auto-loading action
@@ -2336,7 +2347,8 @@ void Server::auto_load_model_if_needed(
                         RecipeOptions(info.recipe, request_options), true,
                         /*allow_reload_on_option_change=*/false,
                         /*pinned=*/std::nullopt,
-                        load_purpose);
+                        load_purpose,
+                        cancel_flag);
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
@@ -2972,10 +2984,19 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         }
         auto span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request_json);
 
+        std::function<bool()> cancel_checker;
+        if (req.is_connection_closed) {
+            cancel_checker = [is_closed = req.is_connection_closed]() { return !is_closed(); };
+        }
+
         // Handle model loading/switching
         if (request_json.contains("model")) {
             try {
-                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
+                std::atomic<bool> load_cancel{false};
+                if (cancel_checker && !cancel_checker()) {
+                    load_cancel.store(true);
+                }
+                auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json), LoadPurpose::UserInference, &load_cancel);
                 if (span) {
                     span->cancel();
                 }
@@ -3056,7 +3077,11 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             // Log the HTTP request
             LOG(INFO, "Server") << "POST /api/v1/chat/completions - 200 OK" << std::endl;
 
-            auto response = router_->chat_completion(request_json);
+            std::atomic<bool> req_cancel{false};
+            if (cancel_checker && !cancel_checker()) {
+                req_cancel.store(true);
+            }
+            auto response = router_->chat_completion(request_json, &req_cancel, cancel_checker);
 
             if (response.contains("error")) {
                 LOG(ERROR, "Server") << "Backend returned error response: " << response["error"].dump() << std::endl;
@@ -3282,7 +3307,15 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
             }
         } else {
             // Non-streaming
-            auto response = router_->completion(request_json);
+            std::function<bool()> cancel_checker;
+            if (req.is_connection_closed) {
+                cancel_checker = [is_closed = req.is_connection_closed]() { return !is_closed(); };
+            }
+            std::atomic<bool> req_cancel{false};
+            if (cancel_checker && !cancel_checker()) {
+                req_cancel.store(true);
+            }
+            auto response = router_->completion(request_json, &req_cancel, cancel_checker);
 
             // Check if response contains an error
             if (response.contains("error")) {

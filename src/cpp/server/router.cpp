@@ -1299,6 +1299,12 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
 
         InhibitGuard inhibit_guard(suspend_inhibitor_.get(), config_->inhibit_suspend());
 
+        if (sink.is_writable && !sink.is_writable()) {
+            LOG(WARNING, "Router") << "Client disconnected before streaming backend execution" << std::endl;
+            server->release_inference();
+            return;
+        }
+
         try {
             streaming_func(server);
             const bool watchdog_reset = server->was_watchdog_triggered();
@@ -1353,7 +1359,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
     }
 }
 
-json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
+json Router::chat_completion(const json& request, std::atomic<bool>* cancel, std::function<bool()> cancel_checker) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
 
@@ -1383,7 +1389,7 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                 if (request.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request["max_tokens"]);
                 if (request.contains("max_completion_tokens")) span->set_attribute("llm.config.max_completion_tokens", request["max_completion_tokens"]);
             }
-            return server->chat_completion(request);
+            return server->chat_completion(request, cancel_checker);
         });
 
         if (span) {
@@ -1464,14 +1470,25 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
     }
 }
 
-json Router::completion(const json& request) {
+json Router::completion(const json& request, std::atomic<bool>* cancel, std::function<bool()> cancel_checker) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request);
+
+    struct RequestCancelScope {
+        WrappedServer* server = nullptr;
+        ~RequestCancelScope() {
+            if (server) server->set_request_cancel_flag(nullptr);
+        }
+    } cancel_scope;
 
     try {
         WrappedServer* active_server = nullptr;
         json response = execute_inference(request, [&](WrappedServer* server) {
             active_server = server;
+            if (cancel) {
+                server->set_request_cancel_flag(cancel);
+                cancel_scope.server = server;
+            }
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
             if (span) {
                 span->set_attribute("llm.backend", identity.recipe);
@@ -1482,7 +1499,7 @@ json Router::completion(const json& request) {
                 if (request.contains("top_p")) span->set_attribute("llm.config.top_p", request["top_p"]);
                 if (request.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request["max_tokens"]);
             }
-            return server->completion(request);
+            return server->completion(request, cancel_checker);
         });
 
         if (span) {
@@ -1799,9 +1816,20 @@ json Router::tokenize(const json& request_body) {
     }
 }
 
-json Router::responses(const json& request) {
+json Router::responses(const json& request, std::atomic<bool>* cancel, std::function<bool()> cancel_checker) {
+    struct RequestCancelScope {
+        WrappedServer* server = nullptr;
+        ~RequestCancelScope() {
+            if (server) server->set_request_cancel_flag(nullptr);
+        }
+    } cancel_scope;
+
     return execute_inference(request, [&](WrappedServer* server) {
-        return server->responses(request);
+        if (cancel) {
+            server->set_request_cancel_flag(cancel);
+            cancel_scope.server = server;
+        }
+        return server->responses(request, cancel_checker);
     });
 }
 
