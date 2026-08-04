@@ -254,10 +254,33 @@ static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* st
     return written;
 }
 
+struct CancelCheckerData {
+    std::atomic<bool>* cancel_flag = nullptr;
+    const std::function<bool()>* liveness_checker = nullptr;
+    std::chrono::steady_clock::time_point last_check_time = std::chrono::steady_clock::now();
+};
+
 static int cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t, curl_off_t,
                                     curl_off_t) {
-    auto* flag = static_cast<std::atomic<bool>*>(clientp);
-    return (flag && flag->load()) ? 1 : 0;
+    try {
+        if (!clientp) return 0;
+        auto* data = static_cast<CancelCheckerData*>(clientp);
+        if (data->cancel_flag && data->cancel_flag->load()) {
+            return 1;
+        }
+        if (data->liveness_checker && *data->liveness_checker) {
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - data->last_check_time).count() >= 25) {
+                data->last_check_time = now;
+                if (!(*data->liveness_checker)()) {
+                    return 1;
+                }
+            }
+        }
+        return 0;
+    } catch (...) {
+        return 1; // Exception safety boundary
+    }
 }
 
 struct ProgressData {
@@ -485,7 +508,8 @@ HttpResponse HttpClient::post(const std::string& url,
                               const std::map<std::string, std::string>& headers,
                               long timeout_seconds,
                               HttpSecurityPolicy policy,
-                              std::atomic<bool>* cancel_flag) {
+                              std::atomic<bool>* cancel_flag,
+                              std::function<bool()> cancel_checker) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -506,9 +530,13 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
-    if (cancel_flag) {
+    CancelCheckerData cancel_data;
+    cancel_data.cancel_flag = cancel_flag;
+    cancel_data.liveness_checker = &cancel_checker;
+
+    if (cancel_flag || cancel_checker) {
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancel_xferinfo_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel_flag);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel_data);
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     }
 
@@ -658,7 +686,8 @@ HttpResponse HttpClient::post_stream(const std::string& url,
                                      const std::map<std::string, std::string>& headers,
                                      long timeout_seconds,
                                      std::function<void(int)> on_status,
-                                     HttpSecurityPolicy policy) {
+                                     HttpSecurityPolicy policy,
+                                     std::function<bool()> cancel_checker) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -684,6 +713,15 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+
+    CancelCheckerData cancel_data;
+    cancel_data.liveness_checker = &cancel_checker;
+
+    if (cancel_checker) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel_data);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
 
     // Add custom headers
     bool has_content_type = false;
@@ -715,12 +753,11 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     response.curl_code = static_cast<int>(res);
     response.curl_error = (res == CURLE_OK) ? std::string() : std::string(curl_easy_strerror(res));
 
-    // For streaming, libcurl can report CURLE_PARTIAL_FILE or CURLE_RECV_ERROR
-    // after a backend closes the connection. Do not throw here because the SSE
-    // layer knows whether it saw the protocol-level [DONE] marker. It will treat
-    // the same transport code as success after [DONE] and as backend failure
-    // before [DONE]. Other CURL errors are still exceptional.
-    if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR && res != CURLE_WRITE_ERROR) {
+    // For streaming, libcurl can report CURLE_PARTIAL_FILE, CURLE_RECV_ERROR,
+    // CURLE_WRITE_ERROR, or CURLE_ABORTED_BY_CALLBACK when client disconnects.
+    // Do not throw here because the SSE layer knows whether it saw the protocol-level
+    // [DONE] marker or client disconnect.
+    if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR && res != CURLE_WRITE_ERROR && res != CURLE_ABORTED_BY_CALLBACK) {
         std::string error = "CURL error: " + response.curl_error;
         LOG(ERROR, "HttpClient") << "" << error << std::endl;
         curl_slist_free_all(header_list);
