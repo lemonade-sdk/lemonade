@@ -42,6 +42,8 @@ const validDraft = {
   name: 'Scoped router',
   candidates: ['fast', 'smart'],
   defaultModel: 'smart',
+  mode: 'rules',
+  llmRouter: { model: '', prompt: '' },
   classifiers: [],
   rules: [{
     id: 'short',
@@ -76,12 +78,14 @@ const validDraft = {
     assert.equal(modelInfo.custom, true);
     assert.equal(modelInfo.routing.default_model, 'smart');
 
-    const badImport = store.importRouterRecords({
-      version: '1', model_name: 'user.bad', recipe: 'collection.router', components: ['fast'],
-      routing: { candidates: ['fast'], default_model: 'fast', router: { type: 'llm', model: 'fast', prompt: 'route' } },
+    const nlImport = store.importRouterRecords({
+      version: '1', model_name: 'user.nl', recipe: 'collection.router', components: ['fast', 'router-model'],
+      routing: { candidates: ['fast'], default_model: 'fast', router: { type: 'llm', model: 'router-model', prompt: 'Use fast for routine requests.' } },
     });
-    assert.equal(badImport.imported, 0);
-    assert.match(badImport.errors[0], /not supported/i);
+    assert.equal(nlImport.imported, 1);
+    assert.deepEqual(nlImport.errors, []);
+    const nlRecord = store.loadRouterRecords().find(item => item.model_name === 'user.nl');
+    assert.equal(nlRecord.request.routing.router.model, 'router-model');
 
     store.deleteRouterRecord(first.model_name);
     assert.equal(store.loadRouterRecords().some(item => item.model_name === first.model_name), false);

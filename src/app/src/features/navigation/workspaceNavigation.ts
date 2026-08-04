@@ -49,12 +49,13 @@ export const WORKSPACE_NAVIGATION = {
     defineSection('performance', 'Health and throughput', 'gauge'),
     defineSection('telemetry', 'Traces, replay and tuning', 'search-check'),
     defineSection('logs', 'Live server output', 'logs'),
-  ] as const),
+  ] as const, 'Monitor'),
   connect: defineWorkspace('connect', [
     defineSection('server', 'Endpoint and authentication', 'plug'),
     defineSection('model-storage', 'Cache and custom directories', 'hard-drive'),
     defineSection('cloud-providers', 'OpenAI-compatible services', 'cloud'),
     defineSection('mcp-gateway', 'Tools and external servers', 'tools'),
+    defineSection('app-directory', 'Compatible clients and integrations', 'layers'),
     defineSection('help-and-support', 'Docs, releases and community', 'book-open'),
   ] as const, 'Settings'),
 } as const;

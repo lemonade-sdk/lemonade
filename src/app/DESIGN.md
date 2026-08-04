@@ -95,7 +95,7 @@ Do not reuse the same icon for unrelated commands in one context. Text labels ac
 
 - `.titlebar` is 52 px high. `.titlebar__nav` is centered independently of brand and utility widths and uses a rounded segmented-control treatment.
 - On compact/mobile layouts the Lemonade brand is hidden, the contextual `menu` control occupies the left slot, the tab selector remains centered, and account/theme/download/server controls live under the `settings` menu.
-- The top-level tabs are Chat, Models, Backends, Dashboard, and Connect. Performance/Telemetry/Logs are Dashboard views, not independent primary tabs.
+- The top-level tabs are Chat, Models, Backends, Monitor, and Settings. Performance/Telemetry/Logs are Monitor views, not independent primary tabs.
 - Active state is expressed with surface, text, and a restrained border; no active item should jump in size or position.
 
 ### Workspace layouts
@@ -153,7 +153,7 @@ The labels below are normative boundaries, not backlog states. **Justified speci
 
 **Prohibited variation:** bespoke filter rows, page header, status controls, banners, or button geometry. They use workspace filters, pane headers, semantic state, and shared controls.
 
-### Dashboard
+### Monitor
 
 **Layout:** the first rail selects Performance, Telemetry, or Logs. Performance uses one content pane; Telemetry and Logs use a second functional filter/list subpanel plus a detail/output pane.
 
@@ -178,9 +178,9 @@ The implementation was audited against every boundary above on 2026-07-20. The c
 | Area | Implemented boundary |
 | --- | --- |
 | App chrome | One centered rounded primary selector; one contextual mobile menu position; compact utilities live under the settings control; the decorative lemon icon is not rendered. |
-| Rails and mobile context | Chat, Models, Backends, Dashboard, and Connect use `WorkspaceRailHeader` and `WorkspaceMobileMenuButton`. Mobile panels share the same dialog, backdrop, focus-return, Escape, and toggle behavior. |
+| Rails and mobile context | Chat, Models, Backends, Monitor, and Settings use `WorkspaceRailHeader` and `WorkspaceMobileMenuButton`. Mobile panels share the same dialog, backdrop, focus-return, Escape, and toggle behavior. |
 | Backends | The filter rail, pane header, status actions, and buttons use workspace components. Only the device × capability matrix and compact backend identity marks remain specialized. |
-| Dashboard | Performance retains charts and gauges without ornamental glow. Telemetry and Logs retain diagnostic artifacts while their navigation, filters, forms, and actions use the workspace grammar. |
+| Monitor | Performance retains charts and gauges without ornamental glow. Telemetry and Logs retain diagnostic artifacts while their navigation, filters, forms, and actions use the workspace grammar. |
 | Connect | Settings navigation, pane headers, fields, actions, provider/help/app rows, and bounded content use shared components and control sizing. |
 | CSS integrity | Component colors resolve through tokens, `styles.css` contains no literal product colors, and the audit contains no exact duplicate rule blocks in the same cascade context. Remaining `!important` declarations are limited to third-party SVG theming, reduced-motion enforcement, mobile browser input behavior, and measured/virtualized layout overrides. |
 

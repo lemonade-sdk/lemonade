@@ -22,7 +22,7 @@ type MarketplaceApp = {
 
 const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 
-const AppsView: React.FC<{ isActive: boolean }> = ({ isActive }) => {
+const AppsView: React.FC<{ isActive: boolean; embedded?: boolean }> = ({ isActive, embedded = false }) => {
   const [marketplaceApps, setMarketplaceApps] = useState<MarketplaceApp[]>([]);
   const [marketplaceSearch, setMarketplaceSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
@@ -79,16 +79,8 @@ const AppsView: React.FC<{ isActive: boolean }> = ({ isActive }) => {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  return (
-    <section className="workspace-pane connect__main apps__main" aria-labelledby="apps-pane-title" data-view="apps">
-      <WorkspacePaneHeader
-        title="Apps"
-        subtitle="Compatible clients and tools for Lemonade."
-        titleId="apps-pane-title"
-      />
-
-      <div className="connect__layout workspace-pane__scroll">
-        <section className="connect__section connect__section--marketplace">
+  const directoryContent = (
+    <section className="connect__section connect__section--marketplace">
           <div className="connect__section-head connect__section-head--search">
             <input
               className="input connect__marketplace-search"
@@ -138,7 +130,20 @@ const AppsView: React.FC<{ isActive: boolean }> = ({ isActive }) => {
               {filteredMarketplaceApps.length === 0 && <div className="connect__empty">No apps match your search.</div>}
             </WorkspaceResourceList>
           )}
-        </section>
+    </section>
+  );
+
+  if (embedded) return directoryContent;
+
+  return (
+    <section className="workspace-pane connect__main apps__main" aria-labelledby="apps-pane-title" data-view="apps">
+      <WorkspacePaneHeader
+        title="Apps"
+        subtitle="Compatible clients and tools for Lemonade."
+        titleId="apps-pane-title"
+      />
+      <div className="connect__layout workspace-pane__scroll">
+        {directoryContent}
       </div>
     </section>
   );

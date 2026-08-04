@@ -5,8 +5,9 @@ export const ROUTER_SCHEMA_VERSION = '1' as const;
 export const SAFE_ROUTER_ID = /^[A-Za-z0-9._-]+$/;
 export const MAX_ROUTER_TREE_DEPTH = 64;
 
-export type RouterClassifierType = 'classifier' | 'semantic_similarity';
+export type RouterClassifierType = 'classifier' | 'semantic_similarity' | 'llm';
 export type RouterOnError = 'match_true' | 'match_false';
+export type RouterRoutingMode = 'rules' | 'llm';
 export type RouterGroupOperator = 'all' | 'any' | 'not';
 export type RouterLeafType =
   | 'keywords_any'
@@ -24,10 +25,16 @@ export interface RouterClassifier {
   id: string;
   type: RouterClassifierType;
   model: string;
+  prompt: string;
   labels: string[];
   defaultLabel?: string;
   referencePhrases: Record<string, string[]>;
   onError: RouterOnError;
+}
+
+export interface RouterLlmRouter {
+  model: string;
+  prompt: string;
 }
 
 export interface RouterLeafNode {
@@ -67,6 +74,8 @@ export interface RouterDraft {
   name: string;
   candidates: string[];
   defaultModel: string;
+  mode: RouterRoutingMode;
+  llmRouter: RouterLlmRouter;
   classifiers: RouterClassifier[];
   rules: RouterRule[];
 }
@@ -79,8 +88,13 @@ export interface RouterPullRequest {
   routing: {
     candidates: string[];
     default_model: string;
+    router?: {
+      type: 'llm';
+      model: string;
+      prompt: string;
+    };
     classifiers?: Array<Record<string, unknown>>;
-    rules: Array<Record<string, unknown>>;
+    rules?: Array<Record<string, unknown>>;
   };
 }
 
@@ -160,8 +174,9 @@ export function createRouterClassifier(index = 0, type: RouterClassifierType = '
     id: `classifier-${index + 1}`,
     type,
     model: '',
-    labels: type === 'classifier' ? ['match'] : [],
-    defaultLabel: type === 'classifier' ? 'match' : undefined,
+    prompt: '',
+    labels: type === 'semantic_similarity' ? [] : type === 'llm' ? ['match', 'other'] : ['match'],
+    defaultLabel: type === 'semantic_similarity' ? undefined : type === 'llm' ? 'other' : 'match',
     referencePhrases: type === 'semantic_similarity' ? { concept: ['example phrase'] } : {},
     onError: 'match_false',
   };
@@ -172,6 +187,8 @@ export function createEmptyRouterDraft(): RouterDraft {
     name: '',
     candidates: [],
     defaultModel: '',
+    mode: 'rules',
+    llmRouter: { model: '', prompt: '' },
     classifiers: [],
     rules: [createRouterRule(0)],
   };
@@ -341,6 +358,7 @@ function validateNode(
 
 export function validateRouterDraft(draft: RouterDraft): string[] {
   const errors: string[] = [];
+  const mode: RouterRoutingMode = draft.mode === 'llm' ? 'llm' : 'rules';
   if (!draft.name.trim() && !draft.modelName?.trim()) errors.push('Router name is required.');
   if (draft.candidates.length === 0) errors.push('Select at least one candidate model.');
   const candidateSet = new Set<string>();
@@ -352,6 +370,12 @@ export function validateRouterDraft(draft: RouterDraft): string[] {
   });
   if (!draft.defaultModel || !candidateSet.has(draft.defaultModel)) errors.push('Default model must be one of the selected candidates.');
 
+  if (mode === 'llm') {
+    if (!String(draft.llmRouter?.model || '').trim()) errors.push('Natural-language router: model is required.');
+    if (!String(draft.llmRouter?.prompt || '').trim()) errors.push('Natural-language router: routing instruction is required.');
+    return errors;
+  }
+
   const classifierIds = new Set<string>();
   draft.classifiers.forEach((classifier, index) => {
     const prefix = `Classifier ${index + 1}`;
@@ -360,10 +384,12 @@ export function validateRouterDraft(draft: RouterDraft): string[] {
     if (classifierIds.has(classifier.id)) errors.push(`${prefix}: duplicate ID "${classifier.id}".`);
     classifierIds.add(classifier.id);
     if (!classifier.model.trim()) errors.push(`${prefix}: model is required.`);
-    if (classifier.type === 'classifier') {
+    if (classifier.type === 'classifier' || classifier.type === 'llm') {
       const labels = classifier.labels.map(label => label.trim()).filter(Boolean);
+      if (classifier.type === 'llm' && labels.length === 0) errors.push(`${prefix}: add at least one output label.`);
       if (new Set(labels).size !== labels.length) errors.push(`${prefix}: labels must be unique.`);
       if (classifier.defaultLabel && !labels.includes(classifier.defaultLabel)) errors.push(`${prefix}: default label must be declared in labels.`);
+      if (classifier.type === 'llm' && !classifier.prompt.trim()) errors.push(`${prefix}: prompt is required for an LLM classifier.`);
     } else {
       const concepts = Object.entries(classifier.referencePhrases);
       if (concepts.length === 0) errors.push(`${prefix}: add at least one semantic concept.`);
@@ -401,6 +427,27 @@ export function buildRouterPullRequest(draft: RouterDraft): RouterPullRequest {
   if (errors.length) throw new Error(errors.slice(0, 6).join(' '));
 
   const components = new Set(draft.candidates);
+  const mode: RouterRoutingMode = draft.mode === 'llm' ? 'llm' : 'rules';
+  if (mode === 'llm') {
+    const routerModel = draft.llmRouter.model.trim();
+    components.add(routerModel);
+    return {
+      version: ROUTER_SCHEMA_VERSION,
+      model_name: draft.modelName?.trim() || normalizeRouterModelName(draft.name),
+      recipe: ROUTER_RECIPE,
+      components: [...components].filter(Boolean),
+      routing: {
+        candidates: [...draft.candidates],
+        default_model: draft.defaultModel,
+        router: {
+          type: 'llm',
+          model: routerModel,
+          prompt: draft.llmRouter.prompt.trim(),
+        },
+      },
+    };
+  }
+
   draft.classifiers.forEach(classifier => components.add(classifier.model));
   const classifiers = draft.classifiers.map(classifier => {
     const result: Record<string, unknown> = {
@@ -409,9 +456,10 @@ export function buildRouterPullRequest(draft: RouterDraft): RouterPullRequest {
       model: classifier.model,
       on_error: classifier.onError,
     };
-    if (classifier.type === 'classifier') {
+    if (classifier.type === 'classifier' || classifier.type === 'llm') {
       const labels = [...new Set(classifier.labels.map(label => label.trim()).filter(Boolean))];
       if (labels.length) result.labels = labels;
+      if (classifier.type === 'llm') result.prompt = classifier.prompt.trim();
     } else {
       result.reference_phrases = Object.fromEntries(
         Object.entries(classifier.referencePhrases)
@@ -494,8 +542,9 @@ function parseMatchExpression(expr: unknown): RouterNode {
 function parseClassifier(value: unknown, index: number): RouterClassifier {
   if (!isRecord(value)) throw new Error(`Classifier ${index + 1} must be an object.`);
   const type = String(value.type || '');
-  if (type === 'llm') throw new Error('LLM classifiers are not supported by the current Lemonade server.');
-  if (type !== 'classifier' && type !== 'semantic_similarity') throw new Error(`Unsupported classifier type "${type}".`);
+  if (type !== 'classifier' && type !== 'semantic_similarity' && type !== 'llm') {
+    throw new Error(`Unsupported classifier type "${type}".`);
+  }
   const referencePhrases: Record<string, string[]> = {};
   if (isRecord(value.reference_phrases)) {
     for (const [label, phrases] of Object.entries(value.reference_phrases)) referencePhrases[label] = splitList(phrases);
@@ -504,6 +553,7 @@ function parseClassifier(value: unknown, index: number): RouterClassifier {
     id: String(value.id || `classifier-${index + 1}`),
     type,
     model: String(value.model || ''),
+    prompt: typeof value.prompt === 'string' ? value.prompt : '',
     labels: splitList(value.labels),
     defaultLabel: typeof value.default_label === 'string' ? value.default_label : undefined,
     referencePhrases,
@@ -518,10 +568,20 @@ export function parseRouterPayload(payload: unknown): RouterDraft {
   if (String(root.version || '') !== ROUTER_SCHEMA_VERSION) throw new Error(`Only router schema version ${ROUTER_SCHEMA_VERSION} is supported.`);
   const routing = isRecord(root.routing) ? root.routing : null;
   if (!routing) throw new Error('Router JSON is missing routing.');
-  if (routing.router) throw new Error('NL/LLM router sugar is not supported by the current Lemonade server. Convert it to explicit rules first.');
   const candidates = splitList(routing.candidates);
-  const rulesRaw = Array.isArray(routing.rules) ? routing.rules : [];
-  const classifiers = (Array.isArray(routing.classifiers) ? routing.classifiers : []).map(parseClassifier);
+  if ('router' in routing && !isRecord(routing.router)) {
+    throw new Error('Natural-language router must be an object.');
+  }
+  const routerSpec = isRecord(routing.router) ? routing.router : null;
+  if (routerSpec && ('rules' in routing || 'classifiers' in routing)) {
+    throw new Error('Natural-language routing cannot be combined with rules or classifiers.');
+  }
+  if (routerSpec && routerSpec.type !== 'llm') throw new Error('Natural-language router type must be "llm".');
+
+  const rulesRaw = routerSpec ? [] : Array.isArray(routing.rules) ? routing.rules : [];
+  const classifiers = routerSpec
+    ? []
+    : (Array.isArray(routing.classifiers) ? routing.classifiers : []).map(parseClassifier);
   const rules = rulesRaw.map((item, index): RouterRule => {
     if (!isRecord(item)) throw new Error(`Rule ${index + 1} must be an object.`);
     return {
@@ -537,8 +597,13 @@ export function parseRouterPayload(payload: unknown): RouterDraft {
     name: routerDisplayName(modelName || 'router'),
     candidates,
     defaultModel: typeof routing.default_model === 'string' ? routing.default_model : '',
+    mode: routerSpec ? 'llm' : 'rules',
+    llmRouter: {
+      model: routerSpec && typeof routerSpec.model === 'string' ? routerSpec.model : '',
+      prompt: routerSpec && typeof routerSpec.prompt === 'string' ? routerSpec.prompt : '',
+    },
     classifiers,
-    rules,
+    rules: routerSpec ? [createRouterRule(0, typeof routing.default_model === 'string' ? routing.default_model : '')] : rules,
   };
   const errors = validateRouterDraft(draft);
   if (errors.length) throw new Error(errors.slice(0, 6).join(' '));

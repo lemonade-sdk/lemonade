@@ -90,10 +90,10 @@ assert.doesNotMatch(capabilitiesSource, /found\.size === 0\) found\.add\('chat'\
   'unknown capability must not silently become Chat');
 assert.match(capabilitiesSource, /Remote search rows must not become Chat/,
   'remote registry rows must avoid name/recipe guessing');
-assert.match(listPanelSource, /if \(filter === 'llm'\) return cap === 'chat';/,
-  'Unknown capability rows must not leak into the LLM capability filter');
-assert.match(listPanelSource, /return cap === 'omni' \|\| recipe === 'collection\.omni'/,
-  'single-repository vision-language models must match the Omni filter');
+assert.match(listPanelSource, /if \(filter === 'llm'\) return cap === 'chat' && !modelIsRouter\(m\);/,
+  'Unknown capability rows and Router collections must not leak into the Chat task filter');
+assert.match(listPanelSource, /if \(filter === 'omni'\) return modelIsOmni\(m\);/,
+  'Omni models must match the dedicated Omni task filter');
 
 assert.match(nav, />Model-Provider</);
 assert.match(nav, /name=\{enabled \? 'cloud' : 'cloud-off'\}/);

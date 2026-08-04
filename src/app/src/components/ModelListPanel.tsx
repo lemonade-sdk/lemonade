@@ -19,7 +19,7 @@ import type { IconName } from './Icon';
 import type { CapabilityIconTarget } from './Icon';
 import { activeDownloadForModel, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceListPanel } from './WorkspacePanels';
-import { backendColor, backendCompactLabel } from '../modelPresentation';
+import { backendColor, backendCompactLabel, backendLabel } from '../modelPresentation';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -40,12 +40,207 @@ function listFmtSize(gb: number): string {
 
 export const listRecipeBadgeText = backendCompactLabel;
 
-type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
+function modelListBackendLabel(recipe: string): string {
+  return backendCompactLabel(recipe);
+}
+
+type BackendReadinessTone = 'ready' | 'attention' | 'unknown';
+
+export interface ModelBackendReadiness {
+  tone: BackendReadinessTone;
+  label: string;
+  backend?: string;
+  state?: string;
+}
+
+const BACKEND_MANAGED_RECIPES = new Set([
+  'llamacpp',
+  'vllm',
+  'flm',
+  'ryzenai-llm',
+  'sd-cpp',
+  'whispercpp',
+  'moonshine',
+  'kokoro',
+  'acestep',
+  'thinksound',
+  'openmoss',
+  'trellis',
+]);
+
+const BACKEND_OPTION_FIELD: Record<string, string> = {
+  llamacpp: 'llamacpp_backend',
+  vllm: 'vllm_backend',
+  'sd-cpp': 'sd-cpp_backend',
+  whispercpp: 'whispercpp_backend',
+  moonshine: 'moonshine_backend',
+  acestep: 'acestep_backend',
+  thinksound: 'thinksound_backend',
+  openmoss: 'openmoss_backend',
+  trellis: 'trellis_backend',
+};
+
+function asRecord(value: unknown): Record<string, any> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, any>
+    : null;
+}
+
+function normalizedBackend(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function configuredBackendForModel(model: ModelInfo, recipe: string, recipeInfo: Record<string, any>): string {
+  const raw = model as any;
+  const recipeOptions = asRecord(raw.recipe_options);
+  const options = asRecord(raw.options);
+  const field = BACKEND_OPTION_FIELD[recipe];
+  const configured = normalizedBackend(
+    (field ? recipeOptions?.[field] : undefined)
+      ?? recipeOptions?.backend
+      ?? (field ? options?.[field] : undefined)
+      ?? options?.backend
+      ?? (field ? raw[field] : undefined)
+      ?? raw.backend
+      ?? raw.default_backend
+      ?? raw.recommended_backend,
+  );
+  if (configured && configured !== 'auto') return configured;
+  return normalizedBackend(recipeInfo.default_backend);
+}
+
+/**
+ * A downloaded model is only ready when its selected/default backend is also
+ * installed and usable. Missing or updateable backends deliberately surface as
+ * attention instead of presenting the model as fully ready.
+ */
+export function modelBackendReadiness(
+  model: ModelInfo,
+  systemInfo?: Record<string, unknown> | null,
+): ModelBackendReadiness {
+  const recipe = normalizedBackend((model as any).recipe);
+  if (!recipe) {
+    return { tone: 'unknown', label: 'Model downloaded; backend could not be determined.' };
+  }
+
+  const recipes = asRecord(systemInfo?.recipes);
+  if (!recipes) {
+    return { tone: 'unknown', label: 'Model downloaded; backend status is not available.' };
+  }
+
+  const recipeInfo = asRecord(recipes[recipe]);
+  if (!recipeInfo && !BACKEND_MANAGED_RECIPES.has(recipe)) {
+    return { tone: 'ready', label: 'Model downloaded and ready.' };
+  }
+  if (!recipeInfo) {
+    return {
+      tone: 'attention',
+      label: `${backendLabel(recipe)} backend is not installed on this server.`,
+      state: 'missing',
+    };
+  }
+
+  const backends = asRecord(recipeInfo.backends);
+  if (!backends || Object.keys(backends).length === 0) {
+    return {
+      tone: 'attention',
+      label: `${backendLabel(recipe)} backend must be installed before loading this model.`,
+      state: 'missing',
+    };
+  }
+
+  const configuredBackend = configuredBackendForModel(model, recipe, recipeInfo);
+  let backend = configuredBackend;
+  let backendInfo: Record<string, any> | null = null;
+
+  if (backend) {
+    const match = Object.entries(backends).find(([name]) => normalizedBackend(name) === backend);
+    if (match) {
+      backend = match[0];
+      backendInfo = asRecord(match[1]);
+    } else {
+      return {
+        tone: 'attention',
+        backend,
+        state: 'missing',
+        label: `${backendLabel(recipe)} backend “${backend}” must be installed before loading this model.`,
+      };
+    }
+  } else {
+    const entries = Object.entries(backends);
+    const preferred = entries.find(([, info]) => normalizedBackend((info as any)?.state) === 'installed')
+      ?? entries.find(([, info]) => ['update_required', 'update_available'].includes(normalizedBackend((info as any)?.state)))
+      ?? entries[0];
+    backend = preferred?.[0] || '';
+    backendInfo = preferred ? asRecord(preferred[1]) : null;
+  }
+
+  const state = normalizedBackend(backendInfo?.state);
+  const backendSuffix = backend ? ` (${backend})` : '';
+  if (state === 'installed') {
+    return {
+      tone: 'ready',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} is installed; model is ready.`,
+    };
+  }
+  if (state === 'update_required') {
+    return {
+      tone: 'attention',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} requires an update before use.`,
+    };
+  }
+  if (state === 'update_available') {
+    return {
+      tone: 'attention',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} has an update available.`,
+    };
+  }
+  if (state === 'installable') {
+    return {
+      tone: 'attention',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} must be downloaded before loading this model.`,
+    };
+  }
+  if (state === 'action_required') {
+    return {
+      tone: 'attention',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} needs attention before loading this model.`,
+    };
+  }
+  if (state === 'unsupported') {
+    return {
+      tone: 'attention',
+      backend,
+      state,
+      label: `${backendLabel(recipe)}${backendSuffix} is not supported on this system.`,
+    };
+  }
+
+  return {
+    tone: 'unknown',
+    backend,
+    state: state || undefined,
+    label: `${backendLabel(recipe)}${backendSuffix} status could not be verified.`,
+  };
+}
+
+type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
 
 const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> = [
   { key: 'all', label: 'All', iconName: 'globe' },
-  { key: 'llm', label: 'LLM', iconName: 'chat' },
+  { key: 'llm', label: 'Chat', iconName: 'chat' },
   { key: 'omni', label: 'Omni', iconName: 'omni' },
+  { key: 'router', label: 'Router', iconName: 'router' },
   { key: 'image', label: 'Image', iconName: 'image' },
   { key: 'audio', label: 'Audio', iconName: 'audio' },
   { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio' },
@@ -162,18 +357,45 @@ function modelMatchesTextFilters(m: ModelInfo, status: ModelStatus, filters: Tex
   return true;
 }
 
+function modelRecipe(m: ModelInfo): string {
+  return String((m as any).recipe || '').trim().toLowerCase();
+}
+
+export function modelIsRouter(m: ModelInfo): boolean {
+  const recipe = modelRecipe(m);
+  return recipe === 'collection.router' || recipe.startsWith('collection.router.');
+}
+
+export function modelIsOmniCollection(m: ModelInfo): boolean {
+  const recipe = modelRecipe(m);
+  return recipe === 'collection.omni' || recipe.startsWith('collection.omni.') || recipe === 'collection';
+}
+
+/** Omni is a task identity, not a concrete backend identity. */
+export function modelIsOmni(m: ModelInfo): boolean {
+  return modelIsOmniCollection(m) || capabilityFromModelInfo(m) === 'omni';
+}
+
 export function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
   if (filter === 'all') return true;
+  if (filter === 'router') return modelIsRouter(m);
+  if (filter === 'omni') return modelIsOmni(m);
+
   const cap = capabilityFromModelInfo(m);
-  if (filter === 'omni') {
-    const recipe = String((m as any).recipe || '').toLowerCase();
-    return cap === 'omni' || recipe === 'collection.omni' || recipe === 'collection';
-  }
   if (filter === 'embedding') return cap === 'embedding' || cap === 'reranking';
-  // Unknown remote rows stay visible under All, but must not be presented as
-  // proven LLM/chat capability merely because they are GGUF/llama.cpp models.
-  if (filter === 'llm') return cap === 'chat';
+  // Router collections intentionally have their own task and must not also be
+  // counted as Chat even though they ultimately route chat-capable models.
+  if (filter === 'llm') return cap === 'chat' && !modelIsRouter(m);
   return (cap as string) === filter;
+}
+
+/** Empty task selection means "all". Multiple selected tasks are OR-ed. */
+export function modelMatchesTasks(m: ModelInfo, tasks?: ReadonlySet<FilterTab>): boolean {
+  if (!tasks || tasks.size === 0 || tasks.has('all')) return true;
+  for (const task of tasks) {
+    if (modelMatchesFilter(m, task)) return true;
+  }
+  return false;
 }
 
 /* ── Left-nav-rail filter dimensions ─────────────────────────────
@@ -225,23 +447,57 @@ export function capabilityTagIconTarget(tag: CapabilityTag): CapabilityIconTarge
   return tag as CapabilityIconTarget;
 }
 
-/** Backend filter — `backend` is 'all' or a lowercased recipe id. */
+/** A backend group is not meaningful for virtual Omni/Router collections. */
+export function modelHasFilterableBackend(m: ModelInfo): boolean {
+  return !modelIsOmni(m) && !modelIsRouter(m) && Boolean(modelRecipe(m));
+}
+
+/** Empty backend selection means "all". Multiple selected backends are OR-ed. */
+export function modelMatchesBackends(m: ModelInfo, backends?: ReadonlySet<string>): boolean {
+  if (!backends || backends.size === 0 || backends.has('all')) return true;
+  return backends.has(modelRecipe(m));
+}
+
+/** Compatibility helper for callers that still need a single backend check. */
 export function modelMatchesBackend(m: ModelInfo, backend: string): boolean {
-  if (!backend || backend === 'all') return true;
-  return String((m as any).recipe || '').toLowerCase() === backend;
+  return modelMatchesBackends(m, backend && backend !== 'all' ? new Set([backend]) : new Set());
 }
 
 /** Curated tag chips (model families + size hints) shown in the left rail. */
-export const TAG_CHIPS: string[] = ['Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
+export const TAG_CHIPS: string[] = ['Recommended', 'Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
 
-/** A tag matches when it appears in the model's labels OR its name/family. */
+export function modelIsRecommended(m: ModelInfo): boolean {
+  const raw = m as any;
+  if (raw.recommended === true || raw.is_recommended === true || raw.featured === true || raw.suggested === true) return true;
+  const labels = [
+    ...(Array.isArray(raw.labels) ? raw.labels : []),
+    ...(Array.isArray(raw.tags) ? raw.tags : []),
+  ].map(value => String(value).trim().toLowerCase());
+  return labels.some(label => ['recommended', 'featured', 'suggested'].includes(label));
+}
+
+/** A tag matches model metadata, labels, or its name/family. */
 export function modelMatchesTag(m: ModelInfo, tag: string | null): boolean {
   if (!tag) return true;
-  const t = tag.toLowerCase();
-  const labels = (m.labels || []).map(l => String(l).toLowerCase());
+  const t = tag.trim().toLowerCase();
+  if (!t) return true;
+  if (t === 'recommended') return modelIsRecommended(m);
+  const labels = [
+    ...(Array.isArray(m.labels) ? m.labels : []),
+    ...(Array.isArray((m as any).tags) ? (m as any).tags : []),
+  ].map(value => String(value).trim().toLowerCase());
   if (labels.includes(t)) return true;
   const hay = `${listModelName(m)} ${m.display_name || ''}`.toLowerCase();
   return hay.includes(t);
+}
+
+/** Empty tag selection means "all". Multiple selected tags are OR-ed. */
+export function modelMatchesTags(m: ModelInfo, tags?: ReadonlySet<string>): boolean {
+  if (!tags || tags.size === 0) return true;
+  for (const tag of tags) {
+    if (modelMatchesTag(m, tag)) return true;
+  }
+  return false;
 }
 
 /* ── Types ───────────────────────────────────────────────────── */
@@ -266,17 +522,17 @@ export interface ModelListPanelProps {
   onSelectModel: (id: string) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
-  filterTab: FilterTab;
-  onFilterChange: (tab: FilterTab) => void;
+  /** Selected left-rail tasks. Empty means all; selections are OR-ed. */
+  taskFilters?: ReadonlySet<FilterTab>;
   /** Selected functional capability tags (multi-select funnel). Empty = no filter. */
   capabilityFilter?: Set<string>;
   onCapabilityFilterChange?: (next: Set<string>) => void;
   /** Primary nav bucket selected in the left rail. */
   primaryFilter?: PrimaryFilter;
-  /** Backend filter ('all' or lowercased recipe id) from the left rail. */
-  backendFilter?: string;
-  /** Active tag chip from the left rail (null = no tag filter). */
-  tagFilter?: string | null;
+  /** Selected backend recipes. Empty means all; selections are OR-ed. */
+  backendFilters?: ReadonlySet<string>;
+  /** Selected built-in/custom tags. Empty means all; selections are OR-ed. */
+  tagFilters?: ReadonlySet<string>;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
   onOpenCustomModels?: () => void;
   onOpenRouter?: () => void;
@@ -293,6 +549,8 @@ export interface ModelListPanelProps {
   registryZoneTop?: React.ReactNode;
   /** Total visible remote-provider results for the anchor bar. */
   registryResultCount?: number;
+  /** Latest /system-info snapshot used to join model and backend readiness. */
+  systemInfo?: Record<string, unknown> | null;
 }
 
 /* ── ModelListPanel ──────────────────────────────────────────── */
@@ -306,13 +564,12 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   onSelectModel,
   searchQuery,
   onSearchChange,
-  filterTab,
-  onFilterChange,
+  taskFilters,
   capabilityFilter,
   onCapabilityFilterChange,
   primaryFilter = 'all',
-  backendFilter = 'all',
-  tagFilter = null,
+  backendFilters,
+  tagFilters,
   searchInputRef,
   onOpenCustomModels,
   onOpenRouter,
@@ -323,6 +580,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   registryZone,
   registryZoneTop,
   registryResultCount = 0,
+  systemInfo = null,
 }) => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterPopoverStyle, setFilterPopoverStyle] = useState<FilterPopoverStyle | null>(null);
@@ -344,13 +602,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       const mName = listModelName(m);
       if (!mName) continue;
 
-      // Filter by type
-      if (!modelMatchesFilter(m, filterTab)) continue;
-
-      // Left-rail filter dimensions (primary bucket / backend / tag)
+      // Left-rail dimensions: OR within Task/Backend/Tags, AND across groups.
+      if (!modelMatchesTasks(m, taskFilters)) continue;
       if (!modelMatchesPrimary(m, primaryFilter, loadedNames, favoriteNames)) continue;
-      if (!modelMatchesBackend(m, backendFilter)) continue;
-      if (!modelMatchesTag(m, tagFilter)) continue;
+      if (!modelMatchesBackends(m, backendFilters)) continue;
+      if (!modelMatchesTags(m, tagFilters)) continue;
 
       // Funnel: functional capability tags (multi-select). Empty = no filter.
       if (!modelMatchesCapabilityTags(m, capabilityFilter ?? new Set())) continue;
@@ -426,7 +682,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     }
 
     return result;
-  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, filterTab, sortBy, pinnedNames, favoriteNames, primaryFilter, backendFilter, tagFilter, capabilityFilter, activeTextFilters]);
+  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, taskFilters, sortBy, pinnedNames, favoriteNames, primaryFilter, backendFilters, tagFilters, capabilityFilter, activeTextFilters]);
 
   // Funnel options: the union of functional capability tags present across the
   // models, in canonical order. Derived client-side from the model labels —
@@ -802,7 +1058,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
 
       <span className="sr-only model-list-panel__count" aria-live="polite" aria-atomic="true">
         {flatList.length} model{flatList.length !== 1 ? 's' : ''}
-        {filterTab !== 'all' && ` (${FILTER_TABS.find(t => t.key === filterTab)?.label})`}
+        {taskFilters && taskFilters.size > 0 && ` (${Array.from(taskFilters).map(task => FILTER_TABS.find(item => item.key === task)?.label || task).join(', ')})`}
       </span>
 
       {/* Scrollable area: model list + optional inline registry result zones */}
@@ -823,8 +1079,30 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           const mId = listModelName(model);
           const displayName = listModelDisplayName(model);
           const recipe = String((model as any).recipe || '');
+          const neutralCollectionGuide = modelIsOmni(model) || modelIsRouter(model);
+          const displayedBackend = recipe && !neutralCollectionGuide ? modelListBackendLabel(recipe) : '';
           const isSelected = mId === selectedModelId;
           const capTags = modelCapabilityTags(model);
+          const backendStyle = recipe && !neutralCollectionGuide
+            ? ({ '--list-backend-color': backendColor(recipe) } as React.CSSProperties)
+            : undefined;
+          const backendReadiness = status === 'downloaded'
+            ? modelBackendReadiness(model, systemInfo)
+            : null;
+          const readinessLabel = status === 'running'
+            ? 'Backend active; model is running.'
+            : status === 'downloading'
+              ? `Model download in progress${downloadPct != null ? ` (${downloadPct.toFixed(0)}%).` : '.'}`
+              : status === 'available'
+                ? 'Model is available to download.'
+                : backendReadiness?.label;
+          const statusTone = status === 'running'
+            ? 'running'
+            : status === 'downloading'
+              ? 'downloading'
+              : status === 'downloaded'
+                ? backendReadiness?.tone || 'unknown'
+                : 'available';
 
           return (
             <li
@@ -833,24 +1111,14 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               tabIndex={isSelected ? 0 : -1}
               aria-selected={isSelected}
               data-model-id={mId}
+              style={backendStyle}
               aria-keyshortcuts={onTogglePin ? 'P' : undefined}
-              className={`model-list-item${isSelected ? ' model-list-item--selected' : ''}${pinned ? ' model-list-item--pinned' : ''} model-list-item--${status}`}
+              className={`model-list-item${isSelected ? ' model-list-item--selected' : ''}${pinned ? ' model-list-item--pinned' : ''}${neutralCollectionGuide ? ' model-list-item--neutral-guide' : ''} model-list-item--${status}`}
               onClick={() => onSelectModel(mId)}
               onKeyDown={e => handleItemKeyDown(e, mId)}
-              aria-label={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${recipe ? `, ${listRecipeBadgeText(recipe)}` : ''}`}
+              aria-label={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
             >
-              {/* Backend badge */}
-              {recipe && (
-                <span
-                  className="model-list-item__backend"
-                  style={{ '--list-backend-color': backendColor(recipe) } as React.CSSProperties}
-                  aria-hidden="true"
-                >
-                  {listRecipeBadgeText(recipe)}
-                </span>
-              )}
-
-              {/* Name + meta */}
+              {/* Name + meta stay left-aligned across every row. */}
               <span className="model-list-item__body">
                 <span className="model-list-item__name">{displayName}</span>
                 <span className="model-list-item__meta">
@@ -867,20 +1135,36 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                 </span>
               </span>
 
-              {/* Status indicator */}
-              <span className="model-list-item__status" aria-hidden="true">
-                {status === 'running' && <span className="row__pulse" />}
-                {status === 'downloading' && downloadPct != null && (
-                  <span className="model-list-item__pct">{downloadPct.toFixed(0)}%</span>
-                )}
-                {status === 'downloaded' && <span className="model-list-item__dot model-list-item__dot--ready" />}
+              {/* The backend identity now lives on the lower guide line instead
+                  of in a separate badge. The line terminates in the compact
+                  readiness ring; the pin sits directly above it. */}
+              <span className="model-list-item__footer" aria-hidden="true">
+                <span className="model-list-item__footer-info">
+                  {status === 'downloading' && downloadPct != null && (
+                    <span className="model-list-item__pct">{downloadPct.toFixed(0)}%</span>
+                  )}
+                  {recipe && !neutralCollectionGuide && (
+                    <span
+                      className="model-list-item__backend"
+                      title={backendLabel(recipe)}
+                    >
+                      {displayedBackend}
+                    </span>
+                  )}
+                </span>
+                <span
+                  className={`model-list-item__status model-list-item__status--${statusTone}`}
+                  title={readinessLabel}
+                  data-backend-state={backendReadiness?.state || statusTone}
+                >
+                  {status !== 'available' && (
+                    <span className={`model-list-item__dot model-list-item__dot--${statusTone}`} />
+                  )}
+                </span>
               </span>
 
-              {/* Pin / favorite (client-local). Rendered as a non-button so it
-                  does not nest an interactive control inside role="option"
-                  (axe nested-interactive). Pointer users click it; keyboard/AT
-                  users toggle via the "P" shortcut on the focused row, and the
-                  pinned state is exposed in the row's aria-label. */}
+              {/* Pointer users click the compact pin above the status terminus;
+                  keyboard and assistive-technology users retain the P shortcut. */}
               {onTogglePin && (
                 <span
                   className={`model-list-item__pin row__pin${pinned ? ' row__pin--active model-list-item__pin--active' : ''}`}

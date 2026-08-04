@@ -37,7 +37,7 @@ import { activeDownloadForModel, downloadsForModel, downloadStore, isDownloadTer
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { buildOmniToolRuntime } from '../tools/omniTools';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOLS, MAX_MCP_SERVER_SELECTION, buildSelectedMcpRuntime, composeMcpRuntimes, listMcpServerToolOptions, type McpServerToolOption } from '../tools/mcpRuntime';
-import { loadModelTuning } from '../modelConfiguration';
+import { DEFAULT_CONTEXT_SIZE, loadModelTuning } from '../modelConfiguration';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import {
   LEMONADE_DEFAULT_CHAT_MODELS,
@@ -772,6 +772,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const downloadAvailabilityKeyRef = useRef(chatBlockingDownloadsKey(downloadItems));
   const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
   const [effectiveSettingsOpen, setEffectiveSettingsOpen] = useState(false);
+  const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState(DEFAULT_CONTEXT_SIZE);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -805,6 +806,28 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   useEffect(() => () => {
     generatedMediaUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
     generatedMediaUrlsRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshDefaultContextSize = async () => {
+      try {
+        const value = await api.getDefaultContextSize();
+        if (!cancelled) setServerDefaultCtxSize(typeof value === 'number' ? value : DEFAULT_CONTEXT_SIZE);
+      } catch {
+        if (!cancelled) setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
+      }
+    };
+
+    void refreshDefaultContextSize();
+    const unsubscribe = api.onStatusChange(status => {
+      if (status === 'connected') void refreshDefaultContextSize();
+      else if (!cancelled) setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -1329,7 +1352,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   const openMcpPicker = useCallback(() => {
     mcpReturnFocusEntryRef.current = 'tools';
-    setMcpPickerTab('lemonade');
     setMcpPickerOpen(true);
   }, []);
 
@@ -3320,6 +3342,7 @@ ${finalText}`
             recipe={currentRecipe}
             mcpEnabled={useMcp}
             mcpServerIds={selectedMcpServerIds}
+            fallbackCtxSize={serverDefaultCtxSize}
             loadedModel={currentLoadedModel}
             isModelLoaded={!!currentLoadedModel}
             onReload={async () => {
@@ -3719,12 +3742,15 @@ ${finalText}`
                   data-mcp-entry="tools"
                   onClick={openMcpPicker}
                   disabled={!modeSupportsMcp}
-                  aria-pressed={mcpPickerOpen}
+                  aria-label="Tools"
+                  aria-haspopup="dialog"
                 >
                   <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Configure tools</strong>
-                    <small>{useMcp ? `${selectedMcpToolCount} selected tool${selectedMcpToolCount === 1 ? '' : 's'}` : 'Lemonade tools and external MCP servers'}</small>
+                    <strong>Tools</strong>
+                    <small>{useMcp
+                      ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
+                      : 'Lemonade tools and external MCP servers'}</small>
                   </span>
                 </button>
               </div>
@@ -3811,7 +3837,9 @@ ${finalText}`
                               <span className={`composer__mcp-status${server.connected ? ' is-connected' : ''}`} aria-hidden="true" />
                               <span className="composer__mcp-server-text">
                                 <strong>{server.name}</strong>
-                                <small>{server.transport === 'builtin' ? 'Built in' : `External MCP · ${server.status}`} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
+                                <small>{server.transport === 'builtin'
+                                  ? 'Built in'
+                                  : `${server.transport === 'streamable-http' ? 'HTTP endpoint' : 'Local process'} · ${server.status}`} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
                               </span>
                             </label>
                             {serverSelected && (

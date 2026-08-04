@@ -23,12 +23,19 @@
     "test:mcp-external": "node scripts/test-external-mcp.mjs",
     "test:mcp-mock": "node tests/mock-mcp-server.runtime.cjs",
     "test:mcp-runtime": "node tests/mcp-runtime.runtime.cjs",
+    "test:mcp-cpp-compat": "node tests/mcp-cpp-httplib-compat.runtime.cjs",
     "test:router-editor": "node tests/router-editor.runtime.cjs",
     "test:router-store": "node tests/router-store.runtime.cjs",
     "test:global-model-settings": "node tests/global-model-settings.runtime.cjs",
     "test:icons": "node tests/icon-library.runtime.cjs",
     "test:default-chat-model": "node tests/default-chat-model.runtime.cjs",
-    "test:storage": "node tests/storage.runtime.cjs"
+    "test:storage": "node tests/storage.runtime.cjs",
+    "test:configuration-consistency": "node tests/configuration-consistency.runtime.cjs",
+    "test:model-list-backends": "node tests/model-list-backend-layout.runtime.cjs",
+    "test:ui-regressions": "node tests/ui-regression-contracts.runtime.cjs",
+    "test:model-nav-filters": "node tests/model-nav-filter-layout.runtime.cjs",
+    "test:model-state": "node tests/model-state-deduplication.runtime.cjs",
+    "test:download-polling": "node tests/download-polling-lifecycle.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",

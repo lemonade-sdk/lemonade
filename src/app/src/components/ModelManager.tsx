@@ -8,8 +8,8 @@ import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, c
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
-import { ModelListPanel, modelIsCustom, modelMatchesBackend, modelMatchesFilter, modelMatchesTag } from './ModelListPanel';
-import type { PrimaryFilter } from './ModelListPanel';
+import { ModelListPanel, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
+import type { FilterTab, PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
 import { ModelDetailPanel } from './ModelDetailPanel';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
@@ -33,8 +33,12 @@ import {
   type GlobalModelSettings,
 } from '../features/modelSettings/globalModelSettings';
 import { backendLabel } from '../modelPresentation';
+import { useServerModelState } from '../features/models/modelState';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
+
+const EMPTY_MODELS: ModelInfo[] = [];
+const EMPTY_LOADED_MODELS: LoadedModel[] = [];
 
 function modelName(m: ModelInfo | null | undefined): string {
   if (!m) return '';
@@ -471,7 +475,6 @@ function saveFavoriteModels(names: string[]): void {
 
 /* ── Filter / search types ─────────────────────────────────── */
 
-type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
 type ProviderEnabledState = Record<ModelRegistryProvider, boolean>;
 
 const REMOTE_SEARCH_CACHE = new Map<string, HFModelResult[]>();
@@ -1048,10 +1051,11 @@ interface ModelManagerProps {
 }
 
 const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelRequest }) => {
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState(api.status);
-  const [modelsLoading, setModelsLoading] = useState(api.isConnected && api.allModels.length === 0);
+  const serverModelState = useServerModelState();
+  const models = serverModelState.models?.data ?? EMPTY_MODELS;
+  const loadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
+  const connectionStatus = serverModelState.status;
+  const modelsLoading = serverModelState.refreshing && models.length === 0;
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
@@ -1060,11 +1064,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [selectedDetailModelId, setSelectedDetailModelId] = useState<string | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterTab, setFilterTab] = useState<FilterTab>('all');
-  // Left nav-rail filter dimensions (client-local, derived from the model list).
+  // Left nav-rail dimensions. Empty sets mean "all"; values within a group
+  // are OR-ed while Task, Backend, Tags and the primary bucket are AND-ed.
+  const [taskFilters, setTaskFilters] = useState<Set<FilterTab>>(() => new Set());
   const [primaryFilter, setPrimaryFilter] = useState<PrimaryFilter>('all');
-  const [backendFilter, setBackendFilter] = useState<string>('all');
-  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [backendFilters, setBackendFilters] = useState<Set<string>>(() => new Set());
+  const [tagFilters, setTagFilters] = useState<Set<string>>(() => new Set());
   const mobileRail = useWorkspaceMobileRail();
   const [navRailCollapsed, setNavRailCollapsed] = useState(false);
   const panelResize = useWorkspacePanelResize<HTMLDivElement>({
@@ -1105,6 +1110,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [customDraft, setCustomDraft] = useState<CustomModelDraftState>(() => createEmptyCustomDraft());
   const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
   const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
+  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModelNames());
   const [favoriteModels, setFavoriteModels] = useState<string[]>(() => loadFavoriteModels());
   // Multi-select functional capability filter driven by the funnel popover.
@@ -1116,13 +1122,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const customJsonInputRef = useRef<HTMLInputElement>(null);
 
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
-  const hasVisibleModelsRef = useRef(false);
-  const modelsSnapshotRef = useRef<string>('');
-  const loadedSnapshotRef = useRef<string>('');
-
-  useEffect(() => {
-    hasVisibleModelsRef.current = models.length > 0 || loadedModels.length > 0 || customModels.length > 0 || routerModels.length > 0;
-  }, [models.length, loadedModels.length, customModels.length, routerModels.length]);
 
   useEffect(() => downloadStore.subscribe(setDownloadItems), []);
 
@@ -1167,15 +1166,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (!api.isConnected) {
       setDynamicRecipeOptions({});
       setCustomRecipeAvailabilityLoaded(false);
+      setSystemInfo(null);
       return;
     }
 
     try {
       const info = await api.systemInfo();
       const hasRecipeData = Boolean(systemRecipeEntries(info));
+      setSystemInfo(info);
       setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
       setCustomRecipeAvailabilityLoaded(hasRecipeData);
     } catch {
+      setSystemInfo(null);
       setDynamicRecipeOptions({});
       setCustomRecipeAvailabilityLoaded(false);
     }
@@ -1186,41 +1188,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   }, [connectionStatus, refreshCustomRecipeAvailability]);
 
   const refresh = useCallback(async () => {
-    if (!api.isConnected) {
-      setModelsLoading(false);
-      if (!hasVisibleModelsRef.current) {
-        modelsSnapshotRef.current = '[]';
-        loadedSnapshotRef.current = '[]';
-        setModels([]);
-        setLoadedModels([]);
-      }
-      return;
-    }
-    if (!hasVisibleModelsRef.current) setModelsLoading(true);
+    if (!api.isConnected) return;
     try {
-      const result = await api.refresh();
-      if (result) {
-        const nextModels = Array.isArray(result.models.data) ? result.models.data.filter((m): m is ModelInfo => !!m && !!modelName(m)) : [];
-        const nextLoaded = Array.isArray(result.health.all_models_loaded) ? result.health.all_models_loaded.filter(m => !!m?.model_name) : [];
-        const nextModelsSig = JSON.stringify(nextModels);
-        const nextLoadedSig = JSON.stringify(nextLoaded);
-        if (modelsSnapshotRef.current !== nextModelsSig) {
-          modelsSnapshotRef.current = nextModelsSig;
-          setModels(nextModels);
-        }
-        if (loadedSnapshotRef.current !== nextLoadedSig) {
-          loadedSnapshotRef.current = nextLoadedSig;
-          setLoadedModels(nextLoaded);
-        }
-      }
+      await api.refresh();
     } catch (err) {
       console.warn('Failed to refresh model list:', err);
-    } finally {
-      setModelsLoading(false);
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  // App owns startup connection. This fallback supports isolated mounts without
+  // creating a second request when the global refresh is already in flight.
+  useEffect(() => {
+    if (connectionStatus !== 'connected' || serverModelState.models || serverModelState.refreshing) return;
+    void api.ensureModelState();
+  }, [connectionStatus, serverModelState.models, serverModelState.refreshing]);
 
   const refreshServerDefaultCtxSize = useCallback(async () => {
     if (!api.isConnected) {
@@ -1239,23 +1220,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (connectionStatus === 'connected') refreshServerDefaultCtxSize();
     else setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
   }, [connectionStatus, refreshServerDefaultCtxSize]);
-
-  // Re-fetch when server connection status changes (e.g. connects after initial mount)
-  useEffect(() => {
-    const unsub = api.onStatusChange((status) => {
-      setConnectionStatus(status);
-      if (status === 'connected') {
-        refresh();
-        refreshServerDefaultCtxSize();
-      }
-    });
-    return unsub;
-  }, [refresh, refreshServerDefaultCtxSize]);
-
-  // Re-fetch when models are loaded/unloaded/deleted via any path (tools, other views)
-  useEffect(() => {
-    return api.onModelsChanged(() => { refresh(); });
-  }, [refresh]);
 
   /* ── Remote registry search ────────────────────────────────
      Deliberately keyed ONLY by the text query and provider switch. Changing
@@ -2415,13 +2379,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     return results.filter(result => {
       if (localRegistryRefs.has(result.id.toLowerCase())) return false;
       const info = remoteResultAsModelInfo(result, remoteVariants[providerKey(provider, result.id)]);
-      if (!modelMatchesFilter(info, filterTab)) return false;
+      if (!modelMatchesTasks(info, taskFilters)) return false;
       if (!modelMatchesCapabilityTags(info, capabilityFilter)) return false;
-      if (!modelMatchesBackend(info, backendFilter)) return false;
-      if (!modelMatchesTag(info, tagFilter)) return false;
+      if (!modelMatchesBackends(info, backendFilters)) return false;
+      if (!modelMatchesTags(info, tagFilters)) return false;
       return true;
     });
-  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, filterTab, capabilityFilter, backendFilter, tagFilter]);
+  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, taskFilters, capabilityFilter, backendFilters, tagFilters]);
 
   const filteredHfResults = useMemo(
     () => filterRemoteResults('huggingface', hfResults),
@@ -2461,10 +2425,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setSelectedRemoteModel(null);
     setMobileDetailOpen(true);
     setSearchQuery('');
-    setFilterTab('all');
+    setTaskFilters(new Set());
     setPrimaryFilter('all');
-    setBackendFilter('all');
-    setTagFilter(null);
+    setBackendFilters(new Set());
+    setTagFilters(new Set());
     setCapabilityFilter(new Set());
     if (showCustomForm) closeCustomForm();
     if (showRouterEditor) closeRouterEditor();
@@ -2704,7 +2668,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     handleCustomDraftChange({ [`${role}Component`]: value } as Partial<CustomModelDraftState>);
   };
   const searchHuggingFaceFromPicker = (query: string) => {
-    setFilterTab('all');
+    setTaskFilters(new Set());
     setSearchQuery(query);
   };
 
@@ -2788,12 +2752,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         favoriteNames={favoriteNameSet}
         primaryFilter={primaryFilter}
         onPrimaryFilterChange={handlePrimaryFilterChange}
-        categoryFilter={filterTab}
-        onCategoryFilterChange={(f) => { setFilterTab(f); mobileRail.close(); }}
-        backendFilter={backendFilter}
-        onBackendFilterChange={(backend) => { setBackendFilter(backend); mobileRail.close(); }}
-        tagFilter={tagFilter}
-        onTagFilterChange={(t) => { setTagFilter(t); mobileRail.close(); }}
+        taskFilters={taskFilters}
+        onTaskFiltersChange={setTaskFilters}
+        backendFilters={backendFilters}
+        onBackendFiltersChange={setBackendFilters}
+        tagFilters={tagFilters}
+        onTagFiltersChange={setTagFilters}
         providerEnabled={providerEnabled}
         providerCounts={providerCounts}
         onToggleProvider={toggleProvider}
@@ -2822,13 +2786,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        filterTab={filterTab}
-        onFilterChange={setFilterTab}
+        taskFilters={taskFilters}
         capabilityFilter={capabilityFilter}
         onCapabilityFilterChange={setCapabilityFilter}
         primaryFilter={primaryFilter}
-        backendFilter={backendFilter}
-        tagFilter={tagFilter}
+        backendFilters={backendFilters}
+        tagFilters={tagFilters}
         searchInputRef={searchRef}
         onOpenRouter={() => openRouterEditor(selectedDetailModel)}
         onOpenGlobalSettings={openGlobalSettings}
@@ -2839,6 +2802,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         registryZoneTop={hasRemoteActivity && !hasLocalMatches ? renderRegistryZones() : undefined}
         registryZone={hasRemoteActivity && hasLocalMatches ? renderRegistryZones() : undefined}
         registryResultCount={remoteResultCount}
+        systemInfo={systemInfo}
       />
 
       <WorkspacePanelResizer label="Resize model list panel" {...panelResize.resizerProps} />
@@ -3186,6 +3150,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       ) : (
         <ModelDetailPanel
           model={selectedDetailModel}
+          models={allModels}
           loadedModel={selectedDetailModelId
             ? (displayLoadedModels.find(m => m.model_name === selectedDetailModelId) ?? null)
             : null}
@@ -3203,7 +3168,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           serverDefaultCtxSize={serverDefaultCtxSize}
           isFavorite={selectedDetailModelId ? favoriteNameSet.has(selectedDetailModelId.toLowerCase()) : false}
           onToggleFavorite={toggleFavoriteModel}
-          onEditCustomCollection={openCustomCollectionEditor}
+          onEditCustomCollection={(model) => {
+            if (String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) openRouterEditor(model);
+            else openCustomCollectionEditor(model);
+          }}
           noModelsAvailable={allModels.length === 0}
           hfModel={selectedRemoteModel}
           hfProvider={selectedRemoteProvider}
