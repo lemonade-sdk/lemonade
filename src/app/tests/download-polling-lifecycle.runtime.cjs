@@ -30,6 +30,11 @@ assert.match(source, /private hasActiveDownloads\(\): boolean/);
 assert.match(source, /if \(!this\.started \|\| !this\.hasActiveDownloads\(\)\) \{/);
 assert.match(source, /this\.clearPollTimer\(\);[\s\S]*return;/);
 assert.doesNotMatch(source, /finally \{[\s\S]{0,120}this\.scheduleNext\(\)/);
+assert.doesNotMatch(
+  source,
+  /if \(!api\.isConnected\)/,
+  'an authoritative /downloads refresh must not depend on the global connection flag',
+);
 
 const originalTsLoader = require.extensions['.ts'];
 const originalApiCache = require.cache[apiPath];
@@ -68,7 +73,9 @@ global.window = {
 let downloadRequests = 0;
 let serverDownloads = [];
 const apiStub = {
-  isConnected: true,
+  // The download endpoint must still be queried while the broader app
+  // connection handshake is settling.
+  isConnected: false,
   async downloads() {
     downloadRequests += 1;
     await new Promise(resolve => setTimeout(resolve, 5));
@@ -103,6 +110,11 @@ async function waitFor(predicate, timeoutMs = 1500) {
     const unsubscribe = downloadStore.subscribe(() => {});
 
     await waitFor(() => downloadRequests === 1);
+    assert.equal(
+      downloadRequests,
+      1,
+      'startup must query the authoritative snapshot before api.isConnected settles',
+    );
     await sleep(1150);
     assert.equal(
       downloadRequests,

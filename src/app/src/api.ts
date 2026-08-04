@@ -764,7 +764,11 @@ class LemonadeAPI {
     refreshing: false,
     error: null,
   };
-  private _modelsRequestInFlight = new Map<boolean, Promise<ModelsData>>();
+  private _modelsRequestInFlight = new Map<
+    boolean,
+    { mutationRevision: number; request: Promise<ModelsData> }
+  >();
+  private _modelsMutationRevision = 0;
   private _refreshInFlight: Promise<{ health: HealthData; models: ModelsData } | null> | null = null;
   private _refreshGenerationInFlight = -1;
   private _connectInFlight: Promise<boolean> | null = null;
@@ -985,6 +989,7 @@ class LemonadeAPI {
   }
 
   private _notifyModelsChanged(): void {
+    this._modelsMutationRevision += 1;
     this._modelStateGeneration += 1;
     this._modelsChangedListeners.forEach(fn => { try { fn(); } catch {} });
     if (this.isConnected) void this.refresh();
@@ -1319,13 +1324,21 @@ class LemonadeAPI {
   }
 
   async models(showAll = true): Promise<ModelsData> {
+    const mutationRevision = this._modelsMutationRevision;
     const existing = this._modelsRequestInFlight.get(showAll);
-    if (existing) return existing;
+    if (existing && existing.mutationRevision === mutationRevision) {
+      return existing.request;
+    }
 
     const request = (async () => {
       const qs = showAll ? '?show_all=true' : '';
       const data = normalizeModels(await this._json<unknown>(`/api/v1/models${qs}`));
       if (showAll) {
+        // A registry read that began before a successful model write
+        // may complete later. Return it to its original caller, but
+        // never publish it or reuse it for post-write verification.
+        if (mutationRevision !== this._modelsMutationRevision) return data;
+
         const signature = JSON.stringify(data);
         if (!this._modelsData || signature !== this._modelsDataSignature) {
           this._modelsData = data;
@@ -1339,11 +1352,12 @@ class LemonadeAPI {
       return data;
     })();
 
-    this._modelsRequestInFlight.set(showAll, request);
+    const entry = { mutationRevision, request };
+    this._modelsRequestInFlight.set(showAll, entry);
     try {
       return await request;
     } finally {
-      if (this._modelsRequestInFlight.get(showAll) === request) {
+      if (this._modelsRequestInFlight.get(showAll) === entry) {
         this._modelsRequestInFlight.delete(showAll);
       }
     }

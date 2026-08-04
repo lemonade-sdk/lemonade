@@ -596,10 +596,6 @@ class DownloadStore {
     // here prevents the timer from firing while the same request is in flight.
     this.clearPollTimer();
     this.refreshInFlight = (async () => {
-      if (!api.isConnected) {
-        this.mergeDownloads([], true);
-        return;
-      }
       try {
         const serverDownloads = await api.downloads();
         const normalized = serverDownloads

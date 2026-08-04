@@ -434,6 +434,18 @@ struct HttpMcpReply {
     std::string session_id;
 };
 
+class McpHttpStatusError : public std::runtime_error {
+public:
+    McpHttpStatusError(int status_code, std::string message)
+        : std::runtime_error(std::move(message)),
+          status_code_(status_code) {}
+
+    int status_code() const noexcept { return status_code_; }
+
+private:
+    int status_code_;
+};
+
 class SseJsonDecoder {
 public:
     std::vector<json> feed(const char* bytes, std::size_t size,
@@ -515,8 +527,30 @@ std::vector<json> parse_http_mcp_messages(const std::string& content_type,
     return messages;
 }
 
+bool json_rpc_is_response(const json& value) {
+    return value.is_object() && value.contains("id") &&
+           !value.contains("method") &&
+           (value.contains("result") || value.contains("error"));
+}
+
+bool json_rpc_is_request(const json& value) {
+    return value.is_object() && value.contains("id") &&
+           value.contains("method") && value["method"].is_string() &&
+           !value.contains("result") && !value.contains("error");
+}
+
+json json_rpc_client_response(const json& request) {
+    const std::string method = request["method"].get<std::string>();
+    if (method == "ping") {
+        return json{{"jsonrpc", "2.0"},
+                    {"id", request["id"]},
+                    {"result", json::object()}};
+    }
+    return json_rpc_method_not_found(request["id"], method);
+}
+
 bool json_rpc_id_matches(const json& value, std::int64_t expected) {
-    if (!value.is_object() || !value.contains("id")) return false;
+    if (!json_rpc_is_response(value)) return false;
     const json& id = value["id"];
     if (id.is_number_integer()) return id.get<std::int64_t>() == expected;
     if (id.is_number_unsigned()) {
@@ -582,6 +616,29 @@ HttpMcpReply http_mcp_post(const McpServerConfig& config,
     std::exception_ptr receiver_error;
     SseJsonDecoder sse_decoder;
 
+    auto handle_incoming_message = [&](const json& candidate) {
+        if (json_rpc_is_request(candidate)) {
+            const std::string active_session_id =
+                reply.session_id.empty() ? session_id : reply.session_id;
+            HttpMcpReply server_request_reply = http_mcp_post(
+                config, active_session_id, protocol_version,
+                json_rpc_client_response(candidate), timeout_ms,
+                std::nullopt);
+            if (!server_request_reply.session_id.empty()) {
+                reply.session_id =
+                    std::move(server_request_reply.session_id);
+            }
+            return false;
+        }
+        if (expected_id &&
+            json_rpc_id_matches(candidate, *expected_id)) {
+            reply.message = candidate;
+            matching_response_received = true;
+            return true;
+        }
+        return false;
+    };
+
     httplib::Request request;
     request.method = "POST";
     request.path = endpoint.path;
@@ -621,11 +678,7 @@ HttpMcpReply http_mcp_post(const McpServerConfig& config,
                         std::string::npos) {
                     for (const auto& candidate :
                          sse_decoder.feed(data, size)) {
-                        if (json_rpc_id_matches(candidate, *expected_id)) {
-                            reply.message = candidate;
-                            matching_response_received = true;
-                            return false;
-                        }
+                        if (handle_incoming_message(candidate)) return false;
                     }
                 } else {
                     body.append(data, size);
@@ -680,27 +733,22 @@ HttpMcpReply http_mcp_post(const McpServerConfig& config,
     if (status < 200 || status >= 300) {
         std::string detail = trim(body);
         if (detail.size() > 512) detail.resize(512);
-        throw std::runtime_error(
+        throw McpHttpStatusError(
+            status,
             "MCP endpoint returned HTTP " + std::to_string(status) +
-            (detail.empty() ? std::string() : ": " + detail));
+                (detail.empty() ? std::string() : ": " + detail));
     }
 
     if (!expected_id || matching_response_received) return reply;
 
     if (content_type.find("text/event-stream") != std::string::npos) {
         for (const auto& candidate : sse_decoder.feed(nullptr, 0, true)) {
-            if (json_rpc_id_matches(candidate, *expected_id)) {
-                reply.message = candidate;
-                return reply;
-            }
+            if (handle_incoming_message(candidate)) return reply;
         }
     } else {
         for (const auto& candidate :
              parse_http_mcp_messages(content_type, body)) {
-            if (json_rpc_id_matches(candidate, *expected_id)) {
-                reply.message = candidate;
-                return reply;
-            }
+            if (handle_incoming_message(candidate)) return reply;
         }
     }
 
@@ -1969,9 +2017,21 @@ struct McpClientManager::Runtime {
         json discovered;
         if (http) {
             std::lock_guard<std::mutex> request_lock(http_mutex);
-            discovered = fetch_tools_http(active_config, session_id,
-                                          protocol_version,
-                                          active_config.timeout_ms);
+            ensure_http_request_current(generation, session_id);
+            try {
+                discovered = fetch_tools_http(
+                    active_config, session_id, protocol_version,
+                    active_config.timeout_ms);
+            } catch (const McpHttpStatusError& error) {
+                if (error.status_code() == 404 && !session_id.empty()) {
+                    invalidate_expired_http_session(
+                        generation, session_id,
+                        "MCP HTTP session expired (HTTP 404); the next "
+                        "request will establish a new session");
+                }
+                throw;
+            }
+            update_http_session_after_request(generation, session_id);
         } else {
             discovered = fetch_tools(source, active_config.timeout_ms);
         }
@@ -2028,9 +2088,21 @@ struct McpClientManager::Runtime {
             timeout_ms > 0 ? timeout_ms : active_config.timeout_ms;
         if (http) {
             std::lock_guard<std::mutex> request_lock(http_mutex);
-            response = request_http(active_config, session_id,
-                                    protocol_version, "tools/call",
-                                    std::move(params), effective_timeout);
+            ensure_http_request_current(generation, session_id);
+            try {
+                response = request_http(
+                    active_config, session_id, protocol_version,
+                    "tools/call", std::move(params), effective_timeout);
+            } catch (const McpHttpStatusError& error) {
+                if (error.status_code() == 404 && !session_id.empty()) {
+                    invalidate_expired_http_session(
+                        generation, session_id,
+                        "MCP HTTP session expired (HTTP 404); the next "
+                        "request will establish a new session");
+                }
+                throw;
+            }
+            update_http_session_after_request(generation, session_id);
         } else {
             response = request(source, "tools/call", std::move(params),
                                effective_timeout);
@@ -2073,6 +2145,63 @@ struct McpClientManager::Runtime {
     }
 
 private:
+    void ensure_http_request_current(
+        std::uint64_t generation,
+        const std::string& expected_session_id) {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+        if (lifecycle_generation != generation) {
+            throw std::runtime_error(
+                "MCP HTTP connection changed before the request was sent");
+        }
+        std::lock_guard<std::mutex> state_lock(state_mutex);
+        if (!connected ||
+            config.transport != kStreamableHttpTransport ||
+            http_session_id != expected_session_id) {
+            throw std::runtime_error(
+                "MCP HTTP connection changed before the request was sent");
+        }
+    }
+
+    void update_http_session_after_request(
+        std::uint64_t generation,
+        const std::string& session_id) {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+        if (lifecycle_generation != generation) {
+            throw std::runtime_error(
+                "MCP HTTP connection changed while the request was running");
+        }
+        std::lock_guard<std::mutex> state_lock(state_mutex);
+        if (!connected ||
+            config.transport != kStreamableHttpTransport) {
+            throw std::runtime_error(
+                "MCP HTTP connection changed while the request was running");
+        }
+        http_session_id = session_id;
+    }
+
+    void invalidate_expired_http_session(
+        std::uint64_t generation,
+        const std::string& expired_session_id,
+        const std::string& message) {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+        if (lifecycle_generation != generation) return;
+        std::lock_guard<std::mutex> state_lock(state_mutex);
+        if (!connected ||
+            config.transport != kStreamableHttpTransport ||
+            http_session_id != expired_session_id) {
+            return;
+        }
+
+        ++lifecycle_generation;
+        connected = false;
+        http_session_id.clear();
+        negotiated_protocol_version.clear();
+        server_info = json::object();
+        server_capabilities = json::object();
+        tools = json::array();
+        last_error = message;
+    }
+
     void connect_http(const McpServerConfig& new_config) {
         std::uint64_t connect_generation = 0;
         {
@@ -2529,10 +2658,7 @@ private:
 
         if (message.contains("method") && message["method"].is_string() &&
             message.contains("id")) {
-            const std::string method =
-                message["method"].get<std::string>();
-            source->write_line(
-                json_rpc_method_not_found(message["id"], method).dump());
+            source->write_line(json_rpc_client_response(message).dump());
             return;
         }
 

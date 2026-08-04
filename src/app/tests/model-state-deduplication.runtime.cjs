@@ -35,7 +35,10 @@ const appSource = fs.readFileSync(appPath, 'utf8');
 const managerSource = fs.readFileSync(managerPath, 'utf8');
 const hookSource = fs.readFileSync(hookPath, 'utf8');
 
-assert.match(apiSource, /private _modelsRequestInFlight = new Map<boolean, Promise<ModelsData>>\(\)/);
+assert.match(apiSource, /private _modelsRequestInFlight = new Map<[\s\S]*mutationRevision: number; request: Promise<ModelsData>[\s\S]*>\(\)/);
+assert.match(apiSource, /private _modelsMutationRevision = 0/);
+assert.match(apiSource, /existing\.mutationRevision === mutationRevision/);
+assert.match(apiSource, /mutationRevision !== this\._modelsMutationRevision/);
 assert.match(apiSource, /private _modelsFetchRevision = 0/);
 assert.match(apiSource, /private _healthDataSignature = ''/);
 assert.match(apiSource, /private _modelsDataSignature = ''/);
@@ -81,12 +84,32 @@ const originalFetch = global.fetch;
 let healthRequests = 0;
 let modelRequests = 0;
 let deleteRequests = 0;
+let pullRequests = 0;
+let modelRows = [
+  { id: 'test-model', model_name: 'test-model', downloaded: true },
+];
+let nextModelReadGate = null;
+
+function holdNextModelsRead() {
+  assert.equal(nextModelReadGate, null, 'Only one delayed model read is supported.');
+  let markStarted;
+  let release;
+  const gate = {
+    started: new Promise(resolve => { markStarted = resolve; }),
+    released: new Promise(resolve => { release = resolve; }),
+    markStarted: () => markStarted(),
+    release: () => release(),
+  };
+  nextModelReadGate = gate;
+  return gate;
+}
 
 global.fetch = async (url, init = {}) => {
   const target = String(url);
-  await new Promise(resolve => setTimeout(resolve, 15));
+  const method = String(init.method || 'GET').toUpperCase();
 
   if (target.includes('/api/v1/health')) {
+    await new Promise(resolve => setTimeout(resolve, 15));
     healthRequests += 1;
     return new Response(JSON.stringify({
       status: 'ok',
@@ -98,12 +121,42 @@ global.fetch = async (url, init = {}) => {
 
   if (target.includes('/api/v1/models')) {
     modelRequests += 1;
-    return new Response(JSON.stringify({
-      data: [{ id: 'test-model', model_name: 'test-model', downloaded: true }],
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    const snapshot = modelRows.map(model => ({ ...model }));
+    const gate = nextModelReadGate;
+    if (gate) {
+      nextModelReadGate = null;
+      gate.markStarted();
+      await gate.released;
+    } else {
+      await new Promise(resolve => setTimeout(resolve, 15));
+    }
+    return new Response(JSON.stringify({ data: snapshot }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
   }
 
-  if (target.endsWith('/api/v1/delete') && String(init.method || 'GET').toUpperCase() === 'POST') {
+  if (target.endsWith('/api/v1/pull') && method === 'POST') {
+    await new Promise(resolve => setTimeout(resolve, 15));
+    pullRequests += 1;
+    const body = typeof init.body === 'string'
+      ? JSON.parse(init.body)
+      : (init.body || {});
+    const name = String(body.model_name || '').trim();
+    if (name && !modelRows.some(model => model.model_name === name)) {
+      modelRows = [
+        ...modelRows,
+        { id: name, model_name: name, custom: true },
+      ];
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  if (target.endsWith('/api/v1/delete') && method === 'POST') {
+    await new Promise(resolve => setTimeout(resolve, 15));
     deleteRequests += 1;
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -111,7 +164,7 @@ global.fetch = async (url, init = {}) => {
     });
   }
 
-  throw new Error(`Unexpected request: ${String(init.method || 'GET')} ${target}`);
+  throw new Error(`Unexpected request: ${method} ${target}`);
 };
 
 async function waitFor(predicate, timeoutMs = 1500) {
@@ -168,6 +221,37 @@ async function waitFor(predicate, timeoutMs = 1500) {
     assert.equal(healthRequests, 5, 'a mutation during refresh must queue exactly one follow-up health request');
     assert.equal(modelRequests, 5, 'a mutation during refresh must queue exactly one follow-up registry request');
     assert.ok(notifications > 0, 'subscribers must receive canonical model-state updates');
+
+    const staleReadGate = holdNextModelsRead();
+    const staleModelsPromise = api.models(true);
+    await staleReadGate.started;
+
+    await api.registerModelDefinition('user.collection', { recipe: 'omni' });
+    assert.equal(pullRequests, 1, 'the collection registration must complete before verification');
+
+    const verifiedModels = await Promise.race([
+      api.models(true),
+      new Promise((_, reject) => setTimeout(
+        () => reject(new Error('Post-write model verification joined the stale request.')),
+        1000,
+      )),
+    ]);
+    assert.ok(
+      verifiedModels.data.some(model => model.model_name === 'user.collection'),
+      'post-registration verification must observe the persisted collection',
+    );
+
+    staleReadGate.release();
+    const staleModels = await staleModelsPromise;
+    assert.ok(
+      !staleModels.data.some(model => model.model_name === 'user.collection'),
+      'the controlled pre-write response must remain stale for the test',
+    );
+    await waitFor(() => api.modelStateSnapshot.refreshing === false);
+    assert.ok(
+      api.modelStateSnapshot.models.data.some(model => model.model_name === 'user.collection'),
+      'a late stale response must not overwrite post-write model state',
+    );
 
     unsubscribe();
     console.log('Model state deduplication checks passed.');

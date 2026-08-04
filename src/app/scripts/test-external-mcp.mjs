@@ -50,6 +50,29 @@ async function readJsonBody(req) {
 
 async function startHttpMcpServer() {
   const observedMethods = [];
+  const observedClientResponses = [];
+  const pendingClientResponses = new Map();
+  let initializeCount = 0;
+  let activeSessionId = '';
+  let expireNextToolCall = false;
+
+  function waitForClientResponse(id) {
+    const key = JSON.stringify(id);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingClientResponses.delete(key);
+        reject(new Error(`Timed out waiting for MCP client response ${key}.`));
+      }, 5000);
+      timer.unref();
+      pendingClientResponses.set(key, {
+        resolve(message) {
+          clearTimeout(timer);
+          resolve(message);
+        },
+      });
+    });
+  }
+
   const server = http.createServer(async (req, res) => {
     try {
       if (req.url !== '/mcp') {
@@ -57,7 +80,12 @@ async function startHttpMcpServer() {
         return;
       }
       if (req.method === 'DELETE') {
-        assert(req.headers['mcp-session-id'] === sessionId, 'DELETE did not carry the MCP session id.');
+        assert(activeSessionId, 'DELETE arrived without an active MCP session.');
+        assert(
+          req.headers['mcp-session-id'] === activeSessionId,
+          'DELETE did not carry the active MCP session id.',
+        );
+        activeSessionId = '';
         res.writeHead(204).end();
         return;
       }
@@ -67,17 +95,44 @@ async function startHttpMcpServer() {
       }
 
       const message = await readJsonBody(req);
-      observedMethods.push(message.method || '');
       const isInitialize = message.method === 'initialize';
       if (!isInitialize) {
-        assert(req.headers['mcp-session-id'] === sessionId, `${message.method} did not carry the MCP session id.`);
-        assert(req.headers['mcp-protocol-version'] === protocolVersion, `${message.method} did not carry MCP-Protocol-Version.`);
+        const label = message.method || 'JSON-RPC response';
+        assert(activeSessionId, `${label} arrived without an active session.`);
+        assert(
+          req.headers['mcp-session-id'] === activeSessionId,
+          `${label} did not carry the active MCP session id.`,
+        );
+        assert(
+          req.headers['mcp-protocol-version'] === protocolVersion,
+          `${label} did not carry MCP-Protocol-Version.`,
+        );
       }
 
+      const isClientResponse = !message.method
+        && message.id !== undefined
+        && (
+          Object.prototype.hasOwnProperty.call(message, 'result')
+          || Object.prototype.hasOwnProperty.call(message, 'error')
+        );
+      if (isClientResponse) {
+        observedClientResponses.push(message);
+        const key = JSON.stringify(message.id);
+        const pending = pendingClientResponses.get(key);
+        assert(pending, `Unexpected MCP client response id: ${key}`);
+        pendingClientResponses.delete(key);
+        pending.resolve(message);
+        res.writeHead(202).end();
+        return;
+      }
+
+      observedMethods.push(message.method || '');
       if (isInitialize) {
+        initializeCount += 1;
+        activeSessionId = `${sessionId}-${initializeCount}`;
         res.writeHead(200, {
           'Content-Type': 'application/json',
-          'Mcp-Session-Id': sessionId,
+          'Mcp-Session-Id': activeSessionId,
         });
         res.end(JSON.stringify({
           jsonrpc: '2.0',
@@ -97,14 +152,42 @@ async function startHttpMcpServer() {
       }
 
       if (message.method === 'tools/list') {
-        // Deliberately keep the SSE response open after the matching response.
-        // A correct Streamable HTTP client must return as soon as that event is
-        // received instead of waiting for the server to close the stream.
+        // Send a server request with the same id as the outstanding
+        // client request. Matching the id alone would misclassify it.
+        const pingResponse = waitForClientResponse(message.id);
+        const rootsRequestId = `server-roots-${initializeCount}-${message.id}`;
+        const rootsResponse = waitForClientResponse(rootsRequestId);
+
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
-          'Mcp-Session-Id': sessionId,
+          'Mcp-Session-Id': activeSessionId,
         });
+        res.write(`event: message\ndata: ${JSON.stringify({
+          jsonrpc: '2.0',
+          id: message.id,
+          method: 'ping',
+        })}\n\n`);
+        res.write(`event: message\ndata: ${JSON.stringify({
+          jsonrpc: '2.0',
+          id: rootsRequestId,
+          method: 'roots/list',
+          params: {},
+        })}\n\n`);
+
+        const [pingReply, rootsReply] = await Promise.all([
+          pingResponse,
+          rootsResponse,
+        ]);
+        assert(
+          pingReply.result && Object.keys(pingReply.result).length === 0,
+          'Client did not answer ping with an empty result.',
+        );
+        assert(
+          rootsReply.error?.code === -32601,
+          'Client did not reject an unsupported request with Method not found.',
+        );
+
         res.write(`event: message\ndata: ${JSON.stringify({
           jsonrpc: '2.0',
           id: message.id,
@@ -128,10 +211,18 @@ async function startHttpMcpServer() {
       }
 
       if (message.method === 'tools/call') {
+        if (expireNextToolCall) {
+          expireNextToolCall = false;
+          activeSessionId = '';
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'MCP session expired' }));
+          return;
+        }
+
         const text = String(message.params?.arguments?.text || '');
         res.writeHead(200, {
           'Content-Type': 'application/json',
-          'Mcp-Session-Id': sessionId,
+          'Mcp-Session-Id': activeSessionId,
         });
         res.end(JSON.stringify({
           jsonrpc: '2.0',
@@ -148,8 +239,12 @@ async function startHttpMcpServer() {
         error: { code: -32601, message: `Unsupported test method: ${message.method}` },
       }));
     } catch (error) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: String(error?.message || error) }));
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: String(error?.message || error) }));
+      } else {
+        res.destroy(error instanceof Error ? error : undefined);
+      }
     }
   });
 
@@ -163,6 +258,9 @@ async function startHttpMcpServer() {
   return {
     url: `http://127.0.0.1:${address.port}/mcp`,
     observedMethods,
+    observedClientResponses,
+    get initializeCount() { return initializeCount; },
+    expireCurrentSessionOnNextToolCall() { expireNextToolCall = true; },
     async close() {
       server.closeAllConnections?.();
       await new Promise(resolve => server.close(resolve));
@@ -210,6 +308,57 @@ try {
   assert(httpConnected.server?.connected === true, 'HTTP server did not reach connected state.');
   const httpResult = await verifyDiscoveredTool(httpServerId, 'http-echo:hello-mcp');
   console.log(`PASS HTTP: discovered ${httpResult.chatName} and received ${httpResult.text}`);
+
+  const initializeCountBeforeExpiry = httpMock.initializeCount;
+  httpMock.expireCurrentSessionOnNextToolCall();
+  let expiryError;
+  try {
+    await request(`/internal/mcp/servers/${httpServerId}/tools/call`, {
+      method: 'POST',
+      body: {
+        name: 'echo',
+        arguments: { text: 'expire-me' },
+        timeout_ms: 10000,
+      },
+    });
+  } catch (error) {
+    expiryError = error;
+  }
+  assert(
+    expiryError && /404|expired/i.test(String(expiryError.message)),
+    'Expired MCP session did not surface the HTTP 404.',
+  );
+
+  const recoveredCall = await request(
+    `/internal/mcp/servers/${httpServerId}/tools/call`,
+    {
+      method: 'POST',
+      body: {
+        name: 'echo',
+        arguments: { text: 'after-expiry' },
+        timeout_ms: 10000,
+      },
+    },
+  );
+  assert(
+    textResult(recoveredCall.result) === 'http-echo:after-expiry',
+    'Client did not recover by establishing a new MCP session.',
+  );
+  assert(
+    httpMock.initializeCount > initializeCountBeforeExpiry,
+    'Expired session was reused instead of reinitializing.',
+  );
+  assert(
+    httpMock.observedClientResponses.some(
+      message => message.result && Object.keys(message.result).length === 0,
+    ),
+    'HTTP mock did not observe the client ping response.',
+  );
+  assert(
+    httpMock.observedClientResponses.some(message => message.error?.code === -32601),
+    'HTTP mock did not observe Method not found for an unsupported server request.',
+  );
+  console.log('PASS HTTP: server requests are answered and expired sessions recover on the next call.');
 
   await request('/internal/mcp/servers', {
     method: 'POST',
