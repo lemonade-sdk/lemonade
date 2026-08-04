@@ -618,18 +618,22 @@ json LlamaCppServer::normalize_response_model(json response, const json& request
     return response;
 }
 
-json LlamaCppServer::chat_completion(const json& request) {
+json LlamaCppServer::chat_completion(const json& request, std::function<bool()> cancel_checker) {
     return normalize_response_model(
         forward_request("/v1/chat/completions",
                         llamacpp::sanitize_tool_schema_limits(
-                            JsonUtils::with_legacy_max_tokens_alias(request))),
+                            JsonUtils::with_legacy_max_tokens_alias(request)),
+                        0,
+                        cancel_checker),
         request);
 }
 
-json LlamaCppServer::completion(const json& request) {
+json LlamaCppServer::completion(const json& request, std::function<bool()> cancel_checker) {
     return normalize_response_model(
         forward_request("/v1/completions",
-                        JsonUtils::with_legacy_max_tokens_alias(request)),
+                        JsonUtils::with_legacy_max_tokens_alias(request),
+                        0,
+                        cancel_checker),
         request);
 }
 
@@ -653,10 +657,48 @@ json LlamaCppServer::tokenize(const json& request_body) {
     return forward_request("/tokenize", request_body);
 }
 
-json LlamaCppServer::responses(const json& request) {
+void LlamaCppServer::abort_request(const std::string& /*request_id*/, int slot_id) {
+    if (!is_backend_alive()) return;
+    std::string base_url = get_base_url();
+
+    auto cancel_slot = [this, &base_url](int target_slot_id) {
+        try {
+            std::string url = base_url + "/slots/" + std::to_string(target_slot_id) + "?action=cancel";
+            auto res = utils::HttpClient::post(url, "{}", {}, 5, utils::HttpSecurityPolicy::TrustedLoopback);
+            LOG(INFO, "LlamaCppServer") << "Aborted slot " << target_slot_id << " (HTTP " << res.status_code << ")" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "LlamaCppServer") << "Failed to cancel slot " << target_slot_id << ": " << e.what() << std::endl;
+        }
+    };
+
+    if (slot_id >= 0) {
+        cancel_slot(slot_id);
+    } else {
+        try {
+            std::string url = base_url + "/slots";
+            auto res = utils::HttpClient::get(url, {}, 5, utils::HttpSecurityPolicy::TrustedLoopback);
+            if (res.status_code == 200) {
+                json slots = json::parse(res.body, nullptr, false);
+                if (slots.is_array()) {
+                    for (const auto& slot : slots) {
+                        if (slot.contains("id") && slot.contains("is_processing") && slot["is_processing"].get<bool>()) {
+                            cancel_slot(slot["id"].get<int>());
+                        }
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            LOG(WARNING, "LlamaCppServer") << "Failed to query /slots for cancellation: " << e.what() << std::endl;
+        }
+    }
+}
+
+json LlamaCppServer::responses(const json& request, std::function<bool()> cancel_checker) {
     return normalize_response_model(
         forward_request("/v1/responses",
-                        llamacpp::sanitize_tool_schema_limits(request)),
+                        llamacpp::sanitize_tool_schema_limits(request),
+                        0,
+                        cancel_checker),
         request);
 }
 

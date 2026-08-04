@@ -31,9 +31,9 @@ public:
     bool downsize() override;
 
     // ICompletionServer implementation
-    json chat_completion(const json& request) override;
-    json completion(const json& request) override;
-    json responses(const json& request) override;
+    json chat_completion(const json& request, std::function<bool()> cancel_checker = nullptr) override;
+    json completion(const json& request, std::function<bool()> cancel_checker = nullptr) override;
+    json responses(const json& request, std::function<bool()> cancel_checker = nullptr) override;
 
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,
@@ -41,6 +41,8 @@ public:
                                    bool sse = true,
                                    long timeout_seconds = 0,
                                    TelemetryCallback telemetry_callback = nullptr) override;
+
+    void abort_request(const std::string& request_id = "", int slot_id = -1) override;
 
     // IEmbeddingsServer implementation
     json embeddings(const json& request) override;

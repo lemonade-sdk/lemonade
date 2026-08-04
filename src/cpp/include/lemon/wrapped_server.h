@@ -345,16 +345,33 @@ public:
         // No-op by default
     }
 
+    // Abort an active in-flight request on this backend (e.g. client disconnect).
+    virtual void abort_request(const std::string& /*request_id*/ = "", int /*slot_id*/ = -1) {
+        // No-op by default for backends without explicit abort endpoints
+    }
+
     // Default to an "unsupported" error so non-chat backends (TTS, image,
     // transcription) inherit a sensible response instead of stubbing each one.
     virtual json chat_completion(const json& request) override {
         return unsupported_capability_error("chat completion");
     }
+    virtual json chat_completion(const json& request, std::function<bool()> cancel_checker) {
+        (void)cancel_checker;
+        return chat_completion(request);
+    }
     virtual json completion(const json& request) override {
         return unsupported_capability_error("text completion");
     }
+    virtual json completion(const json& request, std::function<bool()> cancel_checker) {
+        (void)cancel_checker;
+        return completion(request);
+    }
     virtual json responses(const json& request) {
         return unsupported_capability_error("responses");
+    }
+    virtual json responses(const json& request, std::function<bool()> cancel_checker) {
+        (void)cancel_checker;
+        return responses(request);
     }
 
     // Descriptor association (set by the backend registry at create() time). The
@@ -491,14 +508,18 @@ protected:
     void set_watchdog_health_endpoint(const std::string& endpoint);
 
     // Common method to forward requests to the wrapped server (non-streaming)
-    json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = 0);
+    json forward_request(const std::string& endpoint,
+                         const json& request,
+                         long timeout_seconds = 0,
+                         std::function<bool()> cancel_checker = nullptr);
 
     json forward_get_request(const std::string& endpoint, long timeout_seconds = 0);
 
     // Forward multipart form data to the wrapped server
     json forward_multipart_request(const std::string& endpoint,
                                    const std::vector<utils::MultipartField>& fields,
-                                   long timeout_seconds = 0);
+                                   long timeout_seconds = 0,
+                                   std::function<bool()> cancel_checker = nullptr);
 
     // Validate that the process is running (platform-agnostic check)
     bool is_process_running() const;
