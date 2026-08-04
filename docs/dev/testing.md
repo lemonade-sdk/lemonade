@@ -70,7 +70,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Changes API key authentication | `test/server_cli_apikey.py`, `test/server_websocket_auth.py` |
 | Adds pure C++ logic (parsers, arg resolvers, utilities) | `test/cpp/test_<thing>.cpp`, registered via `register_cpp_ci_test()` in `CMakeLists.txt` |
 | Changes `server_models.json` | Update `test/utils/test_models.py` and `test/utils/capabilities.py` if tests reference the affected models |
-| Changes the desktop or web UI | `npm run typecheck` must pass; add a `test/app/*.test.cjs` regression test where practical |
+| Changes the desktop or web UI | `npm run typecheck` must pass; add a `test/app/app-regression/*.test.cjs` regression test where practical |
 | Fixes a bug | A numbered regression test in whichever suite above owns the surface |
 | Changes a persisted JSON format | A schema-version assertion in the owning suite, so accidental format bumps are caught |
 | Docs only | No tests; `markdown-link-check` must pass |
@@ -79,7 +79,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 
 ## Running Tests Locally
 
-Most Python suites expect a server already running on port `13305` (override with `LEMONADE_TEST_PORT`); they do not start one. Exceptions like `test/server_jobs.py` and `test/server_cli2.py` launch their own `lemond` from the build directory.
+Most Python suites expect a server already running on port `13305` (override with `LEMONADE_TEST_PORT`); they do not start one. That includes `test/server_cli2.py`, which fails fast in `setUpClass` when no server is reachable. Exceptions like `test/server_jobs.py` launch their own `lemond` from the build directory.
 
 ```bash
 pip install -r test/requirements.txt
@@ -90,11 +90,20 @@ python test/server_llm.py --wrapped-server llamacpp --backend vulkan
 
 The `lemonade` CLI binary is auto-discovered from your CMake build directory; override with `--cli-binary`.
 
-C++ unit tests — configure the build first (`./setup.sh` on Linux/macOS, `./setup.ps1` on Windows) if you haven't already:
+C++ unit tests — configure the build first (`./setup.sh` on Linux/macOS, `./setup.ps1` on Windows) if you haven't already.
+
+Linux / macOS:
 
 ```bash
 cmake --build --preset default --target cpp-ci-tests
 ctest --test-dir build -L "^cpp-ci$" --output-on-failure
+```
+
+Windows (use the preset `setup.ps1` configured — `windows` for VS 2022, `vs18` for VS 2026; Visual Studio builds are multi-config, so `ctest` needs `-C Release`):
+
+```powershell
+cmake --build --preset windows --target cpp-ci-tests
+ctest --test-dir build -C Release -L "^cpp-ci$" --output-on-failure
 ```
 
 App typecheck and regression tests:
@@ -116,7 +125,7 @@ python test/test_schema_lock.py
 
 ## Writing a Good Test
 
-- Server integration suites (`test/server_endpoints.py`, `test/server_llm.py`, and most other `test/server_*.py` files) extend `ServerTestBase` (`test/utils/server_base.py`) and end with `run_server_tests(...)`. Suites that manage their own `lemond` processes (`test/server_jobs.py`, `test/server_cli2.py`) and pure Python unit, fixture, and schema tests (`test/test_routing_fixtures.py`, `test/test_schema_lock.py`) are plain `unittest.TestCase` classes.
+- Server integration suites (`test/server_endpoints.py`, `test/server_llm.py`, and most other `test/server_*.py` files) extend `ServerTestBase` (`test/utils/server_base.py`) and end with `run_server_tests(...)`. Suites that manage their own `lemond` processes (`test/server_jobs.py`), suites that drive the CLI against a persistent external server (`test/server_cli2.py`), and pure Python unit, fixture, and schema tests (`test/test_routing_fixtures.py`, `test/test_schema_lock.py`) are plain `unittest.TestCase` classes.
 - Test methods are numbered to enforce order: `test_020_...`, with letter suffixes to insert between existing numbers (`test_021a_...`). Follow the natural sequence of the suite.
 - Use the real client SDKs (`openai`, `ollama`) rather than raw HTTP where a suite is proving API compatibility.
 - Gate hardware- or backend-specific tests with `@skip_if_unsupported` from `test/utils/capabilities.py`. These run on the self-hosted hardware runners and skip elsewhere.
