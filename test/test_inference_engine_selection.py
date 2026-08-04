@@ -222,6 +222,12 @@ class TestMappingIntegrity(unittest.TestCase):
         with self.assertRaises(SystemExit):
             sel.validate_mapping(broken)
 
+    def test_validate_mapping_catches_a_leg_name_that_breaks_the_output(self):
+        broken = copy.deepcopy(MATRIX)
+        broken["exe"][0]["name"] = "llamacpp\nrun_exe=false"
+        with self.assertRaises(SystemExit):
+            sel.validate_mapping(broken)
+
     def test_validate_mapping_catches_an_unreachable_leg(self):
         broken = copy.deepcopy(MATRIX)
         broken["exe"].append(dict(broken["exe"][0], name="brand-new-leg"))

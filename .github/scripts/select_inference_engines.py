@@ -74,7 +74,9 @@ BACKEND_DIR_TO_ENGINES = {
     "moonshine": ["moonshine"],
     "onnxruntime": ["classify-onnxruntime", "router-onnxruntime"],
     # The omni collection bundles an llamacpp planner with SD-Turbo, Whisper,
-    # and kokoro components, so each of those reaches the omni leg too.
+    # and kokoro components, so each of those reaches the omni leg too. That
+    # component list lives in the collection manifest on Hugging Face, not in
+    # this repo, so nothing here catches it being re-composed.
     "sdcpp": ["stable-diffusion", "omni"],
     "thinksound": ["audio-gen-thinksound"],
     "acestep": ["audio-gen-acestep"],
@@ -174,6 +176,11 @@ def validate_mapping(matrix):
         by_backend.update(engines)
 
     problems = set()
+    # `selected` is a space-joined line in $GITHUB_OUTPUT, so whitespace in a
+    # leg name would corrupt it — or append another key entirely.
+    for name in all_engines:
+        if not name or any(char.isspace() for char in name):
+            problems.add(f"matrix leg name {name!r} must be non-empty and unspaced")
     for name in by_backend - all_engines:
         problems.add(f"a backend rule selects unknown engine {name!r}")
     for name in all_engines - by_backend:
