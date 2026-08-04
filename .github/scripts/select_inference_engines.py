@@ -5,7 +5,12 @@ Actions outputs (exe_matrix, deb_matrix, run_exe, run_deb, run_dmg, selected).
 
 Classification is conservative: a file selects nothing only if it matches an
 explicit safe rule, and any file that matches no rule at all selects every
-engine. Engine-specific rules select just that engine's legs.
+engine — including under .github/. Engine-specific rules select just that
+engine's legs.
+
+This runs from the PR head, so a PR that edits this script also changes its own
+gating. That is accepted: fork PRs get a read-only token here, and the repo
+requires review, so a self-skipping rewrite has to get past a human either way.
 """
 
 import argparse
@@ -16,10 +21,10 @@ import sys
 WORKFLOW_FILE = ".github/workflows/cpp_server_build_test_release.yml"
 BACKENDS_DIR = "src/cpp/server/backends/"
 
+# fnmatch's "*" spans "/", so these match at any depth.
 SAFE_PATTERNS = [
     "docs/*",
     "*.md",
-    "**/*.md",
     "mkdocs.yml",
     "examples/*",
     "src/app/*",
@@ -27,12 +32,15 @@ SAFE_PATTERNS = [
     "LICENSE",
 ]
 
-# .github/ paths that DO affect inference tests; any other .github/ file is safe.
-GITHUB_UNSAFE_PATTERNS = [
-    WORKFLOW_FILE,
-    ".github/actions/*",
-    ".github/inference-matrix.json",
-    ".github/scripts/*",
+# Everything under .github/ that cannot reach an inference job. Anything else
+# there — this workflow, the matrix, composite actions, this script — is
+# unrecognized and therefore selects every engine.
+GITHUB_SAFE_PATTERNS = [
+    ".github/workflows/*",
+    ".github/ISSUE_TEMPLATE/*",
+    ".github/CODEOWNERS",
+    ".github/dependabot.yml",
+    ".github/runners.json",
 ]
 
 BACKEND_DIR_TO_ENGINES = {
@@ -66,7 +74,7 @@ TEST_SCRIPT_TO_ENGINES = {
     "test/server_3d.py": ["3d-trellis"],
 }
 
-DMG_ENGINES = {"llamacpp", "omni", "whisper", "text-to-speech"}
+DMG_ENGINES = {"llamacpp", "whisper", "text-to-speech"}
 
 ALL = "ALL"
 
@@ -77,10 +85,10 @@ def _matches_any(path, patterns):
 
 def classify_file(path):
     """Return the engines a single changed file selects: [], a list, or ALL."""
+    if path == WORKFLOW_FILE:
+        return ALL
     if path.startswith(".github/"):
-        if _matches_any(path, GITHUB_UNSAFE_PATTERNS):
-            return ALL
-        return []
+        return [] if _matches_any(path, GITHUB_SAFE_PATTERNS) else ALL
     if _matches_any(path, SAFE_PATTERNS):
         return []
     if path.startswith(BACKENDS_DIR):

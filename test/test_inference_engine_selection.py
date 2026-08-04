@@ -9,8 +9,11 @@ Run with: python -m pytest test/test_inference_engine_selection.py
 
 import importlib.util
 import json
+import re
 import unittest
 from pathlib import Path
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT_PATH = REPO_ROOT / ".github" / "scripts" / "select_inference_engines.py"
@@ -19,6 +22,8 @@ MATRIX_PATH = REPO_ROOT / ".github" / "inference-matrix.json"
 spec = importlib.util.spec_from_file_location("select_inference_engines", SCRIPT_PATH)
 sel = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sel)
+
+WORKFLOW_PATH = REPO_ROOT / sel.WORKFLOW_FILE
 
 with open(MATRIX_PATH, encoding="utf-8") as f:
     MATRIX = json.load(f)
@@ -46,7 +51,11 @@ class TestSafeFiles(unittest.TestCase):
             "src/web-app/package.json",
             "LICENSE",
             ".github/workflows/launchpad-ppa.yml",
+            ".github/workflows/mlc_config.json",
             ".github/runners.json",
+            ".github/CODEOWNERS",
+            ".github/dependabot.yml",
+            ".github/ISSUE_TEMPLATE/bug-report.yml",
         ]:
             outputs = outputs_for([path])
             self.assertEqual(outputs["run_exe"], "false", path)
@@ -120,6 +129,7 @@ class TestRunAllFallback(unittest.TestCase):
             ".github/actions/setup-venv/action.yml",
             ".github/inference-matrix.json",
             ".github/scripts/select_inference_engines.py",
+            ".github/some_new_thing.yml",
             "some/new/unknown_path.txt",
         ]:
             self.assert_all(outputs_for([path]))
@@ -166,6 +176,32 @@ class TestMappingIntegrity(unittest.TestCase):
 
     def test_dmg_engines_exist_in_matrix(self):
         self.assertEqual(sel.DMG_ENGINES - ALL_ENGINE_NAMES, set())
+
+    def test_dmg_engines_match_the_dmg_job(self):
+        """DMG_ENGINES is hand-maintained; tie it to what the job really runs."""
+        with open(WORKFLOW_PATH, encoding="utf-8") as f:
+            workflow = yaml.safe_load(f)
+        steps = workflow["jobs"]["test-dmg-inference"]["steps"]
+        scripts = {
+            f"test/{name}"
+            for step in steps
+            for name in re.findall(r"test/(server_\w+\.py)", step.get("run", ""))
+        }
+        self.assertTrue(scripts, "no test scripts found in test-dmg-inference")
+        reachable = set()
+        for script in sorted(scripts):
+            self.assertIn(script, sel.TEST_SCRIPT_TO_ENGINES)
+            engines = set(sel.TEST_SCRIPT_TO_ENGINES[script])
+            self.assertTrue(
+                engines & sel.DMG_ENGINES,
+                f"{script} runs on .dmg but none of {sorted(engines)} is in DMG_ENGINES",
+            )
+            reachable |= engines
+        self.assertEqual(
+            sel.DMG_ENGINES - reachable,
+            set(),
+            "DMG_ENGINES lists engines the .dmg job never runs",
+        )
 
     def test_matrix_legs_keep_required_fields(self):
         for legs in MATRIX.values():

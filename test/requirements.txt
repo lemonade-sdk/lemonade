@@ -28,3 +28,7 @@ ollama
 
 # JSON Schema validator (required for routing policy / decision fixture tests)
 jsonschema
+
+# YAML parser (required for the inference engine selection tests, which read
+# the CI workflow to check the .dmg job and its engine list agree)
+pyyaml
