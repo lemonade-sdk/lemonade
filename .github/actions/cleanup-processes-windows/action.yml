@@ -212,32 +212,38 @@ runs:
             "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*"
         )
 
-        $productCode = $null
-        $foundProduct = $null
+        # A single stale ARP entry (uninstallable, exit code 1605) must not shadow
+        # a real registration of the same DisplayName, so collect every GUID-keyed
+        # match across all hives instead of stopping at the first one.
+        $foundProducts = @()
 
         foreach ($path in $uninstallPaths) {
             $subkeys = Get-ItemProperty $path -ErrorAction SilentlyContinue
             foreach ($key in $subkeys) {
-                if ($key.DisplayName -eq $productName) {
-                    $foundProduct = $key
-                    $productCode = $key.PSChildName
-                    break
+                if ($key.DisplayName -eq $productName -and $key.PSChildName -like "{*}") {
+                    $foundProducts += $key
                 }
             }
-            if ($productCode) { break }
         }
 
-        if ($productCode) {
-            Write-Host "Found installed product: $($foundProduct.DisplayName) (Version: $($foundProduct.DisplayVersion))" -ForegroundColor Green
-            Write-Host "Product Code: $productCode" -ForegroundColor Gray
+        if ($foundProducts.Count -gt 0) {
+            foreach ($foundProduct in $foundProducts) {
+                $productCode = $foundProduct.PSChildName
+                Write-Host "Found installed product: $($foundProduct.DisplayName) (Version: $($foundProduct.DisplayVersion))" -ForegroundColor Green
+                Write-Host "Product Code: $productCode" -ForegroundColor Gray
 
-            Write-Host "Uninstalling..." -ForegroundColor Yellow
-            $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x $productCode /qn" -Wait -PassThru
+                Write-Host "Uninstalling..." -ForegroundColor Yellow
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x $productCode /qn" -Wait -PassThru
 
-            if ($proc.ExitCode -eq 0) {
-                Write-Host "Uninstall successful!" -ForegroundColor Green
-            } else {
-                Write-Host "Uninstall failed with exit code $($proc.ExitCode)" -ForegroundColor Red
+                if ($proc.ExitCode -eq 0) {
+                    Write-Host "Uninstall successful!" -ForegroundColor Green
+                } elseif ($proc.ExitCode -eq 1605) {
+                    Write-Host "Windows Installer reports product not installed (1605). Removing stale ARP registry key..." -ForegroundColor Yellow
+                    Remove-Item -Path $foundProduct.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+                    Write-Host "Stale ARP registry key removed: $productCode" -ForegroundColor Green
+                } else {
+                    Write-Host "Uninstall failed with exit code $($proc.ExitCode)" -ForegroundColor Red
+                }
             }
         } else {
             Write-Host "Product '$productName' not found installed via MSI in registry." -ForegroundColor Gray
