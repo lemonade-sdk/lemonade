@@ -256,6 +256,9 @@ input, textarea {
 }
 
 .titlebar__search kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 2px;
   border: 0;
   color: var(--text-tertiary);
