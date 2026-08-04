@@ -60,7 +60,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Touches the Anthropic-compatible API | `test/test_ollama.py` (despite the name, this suite owns both the Ollama- and Anthropic-compatible API tests) |
 | Touches the MCP gateway | `test/server_mcp.py` |
 | Changes audio transcription | `test/server_whisper.py` or `test/server_moonshine.py` |
-| Changes text-to-speech | `test/server_tts.py` |
+| Changes text-to-speech | `test/server_tts.py` or `test/server_tts_openmoss.py` |
 | Changes image generation | `test/server_sd.py` — a new device is a flag on this suite, not a new file |
 | Changes the router or routing policies | `test/cpp/test_routing_*.cpp` and `test/server_router.py`; keep `test/test_schema_lock.py` and `test/test_routing_fixtures.py` green |
 | Changes the jobs engine | `test/cpp/test_job_*.cpp` and `test/server_jobs.py` |
@@ -128,7 +128,7 @@ python test/test_schema_lock.py
 - Server integration suites (`test/server_endpoints.py`, `test/server_llm.py`, and most other `test/server_*.py` files) extend `ServerTestBase` (`test/utils/server_base.py`) and end with `run_server_tests(...)`. Suites that manage their own `lemond` processes (`test/server_jobs.py`), suites that drive the CLI against a persistent external server (`test/server_cli2.py`), and pure Python unit, fixture, and schema tests (`test/test_routing_fixtures.py`, `test/test_schema_lock.py`) are plain `unittest.TestCase` classes.
 - Test methods are numbered to enforce order: `test_020_...`, with letter suffixes to insert between existing numbers (`test_021a_...`). Follow the natural sequence of the suite.
 - Use the real client SDKs (`openai`, `ollama`) rather than raw HTTP where a suite is proving API compatibility.
-- Gate hardware- or backend-specific tests with `@skip_if_unsupported` from `test/utils/capabilities.py`. These run on the self-hosted hardware runners and skip elsewhere.
+- Gate hardware- or backend-specific tests with `@skip_if_unsupported` from `test/utils/capabilities.py`. The decorator skips based on the declared capabilities of the configured `--wrapped-server` / `--backend`; in practice these tests execute on the self-hosted hardware runners and skip elsewhere.
 - Mock external services in-process (for example, the mock cloud provider) so tests run in CI without secrets or network dependencies.
 - Clean up after yourself: restore environment variables with `self.addCleanup(...)`, terminate any subprocess the test starts, and never leave a server running on a hardcoded port.
 
