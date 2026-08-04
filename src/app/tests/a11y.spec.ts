@@ -34,10 +34,10 @@ async function navigateToView(page: Page, label: string): Promise<void> {
 }
 
 async function navigateToMonitorSection(page: Page, label: 'Performance' | 'Telemetry' | 'Logs'): Promise<void> {
-  await navigateToView(page, 'Dashboard');
+  await navigateToView(page, 'Monitor');
   await page.waitForSelector('[data-view="dashboard"]');
   if (label !== 'Performance') {
-    await page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: label, exact: true }).click();
+    await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: label, exact: true }).click();
     await page.waitForTimeout(300);
   }
 }
@@ -147,7 +147,7 @@ test.describe('Accessibility — axe-core automated scans', () => {
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 
-  test('A05 — Dashboard performance passes WCAG 2.1 AA', async ({ page }) => {
+  test('A05 — Monitor performance passes WCAG 2.1 AA', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToMonitorSection(page, 'Performance');
@@ -272,7 +272,7 @@ test.describe('Accessibility — keyboard navigation', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    const knownNavLabels = ['Chat', 'Models', 'Backends', 'Dashboard', 'Settings'];
+    const knownNavLabels = ['Chat', 'Models', 'Backends', 'Monitor', 'Settings'];
     const encountered: string[] = [];
 
     for (let i = 0; i < 12; i++) {
@@ -1471,6 +1471,57 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     expect(serious, formatViolations(serious)).toHaveLength(0);
   });
 
+  test('A88b — external MCP setup defaults to an HTTP endpoint and keeps local processes available', async ({ page }) => {
+    await page.route('**/api/v1/health**', route =>
+      route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0', high_security: true } }),
+    );
+    await page.route(/\/internal\/mcp\/servers(?:\?.*)?$/, route =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ servers: [] }) }),
+    );
+    await page.route(/\/mcp(?:\?.*)?$/, async route => {
+      const body = route.request().postDataJSON() as { method?: string; id?: number };
+      if (body?.method === 'initialize') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: body.id,
+            result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'lemonade-mcp', version: '1.0.0' } },
+          }),
+        });
+      } else if (body?.method === 'notifications/initialized') {
+        await route.fulfill({ status: 202, body: '' });
+      } else {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ jsonrpc: '2.0', id: body?.id, result: { tools: MCP_TOOLS } }),
+        });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await navigateToConnectSection(page, 'MCP gateway');
+    await page.getByRole('button', { name: 'Add server', exact: true }).click();
+
+    const form = page.locator('.mcp-server-form');
+    await expect(form).toBeVisible();
+    await expect(form.getByRole('radio', { name: /HTTP endpoint/i })).toBeChecked();
+    await expect(form.getByPlaceholder('http://127.0.0.1:3000/mcp')).toBeVisible();
+    await expect(form.getByLabel('Command', { exact: true })).toHaveCount(0);
+    await expect(form.getByRole('button', { name: 'Test connection', exact: true })).toBeVisible();
+
+    await form.getByRole('radio', { name: /Local process/i }).check();
+    await expect(form.getByLabel('Command', { exact: true })).toBeVisible();
+    await expect(form.getByPlaceholder('http://127.0.0.1:3000/mcp')).toHaveCount(0);
+
+    const results = await new AxeBuilder({ page })
+      .withTags([...WCAG_TAGS])
+      .disableRules(['color-contrast'])
+      .analyze();
+    const serious = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical');
+    expect(serious, formatViolations(serious)).toHaveLength(0);
+  });
+
   test('A89 — MCP handshake: initialize→notifications/initialized→tools/list in order with correct params and MCP-Protocol-Version + Mcp-Session-Id headers', async ({ page }) => {
     // Capture all /mcp requests in order so we can assert the sequence.
     type CapturedRequest = {
@@ -1528,7 +1579,9 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     const initReq = captured[0];
     expect(initReq.method).toBe('initialize');
     const initParams = (initReq.body as { params?: Record<string, unknown> }).params ?? {};
-    expect(initParams['protocolVersion']).toBe('2025-06-18');
+    // Advertise the current client revision; the mock server negotiates the
+    // session down to 2025-06-18, which subsequent request headers must use.
+    expect(initParams['protocolVersion']).toBe('2025-11-25');
     expect(initParams['capabilities']).toMatchObject({ tools: {} });
     const clientInfo = initParams['clientInfo'] as Record<string, string> | undefined;
     expect(clientInfo?.['name']).toBe('lemonade-gui3');
@@ -2208,7 +2261,7 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
 // fl0rianr (2026-06-25) posted a canonical 3-pane target: a NEW left NAVIGATION
 // rail (ModelNavRail) + the existing ModelListPanel (middle) + ModelDetailPanel
 // (right). The left rail surfaces filter dimensions — primary nav (All/
-// Downloaded/My Models/Favorites), collapsible Categories, a Backends select,
+// Downloaded/My Models/Favorites), collapsible Task chips, multi-select Backend chips,
 // collapsible Tags, and a Storage meter — all derived CLIENT-SIDE from the model
 // list (no lemond). Selecting any of them filters the middle list.
 // Range: A124–A136.
@@ -2226,7 +2279,7 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', downloaded: true, size: 8 },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
             { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
             { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
             { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },
@@ -2286,48 +2339,53 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect(await fav.getAttribute('aria-current')).toBe('true');
   });
 
-  // ── Categories (collapsible) ─────────────────────────────────────────────
+  // ── Task chips (collapsible multi-select) ─────────────────────────────────
 
-  test('A128 — Categories section header is a button with aria-expanded that toggles the list', async ({ page }) => {
+  test('A128 — Task section header is a button with aria-expanded that toggles the list', async ({ page }) => {
     await goToModelsWithNavMock(page);
-    const toggle = page.locator('.model-nav-rail__section-toggle').filter({ hasText: 'Categories' });
+    const toggle = page.locator('.model-nav-rail__section-toggle').filter({ hasText: 'Task' });
     expect(await toggle.getAttribute('aria-expanded')).toBe('true');
-    await expect(page.locator('#nav-categories')).toBeVisible();
+    await expect(page.locator('#nav-tasks')).toBeVisible();
     await toggle.click();
     await page.waitForTimeout(100);
     expect(await toggle.getAttribute('aria-expanded')).toBe('false');
-    await expect(page.locator('#nav-categories')).toBeHidden();
+    await expect(page.locator('#nav-tasks')).toBeHidden();
   });
 
-  test('A129 — selecting a category filters the middle list (Audio → whisper only)', async ({ page }) => {
+  test('A129 — selecting tasks is multi-select and filters the middle list', async ({ page }) => {
     await goToModelsWithNavMock(page);
-    const audio = page.locator('.model-nav-rail__cat-item').filter({ hasText: 'Audio' });
+    const audio = page.locator('.model-nav-rail__task-chip').filter({ hasText: /^Audio/ });
+    const image = page.locator('.model-nav-rail__task-chip').filter({ hasText: /^Image/ });
     await audio.click();
+    await image.click();
     await page.waitForTimeout(150);
-    expect(await audio.getAttribute('aria-current')).toBe('true');
+    expect(await audio.getAttribute('aria-pressed')).toBe('true');
+    expect(await image.getAttribute('aria-pressed')).toBe('true');
     const rows = page.locator('.model-list-item');
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText('Whisper');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.filter({ hasText: 'Whisper' })).toHaveCount(1);
+    await expect(rows.filter({ hasText: 'SDXL' })).toHaveCount(1);
   });
 
-  // ── Backends select ──────────────────────────────────────────────────────
+  // ── Backends multi-select chips ──────────────────────────────────────────
 
-  test('A130 — Backends select is labelled and filters the list by recipe', async ({ page }) => {
+  test('A130 — Backend chips support independent multi-selection', async ({ page }) => {
     await goToModelsWithNavMock(page);
-    const select = page.locator('#nav-backend-select');
-    // Associated label.
-    const labelText = await page.locator('label[for="nav-backend-select"]').textContent();
-    expect((labelText ?? '').toLowerCase()).toContain('backend');
-    await select.selectOption('whispercpp');
+    const llama = page.locator('.model-nav-rail__backend-chip').filter({ hasText: 'llama.cpp' });
+    const whisper = page.locator('.model-nav-rail__backend-chip').filter({ hasText: 'Whisper' });
+    await llama.click();
+    await whisper.click();
+    expect(await llama.getAttribute('aria-pressed')).toBe('true');
+    expect(await whisper.getAttribute('aria-pressed')).toBe('true');
     await page.waitForTimeout(150);
-    await expect(page.locator('.model-list-item')).toHaveCount(1);
+    await expect(page.locator('.model-list-item')).toHaveCount(3);
   });
 
   // ── Tags (collapsible chips) ─────────────────────────────────────────────
 
   test('A131 — Tags section uses aria-pressed chips that filter the list', async ({ page }) => {
     await goToModelsWithNavMock(page);
-    const llamaTag = page.locator('.model-nav-rail__tag').filter({ hasText: /^Llama$/ });
+    const llamaTag = page.locator('.model-nav-rail__tag-chip').filter({ hasText: /^Llama/ });
     await expect(llamaTag).toBeVisible();
     expect(await llamaTag.getAttribute('aria-pressed')).toBe('false');
     await llamaTag.click();
@@ -2336,6 +2394,31 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     const rows = page.locator('.model-list-item');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('Llama');
+  });
+
+
+  test('A131b — Recommended is a real metadata filter', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const recommended = page.locator('.model-nav-rail__tag-chip').filter({ hasText: /^Recommended/ });
+    await recommended.click();
+    await page.waitForTimeout(150);
+    expect(await recommended.getAttribute('aria-pressed')).toBe('true');
+    await expect(page.locator('.model-list-item')).toHaveCount(1);
+    await expect(page.locator('.model-list-item').first()).toContainText('Llama');
+  });
+
+  test('A131c — custom tags can be added, selected, and removed', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const input = page.locator('#nav-custom-tag');
+    await input.fill('tools');
+    await page.getByRole('button', { name: 'Add custom tag' }).click();
+    const custom = page.locator('.model-nav-rail__tag-chip').filter({ hasText: /^tools/ });
+    await expect(custom).toBeVisible();
+    expect(await custom.getAttribute('aria-pressed')).toBe('true');
+    await expect(page.locator('.model-list-item')).toHaveCount(1);
+    await expect(page.locator('.model-list-item').first()).toContainText('Llama');
+    await page.getByRole('button', { name: 'Remove custom tag tools' }).click();
+    await expect(custom).toHaveCount(0);
   });
 
   // ── Storage meter ────────────────────────────────────────────────────────
@@ -2440,7 +2523,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', downloaded: true, size: 8 },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
             { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
             { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
             { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },
@@ -2866,7 +2949,7 @@ test.describe('Chat toolbar accessibility', () => {
     await expect(page.getByRole('button', { name: 'Effective settings' })).toBeVisible();
   });
 
-  test('A187 — add menu exposes Lemonade tools and is keyboard-operable', async ({ page }) => {
+  test('A187 — add menu exposes one unified tools entry and is keyboard-operable', async ({ page }) => {
     await goToChatWithLoadedModel(page);
     const addBtn = page.getByRole('button', { name: /Add files, photos, or tools/i });
     await expect(addBtn).toBeVisible();
@@ -2876,9 +2959,9 @@ test.describe('Chat toolbar accessibility', () => {
     await expect(addBtn).toHaveAttribute('aria-expanded', 'true');
     const menu = page.getByRole('menu', { name: 'Add to chat' });
     await expect(menu).toBeVisible();
-    const lemonadeTools = page.getByRole('menuitem', { name: /Lemonade tools/i });
-    await expect(lemonadeTools).toBeVisible();
-    await lemonadeTools.focus();
+    const toolsEntry = page.getByRole('menuitem', { name: 'Tools', exact: true });
+    await expect(toolsEntry).toBeVisible();
+    await toolsEntry.focus();
     await page.keyboard.press('Space');
     const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
     await expect(dialog).toBeVisible();
@@ -2898,28 +2981,32 @@ test.describe('Chat toolbar accessibility', () => {
     await page.keyboard.press('Space');
     await expect(dialog).toHaveCount(0);
     await expect(menu).toBeVisible();
-    await expect(lemonadeTools).toBeVisible();
-    await expect(lemonadeTools).toBeFocused();
+    await expect(toolsEntry).toBeVisible();
+    await expect(toolsEntry).toBeFocused();
   });
 
-  test('A187b — external MCP entry opens the same selectable tools flow', async ({ page }) => {
+  test('A187b — external MCP remains selectable inside the unified tools flow', async ({ page }) => {
     await goToChatWithLoadedModel(page);
     const addBtn = page.getByRole('button', { name: /Add files, photos, or tools/i });
     await addBtn.click();
     const menu = page.getByRole('menu', { name: 'Add to chat' });
-    const externalMcp = page.getByRole('menuitem', { name: /External MCP servers/i });
-    await externalMcp.click();
-    await expect(page.getByRole('dialog', { name: 'Tools for this chat' })).toBeVisible();
+    const toolsEntry = page.getByRole('menuitem', { name: 'Tools', exact: true });
+    await toolsEntry.click();
+    const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
+    await expect(dialog).toBeVisible();
     await expect(menu).toHaveCount(0);
+    const externalTab = dialog.getByRole('tab', { name: 'External MCP servers', exact: true });
+    await externalTab.click();
+    await expect(externalTab).toHaveAttribute('aria-selected', 'true');
     await page.getByRole('button', { name: 'Back to add to chat options' }).click();
     await expect(menu).toBeVisible();
-    await expect(externalMcp).toBeVisible();
+    await expect(toolsEntry).toBeVisible();
   });
 
   test('A187c — MCP enablement selection persists when backing out and reopening the picker', async ({ page }) => {
     await goToChatWithLoadedModel(page);
     await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
-    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+    await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
 
     const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
     const enabled = dialog.getByRole('checkbox', { name: /Tools for this chat/i });
@@ -2928,7 +3015,7 @@ test.describe('Chat toolbar accessibility', () => {
     await expect(enabled).not.toBeChecked();
 
     await page.getByRole('button', { name: 'Back to add to chat options' }).click();
-    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+    await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Tools for this chat' })).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Tools for this chat' }).getByRole('checkbox', { name: /Tools for this chat/i })).not.toBeChecked();
   });
@@ -2979,7 +3066,7 @@ test.describe('Chat toolbar accessibility', () => {
 
     const openPicker = async () => {
       await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
-      await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+      await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
       return page.getByRole('dialog', { name: 'Tools for this chat' });
     };
     const dismissAddMenu = async () => {
@@ -3029,7 +3116,7 @@ test.describe('Chat toolbar accessibility', () => {
     });
     await goToChatWithLoadedModel(page);
     await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
-    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+    await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
     await expect(dialog.getByRole('checkbox', { name: /Tools for this chat/i })).not.toBeChecked();
     await page.getByRole('button', { name: 'Back to add to chat options' }).click();
@@ -3038,7 +3125,7 @@ test.describe('Chat toolbar accessibility', () => {
     await page.reload();
     await page.waitForSelector('.chat');
     await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
-    await page.getByRole('menuitem', { name: /Lemonade tools/i }).click();
+    await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Tools for this chat' }).getByRole('checkbox', { name: /Tools for this chat/i })).toBeChecked();
   });
 });

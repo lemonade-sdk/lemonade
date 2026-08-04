@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult } from '../api';
+import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow } from '../api';
 import api from '../api';
 import { capabilityFromModelInfo, capabilityLabel } from '../modelCapabilities';
 import {
@@ -25,6 +25,12 @@ import {
   WorkspaceMetadataChip,
 } from './WorkspacePanels';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
+import { TTS_VOICES } from '../features/audio/ttsSettings';
+import {
+  describeRouterModelConnection,
+  providerEndpointNeedsInsecureOptIn,
+  validateProviderEndpoint,
+} from '../features/router/routerConnections';
 
 /* ── Helpers (local copies to keep component self-contained) ──── */
 
@@ -92,6 +98,68 @@ function recipesForDisplay(model: ModelInfo | null | undefined): string[] {
     if (name && !out.includes(name)) out.push(name);
   }
   return out;
+}
+
+interface VoiceOption {
+  id: string;
+  label: string;
+}
+
+function voiceOptionsFromValue(value: unknown): VoiceOption[] {
+  const isArray = Array.isArray(value);
+  const rawEntries: Array<[string, unknown]> = isArray
+    ? value.map((item, index) => [String(index), item])
+    : value && typeof value === 'object'
+      ? Object.entries(value as Record<string, unknown>)
+      : [];
+
+  const options: VoiceOption[] = [];
+  for (const [fallbackId, item] of rawEntries) {
+    if (typeof item === 'string') {
+      const text = item.trim();
+      if (!text) continue;
+      options.push(isArray ? { id: text, label: text } : { id: fallbackId, label: text });
+      continue;
+    }
+    if (!item || typeof item !== 'object') continue;
+    const entry = item as Record<string, unknown>;
+    const id = String(entry.id ?? entry.value ?? entry.name ?? fallbackId).trim();
+    if (!id) continue;
+    const label = String(entry.label ?? entry.display_name ?? entry.name ?? id).trim() || id;
+    options.push({ id, label });
+  }
+  return options;
+}
+
+function knownVoiceOptionsForModel(model: ModelInfo): VoiceOption[] {
+  const modelRecord = model as Record<string, unknown>;
+  const recipes = Array.isArray(model.recipes) ? model.recipes : [];
+  const records = [
+    modelRecord,
+    modelRecord.recipe_options,
+    modelRecord.options,
+    modelRecord.tts,
+    ...recipes,
+  ].filter((value): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value));
+
+  const discovered: VoiceOption[] = [];
+  for (const record of records) {
+    for (const key of ['voices', 'available_voices', 'voice_options']) {
+      discovered.push(...voiceOptionsFromValue(record[key]));
+    }
+  }
+
+  if (discovered.length === 0 && recipesForDisplay(model).includes('kokoro')) {
+    discovered.push(...TTS_VOICES);
+  }
+
+  const seen = new Set<string>();
+  return discovered.filter(option => {
+    const normalized = option.id.toLowerCase();
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
 }
 
 function tuningValue(value: unknown): string {
@@ -948,9 +1016,12 @@ const ModelConfigurationTab: React.FC<{
     [model, serverDefaultCtxSize],
   );
   const recipeKeys = useMemo(() => tuningKeysForModel(model), [model]);
+  const knownVoiceOptions = useMemo(() => knownVoiceOptionsForModel(model), [model]);
+  const knownVoiceIds = useMemo(() => new Set(knownVoiceOptions.map(option => option.id.toLowerCase())), [knownVoiceOptions]);
 
   const [ctxSizeDraft, setCtxSizeDraft] = useState('');
   const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
+  const [customVoiceMode, setCustomVoiceMode] = useState(false);
 
   const loadSettingsDraftFromStore = useCallback(() => {
     const userTuning = loadModelTuning(name);
@@ -969,7 +1040,9 @@ const ModelConfigurationTab: React.FC<{
     const next = loadSettingsDraftFromStore();
     setCtxSizeDraft(next.ctxSize);
     setRecipeDraft(next.recipe);
-  }, [loadSettingsDraftFromStore]);
+    const storedVoice = next.recipe.voice || '';
+    setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
+  }, [knownVoiceIds, loadSettingsDraftFromStore]);
 
   useEffect(() => { loadFromStore(); }, [loadFromStore]);
   useEffect(() => { setNotice(null); }, [name]);
@@ -991,7 +1064,9 @@ const ModelConfigurationTab: React.FC<{
     const n = parseNumberOrUndefined(String(value ?? ''));
     return n !== undefined && n >= ctxMin ? n : undefined;
   };
-  const baseCtxSize = positiveCtxValue(baseTuning.recipe_options.ctx_size)
+  const loadedCtxSize = positiveCtxValue(loadedModel?.recipe_options?.ctx_size);
+  const baseCtxSize = loadedCtxSize
+    ?? positiveCtxValue(baseTuning.recipe_options.ctx_size)
     ?? positiveCtxValue(serverDefaultCtxSize)
     ?? 4096;
   const isAutoTuning = ctxSizeDraft === '-1';
@@ -1001,6 +1076,14 @@ const ModelConfigurationTab: React.FC<{
     currentCtxSize,
     Number(model?.max_context_window) || 131072,
   );
+  const stepContextSize = (direction: -1 | 1) => {
+    if (isAutoTuning) return;
+    const nextValue = Math.min(
+      ctxMax,
+      Math.max(ctxMin, currentCtxSize + direction * ctxStep),
+    );
+    setCtxSizeDraft(String(nextValue));
+  };
   const selectorKeys = recipeKeys.filter(key => BACKEND_TUNING_KEYS.has(key) || DEVICE_TUNING_KEYS.has(key));
   const argsKeys = recipeKeys.filter(key => ARGS_TUNING_KEYS.has(key));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
@@ -1046,6 +1129,7 @@ const ModelConfigurationTab: React.FC<{
     }
     setCtxSizeDraft('');
     setRecipeDraft({});
+    setCustomVoiceMode(false);
     setNotice('Load settings reset to built-in defaults.');
   };
 
@@ -1127,6 +1211,57 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
+    if (key === 'voice' && knownVoiceOptions.length > 0) {
+      const customVoiceSentinel = '__custom_voice__';
+      const isUnknownDraft = Boolean(draftValue && !knownVoiceIds.has(draftValue.toLowerCase()));
+      const showCustomVoice = customVoiceMode || isUnknownDraft;
+      const defaultVoice = optionalDisplayValue(baseValue);
+      return (
+        <div key={String(key)} className="detail-tuning__field detail-configuration__field">
+          <span id={`${fieldId}-label`}>{label}</span>
+          <select
+            id={fieldId}
+            className="select detail-configuration__select"
+            value={showCustomVoice ? customVoiceSentinel : draftValue}
+            aria-labelledby={`${fieldId}-label`}
+            onChange={event => {
+              const value = event.target.value;
+              if (value === customVoiceSentinel) {
+                setCustomVoiceMode(true);
+                setRecipeDraft(previous => ({
+                  ...previous,
+                  [String(key)]: previous[String(key)] && !knownVoiceIds.has(previous[String(key)].toLowerCase())
+                    ? previous[String(key)]
+                    : '',
+                }));
+                return;
+              }
+              setCustomVoiceMode(false);
+              setRecipeDraft(previous => ({ ...previous, [String(key)]: value }));
+            }}
+          >
+            <option value="">{defaultVoice ? `Model default (${defaultVoice})` : 'Model default'}</option>
+            {knownVoiceOptions.map(option => (
+              <option key={option.id} value={option.id}>{option.label}</option>
+            ))}
+            <option value={customVoiceSentinel}>Custom voice…</option>
+          </select>
+          {showCustomVoice && (
+            <input
+              id={`${fieldId}-custom`}
+              className="input detail-configuration__voice-custom"
+              type="text"
+              value={isUnknownDraft ? draftValue : ''}
+              placeholder="Enter custom voice ID"
+              aria-label="Custom voice ID"
+              onChange={event => setRecipeDraft(previous => ({ ...previous, [String(key)]: event.target.value }))}
+            />
+          )}
+          <small>Choose a known voice, or use a custom voice ID when the backend supports one.</small>
+        </div>
+      );
+    }
+
     if (ARGS_TUNING_KEYS.has(key)) {
       const hint = TUNING_FIELD_HINTS[key];
       const defaultPlaceholders: Partial<Record<keyof RecipeOptions, string>> = {
@@ -1196,19 +1331,39 @@ const ModelConfigurationTab: React.FC<{
             <div className="detail-configuration__context-card">
               <div className="detail-configuration__control-head">
                 <label htmlFor={ctxSliderId}>Context size</label>
-                <input
-                  id={ctxSizeId}
-                  className="input detail-configuration__context-input"
-                  type="number"
-                  min={ctxMin}
-                  max={ctxMax}
-                  step={ctxStep}
-                  value={ctxSizeDraft}
-                  placeholder={String(baseCtxSize)}
-                  onChange={e => setCtxSizeDraft(e.target.value)}
-                  aria-label="Context size tokens"
-                  disabled={isAutoTuning}
-                />
+                <div className="detail-configuration__context-number">
+                  <input
+                    id={ctxSizeId}
+                    className="input detail-configuration__context-input"
+                    type="number"
+                    min={ctxMin}
+                    max={ctxMax}
+                    step={ctxStep}
+                    value={ctxSizeDraft}
+                    placeholder={String(baseCtxSize)}
+                    onChange={e => setCtxSizeDraft(e.target.value)}
+                    aria-label="Context size tokens"
+                    disabled={isAutoTuning}
+                  />
+                  <span className="detail-configuration__context-stepper">
+                    <button
+                      type="button"
+                      onClick={() => stepContextSize(1)}
+                      disabled={isAutoTuning || currentCtxSize >= ctxMax}
+                      aria-label={`Increase context size by ${ctxStep} tokens`}
+                    >
+                      <Icon name="chevron-up" size={11} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => stepContextSize(-1)}
+                      disabled={isAutoTuning || currentCtxSize <= ctxMin}
+                      aria-label={`Decrease context size by ${ctxStep} tokens`}
+                    >
+                      <Icon name="chevron-down" size={11} aria-hidden="true" />
+                    </button>
+                  </span>
+                </div>
               </div>
               <label
                 className="detail-configuration__autotune"
@@ -1432,7 +1587,200 @@ const COLLECTION_ROLE_LABELS: Record<string, string> = {
   speech: 'Text to speech',
 };
 
-const CustomCollectionSettingsTab: React.FC<{ model: ModelInfo; onEdit?: (model: ModelInfo) => void }> = ({ model, onEdit }) => {
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+const RouterCollectionSettingsTab: React.FC<{
+  model: ModelInfo;
+  models: ModelInfo[];
+  onEdit?: (model: ModelInfo) => void;
+}> = ({ model, models, onEdit }) => {
+  const [providers, setProviders] = useState<CloudProviderRow[]>([]);
+  const [providerError, setProviderError] = useState<string | null>(null);
+  const [editingProvider, setEditingProvider] = useState<string | null>(null);
+  const [editingConnectionModel, setEditingConnectionModel] = useState<string | null>(null);
+  const [endpointDraft, setEndpointDraft] = useState('');
+  const [allowInsecureDraft, setAllowInsecureDraft] = useState(false);
+  const [savingProvider, setSavingProvider] = useState(false);
+
+  const refreshProviders = useCallback(async () => {
+    try {
+      setProviders(await api.cloudProviders());
+      setProviderError(null);
+    } catch (error) {
+      setProviderError(error instanceof Error ? error.message : 'Could not load external providers.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshProviders();
+  }, [refreshProviders]);
+
+  const routing = recordValue((model as any).routing);
+  const candidates = Array.isArray(routing.candidates)
+    ? routing.candidates.filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
+    : [];
+  const defaultModel = String(routing.default_model || '').trim();
+  const nlRouter = recordValue(routing.router);
+  const classifiers = Array.isArray(routing.classifiers)
+    ? routing.classifiers.filter(item => item && typeof item === 'object') as Array<Record<string, unknown>>
+    : [];
+  const connectedRoles = new Map<string, string[]>();
+  const addRole = (nameValue: unknown, role: string) => {
+    const name = String(nameValue || '').trim();
+    if (!name) return;
+    const current = connectedRoles.get(name) || [];
+    if (!current.includes(role)) current.push(role);
+    connectedRoles.set(name, current);
+  };
+  candidates.forEach(name => addRole(name, 'Routing target'));
+  if (String(nlRouter.type || '').toLowerCase() === 'llm') {
+    addRole(nlRouter.model, 'Natural-language router');
+  }
+  classifiers.forEach(classifier => addRole(classifier.model, `Classifier · ${String(classifier.id || classifier.type || 'model')}`));
+  getCollectionComponents(model).forEach(name => addRole(name, 'Collection component'));
+
+  const connections = [...connectedRoles.keys()].map(name =>
+    describeRouterModelConnection(name, models, providers)
+  );
+  const mode = Object.keys(nlRouter).length ? 'Natural-language router' : 'Ordered rules';
+
+  const saveEndpoint = async () => {
+    if (!editingProvider) return;
+    const validationError = validateProviderEndpoint(endpointDraft, allowInsecureDraft);
+    if (validationError) {
+      setProviderError(validationError);
+      return;
+    }
+    setSavingProvider(true);
+    setProviderError(null);
+    try {
+      const provider = editingProvider;
+      await api.installCloudProvider(provider, endpointDraft.trim(), undefined, allowInsecureDraft);
+      await refreshProviders();
+      setEditingProvider(null);
+      setEditingConnectionModel(null);
+      setEndpointDraft('');
+      setAllowInsecureDraft(false);
+    } catch (error) {
+      setProviderError(error instanceof Error ? error.message : 'Could not update provider endpoint.');
+    } finally {
+      setSavingProvider(false);
+    }
+  };
+
+  return (
+    <div className="detail-tab-content custom-collection-settings router-collection-settings">
+      <div className="custom-collection-settings__intro">
+        <div>
+          <h3>Router settings</h3>
+          <p>Review every model connected to this virtual model, including provider endpoints used by external candidates.</p>
+        </div>
+        {onEdit && (
+          <button
+            type="button"
+            className="btn btn--primary btn--sm custom-collection-settings__edit-button"
+            aria-label="Edit router settings"
+            title="Edit router settings"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onEdit(model);
+            }}
+          >
+            <Icon name="edit" size={13} aria-hidden="true" />
+            <span>Edit router</span>
+          </button>
+        )}
+      </div>
+
+      <section className="custom-collection-settings__section" aria-label="Router strategy summary">
+        <h4>Routing</h4>
+        <div className="custom-collection-settings__summary">
+          <span>Strategy</span><strong>{mode}</strong>
+          <span>Default model</span><strong>{defaultModel || 'Not set'}</strong>
+          <span>Routing targets</span><strong>{candidates.length}</strong>
+        </div>
+      </section>
+
+      <section className="custom-collection-settings__section" aria-label="Connected router models">
+        <h4>Connected models</h4>
+        <p className="router-collection-settings__scope-note">Endpoint changes are provider-wide and apply to all models registered through that provider.</p>
+        <div className="router-collection-settings__connections">
+          {connections.map(connection => (
+            <article className="router-collection-settings__connection" key={connection.modelName}>
+              <div className="router-collection-settings__identity">
+                <div>
+                  <strong>{connection.displayName}</strong>
+                  {connection.modelName === defaultModel && <span className="router-editor__default-badge">Default</span>}
+                </div>
+                <small>{connection.modelName}</small>
+                <small>{(connectedRoles.get(connection.modelName) || []).join(' · ')}</small>
+              </div>
+              <div className="router-collection-settings__source">
+                <span className={`router-editor__source-badge router-editor__source-badge--${connection.kind}`}>
+                  {connection.kind === 'external' ? 'External' : connection.kind === 'internal' ? 'Internal' : 'Unresolved'}
+                </span>
+                <small>{connection.kind === 'external' ? (connection.provider || 'Unknown provider') : (connection.backend || connection.recipe || 'Local model')}</small>
+              </div>
+              <div className="router-collection-settings__endpoint">
+                {connection.kind === 'external' ? (
+                  editingProvider === connection.provider && editingConnectionModel === connection.modelName ? (
+                    <div className="router-editor__endpoint-editor">
+                      <input
+                        className="input"
+                        value={endpointDraft}
+                        aria-label={`${connection.provider} endpoint`}
+                        onChange={event => setEndpointDraft(event.target.value)}
+                      />
+                      {providerEndpointNeedsInsecureOptIn(endpointDraft) && (
+                        <label className="router-editor__insecure-opt-in">
+                          <input type="checkbox" checked={allowInsecureDraft} onChange={event => setAllowInsecureDraft(event.target.checked)} />
+                          <span>Allow insecure HTTP</span>
+                        </label>
+                      )}
+                      <WorkspaceActionButton appearance="primary" size="small" disabled={savingProvider} onClick={() => { void saveEndpoint(); }}>
+                        {savingProvider ? 'Saving…' : 'Save'}
+                      </WorkspaceActionButton>
+                      <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setAllowInsecureDraft(false); setProviderError(null); }}>Cancel</WorkspaceActionButton>
+                    </div>
+                  ) : (
+                    <>
+                      <span title={connection.endpoint || 'Endpoint unavailable'}>{connection.endpoint || 'Endpoint not configured'}</span>
+                      <small>{connection.authConfigured ? 'Authentication configured' : 'Authentication required'}</small>
+                      {connection.provider && (
+                        <WorkspaceActionButton size="small" icon="edit" onClick={() => { setEditingProvider(connection.provider); setEditingConnectionModel(connection.modelName); setEndpointDraft(connection.endpoint); setAllowInsecureDraft(connection.allowInsecureHttp); setProviderError(null); }}>
+                          Edit endpoint
+                        </WorkspaceActionButton>
+                      )}
+                    </>
+                  )
+                ) : (
+                  <><span>Managed by Lemonade</span><small>Local registered model</small></>
+                )}
+              </div>
+            </article>
+          ))}
+          {connections.length === 0 && <div className="router-editor__empty">No connected models were found in this router definition.</div>}
+        </div>
+        {providerError && connections.some(connection => connection.kind === 'external') && <div className="router-editor__message router-editor__message--error"><Icon name="alert" size={14} /> {providerError}</div>}
+      </section>
+    </div>
+  );
+};
+
+const CustomCollectionSettingsTab: React.FC<{
+  model: ModelInfo;
+  models: ModelInfo[];
+  onEdit?: (model: ModelInfo) => void;
+}> = ({ model, models, onEdit }) => {
+  if (activeRecipeForModel(model) === 'collection.router') {
+    return <RouterCollectionSettingsTab model={model} models={models} onEdit={onEdit} />;
+  }
+
   const roles = ((model as any).component_roles || {}) as Record<string, string>;
   const components = getCollectionComponents(model);
   const displayRoles: Record<string, string> = { ...roles, llm: roles.llm || components[0] || '' };
@@ -1501,6 +1849,8 @@ const CustomCollectionSettingsTab: React.FC<{ model: ModelInfo; onEdit?: (model:
 
 export interface ModelDetailPanelProps {
   model: ModelInfo | null;
+  /** Registry models used to resolve collection component sources. */
+  models?: ModelInfo[];
   loadedModel: LoadedModel | null;
   loadingModel: string | null;
   pulling: Record<string, number>;
@@ -1565,6 +1915,7 @@ const IMAGE_MODEL_TABS: Array<{ id: DetailTab; label: string }> = TABS;
 
 export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   model,
+  models = [],
   loadedModel,
   loadingModel,
   pulling,
@@ -1598,7 +1949,8 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const [configHasUnsavedChanges, setConfigHasUnsavedChanges] = useState(false);
 
   const detailName = model ? mdName(model) : '';
-  const isCustomCollection = Boolean(model && modelIsCustom(model) && isCollectionModel(model));
+  const isRouterCollection = Boolean(model && activeRecipeForModel(model) === 'collection.router');
+  const isCustomCollection = Boolean(model && modelIsCustom(model) && (isCollectionModel(model) || isRouterCollection));
   const imageOnly = isImageOnlyModel(model);
   const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS);
 
@@ -1872,7 +2224,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           hidden={activeTab !== tab.id}
         >
           {tab.id === 'settings' && model && (
-            <CustomCollectionSettingsTab model={model} onEdit={onEditCustomCollection} />
+            <CustomCollectionSettingsTab model={model} models={models} onEdit={onEditCustomCollection} />
           )}
           {tab.id === 'readme' && (
             <ModelReadmeTab model={model} isActive={activeTab === 'readme'} />

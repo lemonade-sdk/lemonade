@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
-import api, { ConnectionStatus, LoadedModel } from './api';
+import api, { LoadedModel, ModelInfo } from './api';
 import { canSelectInComposer, capabilityFromModelInfo, selectPreferredLoadedModel } from './modelCapabilities';
 import { customModelToModelInfo, loadCustomModels } from './features/customModels/customModelStore';
 import { findModelInfoByName, isCollectionFullyLoaded, isCollectionModel, withVirtualLoadedCollections } from './features/collections/collectionModels';
@@ -13,6 +13,7 @@ import MonitorView from './components/MonitorView';
 import { Icon } from './components/Icon';
 import { WorkspaceActionButton } from './components/WorkspacePanels';
 import { downloadStore, isDownloadActive } from './features/downloadManager/downloadStore';
+import { useServerModelState } from './features/models/modelState';
 import {
   WORKSPACE_NAVIGATION,
   type ConnectSection,
@@ -39,7 +40,7 @@ const NAVIGATION_DESTINATIONS: Array<{
   { id: 'models', label: 'Models', keywords: 'model manager download load', icon: 'hard-drive' },
   { id: 'backends', label: 'Backends', keywords: 'runtime inference engine', icon: 'box' },
   { id: 'apps', label: 'Apps', keywords: 'clients integrations', icon: 'layers' },
-  { id: 'dashboard', label: 'Dashboard', keywords: 'monitor system hardware statistics', icon: 'gauge' },
+  { id: 'dashboard', label: 'Monitor', keywords: 'dashboard monitor system hardware statistics', icon: 'gauge' },
   { id: 'connect', label: 'Settings', keywords: 'connect configuration preferences server', icon: 'settings' },
 ];
 
@@ -218,6 +219,8 @@ function loadSavedRoute(): AppRoute {
 
 type Theme = 'dark' | 'light';
 const THEME_KEY = 'lemonade_theme';
+const EMPTY_MODELS: ModelInfo[] = [];
+const EMPTY_LOADED_MODELS: LoadedModel[] = [];
 
 function loadTheme(): Theme {
   try {
@@ -232,9 +235,11 @@ const App: React.FC = () => {
   const view = route.view;
   const routeRef = useRef(route);
   routeRef.current = route;
-  const [status, setStatus] = useState<ConnectionStatus>(api.status);
+  const serverModelState = useServerModelState();
+  const status = serverModelState.status;
+  const serverModels = serverModelState.models?.data ?? EMPTY_MODELS;
+  const rawLoadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const [currentModel, setCurrentModel] = useState<string | null>(null);
-  const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [clientDataResetNonce, setClientDataResetNonce] = useState(0);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
@@ -308,10 +313,10 @@ const App: React.FC = () => {
     setUtilityMenuOpen(false);
   }, [view]);
 
-  const applyLoadedModels = useCallback((loaded: LoadedModel[]) => {
+  const loadedModelViewState = useMemo(() => {
     const customInfos = loadCustomModels().map(customModelToModelInfo);
-    const knownInfos = [...customInfos, ...api.allModels];
-    const enriched = withVirtualLoadedCollections(loaded, knownInfos).map(model => {
+    const knownInfos = [...customInfos, ...serverModels];
+    const models = withVirtualLoadedCollections(rawLoadedModels, knownInfos).map(model => {
       const info = findModelInfoByName(knownInfos, model.model_name);
       if (!info) return model;
       const cap = capabilityFromModelInfo(info);
@@ -322,6 +327,13 @@ const App: React.FC = () => {
         checkpoint: model.checkpoint || String((info as any).checkpoint || ''),
       };
     });
+    return { models, customInfos, knownInfos };
+  }, [clientDataResetNonce, rawLoadedModels, serverModels]);
+
+  const loadedModels = loadedModelViewState.models;
+
+  useEffect(() => {
+    const { customInfos, knownInfos } = loadedModelViewState;
     const customSelectable = (name: string) => {
       const info = findModelInfoByName(customInfos, name);
       if (!info) return false;
@@ -334,23 +346,22 @@ const App: React.FC = () => {
       const cap = capabilityFromModelInfo(info);
       return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
     };
-    setLoadedModels(enriched);
     setCurrentModel(current => {
-      if (current && enriched.some(m => m.model_name === current && (canSelectInComposer(m) || customSelectable(m.model_name) || infoSelectable(m.model_name)))) return current;
+      if (current && loadedModels.some(m => m.model_name === current && (canSelectInComposer(m) || customSelectable(m.model_name) || infoSelectable(m.model_name)))) return current;
       if (current) {
         const info = findModelInfoByName(knownInfos, current);
-        if (info && isCollectionModel(info) && isCollectionFullyLoaded(info, loaded)) return current;
+        if (info && isCollectionModel(info) && isCollectionFullyLoaded(info, rawLoadedModels)) return current;
       }
-      const virtualOmni = enriched.find(model => {
+      const virtualOmni = loadedModels.find(model => {
         const info = findModelInfoByName(knownInfos, model.model_name);
         return info && isCollectionModel(info);
       });
       return virtualOmni?.model_name
-        || selectPreferredLoadedModel(enriched)?.model_name
-        || enriched.find(m => customSelectable(m.model_name) || infoSelectable(m.model_name))?.model_name
+        || selectPreferredLoadedModel(loadedModels)?.model_name
+        || loadedModels.find(m => customSelectable(m.model_name) || infoSelectable(m.model_name))?.model_name
         || null;
     });
-  }, []);
+  }, [loadedModelViewState, loadedModels, rawLoadedModels]);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
     if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
@@ -402,7 +413,7 @@ const App: React.FC = () => {
           route: { view: workspace as 'dashboard' | 'connect', section: section.id } as AppRoute,
         })),
     );
-    const models = api.allModels
+    const models = serverModels
       .map(model => {
         const name = modelSearchName(model as unknown as Record<string, unknown>);
         return { model, name };
@@ -429,7 +440,7 @@ const App: React.FC = () => {
         view: 'backends' as View,
       }));
     return [...models, ...backends, ...settings, ...pages];
-  }, [navigationSearch]);
+  }, [navigationSearch, serverModels]);
 
   const selectNavigationDestination = useCallback((destination: GlobalSearchResult) => {
     if (destination.modelName) {
@@ -531,29 +542,10 @@ const App: React.FC = () => {
   }, [navigateToRoute]);
 
   useEffect(() => {
-    const unsubStatus = api.onStatusChange(setStatus);
-    const refreshGlobalModels = () => {
-      const loaded = api.loadedModels;
-      applyLoadedModels(loaded);
-    };
-    const unsubModels = api.onModelsChanged(async () => {
-      const result = await api.refresh().catch(() => null);
-      if (result) applyLoadedModels(result.health.all_models_loaded);
-      else refreshGlobalModels();
-    });
-    api.connect().then(async connected => {
-      if (!connected) return;
-      const result = await api.refresh().catch(() => null);
-      if (result) {
-        applyLoadedModels(result.health.all_models_loaded);
-      } else {
-        refreshGlobalModels();
-      }
-    });
-    return () => { unsubStatus(); unsubModels(); };
-  }, [applyLoadedModels]);
+    void api.connect();
+  }, []);
 
-  // App-level health polling: skip when Dashboard is active (it polls every 2s)
+  // App-level health polling: skip when Monitor is active (it polls every 2s)
   useEffect(() => {
     if (view === 'dashboard') {
       api.stopPolling();
@@ -564,9 +556,8 @@ const App: React.FC = () => {
   }, [view]);
 
   const handleRefreshModels = useCallback(async () => {
-    const result = await api.refresh();
-    if (result) applyLoadedModels(result.health.all_models_loaded);
-  }, [applyLoadedModels]);
+    await api.refresh();
+  }, []);
 
   const handleModelSelect = useCallback((modelName: string) => {
     setCurrentModel(modelName);
@@ -581,7 +572,7 @@ const App: React.FC = () => {
         <div className="titlebar__brand" data-tauri-drag-region>
           <span className="titlebar__brand-logo" data-tauri-drag-region>
             <span className="titlebar__brand-icon" aria-hidden="true" />
-            <span className="titlebar__brand-name">Lemonade</span>
+            <span className="titlebar__brand-name">lemonade</span>
           </span>
           <span className={`titlebar__status-dot titlebar__status-dot--brand ${
             status === 'connected' ? 'titlebar__status-dot--connected' :
@@ -591,6 +582,81 @@ const App: React.FC = () => {
             aria-label={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
             title={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
           />
+        </div>
+
+        <div
+          className="titlebar__search"
+          data-tauri-drag-region="false"
+          onBlur={event => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setNavigationSearchOpen(false);
+            }
+          }}
+        >
+          <Icon name="search" size={15} aria-hidden="true" />
+          <input
+            ref={navigationSearchRef}
+            type="search"
+            value={navigationSearch}
+            placeholder="Search Lemonade"
+            aria-label="Search Lemonade"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-haspopup="listbox"
+            aria-expanded={navigationSearchOpen}
+            aria-controls={navigationSearchOpen ? 'titlebar-search-results' : undefined}
+            aria-activedescendant={navigationSearchOpen && navigationSearchResults[navigationSearchIndex]
+              ? `titlebar-search-result-${navigationSearchResults[navigationSearchIndex].id.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+              : undefined}
+            onFocus={() => setNavigationSearchOpen(true)}
+            onChange={event => {
+              setNavigationSearch(event.target.value);
+              setNavigationSearchIndex(0);
+              setNavigationSearchOpen(true);
+            }}
+            onKeyDown={event => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (navigationSearchResults.length > 0) {
+                  setNavigationSearchIndex(index => Math.min(index + 1, navigationSearchResults.length - 1));
+                }
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (navigationSearchResults.length > 0) {
+                  setNavigationSearchIndex(index => Math.max(index - 1, 0));
+                }
+              } else if (event.key === 'Enter' && navigationSearchResults[navigationSearchIndex]) {
+                event.preventDefault();
+                selectNavigationDestination(navigationSearchResults[navigationSearchIndex]);
+              } else if (event.key === 'Escape') {
+                setNavigationSearch('');
+                setNavigationSearchOpen(false);
+              }
+            }}
+          />
+          <kbd>Ctrl K</kbd>
+          {navigationSearchOpen && (
+            <div id="titlebar-search-results" className="titlebar__search-results" role="listbox" aria-label="Global search results">
+              {navigationSearchResults.length > 0 ? navigationSearchResults.map((destination, index) => (
+                <button
+                  key={destination.id}
+                  id={`titlebar-search-result-${destination.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`}
+                  type="button"
+                  role="option"
+                  aria-selected={index === navigationSearchIndex}
+                  className={index === navigationSearchIndex ? 'is-active' : ''}
+                  onMouseDown={event => event.preventDefault()}
+                  onClick={() => selectNavigationDestination(destination)}
+                >
+                  <Icon name={destination.icon} size={14} aria-hidden="true" />
+                  <span>
+                    <strong>{destination.label}</strong>
+                    <small>{destination.description}</small>
+                  </span>
+                </button>
+              )) : <p>{navigationSearch.trim() ? 'No matching results.' : 'Search models, backends, apps, and settings.'}</p>}
+            </div>
+          )}
         </div>
 
         <nav className="titlebar__nav" data-tauri-drag-region="false" aria-label="Primary">

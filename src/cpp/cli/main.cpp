@@ -955,6 +955,12 @@ static bool is_strict_numeric(const std::string& s, bool allow_dot) {
 }
 
 static nlohmann::json parse_typed_value(const std::string& value) {
+    if (!value.empty() && (value.front() == '[' || value.front() == '{')) {
+        auto parsed = nlohmann::json::parse(value, nullptr, false);
+        if (!parsed.is_discarded()) {
+            return parsed;
+        }
+    }
     // Strict integer: optional minus, then digits only (no hex, no scientific)
     if (is_strict_numeric(value, false)) {
         try { return std::stoi(value); } catch (...) {}

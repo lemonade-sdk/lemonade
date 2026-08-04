@@ -30,13 +30,13 @@ export default function MonitorView({
         collapsed={railCollapsed}
         onCollapsedChange={setRailCollapsed}
         panelId="dashboard-views-panel"
-        railLabel="Dashboard navigation"
-        navigationLabel="Dashboard sections"
+        railLabel="Monitor navigation"
+        navigationLabel="Monitor sections"
         railClassName="monitor-rail"
         navClassName="monitor-nav"
         headerTitle="Views"
-        sidebarLabel="dashboard navigation"
-        mobileMenuLabel="Open dashboard views"
+        sidebarLabel="monitor navigation"
+        mobileMenuLabel="Open monitor views"
       />
 
       <div className="monitor-content">

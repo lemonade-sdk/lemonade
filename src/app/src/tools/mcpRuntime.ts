@@ -36,7 +36,7 @@ export interface McpRuntimeContext {
 export interface McpServerOption {
   id: string;
   name: string;
-  transport: 'builtin' | 'stdio';
+  transport: 'builtin' | 'streamable-http' | 'stdio';
   connected: boolean;
   status: string;
   tools: number;
@@ -668,7 +668,7 @@ export async function listMcpServerOptions(): Promise<McpServerOption[]> {
     ...external.map(server => ({
       id: server.id,
       name: server.name,
-      transport: 'stdio' as const,
+      transport: server.transport === 'streamable-http' ? 'streamable-http' as const : 'stdio' as const,
       connected: server.connected === true,
       status: server.status || (server.connected ? 'connected' : 'disconnected'),
       tools: Array.isArray(server.tools) ? server.tools.length : 0,
