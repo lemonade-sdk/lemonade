@@ -62,6 +62,9 @@ class TestSafeFiles(unittest.TestCase):
             "src/cpp/tray/tray_app.cpp",
             "test/app/appSettings.test.cjs",
             "test/cpp/test_auto_tune.cpp",
+            "test/server_endpoints.py",
+            "test/server_cli2.py",
+            "test/test_tray_https.py",
         ]:
             outputs = outputs_for([path])
             self.assertEqual(outputs["run_exe"], "false", path)
@@ -125,6 +128,28 @@ class TestEngineFiles(unittest.TestCase):
         outputs = outputs_for(["src/cpp/server/backends/vllm/x.cpp"])
         self.assertEqual(outputs["run_exe"], "false")
         self.assertEqual(outputs["run_deb"], "false")
+
+    def test_whispercpp_selects_whisper_and_the_omni_collection(self):
+        outputs = outputs_for(["src/cpp/server/backends/whispercpp/x.cpp"])
+        self.assertEqual(selected_names(outputs, "exe_matrix"), {"whisper", "omni"})
+
+    def test_a_non_leg_script_that_becomes_a_leg_stops_being_safe(self):
+        """The non-leg rule is derived, so it yields to the matrix on its own."""
+        self.assertEqual(outputs_for(["test/server_endpoints.py"])["selected"], "none")
+        extended = copy.deepcopy(MATRIX)
+        extended["exe"].append(
+            dict(extended["exe"][0], name="endpoints", script="server_endpoints.py")
+        )
+        rules = sel.derive_script_rules(extended)
+        self.assertEqual(
+            sel.classify_file("test/server_endpoints.py", rules), {"endpoints"}
+        )
+
+    def test_shared_test_helpers_still_select_all(self):
+        for path in ["test/utils/server_base.py", "test/requirements.txt"]:
+            self.assertEqual(
+                selected_names(outputs_for([path]), "exe_matrix"), ALL_ENGINE_NAMES
+            )
 
     def test_engine_test_script_selects_its_engines(self):
         outputs = outputs_for(["test/server_whisper.py"])

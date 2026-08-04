@@ -28,10 +28,14 @@ BACKEND_DIRS = (
 
 # Workflows that define or guard the inference legs. Every other workflow is
 # safe; test_workflows_that_touch_inference_are_listed keeps this honest.
-INFERENCE_WORKFLOWS = [
-    WORKFLOW_FILE,
-    ".github/workflows/routing_schema_tests.yml",
-]
+INFERENCE_WORKFLOWS = frozenset(
+    [
+        WORKFLOW_FILE,
+        ".github/workflows/routing_schema_tests.yml",
+    ]
+)
+
+TEST_DIR = "test/"
 
 # fnmatch's "*" spans "/", so these match at any depth.
 SAFE_PATTERNS = [
@@ -64,13 +68,13 @@ BACKEND_DIR_TO_ENGINES = {
     # server_router.py loads a GGUF embedding model through llamacpp to back
     # the semantic_similarity classifier, so llamacpp reaches the router leg.
     "llamacpp": ["llamacpp", "omni", "router-onnxruntime"],
-    "whispercpp": ["whisper"],
+    "whispercpp": ["whisper", "omni"],
     "fastflowlm": ["flm", "flm-whisper"],
     "ryzenai": ["ryzenai"],
     "moonshine": ["moonshine"],
     "onnxruntime": ["classify-onnxruntime", "router-onnxruntime"],
-    # The omni collection drives image generation and speech through the sdcpp
-    # and kokoro components, so both reach the omni leg as well as their own.
+    # The omni collection bundles an llamacpp planner with SD-Turbo, Whisper,
+    # and kokoro components, so each of those reaches the omni leg too.
     "sdcpp": ["stable-diffusion", "omni"],
     "thinksound": ["audio-gen-thinksound"],
     "acestep": ["audio-gen-acestep"],
@@ -83,7 +87,8 @@ BACKEND_DIR_TO_ENGINES = {
 
 DMG_ENGINES = {"llamacpp", "whisper", "text-to-speech"}
 
-ALL = "ALL"
+# Sentinel, not a string, so a rule value can never be mistaken for it.
+ALL = object()
 
 
 def derive_script_rules(matrix):
@@ -105,13 +110,32 @@ def _matches_any(path, patterns):
     return any(fnmatch.fnmatchcase(path, p) for p in patterns)
 
 
+def _is_non_leg_test_script(path, script_rules):
+    """True for a test script at the top of test/ that no matrix leg runs.
+
+    Those belong to the always-on CLI/endpoints jobs. Deriving this from the
+    matrix rather than listing the scripts means one that later becomes a
+    leg's script is picked up by script_rules first, on its own.
+    """
+    if not path.startswith(TEST_DIR) or path in script_rules:
+        return False
+    name = path[len(TEST_DIR) :]
+    return (
+        "/" not in name
+        and name.endswith(".py")
+        and name.startswith(("server_", "test_"))
+    )
+
+
 def classify_file(path, script_rules):
-    """Return the engines a single changed file selects: [], a list, or ALL."""
+    """Return the engines a single changed file selects: no engines, or ALL."""
     if path in INFERENCE_WORKFLOWS:
         return ALL
+    if path in script_rules:
+        return script_rules[path]
     if path.startswith(".github/"):
         return [] if _matches_any(path, GITHUB_SAFE_PATTERNS) else ALL
-    if _matches_any(path, SAFE_PATTERNS):
+    if _matches_any(path, SAFE_PATTERNS) or _is_non_leg_test_script(path, script_rules):
         return []
     for prefix in BACKEND_DIRS:
         if not path.startswith(prefix):
@@ -121,8 +145,6 @@ def classify_file(path, script_rules):
             return ALL
         backend_dir = remainder.split("/", 1)[0]
         return BACKEND_DIR_TO_ENGINES.get(backend_dir, ALL)
-    if path in script_rules:
-        return script_rules[path]
     return ALL
 
 
