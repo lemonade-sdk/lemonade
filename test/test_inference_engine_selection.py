@@ -71,11 +71,21 @@ class TestSafeFiles(unittest.TestCase):
 
 
 class TestEngineFiles(unittest.TestCase):
-    def test_kokoro_selects_only_tts(self):
+    def test_kokoro_selects_tts_and_the_omni_collection(self):
         outputs = outputs_for(["src/cpp/server/backends/kokoro/foo.cpp"])
-        self.assertEqual(selected_names(outputs, "exe_matrix"), {"text-to-speech"})
-        self.assertEqual(selected_names(outputs, "deb_matrix"), {"text-to-speech"})
+        self.assertEqual(
+            selected_names(outputs, "exe_matrix"), {"text-to-speech", "omni"}
+        )
+        self.assertEqual(
+            selected_names(outputs, "deb_matrix"), {"text-to-speech", "omni"}
+        )
         self.assertEqual(outputs["run_dmg"], "true")
+
+    def test_sdcpp_selects_stable_diffusion_and_the_omni_collection(self):
+        outputs = outputs_for(["src/cpp/server/backends/sdcpp/sd_server.cpp"])
+        self.assertEqual(
+            selected_names(outputs, "exe_matrix"), {"stable-diffusion", "omni"}
+        )
 
     def test_llamacpp_selects_its_legs_and_the_router(self):
         outputs = outputs_for(["src/cpp/server/backends/llamacpp/x.cpp"])
@@ -178,6 +188,18 @@ class TestMappingIntegrity(unittest.TestCase):
         broken["exe"].append(dict(broken["exe"][0], name="brand-new-leg"))
         with self.assertRaises(SystemExit):
             sel.validate_mapping(broken)
+
+    def test_validate_mapping_requires_both_dimensions(self):
+        """A leg wired to a backend folder but not its test script is a hole."""
+        broken = copy.deepcopy(MATRIX)
+        broken["exe"].append(dict(broken["exe"][0], name="llamacpp-rocm"))
+        original = sel.BACKEND_DIR_TO_ENGINES["llamacpp"]
+        sel.BACKEND_DIR_TO_ENGINES["llamacpp"] = original + ["llamacpp-rocm"]
+        try:
+            with self.assertRaises(SystemExit):
+                sel.validate_mapping(broken)
+        finally:
+            sel.BACKEND_DIR_TO_ENGINES["llamacpp"] = original
 
     def test_workflows_that_touch_inference_are_listed(self):
         """A workflow that defines or guards the legs must not classify safe."""

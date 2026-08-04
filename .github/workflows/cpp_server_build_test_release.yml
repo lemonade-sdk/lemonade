@@ -58,8 +58,9 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             # previous_filename matters: a rename out of a gated path (e.g.
             # router.cpp -> docs/router.md) must still count as touching it
+            # --method GET is required: any -F flag would otherwise make gh POST
             gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-              --paginate -F per_page=100 \
+              --method GET --paginate -F per_page=100 \
               --jq '.[] | .filename, (.previous_filename // empty)' > changed_files.txt
           else
             : > changed_files.txt
@@ -1891,13 +1892,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Report selection
+        env:
+          SELECTED: ${{ needs.changes.outputs.selected }}
+          RESULTS: ${{ toJSON(needs.*.result) }}
         run: |
-          echo "Engines selected by change detection: ${{ needs.changes.outputs.selected }}"
-          echo '${{ toJSON(needs.*.result) }}'
-      - name: Fail if any upstream build or inference test failed or was cancelled
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+          echo "Engines selected by change detection: $SELECTED"
+          echo "$RESULTS"
+      # An empty `selected` means the changes job produced no outputs at all, so
+      # every inference job skipped for a reason other than change detection.
+      - name: Fail if a required job failed or change detection produced nothing
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.changes.outputs.selected == ''
         run: |
-          echo "One or more required build or inference test jobs failed or was cancelled."
+          echo "A required build or inference test job failed, was cancelled, or change detection produced no result."
           exit 1
 
   test-cli-endpoints-linux:

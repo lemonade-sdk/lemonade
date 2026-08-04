@@ -63,10 +63,12 @@ BACKEND_DIR_TO_ENGINES = {
     "ryzenai": ["ryzenai"],
     "moonshine": ["moonshine"],
     "onnxruntime": ["classify-onnxruntime", "router-onnxruntime"],
-    "sdcpp": ["stable-diffusion"],
+    # The omni collection drives image generation and speech through the sdcpp
+    # and kokoro components, so both reach the omni leg as well as their own.
+    "sdcpp": ["stable-diffusion", "omni"],
     "thinksound": ["audio-gen-thinksound"],
     "acestep": ["audio-gen-acestep"],
-    "kokoro": ["text-to-speech"],
+    "kokoro": ["text-to-speech", "omni"],
     "trellis": ["3d-trellis"],
     "openmoss": ["tts-openmoss"],
     "cloud": ["router-onnxruntime"],
@@ -137,22 +139,37 @@ def validate_mapping(matrix):
     Runs on every invocation, not just under test: a rule pointing at a leg
     name that no longer exists selects nothing, which would silently retire
     that engine's tests. Failing here fails the aggregate required check.
+
+    Every leg must be reachable from both directions — the backend folder that
+    owns it and the test script that runs it — because a leg wired up through
+    only one of them stops being selected when the other kind of file changes.
     """
     all_engines = {leg["name"] for legs in matrix.values() for leg in legs}
-    mapped = set()
-    for source in (BACKEND_DIR_TO_ENGINES, TEST_SCRIPT_TO_ENGINES):
-        for engines in source.values():
-            mapped.update(engines)
-    problems = []
-    for name in sorted(mapped - all_engines):
-        problems.append(f"rule selects unknown engine {name!r}")
-    for name in sorted(all_engines - mapped):
-        problems.append(f"matrix leg {name!r} is unreachable by any rule")
-    for name in sorted(DMG_ENGINES - all_engines):
-        problems.append(f"DMG_ENGINES lists unknown engine {name!r}")
+    by_backend = set()
+    for engines in BACKEND_DIR_TO_ENGINES.values():
+        by_backend.update(engines)
+    mapped = set(by_backend)
+    for engines in TEST_SCRIPT_TO_ENGINES.values():
+        mapped.update(engines)
+
+    problems = set()
+    for name in mapped - all_engines:
+        problems.add(f"a rule selects unknown engine {name!r}")
+    for name in all_engines - by_backend:
+        problems.add(f"no backend folder selects matrix leg {name!r}")
+    for name in DMG_ENGINES - all_engines:
+        problems.add(f"DMG_ENGINES lists unknown engine {name!r}")
+    for legs in matrix.values():
+        for leg in legs:
+            script = f"test/{leg['script']}"
+            if leg["name"] not in TEST_SCRIPT_TO_ENGINES.get(script, []):
+                problems.add(
+                    f"{script} does not select {leg['name']!r}, the leg it runs"
+                )
     if problems:
         raise SystemExit(
-            "inference engine selection rules are stale:\n  " + "\n  ".join(problems)
+            "inference engine selection rules are stale:\n  "
+            + "\n  ".join(sorted(problems))
         )
 
 
