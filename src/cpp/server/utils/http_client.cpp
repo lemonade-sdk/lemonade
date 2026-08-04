@@ -417,12 +417,12 @@ bool apply_http_security_policy(
         case HttpSecurityPolicy::TrustedLoopback:
             // Managed loopback backends are plain HTTP and must never redirect.
             return set(CURLOPT_FOLLOWLOCATION, 0L) &&
-                   set_proto(CURLOPT_PROTOCOLS_STR, CURLOPT_PROTOCOLS, "http", 1L /* CURLPROTO_HTTP */);
+                   set_proto(CURLOPT_PROTOCOLS_STR, CURLOPT_PROTOCOLS, "HTTP", 1L /* CURLPROTO_HTTP */);
         case HttpSecurityPolicy::AllowInsecureHttp:
-            return apply_protocols("http,https", "http,https");
+            return apply_protocols("HTTP,HTTPS", "HTTP,HTTPS");
         case HttpSecurityPolicy::ExternalHttpsOnly:
         default:
-            return apply_protocols("https", "https");
+            return apply_protocols("HTTPS", "HTTPS");
     }
 }
 } // namespace

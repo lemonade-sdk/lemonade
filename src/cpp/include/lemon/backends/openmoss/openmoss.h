@@ -21,9 +21,9 @@ inline const BackendDescriptor descriptor = {
          "OpenMOSS TTS backend to use", "Text-to-Speech Options"},
     },
     /*support*/ {
-        {"rocm", {"linux", "windows"}, {{"amd_gpu", {}}}, "AMD GPUs (ROCm via TheRock)"},
         {"cuda", {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
         {"vulkan", {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
+        {"rocm", {"linux", "windows"}, {{"amd_gpu", {}}}, "AMD GPUs (ROCm via TheRock)"},
     },
     /*default_labels*/  {"tts"},
     /*required_checkpoints*/ {"main"},
