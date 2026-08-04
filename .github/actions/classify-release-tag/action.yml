@@ -1,0 +1,97 @@
+name: Classify Release Tag
+description: Validate a Lemonade release tag and derive channel/package metadata.
+
+inputs:
+  tag:
+    description: Complete tag such as v12.0.0 or v12.0.0-beta.1. Empty for snapshots.
+    required: false
+    default: ""
+  require_tag:
+    description: Fail when tag is empty.
+    required: false
+    default: "false"
+  require_prerelease:
+    description: Fail unless the supplied tag is a prerelease.
+    required: false
+    default: "false"
+  require_stable:
+    description: Fail unless the supplied tag is a stable release.
+    required: false
+    default: "false"
+  build_serial:
+    description: Monotonic serial for published snapshots/prereleases, normally github.run_number.
+    required: false
+    default: ""
+  build_attempt:
+    description: Attempt number for the workflow run, normally github.run_attempt.
+    required: false
+    default: "1"
+  commit_sha:
+    description: Commit SHA used in snapshot labels. Defaults to the checked-out HEAD.
+    required: false
+    default: ""
+
+outputs:
+  tag_name:
+    value: ${{ steps.classify.outputs.tag_name }}
+    description: Validated complete tag.
+  base_version:
+    value: ${{ steps.classify.outputs.base_version }}
+    description: Numeric MAJOR.MINOR.PATCH version.
+  prerelease_suffix:
+    value: ${{ steps.classify.outputs.prerelease_suffix }}
+    description: Prerelease suffix without the leading dash.
+  is_release_tag:
+    value: ${{ steps.classify.outputs.is_release_tag }}
+    description: Whether a release tag was supplied.
+  is_stable:
+    value: ${{ steps.classify.outputs.is_stable }}
+    description: Whether the tag is a stable release.
+  is_prerelease:
+    value: ${{ steps.classify.outputs.is_prerelease }}
+    description: Whether the tag is a prerelease.
+  build_label:
+    value: ${{ steps.classify.outputs.build_label }}
+    description: Filesystem-safe release or snapshot label.
+  deb_version:
+    value: ${{ steps.classify.outputs.deb_version }}
+    description: Debian version ordered monotonically within the publishing workflow.
+
+runs:
+  using: composite
+  steps:
+    - name: Validate and classify release tag
+      id: classify
+      shell: bash
+      env:
+        TAG_NAME: ${{ inputs.tag }}
+        REQUIRE_TAG: ${{ inputs.require_tag }}
+        REQUIRE_PRERELEASE: ${{ inputs.require_prerelease }}
+        REQUIRE_STABLE: ${{ inputs.require_stable }}
+        BUILD_SERIAL: ${{ inputs.build_serial }}
+        BUILD_ATTEMPT: ${{ inputs.build_attempt }}
+        COMMIT_SHA: ${{ inputs.commit_sha }}
+      run: |
+        set -euo pipefail
+
+        args=(
+          classify
+          --repository "$GITHUB_WORKSPACE"
+          --output "$GITHUB_OUTPUT"
+          --require-tag "$REQUIRE_TAG"
+          --require-prerelease "$REQUIRE_PRERELEASE"
+          --require-stable "$REQUIRE_STABLE"
+          --build-attempt "$BUILD_ATTEMPT"
+        )
+
+        if [[ -n "$TAG_NAME" ]]; then
+          args+=(--tag "$TAG_NAME")
+        fi
+        if [[ -n "$BUILD_SERIAL" ]]; then
+          args+=(--build-serial "$BUILD_SERIAL")
+        fi
+        if [[ -n "$COMMIT_SHA" ]]; then
+          args+=(--commit-sha "$COMMIT_SHA")
+        fi
+
+        python3 "${GITHUB_ACTION_PATH}/../../scripts/release_channels.py" "${args[@]}"

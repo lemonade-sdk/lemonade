@@ -8,7 +8,7 @@ on:
     branches:
       - main
     tags:
-      - '*'
+      - 'v*'
   pull_request:
     branches:
       - main
@@ -19,6 +19,29 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  classify-release:
+    name: Classify release channel
+    runs-on: ubuntu-latest
+    outputs:
+      is_stable: ${{ steps.release-tag.outputs.is_stable }}
+      is_prerelease: ${{ steps.release-tag.outputs.is_prerelease }}
+      deb_version: ${{ steps.release-tag.outputs.deb_version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Classify release and derive Debian version
+        id: release-tag
+        uses: ./.github/actions/classify-release-tag
+        with:
+          tag: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          build_serial: ${{ github.run_number }}
+          build_attempt: ${{ github.run_attempt }}
+          commit_sha: ${{ github.sha }}
+
   prepare-matrix:
     name: Prepare matrix
     runs-on: ubuntu-latest
@@ -59,7 +82,7 @@ jobs:
 
   package:
     name: Build
-    needs: prepare-matrix
+    needs: [prepare-matrix, classify-release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -87,6 +110,7 @@ jobs:
         with:
           release: ${{ matrix.release }}
           codename: ${{ matrix.codename }}
+          version: ${{ needs.classify-release.outputs.deb_version }}
 
       - name: Get short SHA
         id: short_sha
@@ -203,10 +227,10 @@ jobs:
     name: Upload (Stable)
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
-    needs: [prepare-matrix, package]
+    needs: [prepare-matrix, package, classify-release]
     permissions:
       contents: read
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' && needs.classify-release.outputs.is_stable == 'true' }}
     uses: ./.github/workflows/upload.yml
     with:
       target: ppa:lemonade-team/stable
@@ -217,10 +241,10 @@ jobs:
     name: Upload (Bleeding Edge)
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
-    needs: [prepare-matrix, package]
+    needs: [prepare-matrix, package, classify-release]
     permissions:
       contents: read
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || needs.classify-release.outputs.is_prerelease == 'true') }}
     uses: ./.github/workflows/upload.yml
     with:
       target: ppa:lemonade-team/bleeding-edge

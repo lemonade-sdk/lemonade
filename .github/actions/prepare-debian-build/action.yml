@@ -8,6 +8,10 @@ inputs:
   codename:
     description: Debian codename (e.g., noble, questing, resolute)
     required: true
+  version:
+    description: Optional normalized Debian package version override.
+    required: false
+    default: ""
 
 outputs:
   version:
@@ -17,14 +21,26 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Get version from git describe
+    - name: Get package version
       id: get_version
       shell: bash
+      env:
+        REQUESTED_VERSION: ${{ inputs.version }}
       run: |
-        VERSION=$(git describe --tags --always)
-        # Strip leading 'v' for Debian version compatibility
-        DEB_VERSION=$(echo "${VERSION}" | sed 's/^v//')
-        echo "version=${DEB_VERSION}" >> $GITHUB_OUTPUT
+        set -euo pipefail
+
+        if [[ -n "$REQUESTED_VERSION" ]]; then
+          DEB_VERSION="$REQUESTED_VERSION"
+        else
+          # Preserve the historical fallback for non-PPA callers. Published PPA
+          # builds always pass an explicit, normalized version from the release
+          # classifier and never depend on git describe for channel ordering.
+          VERSION=$(git describe --tags --always)
+          DEB_VERSION="${VERSION#v}"
+        fi
+
+        echo "Debian version: $DEB_VERSION"
+        echo "version=${DEB_VERSION}" >> "$GITHUB_OUTPUT"
 
     - name: Create Debian packaging metadata
       shell: bash

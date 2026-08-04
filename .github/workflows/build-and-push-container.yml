@@ -5,7 +5,8 @@ on:
     branches:
       - main
     tags:
-      - "v*"
+      # Only stable tags publish automatically and move the latest tag.
+      - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       tag:
@@ -32,26 +33,69 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0 # needed to fetch tags
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Checkout current release tooling
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: .release-tools
+          sparse-checkout: |
+            .github/actions/classify-release-tag
+            .github/scripts/release_channels.py
+          sparse-checkout-cone-mode: false
+
+      - name: Validate automatic stable tag
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        uses: ./.github/actions/classify-release-tag
+        with:
+          tag: ${{ github.ref_name }}
+          require_tag: "true"
+          require_stable: "true"
+
+      - name: Validate manually selected tag
+        id: manual-tag
+        if: github.event_name == 'workflow_dispatch'
+        uses: ./.release-tools/.github/actions/classify-release-tag
+        with:
+          tag: ${{ inputs.tag }}
+          require_tag: "true"
+
+      - name: Remove release tooling from build context
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: rm -rf .release-tools
 
       - name: Determine tag
         id: tag
+        shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then
               # Tagged release: publish the version tag and move latest.
-              echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-              echo "push_latest=true" >> $GITHUB_OUTPUT
+              echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+              echo "push_latest=true" >> "$GITHUB_OUTPUT"
             else
               # Push to main: publish a rolling edge tag plus an immutable sha tag.
-              echo "tag=edge" >> $GITHUB_OUTPUT
-              echo "sha_tag=sha-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-              echo "push_latest=false" >> $GITHUB_OUTPUT
+              echo "tag=edge" >> "$GITHUB_OUTPUT"
+              echo "sha_tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+              echo "push_latest=false" >> "$GITHUB_OUTPUT"
             fi
           else
-            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
-            echo "push_latest=${{ inputs.add_latest }}" >> $GITHUB_OUTPUT
-            git checkout "refs/tags/${{ inputs.tag }}"
+            # Manual prerelease images may be published under their exact version
+            # tag, but only a validated stable tag may move :latest.
+            if [[ "${{ inputs.add_latest }}" == "true" &&
+                  "${{ steps.manual-tag.outputs.is_stable }}" != "true" ]]; then
+              echo "::error::Moving the container latest tag requires a stable release tag."
+              exit 1
+            fi
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "push_latest=${{ inputs.add_latest }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Log in to GHCR
