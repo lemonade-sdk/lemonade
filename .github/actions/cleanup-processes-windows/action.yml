@@ -233,14 +233,25 @@ runs:
                 Write-Host "Product Code: $productCode" -ForegroundColor Gray
 
                 Write-Host "Uninstalling..." -ForegroundColor Yellow
-                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x $productCode /qn" -Wait -PassThru
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x $productCode /qn /norestart" -Wait -PassThru
 
                 if ($proc.ExitCode -eq 0) {
                     Write-Host "Uninstall successful!" -ForegroundColor Green
+                } elseif ($proc.ExitCode -eq 3010) {
+                    Write-Host "Uninstall successful (3010: reboot pending, not performed on CI runners)." -ForegroundColor Yellow
                 } elseif ($proc.ExitCode -eq 1605) {
                     Write-Host "Windows Installer reports product not installed (1605). Removing stale ARP registry key..." -ForegroundColor Yellow
-                    Remove-Item -Path $foundProduct.PSPath -Recurse -Force -ErrorAction SilentlyContinue
-                    Write-Host "Stale ARP registry key removed: $productCode" -ForegroundColor Green
+                    try {
+                        Remove-Item -Path $foundProduct.PSPath -Recurse -Force -ErrorAction Stop
+                    } catch {
+                        Write-Host "  Remove-Item failed: $_" -ForegroundColor Red
+                    }
+
+                    if (Test-Path $foundProduct.PSPath) {
+                        Write-Host "WARNING: stale ARP registry key still present: $productCode" -ForegroundColor Red
+                    } else {
+                        Write-Host "Stale ARP registry key removed: $productCode" -ForegroundColor Green
+                    }
                 } else {
                     Write-Host "Uninstall failed with exit code $($proc.ExitCode)" -ForegroundColor Red
                 }
@@ -251,10 +262,12 @@ runs:
             # Fallback: Check if we can uninstall via the MSI file if it exists in current directory
             if (Test-Path "lemonade-server-minimal.msi") {
                 Write-Host "Found lemonade-server-minimal.msi in current directory. Attempting uninstall via file..." -ForegroundColor Yellow
-                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x lemonade-server-minimal.msi /qn" -Wait -PassThru
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x lemonade-server-minimal.msi /qn /norestart" -Wait -PassThru
 
                 if ($proc.ExitCode -eq 0) {
                     Write-Host "Uninstall via MSI file successful!" -ForegroundColor Green
+                } elseif ($proc.ExitCode -eq 3010) {
+                    Write-Host "Uninstall via MSI file successful (3010: reboot pending, not performed on CI runners)." -ForegroundColor Yellow
                 } else {
                     Write-Host "Uninstall via MSI file failed with exit code $($proc.ExitCode)" -ForegroundColor Red
                 }
