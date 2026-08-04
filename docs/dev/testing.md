@@ -43,7 +43,7 @@ No timers or sleeps as success signals — monitor logs or process IDs instead. 
 
 ### Respect the CI budget
 
-Use the smallest model that exercises the code path. Suites that run on GitHub-hosted runners download models fresh every run: stay under 1 GB, and never add a model over 5 GB. The self-hosted hardware runners keep persistent model caches, so inference suites there may use larger models when the modality has no small variant. Scenarios that would meaningfully extend every PR's runtime (upgrade paths, long-idle behavior) belong in scheduled or manually-triggered workflows, not the per-PR gate.
+Use the smallest model that exercises the code path. Suites that run on GitHub-hosted runners download models fresh every run: aim for under 1 GB, and treat 5 GB as a hard cap. The self-hosted hardware runners keep persistent model caches, so inference suites there may use larger models when the modality has no small variant. Scenarios that would meaningfully extend every PR's runtime (upgrade paths, long-idle behavior) belong in scheduled or manually-triggered workflows, not the per-PR gate.
 
 ---
 
@@ -57,7 +57,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Adds a backend with a new modality (new endpoints) | New `test/server_<modality>.py` modeled on `test/server_sd.py`; register it in `test/utils/capabilities.py` and `test/utils/test_models.py`; wire it into both the Windows and Linux test blocks of `cpp_server_build_test_release.yml` |
 | Changes LLM inference (llamacpp, RyzenAI, FLM, vLLM) | `test/server_llm.py`, run per backend with `--wrapped-server` / `--backend` |
 | Touches the Ollama-compatible API | `test/test_ollama.py` |
-| Touches the Anthropic-compatible API | `test/server_endpoints.py` |
+| Touches the Anthropic-compatible API | `test/test_ollama.py` (despite the name, this suite owns both the Ollama- and Anthropic-compatible API tests) |
 | Touches the MCP gateway | `test/server_mcp.py` |
 | Changes audio transcription | `test/server_whisper.py` or `test/server_moonshine.py` |
 | Changes text-to-speech | `test/server_tts.py` |
