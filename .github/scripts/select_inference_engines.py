@@ -4,13 +4,10 @@ Reads a newline-separated changed-file list from stdin and writes GitHub
 Actions outputs (exe_matrix, deb_matrix, run_exe, run_deb, run_dmg, selected).
 
 Classification is conservative: a file selects nothing only if it matches an
-explicit safe rule, and any file that matches no rule at all selects every
-engine — including under .github/. Engine-specific rules select just that
-engine's legs.
+explicit safe rule, and anything matching no rule at all selects every engine.
 
-This runs from the PR head, so a PR that edits this script also changes its own
-gating. That is accepted: fork PRs get a read-only token here, and the repo
-requires review, so a self-skipping rewrite has to get past a human either way.
+This runs from the PR head, so a PR can edit its own gating. Accepted: fork PRs
+get a read-only token here, and a self-skipping rewrite still needs review.
 """
 
 import argparse
@@ -26,8 +23,7 @@ BACKEND_DIRS = (
     "src/cpp/include/lemon/backends/",
 )
 
-# Workflows that define or guard the inference legs. Every other workflow is
-# safe; test_workflows_that_touch_inference_are_listed keeps this honest.
+# Workflows that define or guard the legs. Every other workflow is safe.
 INFERENCE_WORKFLOWS = frozenset(
     [
         WORKFLOW_FILE,
@@ -53,8 +49,7 @@ SAFE_PATTERNS = [
 ]
 
 # Everything under .github/ that cannot reach an inference job. Anything else
-# there — the matrix, composite actions, this script — is unrecognized and
-# therefore selects every engine.
+# there — the matrix, composite actions, this script — selects every engine.
 GITHUB_SAFE_PATTERNS = [
     ".github/workflows/*",
     ".github/ISSUE_TEMPLATE/*",
@@ -73,10 +68,9 @@ BACKEND_DIR_TO_ENGINES = {
     "ryzenai": ["ryzenai"],
     "moonshine": ["moonshine"],
     "onnxruntime": ["classify-onnxruntime", "router-onnxruntime"],
-    # The omni collection bundles an llamacpp planner with SD-Turbo, Whisper,
-    # and kokoro components, so each of those reaches the omni leg too. That
-    # component list lives in the collection manifest on Hugging Face, not in
-    # this repo, so nothing here catches it being re-composed.
+    # The omni collection bundles llamacpp, SD-Turbo, Whisper, and kokoro, so
+    # each reaches the omni leg. That component list lives in the collection
+    # manifest on Hugging Face, so nothing here catches it being re-composed.
     "sdcpp": ["stable-diffusion", "omni"],
     "thinksound": ["audio-gen-thinksound"],
     "acestep": ["audio-gen-acestep"],
@@ -96,8 +90,8 @@ ALL = object()
 def derive_script_rules(matrix):
     """Map each test script to the legs that run it, read off the matrix.
 
-    Every leg names the script it runs, so this direction of the mapping is
-    not a judgement call and is never hand-maintained.
+    Every leg names the script it runs, so this direction is never a judgement
+    call and is never hand-maintained.
     """
     rules = {}
     for legs in matrix.values():
@@ -115,9 +109,9 @@ def _matches_any(path, patterns):
 def _is_non_leg_test_script(path, script_rules):
     """True for a test script at the top of test/ that no matrix leg runs.
 
-    Those belong to the always-on CLI/endpoints jobs. Deriving this from the
-    matrix rather than listing the scripts means one that later becomes a
-    leg's script is picked up by script_rules first, on its own.
+    Those belong to the always-on CLI/endpoints jobs. Deriving this instead of
+    listing them means one that later becomes a leg's script stops being safe
+    on its own, because script_rules matches it first.
     """
     if not path.startswith(TEST_DIR) or path in script_rules:
         return False
@@ -168,7 +162,6 @@ def validate_mapping(matrix):
     Runs on every invocation, not just under test, because both failure modes
     are silent: a rule naming a leg that no longer exists selects nothing, and
     a leg no backend folder names stops running when its backend changes.
-    Failing here fails the aggregate required check.
     """
     all_engines = {leg["name"] for legs in matrix.values() for leg in legs}
     by_backend = set()
@@ -177,7 +170,7 @@ def validate_mapping(matrix):
 
     problems = set()
     # `selected` is a space-joined line in $GITHUB_OUTPUT, so whitespace in a
-    # leg name would corrupt it — or append another key entirely.
+    # leg name splits it, and a newline appends a key of its own.
     for name in all_engines:
         if not name or any(char.isspace() for char in name):
             problems.add(f"matrix leg name {name!r} must be non-empty and unspaced")

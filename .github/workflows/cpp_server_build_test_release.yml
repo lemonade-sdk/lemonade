@@ -28,8 +28,8 @@ env:
 
 jobs:
   # ========================================================================
-  # CHANGE DETECTION - Selects which inference-test matrix legs must run.
-  # Narrows only on pull_request; every other event runs the full matrix.
+  # CHANGE DETECTION - Narrows the inference matrix on pull_request only;
+  # every other event runs the full matrix.
   # ========================================================================
 
   changes:
@@ -56,9 +56,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # previous_filename matters: a rename out of a gated path (e.g.
-            # router.cpp -> docs/router.md) must still count as touching it
-            # --method GET is required: any -F flag would otherwise make gh POST
+            # previous_filename: a rename out of a gated path still touches it.
+            # --method GET: any -F flag would otherwise make gh POST, and 404.
             gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
               --method GET --paginate -F per_page=100 \
               --jq '.[] | .filename, (.previous_filename // empty)' > changed_files.txt
@@ -1150,9 +1149,8 @@ jobs:
     name: Test .exe - ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     needs: [build-lemonade-server-installer, changes]
-    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch).
-    # Matrix legs come from .github/inference-matrix.json, filtered by the changes job;
-    # the run_exe guard exists because an empty matrix is a workflow error, not a skip.
+    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
+    # run_exe is needed because an empty matrix is a workflow error, not a skip.
     if: ${{ needs.changes.outputs.run_exe == 'true' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     strategy:
       fail-fast: false
@@ -1339,9 +1337,8 @@ jobs:
     name: Test .deb - ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     needs: [build-lemonade-deb, changes]
-    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch).
-    # Matrix legs come from .github/inference-matrix.json, filtered by the changes job;
-    # the run_deb guard exists because an empty matrix is a workflow error, not a skip.
+    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
+    # run_deb is needed because an empty matrix is a workflow error, not a skip.
     if: ${{ needs.changes.outputs.run_deb == 'true' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     strategy:
       fail-fast: false
@@ -1863,19 +1860,11 @@ jobs:
   # CLI AND ENDPOINTS TESTS - Run on GitHub-hosted runners (no GPU needed)
   # ========================================================================
 
-  # Single aggregate check for branch protection: legs skipped by change
-  # detection count as passing, but any leg that ran must have succeeded.
-  # The three build jobs are in needs because a failed build skips its
-  # inference job, and "skipped" alone is indistinguishable from "not selected",
-  # so without them a broken build reads as green here.
-  #
-  # This gates EVERY matrix leg, whereas branch protection currently names only
-  # 13 of the 27. That widening is intended: hand-syncing contexts is what let
-  # the other legs drift out of the required set. A leg that should not block
-  # merges belongs out of the matrix, not silently non-gating.
-  #
-  # Deliberately NOT in the release job's needs — inference jobs are skipped
-  # on tag pushes, exactly when release runs.
+  # Single required check covering the inference matrix: a leg dropped by change
+  # detection counts as passing, but any leg that ran must have succeeded.
+  # The build jobs are in needs because a failed build skips its inference job,
+  # and that skip is indistinguishable from "not selected" — without them a
+  # broken build reads as green here.
   inference-tests-ok:
     name: Inference Tests OK
     runs-on: ubuntu-latest
@@ -1899,8 +1888,8 @@ jobs:
         run: |
           echo "Engines selected by change detection: $SELECTED"
           echo "$RESULTS"
-      # `selected` is never empty when the changes job ran to completion, so an
-      # empty value means it was skipped and nothing gated the inference jobs.
+      # `selected` is only empty if the changes job never ran, which would mean
+      # nothing gated the inference jobs.
       - name: Fail if a required job failed or change detection produced nothing
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.changes.outputs.selected == ''
         run: |
