@@ -251,6 +251,24 @@ class TestMappingIntegrity(unittest.TestCase):
             self.assertTrue(folders, prefix)
             self.assertEqual(folders - set(sel.BACKEND_DIR_TO_ENGINES), set(), prefix)
 
+    def test_every_gated_job_is_covered_by_the_aggregate(self):
+        """A job change detection can skip must be able to fail the gate.
+
+        Otherwise it can fail while Inference Tests OK stays green, which is
+        the drift this whole mechanism exists to prevent.
+        """
+        with open(WORKFLOW_PATH, encoding="utf-8") as f:
+            jobs = yaml.safe_load(f)["jobs"]
+        covered = set()
+        for name, job in jobs.items():
+            if "needs.changes.outputs" not in str(job.get("if", "")):
+                continue
+            needs = job.get("needs") or []
+            covered.add(name)
+            covered.update([needs] if isinstance(needs, str) else needs)
+        self.assertTrue(covered, "no change-detection-gated jobs found")
+        self.assertEqual(covered - set(jobs["inference-tests-ok"]["needs"]), set())
+
     def test_dmg_engines_exist_in_matrix(self):
         self.assertEqual(sel.DMG_ENGINES - ALL_ENGINE_NAMES, set())
 
