@@ -6,8 +6,10 @@ Actions outputs (exe_matrix, deb_matrix, run_exe, run_deb, run_dmg, selected).
 Classification is conservative: a file selects nothing only if it matches an
 explicit safe rule, and anything matching no rule at all selects every engine.
 
-This runs from the PR head, so a PR can edit its own gating. Accepted: fork PRs
-get a read-only token here, and a self-skipping rewrite still needs review.
+This runs from the PR head, so a PR that edits this script decides its own
+gating, including selecting nothing. Pinning it to the base ref would not buy
+much: pull_request runs the workflow file from the head too, so a PR can
+already delete the inference jobs outright. Both are caught by review.
 """
 
 import argparse
