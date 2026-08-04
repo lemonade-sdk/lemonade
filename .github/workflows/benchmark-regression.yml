@@ -1,21 +1,21 @@
 name: Nightly Backend Perf Regression
 
 on:
-  # TEMPORARY — remove before merging to main
-  push:
-    branches: [iswarya/issue-2858-backend-perf-tracker]
-
   # Nightly — catch environment drift and silent regressions
   schedule:
     - cron: '0 2 * * *'
 
   # On backend change — run when version pins or fork registry change
+  # TEMPORARY: iswarya/issue-2858-backend-perf-tracker added for branch testing — remove before merge
   push:
-    branches: [main]
+    branches:
+      - main
+      - iswarya/issue-2858-backend-perf-tracker
     paths:
       - 'src/cpp/resources/backend_versions.json'
       - 'ci/benchmark_forks.json'
       - 'src/cpp/server/backends/**'
+      - '.github/workflows/benchmark-regression.yml'
 
   # On release — validate perf before shipping
   release:
