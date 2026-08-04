@@ -99,10 +99,10 @@ cmake --build --preset default --target cpp-ci-tests
 ctest --test-dir build -L "^cpp-ci$" --output-on-failure
 ```
 
-Windows (use the preset `setup.ps1` configured — `windows` for VS 2022, `vs18` for VS 2026; Visual Studio builds are multi-config, so `ctest` needs `-C Release`):
+Windows (generator-independent, so it works whether `setup.ps1` configured the `windows` (VS 2022) or `vs18` (VS 2026) preset; Visual Studio builds are multi-config, so `ctest` needs `-C Release`):
 
 ```powershell
-cmake --build --preset windows --target cpp-ci-tests
+cmake --build build --config Release --target cpp-ci-tests
 ctest --test-dir build -C Release -L "^cpp-ci$" --output-on-failure
 ```
 
@@ -128,7 +128,7 @@ python test/test_schema_lock.py
 - Server integration suites (`test/server_endpoints.py`, `test/server_llm.py`, and most other `test/server_*.py` files) extend `ServerTestBase` (`test/utils/server_base.py`) and end with `run_server_tests(...)`. Suites that manage their own `lemond` processes (`test/server_jobs.py`), suites that drive the CLI against a persistent external server (`test/server_cli2.py`), and pure Python unit, fixture, and schema tests (`test/test_routing_fixtures.py`, `test/test_schema_lock.py`) are plain `unittest.TestCase` classes.
 - Test methods are numbered to enforce order: `test_020_...`, with letter suffixes to insert between existing numbers (`test_021a_...`). Follow the natural sequence of the suite.
 - Use the real client SDKs (`openai`, `ollama`) rather than raw HTTP where a suite is proving API compatibility.
-- Gate hardware- or backend-specific tests with `@skip_if_unsupported` from `test/utils/capabilities.py`. The decorator skips based on the declared capabilities of the configured `--wrapped-server` / `--backend`; in practice these tests execute on the self-hosted hardware runners and skip elsewhere.
+- Gate tests on declared server capabilities with `@skip_if_unsupported` from `test/utils/capabilities.py`; it skips based on what the configured `--wrapped-server` / `--backend` reports supporting, not on detected hardware. Use `@requires_backend(...)` to gate on a specific backend. In practice, capability- and backend-gated tests execute on the self-hosted hardware runners and skip elsewhere.
 - Mock external services in-process (for example, the mock cloud provider) so tests run in CI without secrets or network dependencies.
 - Clean up after yourself: restore environment variables with `self.addCleanup(...)`, terminate any subprocess the test starts, and never leave a server running on a hardcoded port.
 
@@ -138,7 +138,7 @@ python test/test_schema_lock.py
 
 Every PR runs the C++ `cpp-ci` tests, the endpoint/CLI suites on Windows, Linux, and macOS, routing schema checks, app typecheck and regression tests, and the docs drift and link checks. Inference suites run on self-hosted AMD hardware runners ([details](./self-hosted-runners.md)).
 
-- CI must be green before requesting review.
+- Relevant local tests should pass before requesting review. All required CI must be green before final approval and merge.
 - Claiming a failure is a pre-existing flake requires evidence: link a `main` run with the identical failure signature. Fix flaky tests at the root cause; don't widen thresholds or add retries.
 - The PR description states how the change was tested and which platforms you could not cover. Ask in the [Discord](https://discord.gg/5xXzkMu8Zk) for help testing on hardware you don't have.
 - A silently-skipped test is a bug: if your change should be exercised by an existing CI job, confirm the job actually ran it rather than skipping.
