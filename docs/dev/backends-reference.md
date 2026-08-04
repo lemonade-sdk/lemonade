@@ -29,12 +29,12 @@ the generator instead. Prose outside the markers is preserved. -->
 <!-- BEGIN GENERATED: backends-matrix -->
 | Recipe | Backend | OS | Device families |
 |--------|---------|----|-----------------|
-| `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `acestep` | cuda | linux, windows | nvidia_gpu |
 | `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
-| `kokoro` | cpu | linux, windows | cpu (x86_64) |
 | `kokoro` | metal | macos | metal |
+| `kokoro` | cpu | linux, windows | cpu (x86_64) |
 | `llamacpp` | system | linux | cpu (arm64, x86_64) |
 | `llamacpp` | metal | macos | metal |
 | `llamacpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
@@ -47,27 +47,27 @@ the generator instead. Prose outside the markers is preserved. -->
 | `onnxruntime` | cpu | windows | cpu (x86_64) |
 | `onnxruntime` | cpu | linux | cpu (arm64, x86_64) |
 | `onnxruntime` | cpu | macos | cpu (arm64) |
-| `openmoss` | rocm | linux, windows | amd_gpu |
 | `openmoss` | cuda | linux, windows | nvidia_gpu |
 | `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `openmoss` | rocm | linux, windows | amd_gpu |
 | `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
-| `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `sd-cpp` | metal | macos | metal |
 | `sd-cpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
-| `sd-cpp` | metal | macos | metal |
-| `thinksound` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `thinksound` | cuda | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `trellis` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `thinksound` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `trellis` | cuda | linux, windows | nvidia_gpu |
 | `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `trellis` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
 | `whispercpp` | npu | windows | amd_npu (XDNA2) |
-| `whispercpp` | rocm | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
-| `whispercpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64) |
-| `whispercpp` | cpu | linux, windows | cpu (x86_64) |
 | `whispercpp` | metal | macos | metal |
+| `whispercpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64) |
+| `whispercpp` | rocm | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `whispercpp` | cpu | linux, windows | cpu (x86_64) |
 <!-- END GENERATED: backends-matrix -->
 
 > **Note:** The `llamacpp` `rocm` row lists `linux, windows` for the family as a
@@ -186,7 +186,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |-------|-----------|--------|
 | `kokoro-v1` | 0.354 | tts |
 
-#### `llamacpp` — Llama.cpp GPU (77 models)
+#### `llamacpp` — Llama.cpp GPU (87 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
@@ -217,6 +217,16 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Llama-3.2-1B-Instruct-GGUF` | 0.834 | — |
 | `Llama-3.2-3B-Instruct-GGUF` | 2.06 | — |
 | `Llama-4-Scout-17B-16E-Instruct-GGUF` | 63.2 | vision |
+| `MiniCPM-V-4-GGUF` | 3.15 | vision |
+| `MiniCPM-V-4.5-GGUF` | 6.12 | vision |
+| `MiniCPM-V-4.6-GGUF` | 1.64 | hot, vision |
+| `MiniCPM-V-4.6-Thinking-GGUF` | 1.64 | reasoning, vision |
+| `MiniCPM-o-2.6-Vision-GGUF` | 5.73 | vision |
+| `MiniCPM-o-4.5-Vision-GGUF` | 6.12 | vision |
+| `MiniCPM3-4B-GGUF` | 2.47 | — |
+| `MiniCPM4-8B-GGUF` | 4.97 | — |
+| `MiniCPM4.1-8B-GGUF` | 4.97 | reasoning |
+| `MiniCPM5-1B-GGUF` | 0.69 | hot, reasoning |
 | `Ministral-3-3B-Instruct-2512-GGUF` | 2.99 | vision |
 | `Nemotron-3-Nano-30B-A3B-GGUF` | 22.8 | — |
 | `Phi-4-mini-instruct-GGUF` | 2.49 | — |
