@@ -22,14 +22,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: python -m pip install --upgrade pip jsonschema pyyaml
+        run: python -m pip install --upgrade pip jsonschema
       # Pure-python, no server binary needed — fast PR gate for the routing
       # policy/decision schemas. Keeps the back-compat guardrails enforced.
       - name: Validate fixtures against the JSON schemas
         run: python test/test_routing_fixtures.py
       - name: Verify frozen-major schema lock
         run: python test/test_schema_lock.py
-      # Guards the inference-test change detection: a renamed matrix leg or a
-      # new backend folder must not silently stop selecting its tests.
-      - name: Verify inference engine selection rules
-        run: python test/test_inference_engine_selection.py

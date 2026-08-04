@@ -19,12 +19,7 @@ BACKEND_DIRS = (
 )
 
 # Every other workflow is safe.
-INFERENCE_WORKFLOWS = frozenset(
-    [
-        WORKFLOW_FILE,
-        ".github/workflows/routing_schema_tests.yml",
-    ]
-)
+INFERENCE_WORKFLOWS = frozenset([WORKFLOW_FILE])
 
 TEST_DIR = "test/"
 
