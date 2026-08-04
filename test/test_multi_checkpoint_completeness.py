@@ -23,6 +23,7 @@ class TestMultiCheckpointCompleteness(unittest.TestCase):
         self.tmp_dir = tempfile.mkdtemp()
         self.lemond_bin = get_default_lemond_binary()
         self.cli_bin = get_default_cli_binary()
+        # Intentionally non-default port: test starts its own isolated lemond
         self.port = 13306
         self.server_proc = None
         self.server_stdout = ""
