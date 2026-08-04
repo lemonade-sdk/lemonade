@@ -134,7 +134,6 @@ class TestEngineFiles(unittest.TestCase):
         self.assertEqual(selected_names(outputs, "exe_matrix"), {"whisper", "omni"})
 
     def test_a_non_leg_script_that_becomes_a_leg_stops_being_safe(self):
-        """The non-leg rule is derived, so it yields to the matrix on its own."""
         self.assertEqual(outputs_for(["test/server_endpoints.py"])["selected"], "none")
         extended = copy.deepcopy(MATRIX)
         extended["exe"].append(
@@ -235,14 +234,12 @@ class TestMappingIntegrity(unittest.TestCase):
             sel.validate_mapping(broken)
 
     def test_a_new_leg_is_wired_to_its_test_script_automatically(self):
-        """The script dimension is derived, so it cannot drift out of sync."""
         extended = copy.deepcopy(MATRIX)
         extended["exe"].append(dict(extended["exe"][0], name="llamacpp-rocm"))
         rules = sel.derive_script_rules(extended)
         self.assertIn("llamacpp-rocm", rules["test/server_llm.py"])
 
     def test_workflows_that_touch_inference_are_listed(self):
-        """A workflow that defines or guards the legs must not classify safe."""
         markers = ("inference-matrix.json", "test_inference_engine_selection.py")
         found = set()
         for path in sorted((REPO_ROOT / ".github" / "workflows").glob("*.y*ml")):
@@ -258,7 +255,6 @@ class TestMappingIntegrity(unittest.TestCase):
             self.assertEqual(folders - set(sel.BACKEND_DIR_TO_ENGINES), set(), prefix)
 
     def test_every_gated_job_is_covered_by_the_aggregate(self):
-        """A job change detection can skip must be able to fail the gate."""
         with open(WORKFLOW_PATH, encoding="utf-8") as f:
             jobs = yaml.safe_load(f)["jobs"]
         covered = set()

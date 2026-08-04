@@ -1860,11 +1860,10 @@ jobs:
   # CLI AND ENDPOINTS TESTS - Run on GitHub-hosted runners (no GPU needed)
   # ========================================================================
 
-  # Single required check covering the inference matrix: a leg dropped by change
-  # detection counts as passing, but any leg that ran must have succeeded.
-  # The build jobs are in needs because a failed build skips its inference job,
-  # and that skip is indistinguishable from "not selected" — without them a
-  # broken build reads as green here.
+  # Single required check covering the inference matrix. The build jobs are in
+  # needs because a failed build skips its inference job, and that skip is
+  # indistinguishable from "not selected" — without them a broken build reads
+  # as green here.
   inference-tests-ok:
     name: Inference Tests OK
     runs-on: ubuntu-latest
@@ -1888,8 +1887,8 @@ jobs:
         run: |
           echo "Engines selected by change detection: $SELECTED"
           echo "$RESULTS"
-      # `selected` is only empty if the changes job never ran, which would mean
-      # nothing gated the inference jobs.
+      # `selected` is only empty if the changes job never ran, so nothing
+      # gated the inference jobs.
       - name: Fail if a required job failed or change detection produced nothing
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.changes.outputs.selected == ''
         run: |

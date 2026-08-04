@@ -1,15 +1,9 @@
 """Select which inference-test matrix legs must run for a set of changed files.
 
-Reads a newline-separated changed-file list from stdin and writes GitHub
-Actions outputs (exe_matrix, deb_matrix, run_exe, run_deb, run_dmg, selected).
+Takes the changed-file list on stdin, one path per line.
 
-Classification is conservative: a file selects nothing only if it matches an
-explicit safe rule, and anything matching no rule at all selects every engine.
-
-This runs from the PR head, so a PR that edits this script decides its own
-gating, including selecting nothing. Pinning it to the base ref would not buy
-much: pull_request runs the workflow file from the head too, so a PR can
-already delete the inference jobs outright. Both are caught by review.
+A file selects nothing only if it matches an explicit safe rule; anything
+matching no rule at all selects every engine.
 """
 
 import argparse
@@ -19,13 +13,12 @@ import sys
 
 WORKFLOW_FILE = ".github/workflows/cpp_server_build_test_release.yml"
 
-# A backend is a folder of sources plus the matching folder of headers.
 BACKEND_DIRS = (
     "src/cpp/server/backends/",
     "src/cpp/include/lemon/backends/",
 )
 
-# Workflows that define or guard the legs. Every other workflow is safe.
+# Every other workflow is safe.
 INFERENCE_WORKFLOWS = frozenset(
     [
         WORKFLOW_FILE,
@@ -50,8 +43,6 @@ SAFE_PATTERNS = [
     "LICENSE",
 ]
 
-# Everything under .github/ that cannot reach an inference job. Anything else
-# there — the matrix, composite actions, this script — selects every engine.
 GITHUB_SAFE_PATTERNS = [
     ".github/workflows/*",
     ".github/ISSUE_TEMPLATE/*",
@@ -71,8 +62,8 @@ BACKEND_DIR_TO_ENGINES = {
     "moonshine": ["moonshine"],
     "onnxruntime": ["classify-onnxruntime", "router-onnxruntime"],
     # The omni collection bundles llamacpp, SD-Turbo, Whisper, and kokoro, so
-    # each reaches the omni leg. That component list lives in the collection
-    # manifest on Hugging Face, so nothing here catches it being re-composed.
+    # each reaches the omni leg. Its component list lives on Hugging Face, so
+    # this is the one mapping nothing here can verify.
     "sdcpp": ["stable-diffusion", "omni"],
     "thinksound": ["audio-gen-thinksound"],
     "acestep": ["audio-gen-acestep"],
@@ -90,11 +81,7 @@ ALL = object()
 
 
 def derive_script_rules(matrix):
-    """Map each test script to the legs that run it, read off the matrix.
-
-    Every leg names the script it runs, so this direction is never a judgement
-    call and is never hand-maintained.
-    """
+    """Map each test script to the legs that run it, read off the matrix."""
     rules = {}
     for legs in matrix.values():
         for leg in legs:
@@ -103,17 +90,15 @@ def derive_script_rules(matrix):
 
 
 def _matches_any(path, patterns):
-    # fnmatchcase, not fnmatch: fnmatch normcases the path, so on macOS a local
-    # run would classify "DOCS/x.md" as safe while the Linux runner would not.
+    # fnmatchcase: plain fnmatch normcases, so macOS would disagree with CI.
     return any(fnmatch.fnmatchcase(path, p) for p in patterns)
 
 
 def _is_non_leg_test_script(path, script_rules):
     """True for a test script at the top of test/ that no matrix leg runs.
 
-    Those belong to the always-on CLI/endpoints jobs. Deriving this instead of
-    listing them means one that later becomes a leg's script stops being safe
-    on its own, because script_rules matches it first.
+    Those belong to the always-on CLI/endpoints jobs. Derived rather than
+    listed so that one adopted by a new leg stops being safe on its own.
     """
     if not path.startswith(TEST_DIR) or path in script_rules:
         return False
@@ -161,9 +146,8 @@ def select_engines(changed_files, event_name, script_rules):
 def validate_mapping(matrix):
     """Raise if BACKEND_DIR_TO_ENGINES and the matrix have drifted apart.
 
-    Runs on every invocation, not just under test, because both failure modes
-    are silent: a rule naming a leg that no longer exists selects nothing, and
-    a leg no backend folder names stops running when its backend changes.
+    Runs in CI, not just under test, so that drift fails the required check
+    rather than silently retiring an engine's tests.
     """
     all_engines = {leg["name"] for legs in matrix.values() for leg in legs}
     by_backend = set()
@@ -171,8 +155,8 @@ def validate_mapping(matrix):
         by_backend.update(engines)
 
     problems = set()
-    # `selected` is a space-joined line in $GITHUB_OUTPUT, so whitespace in a
-    # leg name splits it, and a newline appends a key of its own.
+    # `selected` is a space-joined line in $GITHUB_OUTPUT: whitespace splits
+    # it, a newline appends a key of its own.
     for name in all_engines:
         if not name or any(char.isspace() for char in name):
             problems.add(f"matrix leg name {name!r} must be non-empty and unspaced")
