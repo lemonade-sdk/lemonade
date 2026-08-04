@@ -4,6 +4,8 @@ Lemonade's documentation is a first-class part of the product. Per our [philosop
 
 This guide covers style, structure, and the contribution process for both community authors and AI-assisted contributions.
 
+Documentation under `docs/` is built into the [mkdocs](https://www.mkdocs.org/) site hosted at [lemonade-server.ai/docs](https://lemonade-server.ai/docs). New documents must be added to the `nav` section of [`mkdocs.yml`](../../mkdocs.yml), or they won't appear on the site.
+
 - [Principles](#principles)
 - [Voice and Tone](#voice-and-tone)
 - [Document Structure](#document-structure)
