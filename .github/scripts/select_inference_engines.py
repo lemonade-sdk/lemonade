@@ -21,6 +21,13 @@ import sys
 WORKFLOW_FILE = ".github/workflows/cpp_server_build_test_release.yml"
 BACKENDS_DIR = "src/cpp/server/backends/"
 
+# Workflows that define or guard the inference legs. Every other workflow is
+# safe; test_workflows_that_touch_inference_are_listed keeps this honest.
+INFERENCE_WORKFLOWS = [
+    WORKFLOW_FILE,
+    ".github/workflows/routing_schema_tests.yml",
+]
+
 # fnmatch's "*" spans "/", so these match at any depth.
 SAFE_PATTERNS = [
     "docs/*",
@@ -29,12 +36,16 @@ SAFE_PATTERNS = [
     "examples/*",
     "src/app/*",
     "src/web-app/*",
+    "src/cpp/tray/*",
+    "test/app/*",
+    "test/cpp/*",
+    ".pre-commit-config.yaml",
     "LICENSE",
 ]
 
 # Everything under .github/ that cannot reach an inference job. Anything else
-# there — this workflow, the matrix, composite actions, this script — is
-# unrecognized and therefore selects every engine.
+# there — the matrix, composite actions, this script — is unrecognized and
+# therefore selects every engine.
 GITHUB_SAFE_PATTERNS = [
     ".github/workflows/*",
     ".github/ISSUE_TEMPLATE/*",
@@ -44,7 +55,9 @@ GITHUB_SAFE_PATTERNS = [
 ]
 
 BACKEND_DIR_TO_ENGINES = {
-    "llamacpp": ["llamacpp", "omni"],
+    # server_router.py loads a GGUF embedding model through llamacpp to back
+    # the semantic_similarity classifier, so llamacpp reaches the router leg.
+    "llamacpp": ["llamacpp", "omni", "router-onnxruntime"],
     "whispercpp": ["whisper"],
     "fastflowlm": ["flm", "flm-whisper"],
     "ryzenai": ["ryzenai"],
@@ -80,12 +93,14 @@ ALL = "ALL"
 
 
 def _matches_any(path, patterns):
-    return any(fnmatch.fnmatch(path, p) for p in patterns)
+    # fnmatchcase, not fnmatch: fnmatch normcases the path, so on macOS a local
+    # run would classify "DOCS/x.md" as safe while the Linux runner would not.
+    return any(fnmatch.fnmatchcase(path, p) for p in patterns)
 
 
 def classify_file(path):
     """Return the engines a single changed file selects: [], a list, or ALL."""
-    if path == WORKFLOW_FILE:
+    if path in INFERENCE_WORKFLOWS:
         return ALL
     if path.startswith(".github/"):
         return [] if _matches_any(path, GITHUB_SAFE_PATTERNS) else ALL
@@ -116,6 +131,31 @@ def select_engines(changed_files, event_name):
     return selected
 
 
+def validate_mapping(matrix):
+    """Raise if the rules and the matrix have drifted apart.
+
+    Runs on every invocation, not just under test: a rule pointing at a leg
+    name that no longer exists selects nothing, which would silently retire
+    that engine's tests. Failing here fails the aggregate required check.
+    """
+    all_engines = {leg["name"] for legs in matrix.values() for leg in legs}
+    mapped = set()
+    for source in (BACKEND_DIR_TO_ENGINES, TEST_SCRIPT_TO_ENGINES):
+        for engines in source.values():
+            mapped.update(engines)
+    problems = []
+    for name in sorted(mapped - all_engines):
+        problems.append(f"rule selects unknown engine {name!r}")
+    for name in sorted(all_engines - mapped):
+        problems.append(f"matrix leg {name!r} is unreachable by any rule")
+    for name in sorted(DMG_ENGINES - all_engines):
+        problems.append(f"DMG_ENGINES lists unknown engine {name!r}")
+    if problems:
+        raise SystemExit(
+            "inference engine selection rules are stale:\n  " + "\n  ".join(problems)
+        )
+
+
 def build_outputs(selection, matrix):
     all_engines = {leg["name"] for legs in matrix.values() for leg in legs}
     if selection is ALL:
@@ -142,6 +182,7 @@ def main():
 
     with open(args.matrix_file, encoding="utf-8") as f:
         matrix = json.load(f)
+    validate_mapping(matrix)
 
     changed_files = [line.strip() for line in sys.stdin if line.strip()]
     selection = select_engines(changed_files, args.event_name)

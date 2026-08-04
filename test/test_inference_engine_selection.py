@@ -7,6 +7,7 @@ Run with: python -m pytest test/test_inference_engine_selection.py
       or: python test/test_inference_engine_selection.py
 """
 
+import copy
 import importlib.util
 import json
 import re
@@ -56,6 +57,10 @@ class TestSafeFiles(unittest.TestCase):
             ".github/CODEOWNERS",
             ".github/dependabot.yml",
             ".github/ISSUE_TEMPLATE/bug-report.yml",
+            ".pre-commit-config.yaml",
+            "src/cpp/tray/tray_app.cpp",
+            "test/app/appSettings.test.cjs",
+            "test/cpp/test_auto_tune.cpp",
         ]:
             outputs = outputs_for([path])
             self.assertEqual(outputs["run_exe"], "false", path)
@@ -72,9 +77,12 @@ class TestEngineFiles(unittest.TestCase):
         self.assertEqual(selected_names(outputs, "deb_matrix"), {"text-to-speech"})
         self.assertEqual(outputs["run_dmg"], "true")
 
-    def test_llamacpp_selects_llamacpp_and_omni(self):
+    def test_llamacpp_selects_its_legs_and_the_router(self):
         outputs = outputs_for(["src/cpp/server/backends/llamacpp/x.cpp"])
-        self.assertEqual(selected_names(outputs, "exe_matrix"), {"llamacpp", "omni"})
+        self.assertEqual(
+            selected_names(outputs, "exe_matrix"),
+            {"llamacpp", "omni", "router-onnxruntime"},
+        )
         self.assertEqual(selected_names(outputs, "deb_matrix"), {"llamacpp", "omni"})
         self.assertEqual(outputs["run_dmg"], "true")
 
@@ -126,6 +134,7 @@ class TestRunAllFallback(unittest.TestCase):
             "test/utils/server_base.py",
             "test/requirements.txt",
             ".github/workflows/cpp_server_build_test_release.yml",
+            ".github/workflows/routing_schema_tests.yml",
             ".github/actions/setup-venv/action.yml",
             ".github/inference-matrix.json",
             ".github/scripts/select_inference_engines.py",
@@ -155,19 +164,30 @@ class TestMixedChanges(unittest.TestCase):
 
 
 class TestMappingIntegrity(unittest.TestCase):
-    def test_every_matrix_leg_is_reachable_by_some_rule(self):
-        mapped = set()
-        for engines in sel.BACKEND_DIR_TO_ENGINES.values():
-            mapped.update(engines)
-        for engines in sel.TEST_SCRIPT_TO_ENGINES.values():
-            mapped.update(engines)
-        self.assertEqual(ALL_ENGINE_NAMES - mapped, set())
+    def test_rules_and_matrix_agree(self):
+        sel.validate_mapping(MATRIX)
 
-    def test_every_mapping_target_exists_in_matrix(self):
-        for source in (sel.BACKEND_DIR_TO_ENGINES, sel.TEST_SCRIPT_TO_ENGINES):
-            for key, engines in source.items():
-                for engine in engines:
-                    self.assertIn(engine, ALL_ENGINE_NAMES, f"{key} -> {engine}")
+    def test_validate_mapping_catches_a_renamed_leg(self):
+        broken = copy.deepcopy(MATRIX)
+        broken["exe"][0]["name"] = "renamed-leg"
+        with self.assertRaises(SystemExit):
+            sel.validate_mapping(broken)
+
+    def test_validate_mapping_catches_an_unreachable_leg(self):
+        broken = copy.deepcopy(MATRIX)
+        broken["exe"].append(dict(broken["exe"][0], name="brand-new-leg"))
+        with self.assertRaises(SystemExit):
+            sel.validate_mapping(broken)
+
+    def test_workflows_that_touch_inference_are_listed(self):
+        """A workflow that defines or guards the legs must not classify safe."""
+        markers = ("inference-matrix.json", "test_inference_engine_selection.py")
+        found = set()
+        for path in sorted((REPO_ROOT / ".github" / "workflows").glob("*.y*ml")):
+            text = path.read_text(encoding="utf-8")
+            if any(marker in text for marker in markers):
+                found.add(f".github/workflows/{path.name}")
+        self.assertEqual(found, set(sel.INFERENCE_WORKFLOWS))
 
     def test_every_backend_folder_has_a_rule(self):
         backends_dir = REPO_ROOT / "src" / "cpp" / "server" / "backends"

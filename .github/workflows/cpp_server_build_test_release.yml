@@ -59,7 +59,8 @@ jobs:
             # previous_filename matters: a rename out of a gated path (e.g.
             # router.cpp -> docs/router.md) must still count as touching it
             gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-              --paginate --jq '.[] | .filename, (.previous_filename // empty)' > changed_files.txt
+              --paginate -F per_page=100 \
+              --jq '.[] | .filename, (.previous_filename // empty)' > changed_files.txt
           else
             : > changed_files.txt
           fi
@@ -1865,6 +1866,12 @@ jobs:
   # detection count as passing, but any leg that ran must have succeeded.
   # The three build jobs are in needs because a failed build skips its
   # inference job, and "skipped" alone is indistinguishable from "not selected".
+  #
+  # This gates EVERY matrix leg, whereas branch protection currently names only
+  # 13 of the 27. That widening is intended: hand-syncing contexts is what let
+  # the other legs drift out of the required set. A leg that should not block
+  # merges belongs out of the matrix, not silently non-gating.
+  #
   # Deliberately NOT in the release job's needs — inference jobs are skipped
   # on tag pushes, exactly when release runs.
   inference-tests-ok:
