@@ -85,7 +85,16 @@ def gh_api(path: str, token: str | None = None) -> dict:
         return json.loads(r.read())
 
 
-def resolve_latest_version(repo: str, token: str | None = None) -> str:
+def resolve_latest_version(repo: str, token: str | None = None,
+                           tag_prefix: str = "") -> str:
+    if tag_prefix:
+        # For date-stamped releases, /releases/latest may not match the prefix.
+        # List recent releases and pick the first whose tag starts with prefix.
+        releases = gh_api(f"repos/{repo}/releases?per_page=10", token)
+        for r in releases:
+            if r["tag_name"].startswith(tag_prefix):
+                return r["tag_name"]
+        raise RuntimeError(f"No release found with prefix {tag_prefix!r} in {repo}")
     data = gh_api(f"repos/{repo}/releases/latest", token)
     return data["tag_name"]
 
@@ -145,16 +154,30 @@ def find_binary(install_dir: Path, exe_name: str) -> Path | None:
 # Binary installation
 # ---------------------------------------------------------------------------
 
+def get_installed_version(install_dir: Path) -> str | None:
+    """Read the version stored on disk from a previous install."""
+    version_file = install_dir / "version.txt"
+    if version_file.exists():
+        return version_file.read_text().strip()
+    return None
+
+
 def install_fork_binary(fork: dict, version: str, binaries_dir: Path,
                         token: str | None, dry_run: bool, therock_ver: str = "") -> Path | None:
     fork_id = fork["fork_id"]
     exe_name = fork["binary_exe_windows"] if IS_WINDOWS else fork["binary_exe_linux"]
-    install_dir = binaries_dir / fork_id / version
-    binary_path = find_binary(install_dir, exe_name)
 
-    if binary_path and binary_path.exists():
-        print(f"  [cache] Using existing binary: {binary_path}")
-        return binary_path
+    # Store by fork_id only — one slot per fork, overwritten on version change.
+    # This prevents daily-release forks (e.g. AMD-Ecosystem gfx11-rocm-nightly-YYYYMMDD)
+    # from accumulating unbounded disk usage.
+    install_dir = binaries_dir / fork_id
+    installed_version = get_installed_version(install_dir)
+
+    if installed_version == version:
+        binary_path = find_binary(install_dir, exe_name)
+        if binary_path and binary_path.exists():
+            print(f"  [cache] {version} already installed: {binary_path}")
+            return binary_path
 
     url = resolve_binary_url(fork, version, therock_ver)
     if not url:
@@ -164,16 +187,30 @@ def install_fork_binary(fork: dict, version: str, binaries_dir: Path,
     if dry_run:
         print(f"  [dry-run] Would download: {url}")
         print(f"  [dry-run] Would install to: {install_dir / exe_name}")
-        return install_dir / exe_name  # fake path for dry-run
+        return install_dir / exe_name
+
+    if installed_version and installed_version != version:
+        print(f"  Version changed {installed_version} → {version}, replacing binary")
+        shutil.rmtree(install_dir, ignore_errors=True)
 
     archive_name = url.split("/")[-1]
-    archive_path = install_dir / archive_name
-    install_dir.mkdir(parents=True, exist_ok=True)
+    staging_dir = binaries_dir / f"{fork_id}.staging"
+    shutil.rmtree(staging_dir, ignore_errors=True)
+    staging_dir.mkdir(parents=True, exist_ok=True)
 
+    archive_path = staging_dir / archive_name
     download_file(url, archive_path, token)
-    print(f"  Extracting to {install_dir}")
-    extract_archive(archive_path, install_dir)
-    archive_path.unlink()  # remove archive after extraction
+    print(f"  Extracting to {staging_dir}")
+    extract_archive(archive_path, staging_dir)
+    archive_path.unlink()
+
+    # Atomic swap: staging → install
+    if install_dir.exists():
+        shutil.rmtree(install_dir)
+    staging_dir.rename(install_dir)
+
+    # Record version so next run can skip download
+    (install_dir / "version.txt").write_text(version)
 
     binary_path = find_binary(install_dir, exe_name)
     if not binary_path:
@@ -434,9 +471,17 @@ def main() -> int:
         print(f"Fork: {fork_id}  ({fork['label']})")
         print(f"Repo: {fork['repo']}")
 
+        # Skip if this fork requires a different OS than we're running on
+        runner_os = fork.get("runner_os", "windows" if IS_WINDOWS else "linux")
+        current_os = "windows" if IS_WINDOWS else "linux"
+        if runner_os != current_os:
+            print(f"  [skip] fork requires {runner_os}, running on {current_os}")
+            continue
+
         # Resolve version
         try:
-            version = resolve_latest_version(fork["repo"], args.token)
+            tag_prefix = fork.get("version_tag_prefix", "")
+            version = resolve_latest_version(fork["repo"], args.token, tag_prefix)
             print(f"Version: {version}")
         except Exception as e:
             print(f"  [ERROR] Could not resolve latest version: {e}")

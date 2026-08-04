@@ -40,13 +40,15 @@
       "repo": "AMD-Ecosystem/llama.cpp",
       "branch": "gfx11",
       "version_source": "github_latest",
-      "binary_url_windows": "https://github.com/AMD-Ecosystem/llama.cpp/releases/download/{version}/llama-{version}-win-rocm-gfx11-x64.zip",
-      "binary_url_linux": "https://github.com/AMD-Ecosystem/llama.cpp/releases/download/{version}/llama-{version}-ubuntu-rocm-gfx11-x64.tar.gz",
-      "binary_exe_windows": "llama-server.exe",
+      "version_tag_prefix": "gfx11-rocm-nightly-",
+      "binary_url_windows": "",
+      "binary_url_linux": "https://github.com/AMD-Ecosystem/llama.cpp/releases/download/{version}/llama-{version}-ubuntu-rocm-multiarch-x64.tar.gz",
+      "binary_exe_windows": "",
       "binary_exe_linux": "llama-server",
-      "hardware": ["gfx1100", "gfx1101", "gfx1102"],
+      "runner_os": "linux",
+      "hardware": ["gfx1100", "gfx1101", "gfx1102", "gfx1103", "gfx1150", "gfx1151", "gfx1152", "gfx1153"],
       "tracked": true,
-      "notes": "AMD-Ecosystem gfx11 branch. RDNA3-specific kernel optimizations. Not upstreamed to ggml-org."
+      "notes": "Nightly dated builds. Tag format: gfx11-rocm-nightly-YYYYMMDD. Single multiarch binary — covers all RDNA3/3.5 targets. Linux only, no Windows binary. Requires linux rocm runner."
     },
     {
       "fork_id": "llamacpp-upstream-vulkan",

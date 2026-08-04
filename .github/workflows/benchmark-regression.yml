@@ -76,19 +76,33 @@ jobs:
     name: Bench ${{ matrix.fork_id }}
     needs: build
     if: always() && needs.build.result == 'success'
-    runs-on: [self-hosted, Windows, 128gb, rocm, lemon-prod]
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Windows ROCm runner — lemonade-sdk forks
           - fork_id: llamacpp-rocm-nightly
             backend: rocm-nightly
+            os: windows
+            runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
+            binaries_dir: C:\lemonade-bench-binaries
           - fork_id: llamacpp-rocm-stable
             backend: rocm-stable
-          - fork_id: llamacpp-amd-ecosystem-gfx11
-            backend: rocm-gfx11
+            os: windows
+            runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
+            binaries_dir: C:\lemonade-bench-binaries
           - fork_id: llamacpp-upstream-vulkan
             backend: vulkan
+            os: windows
+            runner: [self-hosted, Windows, 128gb, vulkan, lemon-prod]
+            binaries_dir: C:\lemonade-bench-binaries
+          # Linux ROCm runner — AMD-Ecosystem gfx11 (Linux-only multiarch binary)
+          - fork_id: llamacpp-amd-ecosystem-gfx11
+            backend: rocm-gfx11
+            os: linux
+            runner: [self-hosted, Linux, 128gb, rocm, lemon-prod]
+            binaries_dir: /opt/lemonade-bench-binaries
 
     steps:
       - uses: actions/checkout@v5
@@ -168,12 +182,16 @@ jobs:
           $forkFilter = "${{ matrix.fork_id }}"
           $modelFilter = "${{ github.event.inputs.model_filter }}"
 
+          # Store binaries OUTSIDE the workspace so they persist across runs.
+          # Only re-downloaded when fork version changes (version forms part of path).
+          $binariesDir = "C:\lemonade-bench-binaries"
+
           $args = @(
             "ci/run_regression.py",
-            "--forks",   "ci/benchmark_forks.json",
-            "--output",  "ci/results",
-            "--binaries-dir", "ci/binaries",
-            "--fork-filter", $forkFilter
+            "--forks",        "ci/benchmark_forks.json",
+            "--output",       "ci/results",
+            "--binaries-dir", $binariesDir,
+            "--fork-filter",  $forkFilter
           )
           if ($modelFilter) { $args += "--model-filter"; $args += $modelFilter }
 
