@@ -19,6 +19,7 @@
 #include <cstring>
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/model_name_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
@@ -376,6 +377,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         }
     }
 
+    alias_manager_ = std::make_unique<AliasManager>(cache_dir_);
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
     model_manager_->set_cloud_registry(cloud_registry_.get());
 
@@ -1319,6 +1321,16 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
         handle_simulate_vram_pressure(req, res);
+    });
+
+    web_server.Get("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_get(req, res);
+    });
+    web_server.Post("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_add(req, res);
+    });
+    web_server.Delete(R"(/internal/aliases/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_remove(req, res);
     });
 
     // Server-side MCP client host foundation (admin-gated through the existing
@@ -2534,6 +2546,18 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
         response["data"].push_back(model_info_to_json(model_id, model_info));
     }
 
+    if (alias_manager_) {
+        auto all_aliases = alias_manager_->get_all_aliases();
+        for (const auto& [alias_id, target_name] : all_aliases) {
+            std::string canonical_target = model_manager_->resolve_model_name(target_name);
+            if (models.count(canonical_target) > 0) {
+                response["data"].push_back(model_info_to_json(alias_id, models.at(canonical_target)));
+            } else if (models.count(target_name) > 0) {
+                response["data"].push_back(model_info_to_json(alias_id, models.at(target_name)));
+            }
+        }
+    }
+
     res.set_content(response.dump(), "application/json");
 }
 
@@ -2650,15 +2674,26 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 }
 
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
-    std::string model_id = req.matches[1];
+    std::string model_id = utils::normalize_model_name(req.matches[1]);
 
     if (model_manager_->model_exists(model_id)) {
         auto info = model_manager_->get_model_info(model_id);
-        // Emit the wire-format id (bare for the precedence-winner, canonical-prefixed
-        // for shadowed sources), regardless of which form the client requested.
         std::string canonical_cache_key = model_manager_->resolve_model_name(model_id);
         std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
+        if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+            wire_id = model_id;
+        }
         res.set_content(model_info_to_json(wire_id, info).dump(), "application/json");
+    } else if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+        auto resolved_target = alias_manager_->resolve_alias(model_id);
+        if (resolved_target && model_manager_->model_exists(*resolved_target)) {
+            auto info = model_manager_->get_model_info(*resolved_target);
+            res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
+            return;
+        }
+        res.status = 404;
+        auto error_response = create_model_error(model_id, "Model not found");
+        res.set_content(error_response.dump(), "application/json");
     } else {
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
@@ -2968,6 +3003,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
@@ -3245,6 +3281,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
@@ -5320,6 +5357,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
+    normalize_and_resolve_request_model(request_json);
 
     try {
         model_name = request_json["model_name"];
@@ -5632,6 +5670,140 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
         res.status = 500;
         auto error_response = create_model_error("", e.what());
         res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+void Server::handle_aliases_get(const httplib::Request& req, httplib::Response& res) {
+    try {
+        nlohmann::json alias_list = nlohmann::json::array();
+        if (alias_manager_) {
+            for (const auto& [alias, target] : alias_manager_->get_all_aliases()) {
+                bool downloaded = false;
+                std::string recipe = "llamacpp";
+                try {
+                    if (model_manager_->model_exists(target)) {
+                        std::string canonical = model_manager_->resolve_model_name(target);
+                        downloaded = model_manager_->is_model_downloaded(canonical);
+                        ModelInfo info = model_manager_->get_model_info(canonical);
+                        recipe = info.recipe;
+                    }
+                } catch (...) {}
+                alias_list.push_back({
+                    {"alias", alias},
+                    {"target", target},
+                    {"downloaded", downloaded},
+                    {"recipe", recipe}
+                });
+            }
+        }
+        res.set_content(nlohmann::json{{"aliases", alias_list}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(create_model_error("", e.what()).dump(), "application/json");
+    }
+}
+
+void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto req_json = nlohmann::json::parse(req.body);
+        std::string alias = utils::normalize_model_name(req_json.value("alias", ""));
+        std::string target = utils::normalize_model_name(req_json.value("target", req_json.value("model", "")));
+
+        if (alias.empty() || target.empty()) {
+            res.status = 400;
+            res.set_content(create_model_error("", "Alias and target fields are required").dump(), "application/json");
+            return;
+        }
+
+        if (alias == target) {
+            res.status = 400;
+            res.set_content(create_model_error(alias, "Alias cannot point to itself").dump(), "application/json");
+            return;
+        }
+
+        if (alias.rfind("user.", 0) == 0 || alias.rfind("extra.", 0) == 0 || alias.rfind("builtin.", 0) == 0) {
+            res.status = 400;
+            res.set_content(create_model_error(alias, "Alias name cannot use reserved prefixes (user., extra., builtin.)").dump(), "application/json");
+            return;
+        }
+
+        if (model_manager_->model_exists(alias)) {
+            std::string canonical = model_manager_->resolve_model_name(alias);
+            if (canonical == alias || canonical == "user." + alias || canonical == "builtin." + alias) {
+                res.status = 409;
+                res.set_content(create_model_error(alias, "Cannot create alias '" + alias + "': Name conflicts with an existing canonical model").dump(), "application/json");
+                return;
+            }
+        }
+
+        if (!alias_manager_) {
+            res.status = 500;
+            res.set_content(create_model_error(alias, "AliasManager uninitialized").dump(), "application/json");
+            return;
+        }
+
+        std::string err_msg;
+        if (!alias_manager_->set_alias(alias, target, err_msg)) {
+            res.status = 409;
+            res.set_content(create_model_error(alias, err_msg).dump(), "application/json");
+            return;
+        }
+
+        nlohmann::json response = {
+            {"status", "ok"},
+            {"alias", alias},
+            {"target", target}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(create_model_error("", e.what()).dump(), "application/json");
+    }
+}
+
+void Server::handle_aliases_remove(const httplib::Request& req, httplib::Response& res) {
+    std::string alias = utils::normalize_model_name(req.matches[1]);
+    try {
+        if (!alias_manager_ || !alias_manager_->remove_alias(alias)) {
+            res.status = 404;
+            res.set_content(create_model_error(alias, "Alias not found: " + alias).dump(), "application/json");
+            return;
+        }
+        nlohmann::json response = {
+            {"status", "deleted"},
+            {"alias", alias}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(create_model_error(alias, e.what()).dump(), "application/json");
+    }
+}
+
+std::string Server::resolve_alias_target(const std::string& model_name) const {
+    if (alias_manager_) {
+        auto resolved = alias_manager_->resolve_alias(model_name);
+        if (resolved.has_value()) {
+            return resolved.value();
+        }
+    }
+    return model_name;
+}
+
+void Server::normalize_and_resolve_request_model(nlohmann::json& request_json) const {
+    if (request_json.contains("model") && request_json["model"].is_string()) {
+        std::string raw_name = request_json["model"].get<std::string>();
+        std::string resolved = resolve_alias_target(raw_name);
+        if (resolved != raw_name) {
+            request_json["model"] = resolved;
+        }
+    }
+    if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
+        std::string raw_name = request_json["model_name"].get<std::string>();
+        std::string resolved = resolve_alias_target(raw_name);
+        if (resolved != raw_name) {
+            request_json["model_name"] = resolved;
+        }
     }
 }
 
