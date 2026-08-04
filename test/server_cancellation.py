@@ -15,23 +15,24 @@ import subprocess
 
 import requests
 
+HOST = os.environ.get("LEMONADE_TEST_HOST", "127.0.0.1")
+
 
 def get_free_port() -> int:
-    """Find an available TCP port on localhost."""
+    """Find an available TCP port on local interface."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
+        s.bind((HOST, 0))
         return s.getsockname()[1]
 
 
 def wait_for_server(port: int, timeout: int = 15) -> bool:
-    """Poll localhost:port until HTTP server responds."""
+    """Poll server until HTTP health endpoint responds."""
     start = time.time()
     while time.time() - start < timeout:
         try:
             r = requests.get(
-                f"http://127.0.0.1:{port}/api/v1/health",
+                f"http://{HOST}:{port}/api/v1/health",
                 timeout=1,
-                proxies={"http": None, "https": None},
             )
             if r.status_code == 200:
                 return True
@@ -43,39 +44,41 @@ def wait_for_server(port: int, timeout: int = 15) -> bool:
 class TestServerCancellation(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        """Find executable lemond, spawn server process on ephemeral port."""
-        cls.port = get_free_port()
-        cls.temp_dir = tempfile.mkdtemp(prefix="lemond_cancel_test_")
-
+        """Find executable lemond, spawn server process on ephemeral port with retry."""
         lemond_bin = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "build", "lemond")
         )
         if not os.path.exists(lemond_bin):
             raise unittest.SkipTest(f"lemond binary not found at {lemond_bin}")
 
-        log_path = os.path.join(cls.temp_dir, "lemond_test.log")
-        cls.log_file = open(log_path, "w+", encoding="utf-8")
+        cls.temp_dir = tempfile.mkdtemp(prefix="lemond_cancel_test_")
 
-        cmd = [lemond_bin, cls.temp_dir, "--port", str(cls.port)]
-        env = os.environ.copy()
-        env["XDG_RUNTIME_DIR"] = cls.temp_dir
-        env["NO_PROXY"] = "127.0.0.1,localhost,*"
-        env["no_proxy"] = "127.0.0.1,localhost,*"
-        cls.proc = subprocess.Popen(
-            cmd,
-            stdout=cls.log_file,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=env,
-        )
+        max_retries = 3
+        for attempt in range(max_retries):
+            cls.port = get_free_port()
+            log_path = os.path.join(cls.temp_dir, f"lemond_test_{attempt}.log")
+            cls.log_file = open(log_path, "w+", encoding="utf-8")
 
-        if not wait_for_server(cls.port, timeout=30):
-            cls.log_file.seek(0)
-            log_output = cls.log_file.read()
-            cls.tearDownClass()
-            raise RuntimeError(
-                f"lemond failed to start on port {cls.port}. Log output:\n{log_output}"
+            cmd = [lemond_bin, cls.temp_dir, "--port", str(cls.port)]
+            cls.proc = subprocess.Popen(
+                cmd,
+                stdout=cls.log_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=os.environ.copy(),
             )
+
+            if wait_for_server(cls.port, timeout=15):
+                break
+
+            cls.proc.terminate()
+            cls.proc.wait()
+            cls.log_file.close()
+            if attempt == max_retries - 1:
+                cls.tearDownClass()
+                raise RuntimeError(
+                    f"lemond failed to start after {max_retries} port allocation attempts."
+                )
 
     @classmethod
     def tearDownClass(cls):
@@ -101,7 +104,7 @@ class TestServerCancellation(unittest.TestCase):
         """Start streaming request, read initial bytes, then abruptly close socket."""
         req_payload = (
             "POST /v1/chat/completions HTTP/1.1\r\n"
-            f"Host: 127.0.0.1:{self.port}\r\n"
+            f"Host: {HOST}:{self.port}\r\n"
             "Content-Type: application/json\r\n"
             "Content-Length: 60\r\n"
             "Connection: keep-alive\r\n\r\n"
@@ -109,7 +112,7 @@ class TestServerCancellation(unittest.TestCase):
         )
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect(("127.0.0.1", self.port))
+            s.connect((HOST, self.port))
             s.sendall(req_payload.encode("utf-8"))
             s.settimeout(3.0)
             try:
@@ -130,14 +133,14 @@ class TestServerCancellation(unittest.TestCase):
         )
         req_payload = (
             "POST /v1/chat/completions HTTP/1.1\r\n"
-            f"Host: 127.0.0.1:{self.port}\r\n"
+            f"Host: {HOST}:{self.port}\r\n"
             "Content-Type: application/json\r\n"
             f"Content-Length: {len(body)}\r\n"
             "Connection: close\r\n\r\n" + body
         )
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect(("127.0.0.1", self.port))
+            s.connect((HOST, self.port))
             s.sendall(req_payload.encode("utf-8"))
             s.shutdown(socket.SHUT_RDWR)
             s.close()
@@ -149,14 +152,14 @@ class TestServerCancellation(unittest.TestCase):
         body = '{"model":"default","messages":[{"role":"user","content":"Tell me a story"}],"stream":false}'
         req_payload = (
             "POST /v1/chat/completions HTTP/1.1\r\n"
-            f"Host: 127.0.0.1:{self.port}\r\n"
+            f"Host: {HOST}:{self.port}\r\n"
             "Content-Type: application/json\r\n"
             f"Content-Length: {len(body)}\r\n"
             "Connection: close\r\n\r\n" + body
         )
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect(("127.0.0.1", self.port))
+            s.connect((HOST, self.port))
             s.sendall(req_payload.encode("utf-8"))
             time.sleep(0.05)
             s.close()
@@ -166,10 +169,10 @@ class TestServerCancellation(unittest.TestCase):
     def test_04_multi_client_queue_isolation(self):
         """Assert Client B succeeds immediately after Client A drops mid-stream."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect(("127.0.0.1", self.port))
+            s.connect((HOST, self.port))
             req_payload = (
                 "POST /v1/chat/completions HTTP/1.1\r\n"
-                f"Host: 127.0.0.1:{self.port}\r\n"
+                f"Host: {HOST}:{self.port}\r\n"
                 "Content-Type: application/json\r\n"
                 "Content-Length: 60\r\n"
                 "Connection: close\r\n\r\n"
@@ -179,9 +182,8 @@ class TestServerCancellation(unittest.TestCase):
             s.close()
 
         r = requests.get(
-            f"http://127.0.0.1:{self.port}/api/v1/health",
+            f"http://{HOST}:{self.port}/api/v1/health",
             timeout=5,
-            proxies={"http": None, "https": None},
         )
         self.assertEqual(r.status_code, 200)
         self.assertIn("status", r.json())

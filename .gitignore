@@ -1,5 +1,6 @@
 # Local dev helper script (not tracked)
 .tauri-build-helper.sh
+.venv/
 
 ### Python template
 # Byte-compiled / optimized / DLL files
