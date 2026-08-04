@@ -28,6 +28,41 @@ env:
 
 jobs:
   # ========================================================================
+  # CHANGE DETECTION - Selects which inference-test matrix legs must run.
+  # Narrows only on pull_request; every other event runs the full matrix.
+  # ========================================================================
+
+  changes:
+    name: Detect changed engines
+    runs-on: ubuntu-latest
+    outputs:
+      exe_matrix: ${{ steps.select.outputs.exe_matrix }}
+      deb_matrix: ${{ steps.select.outputs.deb_matrix }}
+      run_exe: ${{ steps.select.outputs.run_exe }}
+      run_deb: ${{ steps.select.outputs.run_deb }}
+      run_dmg: ${{ steps.select.outputs.run_dmg }}
+      selected: ${{ steps.select.outputs.selected }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+      - name: Select inference engines
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+              --paginate --jq '.[].filename' > changed_files.txt
+          else
+            : > changed_files.txt
+          fi
+          python3 .github/scripts/select_inference_engines.py \
+            --matrix-file .github/inference-matrix.json \
+            --event-name "${{ github.event_name }}" \
+            --output "$GITHUB_OUTPUT" < changed_files.txt
+
+  # ========================================================================
   # BUILD JOBS - Run on rai-160-sdk workers
   # ========================================================================
 
@@ -1106,88 +1141,15 @@ jobs:
   test-exe-inference:
     name: Test .exe - ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    needs: build-lemonade-server-installer
-    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    needs: [build-lemonade-server-installer, changes]
+    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch).
+    # Matrix legs come from .github/inference-matrix.json, filtered by the changes job;
+    # the run_exe guard exists because an empty matrix is a workflow error, not a skip.
+    if: ${{ needs.changes.outputs.run_exe == 'true' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: llamacpp
-            script: server_llm.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan rocm"
-            runner: [Windows, vulkan, rocm, lemon-prod]
-          - name: omni
-            script: server_omni.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan"
-            runner: [Windows, vulkan, stx-halo, lemon-prod]
-          - name: ryzenai
-            script: server_llm.py
-            extra_args: "--wrapped-server ryzenai"
-            backends: "cpu hybrid npu"
-            runner: [Windows, xdna2, lemon-prod]
-          - name: flm
-            script: server_llm.py
-            extra_args: "--wrapped-server flm"
-            backends: "npu"
-            runner: [Windows, xdna2, lemon-prod]
-          - name: whisper
-            script: server_whisper.py
-            extra_args: "--wrapped-server whispercpp"
-            backends: "cpu npu rocm"
-            runner: [Windows, stx-halo, lemon-prod]
-          - name: flm-whisper
-            script: server_whisper.py
-            extra_args: "--wrapped-server flm"
-            backends: "npu"
-            runner: [Windows, xdna2, lemon-prod]
-          - name: moonshine
-            script: server_moonshine.py
-            extra_args: "--wrapped-server moonshine"
-            backends: "cpu"
-            runner: [self-hosted, Windows, lemon-prod]
-          - name: classify-onnxruntime
-            script: server_classify.py
-            extra_args: "--wrapped-server onnxruntime"
-            backends: "cpu"
-            runner: [self-hosted, Windows, lemon-prod]
-          - name: router-onnxruntime
-            script: server_router.py
-            extra_args: "--wrapped-server onnxruntime"
-            backends: "cpu"
-            runner: [self-hosted, Windows, lemon-prod]
-          - name: stable-diffusion
-            script: server_sd.py
-            extra_args: ""
-            backends: "cpu rocm vulkan"
-            runner: [Windows, rocm, vulkan, lemon-prod]
-          - name: audio-gen-thinksound
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server thinksound"
-            backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
-          - name: audio-gen-acestep
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server acestep"
-            backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
-          - name: text-to-speech
-            script: server_tts.py
-            extra_args: ""
-            backends: ""
-            runner: [self-hosted, Windows, lemon-prod]
-          - name: 3d-trellis
-            script: server_3d.py
-            extra_args: "--wrapped-server trellis"
-            backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
-          - name: tts-openmoss
-            script: server_tts_openmoss.py
-            extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
+        include: ${{ fromJSON(needs.changes.outputs.exe_matrix) }}
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1368,68 +1330,15 @@ jobs:
   test-deb-inference:
     name: Test .deb - ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    needs: build-lemonade-deb
-    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    needs: [build-lemonade-deb, changes]
+    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch).
+    # Matrix legs come from .github/inference-matrix.json, filtered by the changes job;
+    # the run_deb guard exists because an empty matrix is a workflow error, not a skip.
+    if: ${{ needs.changes.outputs.run_deb == 'true' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: llamacpp
-            script: server_llm.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
-          - name: omni
-            script: server_omni.py
-            extra_args: "--wrapped-server llamacpp"
-            backends: "vulkan"
-            runner: [Linux, vulkan, stx-halo, lemon-prod]
-          - name: stable-diffusion
-            script: server_sd.py
-            extra_args: ""
-            backends: "cpu rocm vulkan"
-            runner: [Linux, vulkan, rocm, lemon-prod]
-          - name: audio-gen-thinksound
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server thinksound"
-            backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
-          - name: audio-gen-acestep
-            script: server_audio_generation.py
-            extra_args: "--wrapped-server acestep"
-            backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
-          - name: whisper
-            script: server_whisper.py
-            extra_args: "--wrapped-server whispercpp"
-            backends: "cpu vulkan rocm"
-            runner: [Linux, rocm, xdna2, lemon-prod]
-          - name: moonshine
-            script: server_moonshine.py
-            extra_args: "--wrapped-server moonshine"
-            backends: "cpu"
-            runner: [self-hosted, Linux, lemon-prod]
-          - name: flm
-            script: server_llm.py
-            extra_args: "--wrapped-server flm"
-            backends: "npu"
-            runner: [Linux, xdna2, lemon-prod]
-          - name: text-to-speech
-            script: server_tts.py
-            extra_args: ""
-            backends: ""
-            runner: [self-hosted, Linux, lemon-prod]
-          - name: 3d-trellis
-            script: server_3d.py
-            extra_args: "--wrapped-server trellis"
-            backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
-          - name: tts-openmoss
-            script: server_tts_openmoss.py
-            extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
+        include: ${{ fromJSON(needs.changes.outputs.deb_matrix) }}
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1808,9 +1717,9 @@ jobs:
   test-dmg-inference:
     name: Test .dmg - macOS inference
     runs-on: macos-latest
-    needs: build-lemonade-macos-dmg
+    needs: [build-lemonade-macos-dmg, changes]
     # Skip inference tests on tag pushes (releases) — signed path runs tests inline in build job
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    if: ${{ needs.changes.outputs.run_dmg == 'true' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     timeout-minutes: 30
     env:
       LEMONADE_CI_MODE: "True"
@@ -1945,6 +1854,26 @@ jobs:
   # ========================================================================
   # CLI AND ENDPOINTS TESTS - Run on GitHub-hosted runners (no GPU needed)
   # ========================================================================
+
+  # Single aggregate check for branch protection: legs skipped by change
+  # detection count as passing, but any leg that ran must have succeeded.
+  # Deliberately NOT in the release job's needs — inference jobs are skipped
+  # on tag pushes, exactly when release runs.
+  inference-tests-ok:
+    name: Inference Tests OK
+    runs-on: ubuntu-latest
+    needs: [changes, test-exe-inference, test-deb-inference, test-dmg-inference]
+    if: always()
+    steps:
+      - name: Fail if any inference test failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "One or more inference test jobs failed or were cancelled:"
+          echo '${{ toJSON(needs.*.result) }}'
+          exit 1
+      - name: Report selection
+        run: |
+          echo "Engines selected by change detection: ${{ needs.changes.outputs.selected }}"
 
   test-cli-endpoints-linux:
     name: Test CLI/Endpoints (ubuntu-latest)

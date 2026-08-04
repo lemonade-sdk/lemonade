@@ -1,0 +1,307 @@
+{
+  "exe": [
+    {
+      "name": "llamacpp",
+      "script": "server_llm.py",
+      "extra_args": "--wrapped-server llamacpp",
+      "backends": "vulkan rocm",
+      "runner": [
+        "Windows",
+        "vulkan",
+        "rocm",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "omni",
+      "script": "server_omni.py",
+      "extra_args": "--wrapped-server llamacpp",
+      "backends": "vulkan",
+      "runner": [
+        "Windows",
+        "vulkan",
+        "stx-halo",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "ryzenai",
+      "script": "server_llm.py",
+      "extra_args": "--wrapped-server ryzenai",
+      "backends": "cpu hybrid npu",
+      "runner": [
+        "Windows",
+        "xdna2",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "flm",
+      "script": "server_llm.py",
+      "extra_args": "--wrapped-server flm",
+      "backends": "npu",
+      "runner": [
+        "Windows",
+        "xdna2",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "whisper",
+      "script": "server_whisper.py",
+      "extra_args": "--wrapped-server whispercpp",
+      "backends": "cpu npu rocm",
+      "runner": [
+        "Windows",
+        "stx-halo",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "flm-whisper",
+      "script": "server_whisper.py",
+      "extra_args": "--wrapped-server flm",
+      "backends": "npu",
+      "runner": [
+        "Windows",
+        "xdna2",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "moonshine",
+      "script": "server_moonshine.py",
+      "extra_args": "--wrapped-server moonshine",
+      "backends": "cpu",
+      "runner": [
+        "self-hosted",
+        "Windows",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "classify-onnxruntime",
+      "script": "server_classify.py",
+      "extra_args": "--wrapped-server onnxruntime",
+      "backends": "cpu",
+      "runner": [
+        "self-hosted",
+        "Windows",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "router-onnxruntime",
+      "script": "server_router.py",
+      "extra_args": "--wrapped-server onnxruntime",
+      "backends": "cpu",
+      "runner": [
+        "self-hosted",
+        "Windows",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "stable-diffusion",
+      "script": "server_sd.py",
+      "extra_args": "",
+      "backends": "cpu rocm vulkan",
+      "runner": [
+        "Windows",
+        "rocm",
+        "vulkan",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "audio-gen-thinksound",
+      "script": "server_audio_generation.py",
+      "extra_args": "--wrapped-server thinksound",
+      "backends": "vulkan rocm",
+      "runner": [
+        "Windows",
+        "rocm",
+        "vulkan",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "audio-gen-acestep",
+      "script": "server_audio_generation.py",
+      "extra_args": "--wrapped-server acestep",
+      "backends": "vulkan rocm",
+      "runner": [
+        "Windows",
+        "rocm",
+        "vulkan",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "text-to-speech",
+      "script": "server_tts.py",
+      "extra_args": "",
+      "backends": "",
+      "runner": [
+        "self-hosted",
+        "Windows",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "3d-trellis",
+      "script": "server_3d.py",
+      "extra_args": "--wrapped-server trellis",
+      "backends": "vulkan rocm",
+      "runner": [
+        "Windows",
+        "rocm",
+        "vulkan",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "tts-openmoss",
+      "script": "server_tts_openmoss.py",
+      "extra_args": "--wrapped-server openmoss",
+      "backends": "vulkan rocm",
+      "runner": [
+        "Windows",
+        "rocm",
+        "vulkan",
+        "lemon-prod"
+      ]
+    }
+  ],
+  "deb": [
+    {
+      "name": "llamacpp",
+      "script": "server_llm.py",
+      "extra_args": "--wrapped-server llamacpp",
+      "backends": "vulkan rocm",
+      "runner": [
+        "Linux",
+        "vulkan",
+        "rocm",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "omni",
+      "script": "server_omni.py",
+      "extra_args": "--wrapped-server llamacpp",
+      "backends": "vulkan",
+      "runner": [
+        "Linux",
+        "vulkan",
+        "stx-halo",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "stable-diffusion",
+      "script": "server_sd.py",
+      "extra_args": "",
+      "backends": "cpu rocm vulkan",
+      "runner": [
+        "Linux",
+        "vulkan",
+        "rocm",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "audio-gen-thinksound",
+      "script": "server_audio_generation.py",
+      "extra_args": "--wrapped-server thinksound",
+      "backends": "vulkan rocm",
+      "runner": [
+        "Linux",
+        "vulkan",
+        "rocm",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "audio-gen-acestep",
+      "script": "server_audio_generation.py",
+      "extra_args": "--wrapped-server acestep",
+      "backends": "vulkan rocm",
+      "runner": [
+        "Linux",
+        "vulkan",
+        "rocm",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "whisper",
+      "script": "server_whisper.py",
+      "extra_args": "--wrapped-server whispercpp",
+      "backends": "cpu vulkan rocm",
+      "runner": [
+        "Linux",
+        "rocm",
+        "xdna2",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "moonshine",
+      "script": "server_moonshine.py",
+      "extra_args": "--wrapped-server moonshine",
+      "backends": "cpu",
+      "runner": [
+        "self-hosted",
+        "Linux",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "flm",
+      "script": "server_llm.py",
+      "extra_args": "--wrapped-server flm",
+      "backends": "npu",
+      "runner": [
+        "Linux",
+        "xdna2",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "text-to-speech",
+      "script": "server_tts.py",
+      "extra_args": "",
+      "backends": "",
+      "runner": [
+        "self-hosted",
+        "Linux",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "3d-trellis",
+      "script": "server_3d.py",
+      "extra_args": "--wrapped-server trellis",
+      "backends": "vulkan rocm",
+      "runner": [
+        "Linux",
+        "vulkan",
+        "rocm",
+        "lemon-prod"
+      ]
+    },
+    {
+      "name": "tts-openmoss",
+      "script": "server_tts_openmoss.py",
+      "extra_args": "--wrapped-server openmoss",
+      "backends": "vulkan rocm",
+      "runner": [
+        "Linux",
+        "vulkan",
+        "rocm",
+        "lemon-prod"
+      ]
+    }
+  ]
+}
