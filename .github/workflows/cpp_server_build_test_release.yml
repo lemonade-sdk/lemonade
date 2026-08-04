@@ -35,6 +35,9 @@ jobs:
   changes:
     name: Detect changed engines
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       exe_matrix: ${{ steps.select.outputs.exe_matrix }}
       deb_matrix: ${{ steps.select.outputs.deb_matrix }}
@@ -52,8 +55,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # previous_filename matters: a rename out of a gated path (e.g.
+            # router.cpp -> docs/router.md) must still count as touching it
             gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-              --paginate --jq '.[].filename' > changed_files.txt
+              --paginate --jq '.[] | .filename, (.previous_filename // empty)' > changed_files.txt
           else
             : > changed_files.txt
           fi
