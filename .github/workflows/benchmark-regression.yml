@@ -1,6 +1,10 @@
 name: Nightly Backend Perf Regression
 
 on:
+  # TEMPORARY — remove before merging to main
+  push:
+    branches: [iswarya/issue-2858-backend-perf-tracker]
+
   # Nightly — catch environment drift and silent regressions
   schedule:
     - cron: '0 2 * * *'
