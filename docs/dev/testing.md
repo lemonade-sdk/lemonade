@@ -79,7 +79,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 
 ## Running Tests Locally
 
-Python suites expect a server already running on port `13305` (override with `LEMONADE_TEST_PORT`). They do not start one.
+Most Python suites expect a server already running on port `13305` (override with `LEMONADE_TEST_PORT`); they do not start one. Exceptions like `test/server_jobs.py` and `test/server_cli2.py` launch their own `lemond` from the build directory.
 
 ```bash
 pip install -r test/requirements.txt
@@ -90,10 +90,10 @@ python test/server_llm.py --wrapped-server llamacpp --backend vulkan
 
 The `lemonade` CLI binary is auto-discovered from your CMake build directory; override with `--cli-binary`.
 
-C++ unit tests:
+C++ unit tests — configure the build first (`./setup.sh` on Linux/macOS, `./setup.ps1` on Windows) if you haven't already:
 
 ```bash
-cmake --build --preset default
+cmake --build --preset default --target cpp-ci-tests
 ctest --test-dir build -L "^cpp-ci$" --output-on-failure
 ```
 
@@ -101,6 +101,7 @@ App typecheck and regression tests:
 
 ```bash
 cd src/app && npm ci && npm run typecheck
+cd ../..
 node test/app/run-app-regression-tests.cjs
 ```
 
@@ -115,7 +116,7 @@ python test/test_schema_lock.py
 
 ## Writing a Good Test
 
-- Python suites are `unittest.TestCase` classes extending `ServerTestBase` (`test/utils/server_base.py`), ending with `run_server_tests(...)`.
+- Server integration suites (`test/server_endpoints.py`, `test/server_llm.py`, and most other `test/server_*.py` files) extend `ServerTestBase` (`test/utils/server_base.py`) and end with `run_server_tests(...)`. Suites that manage their own `lemond` processes (`test/server_jobs.py`, `test/server_cli2.py`) and pure Python unit, fixture, and schema tests (`test/test_routing_fixtures.py`, `test/test_schema_lock.py`) are plain `unittest.TestCase` classes.
 - Test methods are numbered to enforce order: `test_020_...`, with letter suffixes to insert between existing numbers (`test_021a_...`). Follow the natural sequence of the suite.
 - Use the real client SDKs (`openai`, `ollama`) rather than raw HTTP where a suite is proving API compatibility.
 - Gate hardware- or backend-specific tests with `@skip_if_unsupported` from `test/utils/capabilities.py`. These run on the self-hosted hardware runners and skip elsewhere.
