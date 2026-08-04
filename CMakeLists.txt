@@ -601,9 +601,15 @@ if(NOT USE_SYSTEM_LWS)
     FetchContent_Populate(libwebsockets)
     # Patch the CMakeLists.txt files to remove -Werror
     file(READ "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" LWS_CMAKE_MAIN)
+    # CRLF-safe: normalize CR before any line-based patching (autocrlf leaves \r\n on Windows)
+    string(REPLACE "\r" "" LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
     string(REPLACE "-Werror" "" LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
+    # remove directory from OUTPUT list (MSBuild interprets it as file path — MSB8065)
+    string(REPLACE "\t\t\t\${PROJECT_BINARY_DIR}/include/libwebsockets\n" ""
+           LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
     file(WRITE "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" "${LWS_CMAKE_MAIN}")
     file(READ "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" LWS_CMAKE_LIB)
+    string(REPLACE "\r" "" LWS_CMAKE_LIB "${LWS_CMAKE_LIB}")
     string(REPLACE "-Werror" "" LWS_CMAKE_LIB "${LWS_CMAKE_LIB}")
     file(WRITE "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" "${LWS_CMAKE_LIB}")
     # Now add the subdirectory
