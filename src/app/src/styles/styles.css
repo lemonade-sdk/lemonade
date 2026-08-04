@@ -124,8 +124,9 @@ input, textarea {
 /* ---------- Title bar ---------- */
 .titlebar {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) minmax(180px, 280px) auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
+  column-gap: var(--space-2);
   padding: 0 var(--space-3);
   background: var(--surface-1);
   border-bottom: 1px solid var(--border-subtle);
@@ -134,6 +135,8 @@ input, textarea {
 }
 
 .titlebar__brand {
+  grid-column: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -174,23 +177,67 @@ input, textarea {
 }
 
 .titlebar__search {
-  grid-column: 3;
-  margin-right: var(--space-3);
   position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  width: 176px;
   height: 32px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
+  padding: 0;
   color: var(--text-tertiary);
+  transition: width var(--duration-base) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
 }
 
 .titlebar__search:focus-within {
-  border-color: var(--accent-fg);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  width: 208px;
+  color: var(--text-secondary);
+}
+
+.titlebar__search-leading-icon {
+  flex: 0 0 auto;
+}
+
+.titlebar__search-toggle {
+  width: 32px;
+  height: 32px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.titlebar__search-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.titlebar__search-popover {
+  min-width: 0;
+  display: flex;
+  position: relative;
+  flex: 1;
+}
+
+.titlebar__search-entry {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+  height: 28px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-tertiary) 36%, transparent);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.titlebar__search:focus-within .titlebar__search-entry {
+  border-bottom-color: color-mix(in srgb, var(--text-tertiary) 36%, transparent);
+  box-shadow: none;
 }
 
 .titlebar__search input {
@@ -209,12 +256,15 @@ input, textarea {
 }
 
 .titlebar__search kbd {
-  padding: 2px 5px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  border: 0;
   color: var(--text-tertiary);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 10px;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
 }
 
@@ -281,9 +331,8 @@ input, textarea {
 }
 
 .titlebar__nav {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  grid-column: 2;
+  min-width: 0;
   display: flex;
   align-self: center;
   justify-self: center;
@@ -326,7 +375,8 @@ input, textarea {
 }
 
 .titlebar__right {
-  grid-column: 4;
+  grid-column: 3;
+  min-width: 0;
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -334,11 +384,21 @@ input, textarea {
   flex-shrink: 0;
 }
 
+.titlebar__utilities {
+  position: relative;
+}
+
 .titlebar__utilities,
 .titlebar__utility-menu {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.titlebar__utility-menu > .titlebar__search,
+.titlebar__utility-menu > .titlebar__theme-toggle,
+.titlebar__utility-menu > .titlebar__download-toggle {
+  flex: 0 0 auto;
 }
 
 .titlebar__utilities-toggle {
@@ -3771,7 +3831,7 @@ optgroup {
   /* ── Model selector in composer: cap width more aggressively ── */
 
   /* ── Right controls: slightly tighter gap on phone ── */
-.titlebar__right { gap: var(--space-1); grid-area: right; }
+.titlebar__right { gap: var(--space-1); }
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -6692,13 +6752,12 @@ optgroup {
 }
 
 @media (max-width: 480px) {
-  .download-manager { inset: calc(var(--titlebar-height) * 2) 0 0 0; }
   .download-manager__panel {
     top: var(--space-2);
     right: var(--space-2);
     left: var(--space-2);
     width: auto;
-    max-height: calc(100vh - (var(--titlebar-height) * 2) - 16px);
+    max-height: calc(100vh - var(--titlebar-height) - 16px);
     border-radius: 16px;
   }
   .download-item__details { grid-template-columns: 1fr; }
@@ -12200,7 +12259,6 @@ optgroup {
 
 @media (max-width: 1100px) {
   :root { --workspace-list: 286px; }
-  .titlebar { grid-template-columns: 42px minmax(0, 1fr) minmax(160px, 240px) auto; }
   .titlebar__nav button { min-width: 42px; padding-inline: var(--space-2); }
   .titlebar__nav .nav-label { display: none; }
   .titlebar__brand-name { display: none; }
@@ -12364,52 +12422,44 @@ optgroup {
 
 }
 
-@media (max-width: 480px) {
-  .titlebar {
-    grid-template-columns: 1fr auto;
-    grid-template-rows: var(--titlebar-height) 42px;
-    grid-template-areas:
-      "brand right"
-      "nav nav";
-    height: auto;
-    padding-inline: var(--space-3);
-    gap: 0;
+@media (min-width: 769px) and (max-width: 1320px) {
+  .titlebar__search,
+  .titlebar__search:focus-within {
+    width: 32px;
+    flex-basis: 32px;
   }
 
-  .app { grid-template-rows: auto 1fr; }
-  .titlebar__brand { grid-area: brand; }
-  .titlebar__search { display: none; }
-  .titlebar__right { grid-area: right; grid-column: auto; }
+  .titlebar__search-leading-icon { display: none; }
+  .titlebar__search-toggle { display: inline-flex; }
+  .titlebar__search-popover { display: none; }
 
-  .titlebar__nav {
+  .titlebar__search.is-open .titlebar__search-popover {
+    width: min(320px, calc(100vw - 24px));
+    display: block;
+    position: absolute;
+    top: calc(100% + var(--space-2));
+    right: 0;
+    z-index: 80;
+    padding: var(--space-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .titlebar__search.is-open .titlebar__search-entry { width: 100%; }
+
+  .titlebar__search.is-open .titlebar__search-results {
     position: static;
-    left: auto;
-    transform: none;
-    grid-area: nav;
-    width: fit-content;
-    max-width: 100%;
-    justify-self: center;
-    justify-content: center;
-    gap: var(--space-0-5);
-    margin-bottom: 6px;
-    padding: 3px;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-pill);
-    overflow-x: auto;
-    overflow-y: visible;
-  }
-
-  .titlebar__nav button {
-    flex: 1 0 auto;
-    min-width: 40px;
-    height: 30px;
-    gap: 0;
-    padding-inline: var(--space-2);
+    width: 100%;
+    max-height: min(420px, calc(100vh - var(--titlebar-height) - 80px));
+    margin-top: var(--space-1);
+    overflow-y: auto;
   }
 }
 
 @media (max-width: 768px) {
-  .titlebar__brand { justify-self: start; }
+  .titlebar__brand { display: none; }
   .titlebar__right { justify-self: end; }
 
   .titlebar__status-dot--brand { display: none; }
@@ -12417,7 +12467,7 @@ optgroup {
   .titlebar__utilities-toggle { display: inline-flex; }
 
   .titlebar__utility-menu {
-    width: 220px;
+    width: min(320px, calc(100vw - 24px));
     display: none;
     position: fixed;
     top: calc(var(--titlebar-height) + var(--space-2));
@@ -12434,6 +12484,18 @@ optgroup {
   }
 
   .titlebar__utilities.is-open .titlebar__utility-menu { display: flex; }
+
+  .titlebar__utility-menu .titlebar__search,
+  .titlebar__utility-menu .titlebar__search:focus-within {
+    width: 100%;
+    height: 44px;
+    padding: 0 var(--space-3);
+  }
+
+  .titlebar__utility-menu .titlebar__search-results {
+    top: calc(100% + var(--space-1));
+  }
+
   .titlebar__utility-menu .titlebar__theme-toggle,
   .titlebar__utility-menu .titlebar__download-toggle {
     width: 100%;
@@ -12481,6 +12543,9 @@ optgroup {
     margin-left: auto;
     border-color: transparent;
   }
+}
+
+@media (max-width: 768px) {
 
   .empty-state--inset {
     margin-top: 0;
@@ -12656,16 +12721,31 @@ optgroup {
   }
 }
 
-@media (min-width: 481px) and (max-width: 768px) {
+@media (max-width: 480px) {
   .titlebar {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: minmax(44px, 1fr) auto minmax(32px, 1fr);
+    column-gap: var(--space-1);
+    padding-inline: var(--space-1);
+  }
+
+  .titlebar__nav {
+    gap: 2px;
+    padding: 3px;
+  }
+
+  .titlebar__nav button {
+    width: 32px;
+    min-width: 32px;
+    height: 30px;
+    gap: 0;
+    padding: 0;
   }
 }
 
-@media (max-width: 480px) {
-
-  .titlebar__utility-menu {
-    top: calc(var(--titlebar-height) + 42px + var(--space-2));
+@media (max-width: 300px) {
+  .titlebar__nav button {
+    width: 28px;
+    min-width: 28px;
   }
 }
 

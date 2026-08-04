@@ -494,7 +494,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     const appControls = page.getByRole('button', { name: 'App controls', exact: true });
     await expect(appControls).toBeVisible();
-    await expect(appControls.locator('[data-icon="settings"]')).toBeVisible();
+    await expect(appControls.locator('[data-icon="sliders-horizontal"]')).toBeVisible();
     await appControls.click();
     await expect(page.locator('.titlebar__utility-menu').getByRole('status')).toHaveAccessibleName(/Server (connected|connecting|offline)/i);
     await appControls.click();
