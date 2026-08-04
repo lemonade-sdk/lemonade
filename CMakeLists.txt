@@ -819,6 +819,7 @@ set(SOURCES_CORE
     src/cpp/server/cloud_provider_registry.cpp
     src/cpp/server/config_file.cpp
     src/cpp/server/directory_watcher.cpp
+    src/cpp/server/alias_manager.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/model_registry.cpp
     src/cpp/server/hf_variants.cpp
@@ -2561,6 +2562,18 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_REGISTRY_TEST_SRC}")
 
     include(CTest)
     add_test(NAME ModelRegistryTest COMMAND test_model_registry)
+endif()
+
+set(_MODEL_ALIAS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_alias.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_ALIAS_TEST_SRC}")
+    add_executable(test_model_alias test/cpp/test_model_alias.cpp)
+    target_link_libraries(test_model_alias PRIVATE lemonade-server-core)
+    add_dependencies(test_model_alias copy_resources)
+
+    include(CTest)
+    add_test(NAME ModelAliasTest COMMAND test_model_alias)
 endif()
 
 # Router-backed ClassifierServices wiring (issue #2384): binds the pure engine's
