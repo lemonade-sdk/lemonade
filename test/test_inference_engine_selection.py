@@ -30,10 +30,11 @@ with open(MATRIX_PATH, encoding="utf-8") as f:
     MATRIX = json.load(f)
 
 ALL_ENGINE_NAMES = {leg["name"] for legs in MATRIX.values() for leg in legs}
+SCRIPT_RULES = sel.derive_script_rules(MATRIX)
 
 
 def outputs_for(changed_files, event_name="pull_request"):
-    selection = sel.select_engines(changed_files, event_name)
+    selection = sel.select_engines(changed_files, event_name, SCRIPT_RULES)
     return sel.build_outputs(selection, MATRIX)
 
 
@@ -102,6 +103,19 @@ class TestEngineFiles(unittest.TestCase):
         self.assertEqual(outputs["run_exe"], "true")
         self.assertEqual(outputs["run_deb"], "false")
         self.assertEqual(outputs["run_dmg"], "false")
+
+    def test_backend_headers_narrow_like_backend_sources(self):
+        outputs = outputs_for(["src/cpp/include/lemon/backends/trellis/trellis.h"])
+        self.assertEqual(selected_names(outputs, "exe_matrix"), {"3d-trellis"})
+
+    def test_loose_file_in_either_backend_dir_selects_all(self):
+        for path in [
+            "src/cpp/server/backends/backend_registry.cpp",
+            "src/cpp/include/lemon/backends/backend_registry.h",
+        ]:
+            self.assertEqual(
+                selected_names(outputs_for([path]), "exe_matrix"), ALL_ENGINE_NAMES
+            )
 
     def test_cloud_backend_selects_router_leg(self):
         outputs = outputs_for(["src/cpp/server/backends/cloud/cloud_server.cpp"])
@@ -189,17 +203,12 @@ class TestMappingIntegrity(unittest.TestCase):
         with self.assertRaises(SystemExit):
             sel.validate_mapping(broken)
 
-    def test_validate_mapping_requires_both_dimensions(self):
-        """A leg wired to a backend folder but not its test script is a hole."""
-        broken = copy.deepcopy(MATRIX)
-        broken["exe"].append(dict(broken["exe"][0], name="llamacpp-rocm"))
-        original = sel.BACKEND_DIR_TO_ENGINES["llamacpp"]
-        sel.BACKEND_DIR_TO_ENGINES["llamacpp"] = original + ["llamacpp-rocm"]
-        try:
-            with self.assertRaises(SystemExit):
-                sel.validate_mapping(broken)
-        finally:
-            sel.BACKEND_DIR_TO_ENGINES["llamacpp"] = original
+    def test_a_new_leg_is_wired_to_its_test_script_automatically(self):
+        """The script dimension is derived, so it cannot drift out of sync."""
+        extended = copy.deepcopy(MATRIX)
+        extended["exe"].append(dict(extended["exe"][0], name="llamacpp-rocm"))
+        rules = sel.derive_script_rules(extended)
+        self.assertIn("llamacpp-rocm", rules["test/server_llm.py"])
 
     def test_workflows_that_touch_inference_are_listed(self):
         """A workflow that defines or guards the legs must not classify safe."""
@@ -212,9 +221,10 @@ class TestMappingIntegrity(unittest.TestCase):
         self.assertEqual(found, set(sel.INFERENCE_WORKFLOWS))
 
     def test_every_backend_folder_has_a_rule(self):
-        backends_dir = REPO_ROOT / "src" / "cpp" / "server" / "backends"
-        folders = {p.name for p in backends_dir.iterdir() if p.is_dir()}
-        self.assertEqual(folders - set(sel.BACKEND_DIR_TO_ENGINES), set())
+        for prefix in sel.BACKEND_DIRS:
+            folders = {p.name for p in (REPO_ROOT / prefix).iterdir() if p.is_dir()}
+            self.assertTrue(folders, prefix)
+            self.assertEqual(folders - set(sel.BACKEND_DIR_TO_ENGINES), set(), prefix)
 
     def test_dmg_engines_exist_in_matrix(self):
         self.assertEqual(sel.DMG_ENGINES - ALL_ENGINE_NAMES, set())
@@ -232,8 +242,8 @@ class TestMappingIntegrity(unittest.TestCase):
         self.assertTrue(scripts, "no test scripts found in test-dmg-inference")
         reachable = set()
         for script in sorted(scripts):
-            self.assertIn(script, sel.TEST_SCRIPT_TO_ENGINES)
-            engines = set(sel.TEST_SCRIPT_TO_ENGINES[script])
+            self.assertIn(script, SCRIPT_RULES)
+            engines = SCRIPT_RULES[script]
             self.assertTrue(
                 engines & sel.DMG_ENGINES,
                 f"{script} runs on .dmg but none of {sorted(engines)} is in DMG_ENGINES",

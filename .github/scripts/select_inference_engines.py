@@ -19,7 +19,12 @@ import json
 import sys
 
 WORKFLOW_FILE = ".github/workflows/cpp_server_build_test_release.yml"
-BACKENDS_DIR = "src/cpp/server/backends/"
+
+# A backend is a folder of sources plus the matching folder of headers.
+BACKEND_DIRS = (
+    "src/cpp/server/backends/",
+    "src/cpp/include/lemon/backends/",
+)
 
 # Workflows that define or guard the inference legs. Every other workflow is
 # safe; test_workflows_that_touch_inference_are_listed keeps this honest.
@@ -52,6 +57,7 @@ GITHUB_SAFE_PATTERNS = [
     ".github/CODEOWNERS",
     ".github/dependabot.yml",
     ".github/runners.json",
+    ".github/*.md",
 ]
 
 BACKEND_DIR_TO_ENGINES = {
@@ -75,23 +81,22 @@ BACKEND_DIR_TO_ENGINES = {
     "vllm": [],
 }
 
-TEST_SCRIPT_TO_ENGINES = {
-    "test/server_llm.py": ["llamacpp", "ryzenai", "flm"],
-    "test/server_omni.py": ["omni"],
-    "test/server_whisper.py": ["whisper", "flm-whisper"],
-    "test/server_moonshine.py": ["moonshine"],
-    "test/server_classify.py": ["classify-onnxruntime"],
-    "test/server_router.py": ["router-onnxruntime"],
-    "test/server_sd.py": ["stable-diffusion"],
-    "test/server_audio_generation.py": ["audio-gen-thinksound", "audio-gen-acestep"],
-    "test/server_tts.py": ["text-to-speech"],
-    "test/server_tts_openmoss.py": ["tts-openmoss"],
-    "test/server_3d.py": ["3d-trellis"],
-}
-
 DMG_ENGINES = {"llamacpp", "whisper", "text-to-speech"}
 
 ALL = "ALL"
+
+
+def derive_script_rules(matrix):
+    """Map each test script to the legs that run it, read off the matrix.
+
+    Every leg names the script it runs, so this direction of the mapping is
+    not a judgement call and is never hand-maintained.
+    """
+    rules = {}
+    for legs in matrix.values():
+        for leg in legs:
+            rules.setdefault(f"test/{leg['script']}", set()).add(leg["name"])
+    return rules
 
 
 def _matches_any(path, patterns):
@@ -100,7 +105,7 @@ def _matches_any(path, patterns):
     return any(fnmatch.fnmatchcase(path, p) for p in patterns)
 
 
-def classify_file(path):
+def classify_file(path, script_rules):
     """Return the engines a single changed file selects: [], a list, or ALL."""
     if path in INFERENCE_WORKFLOWS:
         return ALL
@@ -108,25 +113,25 @@ def classify_file(path):
         return [] if _matches_any(path, GITHUB_SAFE_PATTERNS) else ALL
     if _matches_any(path, SAFE_PATTERNS):
         return []
-    if path.startswith(BACKENDS_DIR):
-        remainder = path[len(BACKENDS_DIR) :]
+    for prefix in BACKEND_DIRS:
+        if not path.startswith(prefix):
+            continue
+        remainder = path[len(prefix) :]
         if "/" not in remainder:
             return ALL
         backend_dir = remainder.split("/", 1)[0]
-        if backend_dir in BACKEND_DIR_TO_ENGINES:
-            return BACKEND_DIR_TO_ENGINES[backend_dir]
-        return ALL
-    if path in TEST_SCRIPT_TO_ENGINES:
-        return TEST_SCRIPT_TO_ENGINES[path]
+        return BACKEND_DIR_TO_ENGINES.get(backend_dir, ALL)
+    if path in script_rules:
+        return script_rules[path]
     return ALL
 
 
-def select_engines(changed_files, event_name):
+def select_engines(changed_files, event_name, script_rules):
     if event_name != "pull_request" or not changed_files:
         return ALL
     selected = set()
     for path in changed_files:
-        engines = classify_file(path)
+        engines = classify_file(path, script_rules)
         if engines is ALL:
             return ALL
         selected.update(engines)
@@ -134,38 +139,25 @@ def select_engines(changed_files, event_name):
 
 
 def validate_mapping(matrix):
-    """Raise if the rules and the matrix have drifted apart.
+    """Raise if BACKEND_DIR_TO_ENGINES and the matrix have drifted apart.
 
-    Runs on every invocation, not just under test: a rule pointing at a leg
-    name that no longer exists selects nothing, which would silently retire
-    that engine's tests. Failing here fails the aggregate required check.
-
-    Every leg must be reachable from both directions — the backend folder that
-    owns it and the test script that runs it — because a leg wired up through
-    only one of them stops being selected when the other kind of file changes.
+    Runs on every invocation, not just under test, because both failure modes
+    are silent: a rule naming a leg that no longer exists selects nothing, and
+    a leg no backend folder names stops running when its backend changes.
+    Failing here fails the aggregate required check.
     """
     all_engines = {leg["name"] for legs in matrix.values() for leg in legs}
     by_backend = set()
     for engines in BACKEND_DIR_TO_ENGINES.values():
         by_backend.update(engines)
-    mapped = set(by_backend)
-    for engines in TEST_SCRIPT_TO_ENGINES.values():
-        mapped.update(engines)
 
     problems = set()
-    for name in mapped - all_engines:
-        problems.add(f"a rule selects unknown engine {name!r}")
+    for name in by_backend - all_engines:
+        problems.add(f"a backend rule selects unknown engine {name!r}")
     for name in all_engines - by_backend:
         problems.add(f"no backend folder selects matrix leg {name!r}")
     for name in DMG_ENGINES - all_engines:
         problems.add(f"DMG_ENGINES lists unknown engine {name!r}")
-    for legs in matrix.values():
-        for leg in legs:
-            script = f"test/{leg['script']}"
-            if leg["name"] not in TEST_SCRIPT_TO_ENGINES.get(script, []):
-                problems.add(
-                    f"{script} does not select {leg['name']!r}, the leg it runs"
-                )
     if problems:
         raise SystemExit(
             "inference engine selection rules are stale:\n  "
@@ -202,7 +194,9 @@ def main():
     validate_mapping(matrix)
 
     changed_files = [line.strip() for line in sys.stdin if line.strip()]
-    selection = select_engines(changed_files, args.event_name)
+    selection = select_engines(
+        changed_files, args.event_name, derive_script_rules(matrix)
+    )
     outputs = build_outputs(selection, matrix)
 
     print(f"event: {args.event_name}, changed files: {len(changed_files)}")

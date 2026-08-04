@@ -1866,7 +1866,8 @@ jobs:
   # Single aggregate check for branch protection: legs skipped by change
   # detection count as passing, but any leg that ran must have succeeded.
   # The three build jobs are in needs because a failed build skips its
-  # inference job, and "skipped" alone is indistinguishable from "not selected".
+  # inference job, and "skipped" alone is indistinguishable from "not selected",
+  # so without them a broken build reads as green here.
   #
   # This gates EVERY matrix leg, whereas branch protection currently names only
   # 13 of the 27. That widening is intended: hand-syncing contexts is what let
@@ -1898,8 +1899,8 @@ jobs:
         run: |
           echo "Engines selected by change detection: $SELECTED"
           echo "$RESULTS"
-      # An empty `selected` means the changes job produced no outputs at all, so
-      # every inference job skipped for a reason other than change detection.
+      # `selected` is never empty when the changes job ran to completion, so an
+      # empty value means it was skipped and nothing gated the inference jobs.
       - name: Fail if a required job failed or change detection produced nothing
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.changes.outputs.selected == ''
         run: |
