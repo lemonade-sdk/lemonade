@@ -303,6 +303,9 @@ jobs:
 
   build-lemonade-debian13:
     name: Build Lemonade .deb Package (Debian 13)${{ matrix.job-suffix }}
+    # Packaging-only variant: the merge queue gates every merge, so PR pushes
+    # skip it. Any Debian 13 build break still blocks at merge-queue time.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runs-on }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -385,6 +388,7 @@ jobs:
 
   test-lemonade-debian13-smoke:
     name: Smoke test .deb (Debian 13)${{ matrix.job-suffix }}
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runs-on }}
     needs: build-lemonade-debian13
     container:
@@ -459,6 +463,9 @@ jobs:
 
   build-lemonade-rpm:
     name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
+    # Packaging-only variant: the merge queue gates every merge, so PR pushes
+    # skip it. Any Fedora build break still blocks at merge-queue time.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runs-on }}
     container:
       image: fedora:${{ matrix.fedora-version }}
@@ -1500,6 +1507,7 @@ jobs:
 
   test-rpm-package:
     name: Test .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runs-on }}
     needs: build-lemonade-rpm
     container:
@@ -1579,6 +1587,35 @@ jobs:
               echo "ERROR: server RPM requires desktop dependencies (GTK/AppIndicator/Ayatana)"
               rpm -qpR "$RPM_FILE" | grep -iE "gtk|appindicator|ayatana"
               exit 1
+          fi
+
+  # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
+  # successfully (otherwise the merge is blocked), and 2. these jobs do not need
+  # to run on ordinary pull request pushes.
+  packaging-gate:
+    name: Packaging builds
+    needs: [build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+          # Fail if any job broke. In the merge queue, also fail if any never ran.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
           fi
 
   test-embeddable-posix:
