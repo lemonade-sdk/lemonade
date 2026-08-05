@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -71,18 +72,22 @@ def run_test():
         server_thread.daemon = True
         server_thread.start()
 
-        # Determine paths
-        # Search build directory for lemonade-tray binary
-        binary_path = "./build/lemonade-tray"
+        # Accept either a build tree or an installed package.
+        binary_path = os.environ.get("LEMONADE_TRAY_BINARY") or "./build/lemonade-tray"
         if not os.path.exists(binary_path):
-            print(f"lemonade-tray binary not found at {binary_path}", file=sys.stderr)
+            binary_path = shutil.which("lemonade-tray")
+        if not binary_path or not os.path.exists(binary_path):
+            print("lemonade-tray binary not found", file=sys.stderr)
             sys.exit(1)
+
+        runtime_dir = os.path.join(tmpdir, "runtime")
+        os.makedirs(runtime_dir, mode=0o700, exist_ok=True)
 
         # Launch lemonade-tray pointing to mock HTTPS server
         env = os.environ.copy()
         env["LEMONADE_SKIP_VERIFY"] = "1"
-        env["XDG_RUNTIME_DIR"] = os.path.abspath("./build")
-        env["RUNTIME_DIRECTORY"] = os.path.abspath("./build")
+        env["XDG_RUNTIME_DIR"] = runtime_dir
+        env["RUNTIME_DIRECTORY"] = runtime_dir
 
         proc = subprocess.Popen(
             [binary_path, "--host", f"https://localhost:{port}", "--port", str(port)],
