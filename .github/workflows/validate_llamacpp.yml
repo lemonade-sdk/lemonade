@@ -422,19 +422,49 @@ jobs:
           # - backend: cuda
           #   runner: [self-hosted, Windows, 128gb, cuda]
     steps:
-      - name: Prepare Windows runner for long paths and stale workspace caches
+      - name: Cleanup prior validation processes
         if: runner.os == 'Windows'
         shell: PowerShell
         run: |
-          $ErrorActionPreference = "Continue"
-
-          # 1. Kill any running/orphaned processes to release file locks
-          $patterns = @("lemonade", "lemond", "llama-server", "llama", "flm", "ort-server", "moonshine-server", "wscript", "LemonadeServer")
-          foreach ($p in $patterns) {
-              Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          $ErrorActionPreference = "Stop"
+          $workspaceRoot = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE)
+          $lemondPath = [IO.Path]::GetFullPath(
+            (Join-Path $workspaceRoot "build\Release\lemond.exe")
+          )
+          $cachePrefix = [IO.Path]::GetFullPath(
+            (Join-Path $workspaceRoot "ci-cache-")
+          )
+          $staleProcesses = @(
+            Get-CimInstance Win32_Process `
+              -Filter "Name = 'lemond.exe' OR Name = 'llama-server.exe'" `
+              -ErrorAction SilentlyContinue | Where-Object {
+                $_.ExecutablePath -and (
+                  ($_.Name -eq "lemond.exe" -and $_.ExecutablePath.Equals(
+                    $lemondPath,
+                    [StringComparison]::OrdinalIgnoreCase
+                  )) -or
+                  ($_.Name -eq "llama-server.exe" -and $_.ExecutablePath.StartsWith(
+                    $cachePrefix,
+                    [StringComparison]::OrdinalIgnoreCase
+                  ))
+                )
+              }
+          )
+  
+          foreach ($process in $staleProcesses) {
+            Write-Host "Stopping stale $($process.Name) PID $($process.ProcessId)." `
+              -ForegroundColor Yellow
+            & taskkill.exe /PID $process.ProcessId /T /F 2>$null | Out-Null
           }
-
-
+          if ($staleProcesses.Count -gt 0) {
+            Start-Sleep -Seconds 1
+            foreach ($process in $staleProcesses) {
+              if (Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue) {
+                throw "Failed to stop workspace process PID $($process.ProcessId)."
+              }
+            }
+          }
+  
       - uses: actions/checkout@v5
         with:
           clean: true
@@ -458,6 +488,7 @@ jobs:
               exit 1
           }
           & $lemondExe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host "Binaries verified!" -ForegroundColor Green
 
       - name: Setup Python and virtual environment
@@ -471,34 +502,78 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
+          $port = 13305
           $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
           $backend = "${{ matrix.backend }}"
           $channel = "${{ matrix.channel }}"
           $label = if ($channel) { "$backend-$channel" } else { $backend }
           $logsDir = "server-logs-$label"
           $cacheDir = Join-Path $PWD "ci-cache-$label"
+          $cachePrefix = [IO.Path]::GetFullPath($cacheDir)
+          $separator = [string][IO.Path]::DirectorySeparatorChar
+          if (-not $cachePrefix.EndsWith($separator)) { $cachePrefix += $separator }
           $venvPython = ".\.venv\Scripts\python.exe"
-
+          $tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $PWD }
+          $pidFile = Join-Path $tempRoot "lemond-validate-llamacpp.pid"
+  
+          function Get-ValidationLlamaServers {
+            Get-CimInstance Win32_Process `
+              -Filter "Name = 'llama-server.exe'" `
+              -ErrorAction SilentlyContinue | Where-Object {
+                $_.ExecutablePath -and $_.ExecutablePath.StartsWith(
+                  $cachePrefix,
+                  [StringComparison]::OrdinalIgnoreCase
+                )
+              }
+          }
+  
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
 
           $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
           $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
-
-          # Start lemond (Python script handles readiness polling)
-          $proc = Start-Process `
-            -FilePath $lemondExe `
-            -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
-            -RedirectStandardOutput $stdoutLog `
-            -RedirectStandardError $stderrLog `
-            -PassThru
-
-          Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
-
+  
+          # Do not benchmark while another known inference process is active.
+          $conflicts = @(
+            Get-Process -Name @(
+              "lemond", "llama-server", "lemonade", "LemonadeServer",
+              "flm", "ort-server", "moonshine-server"
+            ) -ErrorAction SilentlyContinue
+          )
+          if ($conflicts.Count -gt 0) {
+            $details = ($conflicts | ForEach-Object {
+              "$($_.ProcessName):$($_.Id)"
+            }) -join ", "
+            throw "Runner is not idle: $details"
+          }
+          if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) {
+            throw "Port $port is already in use."
+          }
+  
+          $proc = $null
+          $validationExitCode = 0
+          $cleanupFailed = $false
+  
           try {
+            $proc = Start-Process `
+              -FilePath $lemondExe `
+              -ArgumentList @($cacheDir, "--port", $port, "--host", "127.0.0.1") `
+              -RedirectStandardOutput $stdoutLog `
+              -RedirectStandardError $stderrLog `
+              -PassThru
+  
+            # Same-job fallback for the existing final cleanup action.
+            Set-Content -Path $pidFile -Value $proc.Id -Encoding ASCII
+            Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
+  
+            if ($proc.WaitForExit(500)) {
+              throw "lemond exited before validation started. See $stderrLog."
+            }
+  
             $validationArgs = @(
               "test/validate_llamacpp.py",
               "--backend", $backend,
+              "--port", $port,
               "--output", "llamacpp_validation_$label.json",
               "--logs-dir", $logsDir
             )
@@ -511,17 +586,48 @@ jobs:
             }
 
             & $venvPython @validationArgs
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $validationExitCode = $LASTEXITCODE
           } finally {
-            try {
-              Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" `
-                -Method POST -TimeoutSec 10 | Out-Null
-              Start-Sleep -Seconds 2
-            } catch {
-              Write-Host "lemond shutdown not reachable; relying on cleanup step." -ForegroundColor Yellow
+            if ($null -ne $proc) {
+              try {
+                if (-not $proc.HasExited) {
+                  Invoke-WebRequest -Uri "http://127.0.0.1:$port/internal/shutdown" `
+                    -Method POST -TimeoutSec 10 -UseBasicParsing | Out-Null
+                  $null = $proc.WaitForExit(10000)
+                }
+              } catch {
+                Write-Host "Graceful shutdown failed; forcing targeted cleanup." `
+                  -ForegroundColor Yellow
+              }
+  
+              if (-not $proc.HasExited) {
+                & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
+                $null = $proc.WaitForExit(5000)
+              }
+  
+              # Catch a llama-server orphan even if its lemond parent exited first.
+              $orphans = @(Get-ValidationLlamaServers)
+              foreach ($orphan in $orphans) {
+                & taskkill.exe /PID $orphan.ProcessId /T /F 2>$null | Out-Null
+              }
+              if ($orphans.Count -gt 0) { Start-Sleep -Seconds 1 }
+  
+              $remainingOrphans = @(Get-ValidationLlamaServers)
+              if ($proc.HasExited -and $remainingOrphans.Count -eq 0) {
+                Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+              } else {
+                $cleanupFailed = $true
+                Write-Host "Validation process cleanup did not complete." `
+                  -ForegroundColor Yellow
+              }
             }
           }
-
+  
+          if ($validationExitCode -ne 0) { exit $validationExitCode }
+          if ($cleanupFailed) {
+            throw "Validation completed, but its processes could not be stopped."
+          }
+  
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v7
