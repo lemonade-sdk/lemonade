@@ -313,6 +313,9 @@ private:
     void transition_server_residency_locked(
         WrappedServer* server,
         ResidencyClass requested_residency_class);
+    bool ensure_loaded_model_residency_canonical(
+        const std::string& canonical_model_name,
+        LoadPurpose load_purpose);
     bool has_npu_server() const;
     WrappedServer* find_npu_server() const;
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;

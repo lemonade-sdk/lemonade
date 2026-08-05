@@ -117,6 +117,23 @@ struct RoutingHelperTestHook {
     static void reclaim_now(Router& r, const std::string& model_name) {
         r.reclaim_stale_helper_if_idle(model_name);
     }
+
+    // Drive the residency-transition core with an already-canonical name (the
+    // test's Router has no ModelManager, so it must skip resolve_model_name).
+    static bool ensure_residency(Router& r, const std::string& model_name,
+                                 lemon::LoadPurpose load_purpose) {
+        return r.ensure_loaded_model_residency_canonical(model_name, load_purpose);
+    }
+
+    static ResidencyClass residency_of(Router& r, const std::string& model_name) {
+        std::lock_guard<std::mutex> lock(r.load_mutex_);
+        for (const auto& s : r.loaded_servers_) {
+            if (s->get_model_name() == model_name) {
+                return s->get_residency_class();
+            }
+        }
+        return ResidencyClass::Standard;
+    }
 };
 
 }  // namespace lemon
@@ -399,6 +416,27 @@ static void test_reclaim_rearms_when_rescued_before_commit(Router& router) {
           armed_survives && consumed_stays_resident && survives_refused_commit && reclaimed);
 }
 
+// Reviewer's promotion-path ask: an already-loaded Standard model must not be
+// durably promoted to a routing helper by an in-flight request carrying an
+// obsolete policy. Reconcile publishes a needed-set that excludes the model,
+// then a RoutingDependency residency request arrives (as it would while
+// evaluating a stale copied policy). The backend must stay resident and remain
+// Standard rather than becoming a stale RoutingHelper no active policy needs.
+static void test_stale_policy_does_not_promote_standard(Router& router) {
+    RoutingHelperTestHook::add_server(router, make_standard("promote.model"));
+    RoutingHelperTestHook::reconcile(router, {});
+
+    bool ensured = RoutingHelperTestHook::ensure_residency(
+        router, "promote.model", lemon::LoadPurpose::RoutingDependency);
+    bool still_resident = RoutingHelperTestHook::has_any_model(router, "promote.model");
+    bool stayed_standard =
+        RoutingHelperTestHook::residency_of(router, "promote.model") ==
+        ResidencyClass::Standard;
+
+    check("stale in-flight policy cannot promote a Standard model to a helper",
+          ensured && still_resident && stayed_standard);
+}
+
 // Reviewer's ask #4: router shutdown while a deferred reclaim is pending. The
 // reclaim is posted to the router-owned executor and left blocked on the slot;
 // destroying the Router must wake it, join the worker, and not hang or crash.
@@ -447,6 +485,7 @@ int main() {
         test_maintenance_completion_reclaims_helper(router);
         test_deferred_reclaim_waits_for_slot(router);
         test_reclaim_rearms_when_rescued_before_commit(router);
+        test_stale_policy_does_not_promote_standard(router);
     }
 
     test_shutdown_with_pending_reclaim(config);

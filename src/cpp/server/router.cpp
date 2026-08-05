@@ -315,7 +315,13 @@ void Router::transition_server_residency_locked(
 bool Router::ensure_loaded_model_residency(
     const std::string& model_name,
     LoadPurpose load_purpose) {
-    const std::string canonical_model_name = resolve_model_name(model_name);
+    return ensure_loaded_model_residency_canonical(
+        resolve_model_name(model_name), load_purpose);
+}
+
+bool Router::ensure_loaded_model_residency_canonical(
+    const std::string& canonical_model_name,
+    LoadPurpose load_purpose) {
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
 
@@ -332,6 +338,22 @@ bool Router::ensure_loaded_model_residency(
         find_server_by_model_name(canonical_model_name);
     if (!existing || !existing->is_backend_alive()) {
         return false;
+    }
+
+    // Refuse to durably promote an already-loaded Standard model into a routing
+    // helper for a policy that no longer needs it. An in-flight request can carry
+    // a copy of a policy that was edited or deleted after it started; without this
+    // guard that stale copy would flip a user-facing Standard model to
+    // RoutingHelper, bypassing every stale-helper check in load_model() and
+    // stranding it since reconcile ignored it while it was still Standard. Checking
+    // the needed-set directly (not pinning) keeps a pin from letting an obsolete
+    // policy override the current role. The backend stays resident and still serves
+    // the old request as Standard.
+    if (requested_residency_class == ResidencyClass::RoutingHelper &&
+        existing->get_residency_class() != ResidencyClass::RoutingHelper &&
+        needed_helper_models_.count(canonical_model_name) == 0) {
+        existing->update_access_time();
+        return true;
     }
 
     transition_server_residency_locked(
