@@ -190,5 +190,12 @@
     "rocm-stable": "v0.1.3",
     "cuda": "v0.1.3"
   },
+  "voxcpm2": {
+    "comment": "Tags come from the fork that builds the per-variant llama-tts-server archives; upstream llama.cpp-omni releases only the Comni desktop installers. The tts- prefix keeps these clear of upstream's v1.0.x Comni tags.",
+    "metal": "tts-v0.1.0",
+    "vulkan": "tts-v0.1.0",
+    "cuda": "tts-v0.1.0",
+    "cpu": "tts-v0.1.0"
+  },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

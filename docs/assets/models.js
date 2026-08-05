@@ -17,6 +17,7 @@ const RECIPE_PRIORITY = [
   'thinksound',
   'trellis',
   'vllm',
+  'voxcpm2',
   'whispercpp'
 ];
 
@@ -32,7 +33,8 @@ const RECIPE_DISPLAY_NAMES = {
   acestep: 'ACE-Step',
   onnxruntime: 'ONNX Runtime',
   trellis: 'TRELLIS.2',
-  openmoss: 'OpenMOSS TTS'
+  openmoss: 'OpenMOSS TTS',
+  voxcpm2: 'VoxCPM2'
 };
 /* END GENERATED: models-js-recipes */
 

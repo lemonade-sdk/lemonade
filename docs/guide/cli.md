@@ -457,6 +457,12 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
+
+#### VoxCPM2 (`voxcpm2` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--voxcpm2 BACKEND` | VoxCPM2 backend to use | Auto-detected |
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values

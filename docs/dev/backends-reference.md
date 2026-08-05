@@ -22,6 +22,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
+| `voxcpm2` | VoxCPM2 | yes | no | cpu, cuda, metal, vulkan |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
 
@@ -65,6 +66,10 @@ the generator instead. Prose outside the markers is preserved. -->
 | `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `trellis` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `voxcpm2` | metal | macos | metal |
+| `voxcpm2` | cuda | linux, windows | nvidia_gpu |
+| `voxcpm2` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `voxcpm2` | cpu | linux, windows | cpu (x86_64) |
 | `whispercpp` | npu | windows | amd_npu (XDNA2) |
 | `whispercpp` | metal | macos | metal |
 | `whispercpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64) |
@@ -173,6 +178,12 @@ the generator instead. Prose outside the markers is preserved. -->
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `vllm_backend` | `--vllm` | BACKEND | "" | vLLM backend to use |
 | `vllm_args` | `--vllm-args` | ARGS | "" | Custom arguments to pass to vllm-server |
+
+#### `voxcpm2` — VoxCPM2
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `voxcpm2_backend` | `--voxcpm2` | BACKEND | "" | VoxCPM2 backend to use |
 
 #### `whispercpp` — Whisper.cpp
 
@@ -458,6 +469,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Qwen3.6-35B-A3B-FP16-vLLM` | 71.93 | reasoning, tool-calling, vision |
 | `Qwen3.6-35B-A3B-FP8-vLLM-highconc` | 36.0 | reasoning, tool-calling, vision, mtp |
 | `Qwen3.6-35B-A3B-FP8-vLLM-lowconc` | 36.0 | reasoning, tool-calling, vision, mtp |
+
+#### `voxcpm2` — VoxCPM2 (2 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `VoxCPM2` | 3.31 | tts, voice-design |
+| `VoxCPM2-F16` | 4.72 | tts, voice-design |
 
 #### `whispercpp` — Whisper.cpp (6 models)
 

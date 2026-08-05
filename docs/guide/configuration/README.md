@@ -156,6 +156,12 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "args": "",
     "backend": "auto"
   },
+  "voxcpm2": {
+    "backend": "auto",
+    "cpu_bin": "builtin",
+    "cuda_bin": "builtin",
+    "vulkan_bin": "builtin"
+  },
   "websocket_port": "auto",
   "whispercpp": {
     "args": "",

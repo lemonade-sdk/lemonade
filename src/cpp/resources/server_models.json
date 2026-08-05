@@ -1854,6 +1854,32 @@
             "height": 1024
         }
     },
+    "VoxCPM2": {
+        "checkpoints": {
+            "main": "DennisHuang648/VoxCPM2-GGUF:VoxCPM2-BaseLM-Q8_0.gguf",
+            "acoustic": "DennisHuang648/VoxCPM2-GGUF:VoxCPM2-Acoustic-F16.gguf"
+        },
+        "recipe": "voxcpm2",
+        "suggested": true,
+        "labels": [
+            "tts",
+            "voice-design"
+        ],
+        "size": 3.31
+    },
+    "VoxCPM2-F16": {
+        "checkpoints": {
+            "main": "DennisHuang648/VoxCPM2-GGUF:VoxCPM2-BaseLM-F16.gguf",
+            "acoustic": "DennisHuang648/VoxCPM2-GGUF:VoxCPM2-Acoustic-F16.gguf"
+        },
+        "recipe": "voxcpm2",
+        "suggested": false,
+        "labels": [
+            "tts",
+            "voice-design"
+        ],
+        "size": 4.72
+    },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
         "recipe": "sd-cpp",
