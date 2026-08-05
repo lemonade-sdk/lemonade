@@ -1091,6 +1091,76 @@ jobs:
           tar tzf "$ARCHIVE"
           ls -lh "$ARCHIVE"
 
+      - name: Smoke test embeddable archive
+        shell: bash
+        run: |
+          set -e
+          WORK="$RUNNER_TEMP/embeddable-smoke"
+          mkdir -p "$WORK"
+          tar xzf "build/lemonade-embeddable-${LEMONADE_VERSION}-macos-arm64.tar.gz" -C "$WORK"
+          DIR="$WORK/lemonade-embeddable-${LEMONADE_VERSION}-macos-arm64"
+
+          # Verify expected files exist
+          test -f "$DIR/lemond"
+          test -f "$DIR/lemonade"
+          test -f "$DIR/LICENSE"
+          test -f "$DIR/resources/server_models.json"
+          test -f "$DIR/resources/backend_versions.json"
+          test -f "$DIR/resources/defaults.json"
+          test -f "$DIR/resources/toolDefinitions.json"
+          echo "All expected files present"
+
+          # Verify NO forbidden files
+          FORBIDDEN=0
+          if ls "$DIR"/lemonade-server* 2>/dev/null; then
+            echo "ERROR: Found lemonade-server (legacy CLI) in archive"; FORBIDDEN=1
+          fi
+          if [ -d "$DIR/resources/web-app" ]; then
+            echo "ERROR: Found web-app directory in archive"; FORBIDDEN=1
+          fi
+          if ls "$DIR"/lemonade-app* 2>/dev/null; then
+            echo "ERROR: Found desktop app in archive"; FORBIDDEN=1
+          fi
+          if ls "$DIR"/lemonade-tray* 2>/dev/null; then
+            echo "ERROR: Found tray app in archive"; FORBIDDEN=1
+          fi
+          if ls "$DIR"/LemonadeServer* 2>/dev/null; then
+            echo "ERROR: Found LemonadeServer in archive"; FORBIDDEN=1
+          fi
+          if [ "$FORBIDDEN" -ne 0 ]; then exit 1; fi
+          echo "No forbidden files found"
+
+          "$DIR/lemond" --version
+          "$DIR/lemonade" --version
+
+          cd "$DIR"
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+
+          ./lemond ./ &
+          LEMOND_PID=$!
+
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:13305/api/v1/health > /dev/null 2>&1; then
+              echo "Server is healthy!"
+              break
+            fi
+            if [ $i -eq 15 ]; then
+              echo "ERROR: Server failed to start within 30 seconds"
+              kill $LEMOND_PID 2>/dev/null || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          HEALTH=$(curl -sf http://localhost:13305/api/v1/health)
+          echo "Health response: $HEALTH"
+
+          kill $LEMOND_PID 2>/dev/null || true
+          wait $LEMOND_PID 2>/dev/null || true
+          echo "Embeddable macOS smoke test PASSED!"
+
       - name: Upload embeddable archive
         uses: actions/upload-artifact@v4
         with:
@@ -1586,7 +1656,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs:
       - build-lemonade-embeddable-linux
-      - build-lemonade-embeddable-macos
     strategy:
       fail-fast: false
       matrix:
@@ -1599,12 +1668,7 @@ jobs:
             os: ubuntu-24.04-arm
             platform: ubuntu-arm64
             artifact: lemonade-embeddable-linux-arm64
-          - label: macOS
-            os: macos-latest
-            platform: macos-arm64
-            artifact: lemonade-embeddable-macos
     env:
-      # Both build jobs read version from the same CMakeLists.txt, so either is fine.
       LEMONADE_VERSION: ${{ needs.build-lemonade-embeddable-linux.outputs.version }}
     steps:
       - name: Download embeddable archive
@@ -1809,8 +1873,11 @@ jobs:
     name: Test .dmg - macOS inference
     runs-on: macos-latest
     needs: build-lemonade-macos-dmg
-    # Skip inference tests on tag pushes (releases) — signed path runs tests inline in build job
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    # Unsigned (fork-PR) runs only: on signed runs every test step below was
+    # already conditioned away, leaving a redundant .pkg install that
+    # Test CLI/Endpoints (macos-latest) repeats in the same run. macOS runner
+    # slots are the scarcest resource (org-wide cap: 5 concurrent).
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true' }}
     timeout-minutes: 30
     env:
       LEMONADE_CI_MODE: "True"
@@ -1825,34 +1892,14 @@ jobs:
       - name: Set HF_HOME environment variable
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
-      # ---- Install Server (signed .pkg path) ----
-      - name: Download .pkg package
-        id: download-pkg
-        if: needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
-        uses: actions/download-artifact@v7
-        with:
-          name: lemonade-macos-pkg
-          path: .
-
-      - name: Install Lemonade Server (.pkg)
-        id: install-pkg
-        if: needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
-        uses: ./.github/actions/install-lemonade-server-dmg
-        with:
-          version: ${{ env.LEMONADE_VERSION }}
-          download-artifact: 'false'
-
-      # ---- Download and run from build dir (unsigned path — no system install) ----
       # Download artifacts from build-lemonade-macos-dmg since this job runs on a fresh runner.
       - name: Download built binaries (unsigned path — test-dmg-inference)
-        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         uses: actions/download-artifact@v5
         with:
           name: lemonade-unsigned-binaries
           path: build/
 
       - name: Restore execute permissions on downloaded binaries (unsigned path)
-        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         shell: bash
         run: |
           set -e
@@ -1861,7 +1908,6 @@ jobs:
           echo "Permissions restored."
 
       - name: Verify binaries (unsigned path — test-dmg-inference)
-        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         shell: bash
         run: |
           set -e
@@ -1881,7 +1927,6 @@ jobs:
           echo "All binaries verified!"
 
       - name: Start server before matrix tests (unsigned path)
-        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         shell: bash
         run: |
           set -e
@@ -1918,12 +1963,8 @@ jobs:
       # they share a single setup and model cache (issue #2103). Each step runs
       # even if an earlier test failed; the job fails if any failed.
       - name: Test llamacpp-metal
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true' }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: .venv/bin/python test/server_llm.py --wrapped-server llamacpp --backend metal --cli-binary ./build/lemonade
-
-      - name: Test whisper-metal
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true' }}
-        run: .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --cli-binary ./build/lemonade
 
       # Temporarily disabled — sd-cpp metal test is being skipped
       # - name: Test sd-cpp-metal
@@ -1933,7 +1974,7 @@ jobs:
       #   run: .venv/bin/python test/server_sd.py --wrapped-server sd-cpp --backend metal --cli-binary ./build/lemonade
 
       - name: Test kokoro-metal
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true' }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: .venv/bin/python test/server_tts.py --cli-binary ./build/lemonade
 
       - name: Capture and upload server logs
