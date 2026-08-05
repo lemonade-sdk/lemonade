@@ -84,8 +84,8 @@ const std::string& HttpError::response_body() const {
     return response_body_;
 }
 
-void LemonadeClient::parse_target_url(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl) {
-    lemon::utils::parse_target_url(input_host, out_clean_host, out_port, out_is_ssl);
+void LemonadeClient::parse_target_url(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl, bool override_default_port) {
+    lemon::utils::parse_target_url(input_host, out_clean_host, out_port, out_is_ssl, override_default_port);
 }
 
 LemonadeClient::LemonadeClient(const std::string& host, int port, const std::string& api_key, bool is_ssl)
