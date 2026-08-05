@@ -76,6 +76,7 @@ struct RoutingHelperTestHook {
     static StubWrappedServer* add_server(Router& r, std::unique_ptr<StubWrappedServer> s) {
         StubWrappedServer* raw = s.get();
         std::lock_guard<std::mutex> lock(r.load_mutex_);
+        r.install_reclaim_notifier(raw);
         r.loaded_servers_.push_back(std::move(s));
         return raw;
     }
@@ -291,18 +292,18 @@ static void test_concurrent_policy_update(Router& router) {
 }
 
 // Reviewer's TOCTOU concern: the final request finishing between the busy check
-// and the callback registration. mark_pending_stale_if_busy fuses one lock to
-// both decide and install, so an idle helper returns false (caller evicts now)
-// and a busy one returns true (self-reclaims later) — no lost wakeup.
+// and arming the reclaim. mark_pending_stale_if_busy fuses one lock to both
+// decide and arm, so an idle helper returns false (caller evicts now) and a busy
+// one returns true (self-reclaims later) — no lost wakeup.
 static void test_mark_pending_stale_atomic_decision(Router& router) {
     StubWrappedServer* idle =
         RoutingHelperTestHook::add_server(router, make_helper("atomic.idle"));
-    bool idle_deferred = idle->mark_pending_stale_if_busy([] {});
+    bool idle_deferred = idle->mark_pending_stale_if_busy();
 
     StubWrappedServer* busy =
         RoutingHelperTestHook::add_server(router, make_helper("atomic.busy"));
     busy->acquire_for_inference();
-    bool busy_deferred = busy->mark_pending_stale_if_busy([] {});
+    bool busy_deferred = busy->mark_pending_stale_if_busy();
     busy->release_inference();
     busy->clear_pending_stale();
 
@@ -366,11 +367,11 @@ static void test_deferred_reclaim_waits_for_slot(Router& router) {
           acquired && blocked_during_session && reclaimed_after_session);
 }
 
-// Reviewer's lost-wakeup ask: a request that rescues the helper between the first
-// release and the eviction commit must not strand it. The dispatched reclaim
-// consumed the pending intent; when its commit is refused because a request is
-// still in flight, it must re-arm so that request's release reclaims the helper
-// WITHOUT another reconcile.
+// Reviewer's lost-wakeup ask: a request that rescues the helper after the
+// pending intent was already consumed (the reclaim dispatched but not yet
+// committed) must not strand it. The reclaim must re-arm when its commit is
+// refused, so the rescuer's own release reclaims the helper WITHOUT another
+// reconcile.
 static void test_reclaim_rearms_when_rescued_before_commit(Router& router) {
     StubWrappedServer* helper =
         RoutingHelperTestHook::add_server(router, make_helper("rescue.helper"));
@@ -381,27 +382,28 @@ static void test_reclaim_rearms_when_rescued_before_commit(Router& router) {
     RoutingHelperTestHook::reconcile(router, {});
     bool armed_survives = RoutingHelperTestHook::has_helper(router, "rescue.helper");
 
-    // Consume the original pending intent WITHOUT reclaiming, so the helper is in
-    // the exact state the bug required: the reclaim task has been dispatched (the
-    // callback was extracted and cleared by take_pending_reclaim_if_idle_locked)
-    // but has not committed yet. Overwriting the stored callback with a no-op and
-    // draining it on release reproduces that consumed-and-cleared state; the old
-    // code, which left the original callback installed, would not have failed.
-    helper->mark_pending_stale_if_busy([] {});
+    // Hold the residency slot so the dispatched reclaim parks instead of running.
+    bool acquired = router.begin_exclusive();
+
+    // The final release consumes the pending intent (take_pending_reclaim_if_idle
+    // clears it) and dispatches the reclaim, which now blocks on the held slot.
+    // The helper is thus in the exact state the bug required: intent consumed,
+    // reclaim in flight but not yet committed.
     helper->release_inference();
     bool consumed_stays_resident = RoutingHelperTestHook::has_helper(router, "rescue.helper");
 
-    // A second request arrives before that dispatched reclaim reaches its commit.
+    // A second request arrives before that parked reclaim commits.
     helper->acquire_for_inference();
 
-    // The reclaim's commit is refused (request in flight). With the pending intent
-    // already consumed, only the re-arm keeps the reclaim alive.
-    RoutingHelperTestHook::reclaim_now(router, "rescue.helper");
-    bool survives_refused_commit = RoutingHelperTestHook::has_helper(router, "rescue.helper");
+    // Releasing the slot lets the parked reclaim run. It finds the helper busy
+    // again, so its commit is refused; with the intent already consumed, it must
+    // re-arm rather than strand the helper — so it stays resident while busy.
+    router.end_exclusive();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    bool resident_while_busy = RoutingHelperTestHook::has_helper(router, "rescue.helper");
 
-    // Releasing the second request must now reclaim the helper on its own — no
-    // second reconcile — which only happens if the refused commit re-armed the
-    // intent (the old code left it consumed and the helper would leak).
+    // The re-armed intent makes the second request's release reclaim the helper
+    // on its own — no further reconcile.
     helper->release_inference();
     bool reclaimed = false;
     for (int i = 0; i < 200; ++i) {
@@ -413,7 +415,8 @@ static void test_reclaim_rearms_when_rescued_before_commit(Router& router) {
     }
 
     check("reclaim re-arms on a refused commit; the rescuer's release evicts it",
-          armed_survives && consumed_stays_resident && survives_refused_commit && reclaimed);
+          armed_survives && acquired && consumed_stays_resident &&
+          resident_while_busy && reclaimed);
 }
 
 // Reviewer's promotion-path ask: an already-loaded Standard model must not be

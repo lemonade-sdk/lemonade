@@ -66,7 +66,8 @@ Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManage
     vram_monitor_ = std::make_unique<GlobalVramMonitor>();
     eviction_engine_ = std::make_unique<EvictionEngine>(this, vram_monitor_.get());
     suspend_inhibitor_ = create_suspend_inhibitor();
-    reclaim_executor_ = std::make_shared<RoutingHelperReclaimExecutor>();
+    reclaim_executor_ = std::make_shared<RoutingHelperReclaimExecutor>(
+        [this](const std::string& model_name) { reclaim_stale_helper_if_idle(model_name); });
 
     // Always start the monitor/engine threads; they are cheap no-ops until the
     // user opts in. The monitor skips the VRAM poll when auto_evict is disabled,
@@ -351,7 +352,7 @@ bool Router::ensure_loaded_model_residency_canonical(
     // the old request as Standard.
     if (requested_residency_class == ResidencyClass::RoutingHelper &&
         existing->get_residency_class() != ResidencyClass::RoutingHelper &&
-        needed_helper_models_.count(canonical_model_name) == 0) {
+        !is_needed_helper_locked(canonical_model_name)) {
         existing->update_access_time();
         return true;
     }
@@ -413,26 +414,9 @@ void Router::prune_stale_routing_helpers_locked() {
             server->get_residency_class() != ResidencyClass::RoutingHelper) {
             continue;
         }
-        std::string name = server->get_model_name();
-        // A user pin is an explicit "keep" and outranks policy-churn reclamation.
-        if (server->is_pinned()) {
-            server->clear_pending_stale();
-            continue;
+        if (reclaim_or_defer_helper_locked(server.get())) {
+            stale.push_back(server.get());
         }
-        if (needed_helper_models_.count(name) != 0) {
-            // Referenced again (e.g. a policy re-added it): cancel any pending
-            // release-triggered reclaim.
-            server->clear_pending_stale();
-            continue;
-        }
-        // Atomically: if the helper is still busy, install the release-triggered
-        // reclaim (evicting now would block on the request drain); if it went
-        // idle in the meantime, fall through to evict it directly. Doing both
-        // under one state lock closes the check-then-install lost-wakeup race.
-        if (server->mark_pending_stale_if_busy(make_helper_reclaim_dispatch(name))) {
-            continue;
-        }
-        stale.push_back(server.get());
     }
 
     for (auto* server : stale) {
@@ -442,13 +426,23 @@ void Router::prune_stale_routing_helpers_locked() {
     }
 }
 
-std::function<void()> Router::make_helper_reclaim_dispatch(const std::string& model_name) {
-    std::weak_ptr<RoutingHelperReclaimExecutor> weak_executor = reclaim_executor_;
-    return [this, weak_executor, model_name] {
-        if (auto executor = weak_executor.lock()) {
-            executor->post([this, model_name] { reclaim_stale_helper_if_idle(model_name); });
-        }
-    };
+bool Router::reclaim_or_defer_helper_locked(WrappedServer* server) {
+    // A user pin is an explicit "keep" and a policy re-adding the model both
+    // cancel a pending reclaim; only a still-stale helper is a candidate.
+    if (!routing_helper_no_longer_needed(server->get_model_name(),
+                                         ResidencyClass::RoutingHelper,
+                                         server->is_pinned())) {
+        server->clear_pending_stale();
+        return false;
+    }
+    // Atomically: if the helper is still busy, arm the release-triggered reclaim
+    // (evicting now would block on the request drain); if it went idle in the
+    // meantime, report so the caller evicts it directly. Doing both under one
+    // state lock closes the check-then-arm lost-wakeup race.
+    if (server->mark_pending_stale_if_busy()) {
+        return false;
+    }
+    return true;
 }
 
 void Router::reclaim_stale_helper_if_idle(const std::string& model_name) {
@@ -474,16 +468,15 @@ void Router::reclaim_stale_helper_if_idle(const std::string& model_name) {
             return;
         }
 
-        // Rescued by a pin or referenced again by a policy change since we marked it.
-        if (!routing_helper_no_longer_needed(model_name, ResidencyClass::RoutingHelper,
-                                             server->is_pinned())) {
-            server->clear_pending_stale();
+        // Rescued (pin / re-added) or still busy: the shared helper cancels or
+        // re-arms the reclaim and reports there is nothing to evict right now.
+        if (!reclaim_or_defer_helper_locked(server)) {
             return;
         }
 
-        // Mark EVICTING then atomically confirm still idle.
-        server->set_state(ModelState::EVICTING);
-        if (server->try_commit_eviction()) {
+        // Stale and idle at the decision above. Commit the eviction atomically; a
+        // request that slipped in between rescues the model and this returns false.
+        if (server->try_evict_if_idle()) {
             server->clear_pending_stale();
             LOG(INFO, "Router") << "Routing helper " << model_name
                                 << " released and referenced by no active policy, evicting"
@@ -492,16 +485,29 @@ void Router::reclaim_stale_helper_if_idle(const std::string& model_name) {
             return;
         }
 
-        // A request slipped in between the release and this commit and rescued the
-        // model. This reclaim already consumed the pending intent when it was
-        // dispatched, so we must restore it rather than drop it: re-arm the
-        // release-triggered reclaim if the helper is busy again. If it went idle
-        // within this window, mark_pending_stale_if_busy reports so and we retry
-        // the commit immediately instead of opening a fresh check/install gap.
-        if (server->mark_pending_stale_if_busy(make_helper_reclaim_dispatch(model_name))) {
+        // A request rescued the model between the idle decision and the commit.
+        // This reclaim already consumed the pending intent when it was dispatched,
+        // so we must restore it: re-arm if the helper is busy again. If it went
+        // idle within this window, mark_pending_stale_if_busy reports so and we
+        // retry the commit immediately instead of opening a fresh check/arm gap.
+        if (server->mark_pending_stale_if_busy()) {
             return;
         }
     }
+}
+
+void Router::install_reclaim_notifier(WrappedServer* server) {
+    std::weak_ptr<RoutingHelperReclaimExecutor> weak_executor = reclaim_executor_;
+    std::string model_name = server->get_model_name();
+    server->set_reclaim_notifier([weak_executor, model_name] {
+        if (auto executor = weak_executor.lock()) {
+            executor->post(model_name);
+        }
+    });
+}
+
+bool Router::is_needed_helper_locked(const std::string& canonical_model_name) const {
+    return needed_helper_models_.count(canonical_model_name) != 0;
 }
 
 bool Router::routing_helper_no_longer_needed(const std::string& canonical_model_name,
@@ -512,15 +518,7 @@ bool Router::routing_helper_no_longer_needed(const std::string& canonical_model_
     if (requested_residency_class != ResidencyClass::RoutingHelper || pinned) {
         return false;
     }
-    return needed_helper_models_.count(canonical_model_name) == 0;
-}
-
-bool Router::may_commit_loaded_server(const WrappedServer& server,
-                                      const std::string& canonical_model_name,
-                                      ResidencyClass requested_residency_class) const {
-    return !routing_helper_no_longer_needed(canonical_model_name,
-                                            requested_residency_class,
-                                            server.is_pinned());
+    return !is_needed_helper_locked(canonical_model_name);
 }
 
 bool Router::has_npu_server() const {
@@ -1016,8 +1014,9 @@ void Router::load_model(const std::string& model_name,
             // starting (the load ran with load_mutex_ released). Now that we hold
             // the lock again, validate against the authoritative needed set so a
             // helper no active policy references is never committed.
-            if (!may_commit_loaded_server(*new_server, canonical_model_name,
-                                          requested_residency_class)) {
+            if (routing_helper_no_longer_needed(canonical_model_name,
+                                                requested_residency_class,
+                                                new_server->is_pinned())) {
                 LOG(INFO, "Router") << "Routing helper " << canonical_model_name
                           << " no longer referenced by any active policy; "
                           << "discarding freshly loaded backend" << std::endl;
@@ -1035,6 +1034,7 @@ void Router::load_model(const std::string& model_name,
             new_server->set_state(ModelState::READY);
 
             // Add to loaded servers
+            install_reclaim_notifier(new_server.get());
             loaded_servers_.push_back(std::move(new_server));
 
             is_loading_ = false;
@@ -1107,8 +1107,9 @@ void Router::load_model(const std::string& model_name,
                 // Same policy-churn guard as the initial load: a helper the
                 // active policy dropped while this retry backend was starting
                 // must be discarded, not committed.
-                if (!may_commit_loaded_server(*retry_server, canonical_model_name,
-                                              requested_residency_class)) {
+                if (routing_helper_no_longer_needed(canonical_model_name,
+                                                    requested_residency_class,
+                                                    retry_server->is_pinned())) {
                     LOG(INFO, "Router") << "Routing helper " << canonical_model_name
                               << " no longer referenced by any active policy; "
                               << "discarding freshly loaded backend" << std::endl;
@@ -1120,6 +1121,7 @@ void Router::load_model(const std::string& model_name,
 
                 retry_server->set_state(ModelState::READY);
                 const auto retry_duration_ms = retry_server->get_load_duration_ms();
+                install_reclaim_notifier(retry_server.get());
                 loaded_servers_.push_back(std::move(retry_server));
                 is_loading_ = false;
                 load_cv_.notify_all();

@@ -37,23 +37,27 @@ class CloudProviderRegistry;
 // router destroys the state those tasks touch, so a task can never outlive it.
 class RoutingHelperReclaimExecutor {
 public:
-    RoutingHelperReclaimExecutor() : worker_([this] { run(); }) {}
+    explicit RoutingHelperReclaimExecutor(std::function<void(const std::string&)> handler)
+        : handler_(std::move(handler)), worker_([this] { run(); }) {}
     ~RoutingHelperReclaimExecutor() { stop(); }
 
     RoutingHelperReclaimExecutor(const RoutingHelperReclaimExecutor&) = delete;
     RoutingHelperReclaimExecutor& operator=(const RoutingHelperReclaimExecutor&) = delete;
 
-    void post(std::function<void()> task) {
+    // Queue a helper for reclaim. Keyed by model name so repeated posts for the
+    // same helper (marked -> dispatched -> rescued -> re-armed) collapse to one
+    // pending entry instead of piling up redundant tasks.
+    void post(const std::string& model_name) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (stop_) return;
-            queue_.push_back(std::move(task));
+            pending_.insert(model_name);
         }
         cv_.notify_one();
     }
 
-    // Idempotent. Any still-queued tasks are dropped; the in-flight one (if any)
-    // is allowed to finish, then the worker is joined.
+    // Idempotent. Any still-queued names are dropped; the in-flight reclaim (if
+    // any) is allowed to finish, then the worker is joined.
     void stop() {
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -70,22 +74,23 @@ private:
     void run() {
         std::unique_lock<std::mutex> lock(mutex_);
         while (true) {
-            cv_.wait(lock, [this] { return stop_ || !queue_.empty(); });
+            cv_.wait(lock, [this] { return stop_ || !pending_.empty(); });
             if (stop_) return;
-            std::function<void()> task = std::move(queue_.front());
-            queue_.pop_front();
+            std::string model_name = *pending_.begin();
+            pending_.erase(pending_.begin());
             lock.unlock();
             try {
-                task();
+                handler_(model_name);
             } catch (...) {
             }
             lock.lock();
         }
     }
 
+    std::function<void(const std::string&)> handler_;
     std::mutex mutex_;
     std::condition_variable cv_;
-    std::deque<std::function<void()>> queue_;
+    std::set<std::string> pending_;
     bool stop_ = false;
     std::thread worker_;
 };
@@ -333,6 +338,15 @@ private:
     // it self-reclaims on its final release instead of blocking this pass on an
     // eviction timeout. Caller holds load_mutex_.
     void prune_stale_routing_helpers_locked();
+    // Shared decision for a live routing helper (caller holds load_mutex_): if it
+    // is still needed or pinned, cancel any pending reclaim and return false; if
+    // it is stale but busy, arm the release-triggered reclaim and return false;
+    // if it is stale and idle, return true so the caller evicts it now.
+    bool reclaim_or_defer_helper_locked(WrappedServer* server);
+    // Whether a routing-helper model is still referenced by an active policy
+    // (present in needed_helper_models_). The single source of truth for the
+    // needed-set membership test. Caller holds load_mutex_.
+    bool is_needed_helper_locked(const std::string& canonical_model_name) const;
     // Whether a routing helper of the given residency/pin state is no longer
     // referenced by any active policy (absent from needed_helper_models_). Non
     // routing-helper and pinned models are never considered stale. Caller holds
@@ -347,17 +361,11 @@ private:
     // a later prune, so it is guaranteed to run and is safe to call from a thread
     // other than the one that ran release_inference / finish_downsize.
     void reclaim_stale_helper_if_idle(const std::string& model_name);
-    // Build the busy->idle callback stored on a helper marked pending-stale. It
-    // schedules reclaim_stale_helper_if_idle on reclaim_executor_ via a weak_ptr,
-    // so it never runs on the release call stack and no-ops if the router is gone.
-    std::function<void()> make_helper_reclaim_dispatch(const std::string& model_name);
-    // Whether a freshly loaded backend may be committed to loaded_servers_. A
-    // routing helper whose backend finished starting after a policy change
-    // dropped it must be discarded rather than leaked; shared by the initial
-    // load and the nuclear-retry path. Caller holds load_mutex_.
-    bool may_commit_loaded_server(const WrappedServer& server,
-                                  const std::string& canonical_model_name,
-                                  ResidencyClass requested_residency_class) const;
+    // Install the busy->idle reclaim notifier on a server as it enters the router.
+    // The notifier posts the server's model name to reclaim_executor_ via a
+    // weak_ptr, so it never runs on the release call stack and no-ops if the
+    // router is gone. Only fires when the server has been marked pending-stale.
+    void install_reclaim_notifier(WrappedServer* server);
     // Eviction-engine entry point: physically unload a model previously marked
     // EVICTING, but only if it has not been rescued by an in-flight request
     // (see WrappedServer::try_commit_eviction). Safe against request races.

@@ -196,6 +196,23 @@ public:
         return false;
     }
 
+    // Single-step eviction commit for the synchronous routing-helper reclaim,
+    // which already holds the router lock and unloads inline. Under one state
+    // lock: if the model is idle (no requests, no maintenance downsize), transition
+    // straight to UNLOADED and return true; otherwise leave the state untouched
+    // and return false so the caller re-arms. Unlike the tentative EVICTING mark
+    // used by the async engine, this never clobbers an IN_USE / DOWNSIZING state.
+    bool try_evict_if_idle() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (active_request_count_ == 0 && !maintenance_in_progress_ &&
+            state_ != ModelState::LOADING && state_ != ModelState::UNLOADED) {
+            state_ = ModelState::UNLOADED;
+            state_cv_.notify_all();
+            return true;
+        }
+        return false;
+    }
+
     void rescue_from_eviction() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         if (state_ == ModelState::EVICTING) {
@@ -224,19 +241,27 @@ public:
         }
     }
 
+    // Install, once, the callback that hands this server's reclaim to the router's
+    // executor thread on the next busy->idle edge. Set when the server enters the
+    // router; firing is gated on pending_stale_, so a plain Standard model never
+    // triggers a reclaim.
+    void set_reclaim_notifier(std::function<void()> notifier) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        reclaim_notifier_ = std::move(notifier);
+    }
+
     // Atomically decide, under one state lock, whether this routing helper is
-    // still busy. If so, install the reclaim callback (fired on the next
-    // busy->idle edge) and return true. If it already went idle, return false so
-    // the caller reclaims it now — closing the check-then-install lost-wakeup
-    // race where the last request could release between a separate is_busy() call
-    // and the install.
-    bool mark_pending_stale_if_busy(std::function<void()> on_idle_reclaim) {
+    // still busy. If so, arm the release-triggered reclaim (the pre-installed
+    // notifier fires on the next busy->idle edge) and return true. If it already
+    // went idle, return false so the caller reclaims it now — closing the
+    // check-then-arm lost-wakeup race where the last request could release between
+    // a separate is_busy() call and the arm.
+    bool mark_pending_stale_if_busy() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         if (active_request_count_ == 0 && !maintenance_in_progress_) {
             return false;
         }
         pending_stale_ = true;
-        pending_stale_reclaim_ = std::move(on_idle_reclaim);
         return true;
     }
 
@@ -245,22 +270,19 @@ public:
     void clear_pending_stale() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         pending_stale_ = false;
-        pending_stale_reclaim_ = nullptr;
     }
 
     // Caller holds state_mutex_. If the server is now idle and a policy-drop
-    // reclaim is pending, extract and clear it so the caller can dispatch it
-    // after releasing the lock. Shared by every busy->idle transition
+    // reclaim is pending, clear the flag and return the notifier so the caller can
+    // dispatch it after releasing the lock. Shared by every busy->idle transition
     // (release_inference and finish_downsize) so a helper that was busy only
     // because of a maintenance downsize is reclaimed too. Clearing here is safe:
     // if the dispatched reclaim's eviction commit is later refused (a request
-    // rescued the helper), the reclaim re-arms this pending intent.
+    // rescued the helper), the reclaim re-arms pending_stale_.
     std::function<void()> take_pending_reclaim_if_idle_locked() {
         if (pending_stale_ && active_request_count_ == 0 && !maintenance_in_progress_) {
             pending_stale_ = false;
-            std::function<void()> callback = std::move(pending_stale_reclaim_);
-            pending_stale_reclaim_ = nullptr;
-            return callback;
+            return reclaim_notifier_;
         }
         return nullptr;
     }
@@ -599,10 +621,10 @@ protected:
     bool maintenance_in_progress_;
     bool is_streaming_ = false;
     // Set when this routing helper was dropped by a policy change while busy;
-    // pending_stale_reclaim_ is invoked once the last request releases it. Both
-    // are guarded by state_mutex_.
+    // reclaim_notifier_ (installed once when the server enters the router) is
+    // invoked once the last request releases it. Both are guarded by state_mutex_.
     bool pending_stale_ = false;
-    std::function<void()> pending_stale_reclaim_;
+    std::function<void()> reclaim_notifier_;
     long load_duration_ms_;
     bool pinned_ = false;
     std::atomic<bool>* load_cancel_ = nullptr;
