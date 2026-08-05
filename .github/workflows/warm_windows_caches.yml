@@ -1,0 +1,67 @@
+name: Warm Windows FetchContent Caches
+
+# Caches saved on merge-queue branches are not visible to PR branches; only
+# caches saved on main are shared with every branch. Since the full CI suite
+# no longer runs on push to main (the merge queue already validated the same
+# tree), this workflow refreshes the two Windows FetchContent caches whenever
+# their key input changes.
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  warm-installer-cache:
+    name: Warm installer FetchContent cache
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v5
+        with:
+          path: build/_deps
+          key: fetchcontent-windows-vs2026-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            fetchcontent-windows-vs2026-
+
+      - name: Run setup.ps1 to configure environment
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\setup.ps1
+
+      - name: Build lemond to populate dependency builds
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          cmake --build build --config Release --target lemond
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  warm-embeddable-cache:
+    name: Warm embeddable FetchContent cache
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v5
+        with:
+          path: build/_deps
+          key: fetchcontent-windows-embeddable-vs2026-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-windows-embeddable-vs2026-
+
+      - name: Configure and build lemond to populate dependency builds
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          cmake --preset vs18 -DBUILD_WEB_APP=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --config Release --target lemond
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
