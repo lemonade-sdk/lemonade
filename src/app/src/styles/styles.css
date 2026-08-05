@@ -7029,6 +7029,24 @@ optgroup {
   color: var(--filter-chip-color);
 }
 
+.model-nav-rail__backend-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.model-nav-rail__backend-wrap.is-removable .model-nav-rail__backend-chip {
+  padding-inline-end: 19px;
+}
+
+.model-nav-rail__backend-more {
+  --filter-chip-color: var(--accent-fg);
+  color: var(--text-tertiary);
+}
+
+.model-nav-rail__backend-more svg {
+  color: var(--accent-fg);
+}
+
 .model-nav-rail__chip-count {
   color: var(--text-tertiary);
   font-size: var(--type-overline-size);
@@ -7048,6 +7066,7 @@ optgroup {
   padding-inline-end: 19px;
 }
 
+.model-nav-rail__backend-remove,
 .model-nav-rail__custom-tag-remove {
   position: absolute;
   inset-inline-end: 3px;
@@ -7066,6 +7085,7 @@ optgroup {
   cursor: pointer;
 }
 
+.model-nav-rail__backend-remove:hover,
 .model-nav-rail__custom-tag-remove:hover {
   background: var(--danger-soft);
   color: var(--danger);
@@ -7110,6 +7130,7 @@ optgroup {
 }
 
 .model-nav-rail__filter-chip:focus-visible,
+.model-nav-rail__backend-remove:focus-visible,
 .model-nav-rail__custom-tag-remove:focus-visible,
 .model-nav-rail__custom-tag-entry input:focus-visible,
 .model-nav-rail__custom-tag-entry button:focus-visible {

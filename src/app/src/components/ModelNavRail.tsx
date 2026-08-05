@@ -26,6 +26,13 @@ import { backendColor } from '../modelPresentation';
 import type { IconName } from './Icon';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import {
+  DEFAULT_VISIBLE_BACKEND_COUNT,
+  hideBackendShortcut,
+  resolveBackendRailVisibility,
+  revealNextBackend,
+  type BackendRailVisibilityState,
+} from '../features/models/backendRailVisibility';
+import {
   listModelName,
   listRecipeBadgeText,
   modelHasFilterableBackend,
@@ -166,6 +173,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   const [tasksOpen, setTasksOpen] = useState(true);
   const [backendsOpen, setBackendsOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(true);
+  const [backendVisibility, setBackendVisibility] = useState<BackendRailVisibilityState | null>(null);
   const [customTags, setCustomTags] = useState<string[]>(loadCustomFilterTags);
   const [customTagDraft, setCustomTagDraft] = useState('');
 
@@ -207,6 +215,22 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   }, [allModels]);
 
+  const resolvedBackendVisibility = useMemo(
+    () => resolveBackendRailVisibility(backends.map(backend => backend.value), backendVisibility),
+    [backends, backendVisibility],
+  );
+
+  const visibleBackends = useMemo(() => {
+    const byValue = new Map(backends.map(backend => [backend.value, backend]));
+    return resolvedBackendVisibility.order
+      .slice(0, resolvedBackendVisibility.visibleCount)
+      .map(value => byValue.get(value))
+      .filter((backend): backend is { value: string; label: string; count: number } => Boolean(backend));
+  }, [backends, resolvedBackendVisibility]);
+
+  const hiddenBackendCount = Math.max(0, backends.length - visibleBackends.length);
+  const backendShortcutsRemovable = visibleBackends.length > DEFAULT_VISIBLE_BACKEND_COUNT;
+
   const allTagChips = useMemo(
     () => [...TAG_CHIPS, ...customTags.filter(tag => !TAG_CHIPS.some(builtIn => builtIn.toLowerCase() === tag.toLowerCase()))],
     [customTags],
@@ -239,6 +263,18 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   const toggleBackend = (backend: string) => {
     const next = new Set(backendFilters);
     if (next.has(backend)) next.delete(backend); else next.add(backend);
+    onBackendFiltersChange(next);
+  };
+
+  const showNextBackend = () => {
+    setBackendVisibility(revealNextBackend(resolvedBackendVisibility));
+  };
+
+  const removeBackendShortcut = (backend: string) => {
+    setBackendVisibility(hideBackendShortcut(resolvedBackendVisibility, backend));
+    if (!backendFilters.has(backend)) return;
+    const next = new Set(backendFilters);
+    next.delete(backend);
     onBackendFiltersChange(next);
   };
 
@@ -440,23 +476,48 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         </h2>
         {backendsOpen && (
           <div className="model-nav-rail__chip-list model-nav-rail__backend-list" id="nav-backends" role="group" aria-label="Filter by backend">
-            {backends.map(backend => {
+            {visibleBackends.map(backend => {
               const active = backendFilters.has(backend.value);
               return (
-                <button
+                <span
                   key={backend.value}
-                  type="button"
-                  className={`model-nav-rail__filter-chip model-nav-rail__backend-chip${active ? ' is-active' : ''}`}
-                  style={{ '--filter-chip-color': backendColor(backend.value) } as React.CSSProperties}
-                  aria-pressed={active}
-                  onClick={() => toggleBackend(backend.value)}
+                  className={`model-nav-rail__backend-wrap${backendShortcutsRemovable ? ' is-removable' : ''}`}
                 >
-                  <span>{backend.label}</span>
-                  <span className="model-nav-rail__chip-count" aria-hidden="true">{backend.count}</span>
-                  <span className="sr-only">{`, ${backend.count} models`}</span>
-                </button>
+                  <button
+                    type="button"
+                    className={`model-nav-rail__filter-chip model-nav-rail__backend-chip${active ? ' is-active' : ''}`}
+                    style={{ '--filter-chip-color': backendColor(backend.value) } as React.CSSProperties}
+                    aria-pressed={active}
+                    onClick={() => toggleBackend(backend.value)}
+                  >
+                    <span>{backend.label}</span>
+                    <span className="model-nav-rail__chip-count" aria-hidden="true">{backend.count}</span>
+                    <span className="sr-only">{`, ${backend.count} models`}</span>
+                  </button>
+                  {backendShortcutsRemovable && (
+                    <button
+                      type="button"
+                      className="model-nav-rail__backend-remove"
+                      onClick={() => removeBackendShortcut(backend.value)}
+                      aria-label={`Hide ${backend.label} backend shortcut`}
+                    >
+                      <Icon name="x" size={10} aria-hidden="true" />
+                    </button>
+                  )}
+                </span>
               );
             })}
+            {hiddenBackendCount > 0 && (
+              <button
+                type="button"
+                className="model-nav-rail__filter-chip model-nav-rail__backend-more"
+                onClick={showNextBackend}
+                aria-label={`Show one more backend, ${hiddenBackendCount} hidden`}
+              >
+                <Icon name="plus" size={11} aria-hidden="true" />
+                <span>{hiddenBackendCount}</span>
+              </button>
+            )}
           </div>
         )}
       </section>
