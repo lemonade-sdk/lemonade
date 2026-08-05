@@ -8,6 +8,25 @@ on:
         type: boolean
         default: false
   pull_request:
+    paths:
+      - ".github/workflows/validate_vllm.yml"
+      - ".github/actions/setup-venv/**"
+      - "test/validate_vllm.py"
+      - "test/utils/**"
+      - "test/requirements.txt"
+      - "setup.sh"
+      - "src/cpp/resources/backend_versions.json"
+      - "src/cpp/resources/server_models.json"
+      - "src/cpp/resources/vllm_model_config.json"
+      - "src/cpp/server/backends/vllm/**"
+      - "src/cpp/server/backends/backend_*.cpp"
+      - "src/cpp/server/backend_manager.cpp"
+      - "src/cpp/server/runtime_config.cpp"
+      - "src/cpp/server/system_info.cpp"
+      - "src/cpp/include/lemon/backends/vllm/**"
+      - "src/cpp/include/lemon/backends/backend_*.h"
+      - "src/cpp/include/lemon/backend_manager.h"
+      - "src/cpp/include/lemon/backend_version_policy.h"
   schedule:
     # Sunday at 6:00 PM UTC
     - cron: "0 18 * * 0"

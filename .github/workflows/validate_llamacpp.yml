@@ -8,6 +8,24 @@ on:
         type: boolean
         default: false
   pull_request:
+    paths:
+      - ".github/workflows/validate_llamacpp.yml"
+      - ".github/actions/setup-venv/**"
+      - ".github/actions/cleanup-processes-windows/**"
+      - "test/validate_llamacpp.py"
+      - "test/utils/**"
+      - "test/requirements.txt"
+      - "src/cpp/resources/backend_versions.json"
+      - "src/cpp/resources/server_models.json"
+      - "src/cpp/server/backends/llamacpp/**"
+      - "src/cpp/server/backends/backend_*.cpp"
+      - "src/cpp/server/backend_manager.cpp"
+      - "src/cpp/server/runtime_config.cpp"
+      - "src/cpp/server/system_info.cpp"
+      - "src/cpp/include/lemon/backends/llamacpp/**"
+      - "src/cpp/include/lemon/backends/backend_*.h"
+      - "src/cpp/include/lemon/backend_manager.h"
+      - "src/cpp/include/lemon/backend_version_policy.h"
   schedule:
     # Sunday at 12:00 PM ET (17:00 UTC, 16:00 UTC during EDT)
     - cron: "0 16 * * 0"
