@@ -70,6 +70,17 @@ THRESHOLDS = {
 }
 
 IS_WINDOWS = platform.system() == "Windows"
+BACKEND_VERSIONS_PATH = Path("src/cpp/resources/backend_versions.json")
+
+
+def get_therock_ver() -> str:
+    """Read therock version from backend_versions.json, trimmed to major.minor.
+    Mirrors get_therock_version() in llamacpp_server.cpp."""
+    data = json.loads(BACKEND_VERSIONS_PATH.read_text())
+    version = data["therock"]["version"]          # e.g. "7.13.0"
+    parts = version.lstrip("v").split(".")
+    return ".".join(parts[:2])                    # e.g. "7.13"
+
 
 # ---------------------------------------------------------------------------
 # GitHub helpers
@@ -102,10 +113,14 @@ def resolve_latest_version(repo: str, token: str | None = None,
 def resolve_binary_url(fork: dict, version: str, therock_ver: str = "") -> str:
     key = "binary_url_windows" if IS_WINDOWS else "binary_url_linux"
     url = fork.get(key, "")
-    arch = fork.get("hardware", ["gfx1100"])[0]  # first listed arch as default
+    arch = fork.get("hardware", ["gfx1100"])[0]
     url = url.replace("{version}", version)
     url = url.replace("{arch}", arch)
-    url = url.replace("{therock_ver}", therock_ver)
+    # therock_ver may be empty for forks that don't need it — strip leftover dashes
+    if therock_ver:
+        url = url.replace("{therock_ver}", therock_ver)
+    else:
+        url = url.replace("-{therock_ver}", "").replace("{therock_ver}", "")
     return url
 
 
@@ -225,7 +240,6 @@ def install_fork_binary(fork: dict, version: str, binaries_dir: Path,
 # ---------------------------------------------------------------------------
 
 def find_lemonade_bin() -> str:
-    # Prefer build/Release on Windows, build/ on Linux
     candidates = [
         Path("build/Release/lemonade.exe"),
         Path("build/lemonade"),
@@ -234,8 +248,8 @@ def find_lemonade_bin() -> str:
     for c in candidates:
         if c.exists():
             return str(c)
-    # Fall back to PATH
     return "lemonade"
+
 
 
 def run_bench(fork: dict, version: str, binary_path: Path, model: str,
@@ -253,6 +267,7 @@ def run_bench(fork: dict, version: str, binary_path: Path, model: str,
         "--scenarios", *SCENARIOS,
         "--runs", str(MEASUREMENT_RUNS),
         "--warmup", str(WARMUP_RUNS),
+        "--auto-pull",
         "--json",
         "--output", str(output_file),
     ]
@@ -489,8 +504,10 @@ def main() -> int:
 
         # Install binary
         try:
+            therock_ver = get_therock_ver() if BACKEND_VERSIONS_PATH.exists() else ""
             binary_path = install_fork_binary(
-                fork, version, binaries_dir, args.token, args.dry_run
+                fork, version, binaries_dir, args.token, args.dry_run,
+                therock_ver=therock_ver
             )
         except Exception as e:
             print(f"  [ERROR] Binary install failed: {e}")

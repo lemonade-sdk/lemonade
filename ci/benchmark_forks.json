@@ -48,7 +48,7 @@
       "runner_os": "linux",
       "hardware": ["gfx1100", "gfx1101", "gfx1102", "gfx1103", "gfx1150", "gfx1151", "gfx1152", "gfx1153"],
       "tracked": true,
-      "notes": "Nightly dated builds. Tag format: gfx11-rocm-nightly-YYYYMMDD. Single multiarch binary — covers all RDNA3/3.5 targets. Linux only, no Windows binary. Requires linux rocm runner."
+      "notes": "Nightly dated builds. Tag format: gfx11-rocm-nightly-YYYYMMDD. Single multiarch binary — covers all RDNA3/3.5 targets. Linux only, no Windows binary. Runs on Linux ROCm self-hosted runner."
     },
     {
       "fork_id": "llamacpp-upstream-vulkan",
