@@ -241,14 +241,14 @@ def install_fork_binary(fork: dict, version: str, binaries_dir: Path,
 
 def find_lemonade_bin() -> str:
     candidates = [
-        Path("build/Release/lemonade.exe"),
-        Path("build/lemonade"),
-        Path("build/Release/lemonade"),
+        Path("build/Release/lemonade.exe"),  # Windows CI artifact
+        Path("build/lemonade"),               # Linux CI artifact (validate_vllm.yml pattern)
+        Path("build/Release/lemonade"),       # Windows non-Release build
     ]
     for c in candidates:
         if c.exists():
             return str(c)
-    return "lemonade"
+    return "lemonade"  # fall back to PATH (local dev)
 
 
 

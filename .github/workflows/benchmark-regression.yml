@@ -46,47 +46,67 @@ env:
 
 jobs:
   # =========================================================================
-  # Download latest lemonade Windows release — no build needed, saves 30 min
-  # Linux runners install the .deb directly in the bench job (no artifact needed)
+  # Build lemonade for Windows (cloud runner → artifact → self-hosted runner)
+  # Mirrors the pattern in validate_llamacpp.yml
   # =========================================================================
-  get-lemonade:
-    name: Download lemonade Windows release
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.release.outputs.version }}
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
     steps:
-      - name: Resolve latest lemonade release
-        id: release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION=$(gh api repos/lemonade-sdk/lemonade/releases/latest --jq '.tag_name')
-          echo "Latest lemonade: $VERSION"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      - name: Download and extract Windows release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build lemonade server
+        shell: PowerShell
         run: |
-          VERSION=${{ steps.release.outputs.version }}
-          gh release download "$VERSION" \
-            --repo lemonade-sdk/lemonade \
-            --pattern "lemonade-server-minimal*.msi" \
-            --dir lemonade-win || \
-          gh release download "$VERSION" \
-            --repo lemonade-sdk/lemonade \
-            --pattern "*windows*x64*.zip" \
-            --dir lemonade-win
-          # Extract zip if present
-          if ls lemonade-win/*.zip 1>/dev/null 2>&1; then
-            unzip -q lemonade-win/*.zip -d lemonade-win/extracted
-          fi
+          $ErrorActionPreference = "Stop"
+          cmake --preset vs18
+          cmake --build build --config Release
+          if (-not (Test-Path "build\Release\lemond.exe"))   { exit 1 }
+          if (-not (Test-Path "build\Release\lemonade.exe")) { exit 1 }
+          Write-Host "Build OK"
 
-      - name: Upload Windows binaries
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-build-windows
-          path: lemonade-win/
+          path: |
+            build/Release/lemond.exe
+            build/Release/lemonade.exe
+            build/resources/
+          retention-days: 3
+
+  # =========================================================================
+  # Build lemonade for Linux (cloud runner → artifact → stx-halo runner)
+  # Mirrors the pattern in validate_vllm.yml exactly
+  # =========================================================================
+  build-linux:
+    name: Build (Linux)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Build lemonade server
+        run: |
+          set -e
+          ./setup.sh
+          cmake -DBUILD_WEB_APP=OFF --preset default
+          cmake --build --preset default
+          test -f build/lemond   || { echo "lemond not found!"; exit 1; }
+          test -f build/lemonade || { echo "lemonade not found!"; exit 1; }
+          echo "Build OK"
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-build-linux
+          path: |
+            build/lemond
+            build/lemonade
+            build/resources/
           retention-days: 3
 
   # =========================================================================
@@ -94,8 +114,8 @@ jobs:
   # =========================================================================
   bench:
     name: Bench ${{ matrix.fork_id }}
-    needs: get-lemonade
-    if: always() && needs.get-lemonade.result == 'success'
+    needs: [build-windows, build-linux]
+    if: always() && !failure() && !cancelled()
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -136,18 +156,19 @@ jobs:
           name: lemonade-build-windows
           path: build/Release
 
-      - name: Locate lemonade binaries (Linux)
+      - name: Download lemonade binaries (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-build-linux
+          path: build
+
+      - name: Prepare lemonade binaries (Linux)
         if: runner.os == 'Linux'
         run: |
-          # lemonade is already installed on the self-hosted runner via .deb
-          which lemond   || { echo "ERROR: lemond not found in PATH"; exit 1; }
-          which lemonade || { echo "ERROR: lemonade not found in PATH"; exit 1; }
-          lemond --version
-          lemonade --version
-          # Symlink into build/Release so the rest of the script is OS-agnostic
-          mkdir -p build/Release
-          ln -sf "$(which lemond)"   build/Release/lemond
-          ln -sf "$(which lemonade)" build/Release/lemonade
+          chmod +x build/lemond build/lemonade
+          build/lemond --version
+          build/lemonade --version
 
       - name: Verify binaries (Windows)
         if: runner.os == 'Windows'
@@ -160,10 +181,9 @@ jobs:
       - name: Verify binaries (Linux)
         if: runner.os == 'Linux'
         run: |
-          test -f build/Release/lemond   || { echo "lemond not found"; exit 1; }
-          test -f build/Release/lemonade || { echo "lemonade not found"; exit 1; }
-          chmod +x build/Release/lemond build/Release/lemonade
-          build/Release/lemond --version
+          test -f build/lemond   || { echo "lemond not found"; exit 1; }
+          test -f build/lemonade || { echo "lemonade not found"; exit 1; }
+          echo "Binaries verified"
 
       - name: Setup Python
         uses: ./.github/actions/setup-venv
@@ -198,7 +218,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p "ci-bench-cache-${{ matrix.fork_id }}"
-          build/Release/lemond "ci-bench-cache-${{ matrix.fork_id }}" \
+          build/lemond "ci-bench-cache-${{ matrix.fork_id }}" \
             --port 13310 --host 127.0.0.1 \
             > lemond-bench.stdout.log 2> lemond-bench.stderr.log &
           echo "LEMOND_PID=$!" >> $GITHUB_ENV
@@ -243,7 +263,7 @@ jobs:
             "gpt-oss-20b-mxfp4-GGUF" \
             "gpt-oss-120b-mxfp-GGUF"; do
             echo "Pulling $m"
-            build/Release/lemonade pull "$m"
+            build/lemonade pull "$m"
           done
 
       - name: Run perf regression (Windows)
