@@ -1,31 +1,15 @@
 name: Linux Distro Builds 🐧
 
 on:
-  push:
-    branches: ["main"]
-  pull_request:
-    paths:
-      - "src/cpp/**"
-      - "CMakeLists.txt"
-      - "**/CMakeLists.txt"
-      - "CMakePresets.json"
-      - "cmake/**"
-      - "setup.sh"
-      - "test/server_cli2.py"
-      - "test/server_endpoints.py"
-      - "test/requirements.txt"
-      - "test/utils/**"
-      - ".github/workflows/linux_distro_builds.yml"
-      - ".github/actions/**"
-      - "!**/*.md"
+  merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   build-linux:
