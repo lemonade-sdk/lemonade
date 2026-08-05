@@ -136,23 +136,18 @@ jobs:
           name: lemonade-build-windows
           path: build/Release
 
-      - name: Install lemonade via .deb (Linux)
+      - name: Locate lemonade binaries (Linux)
         if: runner.os == 'Linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(gh api repos/lemonade-sdk/lemonade/releases/latest --jq '.tag_name')
-          gh release download "$VERSION" \
-            --repo lemonade-sdk/lemonade \
-            --pattern "*debian*amd64*.deb" \
-            --dir /tmp/lemonade-deb
-          DEB=$(ls /tmp/lemonade-deb/*.deb | head -1)
-          echo "Installing $DEB"
-          sudo apt-get install -y "$DEB" || sudo dpkg -i "$DEB"
-          # lemond and lemonade are now at /usr/bin/
+          # lemonade is already installed on the self-hosted runner via .deb
+          which lemond   || { echo "ERROR: lemond not found in PATH"; exit 1; }
+          which lemonade || { echo "ERROR: lemonade not found in PATH"; exit 1; }
+          lemond --version
+          lemonade --version
+          # Symlink into build/Release so the rest of the script is OS-agnostic
           mkdir -p build/Release
-          ln -sf /usr/bin/lemond   build/Release/lemond
-          ln -sf /usr/bin/lemonade build/Release/lemonade
+          ln -sf "$(which lemond)"   build/Release/lemond
+          ln -sf "$(which lemonade)" build/Release/lemonade
 
       - name: Verify binaries (Windows)
         if: runner.os == 'Windows'
