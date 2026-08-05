@@ -46,31 +46,47 @@ env:
 
 jobs:
   # =========================================================================
-  # Build lemonade binaries (reuses the same pattern as validate_llamacpp.yml)
+  # Download latest lemonade Windows release — no build needed, saves 30 min
+  # Linux runners install the .deb directly in the bench job (no artifact needed)
   # =========================================================================
-  build:
-    name: Build lemonade
-    runs-on: windows-latest
+  get-lemonade:
+    name: Download lemonade Windows release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Build C++ server
-        shell: PowerShell
+      - name: Resolve latest lemonade release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $ErrorActionPreference = "Stop"
-          cmake --preset vs18
-          cmake --build build --config Release
-          if (-not (Test-Path "build\Release\lemond.exe")) { exit 1 }
-          if (-not (Test-Path "build\Release\lemonade.exe")) { exit 1 }
-          Write-Host "Build OK"
+          VERSION=$(gh api repos/lemonade-sdk/lemonade/releases/latest --jq '.tag_name')
+          echo "Latest lemonade: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Upload build artifacts
+      - name: Download and extract Windows release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${{ steps.release.outputs.version }}
+          gh release download "$VERSION" \
+            --repo lemonade-sdk/lemonade \
+            --pattern "lemonade-server-minimal*.msi" \
+            --dir lemonade-win || \
+          gh release download "$VERSION" \
+            --repo lemonade-sdk/lemonade \
+            --pattern "*windows*x64*.zip" \
+            --dir lemonade-win
+          # Extract zip if present
+          if ls lemonade-win/*.zip 1>/dev/null 2>&1; then
+            unzip -q lemonade-win/*.zip -d lemonade-win/extracted
+          fi
+
+      - name: Upload Windows binaries
         uses: actions/upload-artifact@v7
         with:
-          name: lemonade-build
-          path: build/Release/
+          name: lemonade-build-windows
+          path: lemonade-win/
           retention-days: 3
 
   # =========================================================================
@@ -78,8 +94,8 @@ jobs:
   # =========================================================================
   bench:
     name: Bench ${{ matrix.fork_id }}
-    needs: build
-    if: always() && needs.build.result == 'success'
+    needs: get-lemonade
+    if: always() && needs.get-lemonade.result == 'success'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -96,7 +112,7 @@ jobs:
             binaries_dir: C:\lemonade-bench-binaries
           - fork_id: llamacpp-upstream-vulkan
             backend: vulkan
-            runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
+            runner: [self-hosted, Windows, 128gb, vulkan, lemon-prod]
             binaries_dir: C:\lemonade-bench-binaries
           # Linux Strix Halo runner — AMD-Ecosystem gfx11 (Linux-only multiarch binary)
           - fork_id: llamacpp-amd-ecosystem-gfx11
@@ -113,11 +129,30 @@ jobs:
         if: runner.os == 'Windows'
         uses: ./.github/actions/cleanup-processes-windows
 
-      - name: Download build artifacts
+      - name: Download lemonade binaries (Windows)
+        if: runner.os == 'Windows'
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-build
+          name: lemonade-build-windows
           path: build/Release
+
+      - name: Install lemonade via .deb (Linux)
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(gh api repos/lemonade-sdk/lemonade/releases/latest --jq '.tag_name')
+          gh release download "$VERSION" \
+            --repo lemonade-sdk/lemonade \
+            --pattern "*debian*amd64*.deb" \
+            --dir /tmp/lemonade-deb
+          DEB=$(ls /tmp/lemonade-deb/*.deb | head -1)
+          echo "Installing $DEB"
+          sudo apt-get install -y "$DEB" || sudo dpkg -i "$DEB"
+          # lemond and lemonade are now at /usr/bin/
+          mkdir -p build/Release
+          ln -sf /usr/bin/lemond   build/Release/lemond
+          ln -sf /usr/bin/lemonade build/Release/lemonade
 
       - name: Verify binaries (Windows)
         if: runner.os == 'Windows'
