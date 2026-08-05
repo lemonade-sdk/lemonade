@@ -799,55 +799,6 @@ jobs:
           .venv/bin/python test/server_streaming_errors.py --cli-binary ./build/lemonade
           echo "Streaming error tests PASSED!"
 
-      - name: Restart server before inference tests (unsigned path)
-        if: steps.check_signing.outputs.has_signing != 'true'
-        shell: bash
-        env:
-          LEMONADE_CI_MODE: "True"
-          GGML_METAL_NO_RESIDENCY: "1"
-        run: |
-          set -e
-          echo "Restarting lemond before inference tests so Metal env is inherited..."
-
-          pkill -f lemond 2>/dev/null || true
-          sleep 2
-
-          mkdir -p "$RUNNER_TEMP/xdg-runtime"
-          chmod 700 "$RUNNER_TEMP/xdg-runtime"
-          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
-          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
-
-          ./build/lemond > "$RUNNER_TEMP/lemond-inference-pre.log" 2>&1 &
-          LEMOND_PID=$!
-          disown "$LEMOND_PID"
-
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
-              echo "Server started successfully for inference tests (PID $LEMOND_PID)"
-              exit 0
-            fi
-            echo "Waiting for server... ($i/30)"
-            sleep 2
-          done
-
-          echo "ERROR: Server did not start within 60 seconds"
-          cat "$RUNNER_TEMP/lemond-inference-pre.log" 2>/dev/null || true
-          exit 1
-
-      - name: Run moonshine inference tests (unsigned path)
-        if: steps.check_signing.outputs.has_signing != 'true'
-        shell: bash
-        env:
-          LEMONADE_CI_MODE: "True"
-          PYTHONIOENCODING: utf-8
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          HF_HOME: ${{ github.workspace }}/hf-cache
-        run: |
-          set -e
-          echo "Running moonshine inference tests..."
-          .venv/bin/python test/server_moonshine.py --wrapped-server moonshine --backend cpu --cli-binary ./build/lemonade
-          echo "Moonshine inference tests PASSED!"
-
       - name: Capture and upload server logs (unsigned path)
         if: always() && steps.check_signing.outputs.has_signing != 'true'
         uses: ./.github/actions/capture-server-logs
@@ -1816,8 +1767,8 @@ jobs:
     needs: build-lemonade-macos-dmg
     # Runs on both paths: against the installed .pkg when signing secrets are
     # present (push, merge_group, same-repo PR), and against the build dir
-    # otherwise (fork PR). Metal inference is the only macOS coverage that no
-    # other job provides, so it has to run where merges are gated.
+    # otherwise (fork PR). Inference is the only macOS coverage that no other
+    # job provides, so it has to run where merges are gated.
     # Label a PR `ci:macos` to opt it back in.
     if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')) }}
     timeout-minutes: 45
@@ -1950,7 +1901,7 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      # All metal tests run in one job against the already-started server so
+      # All inference tests run in one job against the already-started server so
       # they share a single setup and model cache (issue #2103). Each step runs
       # even if an earlier test failed; the job fails if any failed.
       - name: Test llamacpp-metal
@@ -1971,6 +1922,10 @@ jobs:
       - name: Test kokoro-metal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: .venv/bin/python test/server_tts.py --cli-binary "$CLI_BINARY"
+
+      - name: Test moonshine
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: .venv/bin/python test/server_moonshine.py --wrapped-server moonshine --backend cpu --cli-binary "$CLI_BINARY"
 
       - name: Capture and upload server logs
         if: always()
