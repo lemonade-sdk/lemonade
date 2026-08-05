@@ -4023,7 +4023,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             if (request_json["stream_format"] != "audio") {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
-                    {"message", "Only pcm audio streaming format is supported"},
+                    {"message", "Only 'audio' is supported for stream_format"},
                     {"type", "invalid_request_error"}
                 }}};
                 res.set_content(error.dump(), "application/json");
@@ -4031,15 +4031,32 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
-        const auto supported_formats =
-            router_->audio_speech_supported_formats(request_json["model"].get<std::string>());
-        std::string response_format = "mp3";
+        const std::string speech_model = request_json["model"].get<std::string>();
+        // A backend's streaming encoder is often narrower than its buffered one, so
+        // which constraint applies depends on the transport in play.
+        auto supported_formats = router_->audio_speech_supported_formats(speech_model);
         if (is_streaming) {
-            response_format = "pcm";
-        } else if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            auto streaming_formats = router_->audio_speech_supported_streaming_formats(speech_model);
+            if (!streaming_formats.empty()) {
+                supported_formats = std::move(streaming_formats);
+            }
+        }
+        // Streaming and encoding are orthogonal: stream_format picks the transport,
+        // response_format the container. An explicit response_format therefore wins
+        // even when streaming, and is rejected below rather than silently swapped if
+        // the backend can't emit it. Only the implicit default differs by transport,
+        // and it yields to whatever the backend declares.
+        std::string response_format;
+        if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
             response_format = request_json["response_format"].get<std::string>();
-        } else if (!supported_formats.empty()) {
-            response_format = supported_formats.front();
+        } else {
+            response_format = is_streaming ? "pcm" : "mp3";
+            const bool default_supported = supported_formats.empty() ||
+                std::find(supported_formats.begin(), supported_formats.end(),
+                          response_format) != supported_formats.end();
+            if (!default_supported) {
+                response_format = supported_formats.front();
+            }
         }
         if (!MIME_TYPES.contains(response_format)) {
             res.status = 400;

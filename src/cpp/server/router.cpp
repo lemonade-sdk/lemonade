@@ -2089,6 +2089,13 @@ std::vector<std::string> Router::audio_speech_supported_formats(const std::strin
     return tts_server ? tts_server->supported_audio_formats() : std::vector<std::string>{};
 }
 
+std::vector<std::string> Router::audio_speech_supported_streaming_formats(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto tts_server = dynamic_cast<ITextToSpeechServer*>(
+        find_server_by_model_name(resolve_model_name(model_name)));
+    return tts_server ? tts_server->supported_streaming_audio_formats() : std::vector<std::string>{};
+}
+
 json Router::image_generations(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
