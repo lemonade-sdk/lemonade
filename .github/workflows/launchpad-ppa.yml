@@ -229,9 +229,9 @@ jobs:
       artifact: lemonade-${{ matrix.codename }}-source-package
     secrets: inherit
 
-  # Gate job. Reports a single status check that passes only if every job in
-  # `needs:` passed. Branch protection requires this check's name, so the merge
-  # queue blocks on all of those jobs at once.
+  # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
+  # successfully (otherwise the merge is blocked), and 2. these jobs do not need
+  # to run on ordinary pull request pushes.
   gate:
     name: Launchpad PPA builds
     needs: [prepare-matrix, package, package-arm64]
