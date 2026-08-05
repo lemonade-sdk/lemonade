@@ -357,10 +357,9 @@ jobs:
             --base main \
             --head "$BRANCH"
 
-  # Required status check standing in for the jobs above: the merge queue gates
-  # only on required checks, and the per-job names shift with the matrix, while
-  # this one is fixed. It also reports on pull_request -- where the gated work is
-  # skipped -- so PRs can still enqueue.
+  # Gate job. Reports a single status check that passes only if every job in
+  # `needs:` passed. Branch protection requires this check's name, so the merge
+  # queue blocks on all of those jobs at once.
   validation-gate:
     name: vLLM validation
     needs: [build, validate]
@@ -371,12 +370,8 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
-          # $NEEDS is {"job-id": {"result": "success|failure|skipped|cancelled", ...}, ...}
-          # for every job listed in `needs:` above. Two separate failures to catch:
-          #   failure/cancelled          -> a gated job ran and broke
-          #   anything but success, in a -> the job never ran at all (empty matrix, or
-          #   merge_group run               an `if:` that stopped matching). Without this
-          #                                 the gate would go green having checked nothing.
+          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+          # Fail if any job broke. In the merge queue, also fail if any never ran.
           echo "$NEEDS"
           broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
           if [ -n "$broke" ]; then
