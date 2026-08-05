@@ -9,12 +9,15 @@ on:
       - main
     tags:
       - '*'
+  pull_request:
+    branches:
+      - main
   merge_group:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   prepare-matrix:
@@ -61,6 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    if: github.event_name != 'pull_request'
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     container:
@@ -204,7 +208,7 @@ jobs:
     needs: [prepare-matrix, package]
     permissions:
       contents: read
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'merge_group' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     uses: ./.github/workflows/upload.yml
     with:
       target: ppa:lemonade-team/stable
@@ -218,9 +222,30 @@ jobs:
     needs: [prepare-matrix, package]
     permissions:
       contents: read
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') && github.event_name != 'merge_group' }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     uses: ./.github/workflows/upload.yml
     with:
       target: ppa:lemonade-team/bleeding-edge
       artifact: lemonade-${{ matrix.codename }}-source-package
     secrets: inherit
+
+  gate:
+    name: Launchpad PPA builds
+    needs: [prepare-matrix, package, package-arm64]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any build job did not succeed
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "prepare-matrix=${{ needs.prepare-matrix.result }} package=${{ needs.package.result }} package-arm64=${{ needs['package-arm64'].result }}"
+            exit 1
+          fi
+
+      - name: Require the binary builds to have run in the merge queue
+        if: github.event_name == 'merge_group'
+        run: |
+          if [ "${{ needs.package.result }}" != "success" ] || [ "${{ needs['package-arm64'].result }}" != "success" ]; then
+            echo "package=${{ needs.package.result }} package-arm64=${{ needs['package-arm64'].result }}"
+            exit 1
+          fi
