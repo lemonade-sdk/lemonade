@@ -21,7 +21,7 @@ repos:
     hooks:
       - id: check-jsonschema
         files: .*\.json$
-        args: ["--schemafile", "schemas/foo.json"]
+        args: ["--schemafile", "schemas/any.json"]
       - id: check-github-actions
       - id: check-github-workflows
 

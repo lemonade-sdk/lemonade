@@ -1,0 +1,23 @@
+{
+  "version": "1",
+  "model_name": "user.Outputs",
+  "recipe": "collection.router",
+  "components": ["local", "cloud"],
+  "routing": {
+    "candidates": ["local", "cloud"],
+    "default_model": "local",
+    "rules": [
+      { "id": "nested-outputs-rule",
+        "match": { "keywords_any": ["escalate"] },
+        "route_to": "cloud",
+        "outputs": {
+          "category": "support",
+          "priority": 1,
+          "metadata": {
+            "team": "tier2",
+            "tags": ["urgent", "billing"]
+          }
+        } }
+    ]
+  }
+}
