@@ -2805,10 +2805,15 @@
 <p>Lemonade uses <a href="https://github.com/ggerganov/llama.cpp">llama.cpp</a> as its primary LLM inference backend, supporting multiple hardware acceleration options. This document explains the available backends and how to choose between them.</p>
 <h2 id="available-backends">Available Backends</h2>
 <h3 id="cpu">CPU</h3>
+<blockquote>
+<p><strong>macOS:</strong> Lemonade uses the Metal-enabled llama.cpp build as the unified
+runtime. The same build can run CPU-only when GPU offload is disabled, so a
+separate <code>llamacpp:cpu</code> backend is not required on macOS.</p>
+</blockquote>
 <ul>
-<li><strong>Platform</strong>: Windows, Linux, macOS</li>
+<li><strong>Platform</strong>: Windows, Linux</li>
 <li><strong>Hardware</strong>: x86_64 processors (Windows and Linux); ARM64/aarch64 processors (Linux)</li>
-<li><strong>Use Case</strong>: Universal fallback, no GPU required</li>
+<li><strong>Use Case</strong>: CPU-only execution and universal fallback on Windows and Linux</li>
 <li><strong>Performance</strong>: Slowest option, suitable for small models or testing</li>
 <li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
 </ul>
@@ -2847,9 +2852,10 @@
 <ul>
 <li><strong>Platform</strong>: macOS only</li>
 <li><strong>Hardware</strong>: Apple Silicon (M1/M2/M3/M4) and Intel Macs with Metal support</li>
-<li><strong>Use Case</strong>: macOS GPU acceleration</li>
+<li><strong>Use Case</strong>: Accelerated llama.cpp inference on macOS</li>
 <li><strong>Performance</strong>: Optimized for Apple Silicon</li>
 <li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
+<li><strong>Notes</strong>: The Metal-enabled build can also run CPU-only when GPU offload is disabled</li>
 </ul>
 <h3 id="system">System</h3>
 <ul>
@@ -2983,10 +2989,11 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <p>Use <strong>Vulkan</strong></p>
 </li>
 <li>
-<p><strong>Do you have Apple Silicon?</strong></p>
+<p><strong>Are you using macOS?</strong></p>
 </li>
+<li>Use <strong>Metal</strong></li>
 <li>
-<p>Use <strong>Metal</strong></p>
+<p>The Metal-enabled build can also run CPU-only when GPU offload is disabled; no separate CPU backend selection is required</p>
 </li>
 <li>
 <p><strong>No GPU or unsupported GPU?</strong></p>
@@ -3027,8 +3034,9 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 </ul>
 <h3 id="macos">macOS</h3>
 <ul>
-<li>Supported: CPU, Metal</li>
-<li>Metal recommended for all Macs with Metal support</li>
+<li>Supported: Metal</li>
+<li>The Metal-enabled llama.cpp build provides both accelerated and CPU-only execution</li>
+<li>A separate <code>llamacpp:cpu</code> selection is not required</li>
 </ul>
 
 

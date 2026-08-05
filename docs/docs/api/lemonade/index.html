@@ -5467,14 +5467,19 @@ returns HTTP 409 and does not make network requests.</p>
 <td>Namespaced <a href="https://lemonade-server.ai/models.html">Lemonade Server model name</a> to register and install.</td>
 </tr>
 <tr>
-<td><code>checkpoint</code></td>
-<td>Yes</td>
-<td>HuggingFace checkpoint to install.</td>
-</tr>
-<tr>
 <td><code>recipe</code></td>
 <td>Yes</td>
 <td>Lemonade API recipe to load the model with.</td>
+</tr>
+<tr>
+<td><code>checkpoint</code></td>
+<td>Yes<code>*</code></td>
+<td>HuggingFace "main" checkpoint to install.</td>
+</tr>
+<tr>
+<td><code>checkpoints</code></td>
+<td>No</td>
+<td>HuggingFace checkpoints to install, for multi-checkpoint models.</td>
 </tr>
 <tr>
 <td><code>reasoning</code></td>
@@ -5503,12 +5508,50 @@ returns HTTP 409 and does not make network requests.</p>
 </tr>
 </tbody>
 </table>
+<p>A model definition requires at least a <code>main</code> checkpoint. This can be either
+be specified with the <code>checkpoint</code> parameter, or a <code>main</code> key in the
+<code>checkpoints</code> dict.</p>
+<p>Other checkpoint types may also be specified depending on the model type.
+This list is not exhaustive, and may change or grow over time as models
+and backends evolve:
+* <code>mmproj</code> - used by vision models, if not already embedded in <code>main</code>
+* <code>draft</code> - used by dflash, eagle, and multitoken-prediction, if not already embedded in <code>main</code>
+* <code>text_encoder</code> - text-to-token encoder used by image generation
+* <code>vae</code> - variational autoencoder used by image generation</p>
 <p>Example request:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><span class="c1"># Single checkpoint</span>
+curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
 <span class="s1">    &quot;model_name&quot;: &quot;user.Phi-4-Mini-GGUF&quot;,</span>
 <span class="s1">    &quot;checkpoint&quot;: &quot;unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M&quot;,</span>
+<span class="s1">    &quot;recipe&quot;: &quot;llamacpp&quot;</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div>
+<p>Instead of defining a model by <code>checkpoint</code> and <code>mmproj</code>, a model can also
+be defined with a dict of checkpoint types and paths. These requests do the
+same thing, but the syntax for pulling the mmproj differs.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Multi-checkpoint</span>
+curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">    &quot;model_name&quot;: &quot;user.My-Gemma3&quot;,</span>
+<span class="s1">    &quot;checkpoint&quot;: &quot;ggml-org/gemma-3-4b-it-GGUF:Q4_K_M&quot;,</span>
+<span class="s1">    &quot;mmproj&quot;: &quot;mmproj-model-f16.gguf&quot;,</span>
+<span class="s1">    &quot;vision&quot;: true,</span>
+<span class="s1">    &quot;recipe&quot;: &quot;llamacpp&quot;</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="c1"># Multi-checkpoint</span>
+curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">    &quot;model_name&quot;: &quot;user.My-Gemma3&quot;,</span>
+<span class="s1">    &quot;checkpoints&quot;: {</span>
+<span class="s1">        &quot;main&quot;: &quot;ggml-org/gemma-3-4b-it-GGUF:Q4_K_M&quot;,</span>
+<span class="s1">        &quot;mmproj&quot;: &quot;ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf&quot;</span>
+<span class="s1">    },</span>
+<span class="s1">    &quot;vision&quot;: true,</span>
 <span class="s1">    &quot;recipe&quot;: &quot;llamacpp&quot;</span>
 <span class="s1">  }&#39;</span>
 </code></pre></div>
