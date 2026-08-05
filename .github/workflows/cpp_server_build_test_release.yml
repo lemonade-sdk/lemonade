@@ -799,7 +799,7 @@ jobs:
           .venv/bin/python test/server_streaming_errors.py --cli-binary ./build/lemonade
           echo "Streaming error tests PASSED!"
 
-      - name: Restart server before whisper Metal tests (unsigned path)
+      - name: Restart server before inference tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
         env:
@@ -807,7 +807,7 @@ jobs:
           GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
-          echo "Restarting lemond before whisper Metal tests so Metal env is inherited..."
+          echo "Restarting lemond before inference tests so Metal env is inherited..."
 
           pkill -f lemond 2>/dev/null || true
           sleep 2
@@ -817,13 +817,13 @@ jobs:
           echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
 
-          ./build/lemond > "$RUNNER_TEMP/lemond-whisper-pre.log" 2>&1 &
+          ./build/lemond > "$RUNNER_TEMP/lemond-inference-pre.log" 2>&1 &
           LEMOND_PID=$!
           disown "$LEMOND_PID"
 
           for i in $(seq 1 30); do
             if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
-              echo "Server started successfully for whisper tests (PID $LEMOND_PID)"
+              echo "Server started successfully for inference tests (PID $LEMOND_PID)"
               exit 0
             fi
             echo "Waiting for server... ($i/30)"
@@ -831,23 +831,8 @@ jobs:
           done
 
           echo "ERROR: Server did not start within 60 seconds"
-          cat "$RUNNER_TEMP/lemond-whisper-pre.log" 2>/dev/null || true
+          cat "$RUNNER_TEMP/lemond-inference-pre.log" 2>/dev/null || true
           exit 1
-
-      - name: Run whisper Metal inference tests (unsigned path)
-        if: steps.check_signing.outputs.has_signing != 'true'
-        shell: bash
-        env:
-          LEMONADE_CI_MODE: "True"
-          PYTHONIOENCODING: utf-8
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          HF_HOME: ${{ github.workspace }}/hf-cache
-          GGML_METAL_NO_RESIDENCY: "1"
-        run: |
-          set -e
-          echo "Running whisper Metal inference tests..."
-          .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --cli-binary ./build/lemonade
-          echo "Whisper Metal inference tests PASSED!"
 
       - name: Run moonshine inference tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -1631,11 +1616,9 @@ jobs:
           fi
 
   # Same gate pattern as packaging-gate, for the macOS jobs that PR pushes skip.
-  # test-dmg-inference is deliberately absent: it only runs on the unsigned
-  # fork-PR path, so it is always skipped in the merge queue.
   macos-gate:
     name: macOS builds
-    needs: [build-lemonade-macos-dmg, test-cli-endpoints-macos, test-embeddable-macos]
+    needs: [build-lemonade-macos-dmg, test-cli-endpoints-macos, test-embeddable-macos, test-dmg-inference]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1831,12 +1814,13 @@ jobs:
     name: Test .dmg - macOS inference
     runs-on: macos-latest
     needs: build-lemonade-macos-dmg
-    # Every test step below is conditioned on has_signing != 'true', so on runs
-    # that have signing secrets (same-repo PRs, push, merge_group) this job
-    # installs the .pkg and then runs nothing. Restrict it to the unsigned
-    # fork-PR path, which is the only place it does any work.
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true' }}
-    timeout-minutes: 30
+    # Runs on both paths: against the installed .pkg when signing secrets are
+    # present (push, merge_group, same-repo PR), and against the build dir
+    # otherwise (fork PR). Metal inference is the only macOS coverage that no
+    # other job provides, so it has to run where merges are gated.
+    # Label a PR `ci:macos` to opt it back in.
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')) }}
+    timeout-minutes: 45
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1850,14 +1834,41 @@ jobs:
       - name: Set HF_HOME environment variable
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
+      # ---- Signed path: install the .pkg ----
+      - name: Download .pkg package
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-macos-pkg
+          path: .
+
+      - name: Install Lemonade Server (.pkg)
+        id: install-pkg
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
+        uses: ./.github/actions/install-lemonade-server-dmg
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+          download-artifact: 'false'
+
+      - name: Set binary paths (signed path)
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
+        shell: bash
+        run: |
+          set -e
+          echo "LEMOND_BIN=${{ steps.install-pkg.outputs.bin-path }}/lemond" >> $GITHUB_ENV
+          echo "CLI_BINARY=${{ steps.install-pkg.outputs.bin-path }}/lemonade" >> $GITHUB_ENV
+
+      # ---- Unsigned path: run from the build dir (no system install) ----
       # Download artifacts from build-lemonade-macos-dmg since this job runs on a fresh runner.
-      - name: Download built binaries (unsigned path — test-dmg-inference)
+      - name: Download built binaries (unsigned path)
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         uses: actions/download-artifact@v5
         with:
           name: lemonade-unsigned-binaries
           path: build/
 
       - name: Restore execute permissions on downloaded binaries (unsigned path)
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         shell: bash
         run: |
           set -e
@@ -1866,6 +1877,7 @@ jobs:
           echo "Permissions restored."
 
       - name: Verify binaries (unsigned path — test-dmg-inference)
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         shell: bash
         run: |
           set -e
@@ -1884,22 +1896,43 @@ jobs:
           ./build/lemonade --version
           echo "All binaries verified!"
 
-      - name: Start server before matrix tests (unsigned path)
+      - name: Set binary paths (unsigned path)
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         shell: bash
         run: |
           set -e
-          echo "Starting server from build/ before matrix tests..."
+          echo "LEMOND_BIN=$PWD/build/lemond" >> $GITHUB_ENV
+          echo "CLI_BINARY=$PWD/build/lemonade" >> $GITHUB_ENV
+
+      # ---- Common ----
+      # lemond has to inherit GGML_METAL_NO_RESIDENCY, so start it here rather
+      # than reusing whatever launchd or the .pkg postflight script started.
+      - name: Start server with Metal environment
+        shell: bash
+        run: |
+          set -e
+          # On the signed path the .pkg postflight starts lemond via launchd as
+          # root, so releasing port 13305 needs sudo. KeepAlive is false in
+          # com.lemonade.server.plist, so it will not respawn.
+          sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
+          sudo pkill -f lemond 2>/dev/null || true
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:13305/live > /dev/null 2>&1 || break
+            sleep 1
+          done
+
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
           chmod 700 "$RUNNER_TEMP/xdg-runtime"
           echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
-          ./build/lemond > "$RUNNER_TEMP/lemond.log" 2>&1 &
+
+          "$LEMOND_BIN" > "$RUNNER_TEMP/lemond.log" 2>&1 &
           LEMOND_PID=$!
           disown "$LEMOND_PID"
 
           for i in $(seq 1 30); do
             if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
-              echo "Server is running and healthy (PID $LEMOND_PID) — starting matrix tests..."
+              echo "Server is running and healthy (PID $LEMOND_PID)"
               exit 0
             fi
             echo "Waiting for server... ($i/30)"
@@ -1922,22 +1955,22 @@ jobs:
       # even if an earlier test failed; the job fails if any failed.
       - name: Test llamacpp-metal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: .venv/bin/python test/server_llm.py --wrapped-server llamacpp --backend metal --cli-binary ./build/lemonade
+        run: .venv/bin/python test/server_llm.py --wrapped-server llamacpp --backend metal --cli-binary "$CLI_BINARY"
 
       - name: Test whisper-metal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --cli-binary ./build/lemonade
+        run: .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --cli-binary "$CLI_BINARY"
 
       # Temporarily disabled — sd-cpp metal test is being skipped
       # - name: Test sd-cpp-metal
       #   if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
       #   env:
       #     LEMONADE_TEST_SD_MODEL: SD-Turbo-GGUF
-      #   run: .venv/bin/python test/server_sd.py --wrapped-server sd-cpp --backend metal --cli-binary ./build/lemonade
+      #   run: .venv/bin/python test/server_sd.py --wrapped-server sd-cpp --backend metal --cli-binary "$CLI_BINARY"
 
       - name: Test kokoro-metal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: .venv/bin/python test/server_tts.py --cli-binary ./build/lemonade
+        run: .venv/bin/python test/server_tts.py --cli-binary "$CLI_BINARY"
 
       - name: Capture and upload server logs
         if: always()
