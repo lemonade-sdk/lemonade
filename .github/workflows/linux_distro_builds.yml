@@ -1,6 +1,11 @@
 name: Linux Distro Builds 🐧
 
 on:
+  push:
+    branches: ["main"]
+  # No paths filter here: the required "Linux distro builds" check has to report
+  # on every PR, and a workflow that never triggers leaves it pending forever.
+  pull_request:
   merge_group:
   workflow_dispatch:
 
@@ -8,12 +13,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-linux:
     name: Build on ${{ matrix.distro }}
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
@@ -230,3 +236,30 @@ jobs:
         uses: ./.github/actions/capture-server-logs
         with:
           artifact-name: server-logs-distro-${{ matrix.distro }}
+
+  # Required status check standing in for the distro matrix above: the merge queue
+  # gates only on required checks, and the per-distro names change with the matrix,
+  # while this one is fixed. It also has to report on pull_request — where the
+  # builds are skipped — so PRs can still enqueue.
+  distro-gate:
+    name: Linux distro builds
+    needs: build-linux
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      RESULTS: build-linux=${{ needs.build-linux.result }}
+    steps:
+      - name: Fail if any distro build did not succeed
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "$RESULTS"
+            exit 1
+          fi
+
+      - name: Require the distro builds to have run in the merge queue
+        if: github.event_name == 'merge_group'
+        run: |
+          if [ "${{ needs.build-linux.result }}" != "success" ]; then
+            echo "$RESULTS"
+            exit 1
+          fi
