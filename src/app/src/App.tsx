@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
-import api, { LoadedModel, ModelInfo } from './api';
+import api, { friendlyErrorMessage, LoadedModel, ModelInfo } from './api';
 import { canSelectInComposer, capabilityFromModelInfo, selectPreferredLoadedModel } from './modelCapabilities';
 import { customModelToModelInfo, loadCustomModels } from './features/customModels/customModelStore';
 import { findModelInfoByName, isCollectionFullyLoaded, isCollectionModel, withVirtualLoadedCollections } from './features/collections/collectionModels';
 import ChatView from './components/ChatView';
 import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
-import AppsView from './components/AppsView';
+import AppsView, { MARKETPLACE_URL, type MarketplaceApp } from './components/AppsView';
 import BackendManager from './components/BackendManager';
 import DownloadManager from './components/DownloadManager';
 import MonitorView from './components/MonitorView';
@@ -206,9 +206,24 @@ function routeFromHash(): AppRoute | null {
   return routeFromHashValue(window.location.hash || '');
 }
 
+function isLegacyAppDirectoryHash(hash: string): boolean {
+  return /^#\/?connect\/app-directory(?:[/?]|$)/i.test(hash);
+}
+
+function canonicalizeLegacyHash(route: AppRoute | null): void {
+  if (!route || !isLegacyAppDirectoryHash(window.location.hash || '')) return;
+  const canonicalHash = hashForRoute(route);
+  if (window.location.hash !== canonicalHash) {
+    window.history.replaceState(null, '', canonicalHash);
+  }
+}
+
 function loadSavedRoute(): AppRoute {
   const fromLocation = routeFromCurrentLocation();
-  if (fromLocation) return fromLocation;
+  if (fromLocation) {
+    canonicalizeLegacyHash(fromLocation);
+    return fromLocation;
+  }
   try {
     const saved = localStorage.getItem('lemonade_current_view');
     const savedRoute = routeFromValue(saved);
@@ -244,6 +259,9 @@ const App: React.FC = () => {
   const [clientDataResetNonce, setClientDataResetNonce] = useState(0);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
   const [modelDetailsRequest, setModelDetailsRequest] = useState<{ modelName: string; nonce: number } | null>(null);
+  const [marketplaceApps, setMarketplaceApps] = useState<MarketplaceApp[]>([]);
+  const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
+  const [marketplaceLoading, setMarketplaceLoading] = useState(true);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
   const [navigationSearch, setNavigationSearch] = useState('');
   const [navigationSearchOpen, setNavigationSearchOpen] = useState(false);
@@ -253,6 +271,28 @@ const App: React.FC = () => {
   const navigationSearchRef = useRef<HTMLInputElement>(null);
   const [isDesktop, setIsDesktop] = useState(false);
   const navigationSearchShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl K';
+
+  useEffect(() => {
+    let cancelled = false;
+    setMarketplaceLoading(true);
+    fetch(MARKETPLACE_URL)
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(data => {
+        if (cancelled) return;
+        setMarketplaceApps(Array.isArray(data?.apps) ? data.apps as MarketplaceApp[] : []);
+        setMarketplaceError(null);
+      })
+      .catch(error => {
+        if (!cancelled) setMarketplaceError(friendlyErrorMessage(error));
+      })
+      .finally(() => {
+        if (!cancelled) setMarketplaceLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     import('./tauriShim').then(({ tauriReady }) => {
@@ -403,6 +443,8 @@ const App: React.FC = () => {
     const normalizedQuery = searchKey(query);
     const matches = (value: string) =>
       !query || value.toLowerCase().includes(query) || searchKey(value).includes(normalizedQuery);
+    if (!query) return [];
+
     const pages = NAVIGATION_DESTINATIONS
       .filter(destination => matches(`${destination.label} ${destination.keywords}`))
       .map(destination => ({
@@ -412,19 +454,27 @@ const App: React.FC = () => {
         icon: destination.icon,
         view: destination.id,
       }));
-    if (!query) return [];
 
-    const settings = Object.entries(WORKSPACE_NAVIGATION).flatMap(([workspace, definition]) =>
-      definition.sections
-        .filter(section => matches(`${section.label} ${section.description}`))
-        .map(section => ({
-          id: `settings:${workspace}:${section.id}`,
-          label: section.label,
-          description: `${definition.label} - ${section.description}`,
-          icon: section.icon,
-          route: { view: workspace as 'dashboard' | 'connect', section: section.id } as AppRoute,
-        })),
-    );
+    const monitorDefinition = WORKSPACE_NAVIGATION.dashboard;
+    const monitor = monitorDefinition.sections
+      .filter(section => matches(`${section.label} ${section.description}`))
+      .map(section => ({
+        id: `workspace:dashboard:${section.id}`,
+        label: section.label,
+        description: `${monitorDefinition.label} - ${section.description}`,
+        icon: section.icon,
+        route: { view: 'dashboard', section: section.id } as AppRoute,
+      }));
+    const settingsDefinition = WORKSPACE_NAVIGATION.connect;
+    const settings = settingsDefinition.sections
+      .filter(section => matches(`${section.label} ${section.description}`))
+      .map(section => ({
+        id: `workspace:connect:${section.id}`,
+        label: section.label,
+        description: `${settingsDefinition.label} - ${section.description}`,
+        icon: section.icon,
+        route: { view: 'connect', section: section.id } as AppRoute,
+      }));
     const models = searchableServerModels
       .map(model => {
         const name = modelSearchName(model as unknown as Record<string, unknown>);
@@ -451,8 +501,37 @@ const App: React.FC = () => {
         icon: 'box' as Parameters<typeof Icon>[0]['name'],
         view: 'backends' as View,
       }));
-    return [...models, ...backends, ...settings, ...pages];
-  }, [navigationSearch, searchableServerModels]);
+    const apps = marketplaceApps
+      .filter(marketplaceApp => matches(`${marketplaceApp.name} ${marketplaceApp.description || ''} ${(marketplaceApp.category || []).join(' ')}`))
+      .slice(0, 8)
+      .map(marketplaceApp => ({
+        id: `app:${marketplaceApp.id || marketplaceApp.name}`,
+        label: marketplaceApp.name,
+        description: marketplaceApp.category?.length ? `App - ${marketplaceApp.category.join(', ')}` : 'App',
+        icon: 'layers' as Parameters<typeof Icon>[0]['name'],
+        view: 'apps' as View,
+      }));
+
+    type SearchGroup = 'models' | 'backends' | 'apps' | 'settings' | 'monitor' | 'pages';
+    const groups: Record<SearchGroup, GlobalSearchResult[]> = {
+      models,
+      backends,
+      apps,
+      settings,
+      monitor,
+      pages,
+    };
+    const defaultOrder: SearchGroup[] = ['pages', 'models', 'backends', 'apps', 'settings', 'monitor'];
+    const preferredGroup: SearchGroup = view === 'apps'
+      ? 'apps'
+      : view === 'backends'
+        ? 'backends'
+        : view === 'connect'
+          ? 'settings'
+          : 'models';
+    const groupOrder = [preferredGroup, ...defaultOrder.filter(group => group !== preferredGroup)];
+    return groupOrder.flatMap(group => groups[group]);
+  }, [marketplaceApps, navigationSearch, searchableServerModels, view]);
 
   const selectNavigationDestination = useCallback((destination: GlobalSearchResult) => {
     if (destination.modelName) {
@@ -525,6 +604,7 @@ const App: React.FC = () => {
     const onHashChange = () => {
       const nextRoute = routeFromHash();
       if (nextRoute) {
+        canonicalizeLegacyHash(nextRoute);
         if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
         if (nextRoute.view === 'connect') lastWorkspaceSectionsRef.current.connect = nextRoute.section;
         setRouteState(nextRoute);
@@ -631,7 +711,7 @@ const App: React.FC = () => {
             </button>
             <div id="titlebar-utility-menu" className="titlebar__utility-menu" aria-label="App controls">
               <div
-                className={`titlebar__search${navigationSearchOpen ? ' is-open' : ''}`}
+                className={`titlebar__search${navigationSearchOpen ? ' is-open' : ''}${view === 'apps' ? ' is-context-visible' : ''}`}
                 onBlur={event => {
                   if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                     setNavigationSearchOpen(false);
@@ -660,7 +740,7 @@ const App: React.FC = () => {
                       type="search"
                       value={navigationSearch}
                       placeholder="Search"
-                      aria-label="Search Lemonade"
+                      aria-label={view === 'apps' ? 'Search apps' : 'Search Lemonade'}
                       aria-autocomplete="list"
                       aria-expanded={navigationSearchOpen}
                       aria-controls="titlebar-search-results"
@@ -821,7 +901,11 @@ const App: React.FC = () => {
         </div>
         <div className="view-slot" hidden={view !== 'apps'}>
           <ViewErrorBoundary view="apps">
-            <AppsView isActive={view === 'apps'} />
+            <AppsView
+              apps={marketplaceApps}
+              loading={marketplaceLoading}
+              error={marketplaceError}
+            />
           </ViewErrorBoundary>
         </div>
         <div className="view-slot" hidden={view !== 'dashboard'}>

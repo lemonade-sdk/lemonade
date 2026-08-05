@@ -11676,6 +11676,7 @@ optgroup {
 }
 
 .connect--workspace.workspace--rail-collapsed,
+.apps-workspace.workspace--rail-collapsed,
 .logs-workspace.workspace--rail-collapsed,
 .backends--workspace.workspace--rail-collapsed {
   grid-template-columns: var(--rail-collapsed) minmax(0, 1fr);
@@ -11690,20 +11691,6 @@ optgroup {
 
 .connect__layout {
   padding: var(--space-5);
-}
-
-.apps__main > .workspace-pane__header {
-  width: min(880px, calc(100% - (var(--space-5) * 2)));
-  margin-inline: auto;
-  padding-inline: 0;
-}
-
-.apps__main { height: 100%; }
-
-.apps__main .connect__layout {
-  display: flex;
-  justify-content: center;
-  min-height: 0;
 }
 
 .connect__section,
@@ -11767,26 +11754,65 @@ optgroup {
 }
 
 .connect__provider-list { margin-top: var(--space-4); }
-.connect__provider-actions,
-.connect__marketplace-actions { width: auto; justify-content: flex-end; }
+.connect__provider-actions { width: auto; justify-content: flex-end; }
 .connect__provider-actions .input { width: min(220px, 34vw); }
 
-.connect__marketplace-search { width: min(360px, 100%); }
-
-.apps__category-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
+.connect__empty {
+  padding: var(--space-4) 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
 }
 
-.connect__app-logo {
+/* Apps */
+.apps-workspace {
+  display: grid;
+  grid-template-columns: var(--workspace-rail) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.apps__main {
+  height: 100%;
+  display: grid;
+  grid-template-rows: var(--workspace-header) minmax(0, 1fr);
+}
+
+.apps__main .workspace-pane__heading h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.apps__nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.apps__content {
+  min-height: 0;
+  padding: var(--space-5);
+}
+
+.apps__directory {
+  width: min(100%, var(--max-content-width));
+  min-width: 0;
+  margin-inline: auto;
+}
+
+.apps__marketplace-actions {
+  width: auto;
+  justify-content: flex-end;
+}
+
+.apps__app-logo {
   width: 28px;
   height: 28px;
   object-fit: contain;
 }
 
-.connect__app-logo--fallback {
+.apps__app-logo--fallback {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -11794,11 +11820,14 @@ optgroup {
   font-weight: var(--weight-semibold);
 }
 
-.connect__empty {
+.apps__empty,
+.apps__error {
   padding: var(--space-4) 0;
-  color: var(--text-tertiary);
   font-size: var(--text-sm);
 }
+
+.apps__empty { color: var(--text-tertiary); }
+.apps__error { color: var(--danger); }
 
 @media (max-width: 900px) {
   .connect__directory-grid,
@@ -12456,6 +12485,47 @@ optgroup {
     margin-top: var(--space-1);
     overflow-y: auto;
   }
+
+  /* Apps uses the shared titlebar search as its primary pane search. Keep the
+     actual field visible at the standard Playwright/desktop width instead of
+     collapsing it behind the search icon. */
+  .titlebar__search.is-context-visible,
+  .titlebar__search.is-context-visible:focus-within {
+    width: 176px;
+    flex-basis: 176px;
+  }
+
+  .titlebar__search.is-context-visible .titlebar__search-leading-icon {
+    display: block;
+  }
+
+  .titlebar__search.is-context-visible .titlebar__search-toggle {
+    display: none;
+  }
+
+  .titlebar__search.is-context-visible .titlebar__search-popover,
+  .titlebar__search.is-context-visible.is-open .titlebar__search-popover {
+    position: relative;
+    inset: auto;
+    width: auto;
+    display: flex;
+    flex: 1;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .titlebar__search.is-context-visible.is-open .titlebar__search-results {
+    position: absolute;
+    top: calc(100% + var(--space-2));
+    left: 0;
+    width: 100%;
+    max-height: min(420px, calc(100vh - var(--titlebar-height) - 80px));
+    margin-top: 0;
+    overflow-y: auto;
+  }
 }
 
 @media (max-width: 768px) {
@@ -12681,17 +12751,22 @@ optgroup {
   }
 
   .connect--workspace,
+  .apps-workspace,
   .monitor-workspace,
   .backends--workspace {
     position: relative;
   }
 
   .connect--workspace,
+  .apps-workspace,
   .monitor-workspace,
   .backends--workspace {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
   }
+
+
+  .apps__content { padding: var(--space-4); }
 
 
 

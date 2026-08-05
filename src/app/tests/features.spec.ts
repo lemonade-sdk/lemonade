@@ -35,6 +35,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(nav.getByText('Chat')).toBeVisible();
     await expect(nav.getByText('Models')).toBeVisible();
     await expect(nav.getByText('Backends')).toBeVisible();
+    await expect(nav.getByText('Apps')).toBeVisible();
     await expect(nav.getByText('Monitor')).toBeVisible();
     await expect(nav.getByText('Settings')).toBeVisible();
 
@@ -91,7 +92,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
       ['Model storage', 'model-storage'],
       ['Cloud providers', 'cloud-providers'],
       ['MCP gateway', 'mcp-gateway'],
-      ['App directory', 'app-directory'],
       ['Help & support', 'help-and-support'],
     ] as const;
 
@@ -111,6 +111,93 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goBack();
     await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
     await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
+  });
+
+  test('01c — Apps is a standalone workspace with category rail navigation', async ({ page }) => {
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: {
+        data: [{
+          id: 'llama-search-model',
+          name: 'Llama Search Model',
+          type: 'llm',
+          labels: ['llm'],
+          recipe: 'llamacpp',
+          suggested: true,
+        }],
+      },
+    }));
+    await page.route('**/apps.json', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        apps: [
+          { id: 'chat-client', name: 'Chat Client', description: 'A conversational client.', category: ['Chat'] },
+          { id: 'creative-studio', name: 'Creative Studio', description: 'Image workflows.', category: ['creative tools'] },
+          { id: 'llama-app', name: 'Llama App', description: 'A llama.cpp companion.', category: ['tools'] },
+        ],
+      }),
+    }));
+
+    await page.goto('/#/apps');
+    await page.waitForSelector('[data-view="apps"]');
+
+    const appCategories = page.getByRole('navigation', { name: 'App categories' });
+    await expect(appCategories.getByRole('button', { name: 'All Apps', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(appCategories.getByRole('button', { name: 'Chat', exact: true })).toBeVisible();
+    await expect(appCategories.getByRole('button', { name: 'Creative Tools', exact: true })).toBeVisible();
+    await expect(page.locator('#apps-pane-title')).toHaveText('All Apps');
+    await expect(page.getByText('Chat Client', { exact: true })).toBeVisible();
+    await expect(page.getByText('Creative Studio', { exact: true })).toBeVisible();
+    await expect(page.getByText('Llama App', { exact: true })).toBeVisible();
+    await expect(page.getByRole('searchbox', { name: 'Search apps' })).toBeVisible();
+
+    const globalResults = page.locator('#titlebar-search-results [role="option"]');
+    const searchFromView = async (viewName: 'Chat' | 'Backends' | 'Apps' | 'Monitor' | 'Settings', query: string) => {
+      await page.locator('.titlebar__nav').getByRole('button', { name: viewName, exact: true }).click();
+      await page.keyboard.press('Control+K');
+      const accessibleName = viewName === 'Apps' ? 'Search apps' : 'Search Lemonade';
+      await page.getByRole('searchbox', { name: accessibleName }).fill(query);
+    };
+
+    await searchFromView('Apps', 'llama');
+    await expect(globalResults.first()).toContainText('Llama App');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Backends', 'llama');
+    await expect(globalResults.first()).toContainText('llama.cpp');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Chat', 'llama');
+    await expect(globalResults.first()).toContainText('Llama Search Model');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Monitor', 'llama');
+    await expect(globalResults.first()).toContainText('Llama Search Model');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Settings', 'model');
+    await expect(globalResults.first()).toContainText('Model storage');
+    await page.keyboard.press('Escape');
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Apps', exact: true }).click();
+    await expect(page.locator('.apps__category-filters')).toHaveCount(0);
+
+    await appCategories.getByRole('button', { name: 'Chat', exact: true }).click();
+    await expect(page.locator('#apps-pane-title')).toHaveText('Chat');
+    await expect(page.getByText('Chat Client', { exact: true })).toBeVisible();
+    await expect(page.getByText('Creative Studio', { exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(/#\/apps$/);
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(page.getByRole('navigation', { name: 'Connect sections' })
+      .getByRole('button', { name: 'App directory', exact: true })).toHaveCount(0);
+
+    await page.goto('/#/connect/app-directory');
+    await expect(page).toHaveURL(/#\/apps$/);
+    await expect(page.locator('[data-view="apps"]')).toBeVisible();
   });
 
   test('02 — Chat view renders with composer', async ({ page }) => {
@@ -508,6 +595,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
         visibleControls: ['All Models', 'Downloaded', 'My Models', 'Favorites'],
       },
       { tab: 'Backends', trigger: 'Open backend filters', dialog: 'Backend filters' },
+      { tab: 'Apps', trigger: 'Open app types', dialog: 'App type navigation', visibleControls: ['All Apps'] },
       { tab: 'Monitor', trigger: 'Open monitor views', dialog: 'Monitor navigation' },
       { tab: 'Settings', trigger: 'Open connection settings', dialog: 'Connection settings' },
     ];

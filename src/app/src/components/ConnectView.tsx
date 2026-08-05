@@ -4,7 +4,6 @@ import { clearClientStorage } from '../storage';
 import { loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
 import { Icon, IconName } from './Icon';
 import McpPanel from './McpPanel';
-import AppsView from './AppsView';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
 import { WORKSPACE_NAVIGATION, type ConnectSection } from '../features/navigation/workspaceNavigation';
 import {
@@ -501,10 +500,6 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         <div hidden={activeSection !== 'mcp-gateway'}>
           <McpPanel connectionStatus={status} isActive={isActive && activeSection === 'mcp-gateway'} />
         </div>
-
-        {activeSection === 'app-directory' && (
-          <AppsView isActive={isActive} embedded />
-        )}
 
       </div>
       </section>
