@@ -1,5 +1,7 @@
 name: Docs And Style
 on:
+  push:
+    branches: ["main"]
   pull_request:
   merge_group:
 
