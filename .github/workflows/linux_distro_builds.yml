@@ -3,21 +3,10 @@ name: Linux Distro Builds 🐧
 on:
   push:
     branches: ["main"]
+  # No paths filter here: the required "Linux distro builds" check has to report
+  # on every PR, and a workflow that never triggers leaves it pending forever.
   pull_request:
-    paths:
-      - "src/cpp/**"
-      - "CMakeLists.txt"
-      - "**/CMakeLists.txt"
-      - "CMakePresets.json"
-      - "cmake/**"
-      - "setup.sh"
-      - "test/server_cli2.py"
-      - "test/server_endpoints.py"
-      - "test/requirements.txt"
-      - "test/utils/**"
-      - ".github/workflows/linux_distro_builds.yml"
-      - ".github/actions/**"
-      - "!**/*.md"
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -30,6 +19,7 @@ concurrency:
 jobs:
   build-linux:
     name: Build on ${{ matrix.distro }}
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
@@ -246,3 +236,32 @@ jobs:
         uses: ./.github/actions/capture-server-logs
         with:
           artifact-name: server-logs-distro-${{ matrix.distro }}
+
+  # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
+  # successfully (otherwise the merge is blocked), and 2. these jobs do not need
+  # to run on ordinary pull request pushes.
+  distro-gate:
+    name: Linux distro builds
+    needs: [build-linux]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+          # Fail if any job broke. In the merge queue, also fail if any never ran.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
+          fi
