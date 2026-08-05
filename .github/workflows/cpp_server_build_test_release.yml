@@ -1589,42 +1589,38 @@ jobs:
               exit 1
           fi
 
-  # Required status check standing in for the four packaging jobs above: the merge
-  # queue gates only on required checks, and their matrix-generated names change
-  # with the Fedora/arch matrix, while this one is fixed. It also has to report on
-  # pull_request — where the packaging jobs are skipped — so PRs can still enqueue.
+  # Required status check standing in for the jobs above: the merge queue gates
+  # only on required checks, and the per-job names shift with the matrix, while
+  # this one is fixed. It also reports on pull_request -- where the gated work is
+  # skipped -- so PRs can still enqueue.
   packaging-gate:
     name: Packaging builds
-    needs:
-      - build-lemonade-debian13
-      - test-lemonade-debian13-smoke
-      - build-lemonade-rpm
-      - test-rpm-package
+    needs: [build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package]
     if: always()
     runs-on: ubuntu-latest
-    env:
-      RESULTS: >-
-        build-lemonade-debian13=${{ needs.build-lemonade-debian13.result }}
-        test-lemonade-debian13-smoke=${{ needs.test-lemonade-debian13-smoke.result }}
-        build-lemonade-rpm=${{ needs.build-lemonade-rpm.result }}
-        test-rpm-package=${{ needs.test-rpm-package.result }}
     steps:
-      - name: Fail if any packaging job did not succeed
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
-            echo "$RESULTS"
+          # $NEEDS is {"job-id": {"result": "success|failure|skipped|cancelled", ...}, ...}
+          # for every job listed in `needs:` above. Two separate failures to catch:
+          #   failure/cancelled          -> a gated job ran and broke
+          #   anything but success, in a -> the job never ran at all (empty matrix, or
+          #   merge_group run               an `if:` that stopped matching). Without this
+          #                                 the gate would go green having checked nothing.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
             exit 1
           fi
-
-      - name: Require the packaging jobs to have run in the merge queue
-        if: github.event_name == 'merge_group'
-        run: |
-          if [ "${{ needs.build-lemonade-debian13.result }}" != "success" ] \
-            || [ "${{ needs.test-lemonade-debian13-smoke.result }}" != "success" ] \
-            || [ "${{ needs.build-lemonade-rpm.result }}" != "success" ] \
-            || [ "${{ needs.test-rpm-package.result }}" != "success" ]; then
-            echo "$RESULTS"
-            exit 1
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
           fi
 
   test-embeddable-posix:
