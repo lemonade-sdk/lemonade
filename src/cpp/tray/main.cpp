@@ -11,6 +11,7 @@
 #include "lemon_tray/tray_ui.h"
 #include <lemon/single_instance.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/url_utils.h>
 #include <lemon/version.h>
 
 #include <atomic>
@@ -66,9 +67,15 @@ static void create_child_process_job() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-static bool wait_for_server(const std::string& host, int port, int timeout_seconds) {
-    std::string connect_host = (host.empty() || host == "0.0.0.0" || host == "localhost")
-        ? "127.0.0.1" : host;
+static bool wait_for_server(const std::string& clean_host, int clean_port, bool is_ssl, int timeout_seconds) {
+    std::string connect_host;
+    if (is_ssl) {
+        connect_host = (clean_host.empty() || clean_host == "0.0.0.0")
+            ? "127.0.0.1" : clean_host;
+    } else {
+        connect_host = (clean_host.empty() || clean_host == "0.0.0.0" || clean_host == "localhost")
+            ? "127.0.0.1" : clean_host;
+    }
 
     // Pass API key if set - prefer admin key over regular API key
     const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
@@ -80,7 +87,22 @@ static bool wait_for_server(const std::string& host, int port, int timeout_secon
 
     for (int i = 0; i < timeout_seconds * 2; ++i) {
         try {
-            httplib::Client cli(connect_host, port);
+#ifndef LEMONADE_HTTPLIB_HAS_TLS
+            if (is_ssl) {
+                std::cerr << "HTTPS support is not compiled in this client." << std::endl;
+                return false;
+            }
+#endif
+            std::string format_host = lemon::utils::bracket_host_if_ipv6(connect_host);
+            std::string scheme = is_ssl ? "https" : "http";
+            std::string url = scheme + "://" + format_host + ":" + std::to_string(clean_port);
+            httplib::Client cli(url);
+#ifdef LEMONADE_HTTPLIB_HAS_TLS
+            const char* skip_verify = std::getenv("LEMONADE_SKIP_VERIFY");
+            if (skip_verify && std::string(skip_verify) == "1") {
+                cli.enable_server_certificate_verification(false);
+            }
+#endif
             cli.set_connection_timeout(1);
             cli.set_read_timeout(5);
             // Use /api/v1/health instead of /live — /live responds before the model
@@ -191,7 +213,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     server_thread.detach();
 
     // Wait for server to be ready
-    if (!wait_for_server(runtime_config->host(), runtime_config->port(), 15)) {
+    if (!wait_for_server(runtime_config->host(), runtime_config->port(), false, 15)) {
         MessageBoxA(NULL,
             "Lemonade Server failed to start within 15 seconds.",
             "Lemonade Server Error", MB_OK | MB_ICONERROR);
@@ -205,7 +227,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // thread; we just need to block until shutdown.
     bool headless = false;
     try {
-        lemon_tray::TrayUI tray(runtime_config->port(), runtime_config->host(), silent);
+        lemon_tray::TrayUIOptions options;
+        options.port = runtime_config->port();
+        options.host = runtime_config->host();
+        options.is_ssl = false;
+        options.silent = silent;
+        lemon_tray::TrayUI tray(options);
         if (tray.initialize()) {
             tray.run();  // Blocks until quit
         } else {
@@ -284,14 +311,20 @@ int main(int argc, char* argv[]) {
         return app.exit(e);
     }
 
+    std::string clean_host;
+    int clean_port = port;
+    bool is_ssl = false;
+    bool explicit_port = app.count("--port") > 0 || app.count("-p") > 0;
+    lemon::utils::parse_target_url(host, clean_host, clean_port, is_ssl, !explicit_port);
+
     // Install signal handlers
     signal(SIGINT, tray_signal_handler);
     signal(SIGTERM, tray_signal_handler);
 
     // Wait for router to be reachable (retry with backoff up to 30s)
-    std::cout << "Connecting to lemond at " << host << ":" << port << "..." << std::endl;
-    if (!wait_for_server(host, port, 30)) {
-        std::cerr << "Error: Could not connect to lemond at " << host << ":" << port << std::endl;
+    std::cout << "Connecting to lemond at " << clean_host << ":" << clean_port << (is_ssl ? " (SSL)" : "") << "..." << std::endl;
+    if (!wait_for_server(clean_host, clean_port, is_ssl, 30)) {
+        std::cerr << "Error: Could not connect to lemond at " << clean_host << ":" << clean_port << std::endl;
         std::cerr << "Make sure lemond is running." << std::endl;
         return 1;
     }
@@ -299,7 +332,12 @@ int main(int argc, char* argv[]) {
     std::cout << "Connected to lemond v" << LEMON_VERSION_STRING << std::endl;
 
     // Create and run tray UI
-    lemon_tray::TrayUI tray(port, host);
+    lemon_tray::TrayUIOptions options;
+    options.port = clean_port;
+    options.host = clean_host;
+    options.is_ssl = is_ssl;
+    options.silent = false;
+    lemon_tray::TrayUI tray(options);
     if (!tray.initialize()) {
         return 1;
     }
