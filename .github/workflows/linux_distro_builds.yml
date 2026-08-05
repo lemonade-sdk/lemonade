@@ -5,7 +5,11 @@ on:
     branches: ["main"]
   # No paths filter here: the required "Linux distro builds" check has to report
   # on every PR, and a workflow that never triggers leaves it pending forever.
+  # `labeled`/`unlabeled` are here so the ci:distros escape hatch takes effect
+  # immediately. Adding `types` replaces the defaults, so the three default
+  # activity types have to be listed explicitly.
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   merge_group:
   workflow_dispatch:
 
@@ -19,7 +23,8 @@ concurrency:
 jobs:
   build-linux:
     name: Build on ${{ matrix.distro }}
-    if: github.event_name != 'pull_request'
+    # Label a PR `ci:distros` to opt it back in.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
