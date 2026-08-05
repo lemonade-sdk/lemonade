@@ -85,27 +85,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows ROCm runner — lemonade-sdk forks
+          # Windows ROCm runner — lemonade-sdk forks + upstream vulkan
           - fork_id: llamacpp-rocm-nightly
             backend: rocm-nightly
-            os: windows
             runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
             binaries_dir: C:\lemonade-bench-binaries
           - fork_id: llamacpp-rocm-stable
             backend: rocm-stable
-            os: windows
             runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
             binaries_dir: C:\lemonade-bench-binaries
           - fork_id: llamacpp-upstream-vulkan
             backend: vulkan
-            os: windows
-            runner: [self-hosted, Windows, 128gb, vulkan, lemon-prod]
+            runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
             binaries_dir: C:\lemonade-bench-binaries
-          # Linux ROCm runner — AMD-Ecosystem gfx11 (Linux-only multiarch binary)
+          # Linux Strix Halo runner — AMD-Ecosystem gfx11 (Linux-only multiarch binary)
           - fork_id: llamacpp-amd-ecosystem-gfx11
             backend: rocm-gfx11
-            os: linux
-            runner: [self-hosted, Linux, 128gb, rocm, lemon-prod]
+            runner: [self-hosted, stx-halo, Linux, lemon-prod]
             binaries_dir: /opt/lemonade-bench-binaries
 
     steps:
@@ -113,7 +109,8 @@ jobs:
         with:
           clean: true
 
-      - name: Cleanup processes
+      - name: Cleanup processes (Windows)
+        if: runner.os == 'Windows'
         uses: ./.github/actions/cleanup-processes-windows
 
       - name: Download build artifacts
@@ -122,12 +119,21 @@ jobs:
           name: lemonade-build
           path: build/Release
 
-      - name: Verify binaries
+      - name: Verify binaries (Windows)
+        if: runner.os == 'Windows'
         shell: PowerShell
         run: |
           if (-not (Test-Path "build\Release\lemond.exe"))   { exit 1 }
           if (-not (Test-Path "build\Release\lemonade.exe")) { exit 1 }
           & "build\Release\lemond.exe" --version
+
+      - name: Verify binaries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          test -f build/Release/lemond   || { echo "lemond not found"; exit 1; }
+          test -f build/Release/lemonade || { echo "lemonade not found"; exit 1; }
+          chmod +x build/Release/lemond build/Release/lemonade
+          build/Release/lemond --version
 
       - name: Setup Python
         uses: ./.github/actions/setup-venv
@@ -136,7 +142,8 @@ jobs:
           python-version: '3.11'
           requirements-file: 'test/requirements.txt'
 
-      - name: Start lemond
+      - name: Start lemond (Windows)
+        if: runner.os == 'Windows'
         shell: PowerShell
         run: |
           $cacheDir = Join-Path $PWD "ci-bench-cache-${{ matrix.fork_id }}"
@@ -148,7 +155,6 @@ jobs:
             -RedirectStandardError  "lemond-bench.stderr.log" `
             -PassThru
           echo "LEMOND_PID=$($proc.Id)" >> $env:GITHUB_ENV
-          # Poll for health
           $retries = 20
           for ($i = 0; $i -lt $retries; $i++) {
             Start-Sleep -Seconds 3
@@ -158,25 +164,60 @@ jobs:
             } catch {}
           }
 
-      - name: Pull benchmark models
+      - name: Start lemond (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "ci-bench-cache-${{ matrix.fork_id }}"
+          build/Release/lemond "ci-bench-cache-${{ matrix.fork_id }}" \
+            --port 13310 --host 127.0.0.1 \
+            > lemond-bench.stdout.log 2> lemond-bench.stderr.log &
+          echo "LEMOND_PID=$!" >> $GITHUB_ENV
+          for i in $(seq 1 20); do
+            sleep 3
+            curl -sf http://127.0.0.1:13310/v1/health && echo "lemond ready" && break
+          done
+
+      - name: Pull benchmark models (Windows)
+        if: runner.os == 'Windows'
         shell: PowerShell
         env:
           LEMONADE_PORT: "13310"
         run: |
           $models = @(
-            "Qwen3-30B-A3B-Q4_K_M-GGUF",
-            "Qwen3-4B-Q4_K_M-GGUF",
-            "gemma-3-4b-it-q4_k_m-gguf",
-            "Llama-3.1-8B-Instruct-Q4_K_M-GGUF",
-            "Phi-4-mini-instruct-Q4_K_M-GGUF",
-            "DeepSeek-R1-0528-Qwen3-8B-Q4_K_M-GGUF"
+            "Qwen3.6-35B-A3B-GGUF",
+            "Qwen3.6-27B-MTP-GGUF",
+            "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+            "Gemma-4-26B-A4B-it-GGUF",
+            "Gemma-4-31B-it-GGUF",
+            "Qwen3.5-4B-GGUF",
+            "gpt-oss-20b-mxfp4-GGUF",
+            "gpt-oss-120b-mxfp-GGUF"
           )
           foreach ($m in $models) {
             Write-Host "Pulling $m"
             & "build\Release\lemonade.exe" pull $m
           }
 
-      - name: Run perf regression
+      - name: Pull benchmark models (Linux)
+        if: runner.os == 'Linux'
+        env:
+          LEMONADE_PORT: "13310"
+        run: |
+          for m in \
+            "Qwen3.6-35B-A3B-GGUF" \
+            "Qwen3.6-27B-MTP-GGUF" \
+            "Qwen3-Coder-30B-A3B-Instruct-GGUF" \
+            "Gemma-4-26B-A4B-it-GGUF" \
+            "Gemma-4-31B-it-GGUF" \
+            "Qwen3.5-4B-GGUF" \
+            "gpt-oss-20b-mxfp4-GGUF" \
+            "gpt-oss-120b-mxfp-GGUF"; do
+            echo "Pulling $m"
+            build/Release/lemonade pull "$m"
+          done
+
+      - name: Run perf regression (Windows)
+        if: runner.os == 'Windows'
         shell: PowerShell
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -185,11 +226,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $forkFilter = "${{ matrix.fork_id }}"
           $modelFilter = "${{ github.event.inputs.model_filter }}"
-
-          # Store binaries OUTSIDE the workspace so they persist across runs.
-          # Only re-downloaded when fork version changes (version forms part of path).
-          $binariesDir = "C:\lemonade-bench-binaries"
-
+          $binariesDir = "${{ matrix.binaries_dir }}"
           $args = @(
             "ci/run_regression.py",
             "--forks",        "ci/benchmark_forks.json",
@@ -198,21 +235,37 @@ jobs:
             "--fork-filter",  $forkFilter
           )
           if ($modelFilter) { $args += "--model-filter"; $args += $modelFilter }
-
           & ".\.venv\Scripts\python.exe" @args
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::Regression detected for $forkFilter"
-            exit $LASTEXITCODE
-          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Stop lemond
-        if: always()
+      - name: Run perf regression (Linux)
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LEMONADE_PORT: "13310"
+        run: |
+          .venv/bin/python ci/run_regression.py \
+            --forks        ci/benchmark_forks.json \
+            --output       ci/results \
+            --binaries-dir "${{ matrix.binaries_dir }}" \
+            --fork-filter  "${{ matrix.fork_id }}" \
+            ${{ github.event.inputs.model_filter && format('--model-filter "{0}"', github.event.inputs.model_filter) || '' }}
+
+      - name: Stop lemond (Windows)
+        if: always() && runner.os == 'Windows'
         shell: PowerShell
         run: |
           try {
             Invoke-WebRequest -Uri "http://127.0.0.1:13310/internal/shutdown" -Method POST -TimeoutSec 10 | Out-Null
             Start-Sleep -Seconds 3
           } catch {}
+
+      - name: Stop lemond (Linux)
+        if: always() && runner.os == 'Linux'
+        run: |
+          curl -sf -X POST http://127.0.0.1:13310/internal/shutdown || true
+          sleep 3
+          kill $LEMOND_PID 2>/dev/null || true
 
       - name: Upload results
         if: always()
@@ -233,8 +286,8 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-      - name: Cleanup
-        if: always()
+      - name: Cleanup (Windows)
+        if: always() && runner.os == 'Windows'
         uses: ./.github/actions/cleanup-processes-windows
 
   # =========================================================================
