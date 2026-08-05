@@ -778,28 +778,34 @@ jobs:
 
   # Required status check standing in for the jobs above: the merge queue gates
   # only on required checks, and the per-job names shift with the matrix, while
-  # this one is fixed. It also has to report on pull_request — where the work is
-  # skipped — so PRs can still enqueue.
+  # this one is fixed. It also reports on pull_request -- where the gated work is
+  # skipped -- so PRs can still enqueue.
   validation-gate:
     name: llama.cpp validation
     needs: [build, validate]
     if: always()
     runs-on: ubuntu-latest
-    env:
-      RESULTS: build=${{ needs.build.result }} validate=${{ needs.validate.result }}
     steps:
-      - name: Fail if any validation job did not succeed
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
-            echo "$RESULTS"
+          # $NEEDS is {"job-id": {"result": "success|failure|skipped|cancelled", ...}, ...}
+          # for every job listed in `needs:` above. Two separate failures to catch:
+          #   failure/cancelled          -> a gated job ran and broke
+          #   anything but success, in a -> the job never ran at all (empty matrix, or
+          #   merge_group run               an `if:` that stopped matching). Without this
+          #                                 the gate would go green having checked nothing.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
             exit 1
           fi
-
-      - name: Require the validation to have run in the merge queue
-        if: github.event_name == 'merge_group'
-        run: |
-          if [ "${{ needs.build.result }}" != "success" ] \
-            || [ "${{ needs.validate.result }}" != "success" ]; then
-            echo "$RESULTS"
-            exit 1
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
           fi
