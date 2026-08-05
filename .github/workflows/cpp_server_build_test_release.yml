@@ -18,6 +18,11 @@ on:
         required: false
         default: false
         type: boolean
+      disable_macos_signing:
+        description: 'Force the unsigned macOS path (reproduces a fork PR, which has no Apple secrets). Skips the self-hosted inference rigs.'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -578,12 +583,15 @@ jobs:
         env:
           APP_CONNECT_KEY: ${{ secrets.MACOS_APP_CONNECT_KEY_GERAMY }}
         run: |
-          if [ -n "$APP_CONNECT_KEY" ]; then
+          if [ "${{ inputs.disable_macos_signing }}" == "true" ]; then
+            echo "has_signing=false" >> $GITHUB_OUTPUT
+            echo "Signing disabled by workflow_dispatch input - exercising the unsigned path"
+          elif [ -n "$APP_CONNECT_KEY" ]; then
             echo "has_signing=true" >> $GITHUB_OUTPUT
-            echo "Signing secrets available - will build signed .pkg"
+            echo "Signing secrets available - will build signed and notarized .pkg"
           else
             echo "has_signing=false" >> $GITHUB_OUTPUT
-            echo "No signing secrets - will build and test locally"
+            echo "No signing secrets - will build an unsigned .pkg without notarizing"
           fi
 
       - name: Setup macOS Keychain
@@ -857,7 +865,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-server-installer
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && inputs.disable_macos_signing != true }}
     strategy:
       fail-fast: false
       matrix:
@@ -1119,7 +1127,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-deb
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && inputs.disable_macos_signing != true }}
     strategy:
       fail-fast: false
       matrix:
