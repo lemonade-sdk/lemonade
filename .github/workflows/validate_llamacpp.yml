@@ -8,24 +8,7 @@ on:
         type: boolean
         default: false
   pull_request:
-    paths:
-      - ".github/workflows/validate_llamacpp.yml"
-      - ".github/actions/setup-venv/**"
-      - ".github/actions/cleanup-processes-windows/**"
-      - "test/validate_llamacpp.py"
-      - "test/utils/**"
-      - "test/requirements.txt"
-      - "src/cpp/resources/backend_versions.json"
-      - "src/cpp/resources/server_models.json"
-      - "src/cpp/server/backends/llamacpp/**"
-      - "src/cpp/server/backends/backend_*.cpp"
-      - "src/cpp/server/backend_manager.cpp"
-      - "src/cpp/server/runtime_config.cpp"
-      - "src/cpp/server/system_info.cpp"
-      - "src/cpp/include/lemon/backends/llamacpp/**"
-      - "src/cpp/include/lemon/backends/backend_*.h"
-      - "src/cpp/include/lemon/backend_manager.h"
-      - "src/cpp/include/lemon/backend_version_policy.h"
+  merge_group:
   schedule:
     # Sunday at 12:00 PM ET (17:00 UTC, 16:00 UTC during EDT)
     - cron: "0 16 * * 0"
@@ -304,7 +287,7 @@ jobs:
   build:
     name: Build
     needs: [get-latest-releases, verify-release-assets]
-    if: always() && !failure() && !cancelled()
+    if: github.event_name != 'pull_request' && always() && !failure() && !cancelled()
     runs-on: windows-latest
     steps:
       - name: Prepare Windows runner for long paths and stale workspace caches
@@ -792,3 +775,31 @@ jobs:
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"
+
+  # Required status check standing in for the jobs above: the merge queue gates
+  # only on required checks, and the per-job names shift with the matrix, while
+  # this one is fixed. It also has to report on pull_request — where the work is
+  # skipped — so PRs can still enqueue.
+  validation-gate:
+    name: llama.cpp validation
+    needs: [build, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      RESULTS: build=${{ needs.build.result }} validate=${{ needs.validate.result }}
+    steps:
+      - name: Fail if any validation job did not succeed
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "$RESULTS"
+            exit 1
+          fi
+
+      - name: Require the validation to have run in the merge queue
+        if: github.event_name == 'merge_group'
+        run: |
+          if [ "${{ needs.build.result }}" != "success" ] \
+            || [ "${{ needs.validate.result }}" != "success" ]; then
+            echo "$RESULTS"
+            exit 1
+          fi

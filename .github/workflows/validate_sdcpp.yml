@@ -12,17 +12,7 @@ on:
         required: false
         type: string
   pull_request:
-    paths:
-      - ".github/workflows/validate_sdcpp.yml"
-      - ".github/scripts/update_sdcpp_versions.py"
-      - ".github/scripts/render_sdcpp_pr_body.py"
-      - "test/validate_sdcpp.py"
-      - "src/cpp/resources/backend_versions.json"
-      - "src/cpp/resources/server_models.json"
-      - "src/cpp/server/backends/sd_server.cpp"
-      - "src/cpp/server/backend_manager.cpp"
-      - "src/cpp/server/runtime_config.cpp"
-      - "src/cpp/server/system_info.cpp"
+  merge_group:
   schedule:
     # Sunday at 17:20 UTC, staggered after the llama.cpp auto-update workflow.
     - cron: "20 17 * * 0"
@@ -56,6 +46,7 @@ concurrency:
 jobs:
   discover-release:
     name: Discover stable-diffusion.cpp releases
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       base_release: ${{ steps.release.outputs.base_release }}
@@ -200,7 +191,7 @@ jobs:
   build:
     name: Build Lemonade with sd-cpp pins
     needs: discover-release
-    if: always() && !failure() && !cancelled()
+    if: github.event_name != 'pull_request' && always() && !failure() && !cancelled()
     runs-on: windows-latest
     steps:
       - name: Prepare Windows runner for long paths and stale workspace caches
@@ -688,4 +679,34 @@ jobs:
               --body-file pr_body.md \
               --base main \
               --head "$BRANCH"
+          fi
+
+  # Required status check standing in for the jobs above: the merge queue gates
+  # only on required checks, and the per-job names shift with the matrix, while
+  # this one is fixed. It also has to report on pull_request — where the work is
+  # skipped — so PRs can still enqueue.
+  validation-gate:
+    name: stable-diffusion.cpp validation
+    needs: [discover-release, build, validate, verify-cuda-assets]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      RESULTS: discover-release=${{ needs.discover-release.result }} build=${{ needs.build.result }} validate=${{ needs.validate.result }} verify-cuda-assets=${{ needs.verify-cuda-assets.result }}
+    steps:
+      - name: Fail if any validation job did not succeed
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "$RESULTS"
+            exit 1
+          fi
+
+      - name: Require the validation to have run in the merge queue
+        if: github.event_name == 'merge_group'
+        run: |
+          if [ "${{ needs.discover-release.result }}" != "success" ] \
+            || [ "${{ needs.build.result }}" != "success" ] \
+            || [ "${{ needs.validate.result }}" != "success" ] \
+            || [ "${{ needs.verify-cuda-assets.result }}" != "success" ]; then
+            echo "$RESULTS"
+            exit 1
           fi
