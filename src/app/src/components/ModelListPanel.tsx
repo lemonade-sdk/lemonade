@@ -1135,9 +1135,9 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                 </span>
               </span>
 
-              {/* The backend identity now lives on the lower guide line instead
-                  of in a separate badge. The line terminates in the compact
-                  readiness ring; the pin sits directly above it. */}
+              {/* The backend identity lives on the lower guide line. A hollow
+                  marker means remote/available; every concrete readiness state
+                  replaces that ring with one solid status point. */}
               <span className="model-list-item__footer" aria-hidden="true">
                 <span className="model-list-item__footer-info">
                   {status === 'downloading' && downloadPct != null && (
@@ -1156,11 +1156,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
                   className={`model-list-item__status model-list-item__status--${statusTone}`}
                   title={readinessLabel}
                   data-backend-state={backendReadiness?.state || statusTone}
-                >
-                  {status !== 'available' && (
-                    <span className={`model-list-item__dot model-list-item__dot--${statusTone}`} />
-                  )}
-                </span>
+                />
               </span>
 
               {/* Pointer users click the compact pin above the status terminus;
