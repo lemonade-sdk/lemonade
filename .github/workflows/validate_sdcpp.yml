@@ -70,7 +70,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          # Only the auto-update runs resolve upstream releases. Everywhere else
+          # the build validates the pins committed in backend_versions.json, so a
+          # bad upstream release can't fail a merge or hide a broken pin.
+          UPDATE_RUN=false
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            UPDATE_RUN=true
+          fi
+
+          if [ "$UPDATE_RUN" = "false" ]; then
             read -r BASE_RELEASE CUDA_RELEASE < <(python3 - <<'PY'
           import json
           with open('src/cpp/resources/backend_versions.json', encoding='utf-8') as f:
@@ -119,11 +127,7 @@ jobs:
           PY
 
           cat release_outputs.env >> "$GITHUB_OUTPUT"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "is_update_run=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_update_run=true" >> "$GITHUB_OUTPUT"
-          fi
+          echo "is_update_run=$UPDATE_RUN" >> "$GITHUB_OUTPUT"
 
           echo "Using base stable-diffusion.cpp release: ${BASE_RELEASE}"
           echo "Using CUDA stable-diffusion.cpp release: ${CUDA_RELEASE}"

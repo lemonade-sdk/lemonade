@@ -25,7 +25,7 @@ env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
   HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
-  LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
+  LITE_MODE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
 
 jobs:
   # ========================================================================
@@ -33,7 +33,10 @@ jobs:
   # ========================================================================
   get-latest-releases:
     name: Get latest releases
-    if: github.event_name != 'pull_request'
+    # Only the auto-update runs resolve upstream releases. Everywhere else the
+    # build validates the pins committed in backend_versions.json, so a bad
+    # upstream release can't fail a merge or hide a broken pin.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       llamacpp_release: ${{ steps.llamacpp.outputs.release }}
@@ -73,7 +76,7 @@ jobs:
   verify-release-assets:
     name: Verify release assets
     needs: get-latest-releases
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       ggml_update_backends: ${{ steps.assets.outputs.ggml_update_backends }}
