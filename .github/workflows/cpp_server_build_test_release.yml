@@ -303,6 +303,9 @@ jobs:
 
   build-lemonade-debian13:
     name: Build Lemonade .deb Package (Debian 13)${{ matrix.job-suffix }}
+    # Packaging-only variant: the merge queue gates every merge, so PR pushes
+    # skip it. Any Debian 13 build break still blocks at merge-queue time.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runs-on }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -385,6 +388,7 @@ jobs:
 
   test-lemonade-debian13-smoke:
     name: Smoke test .deb (Debian 13)${{ matrix.job-suffix }}
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runs-on }}
     needs: build-lemonade-debian13
     container:
@@ -459,6 +463,9 @@ jobs:
 
   build-lemonade-rpm:
     name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
+    # Packaging-only variant: the merge queue gates every merge, so PR pushes
+    # skip it. Any Fedora build break still blocks at merge-queue time.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runs-on }}
     container:
       image: fedora:${{ matrix.fedora-version }}
@@ -1500,6 +1507,7 @@ jobs:
 
   test-rpm-package:
     name: Test .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runs-on }}
     needs: build-lemonade-rpm
     container:
