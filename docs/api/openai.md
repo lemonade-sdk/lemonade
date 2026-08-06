@@ -915,7 +915,7 @@ A typical workflow is to generate an image first, then upscale it:
 
 Speech Generation API. You provide a text input and receive an audio file. Which engine serves the request depends on the model.
 
-> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend), the OpenMOSS family — `OpenMOSS-TTS` (voice cloning from a reference WAV) and `MOSS-VoiceGen` (voice design from a text description) — and `VoxCPM2` (voice design from a parenthetical description at the start of the input, 48 kHz output).
+> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend), the OpenMOSS family — `OpenMOSS-TTS` (voice cloning from a reference WAV) and `MOSS-VoiceGen` (voice design from a text description) — and `VoxCPM2` (voice design from a parenthetical description at the start of the input, 48 kHz output). `VoxCPM2-ModelScope` serves the same weights from ModelScope for networks where Hugging Face is unreachable.
 >
 > **Limitations:** Which `response_format` values are accepted depends on the model's backend: `kokoro-v1` encodes `mp3`, `wav`, `opus`, and `pcm`, while OpenMOSS and VoxCPM2 models natively produce `wav` only. A format the backend cannot encode is rejected with `400 Bad Request` listing the ones it does support. Streaming works for any TTS backend, but a backend's streamable set can be narrower than its buffered set — `kokoro-v1` streams `pcm` only, so an explicit `response_format` of `mp3` alongside `stream_format` is rejected rather than silently answered with PCM.
 

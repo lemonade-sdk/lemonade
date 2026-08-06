@@ -1880,6 +1880,20 @@
         ],
         "size": 4.72
     },
+    "VoxCPM2-ModelScope": {
+        "checkpoints": {
+            "main": "DennisHuang/VoxCPM2-GGUF:VoxCPM2-BaseLM-Q8_0.gguf",
+            "acoustic": "DennisHuang/VoxCPM2-GGUF:VoxCPM2-Acoustic-F16.gguf"
+        },
+        "registry_source": "modelscope",
+        "recipe": "voxcpm2",
+        "suggested": false,
+        "labels": [
+            "tts",
+            "voice-design"
+        ],
+        "size": 3.56
+    },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
         "recipe": "sd-cpp",

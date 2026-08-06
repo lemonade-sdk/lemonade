@@ -470,12 +470,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `Qwen3.6-35B-A3B-FP8-vLLM-highconc` | 36.0 | reasoning, tool-calling, vision, mtp |
 | `Qwen3.6-35B-A3B-FP8-vLLM-lowconc` | 36.0 | reasoning, tool-calling, vision, mtp |
 
-#### `voxcpm2` — VoxCPM2 (2 models)
+#### `voxcpm2` — VoxCPM2 (3 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
 | `VoxCPM2` | 3.31 | tts, voice-design |
 | `VoxCPM2-F16` | 4.72 | tts, voice-design |
+| `VoxCPM2-ModelScope` | 3.56 | tts, voice-design |
 
 #### `whispercpp` — Whisper.cpp (6 models)
 
