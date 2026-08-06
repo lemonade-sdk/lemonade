@@ -500,6 +500,8 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"arm64", "ARM64 processors"},
 
     // AMD GPU architectures (ROCm)
+    {"gfx908", "AMD Instinct MI100 (CDNA1)"},
+    {"gfx90a", "AMD Instinct MI200/MI210/MI250 (CDNA2)"},
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
     {"gfx1152", "Radeon 840M/860M (Krackan Point)"},
