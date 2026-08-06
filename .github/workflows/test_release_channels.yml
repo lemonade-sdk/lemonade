@@ -1,0 +1,190 @@
+name: Test Release Channels
+
+on:
+  pull_request:
+    paths:
+      - ".github/actions/classify-release-tag/**"
+      - ".github/actions/prepare-debian-build/**"
+      - ".github/scripts/release_channels.py"
+      - ".github/scripts/test_release_channels.py"
+      - ".github/workflows/build-and-push-container.yml"
+      - ".github/workflows/cpp_server_build_test_release.yml"
+      - ".github/workflows/launchpad-ppa.yml"
+      - ".github/workflows/publish-website.yml"
+      - ".github/workflows/test_release_channels.yml"
+      - "docs/dev/release.md"
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Release channel unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run parser and Debian-ordering tests
+        run: python3 .github/scripts/test_release_channels.py
+
+  action-integration:
+    name: Composite action integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Create tag fixtures
+        id: fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -nE \
+            's/^[[:space:]]*project\(lemon_cpp[[:space:]]+VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' \
+            CMakeLists.txt | head -n1)
+          SHA=$(git rev-parse --short=7 HEAD)
+          git tag -d "v${VERSION}" "v${VERSION}-rc.1" "v${VERSION}-beta.2oops" >/dev/null 2>&1 || true
+          git tag "v${VERSION}" HEAD
+          git tag "v${VERSION}-rc.1" HEAD
+          git tag "v${VERSION}-beta.2oops" HEAD
+          {
+            echo "version=$VERSION"
+            echo "sha=$SHA"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Classify snapshot
+        id: snapshot
+        uses: ./.github/actions/classify-release-tag
+        with:
+          build_serial: "100"
+          build_attempt: "1"
+          commit_sha: ${{ steps.fixture.outputs.sha }}
+
+      - name: Classify prerelease
+        id: prerelease
+        uses: ./.github/actions/classify-release-tag
+        with:
+          tag: v${{ steps.fixture.outputs.version }}-rc.1
+          require_tag: "true"
+          require_prerelease: "true"
+          build_serial: "101"
+          build_attempt: "1"
+
+      - name: Classify stable release
+        id: stable
+        uses: ./.github/actions/classify-release-tag
+        with:
+          tag: v${{ steps.fixture.outputs.version }}
+          require_tag: "true"
+          require_stable: "true"
+          build_serial: "102"
+          build_attempt: "1"
+
+      - name: Reject invalid tag
+        id: invalid
+        continue-on-error: true
+        uses: ./.github/actions/classify-release-tag
+        with:
+          tag: v${{ steps.fixture.outputs.version }}-beta.2oops
+          require_tag: "true"
+          build_serial: "103"
+
+      - name: Reject conflicting requirements
+        id: conflicting
+        continue-on-error: true
+        uses: ./.github/actions/classify-release-tag
+        with:
+          tag: v${{ steps.fixture.outputs.version }}
+          require_tag: "true"
+          require_stable: "true"
+          require_prerelease: "true"
+
+      - name: Verify generated outputs
+        shell: bash
+        env:
+          VERSION: ${{ steps.fixture.outputs.version }}
+          SHA: ${{ steps.fixture.outputs.sha }}
+          SNAPSHOT: ${{ steps.snapshot.outputs.deb_version }}
+          PRERELEASE: ${{ steps.prerelease.outputs.deb_version }}
+          STABLE: ${{ steps.stable.outputs.deb_version }}
+          INVALID_OUTCOME: ${{ steps.invalid.outcome }}
+          CONFLICTING_OUTCOME: ${{ steps.conflicting.outcome }}
+        run: |
+          set -euo pipefail
+          [[ "$SNAPSHOT" == "${VERSION}~0.100.1.dev+g${SHA}" ]]
+          [[ "$PRERELEASE" == "${VERSION}~0.101.1.rc.1" ]]
+          [[ "$STABLE" == "$VERSION" ]]
+          [[ "$INVALID_OUTCOME" == "failure" ]]
+          [[ "$CONFLICTING_OUTCOME" == "failure" ]]
+          dpkg --compare-versions "$SNAPSHOT" lt "$PRERELEASE"
+          dpkg --compare-versions "$PRERELEASE" lt "$STABLE"
+
+  version-override:
+    name: Debian version override integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Define override
+        id: fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -nE \
+            's/^[[:space:]]*project\(lemon_cpp[[:space:]]+VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' \
+            CMakeLists.txt | head -n1)
+          echo "version=${VERSION}~0.500.1.beta.1" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare Debian metadata with explicit version
+        id: prepare
+        uses: ./.github/actions/prepare-debian-build
+        with:
+          release: "24.04"
+          codename: noble
+          version: ${{ steps.fixture.outputs.version }}
+
+      - name: Verify override
+        shell: bash
+        env:
+          EXPECTED: ${{ steps.fixture.outputs.version }}
+          ACTUAL: ${{ steps.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$ACTUAL" == "$EXPECTED" ]]
+          grep -F "(${EXPECTED}~24.04)" debian/changelog
+
+  downstream-publisher-guards:
+    name: Stable downstream publisher guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify stable-only automatic publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          STABLE_PATTERN="- 'v[0-9]+.[0-9]+.[0-9]+'"
+          CONTAINER=.github/workflows/build-and-push-container.yml
+          WEBSITE=.github/workflows/publish-website.yml
+
+          grep -F -- "$STABLE_PATTERN" "$CONTAINER"
+          grep -F -- "$STABLE_PATTERN" "$WEBSITE"
+
+          if grep -F -- '- "v*"' "$CONTAINER"; then
+            echo "Container workflow still accepts every v* tag."
+            exit 1
+          fi
+          if grep -F -- '- v*' "$WEBSITE"; then
+            echo "Website workflow still accepts every v* tag."
+            exit 1
+          fi
+
+          grep -F 'require_stable: "true"' "$CONTAINER"
+          grep -F 'Moving the container latest tag requires a stable release tag.' "$CONTAINER"
+          grep -F 'Validate stable tag before publishing production website' "$WEBSITE"
+          grep -F 'require_stable: "true"' "$WEBSITE"

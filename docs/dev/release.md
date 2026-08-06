@@ -84,7 +84,7 @@ Confirm with the team before pushing directly to `main`.
 
 Before tagging, check the **`Release vX.Y.Z final checklist`** issue. All P1 items should be resolved and the verdict should read `Ready`.
 
-Lemonade releases are automatically created by the [cpp_server_build_test_release.yml workflow](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml) final step, which is triggered by pushing a tag that matches the `v*` pattern. The tag must match the pattern `v<major>.<minor>.<patch>`, i.e., the value from CMakeLists.txt with a leading `v`.
+Stable Lemonade releases are automatically created by the [cpp_server_build_test_release.yml workflow](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml) final step. Only a stable tag matching `v<major>.<minor>.<patch>` triggers that full release path; prerelease tags use the bleeding-edge flow described below.
 
 Let's say you're releasing v10.8.0, this will trigger the release action:
 
@@ -99,6 +99,34 @@ git push origin v10.8.0
 ```
 
 Example action from v10.7.0: https://github.com/lemonade-sdk/lemonade/actions/runs/27283434473/job/80590025966
+
+### Prerelease Tags and Bleeding-Edge Ordering
+
+Prereleases are created from the same `release-vX.Y.Z` branch as the final release. The supported tag forms are:
+
+```text
+vX.Y.Z-alpha.N
+vX.Y.Z-beta.N
+vX.Y.Z-rc.N
+```
+
+Pushing one of these tags publishes Debian packages to `ppa:lemonade-team/bleeding-edge`. It does **not** run the full stable release workflow or create the normal GitHub release. The final `vX.Y.Z` tag remains the only trigger for the full signed, cross-platform release.
+
+Prerelease tags also do **not** move the production container `:latest` tag or publish the production website. Automatic container and website publication is stable-only. Maintainers may manually publish a prerelease container under its exact version tag, but the container workflow rejects moving `:latest` unless the selected tag is a validated stable release.
+
+`main` snapshots and prerelease tags share the bleeding-edge PPA even though their commits may live on divergent branches. Their Debian versions therefore do not use `git describe` or tag reachability for ordering. The Launchpad workflow assigns every run a monotonically increasing `github.run_number` plus `github.run_attempt`, for example:
+
+```text
+X.Y.Z~0.120.1.dev+gabcdef0
+X.Y.Z~0.121.1.beta.1
+X.Y.Z~0.122.1.dev+g1234567
+X.Y.Z~0.123.1.rc.1
+X.Y.Z
+```
+
+This guarantees that each later bleeding-edge publication supersedes the previous one, independent of annotated versus lightweight tags or release-branch ancestry. The final stable version has no `~0` suffix and therefore supersedes every snapshot and prerelease for the same base version.
+
+The Step 6 reconciliation is still required for the final stable tag because other repository tooling uses tag ancestry. Prerelease reconciliation is not required for PPA ordering.
 
 ## Step 4: Windows Signing
 
@@ -134,7 +162,7 @@ git push origin vX.Y.Z --force
 
 ## Step 6: Reconcile the Tag into `main`
 
-The tag lives on `release-vX.Y.Z`, so it isn't reachable from `main`, and `git describe --tags` on `main` reports the *previous* release — feeding a stale version into the Debian/PPA build (`prepare-debian-build`) and `test_release_notes.yml`. Link it in with an `ours` merge (records the ancestry only, changes no files).
+The stable tag lives on `release-vX.Y.Z`, so it isn't reachable from `main`. Some repository tooling still uses tag ancestry and would report the previous stable release. Link the final stable tag in with an `ours` merge (records the ancestry only, changes no files). PPA package ordering does not depend on this reconciliation.
 
 First confirm **every release-branch fix is forward-ported to `main`** — `-s ours` silently drops anything that isn't (see Step 2's forward-port guidance).
 
