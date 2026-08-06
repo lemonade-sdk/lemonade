@@ -304,8 +304,14 @@ static void test_mark_pending_stale_atomic_decision(Router& router) {
         RoutingHelperTestHook::add_server(router, make_helper("atomic.busy"));
     busy->acquire_for_inference();
     bool busy_deferred = busy->mark_pending_stale_if_busy();
-    busy->release_inference();
+    // Cancel the armed intent while still holding the request. Otherwise the idle
+    // release below dispatches a real reclaim (this stub is stale — no policy needs
+    // it), and the executor worker can evict and free it concurrently with the raw
+    // pointer still in use here. Production only clears/evicts under load_mutex_,
+    // where the server cannot be freed out from under a caller; this direct-pointer
+    // test must cancel before going idle.
     busy->clear_pending_stale();
+    busy->release_inference();
 
     check("mark_pending_stale_if_busy defers only a busy helper (no check/install race)",
           !idle_deferred && busy_deferred);
