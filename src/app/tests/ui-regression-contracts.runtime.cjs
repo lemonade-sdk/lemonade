@@ -9,6 +9,7 @@ const files = {
   chat: path.join(root, 'src/components/ChatView.tsx'),
   connect: path.join(root, 'src/components/ConnectView.tsx'),
   apps: path.join(root, 'src/components/AppsView.tsx'),
+  backendManager: path.join(root, 'src/components/BackendManager.tsx'),
   catalogLayout: path.join(root, 'src/components/WorkspaceCatalogLayout.tsx'),
   mcpPanel: path.join(root, 'src/components/McpPanel.tsx'),
   api: path.join(root, 'src/api.ts'),
@@ -50,6 +51,11 @@ assert.match(sources.apps, /className="apps-workspace"/);
 assert.doesNotMatch(sources.apps, /embedded\?: boolean|apps__category-filters|WorkspaceMetadataChip/);
 assert.match(sources.catalogLayout, /workspace-catalog-layout\$\{railCollapsed \? ' workspace--rail-collapsed' : ''\}/);
 assert.match(sources.catalogLayout, /className="workspace-filter-list"/);
+
+assert.match(sources.backendManager, /const \[showLogos, setShowLogos\] = useState\(true\)/);
+assert.match(sources.backendManager, /data-backends-unsupported-toggle[\s\S]*?data-backends-logo-toggle/);
+assert.match(sources.backendManager, /checked=\{showLogos\}[\s\S]*?<span>Show logos<\/span>/);
+assert.match(sources.backendManager, /showLogos \? \([\s\S]*?data-backend-logo[\s\S]*?: \([\s\S]*?workspace-card__name backend-card__name/);
 
 assert.match(sources.mcpPanel, /transport: 'streamable-http'/);
 assert.match(sources.mcpPanel, />HTTP endpoint</);
