@@ -1582,12 +1582,23 @@ jobs:
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
+      # Covers the install action's manual fallback, which runs in this shell.
+      # The launchd path is covered by the launchctl setenv step below.
       GGML_METAL_NO_RESIDENCY: "1"
     steps:
       - uses: actions/checkout@v5
 
       - name: Set HF_HOME environment variable
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+
+      # Must precede the install: the .pkg postflight starts lemond via launchd,
+      # which passes on the launchd domain environment rather than this shell's.
+      # Killing that server and starting our own instead loses a race for
+      # 127.0.0.1:13305 often enough to be unusable — lemond then binds IPv6
+      # only and every test that uses a literal IPv4 address fails.
+      - name: Put the Metal setting in the launchd environment
+        shell: bash
+        run: sudo launchctl setenv GGML_METAL_NO_RESIDENCY 1
 
       - name: Download .pkg package
         uses: actions/download-artifact@v7
@@ -1602,16 +1613,27 @@ jobs:
           version: ${{ env.LEMONADE_VERSION }}
           download-artifact: 'false'
 
-      # lemond has to inherit GGML_METAL_NO_RESIDENCY, so start it here rather
-      # than reusing the instance the .pkg postflight script started.
-      - name: Start server with Metal environment
-        uses: ./.github/actions/restart-lemond-macos
-        with:
-          bin-path: ${{ steps.install-pkg.outputs.bin-path }}
-
-      - name: Set CLI binary path
+      - name: Verify the server picked up the Metal setting
         shell: bash
-        run: echo "CLI_BINARY=${{ steps.install-pkg.outputs.bin-path }}/lemonade" >> $GITHUB_ENV
+        env:
+          BIN_PATH: ${{ steps.install-pkg.outputs.bin-path }}
+        run: |
+          set -e
+          echo "CLI_BINARY=$BIN_PATH/lemonade" >> "$GITHUB_ENV"
+
+          PID=$(sudo lsof -t -nP -iTCP:13305 -sTCP:LISTEN 2>/dev/null | head -1)
+          if [ -z "$PID" ]; then
+            echo "ERROR: nothing is listening on port 13305"
+            exit 1
+          fi
+          # Assert rather than assume: this job exists to exercise Metal, and a
+          # server without the setting would quietly test something else.
+          if ! sudo ps eww -p "$PID" | grep -q GGML_METAL_NO_RESIDENCY; then
+            echo "ERROR: lemond (PID $PID) is missing GGML_METAL_NO_RESIDENCY"
+            sudo ps eww -p "$PID" || true
+            exit 1
+          fi
+          echo "lemond (PID $PID) has GGML_METAL_NO_RESIDENCY"
 
       - name: Setup Python and virtual environment
         id: setup
