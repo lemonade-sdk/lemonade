@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { IconName } from './Icon';
-import WorkspaceSectionRail, { type WorkspaceSectionDefinition } from './WorkspaceSectionRail';
+import {
+  WorkspaceCatalogLayout,
+  WorkspaceCatalogSection,
+  type CatalogFilterDefinition,
+} from './WorkspaceCatalogLayout';
 import {
   WorkspaceActionButton,
   WorkspaceActionGroup,
   WorkspacePaneHeader,
-  WorkspaceResourceList,
-  WorkspaceResourceRow,
 } from './WorkspacePanels';
 
 export type MarketplaceApp = {
@@ -21,9 +23,10 @@ export type MarketplaceApp = {
 
 export const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 const ALL_APPS_SECTION = 'all-apps';
+const FEATURED_APP_LIMIT = 4;
 
-function categorySectionId(category: string): string {
-  const safeCategory = encodeURIComponent(category.trim().toLowerCase())
+function categorySectionId(categoryKey: string): string {
+  const safeCategory = encodeURIComponent(categoryKey)
     .replace(/%/g, '')
     .replace(/[^a-z0-9_-]+/g, '-');
   return `category-${safeCategory || 'other'}`;
@@ -54,10 +57,11 @@ function normalizedCategory(category: string): string {
   return category.trim().toLocaleLowerCase();
 }
 
-function appHasCategory(app: MarketplaceApp, category: string): boolean {
-  const normalizedFilter = normalizedCategory(category);
-  return (app.category || []).some(item => normalizedCategory(item) === normalizedFilter);
-}
+type CategoryGroup = {
+  key: string;
+  label: string;
+  apps: MarketplaceApp[];
+};
 
 type AppsViewProps = {
   apps: MarketplaceApp[];
@@ -71,54 +75,62 @@ const AppsView: React.FC<AppsViewProps> = ({
   error: marketplaceError,
 }) => {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
-  const [railCollapsed, setRailCollapsed] = useState(false);
 
-  const categories = useMemo(() => {
-    const categoryByKey = new Map<string, string>();
-    marketplaceApps.flatMap(app => app.category || []).forEach(rawCategory => {
-      const category = rawCategory.trim();
-      const key = normalizedCategory(category);
-      if (key && !categoryByKey.has(key)) categoryByKey.set(key, category);
+  const featuredApps = useMemo(
+    () => marketplaceApps.filter(app => app.pinned).slice(0, FEATURED_APP_LIMIT),
+    [marketplaceApps],
+  );
+
+  const categoryGroups = useMemo<CategoryGroup[]>(() => {
+    const groups = new Map<string, CategoryGroup>();
+    marketplaceApps.forEach(app => {
+      const primary = app.category?.[0]?.trim();
+      const key = primary ? normalizedCategory(primary) : 'other';
+      let group = groups.get(key);
+      if (!group) {
+        group = { key, label: primary ? categoryLabel(primary) : 'Other', apps: [] };
+        groups.set(key, group);
+      }
+      group.apps.push(app);
     });
-    return Array.from(categoryByKey.values()).sort((left, right) => left.localeCompare(right));
+    return Array.from(groups.values())
+      .map(group => ({ ...group, apps: [...group.apps].sort((a, b) => a.name.localeCompare(b.name)) }))
+      .sort((left, right) => left.label.localeCompare(right.label));
   }, [marketplaceApps]);
 
   useEffect(() => {
-    if (categoryFilter && !categories.includes(categoryFilter)) setCategoryFilter(null);
-  }, [categories, categoryFilter]);
+    if (categoryFilter && !categoryGroups.some(group => group.key === categoryFilter)) setCategoryFilter(null);
+  }, [categoryGroups, categoryFilter]);
 
-  const categorySections = useMemo<WorkspaceSectionDefinition<string>[]>(() => [
+  const categoryFilters = useMemo<CatalogFilterDefinition<string>[]>(() => [
     {
       id: ALL_APPS_SECTION,
-      label: 'All Apps',
+      label: 'All apps',
       description: marketplaceLoading
         ? 'Loading directory'
         : marketplaceError
           ? 'Directory unavailable'
-          : appCountLabel(marketplaceApps.length),
+          : 'Compatible clients and tools',
       icon: 'globe',
+      count: marketplaceLoading || marketplaceError ? undefined : marketplaceApps.length,
     },
-    ...categories.map(category => {
-      const count = marketplaceApps.filter(app => appHasCategory(app, category)).length;
-      return {
-        id: categorySectionId(category),
-        label: categoryLabel(category),
-        description: appCountLabel(count),
-        icon: categoryIcon(category),
-      };
-    }),
-  ], [categories, marketplaceApps, marketplaceError, marketplaceLoading]);
+    ...categoryGroups.map(group => ({
+      id: categorySectionId(group.key),
+      label: group.label,
+      description: appCountLabel(group.apps.length),
+      icon: categoryIcon(group.key),
+      count: group.apps.length,
+    })),
+  ], [categoryGroups, marketplaceApps.length, marketplaceError, marketplaceLoading]);
 
   const categoryBySection = useMemo(() => new Map(
-    categories.map(category => [categorySectionId(category), category]),
-  ), [categories]);
+    categoryGroups.map(group => [categorySectionId(group.key), group.key]),
+  ), [categoryGroups]);
 
   const activeCategorySection = categoryFilter ? categorySectionId(categoryFilter) : ALL_APPS_SECTION;
-
-  const filteredMarketplaceApps = useMemo(() => marketplaceApps
-    .filter(app => !categoryFilter || appHasCategory(app, categoryFilter))
-    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name)),
-  [categoryFilter, marketplaceApps]);
+  const activeGroup = categoryFilter
+    ? categoryGroups.find(group => group.key === categoryFilter) ?? null
+    : null;
 
   const openExternal = (url?: string) => {
     if (!url) return;
@@ -130,76 +142,91 @@ const AppsView: React.FC<AppsViewProps> = ({
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const visibleCount = filteredMarketplaceApps.length;
-  const paneTitle = categoryFilter ? categoryLabel(categoryFilter) : 'All Apps';
-  const paneSubtitle = categoryFilter
-    ? `${appCountLabel(visibleCount)} in ${categoryLabel(categoryFilter)}.`
-    : 'Compatible clients and tools for Lemonade.';
+  const paneTitle = activeGroup ? activeGroup.label : 'Apps Marketplace';
+  const paneSubtitle = activeGroup
+    ? `${appCountLabel(activeGroup.apps.length)} in ${activeGroup.label}.`
+    : 'Lemonade works best as the inference server for applications. Try out this curated list of apps!';
+
+  const renderAppCard = (app: MarketplaceApp) => (
+    <article key={app.id || app.name} className="workspace-card app-card">
+      <header className="workspace-card__head">
+        {app.logo
+          ? <img className="app-card__logo" src={app.logo} alt="" />
+          : <span className="app-card__logo app-card__logo--fallback" aria-hidden="true">{app.name.slice(0, 1).toUpperCase()}</span>}
+        <span className="app-card__identity">
+          <h3 className="workspace-card__name app-card__name">{app.name}</h3>
+          {app.category && app.category.length > 0 && (
+            <span className="app-card__category">{app.category.map(categoryLabel).join(' · ')}</span>
+          )}
+        </span>
+      </header>
+      <p className="app-card__description">{app.description || 'No description available.'}</p>
+      <footer className="app-card__footer">
+        <WorkspaceActionGroup className="app-card__actions" label={`Links for ${app.name}`}>
+          {app.links?.app && <WorkspaceActionButton appearance="secondary" size="small" icon="globe" onClick={() => openExternal(app.links?.app)}>Visit</WorkspaceActionButton>}
+          {app.links?.guide && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.guide)}>Guide</WorkspaceActionButton>}
+          {app.links?.video && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.video)}>Video</WorkspaceActionButton>}
+        </WorkspaceActionGroup>
+      </footer>
+    </article>
+  );
 
   return (
-    <section
-      className={`apps-workspace${railCollapsed ? ' workspace--rail-collapsed' : ''}`}
-      data-view="apps"
-    >
-      <WorkspaceSectionRail
-        sections={categorySections}
-        activeSection={activeCategorySection}
-        onSectionChange={section => setCategoryFilter(categoryBySection.get(section) ?? null)}
-        collapsed={railCollapsed}
-        onCollapsedChange={setRailCollapsed}
-        panelId="apps-types-panel"
-        railLabel="App type navigation"
-        navigationLabel="App categories"
-        railClassName="apps__rail"
-        navClassName="apps__nav"
-        headerTitle="App Types"
-        sidebarLabel="app types"
-        headerIcon="layers"
-        mobileMenuLabel="Open app types"
-      />
-
-      <section className="workspace-pane apps__main" aria-labelledby="apps-pane-title">
+    <WorkspaceCatalogLayout
+      view="apps"
+      className="apps-workspace"
+      panelId="apps-types-panel"
+      railTitle="Filters"
+      railLabel="App categories"
+      sidebarLabel="app categories"
+      mobileMenuLabel="Open app categories"
+      filters={categoryFilters}
+      activeFilter={activeCategorySection}
+      onFilterChange={section => setCategoryFilter(categoryBySection.get(section) ?? null)}
+      header={
         <WorkspacePaneHeader
+          headingLevel={1}
           title={paneTitle}
           subtitle={paneSubtitle}
           titleId="apps-pane-title"
         />
-
-        <div className="apps__content workspace-pane__scroll">
-          <section className="apps__directory" aria-label={paneTitle}>
-            {marketplaceLoading ? (
-              <div className="apps__empty" role="status">Loading apps...</div>
-            ) : marketplaceError ? (
-              <div className="apps__error" role="alert">Apps unavailable: {marketplaceError}</div>
-            ) : (
-              <WorkspaceResourceList label={`${paneTitle} directory`} className="apps__resource-list">
-                {filteredMarketplaceApps.map(app => (
-                  <WorkspaceResourceRow
-                    key={app.id || app.name}
-                    title={app.name}
-                    description={app.description || 'No description available.'}
-                    metadata={app.category?.join(' · ')}
-                    leading={app.logo
-                      ? <img className="apps__app-logo" src={app.logo} alt="" />
-                      : <span className="apps__app-logo apps__app-logo--fallback">{app.name.slice(0, 1).toUpperCase()}</span>}
-                    actions={<WorkspaceActionGroup className="apps__marketplace-actions" label={`Links for ${app.name}`}>
-                      {app.links?.app && <WorkspaceActionButton appearance="secondary" size="small" icon="globe" onClick={() => openExternal(app.links?.app)}>Visit</WorkspaceActionButton>}
-                      {app.links?.guide && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.guide)}>Guide</WorkspaceActionButton>}
-                      {app.links?.video && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.video)}>Video</WorkspaceActionButton>}
-                    </WorkspaceActionGroup>}
-                  />
-                ))}
-                {filteredMarketplaceApps.length === 0 && (
-                  <div className="apps__empty">
-                    No apps are available for this type.
-                  </div>
-                )}
-              </WorkspaceResourceList>
-            )}
-          </section>
+      }
+    >
+      {marketplaceLoading ? (
+        <div className="apps__empty" role="status">Loading apps...</div>
+      ) : marketplaceError ? (
+        <div className="apps__error" role="alert">Apps unavailable: {marketplaceError}</div>
+      ) : (
+        <div className="workspace-catalog" aria-label={`${paneTitle} directory`}>
+          {activeGroup ? (
+            <WorkspaceCatalogSection>
+              {activeGroup.apps.map(renderAppCard)}
+            </WorkspaceCatalogSection>
+          ) : (
+            <>
+              {featuredApps.length > 0 && (
+                <WorkspaceCatalogSection
+                  title="Featured"
+                  description="Picks from the Lemonade team."
+                >
+                  {featuredApps.map(renderAppCard)}
+                </WorkspaceCatalogSection>
+              )}
+              {categoryGroups.map(group => (
+                <WorkspaceCatalogSection key={group.key} title={group.label}>
+                  {group.apps.map(renderAppCard)}
+                </WorkspaceCatalogSection>
+              ))}
+            </>
+          )}
+          {marketplaceApps.length === 0 && (
+            <div className="apps__empty">
+              No apps are available yet.
+            </div>
+          )}
         </div>
-      </section>
-    </section>
+      )}
+    </WorkspaceCatalogLayout>
   );
 };
 

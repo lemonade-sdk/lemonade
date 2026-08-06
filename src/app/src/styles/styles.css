@@ -3438,22 +3438,13 @@ optgroup {
   grid-template-columns: 56px minmax(0, 1fr);
 }
 
-.manager__main,
-.backends__main {
+.manager__main {
   min-width: 0;
   min-height: 0;
   height: 100%;
   overflow: hidden;
-}
-
-.manager__main {
   display: grid;
   grid-template-rows: auto 1fr;
-}
-
-.backends__main {
-  display: flex;
-  flex-direction: column;
 }
 
 .context-rail {
@@ -3613,7 +3604,7 @@ optgroup {
   .rail { display: none; }
   .manager--with-rail, .backends--with-rail { grid-template-columns: 1fr; }
   .context-rail { display: none; }
-  .manager__main, .backends__main { height: 100%; }
+  .manager__main { height: 100%; }
   .chat__inner { padding: var(--space-5) var(--space-4); overflow-x: hidden; }
   .composer { padding: var(--space-3) var(--space-4); }
   .manager__custom-actions .btn { flex: 1; justify-content: center; }
@@ -11618,9 +11609,8 @@ optgroup {
 }
 
 .connect--workspace.workspace--rail-collapsed,
-.apps-workspace.workspace--rail-collapsed,
 .logs-workspace.workspace--rail-collapsed,
-.backends--workspace.workspace--rail-collapsed {
+.workspace-catalog-layout.workspace--rail-collapsed {
   grid-template-columns: var(--rail-collapsed) minmax(0, 1fr);
 }
 
@@ -11706,60 +11696,67 @@ optgroup {
 }
 
 /* Apps */
-.apps-workspace {
-  display: grid;
-  grid-template-columns: var(--workspace-rail) minmax(0, 1fr);
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
+.apps-workspace .workspace-catalog__grid { align-items: stretch; }
+
+.app-card__logo {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
 }
 
-.apps__main {
-  height: 100%;
-  display: grid;
-  grid-template-rows: var(--workspace-header) minmax(0, 1fr);
+.app-card__logo--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
 }
 
-.apps__main .workspace-pane__heading h2 {
+.app-card__identity {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-0-5);
+}
+
+.app-card__name {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.apps__nav {
+.app-card__description {
   flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
 }
 
-.apps__content {
-  min-height: 0;
-  padding: var(--space-5);
-}
-
-.apps__directory {
-  width: min(100%, var(--max-content-width));
-  min-width: 0;
-  margin-inline: auto;
-}
-
-.apps__marketplace-actions {
-  width: auto;
-  justify-content: flex-end;
-}
-
-.apps__app-logo {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-}
-
-.apps__app-logo--fallback {
-  display: inline-flex;
+.app-card__footer {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  color: var(--text-primary);
-  font-weight: var(--weight-semibold);
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.app-card__actions {
+  width: auto;
+}
+
+.app-card__category {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .apps__empty,
@@ -11815,20 +11812,34 @@ optgroup {
 .workspace-action-button.logs-rail__mobile-close { display: none; }
 .monitor-subpanel__title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .monitor-subpanel__title-row > div { min-width: 0; }
-/* Backends */
-.backends--workspace {
+/* Catalog layout — shared contract for tabs with a filter rail and card grid
+   (Backends, Apps) */
+.workspace-catalog-layout {
   display: grid;
   grid-template-columns: var(--workspace-rail) minmax(0, 1fr);
+  width: 100%;
   height: 100%;
   padding: 0;
   overflow: hidden;
 }
 
-.backends--workspace .backends__main {
-  display: grid;
-  grid-template-rows: var(--workspace-header) auto minmax(0, 1fr) auto;
+.workspace-catalog-layout__main {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
+.workspace-catalog-layout__content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-2) var(--panel-padding-inline) var(--space-6);
+}
+
+/* Backends */
 .backends--workspace .backends__head { padding: 0 var(--panel-padding-inline); }
 .backends__rail-footer { display: grid; gap: var(--space-3); }
 .backends__rail-footer .backends__toggle { justify-content: flex-start; }
@@ -11854,62 +11865,57 @@ optgroup {
 }
 .backends__filter-empty strong { color: var(--text-primary); font-size: var(--text-sm); }
 .backends__filter-empty span { max-width: 320px; font-size: var(--text-xs); }
-.backends__filter-empty + .backends__content { display: none; }
+.backends__filter-empty + .workspace-catalog-layout__content { display: none; }
 
 .backends--workspace .matrix th,
 .backends--workspace .matrix td { padding: var(--space-3); }
 .backends--workspace .cell { gap: var(--space-2); }
 
-.backends__content {
-  min-height: 0;
-  overflow: auto;
-  padding: var(--space-2) var(--panel-padding-inline) var(--space-6);
-}
-
-.backend-catalog {
+/* Shared catalog: sectioned card grid */
+.workspace-catalog {
   display: grid;
   gap: var(--space-6);
 }
 
-.backend-catalog__section {
+.workspace-catalog__section {
   display: grid;
   gap: var(--space-3);
 }
 
-.backend-catalog__heading {
+.workspace-catalog__heading {
   display: flex;
   align-items: end;
   justify-content: space-between;
   gap: var(--space-3);
 }
 
-.backend-catalog__heading h2 {
+.workspace-catalog__heading h2 {
   margin: 0;
   color: var(--text-primary);
   font-size: var(--text-lg);
   font-weight: var(--weight-semibold);
 }
 
-.backend-catalog__heading p {
+.workspace-catalog__heading p {
   margin: var(--space-1) 0 0;
   color: var(--text-tertiary);
   font-size: var(--text-sm);
 }
 
-.backend-catalog__heading > span {
+.workspace-catalog__heading > span {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
   white-space: nowrap;
 }
 
-.backend-catalog__grid {
+.workspace-catalog__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--space-3);
   align-items: start;
 }
 
-.backend-card {
+.workspace-card {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -11919,19 +11925,15 @@ optgroup {
   border-radius: var(--radius-md);
 }
 
-.backend-card__head,
-.backend-card__footer,
-.backend-card__actions {
+.workspace-card__head {
   display: flex;
   align-items: center;
-}
-
-.backend-card__head {
+  gap: var(--space-3);
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.backend-card__name {
+.workspace-card__name {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -11941,6 +11943,12 @@ optgroup {
   font-weight: var(--weight-semibold);
   line-height: var(--leading-snug);
   letter-spacing: var(--tracking-tight);
+}
+
+.backend-card__footer,
+.backend-card__actions {
+  display: flex;
+  align-items: center;
 }
 
 .backend-card__variants {
@@ -12080,9 +12088,9 @@ a.backend-card__version:focus-visible {
 }
 
 @media (max-width: 680px) {
-  .backends__content { padding: var(--space-2) var(--space-4) var(--space-5); }
-  .backend-catalog__grid { grid-template-columns: 1fr; }
-  .backend-catalog__heading { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
+  .workspace-catalog-layout__content { padding: var(--space-2) var(--space-4) var(--space-5); }
+  .workspace-catalog__grid { grid-template-columns: 1fr; }
+  .workspace-catalog__heading { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
   .backend-card__variant-head { gap: var(--space-2); }
   .backend-card__footer { align-items: flex-start; flex-direction: column; }
   .backend-card__actions { flex-wrap: wrap; }
@@ -12226,7 +12234,7 @@ a.backend-card__version:focus-visible {
   .workspace-nav__copy small { display: none; }
   .workspace-nav button { min-height: 44px; }
   .workspace-pane__header { padding-inline: var(--space-4); }
-  .backends__content, .backends--workspace .backends__head { padding-inline: var(--space-4); }
+  .workspace-catalog-layout__content, .backends--workspace .backends__head { padding-inline: var(--space-4); }
   .inspect-layout--embedded { grid-template-columns: 280px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .logs-workspace--embedded { grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 }
@@ -12234,51 +12242,51 @@ a.backend-card__version:focus-visible {
 @media (max-width: 768px) {
   .connect--workspace,
   .logs-workspace,
-  .backends--workspace {
+  .workspace-catalog-layout {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
   }
 
   .connect--workspace.workspace--rail-collapsed,
   .logs-workspace.workspace--rail-collapsed,
-  .backends--workspace.workspace--rail-collapsed {
+  .workspace-catalog-layout.workspace--rail-collapsed {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
   }
 
   .connect--workspace .workspace-rail,
   .logs-workspace .workspace-rail,
-  .backends--workspace .workspace-rail {
+  .workspace-catalog-layout .workspace-rail {
     border-right: 0;
     border-bottom: 1px solid var(--border-subtle);
   }
 
   .connect--workspace .workspace-rail__header,
   .logs-workspace .workspace-rail__header,
-  .backends--workspace .workspace-rail__header,
+  .workspace-catalog-layout .workspace-rail__header,
   .connect--workspace .workspace-rail__footer,
   .logs-workspace .workspace-rail__footer,
-  .backends--workspace .workspace-rail__footer,
+  .workspace-catalog-layout .workspace-rail__footer,
   .logs-workspace .workspace-rail__body { display: none; }
 
   .connect--workspace .workspace-nav,
-  .backends--workspace .workspace-filter-list {
+  .workspace-catalog-layout .workspace-filter-list {
     flex-direction: row;
     overflow-x: auto;
     padding: var(--space-2);
   }
 
   .connect--workspace .workspace-rail.is-collapsed > .workspace-nav,
-  .backends--workspace .workspace-rail.is-collapsed > .workspace-filter-list {
+  .workspace-catalog-layout .workspace-rail.is-collapsed > .workspace-filter-list {
     display: flex;
   }
 
   .connect--workspace .workspace-nav button,
-  .backends--workspace .workspace-filter-list__item { width: auto; min-width: 44px; grid-template-columns: 18px; }
+  .workspace-catalog-layout .workspace-filter-list__item { width: auto; min-width: 44px; grid-template-columns: 18px; }
   .connect--workspace .workspace-nav__copy,
   .connect--workspace .workspace-nav__chevron,
-  .backends--workspace .workspace-filter-list__label,
-  .backends--workspace .workspace-filter-list__count { display: none; }
+  .workspace-catalog-layout .workspace-filter-list__label,
+  .workspace-catalog-layout .workspace-filter-list__count { display: none; }
   .workspace-pane__header p { display: none; }
   .monitor-workspace,
   .monitor-workspace.workspace--rail-collapsed {
@@ -12312,10 +12320,14 @@ a.backend-card__version:focus-visible {
   .monitor-workspace .monitor-nav .workspace-nav__copy,
   .monitor-workspace .monitor-nav .workspace-nav__chevron { display: none; }
 
-  .backends--workspace .backends__main {
-    grid-template-rows: var(--workspace-header) auto auto auto;
-    align-content: start;
+  .workspace-catalog-layout__main {
     overflow-y: auto;
+  }
+
+  .workspace-catalog-layout__content {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
   }
 
   .backends--workspace .matrix {
@@ -12684,23 +12696,17 @@ a.backend-card__version:focus-visible {
   }
 
   .connect--workspace,
-  .apps-workspace,
   .monitor-workspace,
-  .backends--workspace {
+  .workspace-catalog-layout {
     position: relative;
   }
 
   .connect--workspace,
-  .apps-workspace,
   .monitor-workspace,
-  .backends--workspace {
+  .workspace-catalog-layout {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
   }
-
-
-  .apps__content { padding: var(--space-4); }
-
 
 
   .model-nav-rail .model-nav-rail__scroll {
