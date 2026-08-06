@@ -162,7 +162,7 @@ Two consequences worth knowing:
 
 ### macOS specifics
 
-macOS tests always run against an installed `.pkg`, whether or not Apple signing secrets are present — without them the installer is simply unsigned and notarization is skipped. There is no separate fork-PR test path, so a macOS test runs the same way everywhere. Use the `disable_macos_signing` input on a `workflow_dispatch` run to reproduce the unsigned path on demand.
+The macOS `.pkg` suites run against an installed package, whether or not Apple signing secrets are present (`Test Embeddable (macOS)` is separate — it tests the embeddable tarball) — without them the installer is simply unsigned and notarization is skipped. There is no separate fork-PR test path, so a macOS test runs the same way everywhere. Use the `disable_macos_signing` input on a `workflow_dispatch` run to reproduce the unsigned path on demand.
 
 ---
 

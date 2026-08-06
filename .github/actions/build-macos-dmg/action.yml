@@ -1,5 +1,5 @@
 name: 'Build macOS .dmg Package'
-description: 'Build Lemonade .dmg for macOS (signed and notarized via CMake notarize target)'
+description: 'Build the macOS .pkg, and notarize it when signing secrets are available'
 inputs:
   include-tauri:
     description: 'Whether to include the Tauri desktop app (full build)'
@@ -12,7 +12,7 @@ inputs:
     default: 'true'
 outputs:
   artifact-name:
-    description: 'The name of the generated .dmg file'
+    description: 'Filename of the generated .pkg'
     value: ${{ steps.build-dmg.outputs.artifact_name }}
 runs:
   using: "composite"

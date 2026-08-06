@@ -12,7 +12,7 @@ on:
         required: false
         type: string
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, labeled]
   merge_group:
   schedule:
     # Sunday at 17:20 UTC, staggered after the llama.cpp auto-update workflow.

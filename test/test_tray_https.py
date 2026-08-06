@@ -73,11 +73,15 @@ def run_test():
         server_thread.start()
 
         # Accept either a build tree or an installed package.
-        binary_path = os.environ.get("LEMONADE_TRAY_BINARY") or "./build/lemonade-tray"
+        override = os.environ.get("LEMONADE_TRAY_BINARY")
+        if override:
+            binary_path = override
+        else:
+            binary_path = "./build/lemonade-tray"
+            if not os.path.exists(binary_path):
+                binary_path = shutil.which("lemonade-tray") or binary_path
         if not os.path.exists(binary_path):
-            binary_path = shutil.which("lemonade-tray")
-        if not binary_path or not os.path.exists(binary_path):
-            print("lemonade-tray binary not found", file=sys.stderr)
+            print(f"lemonade-tray binary not found at {binary_path}", file=sys.stderr)
             sys.exit(1)
 
         runtime_dir = os.path.join(tmpdir, "runtime")

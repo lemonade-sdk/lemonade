@@ -10,7 +10,7 @@ on:
     tags:
       - '*'
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, labeled]
     branches:
       - main
   merge_group:
@@ -102,7 +102,9 @@ jobs:
 
       - name: Build binary package
         id: build_binary
-        if: github.event_name == 'merge_group'
+        # Also on a labelled PR: the label has to reproduce what the queue runs,
+        # and a source-only package compiles nothing.
+        if: github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
         uses: ./.github/actions/build-debian-package
         with:
           package-type: binary
@@ -110,14 +112,14 @@ jobs:
 
       - name: Build source package
         id: build_source
-        if: github.event_name != 'merge_group'
+        if: github.event_name != 'merge_group' && !contains(github.event.pull_request.labels.*.name, 'ci:distros')
         uses: ./.github/actions/build-debian-package
         with:
           package-type: source
           deb-version: ${{ steps.get_version.outputs.version }}
 
       - name: Upload Debian package
-        if: github.event_name == 'merge_group'
+        if: github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-${{ matrix.codename }}-deb
@@ -125,7 +127,7 @@ jobs:
           retention-days: 30
 
       - name: Upload source package
-        if: github.event_name != 'merge_group'
+        if: github.event_name != 'merge_group' && !contains(github.event.pull_request.labels.*.name, 'ci:distros')
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-${{ matrix.codename }}-source-package

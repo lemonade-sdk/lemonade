@@ -1,0 +1,78 @@
+name: 'Restart lemond (macOS)'
+description: >-
+  Stops the lemond that the .pkg postflight started via launchd and starts a
+  replacement owned by this job, so the server inherits the job environment.
+
+inputs:
+  bin-path:
+    description: 'Directory holding the installed lemond/lemonade binaries'
+    required: true
+  log-file:
+    description: 'Where to write lemond stdout/stderr'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Restart lemond
+      shell: bash
+      env:
+        BIN_PATH: ${{ inputs.bin-path }}
+        LOG_FILE: ${{ inputs.log-file }}
+      run: |
+        set -e
+        LOG_FILE="${LOG_FILE:-$RUNNER_TEMP/lemond.log}"
+
+        # launchd starts lemond as root, so stopping it needs sudo. KeepAlive
+        # is false in com.lemonade.server.plist, so it will not respawn.
+        sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
+        sudo pkill -f lemond 2>/dev/null || true
+
+        # bootout is asynchronous, so poll until the port is actually free.
+        # lemond refuses to start when 127.0.0.1:13305 is taken, and a stale
+        # instance would otherwise satisfy the health check below. sudo is
+        # required: lsof cannot see a root-owned socket otherwise.
+        for i in $(seq 1 30); do
+          sudo lsof -nP -iTCP:13305 -sTCP:LISTEN > /dev/null 2>&1 || break
+          sudo pkill -f lemond 2>/dev/null || true
+          sleep 2
+        done
+        if sudo lsof -nP -iTCP:13305 -sTCP:LISTEN > /dev/null 2>&1; then
+          echo "ERROR: port 13305 still held after 60s"
+          sudo lsof -nP -iTCP:13305 -sTCP:LISTEN || true
+          exit 1
+        fi
+
+        mkdir -p "$RUNNER_TEMP/xdg-runtime"
+        chmod 700 "$RUNNER_TEMP/xdg-runtime"
+        echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+        export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+
+        "$BIN_PATH/lemond" > "$LOG_FILE" 2>&1 &
+        LEMOND_PID=$!
+        disown "$LEMOND_PID"
+
+        # Check this process is still alive, not just that something answers on
+        # the port: a foreign lemond would otherwise pass the health check while
+        # the tests run against a server without this job's environment.
+        # Require both address families — lemond binds them separately and keeps
+        # serving if only one succeeds, and test/server_moonshine.py connects to
+        # 127.0.0.1 while the other suites use localhost (::1 first on macOS).
+        for i in $(seq 1 30); do
+          if ! kill -0 "$LEMOND_PID" 2>/dev/null; then
+            echo "ERROR: lemond exited during startup"
+            cat "$LOG_FILE" 2>/dev/null || true
+            exit 1
+          fi
+          if curl -sf http://127.0.0.1:13305/live > /dev/null 2>&1 \
+             && curl -sf "http://[::1]:13305/live" > /dev/null 2>&1; then
+            echo "Server listening on 127.0.0.1 and [::1] (PID $LEMOND_PID)"
+            exit 0
+          fi
+          echo "Waiting for server... ($i/30)"
+          sleep 2
+        done
+        echo "ERROR: Server did not bind both 127.0.0.1 and [::1] within 60 seconds"
+        cat "$LOG_FILE" 2>/dev/null || true
+        exit 1

@@ -5,11 +5,12 @@ on:
     branches: ["main", "release-v*"]
     tags:
       - v*
-  # `labeled`/`unlabeled` are here so the ci:macos and ci:distros escape hatches
-  # take effect immediately. Adding `types` replaces the defaults, so the three
-  # default activity types have to be listed explicitly.
+  # `labeled` is here so the ci:* escape hatches take effect without a push.
+  # Adding `types` replaces the defaults, so the three default activity types
+  # have to be listed explicitly. `unlabeled` is deliberately absent: removing
+  # a label only ever drops work, and including it would re-run everything.
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, labeled]
   merge_group:
   workflow_dispatch:
     inputs:
@@ -618,6 +619,9 @@ jobs:
           cmake --build --preset default --target cpp-ci-tests
           ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"
       - name: Upload .pkg package
+        # Two test jobs download this unconditionally; a unit-test failure above
+        # must not turn into a confusing "artifact not found" downstream.
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-macos-pkg
@@ -1601,65 +1605,13 @@ jobs:
       # lemond has to inherit GGML_METAL_NO_RESIDENCY, so start it here rather
       # than reusing the instance the .pkg postflight script started.
       - name: Start server with Metal environment
+        uses: ./.github/actions/restart-lemond-macos
+        with:
+          bin-path: ${{ steps.install-pkg.outputs.bin-path }}
+
+      - name: Set CLI binary path
         shell: bash
-        env:
-          BIN_PATH: ${{ steps.install-pkg.outputs.bin-path }}
-        run: |
-          set -e
-          # The .pkg postflight starts lemond via launchd as root. Stop it so
-          # this job owns the server and can give it GGML_METAL_NO_RESIDENCY,
-          # which a launchd-started instance does not inherit.
-          sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
-          sudo pkill -f lemond 2>/dev/null || true
-
-          # bootout is asynchronous, so poll until the port is actually free.
-          # lemond refuses to start when 127.0.0.1:13305 is taken, and a stale
-          # instance would otherwise satisfy the health check below.
-          for i in $(seq 1 30); do
-            lsof -nP -iTCP:13305 -sTCP:LISTEN > /dev/null 2>&1 || break
-            sudo pkill -f lemond 2>/dev/null || true
-            sleep 2
-          done
-          if lsof -nP -iTCP:13305 -sTCP:LISTEN > /dev/null 2>&1; then
-            echo "ERROR: port 13305 still held after 60s"
-            lsof -nP -iTCP:13305 -sTCP:LISTEN || true
-            exit 1
-          fi
-
-          mkdir -p "$RUNNER_TEMP/xdg-runtime"
-          chmod 700 "$RUNNER_TEMP/xdg-runtime"
-          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
-          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
-
-          echo "CLI_BINARY=$BIN_PATH/lemonade" >> "$GITHUB_ENV"
-
-          "$BIN_PATH/lemond" > "$RUNNER_TEMP/lemond.log" 2>&1 &
-          LEMOND_PID=$!
-          disown "$LEMOND_PID"
-
-          # Check this process is still alive, not just that something answers
-          # on the port: a foreign lemond would otherwise pass the health check
-          # while the tests run against a server without the Metal environment.
-          # Require both address families — lemond binds them separately and
-          # keeps serving if only one succeeds, and server_moonshine.py
-          # connects to 127.0.0.1 while the other suites use localhost (::1).
-          for i in $(seq 1 30); do
-            if ! kill -0 "$LEMOND_PID" 2>/dev/null; then
-              echo "ERROR: lemond exited during startup"
-              cat "$RUNNER_TEMP/lemond.log" 2>/dev/null || true
-              exit 1
-            fi
-            if curl -sf http://127.0.0.1:13305/live > /dev/null 2>&1 \
-               && curl -sf "http://[::1]:13305/live" > /dev/null 2>&1; then
-              echo "Server listening on 127.0.0.1 and [::1] (PID $LEMOND_PID)"
-              exit 0
-            fi
-            echo "Waiting for server... ($i/30)"
-            sleep 2
-          done
-          echo "ERROR: Server did not bind both 127.0.0.1 and [::1] within 60 seconds"
-          cat "$RUNNER_TEMP/lemond.log" 2>/dev/null || true
-          exit 1
+        run: echo "CLI_BINARY=${{ steps.install-pkg.outputs.bin-path }}/lemonade" >> $GITHUB_ENV
 
       - name: Setup Python and virtual environment
         id: setup
@@ -2065,7 +2017,7 @@ jobs:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')
     runs-on: macos-latest
     needs: build-lemonade-macos-dmg
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -2089,6 +2041,10 @@ jobs:
           version: ${{ env.LEMONADE_VERSION }}
           download-artifact: 'false'
 
+      - name: Set HF_HOME environment variable
+        shell: bash
+        run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+
       - name: Stop the tray agent started by the .pkg
         # postinst-full-mac bootstraps com.lemonade.tray into the GUI domain and
         # the tray is single-instance, so test_tray_https.py cannot start its own
@@ -2104,11 +2060,17 @@ jobs:
             sleep 1
           done
 
+      # The launchd-started server inherits only the plist environment, so it
+      # would not see this job's GGML_METAL_NO_RESIDENCY or HF_HOME.
+      - name: Start server with the job environment
+        uses: ./.github/actions/restart-lemond-macos
+        with:
+          bin-path: ${{ steps.install-pkg.outputs.bin-path }}
+
       - name: Set environment
         shell: bash
         run: |
           set -e
-          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
           echo "VENV_PYTHON=.venv/bin/python" >> $GITHUB_ENV
           echo "CLI_BINARY=${{ steps.install-pkg.outputs.bin-path }}/lemonade" >> $GITHUB_ENV
           echo "LEMOND_BINARY=${{ steps.install-pkg.outputs.bin-path }}/lemond" >> $GITHUB_ENV
