@@ -3,21 +3,24 @@
 // Replays every golden case under test/conformance/routing/ through the real
 // routing engine and asserts the emitted Decision (via the production
 // route_decision_to_json serializer) equals the recorded expectation: same
-// fields, same values, no tolerance. Any drift is a back-compat violation.
+// fields, same values. Any drift is a back-compat violation.
 //
-// Deterministic corpus only: keywords_any / regex / min_chars / metadata and
-// first-match / fail-open behavior reproduce exactly with no model backend, so
-// an empty ClassifierServices is sufficient.
+// Deterministic cases need no backend. Model-backed cases bind the engine to
+// FakeClassifierServices and declare the answers it returns, so a case tests
+// the engine's threshold and selection logic rather than a real model's floats.
 
+#include "fake_classifier_services.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
 #include "lemon/routing_policy_parser.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -35,6 +38,12 @@ using lemon::Decision;
 using lemon::RoutePolicy;
 using lemon::RoutingPolicyEngine;
 using lemon::json;
+
+// Every Decision field is compared exactly except a trace score, which is
+// computed (dot product, square roots, a division) and so can differ in its last
+// bits between CI's x86 and ARM runners. The margin is far above that noise and
+// far below any score difference a case could care about.
+static constexpr double kScoreTolerance = 1e-12;
 
 static int g_failures = 0;
 
@@ -143,6 +152,133 @@ static std::vector<fs::path> find_case_dirs(const fs::path& root) {
     return dirs;
 }
 
+static bool parse_vector(const json& value, std::vector<float>& out) {
+    if (!value.is_array()) return false;
+    out.clear();
+    for (const auto& item : value) {
+        if (!item.is_number()) return false;
+        out.push_back(item.get<float>());
+    }
+    return true;
+}
+
+// A case's stub answers. Every embedding is keyed by the text it is returned
+// for, including the routing input's own text. A null answer makes that service
+// fail, so the classifier's on_error applies.
+//
+//   {"embed":          {"<model>": {"<text>": [numbers] | null}},
+//    "run_classifier": {"<model>": {"<label>": number} | null},
+//    "chat":           {"<model>": "<reply>" | null}}
+static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, const json& spec,
+                               const std::string& where) {
+    if (!spec.is_object()) {
+        check(where + ": is an object", false);
+        return false;
+    }
+    bool ok = true;
+    for (auto service = spec.begin(); service != spec.end(); ++service) {
+        const std::string& name = service.key();
+        if (name != "embed" && name != "run_classifier" && name != "chat") {
+            check(where + ": unknown service '" + name + "'", false);
+            ok = false;
+            continue;
+        }
+        if (!service.value().is_object()) {
+            check(where + "." + name + ": is a model -> answer map", false);
+            ok = false;
+            continue;
+        }
+        for (auto model = service.value().begin(); model != service.value().end(); ++model) {
+            const json& answer = model.value();
+            const std::string label = where + "." + name + "." + model.key();
+            if (name == "embed") {
+                if (!answer.is_object()) {
+                    check(label + ": is a text -> vector map", false);
+                    ok = false;
+                    continue;
+                }
+                for (auto text = answer.begin(); text != answer.end(); ++text) {
+                    std::vector<float> vec;
+                    if (text.value().is_null()) {
+                        fake.set_embedding(model.key(), text.key(), std::vector<float>{});
+                    } else if (parse_vector(text.value(), vec)) {
+                        fake.set_embedding(model.key(), text.key(), std::move(vec));
+                    } else {
+                        check(label + "." + text.key() + ": is a number array or null", false);
+                        ok = false;
+                    }
+                }
+            } else if (name == "run_classifier") {
+                if (answer.is_null()) {
+                    fake.set_classifier_failure(model.key());
+                    continue;
+                }
+                std::map<std::string, double> scores;
+                bool scores_ok = answer.is_object();
+                for (auto score = answer.begin(); scores_ok && score != answer.end(); ++score) {
+                    if (!score.value().is_number()) {
+                        scores_ok = false;
+                        break;
+                    }
+                    scores[score.key()] = score.value().get<double>();
+                }
+                if (!scores_ok) {
+                    check(label + ": is a label -> number map or null", false);
+                    ok = false;
+                    continue;
+                }
+                fake.set_classifier_scores(model.key(), std::move(scores));
+            } else {
+                if (answer.is_null()) {
+                    fake.set_chat_failure(model.key());
+                } else if (answer.is_string()) {
+                    fake.set_chat_reply(model.key(), answer.get<std::string>());
+                } else {
+                    check(label + ": is a string or null", false);
+                    ok = false;
+                }
+            }
+        }
+    }
+    return ok;
+}
+
+static bool trace_entries_match(const json& expected, const json& produced) {
+    if (!expected.is_object() || !produced.is_object()) return expected == produced;
+    json expected_rest = expected;
+    json produced_rest = produced;
+    expected_rest.erase("score");
+    produced_rest.erase("score");
+    if (expected_rest != produced_rest) return false;
+    if (expected.contains("score") != produced.contains("score")) return false;
+    if (!expected.contains("score")) return true;
+    if (!expected["score"].is_number() || !produced["score"].is_number()) {
+        return expected["score"] == produced["score"];
+    }
+    return std::fabs(expected["score"].get<double>() - produced["score"].get<double>()) <=
+           kScoreTolerance;
+}
+
+static bool decisions_match(const json& expected, const json& produced) {
+    json expected_rest = expected;
+    json produced_rest = produced;
+    expected_rest.erase("trace");
+    produced_rest.erase("trace");
+    if (expected_rest != produced_rest) return false;
+    if (expected.contains("trace") != produced.contains("trace")) return false;
+    if (!expected.contains("trace")) return true;
+    const json& expected_trace = expected["trace"];
+    const json& produced_trace = produced["trace"];
+    if (!expected_trace.is_array() || !produced_trace.is_array() ||
+        expected_trace.size() != produced_trace.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < expected_trace.size(); ++i) {
+        if (!trace_entries_match(expected_trace[i], produced_trace[i])) return false;
+    }
+    return true;
+}
+
 static void report_mismatch(const json& expected, const json& produced) {
     std::printf("  expected: %s\n", expected.dump().c_str());
     std::printf("  produced: %s\n", produced.dump().c_str());
@@ -157,32 +293,102 @@ static void report_mismatch(const json& expected, const json& produced) {
     }
 }
 
-static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
-    const std::string rel = rel_label(case_dir, root);
-
-    RoutePolicy policy;
+// The case dir name is the schema major the policy must declare, so a policy
+// filed under the wrong version cannot pass unnoticed.
+static std::optional<RoutePolicy> load_case_policy(const fs::path& case_dir,
+                                                   const std::string& rel) {
     try {
         const json policy_json = load_json_file(case_dir / "policy.json");
         const std::string directory_version = case_dir.parent_path().filename().string();
         if (!policy_json.contains("version") || !policy_json["version"].is_string() ||
             policy_json["version"].get<std::string>() != directory_version) {
             check(rel + ": policy version matches schema-major directory", false);
-            return 0;
+            return std::nullopt;
         }
-        policy = lemon::parse_route_policy_collection(policy_json);
+        return lemon::parse_route_policy_collection(policy_json);
     } catch (const std::exception& e) {
         check(rel + ": policy.json parses", false);
         std::printf("  %s\n", e.what());
-        return 0;
+        return std::nullopt;
     }
-    std::optional<RoutingPolicyEngine> engine;
+}
+
+// A policy can parse and still fail to compile (bad nesting, unresolved
+// classifier ref), so rule compilation gets its own guard.
+static std::optional<RoutingPolicyEngine> compile_engine(RoutePolicy policy,
+                                                         lemon::ClassifierServices services,
+                                                         const std::string& rel) {
     try {
-        engine.emplace(std::move(policy), lemon::ClassifierServices{});
+        return RoutingPolicyEngine(std::move(policy), std::move(services));
     } catch (const std::exception& e) {
-        check(rel + ": policy compiles", false);
+        check(rel + ": policy engine compiles", false);
         std::printf("  %s\n", e.what());
-        return 0;
+        return std::nullopt;
     }
+}
+
+// One case per non-blank line. A row must be an object carrying a request and a
+// decision, hold no key outside the allowlist, and have a name unique within the
+// file: the coverage matrix maps one behavior to one named case.
+static std::optional<json> read_case_row(const std::string& line, const std::string& rel,
+                                         int line_no, std::set<std::string>& seen_names) {
+    static const std::set<std::string> kAllowedRowKeys = {"name", "note", "request", "decision",
+                                                          "services"};
+    const std::string where = rel + ": cases.jsonl line " + std::to_string(line_no);
+
+    json row;
+    try {
+        row = json::parse(line);
+    } catch (const std::exception& e) {
+        check(where + " parses", false);
+        std::printf("  %s\n", e.what());
+        return std::nullopt;
+    }
+    if (!row.is_object() || !row.contains("request") || !row.contains("decision") ||
+        !row["request"].is_object() || !row["decision"].is_object()) {
+        check(where + " has object request+decision", false);
+        return std::nullopt;
+    }
+    bool keys_ok = true;
+    for (auto it = row.begin(); it != row.end(); ++it) {
+        if (kAllowedRowKeys.count(it.key()) == 0) {
+            check(where + " unknown key '" + it.key() + "'", false);
+            keys_ok = false;
+        }
+    }
+    if (!keys_ok) {
+        return std::nullopt;
+    }
+    const std::string case_name = row.value("name", "");
+    if (case_name.empty()) {
+        check(where + " has a name", false);
+        return std::nullopt;
+    }
+    if (!seen_names.insert(case_name).second) {
+        check(where + " duplicate case name '" + case_name + "'", false);
+        return std::nullopt;
+    }
+    return row;
+}
+
+static void run_case(const RoutingPolicyEngine& engine, const lemon::RouteContext& request_context,
+                     const json& row, const std::string& name) {
+    const Decision decision =
+        engine.route(request_context, row.at("request").value("route_trace", false));
+
+    const json produced = lemon::route_decision_to_json(decision);
+    const json& expected = row.at("decision");
+    const bool ok = decisions_match(expected, produced);
+    check(name, ok);
+    if (!ok) report_mismatch(expected, produced);
+}
+
+static bool is_blank(const std::string& line) {
+    return line.find_first_not_of(" \t\r\n") == std::string::npos;
+}
+
+static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
+    const std::string rel = rel_label(case_dir, root);
 
     std::ifstream cases(case_dir / "cases.jsonl");
     if (!cases) {
@@ -191,63 +397,41 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
     }
 
     int executed = 0;
-    std::string line;
     int line_no = 0;
+    std::string line;
     std::set<std::string> seen_names;
-    static const std::set<std::string> kAllowedRowKeys = {"name", "note", "request", "decision"};
     while (std::getline(cases, line)) {
         ++line_no;
-        if (line.find_first_not_of(" \t\r\n") == std::string::npos) {
+        if (is_blank(line)) continue;
+
+        std::optional<json> row = read_case_row(line, rel, line_no, seen_names);
+        if (!row) continue;
+
+        const std::string name = rel + "/" + row->at("name").get<std::string>();
+        const json& request = row->at("request");
+        const lemon::RouteContext request_context =
+            lemon::build_route_context(request, request.value("model", ""));
+
+        // Everything per case is fresh: a fake holding only this case's stub
+        // answers, and a new engine. A semantic_similarity classifier caches its
+        // reference-phrase embeddings on the instance (classifiers are
+        // shared_ptr), so sharing one engine across the file would pin every case
+        // to the first case's phrase vectors; a fresh engine embeds each case's
+        // own phrases. The fake is declared before the engine so it outlives the
+        // services make() binds to it.
+        lemon::testing::FakeClassifierServices fake;
+        if (row->contains("services") &&
+            !apply_row_services(fake, row->at("services"), name + ".services")) {
             continue;
-        }
-        json row;
-        try {
-            row = json::parse(line);
-        } catch (const std::exception& e) {
-            check(rel + ": cases.jsonl line " + std::to_string(line_no) + " parses", false);
-            std::printf("  %s\n", e.what());
-            continue;
-        }
-        if (!row.is_object() || !row.contains("request") || !row.contains("decision") ||
-            !row["request"].is_object() || !row["decision"].is_object()) {
-            check(rel + ": cases.jsonl line " + std::to_string(line_no) +
-                      " has object request+decision",
-                  false);
-            continue;
-        }
-        for (auto it = row.begin(); it != row.end(); ++it) {
-            if (kAllowedRowKeys.count(it.key()) == 0) {
-                check(rel + ": cases.jsonl line " + std::to_string(line_no) +
-                          " unknown key '" + it.key() + "'",
-                      false);
-            }
         }
 
-        const std::string case_name = row.value("name", "");
-        if (case_name.empty()) {
-            check(rel + ": cases.jsonl line " + std::to_string(line_no) + " has a name", false);
-            continue;
-        }
-        if (!seen_names.insert(case_name).second) {
-            check(rel + ": cases.jsonl line " + std::to_string(line_no) +
-                      " duplicate case name '" + case_name + "'",
-                  false);
-            continue;
-        }
-        const std::string name = rel + "/" + case_name;
+        std::optional<RoutePolicy> policy = load_case_policy(case_dir, rel);
+        if (!policy) return executed;
+        std::optional<RoutingPolicyEngine> engine =
+            compile_engine(std::move(*policy), fake.make(), rel);
+        if (!engine) return executed;
 
-        const json& request = row.at("request");
-        const bool want_trace = request.value("route_trace", false);
-        Decision decision = engine->route(
-            lemon::build_route_context(request, request.value("model", "")), want_trace);
-        const json produced = lemon::route_decision_to_json(decision);
-        const json& expected = row.at("decision");
-
-        const bool ok = produced == expected;
-        check(name, ok);
-        if (!ok) {
-            report_mismatch(expected, produced);
-        }
+        run_case(*engine, request_context, *row, name);
         ++executed;
     }
 
