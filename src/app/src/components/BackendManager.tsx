@@ -782,7 +782,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             const tuning = backendTunings[cellKey] || null;
             const name = `${engineName} · ${backend}`;
             const version = cleanString(info.version);
-            const releaseUrl = releaseLink(info);
+            const releaseUrl =
+              info.state === 'update_required' || info.state === 'update_available'
+                ? ''
+                : releaseLink(info);
             const variantLabel = BACKEND_LABELS[backend] || backend;
 
             return (
