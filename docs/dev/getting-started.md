@@ -792,7 +792,7 @@ The tray application provides a system tray icon for desktop users:
 ### Logging and Console Output
 
 When running `LemonadeServer.exe` or `lemond`:
-- **Log File:** Direct runs write logs to a persistent log file (default: `%TEMP%\lemonade-server.log` on Windows). When `lemond` runs as the systemd service, logs go to the journal instead.
+- **Log File:** Direct runs write logs to a persistent log file (default: `%TEMP%\lemonade-server.log` on Windows, `/run/user/<uid>/lemonade/lemonade-server.log` on Linux) with automatic log rotation (10 MB file cap, 5 rotated backups `.1` through `.5`). File logging is automatically disabled when running under Linux `systemd` or macOS `launchd` services where OS service managers handle logging natively.
 - **Logs UI:** Click "Show Logs" in the tray or use `lemonade logs` to open the desktop app's logs view
   - Connects to the server's WebSocket log stream
   - Shows retained recent log history plus live entries

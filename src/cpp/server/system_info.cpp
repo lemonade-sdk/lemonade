@@ -4128,23 +4128,34 @@ bool SystemInfo::is_running_under_systemd() {
     }
 
 #ifdef HAVE_SYSTEMD
-    // Use systemd journal only when actually running as lemond.service.
-    // sd_pid_get_unit() reads the process's cgroup assignment (not environment variables),
-    // so it cannot give false positives from inherited env vars like JOURNAL_STREAM or
-    // INVOCATION_ID, both of which are inherited by all child processes in a systemd session.
+    // Check both system-level unit and user-level unit (e.g. systemctl --user start lemond.service).
     char* unit_name = nullptr;
-    if (sd_pid_get_unit(0, &unit_name) >= 0) {
+    if (sd_pid_get_unit(0, &unit_name) >= 0 || sd_pid_get_user_unit(0, &unit_name) >= 0) {
         const char* service_name_env = std::getenv("LEMONADE_SYSTEMD_UNIT");
         const char* service_name = service_name_env ? service_name_env : LEMONADE_SYSTEMD_UNIT_NAME;
         bool is_service = (strcmp(unit_name, service_name) == 0);
         free(unit_name);
-        return is_service;
+        if (is_service) {
+            return true;
+        }
     }
 #endif
 
     const char* journal_stream = std::getenv("JOURNAL_STREAM");
     const char* invocation_id = std::getenv("INVOCATION_ID");
     return (journal_stream || invocation_id) && !isatty(STDOUT_FILENO);
+#endif
+}
+
+bool SystemInfo::is_running_under_launchd() {
+#ifdef __APPLE__
+    const char* xpc_service = std::getenv("XPC_SERVICE_NAME");
+    if (xpc_service && xpc_service[0] != '\0') {
+        return true;
+    }
+    return (getppid() == 1) && !isatty(STDOUT_FILENO);
+#else
+    return false;
 #endif
 }
 
