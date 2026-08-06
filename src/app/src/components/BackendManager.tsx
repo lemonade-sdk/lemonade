@@ -84,6 +84,28 @@ const RECIPE_LABELS: Record<string, string> = {
   trellis:         'TRELLIS.2',
 };
 
+const ENGINE_LOGO_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/engines/';
+
+/* plate 'dark' matches logos with a baked-in dark background fill; showName
+ * accompanies icon-only logos that don't spell out the engine name.
+ * stable_diffusion_cpp.png is intentionally unmapped: it's a near-square
+ * collage that reads badly at banner height. */
+type EngineLogo = { file: string; plate?: 'dark'; showName?: boolean };
+
+const ENGINE_LOGOS: Record<string, EngineLogo> = {
+  llamacpp:       { file: 'llama_cpp.png' },
+  onnxruntime:    { file: 'onnx_runtime.png' },
+  whispercpp:     { file: 'whisper_cpp.png', plate: 'dark' },
+  moonshine:      { file: 'moonshine.png', showName: true },
+  kokoro:         { file: 'kokoros.png' },
+  flm:            { file: 'fastflowlm.png' },
+  'ryzenai-llm':  { file: 'ryzen_ai_sw.png', plate: 'dark' },
+  vllm:           { file: 'vllm.png' },
+  acestep:        { file: 'ace_step.png', plate: 'dark' },
+  openmoss:       { file: 'openmoss.png' },
+  trellis:        { file: 'trellis.png' },
+};
+
 /** User-facing labels for backend variants */
 const BACKEND_LABELS: Record<string, string> = {
   cpu:      'CPU',
@@ -1010,11 +1032,29 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const renderBackendCard = useCallback(({ recipe, variants }: BackendCatalogEntry) => {
     const engineName = RECIPE_LABELS[recipe] || recipe;
     const supportsArgs = backendSupportsArgs(recipe);
+    const logo = ENGINE_LOGOS[recipe];
 
     return (
       <article className="workspace-card backend-card" key={recipe} data-recipe={recipe}>
         <div className="workspace-card__head">
-          <h3 className="workspace-card__name">{engineName}</h3>
+          <h3 className="sr-only">{engineName}</h3>
+          <div
+            className={`backend-card__logo${logo?.plate === 'dark' ? ' backend-card__logo--dark' : ''}${logo && !logo.showName ? ' backend-card__logo--image-only' : ''}`}
+            aria-hidden="true"
+          >
+            {logo && (
+              <img
+                src={`${ENGINE_LOGO_BASE}${logo.file}`}
+                alt=""
+                loading="lazy"
+                onError={event => {
+                  event.currentTarget.style.display = 'none';
+                  event.currentTarget.parentElement!.className = 'backend-card__logo';
+                }}
+              />
+            )}
+            <span className="backend-card__logo-name">{engineName}</span>
+          </div>
         </div>
 
         <div className="backend-card__variants">

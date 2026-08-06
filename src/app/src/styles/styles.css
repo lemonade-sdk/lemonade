@@ -11945,6 +11945,43 @@ optgroup {
   letter-spacing: var(--tracking-tight);
 }
 
+.backend-card__logo {
+  flex: 1;
+  height: 48px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.backend-card__logo--dark {
+  background: #000;
+}
+
+.backend-card__logo img {
+  max-width: 100%;
+  max-height: 30px;
+  object-fit: contain;
+}
+
+.backend-card__logo-name {
+  overflow: hidden;
+  color: #1c1c1c;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backend-card__logo--dark .backend-card__logo-name { color: #fff; }
+.backend-card__logo--image-only .backend-card__logo-name { display: none; }
+
 .backend-card__footer,
 .backend-card__actions {
   display: flex;
