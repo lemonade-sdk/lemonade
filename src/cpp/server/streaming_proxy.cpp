@@ -101,11 +101,23 @@ void StreamingProxy::forward_sse_stream(
         }
     };
 
+    int backend_status = 200;
+    std::string error_body;
+    static constexpr size_t max_error_body = 64 * 1024;
+
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
         [&sink, &line_buffer, &has_done_marker, &has_first_token,
-         &time_to_first_token, &start_time, &on_chunk, &process_line](const char* data, size_t length) {
+         &time_to_first_token, &start_time, &on_chunk, &process_line,
+         &backend_status, &error_body](const char* data, size_t length) {
+            if (backend_status != 200) {
+                if (error_body.size() < max_error_body) {
+                    error_body.append(data, std::min(length, max_error_body - error_body.size()));
+                }
+                return true;
+            }
+
             if (on_chunk) {
                 on_chunk();
             }
@@ -132,7 +144,7 @@ void StreamingProxy::forward_sse_stream(
         },
         {},
         timeout_seconds,
-        nullptr,
+        [&backend_status](int status) { backend_status = status; },
         utils::HttpSecurityPolicy::TrustedLoopback
     );
 
@@ -161,10 +173,14 @@ void StreamingProxy::forward_sse_stream(
         }
     }
 
-    if (result.status_code != 200) {
+    if (result.status_code != 200 || backend_status != 200) {
         stream_error = true;
-        LOG(ERROR, "StreamingProxy") << "Backend returned error: " << result.status_code << std::endl;
-        telemetry.error_message = "Backend returned error status code: " + std::to_string(result.status_code);
+        const int status = backend_status != 200 ? backend_status : result.status_code;
+        LOG(ERROR, "StreamingProxy") << "SSE stream failed with error " << status
+                                     << (error_body.empty() ? "" : ": " + error_body) << std::endl;
+        telemetry.error_message = "SSE stream failed with error status code: " + std::to_string(status);
+        throw std::runtime_error("Backend returned error status code: " + std::to_string(status) +
+                                 (error_body.empty() ? "" : " - " + error_body));
     }
 
     if (!stream_error) {
