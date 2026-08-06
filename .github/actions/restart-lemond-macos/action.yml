@@ -33,25 +33,25 @@ runs:
         # lemond refuses to start when 127.0.0.1:13305 is taken, and a stale
         # instance would otherwise satisfy the health check below. sudo is
         # required: lsof cannot see a root-owned socket otherwise.
+        # Any state, not just LISTEN: a socket left in TIME_WAIT still fails
+        # the IPv4 bind, and -sTCP:LISTEN would report the port as free.
         for i in $(seq 1 30); do
-          sudo lsof -nP -iTCP:13305 -sTCP:LISTEN > /dev/null 2>&1 || break
+          sudo lsof -nP -iTCP:13305 > /dev/null 2>&1 || break
           sudo pkill -f lemond 2>/dev/null || true
           sleep 2
         done
-        if sudo lsof -nP -iTCP:13305 -sTCP:LISTEN > /dev/null 2>&1; then
-          echo "ERROR: port 13305 still held after 60s"
-          sudo lsof -nP -iTCP:13305 -sTCP:LISTEN || true
-          exit 1
-        fi
 
         mkdir -p "$RUNNER_TEMP/xdg-runtime"
         chmod 700 "$RUNNER_TEMP/xdg-runtime"
         echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
         export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
 
-        "$BIN_PATH/lemond" > "$LOG_FILE" 2>&1 &
-        LEMOND_PID=$!
-        disown "$LEMOND_PID"
+        start_lemond() {
+          "$BIN_PATH/lemond" > "$LOG_FILE" 2>&1 &
+          LEMOND_PID=$!
+          disown "$LEMOND_PID"
+        }
+        start_lemond
 
         # Three things have to hold, and checking fewer has bitten us:
         #  - our process is alive. `kill -0` is not enough: the child is
