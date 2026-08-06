@@ -16,6 +16,7 @@
 #include <map>
 #include <optional>
 #include <regex>
+#include <set>
 #include <thread>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
@@ -482,7 +483,7 @@ std::string BackendManager::resolve_rocm_asset_version(const std::string& repo,
         return "";
     }
 
-    std::string discovered;
+    std::set<std::string> discovered_versions;
     try {
         auto body = json::parse(resp.body);
         static const std::regex rocm_version_re(R"(-rocm-([0-9]+\.[0-9]+)-)");
@@ -490,8 +491,7 @@ std::string BackendManager::resolve_rocm_asset_version(const std::string& repo,
             std::string name = asset.value("name", "");
             std::smatch match;
             if (std::regex_search(name, match, rocm_version_re)) {
-                discovered = match[1].str();
-                break;
+                discovered_versions.insert(match[1].str());
             }
         }
     } catch (const std::exception& e) {
@@ -500,9 +500,24 @@ std::string BackendManager::resolve_rocm_asset_version(const std::string& repo,
         return "";
     }
 
-    if (discovered.empty()) {
+    if (discovered_versions.empty()) {
         LOG(WARNING, "BackendManager") << "No ROCm-versioned asset found for " << repo
                                        << "@" << tag << std::endl;
+        return "";
+    }
+
+    const std::string preferred = runtime_version_major_minor(
+        resolve_therock_runtime_version(backend_versions_, ""));
+    std::string discovered;
+    if (discovered_versions.count(preferred) != 0) {
+        discovered = preferred;
+    } else if (discovered_versions.size() == 1) {
+        discovered = *discovered_versions.begin();
+    } else {
+        LOG(WARNING, "BackendManager")
+            << "Release " << repo << "@" << tag
+            << " has multiple ROCm asset versions and none match the pinned TheRock "
+            << preferred << "; refusing to choose by GitHub asset order" << std::endl;
         return "";
     }
 
@@ -611,12 +626,11 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string resolved_version = resolve_user_version(
         recipe, resolved_backend, pinned, pinned_params.repo);
 
-    // Only llamacpp's rocm-stable filename embeds a ROCm/TheRock version with
-    // exactly one candidate asset per release (unambiguous to discover). Not
-    // sd-cpp: its releases can ship more than one ROCm-versioned asset at once
-    // (observed "-rocm-7.1.1-" and "-rocm-7.13.0-" in the same release,
-    // presumably per GPU generation), so picking the first match could
-    // silently pick the wrong one — left as a follow-up needing arch-aware
+    // Only llamacpp's rocm-stable filename embeds a ROCm/TheRock version using
+    // release-wide runtime variants. When a release publishes more than one,
+    // resolve_rocm_asset_version prefers the statically pinned TheRock version
+    // rather than depending on GitHub's asset order. sd-cpp remains excluded:
+    // its ROCm variants can differ by GPU generation and require arch-aware
     // disambiguation. Other rocm-stable recipes don't read therock.version.
     const bool uses_therock_version =
         resolved_backend == "rocm-stable" && recipe == "llamacpp";
