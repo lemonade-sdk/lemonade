@@ -454,7 +454,7 @@ jobs:
           foreach ($process in $staleProcesses) {
             Write-Host "Stopping stale $($process.Name) PID $($process.ProcessId)." `
               -ForegroundColor Yellow
-            & taskkill.exe /PID $process.ProcessId /T /F 2>$null | Out-Null
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
           }
           if ($staleProcesses.Count -gt 0) {
             Start-Sleep -Seconds 1
@@ -601,14 +601,14 @@ jobs:
               }
   
               if (-not $proc.HasExited) {
-                & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
                 $null = $proc.WaitForExit(5000)
               }
   
               # Catch a llama-server orphan even if its lemond parent exited first.
               $orphans = @(Get-ValidationLlamaServers)
               foreach ($orphan in $orphans) {
-                & taskkill.exe /PID $orphan.ProcessId /T /F 2>$null | Out-Null
+                Stop-Process -Id $orphan.ProcessId -Force -ErrorAction SilentlyContinue
               }
               if ($orphans.Count -gt 0) { Start-Sleep -Seconds 1 }
   
