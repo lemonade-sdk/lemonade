@@ -167,10 +167,16 @@ const AppsView: React.FC<AppsViewProps> = ({
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const paneTitle = activeGroup ? activeGroup.label : 'Apps Marketplace';
-  const paneSubtitle = activeGroup
-    ? `${appCountLabel(activeGroup.apps.length)} in ${activeGroup.label}.`
-    : 'Lemonade works best as the inference server for applications. Try out this curated list of apps!';
+  const paneTitle = 'Apps Marketplace';
+  const paneSubtitle = 'Lemonade works best as the inference server for applications. Try out this curated list of apps!';
+
+  const showFeatured = !activeGroup && featuredApps.length > 0;
+  const visibleGroups = (activeGroup ? [activeGroup] : categoryGroups)
+    .map(group => ({
+      ...group,
+      apps: showFeatured ? group.apps.filter(app => !featuredApps.includes(app)) : group.apps,
+    }))
+    .filter(group => group.apps.length > 0);
 
   const renderAppCard = (app: MarketplaceApp) => (
     <article key={app.id || app.name} className="workspace-card app-card">
@@ -223,27 +229,19 @@ const AppsView: React.FC<AppsViewProps> = ({
         <div className="apps__error" role="alert">Apps unavailable: {marketplaceError}</div>
       ) : (
         <div className="workspace-catalog" aria-label={`${paneTitle} directory`}>
-          {activeGroup ? (
-            <WorkspaceCatalogSection>
-              {activeGroup.apps.map(renderAppCard)}
+          {showFeatured && (
+            <WorkspaceCatalogSection
+              title="Featured"
+              description="Picks from the Lemonade team."
+            >
+              {featuredApps.map(renderAppCard)}
             </WorkspaceCatalogSection>
-          ) : (
-            <>
-              {featuredApps.length > 0 && (
-                <WorkspaceCatalogSection
-                  title="Featured"
-                  description="Picks from the Lemonade team."
-                >
-                  {featuredApps.map(renderAppCard)}
-                </WorkspaceCatalogSection>
-              )}
-              {categoryGroups.map(group => (
-                <WorkspaceCatalogSection key={group.key} title={group.label}>
-                  {group.apps.map(renderAppCard)}
-                </WorkspaceCatalogSection>
-              ))}
-            </>
           )}
+          {visibleGroups.map(group => (
+            <WorkspaceCatalogSection key={group.key} title={group.label}>
+              {group.apps.map(renderAppCard)}
+            </WorkspaceCatalogSection>
+          ))}
           {marketplaceApps.length === 0 && (
             <div className="apps__empty">
               No apps are available yet.

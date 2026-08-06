@@ -88,8 +88,9 @@ const ENGINE_LOGO_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/assets/
 
 /* plate 'dark' matches logos with a baked-in dark background fill; showName
  * accompanies icon-only logos that don't spell out the engine name.
- * stable_diffusion_cpp.png is intentionally unmapped: it's a near-square
- * collage that reads badly at banner height. */
+ * stable_diffusion_cpp.png (near-square collage) and ryzen_ai_sw.png
+ * (gradient badge) are intentionally unmapped: they read badly at banner
+ * height, so those engines get the text plate instead. */
 type EngineLogo = { file: string; plate?: 'dark'; showName?: boolean };
 
 const ENGINE_LOGOS: Record<string, EngineLogo> = {
@@ -99,7 +100,6 @@ const ENGINE_LOGOS: Record<string, EngineLogo> = {
   moonshine:      { file: 'moonshine.png', showName: true },
   kokoro:         { file: 'kokoros.png' },
   flm:            { file: 'fastflowlm.png' },
-  'ryzenai-llm':  { file: 'ryzen_ai_sw.png', plate: 'dark' },
   vllm:           { file: 'vllm.png' },
   acestep:        { file: 'ace_step.png', plate: 'dark' },
   openmoss:       { file: 'openmoss.png' },
