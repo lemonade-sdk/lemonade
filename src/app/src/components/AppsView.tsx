@@ -68,6 +68,40 @@ type CategoryGroup = {
   apps: MarketplaceApp[];
 };
 
+function collectCategoryGroups(
+  apps: MarketplaceApp[],
+  categoriesOf: (app: MarketplaceApp) => string[],
+  labelByCategory: Map<string, string>,
+  feedOrder: Map<string, number>,
+): CategoryGroup[] {
+  const groups = new Map<string, CategoryGroup>();
+  apps.forEach(app => {
+    const rawCategories = categoriesOf(app).map(category => category.trim());
+    const seenKeys = new Set<string>();
+    (rawCategories.length ? rawCategories : ['']).forEach(raw => {
+      const key = raw ? normalizedCategory(raw) : 'other';
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+      let group = groups.get(key);
+      if (!group) {
+        group = { key, label: raw ? labelByCategory.get(key) ?? categoryLabel(raw) : 'Other', apps: [] };
+        groups.set(key, group);
+      }
+      group.apps.push(app);
+    });
+  });
+  return Array.from(groups.values())
+    .map(group => ({ ...group, apps: [...group.apps].sort((a, b) => a.name.localeCompare(b.name)) }))
+    .sort((left, right) => {
+      const leftOrder = feedOrder.get(left.key);
+      const rightOrder = feedOrder.get(right.key);
+      if (leftOrder !== undefined && rightOrder !== undefined) return leftOrder - rightOrder;
+      if (leftOrder !== undefined) return -1;
+      if (rightOrder !== undefined) return 1;
+      return left.label.localeCompare(right.label);
+    });
+}
+
 /* Dark artwork over a transparent field disappears on the dark theme, so
  * those logos get a white tile behind them; opaque or bright logos render
  * bare. Sampled through a canvas, which requires CORS-enabled logo hosts. */
@@ -159,37 +193,26 @@ const AppsView: React.FC<AppsViewProps> = ({
   const displayLabel = (rawCategory: string): string =>
     labelByCategory.get(normalizedCategory(rawCategory)) ?? categoryLabel(rawCategory);
 
-  const categoryGroups = useMemo<CategoryGroup[]>(() => {
-    const groups = new Map<string, CategoryGroup>();
-    marketplaceApps.forEach(app => {
-      const primary = app.category?.[0]?.trim();
-      const key = primary ? normalizedCategory(primary) : 'other';
-      let group = groups.get(key);
-      if (!group) {
-        const label = primary
-          ? labelByCategory.get(key) ?? categoryLabel(primary)
-          : 'Other';
-        group = { key, label, apps: [] };
-        groups.set(key, group);
-      }
-      group.apps.push(app);
-    });
-    const feedOrder = new Map(marketplaceCategories.map((category, index) => [normalizedCategory(category.id), index]));
-    return Array.from(groups.values())
-      .map(group => ({ ...group, apps: [...group.apps].sort((a, b) => a.name.localeCompare(b.name)) }))
-      .sort((left, right) => {
-        const leftOrder = feedOrder.get(left.key);
-        const rightOrder = feedOrder.get(right.key);
-        if (leftOrder !== undefined && rightOrder !== undefined) return leftOrder - rightOrder;
-        if (leftOrder !== undefined) return -1;
-        if (rightOrder !== undefined) return 1;
-        return left.label.localeCompare(right.label);
-      });
-  }, [labelByCategory, marketplaceApps, marketplaceCategories]);
+  const feedOrder = useMemo(() => new Map(
+    marketplaceCategories.map((category, index) => [normalizedCategory(category.id), index]),
+  ), [marketplaceCategories]);
+
+  /* Sections group each app under its primary category; the sidebar filters
+   * match every assigned category, so a multi-category app is reachable from
+   * all of them. */
+  const categoryGroups = useMemo(
+    () => collectCategoryGroups(marketplaceApps, app => app.category?.slice(0, 1) ?? [], labelByCategory, feedOrder),
+    [feedOrder, labelByCategory, marketplaceApps],
+  );
+
+  const categoryOptions = useMemo(
+    () => collectCategoryGroups(marketplaceApps, app => app.category ?? [], labelByCategory, feedOrder),
+    [feedOrder, labelByCategory, marketplaceApps],
+  );
 
   useEffect(() => {
-    if (categoryFilter && !categoryGroups.some(group => group.key === categoryFilter)) setCategoryFilter(null);
-  }, [categoryGroups, categoryFilter]);
+    if (categoryFilter && !categoryOptions.some(group => group.key === categoryFilter)) setCategoryFilter(null);
+  }, [categoryOptions, categoryFilter]);
 
   const categoryFilters = useMemo<CatalogFilterDefinition<string>[]>(() => [
     {
@@ -203,22 +226,22 @@ const AppsView: React.FC<AppsViewProps> = ({
       icon: 'globe',
       count: marketplaceLoading || marketplaceError ? undefined : marketplaceApps.length,
     },
-    ...categoryGroups.map(group => ({
+    ...categoryOptions.map(group => ({
       id: categorySectionId(group.key),
       label: group.label,
       description: appCountLabel(group.apps.length),
       icon: categoryIcon(group.key),
       count: group.apps.length,
     })),
-  ], [categoryGroups, marketplaceApps.length, marketplaceError, marketplaceLoading]);
+  ], [categoryOptions, marketplaceApps.length, marketplaceError, marketplaceLoading]);
 
   const categoryBySection = useMemo(() => new Map(
-    categoryGroups.map(group => [categorySectionId(group.key), group.key]),
-  ), [categoryGroups]);
+    categoryOptions.map(group => [categorySectionId(group.key), group.key]),
+  ), [categoryOptions]);
 
   const activeCategorySection = categoryFilter ? categorySectionId(categoryFilter) : ALL_APPS_SECTION;
   const activeGroup = categoryFilter
-    ? categoryGroups.find(group => group.key === categoryFilter) ?? null
+    ? categoryOptions.find(group => group.key === categoryFilter) ?? null
     : null;
 
   const openExternal = (url?: string) => {

@@ -742,10 +742,14 @@ const App: React.FC = () => {
                       type="search"
                       value={navigationSearch}
                       placeholder="Search"
+                      role="combobox"
                       aria-label={view === 'apps' ? 'Search apps' : 'Search Lemonade'}
                       aria-autocomplete="list"
                       aria-expanded={navigationSearchOpen}
                       aria-controls="titlebar-search-results"
+                      aria-activedescendant={navigationSearchOpen && navigationSearchResults[navigationSearchIndex]
+                        ? `titlebar-search-option-${navigationSearchIndex}`
+                        : undefined}
                       onFocus={() => setNavigationSearchOpen(true)}
                       onChange={event => {
                         setNavigationSearch(event.target.value);
@@ -784,6 +788,7 @@ const App: React.FC = () => {
                       {navigationSearchResults.length > 0 ? navigationSearchResults.map((destination, index) => (
                         <button
                           key={destination.id}
+                          id={`titlebar-search-option-${index}`}
                           type="button"
                           role="option"
                           aria-selected={index === navigationSearchIndex}

@@ -9,6 +9,7 @@ const files = {
   chat: path.join(root, 'src/components/ChatView.tsx'),
   connect: path.join(root, 'src/components/ConnectView.tsx'),
   apps: path.join(root, 'src/components/AppsView.tsx'),
+  catalogLayout: path.join(root, 'src/components/WorkspaceCatalogLayout.tsx'),
   mcpPanel: path.join(root, 'src/components/McpPanel.tsx'),
   api: path.join(root, 'src/api.ts'),
   mcpRuntime: path.join(root, 'src/tools/mcpRuntime.ts'),
@@ -44,9 +45,11 @@ assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?External MCP servers[\s\S
 
 assert.doesNotMatch(sources.navigation, /defineSection\('app-directory'/);
 assert.doesNotMatch(sources.connect, /AppsView|app-directory/);
-assert.match(sources.apps, /<WorkspaceSectionRail[\s\S]*?navigationLabel="App categories"/);
-assert.match(sources.apps, /className={`apps-workspace\$\{railCollapsed \? ' workspace--rail-collapsed' : ''\}`}/);
+assert.match(sources.apps, /<WorkspaceCatalogLayout[\s\S]*?railLabel="App categories"/);
+assert.match(sources.apps, /className="apps-workspace"/);
 assert.doesNotMatch(sources.apps, /embedded\?: boolean|apps__category-filters|WorkspaceMetadataChip/);
+assert.match(sources.catalogLayout, /workspace-catalog-layout\$\{railCollapsed \? ' workspace--rail-collapsed' : ''\}/);
+assert.match(sources.catalogLayout, /className="workspace-filter-list"/);
 
 assert.match(sources.mcpPanel, /transport: 'streamable-http'/);
 assert.match(sources.mcpPanel, />HTTP endpoint</);
