@@ -329,6 +329,12 @@ The following options apply to all model loads:
 The following options are available depending on the recipe being used:
 
 <!-- BEGIN GENERATED: cli-recipe-options -->
+#### OpenMOSS TTS (`openmoss` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
+
 #### Llama.cpp GPU (`llamacpp` recipe)
 
 | Option | Description | Default |
@@ -338,25 +344,11 @@ The following options are available depending on the recipe being used:
 | `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
 
-#### Whisper.cpp (`whispercpp` recipe)
+#### TRELLIS.2 (`trellis` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--whispercpp BACKEND` | WhisperCpp backend to use | Auto-detected |
-| `--whispercpp-args ARGS` | Custom arguments to pass to whisper-server | `""` |
-
-#### Moonshine (`moonshine` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--moonshine-args ARGS` | Custom arguments to pass to moonshine-server | `""` |
-
-#### StableDiffusion.cpp (`sd-cpp` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
-| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
+| `--trellis BACKEND` | Trellis backend to use | Auto-detected |
 
 #### FastFlowLM NPU (`flm` recipe)
 
@@ -365,11 +357,12 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--flm-args ARGS` | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption | `""` |
 
-#### Ryzen AI LLM (`ryzenai-llm` recipe)
+#### StableDiffusion.cpp (`sd-cpp` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | auto |
+| `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
+| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
 
 #### vLLM ROCm (experimental) (`vllm` recipe)
 
@@ -379,35 +372,42 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
-#### ThinkSound (`thinksound` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--thinksound BACKEND` | ThinkSound backend to use | Auto-detected |
-
 #### ACE-Step (`acestep` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--acestep BACKEND` | ACE-Step backend to use | Auto-detected |
 
+#### Moonshine (`moonshine` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--moonshine-args ARGS` | Custom arguments to pass to moonshine-server | `""` |
+
+#### ThinkSound (`thinksound` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--thinksound BACKEND` | ThinkSound backend to use | Auto-detected |
+
+#### Whisper.cpp (`whispercpp` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--whispercpp BACKEND` | WhisperCpp backend to use | Auto-detected |
+| `--whispercpp-args ARGS` | Custom arguments to pass to whisper-server | `""` |
+
+#### Ryzen AI LLM (`ryzenai-llm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
 #### ONNX Runtime (`onnxruntime` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--onnxruntime-args ARGS` | Custom arguments to pass to ort-server | `""` |
-
-#### TRELLIS.2 (`trellis` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--trellis BACKEND` | Trellis backend to use | Auto-detected |
-
-#### OpenMOSS TTS (`openmoss` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values

@@ -18,38 +18,17 @@
 #endif
 
 #include <lemon/utils/process_platform.h>
+#include <lemon/utils/shell_utils.h>
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <thread>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace lemon {
 namespace utils {
-
-// Helper function: escape Windows command-line arguments
-static std::string escape_windows_arg(const std::string& arg) {
-    std::string result = "\"";
-    for (size_t i = 0; i < arg.size(); ++i) {
-        if (arg[i] == '"') {
-            // Escape the quote with a backslash
-            result += "\\\"";
-        } else if (arg[i] == '\\') {
-            // Check if this backslash is followed by a quote
-            // If so, we need to escape the backslash too
-            if (i + 1 < arg.size() && arg[i + 1] == '"') {
-                result += "\\\\";
-            } else {
-                result += '\\';
-            }
-        } else {
-            result += arg[i];
-        }
-    }
-    result += "\"";
-    return result;
-}
 
 // Helper function to check if a line should be filtered
 static bool should_filter_line(const std::string& line) {
@@ -124,6 +103,11 @@ static std::vector<char> build_windows_environment_block(
     const std::vector<std::pair<std::string, std::string>>& env_vars) {
     std::vector<std::string> merged_entries;
 
+    std::unordered_set<std::string> explicit_keys;
+    for (const auto& kv : env_vars) {
+        explicit_keys.insert(kv.first);
+    }
+
     LPWCH environment = GetEnvironmentStringsW();
     if (environment) {
         for (const wchar_t* entry = environment; *entry != L'\0';
@@ -132,6 +116,27 @@ static std::vector<char> build_windows_environment_block(
             if (size_needed > 0) {
                 std::string narrow(size_needed - 1, '\0');
                 WideCharToMultiByte(CP_UTF8, 0, entry, -1, &narrow[0], size_needed, nullptr, nullptr);
+                size_t eq_pos = narrow.find('=');
+                if (eq_pos != std::string::npos) {
+                    std::string key = narrow.substr(0, eq_pos);
+                    std::string key_upper = key;
+                    std::transform(key_upper.begin(), key_upper.end(), key_upper.begin(), [](unsigned char c){ return static_cast<char>(std::toupper(c)); });
+                    if (explicit_keys.find(key) == explicit_keys.end()) {
+                        if (key_upper.rfind("LEMONADE_", 0) == 0 ||
+                            key_upper.find("API_KEY") != std::string::npos ||
+                            key_upper.find("TOKEN") != std::string::npos ||
+                            key_upper.find("SECRET") != std::string::npos ||
+                            key_upper.find("PASS") != std::string::npos ||
+                            key_upper.find("AUTH") != std::string::npos ||
+                            key_upper == "CUDA_VISIBLE_DEVICES" ||
+                            key_upper == "HIP_VISIBLE_DEVICES" ||
+                            key_upper == "ROCR_VISIBLE_DEVICES" ||
+                            key_upper == "GGML_VK_VISIBLE_DEVICES" ||
+                            key_upper == "ZE_AFFINITY_MASK") {
+                            continue;
+                        }
+                    }
+                }
                 merged_entries.emplace_back(std::move(narrow));
             }
         }
@@ -258,14 +263,14 @@ public:
             si.hStdOutput = stdout_write;
             si.hStdError = stderr_write;
 
-            LOG(DEBUG, "ProcessManager") << "Starting process with filtered output: " << cmdline << std::endl;
+            LOG(DEBUG, "ProcessManager") << "Starting process with filtered output: " << utils::sanitize_log_string(cmdline) << std::endl;
         } else if (inherit_output) {
             // Direct inheritance without filtering
             si.dwFlags |= STARTF_USESTDHANDLES;
             si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
             si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
             si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-            LOG(DEBUG, "ProcessManager") << "Starting process with inherited output: " << cmdline << std::endl;
+            LOG(DEBUG, "ProcessManager") << "Starting process with inherited output: " << utils::sanitize_log_string(cmdline) << std::endl;
         } else {
             // Redirect to NUL to suppress output when not in debug mode
             si.dwFlags |= STARTF_USESTDHANDLES;

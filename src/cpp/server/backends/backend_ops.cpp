@@ -55,18 +55,28 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
             }
         }
 
-        // Try to find the exact variant in the cache directory's subtree.
+        // Try to find the exact variant in snapshots/ before fallback scanning.
+        fs::path snapshots_dir = model_cache_path_fs / "snapshots";
+        if (hf_cache::exists(snapshots_dir)) {
+            std::error_code snap_ec;
+            for (const auto& entry :
+                 fs::recursive_directory_iterator(snapshots_dir, hf_cache::dir_options(), snap_ec)) {
+                if (snap_ec) break;
+                if (entry.path().filename().string() == ctx.variant) {
+                    return path_to_utf8(entry.path());
+                }
+            }
+        }
+
+        // Try to find the exact variant in the cache directory's subtree, preferring files with extensions.
         if (hf_cache::exists(model_cache_path_fs)) {
+            fs::path variant_path_obj = path_from_utf8(ctx.variant);
+            std::string expected_ext = variant_path_obj.extension().string();
             for (const auto& entry :
                  fs::recursive_directory_iterator(model_cache_path_fs, hf_cache::dir_options())) {
-                if (entry.is_regular_file()) {
-                    if (entry.path().filename().string() == ctx.variant) {
+                if (entry.path().filename().string() == ctx.variant) {
+                    if (expected_ext.empty() || entry.path().extension().string() == expected_ext) {
                         return path_to_utf8(entry.path());
-                    }
-                } else if (entry.is_directory()) {
-                    fs::path variant_path = entry.path() / path_from_utf8(ctx.variant);
-                    if (hf_cache::exists(variant_path)) {
-                        return path_to_utf8(variant_path);
                     }
                 }
             }

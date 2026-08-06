@@ -930,7 +930,8 @@ set(LEMON_BACKEND_DESCRIPTOR_SOURCES
 set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_ops.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/hf_cache_util.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/hf_cache_util.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/external/external_backend_server.cpp)
 foreach(_backend_entry ${LEMON_BACKENDS})
     string(REPLACE "|" ";" _backend_parts "${_backend_entry}")
     list(GET _backend_parts 1 _backend_stem)
@@ -2113,6 +2114,46 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_libraries(test_process_manager PRIVATE Threads::Threads)
         add_test(NAME ProcessManagerTest COMMAND test_process_manager)
         register_cpp_ci_test(ProcessManagerTest test_process_manager)
+    endif()
+endif()
+
+# Custom backends C++ unit tests (descriptor registry, permissions, env sanitization, endpoints).
+if(BUILD_TESTING)
+    set(_CUSTOM_BACKENDS_TEST_SRC
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_custom_backends.cpp"
+    )
+    if(EXISTS "${_CUSTOM_BACKENDS_TEST_SRC}")
+        set(_CUSTOM_BACKENDS_PLATFORM_SRC
+            src/cpp/server/utils/platform/path_linux.cpp
+            src/cpp/server/utils/platform/process_linux.cpp
+        )
+        if(WIN32)
+            set(_CUSTOM_BACKENDS_PLATFORM_SRC
+                src/cpp/server/utils/platform/path_windows.cpp
+                src/cpp/server/utils/platform/process_windows.cpp
+            )
+        elseif(APPLE)
+            set(_CUSTOM_BACKENDS_PLATFORM_SRC
+                src/cpp/server/utils/platform/path_macos.cpp
+                src/cpp/server/utils/platform/process_macos.cpp
+            )
+        endif()
+
+        add_executable(test_custom_backends
+            test/cpp/test_custom_backends.cpp
+            src/cpp/server/backends/backend_descriptor_registry.cpp
+            src/cpp/server/utils/process_manager.cpp
+            src/cpp/server/utils/path_utils.cpp
+            ${_CUSTOM_BACKENDS_PLATFORM_SRC}
+        )
+        target_include_directories(test_custom_backends PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+            ${CMAKE_CURRENT_BINARY_DIR}/include
+        )
+        find_package(Threads REQUIRED)
+        target_link_libraries(test_custom_backends PRIVATE nlohmann_json::nlohmann_json Threads::Threads)
+        add_test(NAME CustomBackendsTest COMMAND test_custom_backends)
+        register_cpp_ci_test(CustomBackendsTest test_custom_backends)
     endif()
 endif()
 

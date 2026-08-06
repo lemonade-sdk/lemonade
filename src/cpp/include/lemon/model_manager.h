@@ -274,6 +274,9 @@ public:
     // Get shared model-hub cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
 
+    // Resolve model checkpoint specifier to absolute path on disk
+    std::string resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const;
+
     // Set extra models directory for GGUF discovery.
     // Starts/stops an inotify (Linux) / kqueue (macOS) watcher that
     // automatically refreshes the model cache when files are added or
@@ -347,7 +350,6 @@ private:
     void remove_model_from_cache(const std::string& model_name);
 
     // Resolve model checkpoint to absolute path on disk
-    std::string resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const;
     void resolve_all_model_paths(ModelInfo& info);
 
     // Download from a JSON manifest

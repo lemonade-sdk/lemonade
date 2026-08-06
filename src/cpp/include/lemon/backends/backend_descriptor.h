@@ -101,6 +101,51 @@ struct BackendDescriptor {
     std::vector<std::string> bin_variants;         // each emits `<variant>_bin: "builtin"`
     nlohmann::json config_extra = nlohmann::json::object();  // fixed extras (e.g. prefer_system, image defaults)
 
+    // --- Dynamic Backend Configuration & Platform Matrix ---
+    struct PlatformConfig {
+        std::string command;
+        std::vector<std::string> args;
+        std::string stop_command;
+        std::vector<std::string> stop_command_args;
+        std::unordered_map<std::string, std::string> env;
+    };
+
+    struct HealthProbeConfig {
+        std::string type = "http"; // "http" | "tcp" | "process"
+        std::string endpoint = "/health";
+        int expected_status = 200;
+        int timeout_seconds = 90;
+        int poll_interval_ms = 100;
+    };
+
+    bool is_dynamic = false;
+    std::string health_endpoint = "/health";
+    int health_timeout_seconds = 90;
+    std::string downsize_endpoint;
+    HealthProbeConfig health_probe;
+    std::vector<std::string> capabilities;
+    std::vector<std::string> protected_flags;
+    std::unordered_map<std::string, PlatformConfig> platforms;
+    std::unordered_map<std::string, std::string> endpoints;
+
+    std::string get_endpoint_path(const std::string& key, const std::string& default_path) const {
+        auto it = endpoints.find(key);
+        if (it != endpoints.end() && !it->second.empty()) {
+            return it->second;
+        }
+        return default_path;
+    }
+
+    bool has_capability(const std::string& cap) const {
+        if (capabilities.empty()) return true;
+        for (const auto& c : capabilities) {
+            if (c == cap) return true;
+            if (cap == "completion" && c == "chat_completion") return true;
+            if (cap == "chat_completion" && c == "completion") return true;
+        }
+        return false;
+    }
+
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {
         return config_section.empty() ? recipe : config_section;

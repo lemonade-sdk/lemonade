@@ -1,4 +1,5 @@
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/external/external_backend_server.h"
 #include "lemon/wrapped_server.h"
 
 // Generated from LEMON_BACKENDS at configure time. Defines
@@ -42,6 +43,16 @@ std::unique_ptr<WrappedServer> create_server(const std::string& recipe, const Ba
             return server;
         }
     }
+
+    // Check dynamic custom backend descriptors
+    auto desc = descriptor_shared_for(recipe);
+    if (desc && desc->is_dynamic) {
+        auto server = std::make_unique<ExternalBackendServer>(recipe);
+        server->set_log_level(ctx.log_level);
+        server->set_descriptor(desc);
+        return server;
+    }
+
     return nullptr;
 }
 

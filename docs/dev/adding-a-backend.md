@@ -17,6 +17,9 @@ No router edits, no CLI edits, no doc edits, no support-matrix edits.
 
 That covers the backend's wiring. You still write an integration test ([Testing](#testing)). If the backend introduces a new endpoint or capability instead of serving one that already exists, you also write that endpoint, its router plumbing, and its API docs ([Adding a new endpoint or capability](#adding-a-new-endpoint-or-capability)).
 
+> [!TIP]
+> **Dynamic Custom JSON Backends**: For external binaries or containerized engines (Podman/Docker) that do not require C++ code changes or recompilation, see the [Custom Backends Specification](./custom-backends-spec.md) and the [Custom Backends User Guide](../guide/configuration/custom-backends.md).
+
 Everything for one backend lives in `lemon::backends::<stem>`. The descriptor is header-only so it links into **both** the `lemonade` CLI and `lemond`; the server class and `create()` are server-only (compiled into `lemond`).
 
 ## The descriptor — `<stem>/<stem>.h`
