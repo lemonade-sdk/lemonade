@@ -12025,7 +12025,7 @@ a.backend-card__version:focus-visible {
 }
 
 @media (max-width: 680px) {
-  .backends__content { padding: var(--space-3); }
+  .backends__content { padding: var(--space-2) var(--space-4) var(--space-5); }
   .backend-catalog__grid { grid-template-columns: 1fr; }
   .backend-catalog__heading { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
   .backend-card__variant-head { gap: var(--space-2); }
@@ -12171,6 +12171,7 @@ a.backend-card__version:focus-visible {
   .workspace-nav__copy small { display: none; }
   .workspace-nav button { min-height: 44px; }
   .workspace-pane__header { padding-inline: var(--space-4); }
+  .backends__content, .backends--workspace .backends__head { padding-inline: var(--space-4); }
   .inspect-layout--embedded { grid-template-columns: 280px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .logs-workspace--embedded { grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 }
