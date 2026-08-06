@@ -11706,14 +11706,16 @@ optgroup {
   border-radius: var(--radius-sm);
 }
 
+.app-card__logo--tile {
+  background: #fff;
+  border-radius: var(--radius-md);
+}
+
 .app-card__logo--fallback {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
+  color: #1c1c1c;
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
 }

@@ -68,6 +68,70 @@ type CategoryGroup = {
   apps: MarketplaceApp[];
 };
 
+/* Dark artwork over a transparent field disappears on the dark theme, so
+ * those logos get a white tile behind them; opaque or bright logos render
+ * bare. Sampled through a canvas, which requires CORS-enabled logo hosts. */
+const logoTileCache = new Map<string, boolean>();
+
+function logoNeedsTile(src: string): Promise<boolean> {
+  return new Promise(resolve => {
+    const probe = new Image();
+    probe.crossOrigin = 'anonymous';
+    probe.onload = () => {
+      try {
+        const size = 24;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext('2d');
+        if (!context) {
+          resolve(false);
+          return;
+        }
+        context.drawImage(probe, 0, 0, size, size);
+        const { data } = context.getImageData(0, 0, size, size);
+        let transparent = 0;
+        let opaque = 0;
+        let luminanceSum = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] < 26) {
+            transparent += 1;
+            continue;
+          }
+          opaque += 1;
+          luminanceSum += (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
+        }
+        const transparentShare = transparent / (transparent + opaque || 1);
+        const meanLuminance = opaque ? luminanceSum / opaque : 1;
+        resolve(transparentShare > 0.05 && meanLuminance < 0.45);
+      } catch {
+        resolve(false);
+      }
+    };
+    probe.onerror = () => resolve(false);
+    probe.src = src;
+  });
+}
+
+const AppLogo: React.FC<{ src: string }> = ({ src }) => {
+  const [tiled, setTiled] = useState(() => logoTileCache.get(src) ?? false);
+
+  useEffect(() => {
+    if (logoTileCache.has(src)) {
+      setTiled(logoTileCache.get(src)!);
+      return undefined;
+    }
+    let cancelled = false;
+    logoNeedsTile(src).then(needsTile => {
+      logoTileCache.set(src, needsTile);
+      if (!cancelled) setTiled(needsTile);
+    });
+    return () => { cancelled = true; };
+  }, [src]);
+
+  return <img className={`app-card__logo${tiled ? ' app-card__logo--tile' : ''}`} src={src} alt="" />;
+};
+
 type AppsViewProps = {
   apps: MarketplaceApp[];
   categories: MarketplaceCategory[];
@@ -182,8 +246,8 @@ const AppsView: React.FC<AppsViewProps> = ({
     <article key={app.id || app.name} className="workspace-card app-card">
       <header className="workspace-card__head">
         {app.logo
-          ? <img className="app-card__logo" src={app.logo} alt="" />
-          : <span className="app-card__logo app-card__logo--fallback" aria-hidden="true">{app.name.slice(0, 1).toUpperCase()}</span>}
+          ? <AppLogo src={app.logo} />
+          : <span className="app-card__logo app-card__logo--tile app-card__logo--fallback" aria-hidden="true">{app.name.slice(0, 1).toUpperCase()}</span>}
         <span className="app-card__identity">
           <h3 className="workspace-card__name app-card__name">{app.name}</h3>
           {app.category && app.category.length > 0 && (
