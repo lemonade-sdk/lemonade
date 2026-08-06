@@ -227,6 +227,96 @@ function backendProgressPercent(download: DownloadListItem): number {
   return Math.max(0, Math.min(100, Number.isFinite(download.percent) ? download.percent : 0));
 }
 
+type PendingBackendAction = {
+  isUpdate: boolean;
+  initialVersion: string;
+};
+
+type BackendSyncResult = {
+  state?: BackendInfo['state'];
+  version: string;
+  settled: boolean;
+  hadResponse: boolean;
+};
+
+const BACKEND_STATUS_RETRY_DELAYS_MS = [0, 250, 500, 1000, 2000, 4000, 8000] as const;
+
+class BackendDownloadMissingError extends Error {
+  constructor() {
+    super('Backend download disappeared before reaching a terminal state');
+    this.name = 'BackendDownloadMissingError';
+  }
+}
+
+function backendActionIsReflected(
+  info: BackendInfo | undefined,
+  action: PendingBackendAction | undefined,
+): boolean {
+  if (!info) return false;
+  if (info.state === 'installed') return true;
+  if (info.state !== 'update_available' || !action) return false;
+
+  if (!action.isUpdate) return true;
+  const currentVersion = cleanString(info.version);
+  return Boolean(currentVersion && currentVersion !== cleanString(action.initialVersion));
+}
+
+function waitForBackendDownloadTerminal(
+  recipe: string,
+  backend: string,
+  signal: AbortSignal,
+): Promise<DownloadListItem> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let sawDownload = false;
+    let unsubscribe: (() => void) | null = null;
+    let unsubscribeWhenReady = false;
+
+    const cleanup = () => {
+      signal.removeEventListener('abort', onAbort);
+      if (unsubscribe) unsubscribe();
+      else unsubscribeWhenReady = true;
+    };
+
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+
+    const onAbort = () => finish(() => {
+      const reason = signal.reason;
+      reject(reason instanceof Error ? reason : new Error('Backend download wait cancelled'));
+    });
+
+    const inspect = (items: DownloadListItem[]) => {
+      const item = items.find(download => backendDownloadMatches(download, recipe, backend));
+      if (!item) {
+        if (sawDownload) {
+          finish(() => reject(new BackendDownloadMissingError()));
+        }
+        return;
+      }
+      sawDownload = true;
+      if (isDownloadActive(item) || item.running === true) return;
+      if (item.status !== 'completed'
+        && item.status !== 'error'
+        && item.status !== 'cancelled'
+        && item.status !== 'paused') return;
+      finish(() => resolve(item));
+    };
+
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    unsubscribe = downloadStore.subscribe(inspect);
+    if (unsubscribeWhenReady) unsubscribe();
+  });
+}
+
 function buildBackendCatalog(cells: Map<string, CellEntry[]>): BackendCatalogSection[] {
   const byCapability = new Map<CapabilityCol, Map<string, BackendCatalogEntry>>();
 
@@ -379,6 +469,36 @@ function releaseLink(info: BackendInfo): string {
   return url;
 }
 
+function releaseVersion(url: string): string {
+  try {
+    const pathname = new URL(url).pathname;
+    const marker = '/releases/tag/';
+    const markerIndex = pathname.indexOf(marker);
+    if (markerIndex < 0) return '';
+    return decodeURIComponent(
+      pathname.slice(markerIndex + marker.length).replace(/\/$/, ''),
+    );
+  } catch {
+    return '';
+  }
+}
+
+function releaseLinkForVersion(url: string, version: string): string {
+  if (!url || !version) return '';
+  try {
+    const releaseUrl = new URL(url);
+    const marker = '/releases/tag/';
+    const markerIndex = releaseUrl.pathname.indexOf(marker);
+    if (markerIndex < 0) return '';
+    releaseUrl.pathname = `${releaseUrl.pathname.slice(0, markerIndex + marker.length)}${encodeURIComponent(version)}`;
+    releaseUrl.search = '';
+    releaseUrl.hash = '';
+    return releaseUrl.toString();
+  } catch {
+    return '';
+  }
+}
+
 interface BackendArgsDialogProps {
   backendKeyValue: string | null;
   tuning: BackendTuning | null;
@@ -508,6 +628,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [argsEditorKey, setArgsEditorKey] = useState<string | null>(null);
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const terminalBackendRefreshRef = useRef<Set<string>>(new Set());
+  const systemInfoRequestRef = useRef(0);
+  const pendingBackendActionsRef = useRef<Map<string, PendingBackendAction>>(new Map());
+  const backendSyncPromisesRef = useRef<Map<string, Promise<BackendSyncResult>>>(new Map());
+  const toastTimerRef = useRef<number | null>(null);
   const sysInfoRef = useRef<SystemInfoData | null>(null);
   const argsTriggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -527,27 +651,86 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   /* ── Fetch system-info ────────────────────────────────── */
 
+  const loadSystemInfo = useCallback(async (): Promise<SystemInfoData> => {
+    const requestId = ++systemInfoRequestRef.current;
+    let data: SystemInfoData;
+    try {
+      data = await api.systemInfo() as unknown as SystemInfoData;
+    } catch (err) {
+      // A superseded request must not replace a newer successful snapshot with
+      // an error banner merely because its slower network call failed later.
+      if (requestId !== systemInfoRequestRef.current && sysInfoRef.current) {
+        return sysInfoRef.current;
+      }
+      throw err;
+    }
+    if (requestId === systemInfoRequestRef.current) {
+      sysInfoRef.current = data;
+      setSysInfo(data);
+    }
+    return data;
+  }, []);
+
   const fetchInfo = useCallback(async (showSpinner = true) => {
     try {
       if (showSpinner) setLoading(true);
       setError(null);
       if (!api.healthData) await api.health().catch(() => null);
-      const data = await api.systemInfo() as unknown as SystemInfoData;
-      setSysInfo(data);
+      await loadSystemInfo();
     } catch (err) {
       setError(friendlyErrorMessage(err));
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, []);
+  }, [loadSystemInfo]);
+
+  const syncBackendStatus = useCallback((recipe: string, backend: string): Promise<BackendSyncResult> => {
+    const key = backendKey(recipe, backend);
+    const existing = backendSyncPromisesRef.current.get(key);
+    if (existing) return existing;
+
+    const task = (async (): Promise<BackendSyncResult> => {
+      const action = pendingBackendActionsRef.current.get(key);
+      let state: BackendInfo['state'] | undefined;
+      let version = '';
+      let hadResponse = false;
+
+      for (const delay of BACKEND_STATUS_RETRY_DELAYS_MS) {
+        if (delay > 0) {
+          await new Promise(resolve => window.setTimeout(resolve, delay));
+        }
+
+        try {
+          const freshInfo = await loadSystemInfo();
+          hadResponse = true;
+          const backendInfo = freshInfo.recipes?.[recipe]?.backends?.[backend];
+          state = backendInfo?.state;
+          version = cleanString(backendInfo?.version);
+          if (backendActionIsReflected(backendInfo, action)) {
+            return { state, version, settled: true, hadResponse };
+          }
+        } catch {
+          // The download is already terminal. Keep retrying transient system-info
+          // failures so the user does not need to clear the completed row manually.
+        }
+      }
+
+      return { state, version, settled: false, hadResponse };
+    })().finally(() => {
+      backendSyncPromisesRef.current.delete(key);
+    });
+
+    backendSyncPromisesRef.current.set(key, task);
+    return task;
+  }, [loadSystemInfo]);
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || pendingBackendActionsRef.current.size > 0) return;
     void fetchInfo(!sysInfoRef.current);
   }, [fetchInfo, isActive]);
 
   useEffect(() => api.onModelsChanged(() => {
-    if (isActive) void fetchInfo(false);
+    if (isActive && pendingBackendActionsRef.current.size === 0) void fetchInfo(false);
   }), [fetchInfo, isActive]);
 
   useEffect(() => downloadStore.subscribe((items) => {
@@ -556,67 +739,87 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       if (item.downloadType !== 'backend') continue;
       if (isDownloadActive(item)) continue;
       if (item.status !== 'completed' && item.status !== 'error' && item.status !== 'cancelled') continue;
+      if (!isActive) continue;
+
+      const name = item.modelName || item.id.replace(/^backend:/, '');
+      const separator = name.indexOf(':');
+      const key = separator > 0 ? backendKey(name.slice(0, separator), name.slice(separator + 1)) : '';
+      if (key && pendingBackendActionsRef.current.has(key)) continue;
+
       const refreshKey = `${item.id}:${item.status}:${item.terminalAt || item.updatedAt}`;
       if (terminalBackendRefreshRef.current.has(refreshKey)) continue;
       terminalBackendRefreshRef.current.add(refreshKey);
-      if (isActive) void fetchInfo(false);
+      void fetchInfo(false);
     }
   }), [fetchInfo, isActive]);
 
   /* ── Actions ──────────────────────────────────────────── */
 
   const toast = useCallback((msg: string) => {
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
     setToastMsg(msg);
-    window.setTimeout(() => setToastMsg(null), 3500);
+    toastTimerRef.current = window.setTimeout(() => {
+      toastTimerRef.current = null;
+      setToastMsg(null);
+    }, 3500);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
   }, []);
 
   const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false) => {
     const key = backendKey(recipe, backend);
+    const engineName = RECIPE_LABELS[recipe] || recipe;
     const actionLabel = isUpdate ? 'Updating' : 'Installing';
     const doneLabel = isUpdate ? 'updated' : 'installed';
-    setInstalling(key);
-    toast(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}…`);
+    const initialInfo = sysInfoRef.current?.recipes?.[recipe]?.backends?.[backend];
     const downloadName = backendDownloadName(recipe, backend);
+    const waitController = new AbortController();
+    let actionUrl = '';
+
+    pendingBackendActionsRef.current.set(key, {
+      isUpdate,
+      initialVersion: cleanString(initialInfo?.version),
+    });
+    setInstalling(key);
+    toast(`${actionLabel} ${engineName} · ${backend}…`);
     downloadStore.markLocal(downloadName, 'downloading', 'backend');
+    const terminalDownloadPromise = waitForBackendDownloadTerminal(recipe, backend, waitController.signal);
+    // Observe rejection immediately; the original promise is still awaited below,
+    // but this prevents an unhandled rejection if the API call itself fails first.
+    void terminalDownloadPromise.catch(() => undefined);
+
     try {
       await api.installBackend(recipe, backend, {
         onProgress: (d) => {
+          const rawStatus = typeof d.status === 'string' ? d.status : '';
+          const normalizedStatus = rawStatus.toLowerCase();
+          const completed = d.complete === true
+            || normalizedStatus === 'completed'
+            || normalizedStatus === 'complete'
+            || normalizedStatus === 'success'
+            || normalizedStatus === 'done';
           const percent = typeof d.percent === 'number' ? d.percent : undefined;
+          if (typeof d.action === 'string' && d.action.trim()) actionUrl = d.action.trim();
+
           downloadStore.upsertFromPull(downloadName, {
             ...d,
             id: backendDownloadId(recipe, backend),
             type: 'backend',
             name: downloadName,
-            status: 'downloading',
-            percent: percent ?? d.percent,
+            status: completed ? 'completed' : (rawStatus || 'downloading'),
+            complete: completed ? true : d.complete,
+            running: completed && typeof d.running !== 'boolean' ? false : d.running,
+            percent: completed ? 100 : (percent ?? d.percent),
           }, 'backend');
-          if (d.percent != null) {
-            setToastMsg(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}… ${d.percent}%`);
+
+          if (!completed && percent != null) {
+            toast(`${actionLabel} ${engineName} · ${backend}… ${percent}%`);
           }
         },
-        onComplete: async () => {
-          downloadStore.upsertFromPull(downloadName, {
-            id: backendDownloadId(recipe, backend),
-            type: 'backend',
-            name: downloadName,
-            status: 'completed',
-            complete: true,
-            percent: 100,
-          }, 'backend');
-          toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} ${doneLabel}`);
-          setInstalling(null);
-          try {
-            const fresh = await api.systemInfo() as unknown as SystemInfoData;
-            setSysInfo(fresh);
-            if (isUpdate && fresh?.recipes?.[recipe]?.backends?.[backend]) {
-              const newState = fresh.recipes[recipe].backends[backend].state;
-              if (newState === 'update_required' || newState === 'update_available') {
-                toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} still needs update — the existing binary may need to be removed manually`);
-              }
-            }
-          } catch {
-            void fetchInfo(false);
-          }
+        onComplete: () => {
+          void downloadStore.refresh();
         },
         onError: (err) => {
           downloadStore.upsertFromPull(downloadName, {
@@ -624,27 +827,73 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             type: 'backend',
             name: downloadName,
             status: 'error',
+            running: false,
             error: friendlyErrorMessage(err),
           }, 'backend');
-          toast(`${actionLabel} failed: ${friendlyErrorMessage(err)}`);
-          setInstalling(null);
         },
       });
-      await fetchInfo(false);
+
+      if (actionUrl) {
+        waitController.abort();
+        await terminalDownloadPromise.catch(() => undefined);
+        downloadStore.remove(backendDownloadId(recipe, backend));
+        window.open(actionUrl, '_blank', 'noopener,noreferrer');
+        toast(`${engineName} · ${backend} requires manual setup`);
+        return;
+      }
+
+      const terminalDownload = await terminalDownloadPromise;
+      if (terminalDownload.status === 'paused') {
+        toast(`${engineName} · ${backend} installation paused`);
+        return;
+      }
+      if (terminalDownload.status === 'cancelled') {
+        toast(`${engineName} · ${backend} installation cancelled`);
+        return;
+      }
+      if (terminalDownload.status === 'error') {
+        throw new Error(terminalDownload.error || 'Unknown backend install error');
+      }
+
+      const synced = await syncBackendStatus(recipe, backend);
+      if (synced.settled) {
+        toast(`${engineName} · ${backend} ${doneLabel}`);
+      } else if (synced.hadResponse) {
+        toast(`${engineName} · ${backend} download completed, but Lemonade still reports the previous backend status`);
+      } else {
+        toast(`${engineName} · ${backend} download completed, but the backend status could not be refreshed`);
+      }
     } catch (err) {
+      if (err instanceof BackendDownloadMissingError) {
+        const synced = await syncBackendStatus(recipe, backend);
+        if (synced.settled) {
+          toast(`${engineName} · ${backend} ${doneLabel}`);
+          return;
+        }
+      }
+
       const message = friendlyErrorMessage(err);
-      downloadStore.upsertFromPull(downloadName, {
-        id: backendDownloadId(recipe, backend),
-        type: 'backend',
-        name: downloadName,
-        status: 'error',
-        error: message,
-      }, 'backend');
+      const current = downloadStore.snapshot()
+        .find(download => backendDownloadMatches(download, recipe, backend));
+      if (current?.status !== 'error' && current?.status !== 'cancelled' && current?.status !== 'paused') {
+        downloadStore.upsertFromPull(downloadName, {
+          id: backendDownloadId(recipe, backend),
+          type: 'backend',
+          name: downloadName,
+          status: 'error',
+          running: false,
+          error: message,
+        }, 'backend');
+      }
       toast(`${actionLabel} failed: ${message}`);
-      setInstalling(null);
       void fetchInfo(false);
+    } finally {
+      waitController.abort();
+      pendingBackendActionsRef.current.delete(key);
+      setInstalling(current => current === key ? null : current);
+      void downloadStore.refresh();
     }
-  }, [fetchInfo, toast]);
+  }, [fetchInfo, syncBackendStatus, toast]);
 
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
     try {
@@ -782,10 +1031,13 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             const tuning = backendTunings[cellKey] || null;
             const name = `${engineName} · ${backend}`;
             const version = cleanString(info.version);
-            const releaseUrl =
-              info.state === 'update_required' || info.state === 'update_available'
-                ? ''
-                : releaseLink(info);
+            const isUpdate =
+              info.state === 'update_required' || info.state === 'update_available';
+            const targetReleaseUrl = releaseLink(info);
+            const targetVersion = isUpdate ? releaseVersion(targetReleaseUrl) : '';
+            const installedReleaseUrl = isUpdate
+              ? releaseLinkForVersion(targetReleaseUrl, version)
+              : targetReleaseUrl;
             const variantLabel = BACKEND_LABELS[backend] || backend;
 
             return (
@@ -807,13 +1059,13 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                 </div>
 
                 <div className="backend-card__variant-meta">
-                  {version && (releaseUrl ? (
+                  {version && (installedReleaseUrl ? (
                     <a
                       className="backend-card__version"
-                      href={releaseUrl}
+                      href={installedReleaseUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      title={`Open ${engineName} ${version} release page`}
+                      title={`Open installed ${engineName} ${version} release page`}
                     >
                       {version}
                       <Icon name="external-link" size={11} aria-hidden="true" />
@@ -821,6 +1073,19 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                   ) : (
                     <span className="backend-card__version">{version}</span>
                   ))}
+                  {isUpdate && targetReleaseUrl && targetVersion && targetVersion !== version && (
+                    <a
+                      className="backend-card__version"
+                      href={targetReleaseUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Open ${engineName} ${targetVersion} update release page`}
+                    >
+                      <Icon name="chevron-right" size={11} aria-hidden="true" />
+                      {targetVersion}
+                      <Icon name="external-link" size={11} aria-hidden="true" />
+                    </a>
+                  )}
                   {tuning && (
                     <span className={`cell__args-state cell__args-state--${tuning.source}`} data-cell-backend-args={tuning.source}>
                       <Icon name="terminal-square" size={12} aria-hidden="true" />
