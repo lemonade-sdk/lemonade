@@ -69,7 +69,7 @@ FastFlowLMServer::~FastFlowLMServer() {
     unload();
 }
 
-std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade) {
+std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade, bool modelscope) {
     LOG(INFO, "FastFlowLM") << "Pulling model with FLM: " << checkpoint << std::endl;
 
     std::string flm_path = get_flm_path();
@@ -80,6 +80,11 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
     std::vector<std::string> args = {"pull", checkpoint};
     if (!do_not_upgrade) {
         args.push_back("--force");
+    }
+
+    if (modelscope) {
+        args.push_back("--modelscope");
+        args.push_back("1");
     }
 
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
@@ -175,7 +180,9 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    download_model(model_info.checkpoint(), do_not_upgrade);
+    bool modelscope = options.get_option("modelscope");
+
+    download_model(model_info.checkpoint(), do_not_upgrade, modelscope);
 
     port_ = choose_port();
 

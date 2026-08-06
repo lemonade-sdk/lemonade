@@ -27,6 +27,9 @@ inline const BackendDescriptor descriptor = {
          "Safe flm serve tuning args: --pmode, --prefill-chunk-len, "
          "--img-pre-resize, --socket, --q-len, --preemption",
          "FastFlowLM Options"},
+        {"modelscope", "--modelscope", false, "BOOL",
+         "Download models from ModelScope instead of HuggingFace",
+         "FastFlowLM Options"},
     },
     /*support*/ {
         {"npu", {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
