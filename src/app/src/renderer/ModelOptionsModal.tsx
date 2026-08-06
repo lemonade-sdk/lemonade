@@ -96,7 +96,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   const [exportError, setExportError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModelNameCopied, setIsModelNameCopied] = useState(false);
-  const [upscalerModels, setUpscalerModels] = useState<string[]>([]);
   const cardRef = useRef<HTMLDivElement>(null);
   const modelNameCopyTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -116,7 +115,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     setModelName(model ?? "");
     setModelUrl("");
     setOptions(undefined);
-    setUpscalerModels([]);
     void ensureSystemInfoLoaded();
 
     const fetchOptions = async () => {
@@ -155,24 +153,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
         const recipe = data.recipe as string;
         const recipeOptions = data.recipe_options ?? {};
         setOptions(apiToRecipeOptions(recipe, recipeOptions));
-
-        // Fetch upscaler models for sd-cpp recipe
-        if (recipe === 'sd-cpp' && isMounted) {
-          try {
-            const modelsRes = await serverFetch('/models?show_all=true');
-            if (modelsRes.ok) {
-              const allModels = await modelsRes.json();
-              const models = Array.isArray(allModels.data) ? allModels.data : Object.entries(allModels).map(([name, info]) => ({ id: name, ...(info as object) }));
-              const upscalers = models
-                .filter((m: any) => (m.labels || []).includes('upscaling') && m.recipe === 'sd-cpp')
-                .map((m: any) => m.id)
-                .sort();
-              setUpscalerModels(upscalers);
-            }
-          } catch (error) {
-            console.error('Failed to fetch upscaler models:', error);
-          }
-        }
       } catch (error) {
         console.error('Failed to load options:', error);
         if (isMounted) {
@@ -560,7 +540,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   const renderStringField = (key: string) => {
     const def = getOptionDefinition(key);
     if (!def || def.type !== 'string' || def.isBackendOption) return null;
-    if (key === 'upscaleModel') return null; // Rendered as dropdown below
 
     const value = getOptionValue<string>(key);
     if (value === undefined) return null;
@@ -601,32 +580,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           <option value="">Auto</option>
           {(supportedRecipes[modelInfo.recipe] ?? []).map((backend) => (
             <option key={backend} value={backend}>{getBackendDisplayName(backend)}</option>
-          ))}
-        </select>
-      </div>
-    );
-  };
-
-  // Render the upscale model selector for sd-cpp recipe
-  const renderUpscaleModelSelector = (): React.ReactNode => {
-    if (options?.recipe !== 'sd-cpp' || upscalerModels.length === 0) return null;
-
-    const def = getOptionDefinition('upscaleModel');
-    const effectiveValue = getOptionValue<string>('upscaleModel') ?? '';
-
-    return (
-      <div className="form-section" key="upscaleModel">
-        <label className="form-label" title={def!.description}>
-          {def!.label}
-        </label>
-        <select
-          className="form-input form-select"
-          value={effectiveValue}
-          onChange={(e) => handleStringChange('upscaleModel', e.target.value)}
-        >
-          <option value="">None</option>
-          {upscalerModels.map((model) => (
-            <option key={model} value={model}>{model}</option>
           ))}
         </select>
       </div>
@@ -677,27 +630,22 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
   // Render all options for the current recipe
   const renderOptions = () => {
-    const upscaledIdx = availableOptions.indexOf('upscaleModel');
-    const items = availableOptions.map((key, i) => {
-      // Render upscaleModel here instead of at filter+splice
-      if (key === 'upscaleModel') return renderUpscaleModelSelector();
+    return availableOptions.map(key => {
       const def = getOptionDefinition(key);
       if (!def) return null;
-      if (def.type === 'numeric') return renderNumericField(key);
-      if (def.type === 'string') {
-        if (def.isBackendOption) return renderBackendSelector(key);
-        return renderStringField(key);
-      }
-      if (def.type === 'boolean') return renderBooleanField(key);
-      return null;
-    }).filter(Boolean);
 
-    // Move upscaleModel right before mergeArgs (index 5 in sd-cpp order)
-    if (upscaledIdx > 5 && upscaledIdx >= 0) {
-      const [node] = items.splice(upscaledIdx, 1);
-      items.splice(5, 0, node);
-    }
-    return items;
+      if (def.type === 'numeric') {
+        return renderNumericField(key);
+      } else if (def.type === 'string') {
+        if (def.isBackendOption) {
+          return renderBackendSelector(key);
+        }
+        return renderStringField(key);
+      } else if (def.type === 'boolean') {
+        return renderBooleanField(key);
+      }
+      return null;
+    });
   };
 
   return (
