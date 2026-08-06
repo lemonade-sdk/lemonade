@@ -82,7 +82,6 @@ export interface StableDiffusionOptions {
   cfgScale: NumericOption;
   width: NumericOption;
   height: NumericOption;
-  upscaleModel: StringOption;
   mergeArgs: BooleanOption;
   pinned: BooleanOption;
   saveOptions: BooleanOption;
@@ -164,7 +163,6 @@ export interface StringOptionDef {
   label: string;
   description?: string;
   isBackendOption?: boolean;
-  isUpscalerOption?: boolean;
   backendRecipe?: string;
 }
 
@@ -265,13 +263,6 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     description: 'Stable Diffusion backend to use',
     isBackendOption: true,
     backendRecipe: 'sd-cpp',
-  },
-  upscaleModel: {
-    type: 'string',
-    default: '',
-    label: 'Upscale Model',
-    description: 'ESRGAN upscaler to apply after image generation (set model options, not in-chat)',
-    isUpscalerOption: true,
   },
   steps: {
     type: 'numeric',
@@ -377,7 +368,7 @@ export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'moonshine': ['moonshineArgs', 'mergeArgs', 'pinned', 'saveOptions'],
   'flm': ['ctxSize', 'mergeArgs', 'pinned', 'saveOptions'],
   'ryzenai-llm': ['ctxSize', 'pinned', 'saveOptions'],
-  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'upscaleModel', 'mergeArgs', 'pinned', 'saveOptions'],
+  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'mergeArgs', 'pinned', 'saveOptions'],
   'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'mergeArgs', 'pinned', 'saveOptions'],
   'thinksound': ['thinksoundBackend', 'pinned', 'saveOptions'],
   'acestep': ['acestepBackend', 'pinned', 'saveOptions'],
@@ -423,7 +414,6 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   vllmBackend: 'vllm_backend',
   vllmArgs: 'vllm_args',
   saveOptions: 'save_options',
-  upscaleModel: 'upscale_model',
 };
 
 const API_TO_FRONTEND_MAP: Record<string, string> = Object.fromEntries(
