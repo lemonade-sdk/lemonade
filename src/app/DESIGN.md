@@ -163,11 +163,19 @@ The labels below are normative boundaries, not backlog states. **Justified speci
 
 **Logs — justified specialization:** monospace virtualized output, severity markers, and compact fixed-height rows. The filter panel, search control, header, and actions are standard workspace UI.
 
+### Apps
+
+**Layout:** two panels: an App types `.workspace-rail` and a full-width `.workspace-pane` directory. Marketplace categories live in the rail; search remains a pane-level action. The directory is not centered or embedded in Settings.
+
+**Justified specialization:** marketplace logos, category metadata, and external Visit, Guide, and Video actions.
+
+**Prohibited variation:** horizontal category chip bars, centered fixed-width page shells, duplicate Settings navigation entries, or app-specific rail/mobile behavior. Apps uses the shared workspace rail, pane header, resource rows, actions, and mobile context panel.
+
 ### Connect
 
-**Layout:** two panels: Settings `.workspace-rail` and a `.workspace-pane` for the selected Server, Storage, Cloud, MCP, Apps, Support, or Account section.
+**Layout:** two panels: Settings `.workspace-rail` and a `.workspace-pane` for the selected Server, Storage, Cloud, MCP, Support, or Account section.
 
-**Justified specialization:** provider brand marks, endpoint examples, and marketplace metadata. Forms use a bounded reading width.
+**Justified specialization:** provider brand marks and endpoint examples. Forms use a bounded reading width.
 
 **Prohibited variation:** card-heavy pages, independent headings inside an already titled pane, custom input heights, or unique help-link styling. Sections use the pane header, standard forms/actions, and restrained row/card grouping.
 
@@ -178,10 +186,11 @@ The implementation was audited against every boundary above on 2026-07-20. The c
 | Area | Implemented boundary |
 | --- | --- |
 | App chrome | One centered rounded primary selector; one contextual mobile menu position; compact utilities live under the settings control; the decorative lemon icon is not rendered. |
-| Rails and mobile context | Chat, Models, Backends, Monitor, and Settings use `WorkspaceRailHeader` and `WorkspaceMobileMenuButton`. Mobile panels share the same dialog, backdrop, focus-return, Escape, and toggle behavior. |
+| Rails and mobile context | Chat, Models, Backends, Apps, Monitor, and Settings use `WorkspaceRailHeader` and `WorkspaceMobileMenuButton`. Mobile panels share the same dialog, backdrop, focus-return, Escape, and toggle behavior. |
 | Backends | The filter rail, pane header, status actions, and buttons use workspace components. Only the device × capability matrix and compact backend identity marks remain specialized. |
+| Apps | Category navigation lives in a dedicated rail; the directory uses the full content pane with shared search, resource rows, actions, and responsive context-panel behavior. |
 | Monitor | Performance retains charts and gauges without ornamental glow. Telemetry and Logs retain diagnostic artifacts while their navigation, filters, forms, and actions use the workspace grammar. |
-| Connect | Settings navigation, pane headers, fields, actions, provider/help/app rows, and bounded content use shared components and control sizing. |
+| Connect | Settings navigation, pane headers, fields, actions, provider/help rows, and bounded content use shared components and control sizing. |
 | CSS integrity | Component colors resolve through tokens, `styles.css` contains no literal product colors, and the audit contains no exact duplicate rule blocks in the same cascade context. Remaining `!important` declarations are limited to third-party SVG theming, reduced-motion enforcement, mobile browser input behavior, and measured/virtualized layout overrides. |
 
 “Prohibited variation” entries remain in this specification after conformance because they are regression guards, not unresolved work.

@@ -1,16 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { friendlyErrorMessage } from '../api';
-import { Icon } from './Icon';
+import type { IconName } from './Icon';
+import WorkspaceSectionRail, { type WorkspaceSectionDefinition } from './WorkspaceSectionRail';
 import {
   WorkspaceActionButton,
   WorkspaceActionGroup,
-  WorkspaceMetadataChip,
   WorkspacePaneHeader,
   WorkspaceResourceList,
   WorkspaceResourceRow,
 } from './WorkspacePanels';
 
-type MarketplaceApp = {
+export type MarketplaceApp = {
   id: string;
   name: string;
   description?: string;
@@ -20,54 +19,106 @@ type MarketplaceApp = {
   links?: { app?: string; guide?: string; video?: string };
 };
 
-const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
+export const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
+const ALL_APPS_SECTION = 'all-apps';
 
-const AppsView: React.FC<{ isActive: boolean; embedded?: boolean }> = ({ isActive, embedded = false }) => {
-  const [marketplaceApps, setMarketplaceApps] = useState<MarketplaceApp[]>([]);
-  const [marketplaceSearch, setMarketplaceSearch] = useState('');
+function categorySectionId(category: string): string {
+  const safeCategory = encodeURIComponent(category.trim().toLowerCase())
+    .replace(/%/g, '')
+    .replace(/[^a-z0-9_-]+/g, '-');
+  return `category-${safeCategory || 'other'}`;
+}
+
+function categoryIcon(category: string): IconName {
+  const normalized = category.toLowerCase();
+  if (/chat|assistant|conversation|bot/.test(normalized)) return 'chat';
+  if (/image|photo|design|creative|art/.test(normalized)) return 'image';
+  if (/audio|music|speech|voice/.test(normalized)) return 'audio';
+  if (/code|developer|development|ide/.test(normalized)) return 'code';
+  if (/search|research|knowledge|rag/.test(normalized)) return 'search';
+  if (/automation|workflow|tool|productivity/.test(normalized)) return 'tools';
+  if (/3d|model/.test(normalized)) return 'box';
+  return 'layers';
+}
+
+function appCountLabel(count: number): string {
+  return `${count} compatible ${count === 1 ? 'app' : 'apps'}`;
+}
+
+function categoryLabel(category: string): string {
+  return category.trim().replace(/(^|[\s/&-])(\p{Ll})/gu, (_match, separator: string, letter: string) =>
+    `${separator}${letter.toLocaleUpperCase()}`);
+}
+
+function normalizedCategory(category: string): string {
+  return category.trim().toLocaleLowerCase();
+}
+
+function appHasCategory(app: MarketplaceApp, category: string): boolean {
+  const normalizedFilter = normalizedCategory(category);
+  return (app.category || []).some(item => normalizedCategory(item) === normalizedFilter);
+}
+
+type AppsViewProps = {
+  apps: MarketplaceApp[];
+  loading: boolean;
+  error: string | null;
+};
+
+const AppsView: React.FC<AppsViewProps> = ({
+  apps: marketplaceApps,
+  loading: marketplaceLoading,
+  error: marketplaceError,
+}) => {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
-  const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
-  const [marketplaceLoading, setMarketplaceLoading] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
+
+  const categories = useMemo(() => {
+    const categoryByKey = new Map<string, string>();
+    marketplaceApps.flatMap(app => app.category || []).forEach(rawCategory => {
+      const category = rawCategory.trim();
+      const key = normalizedCategory(category);
+      if (key && !categoryByKey.has(key)) categoryByKey.set(key, category);
+    });
+    return Array.from(categoryByKey.values()).sort((left, right) => left.localeCompare(right));
+  }, [marketplaceApps]);
 
   useEffect(() => {
-    if (!isActive || marketplaceApps.length > 0) return;
-    let cancelled = false;
-    setMarketplaceLoading(true);
-    fetch(MARKETPLACE_URL)
-      .then(response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then(data => {
-        if (cancelled) return;
-        const apps = Array.isArray(data?.apps) ? data.apps as MarketplaceApp[] : [];
-        setMarketplaceApps(apps);
-        setMarketplaceError(null);
-      })
-      .catch(err => { if (!cancelled) setMarketplaceError(friendlyErrorMessage(err)); })
-      .finally(() => { if (!cancelled) setMarketplaceLoading(false); });
-    return () => { cancelled = true; };
-  }, [isActive, marketplaceApps.length]);
+    if (categoryFilter && !categories.includes(categoryFilter)) setCategoryFilter(null);
+  }, [categories, categoryFilter]);
 
-  const categories = useMemo(() => Array.from(new Set(
-    marketplaceApps.flatMap(app => app.category || [])
-      .map(category => category.trim())
-      .filter(Boolean),
-  )).sort((left, right) => left.localeCompare(right)), [marketplaceApps]);
+  const categorySections = useMemo<WorkspaceSectionDefinition<string>[]>(() => [
+    {
+      id: ALL_APPS_SECTION,
+      label: 'All Apps',
+      description: marketplaceLoading
+        ? 'Loading directory'
+        : marketplaceError
+          ? 'Directory unavailable'
+          : appCountLabel(marketplaceApps.length),
+      icon: 'globe',
+    },
+    ...categories.map(category => {
+      const count = marketplaceApps.filter(app => appHasCategory(app, category)).length;
+      return {
+        id: categorySectionId(category),
+        label: categoryLabel(category),
+        description: appCountLabel(count),
+        icon: categoryIcon(category),
+      };
+    }),
+  ], [categories, marketplaceApps, marketplaceError, marketplaceLoading]);
 
-  const filteredMarketplaceApps = useMemo(() => {
-    const query = marketplaceSearch.trim().toLowerCase();
-    return marketplaceApps
-      .filter(app => {
-        const categories = app.category || [];
-        const matchesCategory = !categoryFilter || categories.some(category => category.toLowerCase() === categoryFilter.toLowerCase());
-        const matchesQuery = !query || app.name.toLowerCase().includes(query)
-          || (app.description || '').toLowerCase().includes(query)
-          || categories.join(' ').toLowerCase().includes(query);
-        return matchesCategory && matchesQuery;
-      })
-      .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name));
-  }, [categoryFilter, marketplaceApps, marketplaceSearch]);
+  const categoryBySection = useMemo(() => new Map(
+    categories.map(category => [categorySectionId(category), category]),
+  ), [categories]);
+
+  const activeCategorySection = categoryFilter ? categorySectionId(categoryFilter) : ALL_APPS_SECTION;
+
+  const filteredMarketplaceApps = useMemo(() => marketplaceApps
+    .filter(app => !categoryFilter || appHasCategory(app, categoryFilter))
+    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name)),
+  [categoryFilter, marketplaceApps]);
 
   const openExternal = (url?: string) => {
     if (!url) return;
@@ -79,72 +130,75 @@ const AppsView: React.FC<{ isActive: boolean; embedded?: boolean }> = ({ isActiv
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const directoryContent = (
-    <section className="connect__section connect__section--marketplace">
-          <div className="connect__section-head connect__section-head--search">
-            <input
-              className="input connect__marketplace-search"
-              value={marketplaceSearch}
-              onChange={e => setMarketplaceSearch(e.target.value)}
-              placeholder="Search apps..."
-              aria-label="Search apps"
-            />
-          </div>
-          {categories.length > 0 && (
-            <div className="apps__category-filters" role="group" aria-label="Filter apps by category">
-              <WorkspaceMetadataChip
-                emphasis={categoryFilter === null ? 'medium' : 'low'}
-                tone={categoryFilter === null ? 'accent' : 'neutral'}
-                buttonProps={{ onClick: () => setCategoryFilter(null), 'aria-pressed': categoryFilter === null }}
-              >
-                All
-              </WorkspaceMetadataChip>
-              {categories.map(category => (
-                <WorkspaceMetadataChip
-                  key={category}
-                  emphasis={categoryFilter === category ? 'medium' : 'low'}
-                  tone={categoryFilter === category ? 'accent' : 'neutral'}
-                  buttonProps={{ onClick: () => setCategoryFilter(category), 'aria-pressed': categoryFilter === category }}
-                >
-                  {category}
-                </WorkspaceMetadataChip>
-              ))}
-            </div>
-          )}
-          {marketplaceLoading ? <div className="connect__empty">Loading apps...</div> : marketplaceError ? <div className="connect__error">Apps unavailable: {marketplaceError}</div> : (
-            <WorkspaceResourceList label="Compatible apps">
-              {filteredMarketplaceApps.map(app => (
-                <WorkspaceResourceRow
-                  key={app.id || app.name}
-                  title={app.name}
-                  description={app.description || 'No description available.'}
-                  metadata={app.category?.[0]}
-                  leading={app.logo ? <img className="connect__app-logo" src={app.logo} alt="" /> : <span className="connect__app-logo connect__app-logo--fallback">{app.name.slice(0, 1).toUpperCase()}</span>}
-                  actions={<WorkspaceActionGroup className="connect__marketplace-actions" label={`Links for ${app.name}`}>
-                    {app.links?.app && <WorkspaceActionButton appearance="secondary" size="small" icon="globe" onClick={() => openExternal(app.links?.app)}>Visit</WorkspaceActionButton>}
-                    {app.links?.guide && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.guide)}>Guide</WorkspaceActionButton>}
-                    {app.links?.video && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.video)}>Video</WorkspaceActionButton>}
-                  </WorkspaceActionGroup>}
-                />
-              ))}
-              {filteredMarketplaceApps.length === 0 && <div className="connect__empty">No apps match your search.</div>}
-            </WorkspaceResourceList>
-          )}
-    </section>
-  );
-
-  if (embedded) return directoryContent;
+  const visibleCount = filteredMarketplaceApps.length;
+  const paneTitle = categoryFilter ? categoryLabel(categoryFilter) : 'All Apps';
+  const paneSubtitle = categoryFilter
+    ? `${appCountLabel(visibleCount)} in ${categoryLabel(categoryFilter)}.`
+    : 'Compatible clients and tools for Lemonade.';
 
   return (
-    <section className="workspace-pane connect__main apps__main" aria-labelledby="apps-pane-title" data-view="apps">
-      <WorkspacePaneHeader
-        title="Apps"
-        subtitle="Compatible clients and tools for Lemonade."
-        titleId="apps-pane-title"
+    <section
+      className={`apps-workspace${railCollapsed ? ' workspace--rail-collapsed' : ''}`}
+      data-view="apps"
+    >
+      <WorkspaceSectionRail
+        sections={categorySections}
+        activeSection={activeCategorySection}
+        onSectionChange={section => setCategoryFilter(categoryBySection.get(section) ?? null)}
+        collapsed={railCollapsed}
+        onCollapsedChange={setRailCollapsed}
+        panelId="apps-types-panel"
+        railLabel="App type navigation"
+        navigationLabel="App categories"
+        railClassName="apps__rail"
+        navClassName="apps__nav"
+        headerTitle="App Types"
+        sidebarLabel="app types"
+        headerIcon="layers"
+        mobileMenuLabel="Open app types"
       />
-      <div className="connect__layout workspace-pane__scroll">
-        {directoryContent}
-      </div>
+
+      <section className="workspace-pane apps__main" aria-labelledby="apps-pane-title">
+        <WorkspacePaneHeader
+          title={paneTitle}
+          subtitle={paneSubtitle}
+          titleId="apps-pane-title"
+        />
+
+        <div className="apps__content workspace-pane__scroll">
+          <section className="apps__directory" aria-label={paneTitle}>
+            {marketplaceLoading ? (
+              <div className="apps__empty" role="status">Loading apps...</div>
+            ) : marketplaceError ? (
+              <div className="apps__error" role="alert">Apps unavailable: {marketplaceError}</div>
+            ) : (
+              <WorkspaceResourceList label={`${paneTitle} directory`} className="apps__resource-list">
+                {filteredMarketplaceApps.map(app => (
+                  <WorkspaceResourceRow
+                    key={app.id || app.name}
+                    title={app.name}
+                    description={app.description || 'No description available.'}
+                    metadata={app.category?.join(' · ')}
+                    leading={app.logo
+                      ? <img className="apps__app-logo" src={app.logo} alt="" />
+                      : <span className="apps__app-logo apps__app-logo--fallback">{app.name.slice(0, 1).toUpperCase()}</span>}
+                    actions={<WorkspaceActionGroup className="apps__marketplace-actions" label={`Links for ${app.name}`}>
+                      {app.links?.app && <WorkspaceActionButton appearance="secondary" size="small" icon="globe" onClick={() => openExternal(app.links?.app)}>Visit</WorkspaceActionButton>}
+                      {app.links?.guide && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.guide)}>Guide</WorkspaceActionButton>}
+                      {app.links?.video && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.video)}>Video</WorkspaceActionButton>}
+                    </WorkspaceActionGroup>}
+                  />
+                ))}
+                {filteredMarketplaceApps.length === 0 && (
+                  <div className="apps__empty">
+                    No apps are available for this type.
+                  </div>
+                )}
+              </WorkspaceResourceList>
+            )}
+          </section>
+        </div>
+      </section>
     </section>
   );
 };

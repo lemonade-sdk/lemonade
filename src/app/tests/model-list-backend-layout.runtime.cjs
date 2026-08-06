@@ -51,7 +51,8 @@ assert.match(component, /className="model-list-item__footer"/);
 assert.match(component, /const neutralCollectionGuide = modelIsOmni\(model\) \|\| modelIsRouter\(model\);/);
 assert.match(component, /className="model-list-item__footer-info"[\s\S]*recipe && !neutralCollectionGuide[\s\S]*className="model-list-item__backend"[\s\S]*\{displayedBackend\}/);
 assert.match(component, /model-list-item__status model-list-item__status--\$\{statusTone\}/);
-assert.match(component, /model-list-item__dot model-list-item__dot--\$\{statusTone\}/);
+assert.doesNotMatch(component, /model-list-item__dot/,
+  'active readiness must replace the hollow ring instead of nesting a dot inside it');
 assert.match(component, /data-backend-state=\{backendReadiness\?\.state \|\| statusTone\}/);
 assert.match(component, /aria-label=\{`\$\{displayName\}[\s\S]*\$\{readinessLabel \? `, \$\{readinessLabel\}` : ''\}`\}/);
 assert.match(component, /model-list-item__pin row__pin[\s\S]*?<Icon name="pin" size=\{12\}/);
@@ -78,8 +79,12 @@ assert.doesNotMatch(styles, /\.model-list-item__footer::after/,
   'backend and neutral guide colors must share one one-pixel paint layer');
 assert.match(styles, /\.model-list-item__footer-info\s*\{[^}]*inset-inline-end:\s*16px;[^}]*display:\s*inline-flex;[^}]*font-weight:\s*var\(--weight-regular\);/s);
 assert.match(styles, /\.model-list-item__backend\s*\{[^}]*text-transform:\s*none;/s);
-assert.match(styles, /\.model-list-item__status\s*\{[^}]*inset-inline-end:\s*0;[^}]*width:\s*11px;[^}]*border-radius:\s*50%;/s);
-assert.match(styles, /\.model-list-item__dot--attention\s*\{[^}]*background:\s*var\(--status-warning\);/s);
+assert.match(styles, /\.model-list-item__status\s*\{[^}]*inset-inline-end:\s*0;[^}]*width:\s*11px;[^}]*display:\s*grid;[^}]*place-items:\s*center;/s);
+assert.match(styles, /\.model-list-item__status--available::before\s*\{[^}]*width:\s*9px;[^}]*height:\s*9px;[^}]*border:\s*1px solid var\(--model-list-line\);/s);
+assert.match(styles, /\.model-list-item__status--ready::before,[\s\S]*\.model-list-item__status--downloading::before\s*\{[^}]*width:\s*7px;[^}]*height:\s*7px;[^}]*border:\s*0;/s);
+assert.match(styles, /\.model-list-item__status--attention::before\s*\{[^}]*background:\s*var\(--status-warning\);/s);
+assert.doesNotMatch(styles, /\.model-list-item__dot/,
+  'the status marker must use one painted shape at every state');
 assert.match(styles, /\.model-list-item__pin\s*\{[^}]*position:\s*absolute;[^}]*inset-block-start:\s*6px;[^}]*inset-inline-end:\s*6px;[^}]*border:\s*0;/s);
 assert.doesNotMatch(styles, /model-list-item__backend-cluster/,
   'the previous custom backend badge/cluster design must be removed');

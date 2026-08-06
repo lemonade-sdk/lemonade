@@ -6952,6 +6952,24 @@ optgroup {
   color: var(--filter-chip-color);
 }
 
+.model-nav-rail__backend-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.model-nav-rail__backend-wrap.is-removable .model-nav-rail__backend-chip {
+  padding-inline-end: 19px;
+}
+
+.model-nav-rail__backend-more {
+  --filter-chip-color: var(--accent-fg);
+  color: var(--text-tertiary);
+}
+
+.model-nav-rail__backend-more svg {
+  color: var(--accent-fg);
+}
+
 .model-nav-rail__chip-count {
   color: var(--text-tertiary);
   font-size: var(--type-overline-size);
@@ -6971,6 +6989,7 @@ optgroup {
   padding-inline-end: 19px;
 }
 
+.model-nav-rail__backend-remove,
 .model-nav-rail__custom-tag-remove {
   position: absolute;
   inset-inline-end: 3px;
@@ -6989,6 +7008,7 @@ optgroup {
   cursor: pointer;
 }
 
+.model-nav-rail__backend-remove:hover,
 .model-nav-rail__custom-tag-remove:hover {
   background: var(--danger-soft);
   color: var(--danger);
@@ -7033,6 +7053,7 @@ optgroup {
 }
 
 .model-nav-rail__filter-chip:focus-visible,
+.model-nav-rail__backend-remove:focus-visible,
 .model-nav-rail__custom-tag-remove:focus-visible,
 .model-nav-rail__custom-tag-entry input:focus-visible,
 .model-nav-rail__custom-tag-entry button:focus-visible {
@@ -7646,8 +7667,10 @@ optgroup {
   font-variant-numeric: tabular-nums;
 }
 
-/* The ring is the physical end of the lower rule. Its inner light reports the
-   joined model/backend readiness state; a hollow ring means remote/available. */
+/* The status marker is the physical end of the lower rule. Remote/available
+   stays a small hollow circle. Every concrete state is one larger solid point,
+   replacing the ring instead of being centered inside it. Keeping a single
+   painted shape avoids fractional-zoom drift between two nested circles. */
 .model-list-item__status {
   position: absolute;
   z-index: 3;
@@ -7655,54 +7678,57 @@ optgroup {
   inset-inline-end: 0;
   width: 11px;
   height: 11px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--model-list-line);
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.model-list-item__status::before {
+  content: '';
+  box-sizing: border-box;
   border-radius: 50%;
-  background: var(--model-list-row-bg);
   box-shadow: 0 0 0 2px var(--model-list-row-bg);
 }
 
-.model-list-item__dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
+.model-list-item__status--available::before {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--model-list-line);
+  background: var(--model-list-row-bg);
 }
 
-.model-list-item__dot--ready,
-.model-list-item__dot--running {
+.model-list-item__status--ready::before,
+.model-list-item__status--running::before,
+.model-list-item__status--attention::before,
+.model-list-item__status--unknown::before,
+.model-list-item__status--downloading::before {
+  width: 7px;
+  height: 7px;
+  border: 0;
+}
+
+.model-list-item__status--ready::before,
+.model-list-item__status--running::before {
   background: var(--status-ok);
 }
 
-.model-list-item__dot--running {
+.model-list-item__status--running::before {
   animation: dotPulse 2s ease-in-out infinite;
 }
 
-.model-list-item__dot--attention {
+.model-list-item__status--attention::before {
   background: var(--status-warning);
 }
 
-.model-list-item__dot--unknown {
+.model-list-item__status--unknown::before {
   background: var(--text-disabled);
 }
 
-.model-list-item__dot--downloading {
+.model-list-item__status--downloading::before {
   background: var(--accent-fg);
   animation: dotPulse 1.4s ease-in-out infinite;
-}
-
-.model-list-item__status--attention {
-  border-color: color-mix(in srgb, var(--status-warning) 48%, var(--model-list-line));
-}
-
-.model-list-item__status--running,
-.model-list-item__status--ready {
-  border-color: color-mix(in srgb, var(--status-ok) 42%, var(--model-list-line));
-}
-
-.model-list-item__status--downloading {
-  border-color: color-mix(in srgb, var(--accent-fg) 48%, var(--model-list-line));
 }
 
 /* Pin / favorite: a single compact icon above the status terminus, without a
@@ -11592,6 +11618,7 @@ optgroup {
 }
 
 .connect--workspace.workspace--rail-collapsed,
+.apps-workspace.workspace--rail-collapsed,
 .logs-workspace.workspace--rail-collapsed,
 .backends--workspace.workspace--rail-collapsed {
   grid-template-columns: var(--rail-collapsed) minmax(0, 1fr);
@@ -11606,20 +11633,6 @@ optgroup {
 
 .connect__layout {
   padding: var(--space-5);
-}
-
-.apps__main > .workspace-pane__header {
-  width: min(880px, calc(100% - (var(--space-5) * 2)));
-  margin-inline: auto;
-  padding-inline: 0;
-}
-
-.apps__main { height: 100%; }
-
-.apps__main .connect__layout {
-  display: flex;
-  justify-content: center;
-  min-height: 0;
 }
 
 .connect__section,
@@ -11683,26 +11696,65 @@ optgroup {
 }
 
 .connect__provider-list { margin-top: var(--space-4); }
-.connect__provider-actions,
-.connect__marketplace-actions { width: auto; justify-content: flex-end; }
+.connect__provider-actions { width: auto; justify-content: flex-end; }
 .connect__provider-actions .input { width: min(220px, 34vw); }
 
-.connect__marketplace-search { width: min(360px, 100%); }
-
-.apps__category-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
+.connect__empty {
+  padding: var(--space-4) 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
 }
 
-.connect__app-logo {
+/* Apps */
+.apps-workspace {
+  display: grid;
+  grid-template-columns: var(--workspace-rail) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.apps__main {
+  height: 100%;
+  display: grid;
+  grid-template-rows: var(--workspace-header) minmax(0, 1fr);
+}
+
+.apps__main .workspace-pane__heading h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.apps__nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.apps__content {
+  min-height: 0;
+  padding: var(--space-5);
+}
+
+.apps__directory {
+  width: min(100%, var(--max-content-width));
+  min-width: 0;
+  margin-inline: auto;
+}
+
+.apps__marketplace-actions {
+  width: auto;
+  justify-content: flex-end;
+}
+
+.apps__app-logo {
   width: 28px;
   height: 28px;
   object-fit: contain;
 }
 
-.connect__app-logo--fallback {
+.apps__app-logo--fallback {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -11710,11 +11762,14 @@ optgroup {
   font-weight: var(--weight-semibold);
 }
 
-.connect__empty {
+.apps__empty,
+.apps__error {
   padding: var(--space-4) 0;
-  color: var(--text-tertiary);
   font-size: var(--text-sm);
 }
+
+.apps__empty { color: var(--text-tertiary); }
+.apps__error { color: var(--danger); }
 
 @media (max-width: 900px) {
   .connect__directory-grid,
@@ -12363,6 +12418,47 @@ a.backend-card__version:focus-visible {
     margin-top: var(--space-1);
     overflow-y: auto;
   }
+
+  /* Apps uses the shared titlebar search as its primary pane search. Keep the
+     actual field visible at the standard Playwright/desktop width instead of
+     collapsing it behind the search icon. */
+  .titlebar__search.is-context-visible,
+  .titlebar__search.is-context-visible:focus-within {
+    width: 176px;
+    flex-basis: 176px;
+  }
+
+  .titlebar__search.is-context-visible .titlebar__search-leading-icon {
+    display: block;
+  }
+
+  .titlebar__search.is-context-visible .titlebar__search-toggle {
+    display: none;
+  }
+
+  .titlebar__search.is-context-visible .titlebar__search-popover,
+  .titlebar__search.is-context-visible.is-open .titlebar__search-popover {
+    position: relative;
+    inset: auto;
+    width: auto;
+    display: flex;
+    flex: 1;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .titlebar__search.is-context-visible.is-open .titlebar__search-results {
+    position: absolute;
+    top: calc(100% + var(--space-2));
+    left: 0;
+    width: 100%;
+    max-height: min(420px, calc(100vh - var(--titlebar-height) - 80px));
+    margin-top: 0;
+    overflow-y: auto;
+  }
 }
 
 @media (max-width: 768px) {
@@ -12588,17 +12684,22 @@ a.backend-card__version:focus-visible {
   }
 
   .connect--workspace,
+  .apps-workspace,
   .monitor-workspace,
   .backends--workspace {
     position: relative;
   }
 
   .connect--workspace,
+  .apps-workspace,
   .monitor-workspace,
   .backends--workspace {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
   }
+
+
+  .apps__content { padding: var(--space-4); }
 
 
 

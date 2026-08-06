@@ -42,9 +42,11 @@ assert.match(sources.chat, /const openMcpPicker = useCallback\(\(\) => \{[\s\S]*
 assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?Lemonade tools[\s\S]*?<\/button>/);
 assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?External MCP servers[\s\S]*?<\/button>/);
 
-assert.match(sources.navigation, /defineSection\('app-directory', 'Compatible clients and integrations', 'layers'\)/);
-assert.match(sources.connect, /activeSection === 'app-directory'[\s\S]*?<AppsView isActive=\{isActive\} embedded \/>/);
-assert.match(sources.apps, /embedded\?: boolean/);
+assert.doesNotMatch(sources.navigation, /defineSection\('app-directory'/);
+assert.doesNotMatch(sources.connect, /AppsView|app-directory/);
+assert.match(sources.apps, /<WorkspaceSectionRail[\s\S]*?navigationLabel="App categories"/);
+assert.match(sources.apps, /className={`apps-workspace\$\{railCollapsed \? ' workspace--rail-collapsed' : ''\}`}/);
+assert.doesNotMatch(sources.apps, /embedded\?: boolean|apps__category-filters|WorkspaceMetadataChip/);
 
 assert.match(sources.mcpPanel, /transport: 'streamable-http'/);
 assert.match(sources.mcpPanel, />HTTP endpoint</);
