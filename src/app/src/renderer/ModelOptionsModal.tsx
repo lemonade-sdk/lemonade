@@ -416,19 +416,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     return opt?.useDefault ?? true;
   };
 
-  // Check if a boolean option is forced by the selected backend (e.g. Vulkan forces --diffusion-fa)
-  const isOptionForcedByBackend = (key: string): boolean => {
-    if (modelInfo?.recipe !== 'sd-cpp') return false;
-    const backend = (options as unknown as Record<string, { value: string }>)['sdcppBackend']?.value ?? '';
-    const forcedFlags: Record<string, string[]> = {
-      diffusionFa: ['vulkan', 'cuda'],
-      diffusionConvDirect: [],
-      vaeConvDirect: [],
-    };
-    const forcedList = forcedFlags[key] ?? [];
-    return forcedList.includes(backend);
-  };
-
   const renderContextSizeField = (key: string) => {
     const def = getOptionDefinition(key);
     if (!def || def.type !== 'numeric') return null;
@@ -606,7 +593,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
     const value = getOptionValue<boolean>(key);
     const useDefault = getOptionUseDefault(key);
-    const forced = isOptionForcedByBackend(key);
     if (value === undefined) return null;
 
     return (
@@ -629,12 +615,9 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           <input
             type="checkbox"
             checked={value}
-            onChange={(e) => !forced && handleBooleanChange(key, e.target.checked)}
-            disabled={forced}
+            onChange={(e) => handleBooleanChange(key, e.target.checked)}
             className="settings-checkbox"
-            title={forced ? 'This option is locked by the selected backend' : ''}
           />
-          {forced && <span className="settings-locked-indicator" title="Locked by backend">🔒</span>}
           <div className="settings-checkbox-content">
             <span className="settings-description">
               {def.description}
