@@ -2,7 +2,7 @@ name: C++ Server Build, Test, and Release 🚀
 
 on:
   push:
-    branches: ["main", "release-v*"]
+    branches: ["release-v*"]
     tags:
       - v*
   pull_request:
