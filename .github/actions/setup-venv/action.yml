@@ -88,6 +88,16 @@ runs:
         echo "Using Python at: $PYTHON_EXE"
         echo "SETUP_PYTHON_PATH=$PYTHON_EXE" >> $GITHUB_ENV
 
+    - name: Cache pip packages
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cache/pip
+          ~\AppData\Local\pip\Cache
+        key: pip-${{ runner.os }}-${{ inputs.python-version }}-${{ inputs.requirements-file != '' && hashFiles(inputs.requirements-file) || 'no-reqs' }}-${{ inputs.install-package || 'no-pkg' }}
+        restore-keys: |
+          pip-${{ runner.os }}-${{ inputs.python-version }}-
+
     - name: Create virtual environment (Windows)
       id: create-venv-windows
       if: runner.os == 'Windows'
@@ -98,29 +108,54 @@ runs:
         $VENV_PATH = "$env:GITHUB_WORKSPACE\$VENV_NAME"
         $BASE_PYTHON = $env:SETUP_PYTHON_PATH
 
-        Write-Host "Creating virtual environment at $VENV_PATH..."
+        Write-Host "Setting up virtual environment at $VENV_PATH..."
         Write-Host "Using base Python: $BASE_PYTHON"
 
-        # Verify we're using the correct Python
-        & $BASE_PYTHON --version
+        # Verify we're using the correct Python and get version string
+        $expectedVer = (& $BASE_PYTHON --version 2>&1).ToString().Trim()
 
-        # Remove existing venv if present
+        # Compute requirements metadata hash to check for modifications
+        $reqFile = "${{ inputs.requirements-file }}"
+        $reqHash = "none"
+        if ($reqFile -and (Test-Path $reqFile)) {
+          $reqHash = (Get-FileHash $reqFile -Algorithm SHA256).Hash
+        }
+        $installPackage = "${{ inputs.install-package }}"
+        $extraIndex = "${{ inputs.extra-index-url }}"
+
+        $expectedMarker = "python=$expectedVer|req_hash=$reqHash|package=$installPackage|extra_index=$extraIndex"
+        $markerFile = Join-Path $VENV_PATH ".venv-marker"
+
+        # Check if venv already exists and matches Python version + dependencies hash
+        $reusing = $false
         if (Test-Path $VENV_PATH) {
-          Write-Host "Removing existing venv..."
-          Remove-Item -Recurse -Force $VENV_PATH
+          $venvPython = "$VENV_PATH\Scripts\python.exe"
+          if ((Test-Path $venvPython) -and (Test-Path $markerFile)) {
+            $currentMarker = Get-Content $markerFile -Raw -ErrorAction SilentlyContinue
+            if ($currentMarker -and ($currentMarker.Trim() -eq $expectedMarker.Trim())) {
+              Write-Host "Reusing existing virtual environment (marker matched)."
+              $reusing = $true
+            }
+          }
+          if (-not $reusing) {
+            Write-Host "Removing stale virtual environment..."
+            Remove-Item -Recurse -Force $VENV_PATH
+          }
         }
 
-        # Create the venv using the explicit Python path
-        & $BASE_PYTHON -m venv $VENV_PATH
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host "venv creation failed, trying with --without-pip..."
-          & $BASE_PYTHON -m venv $VENV_PATH --without-pip
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        # Create the venv if not reusing
+        if (-not $reusing) {
+          & $BASE_PYTHON -m venv $VENV_PATH
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "venv creation failed, trying with --without-pip..."
+            & $BASE_PYTHON -m venv $VENV_PATH --without-pip
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          # Install pip manually
-          Write-Host "Installing pip manually..."
-          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$VENV_PATH\get-pip.py" -UseBasicParsing
-          & "$VENV_PATH\Scripts\python.exe" "$VENV_PATH\get-pip.py"
+            # Install pip manually
+            Write-Host "Installing pip manually..."
+            Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$VENV_PATH\get-pip.py" -UseBasicParsing
+            & "$VENV_PATH\Scripts\python.exe" "$VENV_PATH\get-pip.py"
+          }
         }
 
         $PYTHON_PATH = "$VENV_PATH\Scripts\python.exe"
@@ -130,13 +165,17 @@ runs:
         # This ensures venv Python takes precedence over system Python
         "$VENV_PATH\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-        # Upgrade pip
-        & $PYTHON_PATH -m pip install --upgrade pip
+        # Upgrade pip and write marker if we just created the venv
+        if (-not $reusing) {
+          & $PYTHON_PATH -m pip install --upgrade pip
+          $expectedMarker | Out-File -FilePath $markerFile -Encoding utf8 -Force
+        }
 
         "venv-path=$VENV_PATH" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         "python-path=$PYTHON_PATH" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        "reusing=$reusing" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-        Write-Host "Virtual environment created successfully!"
+        Write-Host "Virtual environment ready!"
         Write-Host "Venv Python location:"
         & $PYTHON_PATH -c "import sys; print(sys.executable)"
         & $PYTHON_PATH --version
@@ -150,20 +189,45 @@ runs:
         VENV_PATH="$GITHUB_WORKSPACE/$VENV_NAME"
         BASE_PYTHON="$SETUP_PYTHON_PATH"
 
-        echo "Creating virtual environment at $VENV_PATH..."
+        echo "Setting up virtual environment at $VENV_PATH..."
         echo "Using base Python: $BASE_PYTHON"
 
-        # Verify we're using the correct Python
-        "$BASE_PYTHON" --version
+        # Verify we're using the correct Python and get version string
+        expected_ver=$("$BASE_PYTHON" --version 2>&1 | xargs)
 
-        # Remove existing venv if present
+        # Compute requirements metadata hash to check for modifications
+        req_file="${{ inputs.requirements-file }}"
+        req_hash="none"
+        if [ -n "$req_file" ] && [ -f "$req_file" ]; then
+          req_hash=$(sha256sum "$req_file" | cut -d' ' -f1)
+        fi
+        install_package="${{ inputs.install-package }}"
+        extra_index="${{ inputs.extra-index-url }}"
+
+        expected_marker="python=$expected_ver|req_hash=$req_hash|package=$install_package|extra_index=$extra_index"
+        marker_file="$VENV_PATH/.venv-marker"
+
+        # Check if venv already exists and matches Python version + dependencies hash
+        reusing=false
         if [ -d "$VENV_PATH" ]; then
-          echo "Removing existing venv..."
-          rm -rf "$VENV_PATH"
+          venv_python="$VENV_PATH/bin/python"
+          if [ -f "$venv_python" ] && [ -f "$marker_file" ]; then
+            current_marker=$(cat "$marker_file" 2>/dev/null | xargs)
+            if [ "$current_marker" = "$expected_marker" ]; then
+              echo "Reusing existing virtual environment (marker matched)."
+              reusing=true
+            fi
+          fi
+          if [ "$reusing" = "false" ]; then
+            echo "Removing stale virtual environment..."
+            rm -rf "$VENV_PATH"
+          fi
         fi
 
-        # Create the venv using the explicit Python path
-        "$BASE_PYTHON" -m venv "$VENV_PATH"
+        # Create the venv if not reusing
+        if [ "$reusing" = "false" ]; then
+          "$BASE_PYTHON" -m venv "$VENV_PATH"
+        fi
 
         PYTHON_PATH="$VENV_PATH/bin/python"
         PIP_PATH="$VENV_PATH/bin/pip"
@@ -171,19 +235,23 @@ runs:
         # Add bin to PATH (prepended in subsequent steps)
         echo "$VENV_PATH/bin" >> $GITHUB_PATH
 
-        # Upgrade pip
-        "$PYTHON_PATH" -m pip install --upgrade pip
+        # Upgrade pip and write marker if we just created the venv
+        if [ "$reusing" = "false" ]; then
+          "$PYTHON_PATH" -m pip install --upgrade pip
+          echo "$expected_marker" > "$marker_file"
+        fi
 
         echo "venv-path=$VENV_PATH" >> $GITHUB_OUTPUT
         echo "python-path=$PYTHON_PATH" >> $GITHUB_OUTPUT
+        echo "reusing=$reusing" >> $GITHUB_OUTPUT
 
-        echo "Virtual environment created successfully!"
+        echo "Virtual environment ready!"
         echo "Venv Python location:"
         "$PYTHON_PATH" -c "import sys; print(sys.executable)"
         "$PYTHON_PATH" --version
 
     - name: Install requirements file (Windows)
-      if: inputs.requirements-file != '' && runner.os == 'Windows'
+      if: inputs.requirements-file != '' && runner.os == 'Windows' && steps.create-venv-windows.outputs.reusing != 'True'
       shell: powershell
       run: |
         $VENV_PATH = "${{ steps.create-venv-windows.outputs.venv-path }}"
@@ -193,7 +261,7 @@ runs:
         & $PIP install -r "${{ inputs.requirements-file }}"
 
     - name: Install requirements file (Linux/macOS)
-      if: inputs.requirements-file != '' && runner.os != 'Windows'
+      if: inputs.requirements-file != '' && runner.os != 'Windows' && steps.create-venv-linux.outputs.reusing != 'true'
       shell: bash
       run: |
         VENV_PATH="${{ steps.create-venv-linux.outputs.venv-path }}"
@@ -203,7 +271,7 @@ runs:
         "$PIP" install -r "${{ inputs.requirements-file }}"
 
     - name: Install package (Windows)
-      if: inputs.install-package != '' && runner.os == 'Windows'
+      if: inputs.install-package != '' && runner.os == 'Windows' && steps.create-venv-windows.outputs.reusing != 'True'
       shell: powershell
       run: |
         $VENV_PATH = "${{ steps.create-venv-windows.outputs.venv-path }}"
@@ -219,7 +287,7 @@ runs:
         Invoke-Expression $cmd
 
     - name: Install package (Linux/macOS)
-      if: inputs.install-package != '' && runner.os != 'Windows'
+      if: inputs.install-package != '' && runner.os != 'Windows' && steps.create-venv-linux.outputs.reusing != 'true'
       shell: bash
       run: |
         VENV_PATH="${{ steps.create-venv-linux.outputs.venv-path }}"

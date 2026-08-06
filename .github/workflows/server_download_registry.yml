@@ -4,6 +4,16 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    paths:
+      - ".github/workflows/server_download_registry.yml"
+      - ".github/actions/**"
+      - "src/cpp/**"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "setup.sh"
+      - "test/server_downloads.py"
+      - "test/server_gfx_topology.py"
+      - "test/requirements.txt"
   merge_group:
 
 permissions:
@@ -40,6 +50,24 @@ jobs:
         with:
           clean: true
           fetch-depth: 0
+
+      - name: Cache CMake FetchContent dependencies
+        uses: actions/cache@v5
+        with:
+          path: build/_deps
+          key: fetchcontent-linux-registry-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            fetchcontent-linux-registry-
+
+      - name: Cache Hugging Face models and registry cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            hf-cache
+            ci-cache
+          key: hf-ci-registry-cache-${{ hashFiles('src/cpp/resources/server_models.json') }}
+          restore-keys: |
+            hf-ci-registry-cache-
 
       - name: Configure git safe directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -98,11 +126,6 @@ jobs:
         if: failure()
         run: cat "$RUNNER_TEMP/lemond-download-registry.log" || true
 
-      - name: Stop lemond
+      - name: Stop lemond and cleanup
         if: always()
-        shell: bash
-        run: |
-          if [ -f "$RUNNER_TEMP/lemond-download-registry.pid" ]; then
-            kill "$(cat "$RUNNER_TEMP/lemond-download-registry.pid")" 2>/dev/null || true
-          fi
-          pkill -f lemond 2>/dev/null || true
+        uses: ./.github/actions/cleanup-processes-linux
