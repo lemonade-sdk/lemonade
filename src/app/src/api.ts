@@ -1942,7 +1942,20 @@ class LemonadeAPI {
               : downloadPayloadErrorMessage(d);
             if (eventError) throw new Error(String(eventError));
             callbacks?.onProgress?.(d);
-            if (currentEventType === 'complete' || downloadPayloadCompleted(d)) sawTerminal = true;
+            const progressData = currentEventType === 'complete'
+              ? {
+                  ...d,
+                  status: 'completed',
+                  complete: true,
+                  running: false,
+                }
+              : d;
+
+            callbacks?.onProgress?.(progressData);
+
+            if (currentEventType === 'complete' || downloadPayloadCompleted(progressData)) {
+              sawTerminal = true;
+            }
           }
         }
 

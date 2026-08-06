@@ -72,6 +72,7 @@ interface SystemInfoData {
 /** User-facing labels for recipes */
 const RECIPE_LABELS: Record<string, string> = {
   llamacpp:       'llama.cpp',
+  onnxruntime:    'ONNX Runtime',
   whispercpp:     'whisper.cpp',
   moonshine:      'Moonshine',
   'sd-cpp':       'stable-diffusion.cpp',
@@ -83,6 +84,19 @@ const RECIPE_LABELS: Record<string, string> = {
   thinksound:      'ThinkSound',
   openmoss:        'OpenMOSS TTS',
   trellis:         'TRELLIS.2',
+};
+
+/** User-facing labels for backend variants */
+const BACKEND_LABELS: Record<string, string> = {
+  cpu:      'CPU',
+  system:   'System',
+  vulkan:   'Vulkan',
+  rocm:     'ROCm',
+  cuda:     'CUDA',
+  metal:    'Metal',
+  npu:      'NPU',
+  directml: 'DirectML',
+  dml:      'DirectML',
 };
 
 /** Recipe → capability column for the matrix */
@@ -131,17 +145,6 @@ function isExperimentalBackend(recipe: string, recipeInfo: RecipeInfo, backendIn
 /** Device display order */
 const DEVICE_ORDER = ['cpu', 'nvidia_gpu', 'amd_gpu', 'metal', 'amd_npu', 'gpu', 'accelerator', 'unknown'] as const;
 type DeviceKey = typeof DEVICE_ORDER[number];
-
-const DEVICE_LABELS: Record<DeviceKey, string> = {
-  cpu:         'CPU',
-  amd_gpu:     'GPU (AMD)',
-  nvidia_gpu:  'GPU (NVIDIA / CUDA)',
-  metal:       'GPU (Metal)',
-  amd_npu:     'NPU',
-  gpu:         'GPU',
-  accelerator: 'Accelerator',
-  unknown:     'Other device',
-};
 
 /** Backend → fallback row when the server does not expose BackendInfo.devices */
 const BACKEND_DEVICE: Record<string, DeviceKey> = {
@@ -224,6 +227,96 @@ function backendProgressPercent(download: DownloadListItem): number {
   return Math.max(0, Math.min(100, Number.isFinite(download.percent) ? download.percent : 0));
 }
 
+type PendingBackendAction = {
+  isUpdate: boolean;
+  initialVersion: string;
+};
+
+type BackendSyncResult = {
+  state?: BackendInfo['state'];
+  version: string;
+  settled: boolean;
+  hadResponse: boolean;
+};
+
+const BACKEND_STATUS_RETRY_DELAYS_MS = [0, 250, 500, 1000, 2000, 4000, 8000] as const;
+
+class BackendDownloadMissingError extends Error {
+  constructor() {
+    super('Backend download disappeared before reaching a terminal state');
+    this.name = 'BackendDownloadMissingError';
+  }
+}
+
+function backendActionIsReflected(
+  info: BackendInfo | undefined,
+  action: PendingBackendAction | undefined,
+): boolean {
+  if (!info) return false;
+  if (info.state === 'installed') return true;
+  if (info.state !== 'update_available' || !action) return false;
+
+  if (!action.isUpdate) return true;
+  const currentVersion = cleanString(info.version);
+  return Boolean(currentVersion && currentVersion !== cleanString(action.initialVersion));
+}
+
+function waitForBackendDownloadTerminal(
+  recipe: string,
+  backend: string,
+  signal: AbortSignal,
+): Promise<DownloadListItem> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let sawDownload = false;
+    let unsubscribe: (() => void) | null = null;
+    let unsubscribeWhenReady = false;
+
+    const cleanup = () => {
+      signal.removeEventListener('abort', onAbort);
+      if (unsubscribe) unsubscribe();
+      else unsubscribeWhenReady = true;
+    };
+
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+
+    const onAbort = () => finish(() => {
+      const reason = signal.reason;
+      reject(reason instanceof Error ? reason : new Error('Backend download wait cancelled'));
+    });
+
+    const inspect = (items: DownloadListItem[]) => {
+      const item = items.find(download => backendDownloadMatches(download, recipe, backend));
+      if (!item) {
+        if (sawDownload) {
+          finish(() => reject(new BackendDownloadMissingError()));
+        }
+        return;
+      }
+      sawDownload = true;
+      if (isDownloadActive(item) || item.running === true) return;
+      if (item.status !== 'completed'
+        && item.status !== 'error'
+        && item.status !== 'cancelled'
+        && item.status !== 'paused') return;
+      finish(() => resolve(item));
+    };
+
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    unsubscribe = downloadStore.subscribe(inspect);
+    if (unsubscribeWhenReady) unsubscribe();
+  });
+}
+
 function buildBackendCatalog(cells: Map<string, CellEntry[]>): BackendCatalogSection[] {
   const byCapability = new Map<CapabilityCol, Map<string, BackendCatalogEntry>>();
 
@@ -261,11 +354,14 @@ function buildBackendCatalog(cells: Map<string, CellEntry[]>): BackendCatalogSec
     unsupported: 5,
   };
 
+  const experimentalRank = (entry: BackendCatalogEntry): number =>
+    entry.variants.every(variant => variant.info.experimental) ? 1 : 0;
+
   return CAPABILITY_COLS.map(capability => ({
     capability,
     entries: [...(byCapability.get(capability)?.values() || [])].sort((a, b) => (
-      Math.min(...a.variants.map(variant => stateRank[variant.info.state]))
-        - Math.min(...b.variants.map(variant => stateRank[variant.info.state]))
+      experimentalRank(a) - experimentalRank(b)
+      || b.variants.length - a.variants.length
       || (RECIPE_LABELS[a.recipe] || a.recipe).localeCompare(RECIPE_LABELS[b.recipe] || b.recipe)
     )).map(entry => ({
       ...entry,
@@ -363,6 +459,44 @@ function canShowUninstall(info: BackendInfo): boolean {
   return info.state === 'installed'
     || info.state === 'update_required'
     || info.state === 'update_available';
+}
+
+function releaseLink(info: BackendInfo): string {
+  const url = (info.release_url || '').trim();
+  if (!/^https?:\/\//.test(url)) return '';
+  const path = url.replace(/^https?:\/\//, '');
+  if (path.includes('//') || url.endsWith('/tag/')) return '';
+  return url;
+}
+
+function releaseVersion(url: string): string {
+  try {
+    const pathname = new URL(url).pathname;
+    const marker = '/releases/tag/';
+    const markerIndex = pathname.indexOf(marker);
+    if (markerIndex < 0) return '';
+    return decodeURIComponent(
+      pathname.slice(markerIndex + marker.length).replace(/\/$/, ''),
+    );
+  } catch {
+    return '';
+  }
+}
+
+function releaseLinkForVersion(url: string, version: string): string {
+  if (!url || !version) return '';
+  try {
+    const releaseUrl = new URL(url);
+    const marker = '/releases/tag/';
+    const markerIndex = releaseUrl.pathname.indexOf(marker);
+    if (markerIndex < 0) return '';
+    releaseUrl.pathname = `${releaseUrl.pathname.slice(0, markerIndex + marker.length)}${encodeURIComponent(version)}`;
+    releaseUrl.search = '';
+    releaseUrl.hash = '';
+    return releaseUrl.toString();
+  } catch {
+    return '';
+  }
 }
 
 interface BackendArgsDialogProps {
@@ -494,6 +628,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [argsEditorKey, setArgsEditorKey] = useState<string | null>(null);
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const terminalBackendRefreshRef = useRef<Set<string>>(new Set());
+  const systemInfoRequestRef = useRef(0);
+  const pendingBackendActionsRef = useRef<Map<string, PendingBackendAction>>(new Map());
+  const backendSyncPromisesRef = useRef<Map<string, Promise<BackendSyncResult>>>(new Map());
+  const toastTimerRef = useRef<number | null>(null);
   const sysInfoRef = useRef<SystemInfoData | null>(null);
   const argsTriggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -513,27 +651,86 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   /* ── Fetch system-info ────────────────────────────────── */
 
+  const loadSystemInfo = useCallback(async (): Promise<SystemInfoData> => {
+    const requestId = ++systemInfoRequestRef.current;
+    let data: SystemInfoData;
+    try {
+      data = await api.systemInfo() as unknown as SystemInfoData;
+    } catch (err) {
+      // A superseded request must not replace a newer successful snapshot with
+      // an error banner merely because its slower network call failed later.
+      if (requestId !== systemInfoRequestRef.current && sysInfoRef.current) {
+        return sysInfoRef.current;
+      }
+      throw err;
+    }
+    if (requestId === systemInfoRequestRef.current) {
+      sysInfoRef.current = data;
+      setSysInfo(data);
+    }
+    return data;
+  }, []);
+
   const fetchInfo = useCallback(async (showSpinner = true) => {
     try {
       if (showSpinner) setLoading(true);
       setError(null);
       if (!api.healthData) await api.health().catch(() => null);
-      const data = await api.systemInfo() as unknown as SystemInfoData;
-      setSysInfo(data);
+      await loadSystemInfo();
     } catch (err) {
       setError(friendlyErrorMessage(err));
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, []);
+  }, [loadSystemInfo]);
+
+  const syncBackendStatus = useCallback((recipe: string, backend: string): Promise<BackendSyncResult> => {
+    const key = backendKey(recipe, backend);
+    const existing = backendSyncPromisesRef.current.get(key);
+    if (existing) return existing;
+
+    const task = (async (): Promise<BackendSyncResult> => {
+      const action = pendingBackendActionsRef.current.get(key);
+      let state: BackendInfo['state'] | undefined;
+      let version = '';
+      let hadResponse = false;
+
+      for (const delay of BACKEND_STATUS_RETRY_DELAYS_MS) {
+        if (delay > 0) {
+          await new Promise(resolve => window.setTimeout(resolve, delay));
+        }
+
+        try {
+          const freshInfo = await loadSystemInfo();
+          hadResponse = true;
+          const backendInfo = freshInfo.recipes?.[recipe]?.backends?.[backend];
+          state = backendInfo?.state;
+          version = cleanString(backendInfo?.version);
+          if (backendActionIsReflected(backendInfo, action)) {
+            return { state, version, settled: true, hadResponse };
+          }
+        } catch {
+          // The download is already terminal. Keep retrying transient system-info
+          // failures so the user does not need to clear the completed row manually.
+        }
+      }
+
+      return { state, version, settled: false, hadResponse };
+    })().finally(() => {
+      backendSyncPromisesRef.current.delete(key);
+    });
+
+    backendSyncPromisesRef.current.set(key, task);
+    return task;
+  }, [loadSystemInfo]);
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || pendingBackendActionsRef.current.size > 0) return;
     void fetchInfo(!sysInfoRef.current);
   }, [fetchInfo, isActive]);
 
   useEffect(() => api.onModelsChanged(() => {
-    if (isActive) void fetchInfo(false);
+    if (isActive && pendingBackendActionsRef.current.size === 0) void fetchInfo(false);
   }), [fetchInfo, isActive]);
 
   useEffect(() => downloadStore.subscribe((items) => {
@@ -542,67 +739,87 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       if (item.downloadType !== 'backend') continue;
       if (isDownloadActive(item)) continue;
       if (item.status !== 'completed' && item.status !== 'error' && item.status !== 'cancelled') continue;
+      if (!isActive) continue;
+
+      const name = item.modelName || item.id.replace(/^backend:/, '');
+      const separator = name.indexOf(':');
+      const key = separator > 0 ? backendKey(name.slice(0, separator), name.slice(separator + 1)) : '';
+      if (key && pendingBackendActionsRef.current.has(key)) continue;
+
       const refreshKey = `${item.id}:${item.status}:${item.terminalAt || item.updatedAt}`;
       if (terminalBackendRefreshRef.current.has(refreshKey)) continue;
       terminalBackendRefreshRef.current.add(refreshKey);
-      if (isActive) void fetchInfo(false);
+      void fetchInfo(false);
     }
   }), [fetchInfo, isActive]);
 
   /* ── Actions ──────────────────────────────────────────── */
 
   const toast = useCallback((msg: string) => {
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
     setToastMsg(msg);
-    window.setTimeout(() => setToastMsg(null), 3500);
+    toastTimerRef.current = window.setTimeout(() => {
+      toastTimerRef.current = null;
+      setToastMsg(null);
+    }, 3500);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
   }, []);
 
   const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false) => {
     const key = backendKey(recipe, backend);
+    const engineName = RECIPE_LABELS[recipe] || recipe;
     const actionLabel = isUpdate ? 'Updating' : 'Installing';
     const doneLabel = isUpdate ? 'updated' : 'installed';
-    setInstalling(key);
-    toast(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}…`);
+    const initialInfo = sysInfoRef.current?.recipes?.[recipe]?.backends?.[backend];
     const downloadName = backendDownloadName(recipe, backend);
+    const waitController = new AbortController();
+    let actionUrl = '';
+
+    pendingBackendActionsRef.current.set(key, {
+      isUpdate,
+      initialVersion: cleanString(initialInfo?.version),
+    });
+    setInstalling(key);
+    toast(`${actionLabel} ${engineName} · ${backend}…`);
     downloadStore.markLocal(downloadName, 'downloading', 'backend');
+    const terminalDownloadPromise = waitForBackendDownloadTerminal(recipe, backend, waitController.signal);
+    // Observe rejection immediately; the original promise is still awaited below,
+    // but this prevents an unhandled rejection if the API call itself fails first.
+    void terminalDownloadPromise.catch(() => undefined);
+
     try {
       await api.installBackend(recipe, backend, {
         onProgress: (d) => {
+          const rawStatus = typeof d.status === 'string' ? d.status : '';
+          const normalizedStatus = rawStatus.toLowerCase();
+          const completed = d.complete === true
+            || normalizedStatus === 'completed'
+            || normalizedStatus === 'complete'
+            || normalizedStatus === 'success'
+            || normalizedStatus === 'done';
           const percent = typeof d.percent === 'number' ? d.percent : undefined;
+          if (typeof d.action === 'string' && d.action.trim()) actionUrl = d.action.trim();
+
           downloadStore.upsertFromPull(downloadName, {
             ...d,
             id: backendDownloadId(recipe, backend),
             type: 'backend',
             name: downloadName,
-            status: 'downloading',
-            percent: percent ?? d.percent,
+            status: completed ? 'completed' : (rawStatus || 'downloading'),
+            complete: completed ? true : d.complete,
+            running: completed && typeof d.running !== 'boolean' ? false : d.running,
+            percent: completed ? 100 : (percent ?? d.percent),
           }, 'backend');
-          if (d.percent != null) {
-            setToastMsg(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}… ${d.percent}%`);
+
+          if (!completed && percent != null) {
+            toast(`${actionLabel} ${engineName} · ${backend}… ${percent}%`);
           }
         },
-        onComplete: async () => {
-          downloadStore.upsertFromPull(downloadName, {
-            id: backendDownloadId(recipe, backend),
-            type: 'backend',
-            name: downloadName,
-            status: 'completed',
-            complete: true,
-            percent: 100,
-          }, 'backend');
-          toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} ${doneLabel}`);
-          setInstalling(null);
-          try {
-            const fresh = await api.systemInfo() as unknown as SystemInfoData;
-            setSysInfo(fresh);
-            if (isUpdate && fresh?.recipes?.[recipe]?.backends?.[backend]) {
-              const newState = fresh.recipes[recipe].backends[backend].state;
-              if (newState === 'update_required' || newState === 'update_available') {
-                toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} still needs update — the existing binary may need to be removed manually`);
-              }
-            }
-          } catch {
-            void fetchInfo(false);
-          }
+        onComplete: () => {
+          void downloadStore.refresh();
         },
         onError: (err) => {
           downloadStore.upsertFromPull(downloadName, {
@@ -610,27 +827,73 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             type: 'backend',
             name: downloadName,
             status: 'error',
+            running: false,
             error: friendlyErrorMessage(err),
           }, 'backend');
-          toast(`${actionLabel} failed: ${friendlyErrorMessage(err)}`);
-          setInstalling(null);
         },
       });
-      await fetchInfo(false);
+
+      if (actionUrl) {
+        waitController.abort();
+        await terminalDownloadPromise.catch(() => undefined);
+        downloadStore.remove(backendDownloadId(recipe, backend));
+        window.open(actionUrl, '_blank', 'noopener,noreferrer');
+        toast(`${engineName} · ${backend} requires manual setup`);
+        return;
+      }
+
+      const terminalDownload = await terminalDownloadPromise;
+      if (terminalDownload.status === 'paused') {
+        toast(`${engineName} · ${backend} installation paused`);
+        return;
+      }
+      if (terminalDownload.status === 'cancelled') {
+        toast(`${engineName} · ${backend} installation cancelled`);
+        return;
+      }
+      if (terminalDownload.status === 'error') {
+        throw new Error(terminalDownload.error || 'Unknown backend install error');
+      }
+
+      const synced = await syncBackendStatus(recipe, backend);
+      if (synced.settled) {
+        toast(`${engineName} · ${backend} ${doneLabel}`);
+      } else if (synced.hadResponse) {
+        toast(`${engineName} · ${backend} download completed, but Lemonade still reports the previous backend status`);
+      } else {
+        toast(`${engineName} · ${backend} download completed, but the backend status could not be refreshed`);
+      }
     } catch (err) {
+      if (err instanceof BackendDownloadMissingError) {
+        const synced = await syncBackendStatus(recipe, backend);
+        if (synced.settled) {
+          toast(`${engineName} · ${backend} ${doneLabel}`);
+          return;
+        }
+      }
+
       const message = friendlyErrorMessage(err);
-      downloadStore.upsertFromPull(downloadName, {
-        id: backendDownloadId(recipe, backend),
-        type: 'backend',
-        name: downloadName,
-        status: 'error',
-        error: message,
-      }, 'backend');
+      const current = downloadStore.snapshot()
+        .find(download => backendDownloadMatches(download, recipe, backend));
+      if (current?.status !== 'error' && current?.status !== 'cancelled' && current?.status !== 'paused') {
+        downloadStore.upsertFromPull(downloadName, {
+          id: backendDownloadId(recipe, backend),
+          type: 'backend',
+          name: downloadName,
+          status: 'error',
+          running: false,
+          error: message,
+        }, 'backend');
+      }
       toast(`${actionLabel} failed: ${message}`);
-      setInstalling(null);
       void fetchInfo(false);
+    } finally {
+      waitController.abort();
+      pendingBackendActionsRef.current.delete(key);
+      setInstalling(current => current === key ? null : current);
+      void downloadStore.refresh();
     }
-  }, [fetchInfo, toast]);
+  }, [fetchInfo, syncBackendStatus, toast]);
 
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
     try {
@@ -698,8 +961,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           experimental: isExperimentalBackend(recipe, recipeInfo, backendInfo),
         };
         // Match GUI2: unsupported backends are not useful actions/statuses for
-        // the current system and should not take matrix space (#2568).
-        if (effectiveInfo.state === 'unsupported') continue;
+        // the current system and are hidden unless explicitly requested (#2568).
+        if (!showUnsupported && effectiveInfo.state === 'unsupported') continue;
         for (const device of devicesForBackend(recipe, backend, effectiveInfo)) {
           const key = `${device}:${cap}`;
           if (!cells.has(key)) cells.set(key, []);
@@ -708,42 +971,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       }
     }
     return cells;
-  }, [sysInfo]);
-
-  const unsupportedMatrixCells = useMemo(() => {
-    if (!sysInfo?.recipes) return new Map<string, CellEntry[]>();
-    const cells = new Map<string, CellEntry[]>();
-
-    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
-      const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
-      for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
-        const effectiveInfo: BackendInfo = {
-          ...backendInfo,
-          experimental: isExperimentalBackend(recipe, recipeInfo, backendInfo),
-        };
-        // Keep unsupported backends out of the primary matrix (#2568), but retain
-        // a collapsed same-shape matrix for debugging and technical-detail reasons.
-        if (effectiveInfo.state !== 'unsupported') continue;
-        for (const device of devicesForBackend(recipe, backend, effectiveInfo)) {
-          const key = `${device}:${cap}`;
-          if (!cells.has(key)) cells.set(key, []);
-          cells.get(key)!.push({ recipe, backend, info: effectiveInfo });
-        }
-      }
-    }
-    return cells;
-  }, [sysInfo]);
+  }, [showUnsupported, sysInfo]);
 
   const backendCatalog = useMemo(() => buildBackendCatalog(matrixCells), [matrixCells]);
-  const unsupportedBackendCatalog = useMemo(() => buildBackendCatalog(unsupportedMatrixCells), [unsupportedMatrixCells]);
-
-  const unsupportedBackendCount = useMemo(() => {
-    const keys = new Set<string>();
-    for (const entries of unsupportedMatrixCells.values()) {
-      for (const { recipe, backend } of entries) keys.add(backendKey(recipe, backend));
-    }
-    return keys.size;
-  }, [unsupportedMatrixCells]);
 
   const updatesAvailable = useMemo(() => {
     if (!sysInfo?.recipes) return 0;
@@ -761,7 +991,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     if (!sysInfo?.recipes) return counts;
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       for (const backendInfo of Object.values(recipeInfo.backends)) {
-        if (backendInfo.state === 'unsupported') continue;
+        if (backendInfo.state === 'unsupported' && !showUnsupported) continue;
         counts.all++;
         if (backendInfo.state === 'installed') counts.installed++;
         if (backendInfo.state === 'installable') counts.available++;
@@ -770,7 +1000,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       }
     }
     return counts;
-  }, [sysInfo]);
+  }, [showUnsupported, sysInfo]);
 
   const backendMatchesView = useCallback((entry: CellEntry) => {
     if (viewFilter === 'all') return true;
@@ -781,30 +1011,18 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     return recipeInfo ? isExperimentalBackend(entry.recipe, recipeInfo, entry.info) : Boolean(entry.info.experimental);
   }, [sysInfo, viewFilter]);
 
-  const renderBackendCard = useCallback(({ recipe, variants, devices }: BackendCatalogEntry) => {
+  const renderBackendCard = useCallback(({ recipe, variants }: BackendCatalogEntry) => {
     const engineName = RECIPE_LABELS[recipe] || recipe;
     const supportsArgs = backendSupportsArgs(recipe);
-    const hasExperimentalVariant = variants.some(variant => variant.info.experimental);
 
     return (
       <article className="backend-card" key={recipe} data-recipe={recipe}>
         <div className="backend-card__head">
-          <div>
-            <h3 className={hasExperimentalVariant ? 'backend-card__name is-experimental' : 'backend-card__name'}>
-              {engineName}
-              {hasExperimentalVariant && <Icon name="flask-conical" size={14} aria-label="Experimental variant available" />}
-            </h3>
-            <div className="backend-card__devices">
-              {devices.map(device => <span key={device}>{DEVICE_LABELS[device]}</span>)}
-            </div>
-          </div>
-          <span className="backend-card__variant-count">
-            {variants.length} variant{variants.length === 1 ? '' : 's'}
-          </span>
+          <h3 className="backend-card__name">{engineName}</h3>
         </div>
 
         <div className="backend-card__variants">
-          {variants.map(({ backend, info, devices: variantDevices }) => {
+          {variants.map(({ backend, info }) => {
             const badge = stateBadge(info.state);
             const cellKey = backendKey(recipe, backend);
             const isInstalling = installing === cellKey;
@@ -812,40 +1030,76 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
             const tuning = backendTunings[cellKey] || null;
             const name = `${engineName} · ${backend}`;
+            const version = cleanString(info.version);
+            const isUpdate =
+              info.state === 'update_required' || info.state === 'update_available';
+            const targetReleaseUrl = releaseLink(info);
+            const targetVersion = isUpdate ? releaseVersion(targetReleaseUrl) : '';
+            const installedReleaseUrl = isUpdate
+              ? releaseLinkForVersion(targetReleaseUrl, version)
+              : targetReleaseUrl;
+            const variantLabel = BACKEND_LABELS[backend] || backend;
 
             return (
-              <div className="backend-card__variant" key={cellKey} data-cell={cellKey}>
+              <div
+                className={`backend-card__variant${info.state === 'unsupported' ? ' backend-card__variant--unsupported' : ''}`}
+                key={cellKey}
+                data-cell={cellKey}
+              >
                 <div className="backend-card__variant-head">
-                  <div>
-                    <h4 className={info.experimental ? 'backend-card__variant-name is-experimental' : 'backend-card__variant-name'}>
-                      {backend}
-                      {info.experimental && (
-                        <span className="cell__experimental-icon" role="img" aria-label="experimental" title="experimental">
-                          <Icon name="flask-conical" size={13} aria-hidden="true" />
-                        </span>
-                      )}
-                    </h4>
-                    <div className="backend-card__devices">
-                      {variantDevices.map(device => <span key={device}>{DEVICE_LABELS[device]}</span>)}
-                    </div>
-                  </div>
-                  <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
+                  <h4 className="backend-card__variant-name">
+                    {variantLabel}
+                    {info.experimental && (
+                      <span className="cell__experimental-icon" role="img" aria-label="experimental" title="experimental">
+                        <Icon name="flask-conical" size={13} aria-hidden="true" />
+                      </span>
+                    )}
+                  </h4>
+                  {info.state !== 'installable' && <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>}
                 </div>
 
-                {showTech && info.version && <span className="backend-card__version">{info.version}</span>}
-                {tuning && (
-                  <span className={`cell__args-state cell__args-state--${tuning.source}`} data-cell-backend-args={tuning.source}>
-                    <Icon name="terminal-square" size={12} aria-hidden="true" />
-                    Args · {tuning.source === 'optimized' ? 'Optimized' : 'Manual'}
-                  </span>
-                )}
+                <div className="backend-card__variant-meta">
+                  {version && (installedReleaseUrl ? (
+                    <a
+                      className="backend-card__version"
+                      href={installedReleaseUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Open installed ${engineName} ${version} release page`}
+                    >
+                      {version}
+                      <Icon name="external-link" size={11} aria-hidden="true" />
+                    </a>
+                  ) : (
+                    <span className="backend-card__version">{version}</span>
+                  ))}
+                  {isUpdate && targetReleaseUrl && targetVersion && targetVersion !== version && (
+                    <a
+                      className="backend-card__version"
+                      href={targetReleaseUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Open ${engineName} ${targetVersion} update release page`}
+                    >
+                      <Icon name="chevron-right" size={11} aria-hidden="true" />
+                      {targetVersion}
+                      <Icon name="external-link" size={11} aria-hidden="true" />
+                    </a>
+                  )}
+                  {tuning && (
+                    <span className={`cell__args-state cell__args-state--${tuning.source}`} data-cell-backend-args={tuning.source}>
+                      <Icon name="terminal-square" size={12} aria-hidden="true" />
+                      Args · {tuning.source === 'optimized' ? 'Optimized' : 'Manual'}
+                    </span>
+                  )}
+                </div>
 
                 <div className="backend-card__footer">
                   <div className="backend-card__actions">
                     {info.state === 'installable' && (
                       <WorkspaceActionButton
                         size="small"
-                        appearance="primary"
+                        appearance="secondary"
                         icon="download"
                         className="cell__swap"
                         aria-label={`Install ${name}`}
@@ -893,24 +1147,24 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         {isInstalling ? 'Working…' : 'Uninstall'}
                       </WorkspaceActionButton>
                     )}
+                    {supportsArgs && info.state !== 'unsupported' && (
+                      <WorkspaceActionButton
+                        type="button"
+                        size="toolbar"
+                        appearance="quiet"
+                        icon="terminal-square"
+                        iconOnly
+                        className={`cell__args-button${tuning ? ' is-active' : ''}`}
+                        data-backend-args-button={cellKey}
+                        onClick={event => {
+                          argsTriggerRef.current = event.currentTarget;
+                          setArgsEditorKey(cellKey);
+                        }}
+                        title={tuning ? 'Edit backend arguments' : 'Add backend arguments'}
+                        aria-label={`${tuning ? 'Edit' : 'Add'} backend arguments for ${engineName} (${backend})`}
+                      />
+                    )}
                   </div>
-                  {supportsArgs && (
-                    <WorkspaceActionButton
-                      type="button"
-                      size="toolbar"
-                      appearance="quiet"
-                      icon="terminal-square"
-                      iconOnly
-                      className={`cell__args-button${tuning ? ' is-active' : ''}`}
-                      data-backend-args-button={cellKey}
-                      onClick={event => {
-                        argsTriggerRef.current = event.currentTarget;
-                        setArgsEditorKey(cellKey);
-                      }}
-                      title={tuning ? 'Edit backend arguments' : 'Add backend arguments'}
-                      aria-label={`${tuning ? 'Edit' : 'Add'} backend arguments for ${engineName} (${backend})`}
-                    />
-                  )}
                 </div>
 
                 {showBackendProgress && backendDownload && (
@@ -921,12 +1175,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                     <span className="cell__download-progress-text">{backendProgressPercent(backendDownload).toFixed(0)}%</span>
                   </div>
                 )}
-                {(showTech && info.message || backendDownload?.status === 'error' && backendDownload.error) && (
-                  <details className="backend-card__details">
-                    <summary>View technical details</summary>
-                    <span>{backendDownload?.status === 'error' && backendDownload.error ? backendDownload.error : info.message}</span>
-                  </details>
-                )}
+                {backendDownload?.status === 'error' && backendDownload.error ? (
+                  <p className="backend-card__note backend-card__note--error">{backendDownload.error}</p>
+                ) : ((showTech || info.state === 'update_available' || info.state === 'update_required') && info.message && (
+                  <p className="backend-card__note">{info.message}</p>
+                ))}
               </div>
             );
           })}
@@ -941,9 +1194,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   if (loading && !sysInfo) {
     return (
       <section className="backends" data-view="backends">
-        <div className="backends__head">
-          <div className="backends__title"><h1>Backends</h1></div>
-        </div>
+        <WorkspacePaneHeader className="backends__pane-header" headingLevel={1} title="Backends" />
         <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
           <div className="hf-zone__spinner" />
         </div>
@@ -988,6 +1239,15 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             />
             <span>Show technical details</span>
           </label>
+          <label className="backends__toggle">
+            <input
+              type="checkbox"
+              checked={showUnsupported}
+              onChange={e => setShowUnsupported(e.target.checked)}
+              data-backends-unsupported-toggle
+            />
+            <span>Show unsupported backends</span>
+          </label>
           {sysInfo && (
             <div className="backends__runtime-meta">
               <strong>Lemonade {lemonadeVersion(sysInfo)}</strong>
@@ -1008,8 +1268,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       <div className="backends__main workspace-pane">
       <WorkspacePaneHeader
         className="backends__pane-header"
-        title="Compatibility matrix"
-        subtitle="Runtime availability by device and model capability."
+        headingLevel={1}
+        title="Backends"
+        subtitle="Install and update the inference engines available on this machine."
         actions={updatesAvailable > 0 ? (
           <div className="backends__header-update" data-backends-banner>
             <span className="sr-only" data-backends-banner-text>{updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available</span>
@@ -1045,21 +1306,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         )}
 
         <div className="backends__content">
-          <section className="backend-overview" aria-label="Backend setup summary">
-            <button type="button" className="backend-overview__item" onClick={() => setViewFilter('installed')}>
-              <strong>{backendStateCounts.installed}</strong>
-              <span>Ready to use</span>
-            </button>
-            <button type="button" className="backend-overview__item" onClick={() => setViewFilter('available')}>
-              <strong>{backendStateCounts.available}</strong>
-              <span>Ready to install</span>
-            </button>
-            <button type="button" className="backend-overview__item" onClick={() => setViewFilter('updates')}>
-              <strong>{backendStateCounts.updates}</strong>
-              <span>Need attention</span>
-            </button>
-          </section>
-
           <div className="backend-catalog" data-backends-matrix>
             {backendCatalog.map(({ capability, entries }) => {
               const visibleEntries = entries
@@ -1080,7 +1326,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                       <h2>{CAPABILITY_LABELS[capability]}</h2>
                       <p>{CAPABILITY_DESCRIPTIONS[capability]}</p>
                     </div>
-                    <span>{visibleEntries.length} engine{visibleEntries.length === 1 ? '' : 's'}</span>
                   </header>
                   <div className="backend-catalog__grid">
                     {visibleEntries.map(renderBackendCard)}
@@ -1089,41 +1334,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               );
             })}
           </div>
+
         </div>
-
-        {unsupportedBackendCount > 0 && (
-            <section className="backends__unsupported" data-backends-unsupported>
-            <button
-              type="button"
-              className="backends__unsupported-toggle"
-              aria-expanded={showUnsupported}
-              aria-controls="backends-unsupported-matrix"
-              onClick={() => setShowUnsupported(open => !open)}>
-              <span className="backends__unsupported-title">
-                <Icon name={showUnsupported ? 'chevron-down' : 'chevron-right'} size={14} aria-hidden="true" />
-                Unsupported backends
-              </span>
-              <span className="backends__unsupported-meta">
-                {unsupportedBackendCount} hidden from the main table
-              </span>
-            </button>
-
-            {showUnsupported && (
-              <div className="backend-catalog backend-catalog--unsupported" id="backends-unsupported-matrix" data-backends-unsupported-matrix>
-                {unsupportedBackendCatalog.map(({ capability, entries }) => (
-                  <section className="backend-catalog__section" key={capability}>
-                    <header className="backend-catalog__heading">
-                      <div><h2>{CAPABILITY_LABELS[capability]}</h2></div>
-                    </header>
-                    <div className="backend-catalog__grid">
-                      {entries.map(renderBackendCard)}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
 
       <BackendArgsDialog
         backendKeyValue={argsEditorKey}
