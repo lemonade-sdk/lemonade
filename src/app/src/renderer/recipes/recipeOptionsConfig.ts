@@ -82,9 +82,6 @@ export interface StableDiffusionOptions {
   cfgScale: NumericOption;
   width: NumericOption;
   height: NumericOption;
-  diffusionFa: BooleanOption;
-  diffusionConvDirect: BooleanOption;
-  vaeConvDirect: BooleanOption;
   mergeArgs: BooleanOption;
   pinned: BooleanOption;
   saveOptions: BooleanOption;
@@ -303,24 +300,6 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     label: 'Height',
     description: 'Image height in pixels',
   },
-  diffusionFa: {
-    type: 'boolean',
-    default: false,
-    label: 'Diffusion FA',
-    description: 'Enable fused-attention for stable-diffusion.cpp',
-  },
-  diffusionConvDirect: {
-    type: 'boolean',
-    default: false,
-    label: 'Diffusion Conv Direct',
-    description: 'Enable direct convolution for stable-diffusion.cpp',
-  },
-  vaeConvDirect: {
-    type: 'boolean',
-    default: false,
-    label: 'VAE Conv Direct',
-    description: 'Enable direct VAE convolution for stable-diffusion.cpp',
-  },
 
   // Audio-generation backends
   thinksoundBackend: {
@@ -389,7 +368,7 @@ export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'moonshine': ['moonshineArgs', 'mergeArgs', 'pinned', 'saveOptions'],
   'flm': ['ctxSize', 'mergeArgs', 'pinned', 'saveOptions'],
   'ryzenai-llm': ['ctxSize', 'pinned', 'saveOptions'],
-  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'diffusionFa', 'diffusionConvDirect', 'vaeConvDirect', 'mergeArgs', 'pinned', 'saveOptions'],
+  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'mergeArgs', 'pinned', 'saveOptions'],
   'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'mergeArgs', 'pinned', 'saveOptions'],
   'thinksound': ['thinksoundBackend', 'pinned', 'saveOptions'],
   'acestep': ['acestepBackend', 'pinned', 'saveOptions'],
@@ -427,9 +406,6 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   whispercppArgs: 'whispercpp_args',
   moonshineArgs: 'moonshine_args',
   sdcppBackend: 'sd-cpp_backend',
-  diffusionFa: 'diffusion_fa',
-  diffusionConvDirect: 'diffusion_conv_direct',
-  vaeConvDirect: 'vae_conv_direct',
   thinksoundBackend: 'thinksound_backend',
   acestepBackend: 'acestep_backend',
   trellisBackend: 'trellis_backend',
