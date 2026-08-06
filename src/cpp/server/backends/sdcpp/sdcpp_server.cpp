@@ -642,7 +642,6 @@ std::string SDServer::upscale_via_cli(
     const std::string& upscale_model_path,
     const std::string& cli_exe_path,
     const std::vector<std::pair<std::string, std::string>>& env_vars,
-    const std::string& backend,
     bool debug) {
 
     if (!fs::exists(cli_exe_path)) {
@@ -704,15 +703,10 @@ std::string SDServer::upscale_via_cli(
 
     std::vector<std::string> cli_args = {
         "-M", "upscale",
-    };
-    if (!backend.empty()) {
-        cli_args.insert(cli_args.end(), {"--backend", backend});
-    }
-    cli_args.insert(cli_args.end(), {
         "--upscale-model", upscale_model_path,
         "-i", input_path.string(),
         "-o", output_path.string()
-    });
+    };
 
     // inherit_output = true so subprocess stderr/stdout is visible in server
     // logs for debugging failed upscale operations

@@ -51,7 +51,6 @@ public:
         const std::string& upscale_model_path,
         const std::string& cli_exe_path,
         const std::vector<std::pair<std::string, std::string>>& env_vars,
-        const std::string& backend,
         bool debug = false);
 
 private:

@@ -327,9 +327,6 @@ private:
         const std::string& main_model_name,
         httplib::Response* res);
 
-    // Map recipe backend name to sd-cli device identifier (vulkan0, rocm0, etc).
-    static std::string sd_backend_for_recipe(const std::string& recipe_backend);
-
     bool parse_required_json_body(const httplib::Request& req,
                                   httplib::Response& res,
                                   nlohmann::json& out);
