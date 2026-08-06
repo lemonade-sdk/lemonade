@@ -138,6 +138,11 @@ python test/test_schema_lock.py
 
 Every PR runs the C++ `cpp-ci` tests, the endpoint/CLI suites on Windows and Linux, routing schema checks, app typecheck and regression tests, and the docs drift and link checks. Inference suites run on self-hosted AMD hardware runners ([details](./self-hosted-runners.md)).
 
+- Relevant local tests should pass before requesting review. All required CI must be green before final approval and merge.
+- Claiming a failure is a pre-existing flake requires evidence: link a `main` run with the identical failure signature. Fix flaky tests at the root cause; don't widen thresholds or add retries.
+- The PR description states how the change was tested and which platforms you could not cover. Ask in the [Discord](https://discord.gg/5xXzkMu8Zk) for help testing on hardware you don't have.
+- A silently-skipped test is a bug: if your change should be exercised by an existing CI job, confirm the job actually ran it rather than skipping.
+
 ### What defers to the merge queue
 
 Packaging, distro, PPA, backend-validation and most macOS jobs do **not** run on PR pushes. They run in the merge queue, so a break there blocks the merge rather than every push. Each group reports through one aggregate check whose name is stable enough to be required:
@@ -158,11 +163,6 @@ Two consequences worth knowing:
 ### macOS specifics
 
 macOS tests always run against an installed `.pkg`, whether or not Apple signing secrets are present — without them the installer is simply unsigned and notarization is skipped. There is no separate fork-PR test path, so a macOS test runs the same way everywhere. Use the `disable_macos_signing` input on a `workflow_dispatch` run to reproduce the unsigned path on demand.
-
-- Relevant local tests should pass before requesting review. All required CI must be green before final approval and merge.
-- Claiming a failure is a pre-existing flake requires evidence: link a `main` run with the identical failure signature. Fix flaky tests at the root cause; don't widen thresholds or add retries.
-- The PR description states how the change was tested and which platforms you could not cover. Ask in the [Discord](https://discord.gg/5xXzkMu8Zk) for help testing on hardware you don't have.
-- A silently-skipped test is a bug: if your change should be exercised by an existing CI job, confirm the job actually ran it rather than skipping.
 
 ---
 
