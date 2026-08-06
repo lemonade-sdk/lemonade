@@ -475,7 +475,7 @@ input, textarea {
 
 .titlebar__status-dot--connected {
   background: var(--success);
-  box-shadow: 0 0 0 3px var(--success-soft);
+  box-shadow: 0 0 6px var(--success);
 }
 
 .titlebar__status-dot--connecting {
@@ -2414,7 +2414,7 @@ input, textarea {
   background: var(--text-disabled);
 }
 
-.connect__status-dot--connected { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
+.connect__status-dot--connected { background: var(--success); box-shadow: 0 0 6px var(--success); }
 .connect__status-dot--connecting { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
 
 /* ---------- Buttons ---------- */

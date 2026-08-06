@@ -145,21 +145,21 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForSelector('[data-view="apps"]');
 
     const appCategories = page.getByRole('navigation', { name: 'App categories' });
-    await expect(appCategories.getByRole('button', { name: 'All Apps', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(appCategories.getByRole('button', { name: 'All Apps', exact: true })).toHaveAttribute('aria-current', 'true');
     await expect(appCategories.getByRole('button', { name: 'Chat', exact: true })).toBeVisible();
     await expect(appCategories.getByRole('button', { name: 'Creative Tools', exact: true })).toBeVisible();
-    await expect(page.locator('#apps-pane-title')).toHaveText('All Apps');
+    await expect(page.locator('#apps-pane-title')).toHaveText('Apps Marketplace');
     await expect(page.getByText('Chat Client', { exact: true })).toBeVisible();
     await expect(page.getByText('Creative Studio', { exact: true })).toBeVisible();
     await expect(page.getByText('Llama App', { exact: true })).toBeVisible();
-    await expect(page.getByRole('searchbox', { name: 'Search apps' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Search apps' })).toBeVisible();
 
     const globalResults = page.locator('#titlebar-search-results [role="option"]');
     const searchFromView = async (viewName: 'Chat' | 'Backends' | 'Apps' | 'Monitor' | 'Settings', query: string) => {
       await page.locator('.titlebar__nav').getByRole('button', { name: viewName, exact: true }).click();
       await page.keyboard.press('Control+K');
       const accessibleName = viewName === 'Apps' ? 'Search apps' : 'Search Lemonade';
-      await page.getByRole('searchbox', { name: accessibleName }).fill(query);
+      await page.getByRole('combobox', { name: accessibleName }).fill(query);
     };
 
     await searchFromView('Apps', 'llama');
@@ -185,8 +185,11 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.titlebar__nav').getByRole('button', { name: 'Apps', exact: true }).click();
     await expect(page.locator('.apps__category-filters')).toHaveCount(0);
 
-    await appCategories.getByRole('button', { name: 'Chat', exact: true }).click();
-    await expect(page.locator('#apps-pane-title')).toHaveText('Chat');
+    const chatCategory = appCategories.getByRole('button', { name: 'Chat', exact: true });
+    await chatCategory.click();
+    await expect(chatCategory).toHaveAttribute('aria-current', 'true');
+    await expect(page.locator('#apps-pane-title')).toHaveText('Apps Marketplace');
+    await expect(page.getByRole('heading', { name: 'Chat', exact: true, level: 2 })).toBeVisible();
     await expect(page.getByText('Chat Client', { exact: true })).toBeVisible();
     await expect(page.getByText('Creative Studio', { exact: true })).toHaveCount(0);
     await expect(page).toHaveURL(/#\/apps$/);
@@ -595,7 +598,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
         visibleControls: ['All Models', 'Downloaded', 'My Models', 'Favorites'],
       },
       { tab: 'Backends', trigger: 'Open backend filters', dialog: 'Backend filters' },
-      { tab: 'Apps', trigger: 'Open app types', dialog: 'App type navigation', visibleControls: ['All Apps'] },
+      { tab: 'Apps', trigger: 'Open app categories', dialog: 'App categories', visibleControls: ['All Apps'] },
       { tab: 'Monitor', trigger: 'Open monitor views', dialog: 'Monitor navigation' },
       { tab: 'Settings', trigger: 'Open connection settings', dialog: 'Connection settings' },
     ];
