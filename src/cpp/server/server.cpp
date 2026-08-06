@@ -4422,6 +4422,15 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
     return true;
 }
 
+// Parse a boolean value from a multipart form field.
+// Accepts "true", "1", "True" as truthy; everything else is false.
+static bool parse_bool_form_field(const httplib::MultipartFormData& form,
+                                  const std::string& name) {
+    if (!form.has_field(name)) return false;
+    const std::string& val = form.get_field(name);
+    return val == "true" || val == "1" || val == "True";
+}
+
 void Server::handle_image_edits(const httplib::Request& req, httplib::Response& res) {
     try {
         LOG(INFO, "Server") << "POST /api/v1/images/edits" << std::endl;
@@ -4545,12 +4554,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             res.status = 500;
         }
         // Auto-upscale if the loaded model has an upscale_model recipe option
-        bool skip_upscale = false;
-        if (req.form.has_field("skip_upscale")) {
-            const std::string& val = req.form.get_field("skip_upscale");
-            skip_upscale = (val == "true" || val == "1" || val == "True");
-        }
-        if (!apply_upscale_if_configured(edit_model_name, response, res, skip_upscale)) {
+        if (!apply_upscale_if_configured(edit_model_name, response, res, parse_bool_form_field(req.form, "skip_upscale"))) {
             return; // Error already set by apply_upscale_if_configured
         }
         res.set_content(response.dump(), "application/json");
@@ -4607,12 +4611,7 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
             res.status = 500;
         }
         // Auto-upscale if the loaded model has an upscale_model recipe option
-        bool skip_upscale = false;
-        if (req.form.has_field("skip_upscale")) {
-            const std::string& val = req.form.get_field("skip_upscale");
-            skip_upscale = (val == "true" || val == "1" || val == "True");
-        }
-        if (!apply_upscale_if_configured(var_model_name, response, res, skip_upscale)) {
+        if (!apply_upscale_if_configured(var_model_name, response, res, parse_bool_form_field(req.form, "skip_upscale"))) {
             return; // Error already set by apply_upscale_if_configured
         }
         res.set_content(response.dump(), "application/json");
