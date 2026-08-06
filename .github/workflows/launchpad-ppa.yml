@@ -10,6 +10,7 @@ on:
     tags:
       - '*'
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
   merge_group:
@@ -64,7 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    if: github.event_name != 'pull_request'
+    # Label a PR `ci:distros` to opt it back in.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     container:
@@ -140,7 +142,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
-    if: github.event_name == 'merge_group'
+    # Label a PR `ci:distros` to opt it back in.
+    if: github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     container:

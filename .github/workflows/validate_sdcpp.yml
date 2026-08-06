@@ -12,6 +12,7 @@ on:
         required: false
         type: string
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   merge_group:
   schedule:
     # Sunday at 17:20 UTC, staggered after the llama.cpp auto-update workflow.
@@ -46,7 +47,8 @@ concurrency:
 jobs:
   discover-release:
     name: Discover stable-diffusion.cpp releases
-    if: github.event_name != 'pull_request'
+    # Label a PR `ci:upgrades` to opt it back in.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')
     runs-on: ubuntu-latest
     outputs:
       base_release: ${{ steps.release.outputs.base_release }}
@@ -195,7 +197,8 @@ jobs:
   build:
     name: Build Lemonade with sd-cpp pins
     needs: discover-release
-    if: github.event_name != 'pull_request' && always() && !failure() && !cancelled()
+    # Label a PR `ci:upgrades` to opt it back in.
+    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
     runs-on: windows-latest
     steps:
       - name: Prepare Windows runner for long paths and stale workspace caches
