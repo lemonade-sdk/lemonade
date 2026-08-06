@@ -1606,21 +1606,25 @@ jobs:
           BIN_PATH: ${{ steps.install-pkg.outputs.bin-path }}
         run: |
           set -e
-          # The .pkg postflight starts lemond via launchd as root, so releasing
-          # port 13305 needs sudo. KeepAlive is false in
-          # com.lemonade.server.plist, so it will not respawn.
+          # The .pkg postflight starts lemond via launchd as root. Stop it so
+          # this job owns the server and can give it GGML_METAL_NO_RESIDENCY,
+          # which a launchd-started instance does not inherit.
           sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
           sudo pkill -f lemond 2>/dev/null || true
 
-          # Wait for the port to be free on BOTH address families. Polling
-          # localhost is not enough: it resolves to ::1 first on macOS, so the
-          # IPv4 socket can still be held after the IPv6 one is released. lemond
-          # logs the failed IPv4 bind and keeps serving IPv6-only, which breaks
-          # any test that connects to 127.0.0.1 (test/server_moonshine.py does).
+          # bootout is asynchronous, so poll until the port is actually free.
+          # lemond refuses to start when 127.0.0.1:13305 is taken, and a stale
+          # instance would otherwise satisfy the health check below.
           for i in $(seq 1 30); do
             lsof -nP -iTCP:13305 -sTCP:LISTEN > /dev/null 2>&1 || break
-            sleep 1
+            sudo pkill -f lemond 2>/dev/null || true
+            sleep 2
           done
+          if lsof -nP -iTCP:13305 -sTCP:LISTEN > /dev/null 2>&1; then
+            echo "ERROR: port 13305 still held after 60s"
+            lsof -nP -iTCP:13305 -sTCP:LISTEN || true
+            exit 1
+          fi
 
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
           chmod 700 "$RUNNER_TEMP/xdg-runtime"
@@ -1633,9 +1637,18 @@ jobs:
           LEMOND_PID=$!
           disown "$LEMOND_PID"
 
-          # Require both families: a half-bound server passes a localhost
-          # health check while refusing every IPv4 client.
+          # Check this process is still alive, not just that something answers
+          # on the port: a foreign lemond would otherwise pass the health check
+          # while the tests run against a server without the Metal environment.
+          # Require both address families — lemond binds them separately and
+          # keeps serving if only one succeeds, and server_moonshine.py
+          # connects to 127.0.0.1 while the other suites use localhost (::1).
           for i in $(seq 1 30); do
+            if ! kill -0 "$LEMOND_PID" 2>/dev/null; then
+              echo "ERROR: lemond exited during startup"
+              cat "$RUNNER_TEMP/lemond.log" 2>/dev/null || true
+              exit 1
+            fi
             if curl -sf http://127.0.0.1:13305/live > /dev/null 2>&1 \
                && curl -sf "http://[::1]:13305/live" > /dev/null 2>&1; then
               echo "Server listening on 127.0.0.1 and [::1] (PID $LEMOND_PID)"
