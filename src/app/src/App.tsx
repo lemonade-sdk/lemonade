@@ -6,7 +6,7 @@ import { findModelInfoByName, isCollectionFullyLoaded, isCollectionModel, withVi
 import ChatView from './components/ChatView';
 import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
-import AppsView, { MARKETPLACE_URL, type MarketplaceApp } from './components/AppsView';
+import AppsView, { MARKETPLACE_URL, type MarketplaceApp, type MarketplaceCategory } from './components/AppsView';
 import BackendManager from './components/BackendManager';
 import DownloadManager from './components/DownloadManager';
 import MonitorView from './components/MonitorView';
@@ -260,6 +260,7 @@ const App: React.FC = () => {
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
   const [modelDetailsRequest, setModelDetailsRequest] = useState<{ modelName: string; nonce: number } | null>(null);
   const [marketplaceApps, setMarketplaceApps] = useState<MarketplaceApp[]>([]);
+  const [marketplaceCategories, setMarketplaceCategories] = useState<MarketplaceCategory[]>([]);
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(true);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
@@ -283,6 +284,7 @@ const App: React.FC = () => {
       .then(data => {
         if (cancelled) return;
         setMarketplaceApps(Array.isArray(data?.apps) ? data.apps as MarketplaceApp[] : []);
+        setMarketplaceCategories(Array.isArray(data?.categories) ? data.categories as MarketplaceCategory[] : []);
         setMarketplaceError(null);
       })
       .catch(error => {
@@ -903,6 +905,7 @@ const App: React.FC = () => {
           <ViewErrorBoundary view="apps">
             <AppsView
               apps={marketplaceApps}
+              categories={marketplaceCategories}
               loading={marketplaceLoading}
               error={marketplaceError}
             />

@@ -21,6 +21,11 @@ export type MarketplaceApp = {
   links?: { app?: string; guide?: string; video?: string };
 };
 
+export type MarketplaceCategory = {
+  id: string;
+  label: string;
+};
+
 export const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 const ALL_APPS_SECTION = 'all-apps';
 const FEATURED_APP_LIMIT = 4;
@@ -65,12 +70,14 @@ type CategoryGroup = {
 
 type AppsViewProps = {
   apps: MarketplaceApp[];
+  categories: MarketplaceCategory[];
   loading: boolean;
   error: string | null;
 };
 
 const AppsView: React.FC<AppsViewProps> = ({
   apps: marketplaceApps,
+  categories: marketplaceCategories,
   loading: marketplaceLoading,
   error: marketplaceError,
 }) => {
@@ -81,6 +88,13 @@ const AppsView: React.FC<AppsViewProps> = ({
     [marketplaceApps],
   );
 
+  const labelByCategory = useMemo(() => new Map(
+    marketplaceCategories.map(category => [normalizedCategory(category.id), category.label]),
+  ), [marketplaceCategories]);
+
+  const displayLabel = (rawCategory: string): string =>
+    labelByCategory.get(normalizedCategory(rawCategory)) ?? categoryLabel(rawCategory);
+
   const categoryGroups = useMemo<CategoryGroup[]>(() => {
     const groups = new Map<string, CategoryGroup>();
     marketplaceApps.forEach(app => {
@@ -88,15 +102,26 @@ const AppsView: React.FC<AppsViewProps> = ({
       const key = primary ? normalizedCategory(primary) : 'other';
       let group = groups.get(key);
       if (!group) {
-        group = { key, label: primary ? categoryLabel(primary) : 'Other', apps: [] };
+        const label = primary
+          ? labelByCategory.get(key) ?? categoryLabel(primary)
+          : 'Other';
+        group = { key, label, apps: [] };
         groups.set(key, group);
       }
       group.apps.push(app);
     });
+    const feedOrder = new Map(marketplaceCategories.map((category, index) => [normalizedCategory(category.id), index]));
     return Array.from(groups.values())
       .map(group => ({ ...group, apps: [...group.apps].sort((a, b) => a.name.localeCompare(b.name)) }))
-      .sort((left, right) => left.label.localeCompare(right.label));
-  }, [marketplaceApps]);
+      .sort((left, right) => {
+        const leftOrder = feedOrder.get(left.key);
+        const rightOrder = feedOrder.get(right.key);
+        if (leftOrder !== undefined && rightOrder !== undefined) return leftOrder - rightOrder;
+        if (leftOrder !== undefined) return -1;
+        if (rightOrder !== undefined) return 1;
+        return left.label.localeCompare(right.label);
+      });
+  }, [labelByCategory, marketplaceApps, marketplaceCategories]);
 
   useEffect(() => {
     if (categoryFilter && !categoryGroups.some(group => group.key === categoryFilter)) setCategoryFilter(null);
@@ -156,7 +181,7 @@ const AppsView: React.FC<AppsViewProps> = ({
         <span className="app-card__identity">
           <h3 className="workspace-card__name app-card__name">{app.name}</h3>
           {app.category && app.category.length > 0 && (
-            <span className="app-card__category">{app.category.map(categoryLabel).join(' · ')}</span>
+            <span className="app-card__category">{app.category.map(displayLabel).join(' · ')}</span>
           )}
         </span>
       </header>
