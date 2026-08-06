@@ -269,15 +269,17 @@ private:
     // recipe option configured. Returns a new JSON response with the upscaled
     // image, or the original response unchanged if no upscaler is set.
     // On failure, sets res status/body and returns false.
+    // If skip_upscale_request is true, skip auto-upscale even if configured (per-request override).
     bool apply_upscale_if_configured(
         const std::string& model_name,
         nlohmann::json& response,
-        httplib::Response& res);
+        httplib::Response& res,
+        bool skip_upscale_request = false);
 
     // Internal helper: resolve upscale model path, pick backend, run sd-cli.
-    // Returns the upscaled base64 image, or empty on failure (with error
-    // already written to res if res is not null).
-    std::string do_upscale(
+    // Returns the upscaled base64 image on success, or std::nullopt on failure
+    // (error already written to res if res is not null).
+    std::optional<std::string> do_upscale(
         const std::string& b64_image,
         const std::string& upscale_model_name,
         const std::string& main_model_name,
