@@ -53,22 +53,40 @@ runs:
         LEMOND_PID=$!
         disown "$LEMOND_PID"
 
-        # Check this process is still alive, not just that something answers on
-        # the port: a foreign lemond would otherwise pass the health check while
-        # the tests run against a server without this job's environment.
-        # Require both address families — lemond binds them separately and keeps
-        # serving if only one succeeds, and test/server_moonshine.py connects to
-        # 127.0.0.1 while the other suites use localhost (::1 first on macOS).
+        # Three things have to hold, and checking fewer has bitten us:
+        #  - our process is alive. `kill -0` is not enough: the child is
+        #    disowned, so an exited lemond lingers as an unreaped zombie and
+        #    `kill -0` still succeeds. Check the process state instead.
+        #  - both address families answer. lemond binds them separately and
+        #    keeps serving if only one succeeds, and test/server_moonshine.py
+        #    connects to 127.0.0.1 while the other suites use localhost, which
+        #    resolves to ::1 first on macOS.
+        #  - the listener is *ours*. A departing launchd instance can answer
+        #    both curls, leaving the tests to run against a server without this
+        #    job's environment until it finishes shutting down.
         for i in $(seq 1 30); do
-          if ! kill -0 "$LEMOND_PID" 2>/dev/null; then
-            echo "ERROR: lemond exited during startup"
-            cat "$LOG_FILE" 2>/dev/null || true
-            exit 1
-          fi
+          STATE=$(ps -o stat= -p "$LEMOND_PID" 2>/dev/null || true)
+          case "${STATE:-gone}" in
+            gone|Z*)
+              echo "ERROR: lemond exited during startup (state '${STATE:-gone}')"
+              cat "$LOG_FILE" 2>/dev/null || true
+              exit 1
+              ;;
+          esac
           if curl -sf http://127.0.0.1:13305/live > /dev/null 2>&1 \
              && curl -sf "http://[::1]:13305/live" > /dev/null 2>&1; then
-            echo "Server listening on 127.0.0.1 and [::1] (PID $LEMOND_PID)"
-            exit 0
+            OWNERS=$(sudo lsof -t -nP -iTCP:13305 -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')
+            case " $OWNERS " in
+              *" $LEMOND_PID "*)
+                echo "Server listening on 127.0.0.1 and [::1] (PID $LEMOND_PID)"
+                exit 0
+                ;;
+              *)
+                echo "ERROR: port 13305 held by PID(s) '$OWNERS', not our lemond ($LEMOND_PID)"
+                cat "$LOG_FILE" 2>/dev/null || true
+                exit 1
+                ;;
+            esac
           fi
           echo "Waiting for server... ($i/30)"
           sleep 2
