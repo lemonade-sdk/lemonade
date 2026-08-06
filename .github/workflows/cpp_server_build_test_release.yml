@@ -1611,8 +1611,14 @@ jobs:
           # com.lemonade.server.plist, so it will not respawn.
           sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
           sudo pkill -f lemond 2>/dev/null || true
-          for i in $(seq 1 15); do
-            curl -sf http://localhost:13305/live > /dev/null 2>&1 || break
+
+          # Wait for the port to be free on BOTH address families. Polling
+          # localhost is not enough: it resolves to ::1 first on macOS, so the
+          # IPv4 socket can still be held after the IPv6 one is released. lemond
+          # logs the failed IPv4 bind and keeps serving IPv6-only, which breaks
+          # any test that connects to 127.0.0.1 (test/server_moonshine.py does).
+          for i in $(seq 1 30); do
+            lsof -nP -iTCP:13305 -sTCP:LISTEN > /dev/null 2>&1 || break
             sleep 1
           done
 
@@ -1627,15 +1633,18 @@ jobs:
           LEMOND_PID=$!
           disown "$LEMOND_PID"
 
+          # Require both families: a half-bound server passes a localhost
+          # health check while refusing every IPv4 client.
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
-              echo "Server is running and healthy (PID $LEMOND_PID)"
+            if curl -sf http://127.0.0.1:13305/live > /dev/null 2>&1 \
+               && curl -sf "http://[::1]:13305/live" > /dev/null 2>&1; then
+              echo "Server listening on 127.0.0.1 and [::1] (PID $LEMOND_PID)"
               exit 0
             fi
             echo "Waiting for server... ($i/30)"
             sleep 2
           done
-          echo "ERROR: Server did not start within 60 seconds"
+          echo "ERROR: Server did not bind both 127.0.0.1 and [::1] within 60 seconds"
           cat "$RUNNER_TEMP/lemond.log" 2>/dev/null || true
           exit 1
 
@@ -1669,8 +1678,6 @@ jobs:
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: .venv/bin/python test/server_moonshine.py --wrapped-server moonshine --backend cpu --cli-binary "$CLI_BINARY"
 
-      # Must run last: evicting a Kokoro model takes lemond down with it
-      # (#2916), so no test can rely on the server after this one.
       - name: Test kokoro-metal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: .venv/bin/python test/server_tts.py --cli-binary "$CLI_BINARY"
