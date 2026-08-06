@@ -9,10 +9,8 @@ import {
   saveBackendTuning,
 } from '../modelConfiguration';
 import { Icon, type IconName } from './Icon';
-import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
-import WorkspaceRailHeader from './WorkspaceRailHeader';
+import { WorkspaceCatalogLayout, WorkspaceCatalogSection } from './WorkspaceCatalogLayout';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspacePaneHeader } from './WorkspacePanels';
 
@@ -84,6 +82,28 @@ const RECIPE_LABELS: Record<string, string> = {
   thinksound:      'ThinkSound',
   openmoss:        'OpenMOSS TTS',
   trellis:         'TRELLIS.2',
+};
+
+const ENGINE_LOGO_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/engines/';
+
+/* plate 'dark' matches logos with a baked-in dark background fill; showName
+ * accompanies icon-only logos that don't spell out the engine name.
+ * stable_diffusion_cpp.png (near-square collage) and ryzen_ai_sw.png
+ * (gradient badge) are intentionally unmapped: they read badly at banner
+ * height, so those engines get the text plate instead. */
+type EngineLogo = { file: string; plate?: 'dark'; showName?: boolean };
+
+const ENGINE_LOGOS: Record<string, EngineLogo> = {
+  llamacpp:       { file: 'llama_cpp.png' },
+  onnxruntime:    { file: 'onnx_runtime.png' },
+  whispercpp:     { file: 'whisper_cpp.png', plate: 'dark' },
+  moonshine:      { file: 'moonshine.png', showName: true },
+  kokoro:         { file: 'kokoros.png' },
+  flm:            { file: 'fastflowlm.png' },
+  vllm:           { file: 'vllm.png' },
+  acestep:        { file: 'ace_step.png', plate: 'dark' },
+  openmoss:       { file: 'openmoss.png' },
+  trellis:        { file: 'trellis.png' },
 };
 
 /** User-facing labels for backend variants */
@@ -620,8 +640,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [showTech, setShowTech] = useState(false);
   const [showUnsupported, setShowUnsupported] = useState(false);
   const [viewFilter, setViewFilter] = useState<BackendViewFilter>('all');
-  const [railCollapsed, setRailCollapsed] = useState(false);
-  const mobileRail = useWorkspaceMobileRail();
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [backendTunings, setBackendTunings] = useState<Record<string, BackendTuning>>(loadBackendTunings);
@@ -1014,11 +1032,29 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const renderBackendCard = useCallback(({ recipe, variants }: BackendCatalogEntry) => {
     const engineName = RECIPE_LABELS[recipe] || recipe;
     const supportsArgs = backendSupportsArgs(recipe);
+    const logo = ENGINE_LOGOS[recipe];
 
     return (
-      <article className="backend-card" key={recipe} data-recipe={recipe}>
-        <div className="backend-card__head">
-          <h3 className="backend-card__name">{engineName}</h3>
+      <article className="workspace-card backend-card" key={recipe} data-recipe={recipe}>
+        <div className="workspace-card__head">
+          <h3 className="sr-only">{engineName}</h3>
+          <div
+            className={`backend-card__logo${logo?.plate === 'dark' ? ' backend-card__logo--dark' : ''}${logo && !logo.showName ? ' backend-card__logo--image-only' : ''}`}
+            aria-hidden="true"
+          >
+            {logo && (
+              <img
+                src={`${ENGINE_LOGO_BASE}${logo.file}`}
+                alt=""
+                loading="lazy"
+                onError={event => {
+                  event.currentTarget.style.display = 'none';
+                  event.currentTarget.parentElement!.className = 'backend-card__logo';
+                }}
+              />
+            )}
+            <span className="backend-card__logo-name">{engineName}</span>
+          </div>
         </div>
 
         <div className="backend-card__variants">
@@ -1194,7 +1230,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   if (loading && !sysInfo) {
     return (
       <section className="backends" data-view="backends">
-        <WorkspacePaneHeader className="backends__pane-header" headingLevel={1} title="Backends" />
+        <WorkspacePaneHeader className="backends__pane-header" headingLevel={1} title="Inference Backends" />
         <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
           <div className="hf-zone__spinner" />
         </div>
@@ -1203,34 +1239,25 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   }
 
   return (
-    <section className={`backends backends--workspace${railCollapsed ? ' workspace--rail-collapsed' : ''}${showTech ? ' show-tech' : ''}`} data-view="backends">
-      {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
-      <aside
-        ref={mobileRail.panelRef}
-        id="backend-filters-panel"
-        className={`workspace-rail mobile-context-panel backends__rail${railCollapsed && !mobileRail.isOpen ? ' is-collapsed' : ''}${mobileRail.isOpen ? ' is-mobile-open' : ''}`}
-        aria-label="Backend filters"
-        role={mobileRail.isOpen ? 'dialog' : undefined}
-        aria-modal={mobileRail.isOpen ? true : undefined}
-      >
-        <WorkspaceRailHeader
-          title="Filters"
-          sidebarLabel="backend filters"
-          purpose="filter"
-          collapsed={railCollapsed && !mobileRail.isOpen}
-          onToggle={() => setRailCollapsed(value => !value)}
-          onMobileClose={mobileRail.isOpen ? mobileRail.close : undefined}
-        />
-        <nav className="workspace-filter-list" aria-label="Backend filters">
-          {BACKEND_VIEW_FILTERS.map(([id, label, description, icon]) => (
-            <button key={id} type="button" className={`workspace-filter-list__item${viewFilter === id ? ' is-active' : ''}`} aria-current={viewFilter === id ? 'true' : undefined} aria-label={label} title={`${label} — ${description}`} onClick={() => { setViewFilter(id); mobileRail.close(); }}>
-              <Icon className="workspace-filter-list__icon" name={icon} size={14} />
-              <span className="workspace-filter-list__label">{label}</span>
-              <span className="workspace-filter-list__count">{backendStateCounts[id]}</span>
-            </button>
-          ))}
-        </nav>
-        <div className="workspace-rail__footer backends__rail-footer">
+    <WorkspaceCatalogLayout
+      view="backends"
+      className={`backends backends--workspace${showTech ? ' show-tech' : ''}`}
+      panelId="backend-filters-panel"
+      railTitle="Filters"
+      railLabel="Backend filters"
+      sidebarLabel="backend filters"
+      mobileMenuLabel="Open backend filters"
+      filters={BACKEND_VIEW_FILTERS.map(([id, label, description, icon]) => ({
+        id,
+        label,
+        description,
+        icon,
+        count: backendStateCounts[id],
+      }))}
+      activeFilter={viewFilter}
+      onFilterChange={setViewFilter}
+      railFooter={
+        <div className="backends__rail-footer">
           <label className="backends__toggle">
             <input
               type="checkbox"
@@ -1255,103 +1282,84 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             </div>
           )}
         </div>
-      </aside>
-
-      <WorkspaceMobileMenuButton
-        menuLabel="Open backend filters"
-        panelId="backend-filters-panel"
-        expanded={mobileRail.isOpen}
-        onClick={mobileRail.toggle}
-        triggerRef={mobileRail.triggerRef}
-      />
-
-      <div className="backends__main workspace-pane">
-      <WorkspacePaneHeader
-        className="backends__pane-header"
-        headingLevel={1}
-        title="Backends"
-        subtitle="Install and update the inference engines available on this machine."
-        actions={updatesAvailable > 0 ? (
-          <div className="backends__header-update" data-backends-banner>
-            <span className="sr-only" data-backends-banner-text>{updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available</span>
-            <WorkspaceActionButton appearance="primary" icon="rotate-ccw" data-backends-banner-action onClick={handleUpdateAll} disabled={installing !== null}>
-              {installing ? 'Updating…' : `Update all (${updatesAvailable})`}
-            </WorkspaceActionButton>
-          </div>
-        ) : undefined}
-      />
-
-      <div className="backends__head">
-
-        {error && (
-          <div className="banner banner--error" data-backends-error>
-            <span className="banner__icon" aria-hidden="true"><Icon name="alert" size={16} /></span>
-            <span className="banner__text">Could not load backend system info: {error}</span>
-            <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => void fetchInfo()} disabled={loading}>Retry</WorkspaceActionButton>
-          </div>
-        )}
-
-      </div>
-
-      {backendCatalog.length === 0 && (
-        <p className="sr-only" data-backends-matrix-empty>No backend data is available for this Lemonade server yet.</p>
-      )}
-
-      {backendStateCounts[viewFilter] === 0 && (
-        <div className="backends__filter-empty">
-          <Icon name={viewFilter === 'updates' ? 'check' : 'box'} size={24} />
-          <strong>No {viewFilter} backends</strong>
-          <span>{viewFilter === 'updates' ? 'Every installed backend is current.' : 'No runtimes match this filter on the connected machine.'}</span>
-          </div>
-        )}
-
-        <div className="backends__content">
-          <div className="backend-catalog" data-backends-matrix>
-            {backendCatalog.map(({ capability, entries }) => {
-              const visibleEntries = entries
-                .map(entry => {
-                  const variants = entry.variants.filter(backendMatchesView);
-                  return {
-                    ...entry,
-                    variants,
-                    devices: uniq(variants.flatMap(variant => variant.devices)),
-                  };
-                })
-                .filter(entry => entry.variants.length > 0);
-              if (visibleEntries.length === 0) return null;
-              return (
-                <section className="backend-catalog__section" key={capability}>
-                  <header className="backend-catalog__heading">
-                    <div>
-                      <h2>{CAPABILITY_LABELS[capability]}</h2>
-                      <p>{CAPABILITY_DESCRIPTIONS[capability]}</p>
-                    </div>
-                  </header>
-                  <div className="backend-catalog__grid">
-                    {visibleEntries.map(renderBackendCard)}
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-
+      }
+      header={
+        <WorkspacePaneHeader
+          className="backends__pane-header"
+          headingLevel={1}
+          title="Inference Backends"
+          subtitle="Install and update the inference engines available on this machine."
+          actions={updatesAvailable > 0 ? (
+            <div className="backends__header-update" data-backends-banner>
+              <span className="sr-only" data-backends-banner-text>{updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available</span>
+              <WorkspaceActionButton appearance="primary" icon="rotate-ccw" data-backends-banner-action onClick={handleUpdateAll} disabled={installing !== null}>
+                {installing ? 'Updating…' : `Update all (${updatesAvailable})`}
+              </WorkspaceActionButton>
+            </div>
+          ) : undefined}
+        />
+      }
+      preContent={<>
+        <div className="backends__head">
+          {error && (
+            <div className="banner banner--error" data-backends-error>
+              <span className="banner__icon" aria-hidden="true"><Icon name="alert" size={16} /></span>
+              <span className="banner__text">Could not load backend system info: {error}</span>
+              <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => void fetchInfo()} disabled={loading}>Retry</WorkspaceActionButton>
+            </div>
+          )}
         </div>
-
-      <BackendArgsDialog
-        backendKeyValue={argsEditorKey}
-        tuning={argsEditorKey ? backendTunings[argsEditorKey] || null : null}
-        onSave={handleSaveBackendArgs}
-        onClear={handleClearBackendArgs}
-        onClose={closeArgsEditor}
-      />
-
-      {/* #2351: always-present polite live region so NVDA announces toast messages */}
-      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-backends-toast-live>
-        {toastMsg || ''}
+        {backendCatalog.length === 0 && (
+          <p className="sr-only" data-backends-matrix-empty>No backend data is available for this Lemonade server yet.</p>
+        )}
+        {backendStateCounts[viewFilter] === 0 && (
+          <div className="backends__filter-empty">
+            <Icon name={viewFilter === 'updates' ? 'check' : 'box'} size={24} />
+            <strong>No {viewFilter} backends</strong>
+            <span>{viewFilter === 'updates' ? 'Every installed backend is current.' : 'No runtimes match this filter on the connected machine.'}</span>
+          </div>
+        )}
+      </>}
+      overlay={<>
+        <BackendArgsDialog
+          backendKeyValue={argsEditorKey}
+          tuning={argsEditorKey ? backendTunings[argsEditorKey] || null : null}
+          onSave={handleSaveBackendArgs}
+          onClear={handleClearBackendArgs}
+          onClose={closeArgsEditor}
+        />
+        {/* #2351: always-present polite live region so NVDA announces toast messages */}
+        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-backends-toast-live>
+          {toastMsg || ''}
+        </div>
+        {toastMsg && <div className="backends__toast" data-backends-toast>{toastMsg}</div>}
+      </>}
+    >
+      <div className="workspace-catalog" data-backends-matrix>
+        {backendCatalog.map(({ capability, entries }) => {
+          const visibleEntries = entries
+            .map(entry => {
+              const variants = entry.variants.filter(backendMatchesView);
+              return {
+                ...entry,
+                variants,
+                devices: uniq(variants.flatMap(variant => variant.devices)),
+              };
+            })
+            .filter(entry => entry.variants.length > 0);
+          if (visibleEntries.length === 0) return null;
+          return (
+            <WorkspaceCatalogSection
+              key={capability}
+              title={CAPABILITY_LABELS[capability]}
+              description={CAPABILITY_DESCRIPTIONS[capability]}
+            >
+              {visibleEntries.map(renderBackendCard)}
+            </WorkspaceCatalogSection>
+          );
+        })}
       </div>
-      {toastMsg && <div className="backends__toast" data-backends-toast>{toastMsg}</div>}
-      </div>
-    </section>
+    </WorkspaceCatalogLayout>
   );
 };
 
