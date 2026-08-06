@@ -140,12 +140,11 @@ void VoxCPM2Server::audio_speech(const json& request, httplib::DataSink& sink) {
     // anything else, so the catalog name Lemonade routed on cannot be passed through.
     forwarded["model"] = "voxcpm2";
 
-    // Streaming requests deliberately go to the buffered endpoint. llama-tts-server
-    // also exposes /v1/audio/speech/stream, but its first decode step feeds a
-    // single 4-frame latent patch into the AudioVAE, whose causal convolutions need
-    // more left padding than that — GGML_ASSERT(lp0 <= x->ne[0]) in
-    // voxcpm2_audiovae.cpp aborts the subprocess on every such request. Switch the
-    // endpoint here once that is fixed upstream.
+    // Streaming requests deliberately go to the buffered endpoint.
+    // /v1/audio/speech/stream re-decodes a context window of latents on every
+    // step, which costs more than one buffered decode of the whole utterance,
+    // so the extra wall-clock outweighs starting playback earlier. Switch once
+    // that gap closes.
     forward_streaming_request("/v1/audio/speech", forwarded.dump(), sink, /*sse=*/false, /*timeout_seconds=*/600);
 }
 
