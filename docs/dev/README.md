@@ -36,4 +36,4 @@ Lemonade has a unique capability to group LLM, image, and speech models together
 
 ### CI System
 
-Lemonade has a CI system that tests changes on real AI PC hardware targets — in the merge queue by default, or on a PR labeled `ci::backends` (see the [testing guide](./testing.md#what-defers-to-the-merge-queue)). The [self-hosted runners](./self-hosted-runners.md) guide documents how those are set up.
+Lemonade has a CI system that tests changes on real AI PC hardware targets — in the merge queue by default, or on a PR labeled `ci:backends` (see the [testing guide](./testing.md#what-defers-to-the-merge-queue)). The [self-hosted runners](./self-hosted-runners.md) guide documents how those are set up.
