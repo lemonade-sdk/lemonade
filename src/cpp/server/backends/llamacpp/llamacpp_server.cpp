@@ -90,7 +90,8 @@ static void push_overridable_arg(std::vector<std::string>& args,
         anti_key = "--no-" + key.substr(2); //remove -- prefix
     }
 
-    if ((custom_args.find(key) == std::string::npos) && (custom_args.find(anti_key) == std::string::npos)) {
+    const std::vector<std::string> tokens = parse_custom_args(custom_args);
+    if (!custom_args_has_flag(tokens, key) && !custom_args_has_flag(tokens, anti_key)) {
         args.push_back(key);
     }
 }
@@ -101,13 +102,15 @@ static void push_overridable_arg(std::vector<std::string>& args,
                     const std::string& key,
                     const std::string& value,
                     const std::vector<std::string>& aliases = {}) {
+    const std::vector<std::string> tokens = parse_custom_args(custom_args);
+
     for (const auto& alias : aliases) {
-        if (custom_args.find(alias) != std::string::npos) {
+        if (custom_args_has_flag(tokens, alias)) {
             return;
         }
     }
 
-    if (custom_args.find(key) == std::string::npos) {
+    if (!custom_args_has_flag(tokens, key)) {
         args.push_back(key);
         args.push_back(value);
     }
