@@ -1,0 +1,45 @@
+{
+  "name": "ai-campus-copilot-local",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A privacy-first student assistant powered by Lemonade local AI",
+  "license": "Apache-2.0",
+  "author": "Jerome Prakash L",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "dexie": "^4.0.11",
+    "lucide-react": "^0.469.0",
+    "next": "^15.1.6",
+    "pdfjs-dist": "^4.10.38",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.2.0",
+    "@playwright/test": "^1.49.1",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "eslint": "^9.18.0",
+    "eslint-config-next": "^15.1.6",
+    "fake-indexeddb": "^6.0.1",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

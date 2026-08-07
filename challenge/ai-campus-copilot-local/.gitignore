@@ -1,0 +1,21 @@
+# The repository root .gitignore excludes `lib/` for Python packaging. That rule
+# also matches this app's src/lib/ source directory, so re-include it here.
+!src/lib/
+
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+.env
+.env.local
+.env*.local
+
+playwright-report/
+test-results/
+.playwright/
+
+.DS_Store
+*.log

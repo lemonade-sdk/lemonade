@@ -25,6 +25,16 @@
   <a href="https://discord.gg/5xXzkMu8Zk">Discord</a>
 </h3>
 
+<!-- FORK NOTE: The section below is specific to this fork and is not part of upstream lemonade-sdk/lemonade. -->
+
+## Developer Challenge Project
+
+This fork contains **AI Campus Copilot Local**, an open-source student document assistant powered by Lemonade Server.
+
+Project location: `challenge/ai-campus-copilot-local/`
+
+<!-- END FORK NOTE -->
+
 Lemonade is the local AI server that gives you the same capabilities as cloud APIs, except 100% free and private. Use the latest models for chat, coding, speech, and image generation on your own NPU and GPU.
 
 Lemonade comes in two flavors:
