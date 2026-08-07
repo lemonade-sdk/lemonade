@@ -243,10 +243,15 @@ def run_bench(fork: dict, version: str, binary_path: Path, model: str,
               output_file: Path, compare_file: Path | None,
               dry_run: bool, lemonade_bin: str) -> dict | None:
     backend = fork["backend"]
+    # bench_as: the backend name lemond recognises for --backend flag.
+    # Some forks (e.g. rocm-gfx11) use a custom name not in lemond's registry;
+    # install_as is the compatible name lemond knows — use that for bench too.
+    # The env var still points at the custom fork binary.
+    bench_as = fork.get("install_as", backend)
     env_var = f"LEMONADE_LLAMACPP_{backend.upper()}_BIN"
 
     cmd = [lemonade_bin, "bench", model,
-           "--backend", backend,
+           "--backend", bench_as,
            "--scenarios", *SCENARIOS,
            "--runs", str(MEASUREMENT_RUNS),
            "--warmup", str(WARMUP_RUNS),
