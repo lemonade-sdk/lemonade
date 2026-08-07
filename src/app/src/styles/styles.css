@@ -14487,6 +14487,10 @@ button.workspace-metadata-chip:hover {
   font-size: var(--type-supporting-size);
 }
 
+.effective-settings__note-copy {
+  min-width: 0;
+}
+
 .effective-settings__empty {
   margin: 0;
   color: var(--text-tertiary);
