@@ -3741,7 +3741,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 400, response.text)
         self.assertIn("undeclared-classifier-model", response.json()["error"])
-        print("[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400")
+        print(
+            "[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400"
+        )
 
     def test_021zm_routing_validate_llm_router_fails_open_returns_200(self):
         """The 'llm' router type is fully implemented: the parser desugars
@@ -3792,7 +3794,9 @@ class EndpointTests(ServerTestBase):
             [rule["id"] for rule in normalized_routing["rules"]],
             ["__route_0", "__route_1"],
         )
-        print("[OK] /routing/validate ran an llm router live and failed open to the default model")
+        print(
+            "[OK] /routing/validate ran an llm router live and failed open to the default model"
+        )
 
     def test_021zn_routing_validate_has_images_flag(self):
         """The has_images request flag flows through to a has_images match
@@ -3981,7 +3985,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response_bad_has_tools.status_code, 400)
         self.assertIn("has_tools", response_bad_has_tools.json()["error"])
-        print("[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400")
+        print(
+            "[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400"
+        )
 
     def test_021zj_router_llm_l0a_live(self):
         """L0a live path (#2405), deterministic: the router component is a mock
@@ -6264,7 +6270,6 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
-
     def test_037_model_update_check_lifecycle(self):
         """A successful re-pull clears a staged per-model update marker.
 
@@ -6317,9 +6322,7 @@ class EndpointTests(ServerTestBase):
             processed_models,
             "Pulled model must have a processed snapshot entry",
         )
-        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get(
-            "snapshot_id", ""
-        )
+        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get("snapshot_id", "")
         self.assertTrue(original_snapshot, "Processed snapshot must not be empty")
 
         stale_snapshot = "0" * 40
@@ -6367,6 +6370,60 @@ class EndpointTests(ServerTestBase):
                 provenance_file.write(original_provenance)
 
         print("[OK] /models/check-updates lifecycle clears after re-pull")
+
+    def test_051_models_sync_internal_security_boundary(self):
+        """Verify that model sync routes are exclusively administrative internal routes and public routes return 404."""
+        # 1. Verify GET /internal/models/sync/status returns the status JSON
+        status_url = f"http://localhost:{PORT}/internal/models/sync/status"
+        resp = requests.get(status_url, timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(
+            resp.status_code, 200, f"/internal/models/sync/status failed: {resp.text}"
+        )
+        status_json = resp.json()
+        self.assertIn("status", status_json)
+        self.assertIn("checked_count", status_json)
+        self.assertIn("models_updated", status_json)
+        self.assertIn("terminal_error", status_json)
+
+        # 2. Verify POST /internal/models/sync dry_run returns dry_run: true
+        sync_url = f"http://localhost:{PORT}/internal/models/sync"
+        resp = requests.post(
+            sync_url,
+            json={"dry_run": True, "models": [ENDPOINT_TEST_MODEL]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code, 200, f"/internal/models/sync dry run failed: {resp.text}"
+        )
+        sync_json = resp.json()
+        self.assertTrue(sync_json.get("dry_run"))
+        self.assertIn("checked_count", sync_json)
+
+        # 3. Verify POST /internal/models/sync async returns 202 Accepted
+        resp = requests.post(
+            sync_url,
+            json={"async": True, "models": [ENDPOINT_TEST_MODEL]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code,
+            202,
+            f"/internal/models/sync async dispatch failed: {resp.text}",
+        )
+        async_json = resp.json()
+        self.assertTrue(async_json.get("async"))
+
+        # 4. Verify public quad-prefix route /api/v1/models/sync returns 404
+        public_url = f"{self.base_url}/models/sync"
+        resp = requests.post(
+            public_url, json={"dry_run": True}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            404,
+            f"public /api/v1/models/sync should not exist, got {resp.status_code}",
+        )
+        print("[OK] /internal/models/sync security boundary is secure")
 
 
 if __name__ == "__main__":

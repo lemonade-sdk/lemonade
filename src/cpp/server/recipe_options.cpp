@@ -3,6 +3,7 @@
 #include <lemon/utils/custom_args.h>
 #include <nlohmann/json.hpp>
 #include <map>
+#include <optional>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>
 #else
@@ -25,6 +26,7 @@ static const json& common_defaults() {
         {"downsize_idle_timeout", 60},    // Default soft idle timeout (1 min)
         {"evict_weight_factor", 1.0},     // Eviction-protection weight (higher = more protected)
         {"pinned", false},
+        {"auto_update", nullptr},
     };
     return d;
 }
@@ -83,6 +85,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     keys.push_back("downsize_idle_timeout");
     keys.push_back("evict_weight_factor");
     keys.push_back("pinned");
+    keys.push_back("auto_update");
 
     return keys;
 }
@@ -183,7 +186,15 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
 
 RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
     json merged = options_;
-    bool merge_args = options_.contains("merge_args") ? options_["merge_args"].get<bool>() : options.get_option("merge_args").get<bool>();
+    auto get_bool = [](const json& j, const std::string& key) -> std::optional<bool> {
+        if (j.contains(key) && j[key].is_boolean()) {
+            return j[key].get<bool>();
+        }
+        return std::nullopt;
+    };
+    bool merge_args = get_bool(options_, "merge_args")
+                          .value_or(get_bool(options.options_, "merge_args").value_or(true));
+
 
     for (auto it = options.options_.begin(); it != options.options_.end(); ++it) {
         if (merge_args && it.key().size() >= 5 && it.key().substr(it.key().size() - 5) == "_args") {

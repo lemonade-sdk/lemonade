@@ -160,7 +160,6 @@ POLICY = {
 }
 
 
-
 class RouterTests(ServerTestBase):
     """End-to-end routing through a collection.router collection."""
 
