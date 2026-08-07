@@ -54,12 +54,12 @@
     }
   },
   "llamacpp": {
-    "vulkan": "b9747",
-    "rocm-stable": "b9752",
-    "rocm-nightly": "b1292",
-    "cuda": "b9851",
-    "metal": "b9747",
-    "cpu": "b9747"
+    "vulkan": "b10241",
+    "rocm-stable": "b10236",
+    "rocm-nightly": "b1305",
+    "cuda": "b10236",
+    "metal": "b10241",
+    "cpu": "b10241"
   },
   "whispercpp": {
     "cpu": "v1.8.4",

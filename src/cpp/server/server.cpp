@@ -1072,10 +1072,15 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_embeddings(req, res);
     });
 
-    // Reranking
-    register_post("reranking", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_reranking(req, res);
-    });
+    // Reranking.
+    // `/rerank` is the de-facto convention that most clients expect.
+    // `/reranking` (Lemonade's original path) is kept as an alias for backward compatibility.
+    // `/reranker` is added as an additional alias.
+    for (const char* rerank_path : {"rerank", "reranking", "reranker"}) {
+        register_post(rerank_path, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_reranking(req, res);
+        });
+    }
 
     register_post("classify", [this](const httplib::Request& req, httplib::Response& res) {
         handle_classify(req, res);
