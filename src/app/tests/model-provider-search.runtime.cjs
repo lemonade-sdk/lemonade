@@ -10,6 +10,7 @@ const api = fs.readFileSync(path.join(root, 'src/api.ts'), 'utf8');
 const capabilitiesSource = fs.readFileSync(path.join(root, 'src/modelCapabilities.ts'), 'utf8');
 const remoteCapabilitiesSource = fs.readFileSync(path.join(root, 'src/remoteModelCapabilities.ts'), 'utf8');
 const listPanelSource = fs.readFileSync(path.join(root, 'src/components/ModelListPanel.tsx'), 'utf8');
+const huggingFaceSearchPath = path.join(root, 'src/features/models/huggingFaceSearch.ts');
 
 function loadTypeScriptModule(filename) {
   const source = fs.readFileSync(filename, 'utf8');
@@ -39,6 +40,8 @@ assert.match(api, /registrySearch\(\s*source: ModelRegistryProvider/);
 assert.match(api, /format: 'gguf'/);
 assert.match(api, /searchModelScope/);
 assert.match(api, /source: 'modelscope'/);
+assert.match(api, /limit: String\(HUGGING_FACE_SEARCH_LIMIT\)/);
+assert.match(api, /filterHuggingFaceSearchResults\(data\)/);
 
 // User models and Omni collections must be server-backed, not only browser
 // localStorage entries. This keeps them visible through /models after restart.
@@ -103,6 +106,20 @@ assert.match(nav, /aria-pressed=\{enabled\}/);
 
 const { remoteCapabilityEvidence } = loadTypeScriptModule(path.join(root, 'src/remoteModelCapabilities.ts'));
 const { capabilityFromModelInfo, modelCapabilityTags } = loadTypeScriptModule(path.join(root, 'src/modelCapabilities.ts'));
+const { filterHuggingFaceSearchResults, HUGGING_FACE_SEARCH_LIMIT } = loadTypeScriptModule(huggingFaceSearchPath);
+
+const rankedHuggingFaceResults = Array.from({ length: 14 }, (_, index) => ({
+  id: `org/model-${index + 1}`,
+  pipeline_tag: index === 3 ? 'image-text-to-image' : 'text-generation',
+}));
+const filteredHuggingFaceResults = filterHuggingFaceSearchResults(rankedHuggingFaceResults);
+assert.equal(HUGGING_FACE_SEARCH_LIMIT, 12, 'GUI2 caps Hugging Face search at its top 12 download-ranked results');
+assert.equal(filteredHuggingFaceResults.length, 11, 'incompatible pipelines within the top 12 must be removed');
+assert.equal(filteredHuggingFaceResults.at(-1).id, 'org/model-12', 'filtering must not refill from lower-ranked results');
+assert.ok(
+  filteredHuggingFaceResults.every(result => result.pipeline_tag !== 'image-text-to-image'),
+  'non-LLM image pipelines must be excluded from model search',
+);
 
 const unknownByNameOnly = remoteCapabilityEvidence({
   id: 'org/embedding-chat-reranker-name-only',
