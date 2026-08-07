@@ -379,6 +379,13 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
+#### TheNoise ROCm (experimental) (`thenoise` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
+| `--thenoise-args ARGS` | Custom arguments to pass to thenoise (must not conflict with managed args) | `""` |
+
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |

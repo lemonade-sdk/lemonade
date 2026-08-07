@@ -134,6 +134,14 @@ Values set in the user's `config.json` always take precedence over these seeded 
     },
     "trust_incoming_trace_context": false
   },
+  "thenoise": {
+    "args": "",
+    "backend": "auto",
+    "guidance_scale": 1.0,
+    "height": 1024,
+    "steps": 8,
+    "width": 1024
+  },
   "thinksound": {
     "backend": "auto",
     "cuda_bin": "builtin",
