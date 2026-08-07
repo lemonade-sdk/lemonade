@@ -490,6 +490,36 @@ class EndpointTests(ServerTestBase):
         )
         print("[OK] /metrics returned Prometheus text with loaded model samples")
 
+    def test_002b_cache_and_routing_metrics_series(self):
+        """Cache-effectiveness and route-stability series exist in /metrics and /stats."""
+        response = requests.get(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.text
+        self.assertIn("# HELP lemonade_model_cache_tokens ", body)
+        self.assertIn("# HELP lemonade_model_cache_tokens_total ", body)
+
+        samples = self._parse_prometheus_text(body)
+        for series in (
+            "lemonade_cache_tokens_total",
+            "lemonade_routing_decisions_total",
+            "lemonade_routing_switches_total",
+        ):
+            self.assertIn(series, samples, f"{series} missing from /metrics")
+
+        stats_response = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(stats_response.status_code, 200)
+        stats = stats_response.json()
+        for key in (
+            "cache_tokens",
+            "cache_tokens_total",
+            "routing_decisions_total",
+            "routing_switches_total",
+        ):
+            self.assertIn(key, stats, f"{key} missing from /stats")
+        print("[OK] cache and routing telemetry series present in /metrics and /stats")
+
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""
         # Model is already pulled in setUpClass

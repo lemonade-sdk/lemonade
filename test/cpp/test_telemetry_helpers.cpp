@@ -9,6 +9,7 @@
 #include <vector>
 #include "lemon/backends/vllm/vllm_server.h"
 #include "lemon/streaming_proxy.h"
+#include "lemon/utils/conversation_fingerprint.h"
 
 namespace lemon::telemetry {
     std::string standardize_thinking(const std::string& text);
@@ -185,6 +186,19 @@ int main() {
             auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
             check_int("parse_telemetry: root usage prompt_tokens", tel.input_tokens, 10);
             check_int("parse_telemetry: root usage completion_tokens", tel.output_tokens, 20);
+            check_int("parse_telemetry: cache_tokens -1 when unreported", tel.cache_tokens, -1);
+        }
+
+        // 1b. Cached tokens from usage.prompt_tokens_details (OpenAI-wire)
+        {
+            std::string buffer = "data: {\"usage\": {\"prompt_tokens\": 10, \"completion_tokens\": 20, \"prompt_tokens_details\": {\"cached_tokens\": 8}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: usage cached_tokens", tel.cache_tokens, 8);
+        }
+        {
+            std::string buffer = "data: {\"usage\": {\"prompt_tokens\": 10, \"prompt_tokens_details\": {\"cached_tokens\": 0}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: usage cached_tokens zero is reported, not -1", tel.cache_tokens, 0);
         }
 
         // 2. Nested usage under response (OpenAI keys)
@@ -209,12 +223,13 @@ int main() {
 
         // 3. Root level timings
         {
-            std::string buffer = "data: {\"timings\": {\"prompt_n\": 50, \"predicted_n\": 60, \"prompt_ms\": 1500.0, \"predicted_per_second\": 25.5}}\n";
+            std::string buffer = "data: {\"timings\": {\"prompt_n\": 50, \"predicted_n\": 60, \"prompt_ms\": 1500.0, \"predicted_per_second\": 25.5, \"cache_n\": 45}}\n";
             auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
             check_int("parse_telemetry: root timings prompt_tokens", tel.input_tokens, 50);
             check_int("parse_telemetry: root timings completion_tokens", tel.output_tokens, 60);
             check_double_val("parse_telemetry: root timings prompt_ms", tel.time_to_first_token, 1.5);
             check_double_val("parse_telemetry: root timings predicted_per_second", tel.tokens_per_second, 25.5);
+            check_int("parse_telemetry: root timings cache_n", tel.cache_tokens, 45);
         }
 
         // 4. Nested timings under response
@@ -226,6 +241,56 @@ int main() {
             check_double_val("parse_telemetry: nested timings prompt_ms", tel.time_to_first_token, 2.0);
             check_double_val("parse_telemetry: nested timings predicted_per_second", tel.tokens_per_second, 30.0);
         }
+    }
+
+    // --- conversation_fingerprint tests ---
+    std::printf("===========================================\n");
+    {
+        auto check_bool = [](const char* name, bool ok) {
+            std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+            if (!ok) ++g_failures;
+        };
+        using lemon::utils::conversation_fingerprint;
+
+        nlohmann::json turn1 = {{"messages", nlohmann::json::array({
+            {{"role", "system"}, {"content", "You are helpful."}},
+            {{"role", "user"}, {"content", "Refactor my parser"}}
+        })}};
+        nlohmann::json turn2 = {{"messages", nlohmann::json::array({
+            {{"role", "system"}, {"content", "You are helpful."}},
+            {{"role", "user"}, {"content", "Refactor my parser"}},
+            {{"role", "assistant"}, {"content", "Done."}},
+            {{"role", "user"}, {"content", "now add tests"}}
+        })}};
+        check_bool("conversation_fingerprint: stable across appended turns",
+                   conversation_fingerprint(turn1) == conversation_fingerprint(turn2));
+
+        nlohmann::json other = {{"messages", nlohmann::json::array({
+            {{"role", "system"}, {"content", "You are helpful."}},
+            {{"role", "user"}, {"content", "Write a poem"}}
+        })}};
+        check_bool("conversation_fingerprint: differs for different first user message",
+                   conversation_fingerprint(turn1) != conversation_fingerprint(other));
+
+        nlohmann::json no_system = {{"messages", nlohmann::json::array({
+            {{"role", "user"}, {"content", "Refactor my parser"}}
+        })}};
+        check_bool("conversation_fingerprint: system prompt participates",
+                   conversation_fingerprint(turn1) != conversation_fingerprint(no_system));
+
+        nlohmann::json parts = {{"messages", nlohmann::json::array({
+            {{"role", "system"}, {"content", "You are helpful."}},
+            {{"role", "user"}, {"content", nlohmann::json::array({
+                {{"type", "text"}, {"text", "Refactor my parser"}}
+            })}}
+        })}};
+        check_bool("conversation_fingerprint: content-part form matches plain string form",
+                   conversation_fingerprint(turn1) == conversation_fingerprint(parts));
+
+        nlohmann::json prompt_a = {{"prompt", "complete this"}};
+        nlohmann::json prompt_b = {{"prompt", "complete that"}};
+        check_bool("conversation_fingerprint: legacy prompt form distinguishes inputs",
+                   conversation_fingerprint(prompt_a) != conversation_fingerprint(prompt_b));
     }
 
     // --- accumulate_responses_delta tests ---

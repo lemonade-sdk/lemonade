@@ -1150,7 +1150,15 @@ curl http://localhost:13305/v1/stats
   "tokens_per_second": 33.33,
   "input_tokens": 128,
   "output_tokens": 5,
-  "prompt_tokens": 9
+  "prompt_tokens": 9,
+  "cache_tokens": 96,
+  "request_count_total": 12,
+  "input_tokens_total": 1536,
+  "output_tokens_total": 60,
+  "prompt_tokens_total": 108,
+  "cache_tokens_total": 1152,
+  "routing_decisions_total": 4,
+  "routing_switches_total": 1
 }
 ```
 
@@ -1161,6 +1169,10 @@ curl http://localhost:13305/v1/stats
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
 - `prompt_tokens` - Total prompt tokens including cached tokens
+- `cache_tokens` - Prompt tokens served from the backend's prefix cache on the last request (llama.cpp `timings.cache_n`, or `usage.prompt_tokens_details.cached_tokens` from OpenAI-compatible cloud providers)
+- `*_total` - Cumulative counters since server start
+- `routing_decisions_total` - Routing decisions made by `collection.router` dispatch
+- `routing_switches_total` - Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)
 
 ## `GET /v1/system-stats`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

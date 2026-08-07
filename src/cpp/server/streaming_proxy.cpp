@@ -36,6 +36,11 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
         if (usage.contains("decoding_speed_tps")) {
             telemetry.tokens_per_second = usage["decoding_speed_tps"].get<double>();
         }
+        if (usage.contains("prompt_tokens_details") && usage["prompt_tokens_details"].is_object() &&
+            usage["prompt_tokens_details"].contains("cached_tokens") &&
+            usage["prompt_tokens_details"]["cached_tokens"].is_number()) {
+            telemetry.cache_tokens = usage["prompt_tokens_details"]["cached_tokens"].get<int>();
+        }
     }
 
     nlohmann::json timings;
@@ -57,6 +62,9 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
         }
         if (timings.contains("predicted_per_second")) {
             telemetry.tokens_per_second = timings["predicted_per_second"].get<double>();
+        }
+        if (timings.contains("cache_n") && timings["cache_n"].is_number()) {
+            telemetry.cache_tokens = timings["cache_n"].get<int>();
         }
     }
 }
