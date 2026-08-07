@@ -125,7 +125,7 @@ jobs:
           .venv/bin/python ci/run_regression.py \
             --forks        ci/benchmark_forks.json \
             --output       ci/results \
-            --binaries-dir /opt/lemonade-bench-binaries \
+            --binaries-dir "${{ github.workspace }}/../bench-binaries" \
             --fork-filter  "$FORK_ID" \
             --download-only
           echo "Fork binary ready"
@@ -197,7 +197,7 @@ jobs:
             ci/run_regression.py
             --forks        ci/benchmark_forks.json
             --output       ci/results
-            --binaries-dir /opt/lemonade-bench-binaries
+            --binaries-dir "${{ github.workspace }}/../bench-binaries"
             --fork-filter  "$FORK_ID"
             --port         "$PORT"
           )
