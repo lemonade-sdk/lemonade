@@ -4,6 +4,7 @@ import { CircleAlert, CircleCheck, CircleSlash, Loader2, RefreshCw } from "lucid
 import { useLemonade, type ConnectionStatus } from "@/components/providers/LemonadeProvider";
 import { useToast } from "@/components/providers/ToastProvider";
 import { ModelPicker } from "@/components/setup/ModelPicker";
+import { ServerUrlField } from "@/components/setup/ServerUrlField";
 import { Callout, Card, Chip, PageHeader, SkeletonList } from "@/components/ui/Primitives";
 
 const STATUS_COPY: Record<
@@ -41,6 +42,8 @@ export default function SetupPage() {
     refresh,
     isRefreshing,
     isReady,
+    isDirectMode,
+    serverUrl,
   } = useLemonade();
   const toast = useToast();
 
@@ -66,6 +69,24 @@ export default function SetupPage() {
       />
 
       <div className="flex flex-col gap-6">
+        {isDirectMode ? (
+          <Callout tone="warning" title="You are using the hosted demo">
+            <p>
+              This page is served from the internet, but the AI still runs on{" "}
+              <strong>your</strong> machine — your browser calls your own Lemonade Server
+              directly. Nothing is sent to a cloud model.
+            </p>
+            <p className="mt-2">
+              For that to work Lemonade must be running locally, and your browser must allow this
+              page to reach it. Some browsers block or prompt before a hosted page contacts a local
+              address. If the connection keeps failing, run the app locally instead — see the
+              README. That path is the supported one.
+            </p>
+          </Callout>
+        ) : null}
+
+        <ServerUrlField />
+
         <Card>
           <div className="flex items-start gap-3">
             <Icon
@@ -92,7 +113,9 @@ export default function SetupPage() {
               <dl className="mt-3 grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
                 <Row label="Server URL">
                   <code className="font-mono text-xs">
-                    proxied via this app to LEMONADE_SERVER_URL
+                    {isDirectMode
+                      ? (serverUrl ?? "not set")
+                      : "proxied via this app to LEMONADE_SERVER_URL"}
                   </code>
                 </Row>
                 <Row label="Server version">{health?.version ?? "—"}</Row>

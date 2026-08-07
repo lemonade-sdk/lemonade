@@ -412,10 +412,44 @@ export function createServerClient(overrides: Partial<LemonadeClientOptions> = {
   });
 }
 
+export const DEFAULT_DIRECT_URL = "http://localhost:13305";
+
 /**
- * Browser-side factory. Points at this app's own proxy routes, which mirror
- * Lemonade's paths, so both sides share one implementation.
+ * True for the hosted static build, which has no server and therefore no proxy.
+ * Inlined by Next at build time.
+ */
+export const IS_DIRECT_MODE = process.env["NEXT_PUBLIC_LEMONADE_DIRECT"] === "1";
+
+/**
+ * Browser-side factory.
+ *
+ * Proxied build: points at this app's own routes, which mirror Lemonade's
+ * paths, so both sides share one implementation.
+ *
+ * Static build: points straight at the user's Lemonade Server, since no proxy
+ * exists to forward through.
  */
 export function createBrowserClient(overrides: Partial<LemonadeClientOptions> = {}) {
-  return new LemonadeClient({ baseUrl: "/api/lemonade", ...overrides });
+  const baseUrl = IS_DIRECT_MODE ? DEFAULT_DIRECT_URL : "/api/lemonade";
+  return new LemonadeClient({ baseUrl, ...overrides });
+}
+
+/** Rejects anything that is not a usable http(s) origin. */
+/** Path to a document's detail view, differing by build mode. */
+export function documentHref(documentId: string): string {
+  return IS_DIRECT_MODE
+    ? `/documents/view/?id=${encodeURIComponent(documentId)}`
+    : `/documents/${encodeURIComponent(documentId)}`;
+}
+
+export function normaliseServerUrl(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
 }

@@ -1,0 +1,74 @@
+# Builds and publishes the AI Campus Copilot Local hosted demo to GitHub Pages.
+#
+# This workflow belongs to the fork's challenge project, not to upstream
+# Lemonade. It is scoped to challenge/** so it never runs for Lemonade changes.
+name: Campus Copilot Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "challenge/ai-campus-copilot-local/**"
+      - ".github/workflows/campus-copilot-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a half-finished deployment; queue instead.
+concurrency:
+  group: campus-copilot-pages
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: challenge/ai-campus-copilot-local
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: challenge/ai-campus-copilot-local/package-lock.json
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build static export
+        env:
+          # GitHub Pages serves a project site under /<repo>.
+          PAGES_BASE_PATH: /${{ github.event.repository.name }}
+          NEXT_PUBLIC_APP_NAME: AI Campus Copilot Local
+        run: npm run build:static
+
+      - name: Disable Jekyll processing
+        run: touch out/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: challenge/ai-campus-copilot-local/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

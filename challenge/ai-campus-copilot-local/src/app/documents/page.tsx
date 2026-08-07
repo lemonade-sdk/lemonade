@@ -25,6 +25,7 @@ import { deleteAllData, deleteDocument, getChunks } from "@/lib/db/repo";
 import { formatBytes } from "@/lib/documents/limits";
 import { processFile, rebuildEmbeddings, type ProcessingProgress } from "@/lib/documents/process";
 import { useDocuments } from "@/lib/hooks/useDocuments";
+import { documentHref } from "@/lib/lemonade/client";
 import { isLemonadeError } from "@/lib/lemonade/errors";
 import { formatDuration, formatTimestamp } from "@/lib/utils/cn";
 
@@ -191,7 +192,7 @@ export default function DocumentsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <Link
-                          href={`/documents/${document.id}`}
+                          href={documentHref(document.id)}
                           className="truncate text-sm font-semibold text-ink hover:underline"
                         >
                           {document.filename}
