@@ -203,7 +203,7 @@ CAPABILITIES = {
                 "image": "Anima-Turbo",
             },
         },
-        "sd-npu": {
+        "ryzenai-sd-server": {
             "backends": ["npu"],
             "supports": {
                 "image_generation": True,

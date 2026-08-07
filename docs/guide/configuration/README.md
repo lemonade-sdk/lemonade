@@ -117,6 +117,13 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "ryzenai": {
     "server_bin": "builtin"
   },
+  "ryzenaisd": {
+    "cfg_scale": 7.0,
+    "height": 512,
+    "npu_bin": "builtin",
+    "steps": 20,
+    "width": 512
+  },
   "sdcpp": {
     "args": "",
     "backend": "auto",

@@ -26,6 +26,7 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to ryzenai-sd-server (must not conflict with managed args)",
          "Ryzen AI SD Options"},
         {"steps",  "", 20,  "SIZE", "Number of diffusion steps",  "Ryzen AI SD Options"},
+        {"cfg_scale", "", 7.0, "SIZE", "Classifier-free guidance scale", "Ryzen AI SD Options"},
         {"width",  "", 512, "SIZE", "Output image width",         "Ryzen AI SD Options"},
         {"height", "", 512, "SIZE", "Output image height",        "Ryzen AI SD Options"},
     },
@@ -46,7 +47,7 @@ inline const BackendDescriptor descriptor = {
     /*takes_args*/      false,
     /*arg_variants*/    {},
     /*bin_variants*/    {"npu"},
-    /*config_extra*/    nlohmann::json::object(),
+    /*config_extra*/    {{"steps", 20}, {"cfg_scale", 7.0}, {"width", 512}, {"height", 512}},
 };
 
 }  // namespace ryzenaisd

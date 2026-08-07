@@ -42,6 +42,12 @@ private:
 
     // Resolve the final "WxH" size string for the request.
     std::string resolve_size(const json& request) const;
+
+    // Build the flat {"steps":N,"cfg_scale":N.N,"seed":N} object that
+    // ryzenai-sd-server's parse_extra_args() expects embedded in the prompt
+    // as <sd_cpp_extra_args>...</sd_cpp_extra_args>. Precedence for each
+    // value: request override -> model image_defaults -> recipe_options.
+    json build_extra_args(const json& request) const;
 };
 
 namespace ryzenaisd {
