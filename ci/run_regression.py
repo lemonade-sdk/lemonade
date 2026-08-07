@@ -267,11 +267,19 @@ def run_bench(fork: dict, version: str, binary_path: Path, model: str,
         return None
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(cmd, env=env, capture_output=True, text=True)
 
-    if result.returncode != 0:
-        print(f"    [ERROR] lemonade bench failed (exit {result.returncode})")
-        print(result.stderr[-2000:])
+    # Stream output live so CI logs show progress (model pulls, scenario runs)
+    print("    [running — streaming output below]", flush=True)
+    proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True)
+    output_lines = []
+    for line in proc.stdout:
+        print(f"    {line}", end="", flush=True)
+        output_lines.append(line)
+    proc.wait()
+
+    if proc.returncode != 0:
+        print(f"    [ERROR] lemonade bench failed (exit {proc.returncode})")
         return None
 
     if not output_file.exists():
@@ -502,7 +510,7 @@ def main() -> int:
                 continue
 
         for model in run_models:
-            print(f"\n  Model: {model}")
+            print(f"\n  Model: {model} (--auto-pull enabled, first run may download weights)")
             run_file    = output_dir / fork_id / model / f"run-{timestamp}.json"
             prev_result = find_previous_result(output_dir, fork_id, model)
 
