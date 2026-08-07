@@ -13,6 +13,7 @@
 namespace lemon::telemetry {
     std::string standardize_thinking(const std::string& text);
     std::string hex_to_bytes(const std::string& hex);
+    std::string truncate_string(const std::string& str, size_t max_len);
 }
 
 static int g_failures = 0;
@@ -55,8 +56,17 @@ static void check_map_empty(const char* name, const std::map<std::string, nlohma
 int main() {
     using lemon::telemetry::hex_to_bytes;
     using lemon::telemetry::standardize_thinking;
+    using lemon::telemetry::truncate_string;
 
     std::printf("=== RUNNING TELEMETRY HELPERS C++ TESTS ===\n");
+
+    // --- truncate_string tests ---
+    std::string long_text = "This is a very long string that would previously be truncated at 4096 bytes or custom limits.";
+    check_eq("truncate_string: max_len = 0 (unlimited / no truncation)", truncate_string(long_text, 0), long_text);
+    check_eq("truncate_string: max_len >= string length", truncate_string("short text", 100), "short text");
+    check_eq("truncate_string: max_len <= 15 (hard prefix)", truncate_string("0123456789ABCDEF", 10), "0123456789");
+    check_eq("truncate_string: max_len = 16 boundary threshold", truncate_string("0123456789ABCDEF0123", 16), "0... [TRUNCATED]");
+    check_eq("truncate_string: max_len > 15 (truncated with suffix)", truncate_string("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", 25), "0123456789... [TRUNCATED]");
 
     // --- hex_to_bytes tests ---
     check_eq("hex_to_bytes: empty string", hex_to_bytes(""), "");

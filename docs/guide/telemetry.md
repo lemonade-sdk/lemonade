@@ -173,7 +173,8 @@ Telemetry settings are configured under the `telemetry` block in your `config.js
 | `telemetry.hide_thinking` | boolean | `false` | Redacts internal reasoning/thinking blocks from trace attributes. |
 | `telemetry.trust_incoming_trace_context` | boolean | `false` | When `true`, honors caller-supplied W3C `traceparent` headers to link inference spans to the caller's distributed trace. |
 | `telemetry.max_queue_capacity` | int | `1000` | Target memory buffer capacity for queued spans. When full, oldest spans are evicted first (FIFO). |
-| `telemetry.max_attribute_length` | int | `4096` | Maximum allowed length in bytes for trace span attributes (e.g. prompt text, completion text). Longer attributes are truncated to this limit. |
+| `telemetry.max_queue_bytes` | int64 | `134217728` | Maximum memory buffer capacity in bytes for queued spans (default 128MB). Oldest spans are evicted when total queue bytes exceed this limit. |
+| `telemetry.max_attribute_length` | int | `0` | Maximum allowed length in bytes for trace span attributes (e.g. prompt text, completion text). Set to `0` (default) for unlimited length / no truncation. Longer attributes are truncated to this limit if a positive integer is configured. |
 | `telemetry.otlp.endpoint` | string | `"http://localhost:4318/v1/traces"` | The OTLP HTTP receiver endpoint URL. |
 | `telemetry.otlp.protocol` | string | `"http/protobuf"` | The encoding protocol: `"http/protobuf"` or `"http/json"`. |
 | `telemetry.otlp.semantics` | array | `["openinference", "otel_genai"]` | Enabled trace conventions. Supported: `"openinference"`, `"otel_genai"`. |

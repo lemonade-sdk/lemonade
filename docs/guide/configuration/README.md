@@ -118,6 +118,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "hide_inputs": false,
     "hide_outputs": false,
     "hide_thinking": false,
+    "max_attribute_length": 0,
     "max_queue_capacity": 1000,
     "otlp": {
       "batch_timeout_s": 1.0,
