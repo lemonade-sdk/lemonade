@@ -143,7 +143,7 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      - name: Download fork binary
+      - name: Download fork binary and export env var
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORK_ID: ${{ matrix.fork_id }}
@@ -155,7 +155,31 @@ jobs:
             --binaries-dir "${{ github.workspace }}/../bench-binaries" \
             --fork-filter  "$FORK_ID" \
             --download-only
-          echo "Fork binary ready"
+
+          # Export the env var so lemond inherits it when it starts.
+          # This is the key: LEMONADE_<RECIPE>_<BACKEND>_BIN must be set
+          # in the environment BEFORE lemond starts — not just for bench client.
+          .venv/bin/python - << 'PY'
+          import json, os, sys
+          from pathlib import Path
+          forks = json.loads(Path("ci/benchmark_forks.json").read_text())["forks"]
+          fork_id = os.environ["FORK_ID"]
+          fork = next((f for f in forks if f["fork_id"] == fork_id), None)
+          if not fork:
+            print(f"ERROR: fork {fork_id} not found"); sys.exit(1)
+          recipe  = fork["recipe"].upper()
+          backend = fork["backend"].upper()
+          exe     = fork.get("binary_exe_linux", "llama-server")
+          bindir  = Path(os.environ["GITHUB_WORKSPACE"]) / ".." / "bench-binaries" / fork_id
+          binary  = next(bindir.rglob(exe), None)
+          if not binary:
+            print(f"ERROR: {exe} not found under {bindir}"); sys.exit(1)
+          env_var = f"LEMONADE_{recipe}_{backend}_BIN"
+          print(f"Exporting {env_var}={binary}")
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+            f.write(f"{env_var}={binary}\n")
+          PY
+          echo "Fork binary ready and env var exported"
 
       - name: Run validation with lemond
         env:
@@ -168,8 +192,6 @@ jobs:
 
           FORK_ID="${{ matrix.fork_id }}"
           MODEL_FILTER="${{ github.event.inputs.model_filter }}"
-          # Use RUNNER_TEMP so lemond's model cache persists across nightly runs.
-          # $(pwd)/ci-bench-cache-* is wiped by git clean; $RUNNER_TEMP is not.
           CACHE_DIR="$RUNNER_TEMP/lemond-bench-cache-$FORK_ID"
           LOGS_DIR="$(pwd)/server-logs-$FORK_ID"
           mkdir -p "$CACHE_DIR" "$LOGS_DIR"
@@ -177,7 +199,6 @@ jobs:
           chmod 700 "$RUNNER_TEMP/xdg-runtime"
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
 
-          # Dynamic port — mirrors validate_vllm.yml lines 156-196 verbatim
           pick_free_port() {
             if command -v python3 >/dev/null 2>&1; then
               python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()' && return 0
@@ -189,6 +210,8 @@ jobs:
             return 1
           }
 
+          # lemond inherits LEMONADE_<RECIPE>_<BACKEND>_BIN from GITHUB_ENV
+          # (set in the previous step) — this is what routes to the fork binary
           LEMOND_PID=""
           started=0
           for start_attempt in $(seq 1 5); do
