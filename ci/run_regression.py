@@ -477,16 +477,19 @@ def main() -> int:
         if args.port:
             base_url = f"http://127.0.0.1:{args.port}"
         if not args.dry_run:
-            try:
-                # Use install_as if set — some forks use a custom backend name
-                # (e.g. rocm-gfx11) not in backend_versions.json, so install
-                # a compatible base backend (rocm-nightly) then override with
-                # the fork binary via env var
-                install_backend_name = fork.get("install_as", fork["backend"])
-                install_backend(base_url, fork["recipe"], install_backend_name)
-            except Exception as e:
-                print(f"  [ERROR] Backend install failed: {e}")
-                continue
+            # Skip POST /install when fork provides its own prebuilt binary.
+            # The binary is already injected via LEMONADE_<RECIPE>_<BACKEND>_BIN —
+            # it has ROCm baked in and doesn't need lemond to install anything.
+            has_own_binary = bool(fork.get("binary_url_linux") or fork.get("binary_url_windows"))
+            if not has_own_binary:
+                try:
+                    install_backend_name = fork.get("install_as", fork["backend"])
+                    install_backend(base_url, fork["recipe"], install_backend_name)
+                except Exception as e:
+                    print(f"  [ERROR] Backend install failed: {e}")
+                    continue
+            else:
+                print(f"  Skipping POST /install — fork provides its own prebuilt binary")
 
         # Fetch model list from registry now that lemond is confirmed running
         run_models = models
