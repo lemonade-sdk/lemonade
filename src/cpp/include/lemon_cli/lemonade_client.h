@@ -74,7 +74,7 @@ struct RecipeStatus {
 // Main CLI client class
 class LemonadeClient {
 public:
-    static void parse_target_url(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl);
+    static void parse_target_url(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl, bool override_default_port = true);
 
     LemonadeClient(const std::string& host, int port, const std::string& api_key, bool is_ssl = false);
     ~LemonadeClient();

@@ -131,6 +131,21 @@ inline std::string validate_custom_args(const std::string& custom_args_str, cons
     return "";
 }
 
+inline bool custom_args_has_flag(const std::vector<std::string>& tokens,
+                                 const std::string& flag) {
+    for (const auto& arg : tokens) {
+        std::string token = arg;
+        size_t eq_pos = token.find('=');
+        if (eq_pos != std::string::npos) {
+            token = token.substr(0, eq_pos);
+        }
+        if (token == flag) {
+            return true;
+        }
+    }
+    return false;
+}
+
 inline std::string map_to_args_string(const CustomArgsMap& m) {
     std::string result;
     bool first = true;
