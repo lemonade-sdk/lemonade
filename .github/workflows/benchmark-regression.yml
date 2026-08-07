@@ -1,12 +1,10 @@
 name: Nightly Backend Perf Regression
 
 on:
-  # Nightly — catch environment drift and silent regressions
   schedule:
     - cron: '0 2 * * *'
 
-  # On backend change — run when version pins or fork registry change
-  # TEMPORARY: branch added for testing — remove iswarya/... before merge to main
+  # TEMPORARY: branch trigger for testing — remove before merge to main
   push:
     branches:
       - main
@@ -17,15 +15,13 @@ on:
       - 'src/cpp/server/backends/**'
       - '.github/workflows/benchmark-regression.yml'
 
-  # On release — validate perf before shipping
   release:
     types: [published]
 
-  # On demand — investigations and PR gates
   workflow_dispatch:
     inputs:
       fork_filter:
-        description: 'Comma-separated fork_ids to run (blank = all tracked)'
+        description: 'Comma-separated fork_ids (blank = all tracked)'
         required: false
         default: ''
       model_filter:
@@ -46,188 +42,113 @@ env:
 
 jobs:
   # =========================================================================
-  # Perf regression — uses lemonade already installed on self-hosted runners.
-  # No build step — runners have lemonade from validate_llamacpp/vllm runs.
-  # TODO: switch to downloading a release artifact once bench logic is stable.
+  # Build — mirrors validate_vllm.yml build job exactly (ubuntu-22.04)
+  # =========================================================================
+  build:
+    name: Build (Linux)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Build lemonade server
+        run: |
+          set -e
+          ./setup.sh
+          cmake -DBUILD_WEB_APP=OFF --preset default
+          cmake --build --preset default
+          test -f build/lemond   || { echo "lemond not found!"; exit 1; }
+          test -f build/lemonade || { echo "lemonade not found!"; exit 1; }
+          echo "Build successful!"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench-build
+          path: |
+            build/lemond
+            build/lemonade
+            build/resources/
+          retention-days: 3
+
+  # =========================================================================
+  # Bench — one job per fork, mirrors validate_vllm.yml validate job exactly
+  # Runner: [self-hosted, stx-halo, Linux, lemon-prod]
   # =========================================================================
   bench:
     name: Bench ${{ matrix.fork_id }}
-    if: always()
-    runs-on: ${{ matrix.runner }}
+    needs: build
+    if: always() && needs.build.result == 'success'
+    runs-on: [self-hosted, stx-halo, Linux, lemon-prod]
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Windows ROCm runner — mirrors validate_llamacpp.yml runner labels exactly
-          - fork_id: llamacpp-rocm-nightly
-            runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
-            binaries_dir: C:\lemonade-bench-binaries
-          - fork_id: llamacpp-rocm-stable
-            runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
-            binaries_dir: C:\lemonade-bench-binaries
-          - fork_id: llamacpp-upstream-vulkan
-            runner: [self-hosted, Windows, 128gb, vulkan, lemon-prod]
-            binaries_dir: C:\lemonade-bench-binaries
-          # Linux Strix Halo runner — mirrors validate_vllm.yml runner label exactly
           - fork_id: llamacpp-amd-ecosystem-gfx11
-            runner: [self-hosted, stx-halo, Linux, lemon-prod]
-            binaries_dir: /opt/lemonade-bench-binaries
+          - fork_id: llamacpp-rocm-nightly
+          - fork_id: llamacpp-upstream-vulkan
 
     steps:
-      # ── Windows pre-steps ────────────────────────────────────────────────
-      - name: Kill stale processes (Windows)
-        if: runner.os == 'Windows'
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Continue"
-          $patterns = @("lemonade","lemond","llama-server","llama","flm","ort-server","moonshine-server","wscript","LemonadeServer")
-          foreach ($p in $patterns) {
-            Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-          }
-
       - uses: actions/checkout@v5
         with:
           clean: true
 
-      - name: Cleanup processes (Windows)
-        if: runner.os == 'Windows'
-        uses: ./.github/actions/cleanup-processes-windows
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: bench-build
+          path: build
 
-      # ── Get lemonade binaries ─────────────────────────────────────────────
-      # Windows: download artifact from latest successful validate_llamacpp run
-      # Linux:   lemond is at /usr/bin/lemond (installed via .deb by release CI)
-      - name: Download lemonade artifact (Windows)
-        if: runner.os == 'Windows'
-        shell: PowerShell
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          # Find latest successful run of validate_llamacpp.yml that has llamacpp-build artifact
-          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = "application/vnd.github+json" }
-          $runs = Invoke-RestMethod `
-            -Uri "https://api.github.com/repos/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml/runs?status=success&per_page=5" `
-            -Headers $headers
-          $runId = $runs.workflow_runs[0].id
-          Write-Host "Using artifacts from run $runId"
-
-          $artifacts = Invoke-RestMethod `
-            -Uri "https://api.github.com/repos/lemonade-sdk/lemonade/actions/runs/$runId/artifacts" `
-            -Headers $headers
-          $artifact = $artifacts.artifacts | Where-Object { $_.name -like "lemonade-windows*" -or $_.name -like "*windows*release*" } | Select-Object -First 1
-          if (-not $artifact) {
-            # Fall back: check validate_llamacpp.yml runs
-            $runs2 = Invoke-RestMethod `
-              -Uri "https://api.github.com/repos/lemonade-sdk/lemonade/actions/workflows/validate_llamacpp.yml/runs?status=success&per_page=5" `
-              -Headers $headers
-            $runId = $runs2.workflow_runs[0].id
-            $artifacts = Invoke-RestMethod `
-              -Uri "https://api.github.com/repos/lemonade-sdk/lemonade/actions/runs/$runId/artifacts" `
-              -Headers $headers
-            $artifact = $artifacts.artifacts | Where-Object { $_.name -like "llamacpp-build*" } | Select-Object -First 1
-          }
-          if (-not $artifact) { Write-Host "ERROR: no lemonade Windows artifact found"; exit 1 }
-
-          Write-Host "Downloading artifact: $($artifact.name) (ID $($artifact.id))"
-          $zipPath = "$env:TEMP\lemonade-artifact.zip"
-          Invoke-WebRequest `
-            -Uri "https://api.github.com/repos/lemonade-sdk/lemonade/actions/artifacts/$($artifact.id)/zip" `
-            -Headers $headers `
-            -OutFile $zipPath
-          Expand-Archive -Path $zipPath -DestinationPath "build" -Force
-
-          # Locate lemond.exe anywhere in the extracted tree
-          $lemondPath = Get-ChildItem -Recurse build -Filter "lemond.exe" | Select-Object -First 1 -ExpandProperty FullName
-          $lemonadePath = Get-ChildItem -Recurse build -Filter "lemonade.exe" | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $lemondPath) { Write-Host "ERROR: lemond.exe not in artifact"; exit 1 }
-          Write-Host "lemond   : $lemondPath"
-          Write-Host "lemonade : $lemonadePath"
-          & $lemondPath --version
-          echo "LEMOND_EXE=$lemondPath"   >> $env:GITHUB_ENV
-          echo "LEMONADE_EXE=$lemonadePath" >> $env:GITHUB_ENV
-
-      - name: Install lemonade (Linux)
-        if: runner.os == 'Linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify binaries
         run: |
           set -e
-          # Use already-installed lemond if available (no download needed)
-          if command -v lemond >/dev/null 2>&1; then
-            echo "lemond already in PATH: $(which lemond)"
-            lemond --version
-            echo "LEMOND_EXE=$(which lemond)"     >> $GITHUB_ENV
-            echo "LEMONADE_EXE=$(which lemonade 2>/dev/null || which lemond)" >> $GITHUB_ENV
-            exit 0
-          fi
+          chmod +x build/lemond build/lemonade
+          build/lemond --version
+          build/lemonade --version
+          echo "Binaries verified!"
 
-          # Use embeddable package — no sudo needed, just extract and run
-          # Per amd-skills/local-ai-app-integration: use lemonade-embeddable-*-ubuntu-x64.tar.gz
-          echo "lemond not in PATH — downloading embeddable package..."
-          EMBED_URL=$(curl -sf \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest" \
-            | python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; url=next((a['browser_download_url'] for a in assets if 'embeddable' in a['name'] and 'ubuntu' in a['name'] and 'x64' in a['name']),None); print(url or '')")
-          if [ -z "$EMBED_URL" ]; then
-            echo "ERROR: no embeddable ubuntu-x64 package found in latest release"
-            exit 1
-          fi
-          echo "Downloading: $EMBED_URL"
-          mkdir -p /tmp/lemond-embed
-          curl -sfL "$EMBED_URL" | tar -xz --strip-components=1 -C /tmp/lemond-embed
-          # Verify full package (resources/ required — not just the binary)
-          test -f /tmp/lemond-embed/lemond      || { echo "ERROR: lemond binary missing"; exit 1; }
-          test -d /tmp/lemond-embed/resources   || { echo "ERROR: resources/ missing — embeddable package incomplete"; exit 1; }
-          chmod +x /tmp/lemond-embed/lemond /tmp/lemond-embed/lemonade 2>/dev/null || true
-          /tmp/lemond-embed/lemond --version
-          echo "LEMOND_EXE=/tmp/lemond-embed/lemond"   >> $GITHUB_ENV
-          echo "LEMONADE_EXE=/tmp/lemond-embed/lemonade" >> $GITHUB_ENV
-          echo "LEMOND_DIR=/tmp/lemond-embed"           >> $GITHUB_ENV
-
-      # ── Python venv ───────────────────────────────────────────────────────
-      - name: Setup Python and venv
+      - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
         with:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      # Fork binary is downloaded inside run_regression.py during the real run.
-      # No separate pre-download step — lemond must be running first for registry lookup.
-
-      # ── Start lemond — Windows (port 13305, mirrors validate_llamacpp.yml) ─
-      - name: Start lemond (Windows)
-        if: runner.os == 'Windows'
-        shell: PowerShell
+      - name: Download fork binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORK_ID: ${{ matrix.fork_id }}
         run: |
-          $cacheDir = Join-Path $PWD "ci-bench-cache-${{ matrix.fork_id }}"
-          $logsDir  = Join-Path $PWD "server-logs-${{ matrix.fork_id }}"
-          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
-          New-Item -ItemType Directory -Force -Path $logsDir  | Out-Null
+          set -e
+          .venv/bin/python ci/run_regression.py \
+            --forks        ci/benchmark_forks.json \
+            --output       ci/results \
+            --binaries-dir /opt/lemonade-bench-binaries \
+            --fork-filter  "$FORK_ID" \
+            --download-only
+          echo "Fork binary ready"
 
-          $proc = Start-Process `
-            -FilePath "$env:LEMOND_EXE" `
-            -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
-            -RedirectStandardOutput "$logsDir\lemond.stdout.log" `
-            -RedirectStandardError  "$logsDir\lemond.stderr.log" `
-            -PassThru
-          Write-Host "Started lemond PID $($proc.Id)"
-          echo "LEMOND_PORT=13305" >> $env:GITHUB_ENV
-
-      # ── Start lemond — Linux (dynamic port, mirrors validate_vllm.yml exactly) ─
-      - name: Start lemond (Linux)
-        if: runner.os == 'Linux'
+      - name: Run validation with lemond
+        env:
+          HOME: ${{ github.workspace }}/.home
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
-          mkdir -p "$XDG_RUNTIME_DIR"
-          chmod 700 "$XDG_RUNTIME_DIR"
-          CACHE_DIR="$(pwd)/ci-bench-cache-${{ matrix.fork_id }}"
-          LOGS_DIR="$(pwd)/server-logs-${{ matrix.fork_id }}"
-          # If using embeddable package, run from its directory so resources/ is found
-          if [ -n "$LEMOND_DIR" ]; then cd "$LEMOND_DIR"; fi
+          set -e
+          mkdir -p "$HOME"
+          echo "HOME=$HOME" >> "$GITHUB_ENV"
+
+          FORK_ID="${{ matrix.fork_id }}"
+          MODEL_FILTER="${{ github.event.inputs.model_filter }}"
+          CACHE_DIR="$(pwd)/ci-bench-cache-$FORK_ID"
+          LOGS_DIR="$(pwd)/server-logs-$FORK_ID"
           mkdir -p "$CACHE_DIR" "$LOGS_DIR"
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
 
+          # Dynamic port — mirrors validate_vllm.yml lines 156-196 verbatim
           pick_free_port() {
             if command -v python3 >/dev/null 2>&1; then
               python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()' && return 0
@@ -244,7 +165,7 @@ jobs:
           for start_attempt in $(seq 1 5); do
             PORT=$(pick_free_port) || { echo "ERROR: could not find a free port"; exit 1; }
             echo "Attempt $start_attempt: starting lemond on 127.0.0.1:$PORT..."
-            $LEMOND_EXE "$CACHE_DIR" --port "$PORT" --host 127.0.0.1 \
+            build/lemond "$CACHE_DIR" --port "$PORT" --host 127.0.0.1 \
               > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
             LEMOND_PID=$!
             for i in $(seq 1 30); do
@@ -267,72 +188,31 @@ jobs:
           done
           if [ "$started" != "1" ]; then
             echo "ERROR: lemond failed to start after multiple attempts"
+            cat "$LOGS_DIR/lemond.stderr.log" 2>/dev/null || true
             exit 1
           fi
-          echo "LEMOND_PID=$LEMOND_PID" >> $GITHUB_ENV
-          echo "LEMOND_PORT=$PORT"      >> $GITHUB_ENV
 
-      # ── Run regression (Windows) ─────────────────────────────────────────
-      - name: Run perf regression (Windows)
-        if: runner.os == 'Windows'
-        shell: PowerShell
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          $forkFilter  = "${{ matrix.fork_id }}"
-          $modelFilter = "${{ github.event.inputs.model_filter }}"
-          $binariesDir = "${{ matrix.binaries_dir }}"
-
-          $args = @(
-            "ci/run_regression.py",
-            "--forks",        "ci/benchmark_forks.json",
-            "--output",       "ci/results",
-            "--binaries-dir", $binariesDir,
-            "--fork-filter",  $forkFilter,
-            "--port",         "13305"
+          EXIT_CODE=0
+          BENCH_ARGS=(
+            ci/run_regression.py
+            --forks        ci/benchmark_forks.json
+            --output       ci/results
+            --binaries-dir /opt/lemonade-bench-binaries
+            --fork-filter  "$FORK_ID"
+            --port         "$PORT"
           )
-          if ($modelFilter) { $args += "--model-filter"; $args += $modelFilter }
+          if [ -n "$MODEL_FILTER" ]; then
+            BENCH_ARGS+=(--model-filter "$MODEL_FILTER")
+          fi
 
-          & ".\.venv\Scripts\python.exe" @args
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          LEMONADE_EXE="$(pwd)/build/lemonade" .venv/bin/python "${BENCH_ARGS[@]}" || EXIT_CODE=$?
 
-      # ── Run regression (Linux) ────────────────────────────────────────────
-      - name: Run perf regression (Linux)
-        if: runner.os == 'Linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          MODEL_FILTER="${{ github.event.inputs.model_filter }}"
-          EXTRA=""
-          if [ -n "$MODEL_FILTER" ]; then EXTRA="--model-filter $MODEL_FILTER"; fi
+          curl -sf -X POST "http://127.0.0.1:$PORT/internal/shutdown" || true
+          sleep 2
+          kill "$LEMOND_PID" 2>/dev/null || true
 
-          .venv/bin/python ci/run_regression.py \
-            --forks        ci/benchmark_forks.json \
-            --output       ci/results \
-            --binaries-dir "${{ matrix.binaries_dir }}" \
-            --fork-filter  "${{ matrix.fork_id }}" \
-            --port         "$LEMOND_PORT" \
-            $EXTRA
+          exit $EXIT_CODE
 
-      # ── Stop lemond ───────────────────────────────────────────────────────
-      - name: Stop lemond (Windows)
-        if: always() && runner.os == 'Windows'
-        shell: PowerShell
-        run: |
-          try {
-            Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" -Method POST -TimeoutSec 10 | Out-Null
-            Start-Sleep -Seconds 3
-          } catch {}
-
-      - name: Stop lemond (Linux)
-        if: always() && runner.os == 'Linux'
-        run: |
-          curl -sf -X POST "http://127.0.0.1:${LEMOND_PORT}/internal/shutdown" || true
-          sleep 3
-          kill $LEMOND_PID 2>/dev/null || true
-
-      # ── Upload artifacts ──────────────────────────────────────────────────
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v7
@@ -340,6 +220,7 @@ jobs:
           name: bench-results-${{ matrix.fork_id }}-${{ github.run_id }}
           path: ci/results/
           retention-days: 90
+          if-no-files-found: warn
 
       - name: Upload lemond logs
         if: always()
@@ -350,12 +231,13 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-      - name: Cleanup (Windows)
-        if: always() && runner.os == 'Windows'
-        uses: ./.github/actions/cleanup-processes-windows
+      - name: Cleanup
+        if: always()
+        run: |
+          pkill -9 -f lemond 2>/dev/null || true
 
   # =========================================================================
-  # Aggregate leaderboard + file issue on regression
+  # Report — aggregates leaderboard, files issue on critical regression
   # =========================================================================
   report:
     name: Aggregate and report
@@ -389,9 +271,9 @@ jobs:
               data = json.loads(run_file.read_text())
             except Exception:
               continue
-            fork_id  = data.get("fork_id", "unknown")
-            version  = data.get("fork_version", "unknown")
-            model    = data.get("model", "unknown")
+            fork_id = data.get("fork_id", "unknown")
+            version = data.get("fork_version", "unknown")
+            model   = data.get("model", "unknown")
             for br in data.get("results", []):
               for sc in br.get("scenarios", []):
                 tps = sc.get("tps", {}).get("mean")
@@ -436,21 +318,22 @@ jobs:
             print("No critical regressions.")
             raise SystemExit(0)
 
-          lines = ["## Perf Regression Detected — Nightly Backend Bench\n"]
+          lines = ["## Perf Regression Detected\n"]
           lines.append("| Fork | Model | Scenario | Metric | Prev | Curr | Delta |")
           lines.append("|------|-------|----------|--------|------|------|-------|")
           for a in criticals:
             lines.append(f"| {a['fork_id']} | {a['model']} | {a['scenario']} | "
                          f"{a['metric']} | {a['prev']} | {a['curr']} | {a['delta_pct']:+.1f}% |")
           server_url = os.environ.get("GITHUB_SERVER_URL","")
-          repo       = os.environ.get("GITHUB_REPOSITORY","")
-          run_id     = os.environ.get("GITHUB_RUN_ID","")
+          repo = os.environ.get("GITHUB_REPOSITORY","")
+          run_id = os.environ.get("GITHUB_RUN_ID","")
           lines.append(f"\nCI run: {server_url}/{repo}/actions/runs/{run_id}")
 
-          body  = "\n".join(lines)
+          body = "\n".join(lines)
           title = f"Perf regression: {', '.join(set(a['fork_id'] for a in criticals))}"
           result = subprocess.run(
-            ["gh","issue","create","--title",title,"--body",body,"--label","performance,regression"],
+            ["gh", "issue", "create", "--title", title, "--body", body,
+             "--label", "performance,regression"],
             capture_output=True, text=True)
           print(result.stdout)
           if result.returncode != 0:
@@ -465,3 +348,4 @@ jobs:
           name: leaderboard-${{ github.run_id }}
           path: ci/results/leaderboard.json
           retention-days: 90
+          if-no-files-found: warn

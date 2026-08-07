@@ -383,7 +383,9 @@ def main() -> int:
     parser.add_argument("--model-filter", default="")
     parser.add_argument("--port",         default="",
                         help="lemond port (informational; bench uses UDP beacon)")
-    parser.add_argument("--dry-run",      action="store_true")
+    parser.add_argument("--dry-run",       action="store_true")
+    parser.add_argument("--download-only", action="store_true",
+                        help="Only download fork binaries, do not run bench (use before lemond starts)")
     parser.add_argument("--token",        default=os.environ.get("GH_TOKEN"))
     args = parser.parse_args()
 
@@ -424,6 +426,21 @@ def main() -> int:
     leaderboard: dict = {}
     all_alerts:  list = []
     run_summary: list = []
+
+    # --download-only: just fetch binaries, exit before bench (used before lemond starts)
+    if args.download_only:
+        for fork in forks:
+            fork_id = fork["fork_id"]
+            print(f"Downloading binary for {fork_id}...")
+            try:
+                tag_prefix = fork.get("version_tag_prefix", "")
+                version = resolve_latest_version(fork["repo"], args.token, tag_prefix)
+                install_fork_binary(fork, version, binaries_dir, args.token, args.dry_run)
+            except Exception as e:
+                print(f"  [ERROR] {e}")
+                return 1
+        print("All fork binaries ready.")
+        return 0
 
     for fork in forks:
         fork_id = fork["fork_id"]
