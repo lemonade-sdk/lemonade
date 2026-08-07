@@ -297,6 +297,64 @@ The CLI (`lemonade list`) prints the API `id` verbatim. That means the Name colu
 
 The Tauri desktop app and the web app apply a display transformation on top of the API id: bare ids render as `NAME`, and canonical-prefixed ids render as `NAME (registered)` / `NAME (imported)` / `NAME (builtin)`. The suffix appears only for shadowed sources.
 
+### Model Aliases (`aliases.json`)
+
+You can define custom **aliases for model names** in `aliases.json` — alternative high-level names that resolve to any target model name. The target model does not define or need to be aware of being aliased:
+
+1. **Standalone Alias Management**: Model aliases live in a dedicated `aliases.json` file in the Lemonade cache directory (`<cache_dir>/aliases.json`). They are managed via the CLI (`lemonade alias add ALIAS TARGET_MODEL`) or administrative REST API (`POST /internal/aliases`).
+2. **Persistence**: `aliases.json` is automatically loaded on server startup and saved on every alias mutation.
+3. **Decoupled Architecture**: Aliases function purely at the symbolic routing layer. They do not pollute model definition files (`user_models.json` or `server_models.json`).
+
+### Conceptual: Definition Layer vs. Symbolic Routing Layer
+
+Lemonade separates model definition from model routing to provide stable API endpoints for client applications.
+
+* **Definition Layer (User Models and Recipes)**: Defines concrete models and execution parameters (checkpoints, hardware targets, context sizes, and backend engines). Use this layer to introduce new models, adjust inference parameters, or support new hardware.
+* **Symbolic Routing Layer (Model Aliases)**: Defines client addressing. Aliases function as symbolic links, decoupling client SDKs from underlying model definitions.
+
+Use Model Aliases to abstract model identity from application code. This enables:
+
+1. **Environment-independent naming**: An application can request an alias like `default-llm`. Developers can map `default-llm` to a lightweight local model, while production servers map it to a larger model. The application code remains unchanged.
+2. **Active-standby failover**: Administrators can redirect an alias to a fallback model if a local hardware model degrades.
+3. **Capability preservation**: Aliases inherit all capabilities of their target models. You can alias a speech-to-text model to `system-stt` or an image generator to `system-image-gen` without losing functionality or LRU pool classification.
+
+#### OpenAI SDK & LiteLLM Integration Example
+
+When using the OpenAI SDK or LiteLLM, target the alias instead of the concrete model:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:13305/v1", api_key="dummy")
+
+# The client requests the alias "production-llm"
+response = client.chat.completions.create(
+    model="production-llm",
+    messages=[{"role": "user", "content": "Hello"}]
+)
+```
+
+If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or `POST /internal/aliases`. Client application code requires no updates.
+
+#### Alias Resolution
+
+When an alias is specified in any API request (e.g., `/v1/chat/completions`, `/v1/load`) or CLI command, Lemonade resolves the alias to its underlying target model ID (e.g., `user.MyCustomModel` or `Qwen3-0.6B-GGUF`).
+
+#### Precedence & Conflict Handling
+
+Model resolution and alias processing follow strict source precedence rules:
+
+`User Models / User Aliases` > `Imported Extra Models` > `Built-in Server Models`
+
+Specifically:
+1. **Primary Model Precedence**: Primary model names (`user.*`, `extra.*`, `builtin.*`) always take precedence over aliases. If an alias name conflicts with a primary model name, the primary model wins.
+2. **Source Precedence & First-Matched Wins**: Evaluated order follows source precedence (Registered User > Imported Extra > Built-in). Models with higher precedence claim aliases first. If multiple models at the same rank attempt to declare the same alias, the first registered model claims it.
+3. **Conflict Logging**: When an alias conflict occurs (e.g., an alias matches an existing primary model name or an alias claimed by a higher-precedence model), Lemonade logs a `Model alias conflict` warning at startup and ignores the conflicting duplicate.
+
+#### Independent Listing in `/v1/models`
+
+Every registered alias is exposed as an independent model entry in `/v1/models`, `/v1/models/{id}`, and `lemonade list`. Alias entries set `id` to the alias name while sharing the target model's recipe, downloaded status, and backend configuration.
+
 ### Five reference cases
 
 | Sources                                         | `/v1/models` ids                                      | Resolution                                                                 |

@@ -60,7 +60,7 @@ All core endpoints are registered under **4 path prefixes**:
 
 **WebSocket Realtime API**: OpenAI-compatible Realtime protocol for real-time audio transcription. `/realtime` and `/logs/stream` accept WebSocket upgrades directly on the main HTTP port; a dedicated listener on an OS-assigned port (9000+, exposed via the `websocket_port` field in the `/health` response) also remains for backward compatibility.
 
-**Internal endpoints:** `POST /internal/shutdown`
+**Internal endpoints:** `POST /internal/shutdown`, `GET /internal/aliases`, `POST /internal/aliases`, `DELETE /internal/aliases/{alias}`
 
 Optional API key auth via `LEMONADE_API_KEY` env var (regular API endpoints) or `LEMONADE_ADMIN_API_KEY` env var (full access including internal endpoints). Clients prefer `LEMONADE_ADMIN_API_KEY` if set. CORS enabled on all routes.
 

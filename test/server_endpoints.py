@@ -39,6 +39,7 @@ from utils.server_base import (
     run_server_tests,
     OpenAI,
     pull_model_with_retry,
+    _auth_headers,
 )
 from utils.test_models import (
     PORT,
@@ -2449,6 +2450,62 @@ class EndpointTests(ServerTestBase):
         )
         print(f"[OK] builtin.{ENDPOINT_TEST_MODEL} alias resolves to bare id")
 
+    def test_021aa_internal_aliases_endpoints(self):
+        """Test administrative REST endpoints: POST/GET/DELETE /internal/aliases."""
+        alias_name = "test-endpoint-alias"
+        target_model = ENDPOINT_TEST_MODEL
+
+        get_res = requests.get(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(get_res.status_code, 200)
+        self.assertIn("aliases", get_res.json())
+
+        try:
+            add_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": alias_name, "target": target_model},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_res.status_code, 200)
+            self.assertEqual(add_res.json()["alias"], alias_name)
+            self.assertEqual(add_res.json()["target"], target_model)
+
+            model_res = requests.get(
+                f"{self.base_url}/models/{alias_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(model_res.status_code, 200)
+            self.assertEqual(model_res.json()["id"], alias_name)
+
+            get_res2 = requests.get(
+                f"{self.internal_url}/aliases",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(get_res2.status_code, 200)
+            aliases = get_res2.json()["aliases"]
+            found = any(a["alias"] == alias_name for a in aliases)
+            self.assertTrue(found)
+
+        finally:
+            del_res = requests.delete(
+                f"{self.internal_url}/aliases/{alias_name}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(del_res.status_code, (200, 404))
+
+        model_res_del = requests.get(
+            f"{self.base_url}/models/{alias_name}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(model_res_del.status_code, 404)
+        print(f"[OK] /internal/aliases POST/GET/DELETE verified")
+
     def test_021e_naming_spec_user_shadows_builtin(self):
         """Naming spec: a user.X registration shadows a built-in X.
 
@@ -3741,7 +3798,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 400, response.text)
         self.assertIn("undeclared-classifier-model", response.json()["error"])
-        print("[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400")
+        print(
+            "[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400"
+        )
 
     def test_021zm_routing_validate_llm_router_fails_open_returns_200(self):
         """The 'llm' router type is fully implemented: the parser desugars
@@ -3792,7 +3851,9 @@ class EndpointTests(ServerTestBase):
             [rule["id"] for rule in normalized_routing["rules"]],
             ["__route_0", "__route_1"],
         )
-        print("[OK] /routing/validate ran an llm router live and failed open to the default model")
+        print(
+            "[OK] /routing/validate ran an llm router live and failed open to the default model"
+        )
 
     def test_021zn_routing_validate_has_images_flag(self):
         """The has_images request flag flows through to a has_images match
@@ -3981,7 +4042,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response_bad_has_tools.status_code, 400)
         self.assertIn("has_tools", response_bad_has_tools.json()["error"])
-        print("[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400")
+        print(
+            "[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400"
+        )
 
     def test_021zj_router_llm_l0a_live(self):
         """L0a live path (#2405), deterministic: the router component is a mock
@@ -6264,7 +6327,6 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
-
     def test_037_model_update_check_lifecycle(self):
         """A successful re-pull clears a staged per-model update marker.
 
@@ -6317,9 +6379,7 @@ class EndpointTests(ServerTestBase):
             processed_models,
             "Pulled model must have a processed snapshot entry",
         )
-        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get(
-            "snapshot_id", ""
-        )
+        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get("snapshot_id", "")
         self.assertTrue(original_snapshot, "Processed snapshot must not be empty")
 
         stale_snapshot = "0" * 40

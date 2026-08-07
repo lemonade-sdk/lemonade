@@ -98,6 +98,17 @@ lemonade list
 lemonade pull Gemma-4-E2B-it-GGUF
 ```
 
+To manage model aliases for environment-independent naming and active-standby failover:
+
+```
+lemonade alias add production-llm Gemma-4-E2B-it-GGUF
+lemonade alias list
+
+# Instant active-standby failover to a different model target
+lemonade alias add production-llm Qwen3-0.6B-GGUF
+lemonade alias remove production-llm
+```
+
 To see the backends available on your PC:
 
 ```
