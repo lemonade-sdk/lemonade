@@ -157,6 +157,19 @@ CAPABILITIES = {
                 "audio": "whisper-v3-turbo-FLM",
             },
         },
+        "moonshine": {
+            "backends": ["cpu"],
+            "supports": {
+                "transcription": True,
+                # English-only checkpoints; the language param is ignored
+                "transcription_with_language": False,
+                "rai_cache": False,
+                "realtime_websocket": True,
+            },
+            "test_models": {
+                "audio": "Moonshine-Tiny-Streaming",
+            },
+        },
     },
     "stable_diffusion": {
         "sd-cpp": {
@@ -167,6 +180,77 @@ CAPABILITIES = {
             },
             "test_models": {
                 "image": "SD-Turbo",
+            },
+        },
+    },
+    "audio_generation": {
+        "thinksound": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "audio_generation": True,
+            },
+            "test_models": {
+                "audio_generation": "ThinkSound-SFX",
+            },
+        },
+        "acestep": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "audio_generation": True,
+            },
+            "test_models": {
+                "audio_generation": "ACE-Step-Music",
+            },
+        },
+    },
+    "model3d": {
+        "trellis": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "model_3d_generation": True,
+            },
+            "test_models": {
+                "model3d": "TRELLIS-3D",
+            },
+        },
+    },
+    "classification": {
+        "onnxruntime": {
+            "backends": ["cpu"],
+            "supports": {
+                "classify": True,
+            },
+            "test_models": {
+                "classification": "Phishing-Email-Detection-ONNX",
+            },
+        },
+    },
+    "tts": {
+        "openmoss": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "tts": True,
+                "voice_cloning": True,
+                "voice_design": True,
+            },
+            "test_models": {
+                "tts": "OpenMOSS-TTS",
+                "tts_design": "MOSS-VoiceGen",
+            },
+        },
+    },
+    "omni": {
+        # Omni "collection" models run a server-side tool-calling loop. The
+        # wrapped server here is the collection's chat (planner) component,
+        # which is llamacpp — so --backend selects the llamacpp backend.
+        "llamacpp": {
+            "backends": ["vulkan", "rocm", "cpu", "metal"],
+            "supports": {
+                "collection_chat": True,
+                "collection_chat_streaming": True,
+            },
+            "test_models": {
+                "omni": "LMX-Omni-5.5B-Lite",
             },
         },
     },

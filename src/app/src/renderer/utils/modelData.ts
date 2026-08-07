@@ -1,4 +1,4 @@
-import { isCollectionRecipe } from './recipeNames';
+import { isModelCollectionRecipe } from './recipeNames';
 
 export const USER_MODEL_PREFIX = 'user.';
 
@@ -21,19 +21,40 @@ export interface ModelInfo {
   components?: string[];
   max_prompt_length?: number;
   max_context_window?: number;
+  // Cloud models only: USD per 1M tokens, when the provider reports it.
+  cost_input_per_million?: number;
+  cost_output_per_million?: number;
   mmproj?: string;
   source?: string;
+  registry_source?: 'huggingface' | 'modelscope';
   model_name?: string;
   reasoning?: boolean;
   vision?: boolean;
   downloaded?: boolean;
+  update_available?: boolean;
   image_defaults?: ImageDefaults;
+  // Per-collection system prompt template (collection.omni only). Overrides the
+  // global default in toolDefinitions.json when set. Keeps {tool_list} and
+  // {tool_guidance} placeholders so runtime substitution still works.
+  system_prompt?: string;
+  // collection.router policies. Kept opaque in the general model catalog; router
+  // authoring tools validate against the routing schema.
+  routing?: unknown;
   [key: string]: unknown;
 }
 
 export interface ModelsData {
   [key: string]: ModelInfo;
 }
+
+export type TtsVoiceMode = 'fixed' | 'clone' | 'design';
+
+export const getTtsVoiceMode = (info?: ModelInfo | null): TtsVoiceMode => {
+  if (!info) return 'fixed';
+  if ((info.labels || []).includes('voice-design')) return 'design';
+  if (info.recipe === 'openmoss') return 'clone';
+  return 'fixed';
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -68,7 +89,7 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   const checkpoint = typeof info['checkpoint'] === 'string' ? info['checkpoint'] : '';
   const recipe = typeof info['recipe'] === 'string' ? info['recipe'] : '';
 
-  if (!recipe || (!checkpoint && !isCollectionRecipe(recipe))) {
+  if (!recipe || (!checkpoint && !isModelCollectionRecipe(recipe))) {
     return null;
   }
 
@@ -104,6 +125,11 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
     normalized.source = source;
   }
 
+  const registrySource = info['registry_source'];
+  if (registrySource === 'huggingface' || registrySource === 'modelscope') {
+    normalized.registry_source = registrySource;
+  }
+
   const modelName = info['model_name'];
   if (typeof modelName === 'string' && modelName) {
     normalized.model_name = modelName;
@@ -127,6 +153,15 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   const reasoning = info['reasoning'];
   if (typeof reasoning === 'boolean') {
     normalized.reasoning = reasoning;
+  }
+
+  const systemPrompt = info['system_prompt'];
+  if (typeof systemPrompt === 'string' && systemPrompt) {
+    normalized.system_prompt = systemPrompt;
+  }
+
+  if (isRecord(info['routing'])) {
+    normalized.routing = info['routing'];
   }
 
   const vision = info['vision'];
@@ -160,6 +195,7 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         // Use the suggested field from the API response
         suggested: model.suggested === true,
         downloaded: model.downloaded || false,
+        update_available: model.update_available === true,
       };
 
       if (Array.isArray(model.labels)) {
@@ -184,6 +220,10 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 
       if (typeof model.source === 'string' && model.source) {
         modelInfo.source = model.source;
+      }
+
+      if (model.registry_source === 'huggingface' || model.registry_source === 'modelscope') {
+        modelInfo.registry_source = model.registry_source;
       }
 
       if (typeof model.model_name === 'string' && model.model_name) {
@@ -216,6 +256,21 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.vision = model.vision;
       }
 
+      if (typeof model.system_prompt === 'string' && model.system_prompt) {
+        modelInfo.system_prompt = model.system_prompt;
+      }
+
+      if (model.routing && typeof model.routing === 'object' && !Array.isArray(model.routing)) {
+        modelInfo.routing = model.routing;
+      }
+
+      // cloud_provider distinguishes per-provider buckets in the Model
+      // Manager grouping (recipe="cloud" alone collapses all providers
+      // into a single sub-heading).
+      if (typeof model.cloud_provider === 'string' && model.cloud_provider) {
+        modelInfo.cloud_provider = model.cloud_provider;
+      }
+
       // Parse image_defaults if present (for sd-cpp models)
       if (model.image_defaults && typeof model.image_defaults === 'object') {
         modelInfo.image_defaults = {
@@ -238,7 +293,156 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 };
 
 export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
-  // Server is the source of truth for all models (including user models)
-  // The /models?show_all=true endpoint returns both built-in and user models
+  // Cloud models are now served by lemond through /v1/models like every other
+  // recipe — the server discovers them from each installed provider as soon
+  // as an API key is resolvable (env var or POST /v1/cloud/auth). No
+  // client-side discovery, no per-client mirroring.
   return fetchBuiltInModelsFromAPI();
+};
+
+// ---------------------------------------------------------------------------
+// Model export — mirrors the CLI's validate_and_transform_model_json so GUI
+// and CLI produce the same import-ready file from the live /models/{id} object.
+// ---------------------------------------------------------------------------
+
+// Keys allowed in exported model files. Keep in sync with kKnownKeys in
+// src/cpp/cli/recipe_import.cpp. Notably excludes the user-specific runtime
+// fields (suggested, created, downloaded) and wire decorations (id, object,
+// owned_by) — the server regenerates those on import.
+const EXPORT_KNOWN_KEYS = new Set([
+  'checkpoint',
+  'checkpoints',
+  'components',
+  'model_name',
+  'models',
+  'image_defaults',
+  'labels',
+  'recipe',
+  'recipe_options',
+  'routing',
+  'source',
+  'registry_source',
+  'size',
+  'system_prompt',
+  // Router collections carry a root schema version the /pull parser requires;
+  // dropping it would make the exported file un-importable.
+  'version',
+]);
+
+const toExportEntry = (raw: Record<string, unknown>): Record<string, unknown> => {
+  const entry = Object.fromEntries(
+    Object.entries(raw).filter(([key]) => EXPORT_KNOWN_KEYS.has(key))
+  );
+  if (typeof entry.model_name !== 'string' && typeof raw.id === 'string') {
+    entry.model_name = raw.id;
+  }
+  if (isRecord(entry.checkpoints) && 'checkpoint' in entry) {
+    delete entry.checkpoint;
+  }
+
+  // Preserve only portable remote provenance. Local origins refer to paths on
+  // the exporting machine and must not be replayed on import.
+  const publicSource = typeof raw.source === 'string' ? raw.source.toLowerCase() : '';
+  const explicitRegistry = typeof raw.registry_source === 'string'
+    ? raw.registry_source.toLowerCase()
+    : '';
+  const isRemoteSource = (value: string): value is 'huggingface' | 'modelscope' =>
+    value === 'huggingface' || value === 'modelscope';
+
+  if (publicSource && !isRemoteSource(publicSource)) {
+    delete entry.source;
+    delete entry.registry_source;
+  } else {
+    const registrySource = isRemoteSource(publicSource)
+      ? publicSource
+      : isRemoteSource(explicitRegistry)
+        ? explicitRegistry
+        : '';
+    if (registrySource) {
+      entry.source = registrySource;
+      entry.registry_source = registrySource;
+    } else {
+      delete entry.source;
+      delete entry.registry_source;
+    }
+  }
+  return entry;
+};
+
+/**
+ * Normalize a live /models/{id} object into the import-ready file shape
+ * (pure; mirrors the CLI transform). Collections keep `components` and a
+ * `models` array with each component normalized by the same per-model
+ * transform.
+ */
+export const normalizeModelExportPayload = (
+  raw: Record<string, unknown>,
+  fallbackId = '',
+): { filename: string; payload: Record<string, unknown> } => {
+  const payload = toExportEntry(raw);
+
+  // The exported model itself is import-ready: registration uses the `user.`
+  // namespace, exactly like the CLI export transform.
+  const name = typeof payload.model_name === 'string' && payload.model_name ? payload.model_name : fallbackId;
+  payload.model_name = name.startsWith(USER_MODEL_PREFIX) ? name : `${USER_MODEL_PREFIX}${name}`;
+
+  if (isModelCollectionRecipe(typeof payload.recipe === 'string' ? payload.recipe : undefined)) {
+    // Normalize each embedded component with the same transform. Components
+    // are leaf models: drop their (empty) collection fields and keep bare
+    // names — the server decides `user.` prefixing when registering them.
+    const models = Array.isArray(raw.models) ? raw.models : [];
+    payload.models = models.filter(isRecord).map((component) => {
+      const entry = toExportEntry(component);
+      if (Array.isArray(entry.components) && entry.components.length === 0) delete entry.components;
+      if (Array.isArray(entry.models) && entry.models.length === 0) delete entry.models;
+      return entry;
+    });
+  } else {
+    // Regular-model files carry no collection fields (the live API emits an
+    // empty `components` array on every model object).
+    delete payload.components;
+    delete payload.models;
+  }
+
+  const bareName = name.startsWith(USER_MODEL_PREFIX) ? name.slice(USER_MODEL_PREFIX.length) : name;
+  return { filename: `${bareName}.json`, payload };
+};
+
+/**
+ * Build an exportable model JSON the same way `lemonade export` does: fetch
+ * the live /models/{id} object and normalize it into the import-ready file
+ * shape.
+ */
+export const buildModelExportFile = async (
+  modelId: string,
+): Promise<{ filename: string; payload: Record<string, unknown> }> => {
+  const { serverFetch } = await import('./serverConfig');
+  const response = await serverFetch(`/models/${encodeURIComponent(modelId)}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch model info for '${modelId}' (HTTP ${response.status}).`);
+  }
+  const raw: unknown = await response.json();
+  if (!isRecord(raw)) {
+    throw new Error(`Unexpected /models response for '${modelId}'.`);
+  }
+  return normalizeModelExportPayload(raw, modelId);
+};
+
+/** Trigger a browser download of a JSON payload as a file. */
+export const downloadJsonFile = (filename: string, payload: unknown): void => {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+};
+
+/** Trigger a browser download of an exported model/collection JSON. */
+export const downloadModelExportFile = async (modelId: string): Promise<void> => {
+  const { filename, payload } = await buildModelExportFile(modelId);
+  downloadJsonFile(filename, payload);
 };

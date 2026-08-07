@@ -15,6 +15,7 @@ Build-Depends:
  libcpp-httplib-dev (>> 0.26),
  libcurl4-openssl-dev,
  libjs-katex,
+ libmbedtls-dev,
  libssl-dev,
  libsystemd-dev,
  libwebsockets-dev,
@@ -47,9 +48,7 @@ Vcs-Git: https://salsa.debian.org/debian/lemonade.git
 Package: lemonade-server
 Architecture: linux-any
 Multi-Arch: foreign
-Depends: ${shlibs:Depends}, ${misc:Depends}, fonts-katex, unzip, libatomic1
-Recommends: ffmpeg,
-            libxrt-npu2,
+Depends: ${shlibs:Depends}, ${misc:Depends}, fonts-katex, unzip, libatomic1, libgomp1
 Description: Local LLM serving with GPU and NPU acceleration server
  Lemonade helps users run local LLMs with the highest performance by
  configuring state-of-the-art inference engines for their NPUs and GPUs.

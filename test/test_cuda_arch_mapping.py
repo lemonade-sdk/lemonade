@@ -24,6 +24,7 @@ CUDA_SUPPORTED_ARCHS = {
     "sm_90",  # Hopper
     "sm_100",  # Blackwell DC
     "sm_120",  # Blackwell consumer
+    "sm_121",  # Blackwell GB10 / Thor SoC
 }
 
 
@@ -49,17 +50,44 @@ def compute_cap_to_sm(compute_cap: str) -> str:
 # Python replica of system_info.cpp::identify_cuda_arch_from_name() (compact)
 # ---------------------------------------------------------------------------
 
+# Data-center Blackwell (B100/B200) is compute capability 10.0 (sm_100), not
+# 12.0 (sm_120) like the consumer/workstation Blackwell parts. These are matched
+# before the generic "blackwell" keyword below so a name like
+# "NVIDIA B200 (Blackwell)" still resolves to sm_100. Mirrors the C++ pre-check.
+_DC_BLACKWELL = ["b100", "b200"]
+
 _NAME_ARCH_TABLE = [
-    # Blackwell DC (sm_100)
-    (["b100", "b200"], "sm_100"),
+    # GB10 Thor SoC (sm_121)
+    (["gb10"], "sm_121"),
+    # Blackwell consumer/workstation (sm_120). The generic "blackwell" keyword
+    # covers current and future RTX 50 / RTX PRO Blackwell GPUs; explicit model
+    # numbers cover names that do not include "Blackwell".
+    (
+        [
+            "blackwell",
+            "rtx 50",
+            "rtx50",
+            "5090",
+            "5080",
+            "5070",
+            "5060",
+            "rtx pro 6000",
+            "rtx pro 5000",
+            "rtx pro 4500",
+            "rtx pro 4000",
+            "rtx pro 3500",
+            "rtx pro 3000",
+            "rtx pro 2000",
+            "rtx pro 1000",
+        ],
+        "sm_120",
+    ),
     # Hopper (sm_90)
     (["h100", "h200"], "sm_90"),
-    # Ampere DC (sm_80)
-    (["a100"], "sm_80"),
-    # Blackwell consumer (sm_120)
-    (["rtx 50", "rtx50", "5090", "5080", "5070", "5060"], "sm_120"),
     # Ada Lovelace (sm_89)
     (["rtx 40", "rtx40", "4090", "4080", "4070", "4060", "l40", " l4"], "sm_89"),
+    # Ampere DC (sm_80)
+    (["a100"], "sm_80"),
     # Ampere consumer/pro (sm_86)
     (
         [
@@ -122,10 +150,13 @@ def identify_cuda_arch_from_name(device_name: str) -> str:
         "b100",
         "b200",
         "l40",
-        "l4",
+        "gb10",
     ]
     if not any(kw in name for kw in nvidia_ids):
         return ""
+    # Data-center Blackwell first, before the generic "blackwell" keyword.
+    if any(kw in name for kw in _DC_BLACKWELL):
+        return "sm_100"
     for keywords, sm in _NAME_ARCH_TABLE:
         if any(kw in name for kw in keywords):
             return sm
@@ -147,6 +178,7 @@ class TestComputeCapToSm(unittest.TestCase):
             ("9.0", "sm_90"),
             ("10.0", "sm_100"),
             ("12.0", "sm_120"),
+            ("12.1", "sm_121"),
         ]
         for cap, expected in cases:
             with self.subTest(cap=cap):
@@ -163,7 +195,7 @@ class TestComputeCapToSm(unittest.TestCase):
                 self.assertEqual(compute_cap_to_sm(bad), "")
 
     def test_supported_arch_membership(self):
-        for cap in ["7.5", "8.0", "8.6", "8.9", "9.0", "10.0", "12.0"]:
+        for cap in ["7.5", "8.0", "8.6", "8.9", "9.0", "10.0", "12.0", "12.1"]:
             sm = compute_cap_to_sm(cap)
             self.assertIn(
                 sm, CUDA_SUPPORTED_ARCHS, f"{cap} -> {sm} not in supported set"
@@ -189,6 +221,43 @@ class TestIdentifyCudaArchFromName(unittest.TestCase):
             ("NVIDIA A100-SXM4-80GB", "sm_80"),
             ("NVIDIA A10", "sm_86"),
             ("NVIDIA A40", "sm_86"),
+            ("NVIDIA GB10", "sm_121"),
+            ("GB10", "sm_121"),
+            # RTX PRO Blackwell (sm_120) — both the generic "Blackwell" keyword
+            # and the explicit RTX PRO model numbers must resolve to sm_120.
+            ("NVIDIA RTX PRO 3000 Blackwell Generation Laptop GPU", "sm_120"),
+            ("NVIDIA RTX PRO 6000 Blackwell", "sm_120"),
+            ("NVIDIA RTX PRO 1000", "sm_120"),
+            # Data-center Blackwell (sm_100) must NOT be misclassified as sm_120
+            # even when the name contains "Blackwell".
+            ("NVIDIA B200", "sm_100"),
+            ("NVIDIA B200 (Blackwell)", "sm_100"),
+            ("NVIDIA B100", "sm_100"),
+        ]
+        for name, expected in cases:
+            with self.subTest(name=name):
+                self.assertEqual(identify_cuda_arch_from_name(name), expected)
+
+    def test_blackwell_consumer(self):
+        # Generic "Blackwell" keyword and RTX PRO Blackwell → sm_120
+        cases = [
+            ("NVIDIA GeForce RTX 5080", "sm_120"),
+            ("NVIDIA RTX PRO 3000 Blackwell Generation Laptop GPU", "sm_120"),
+            ("NVIDIA RTX PRO 6000 Blackwell", "sm_120"),
+            ("NVIDIA RTX PRO 4000 Blackwell", "sm_120"),
+        ]
+        for name, expected in cases:
+            with self.subTest(name=name):
+                self.assertEqual(identify_cuda_arch_from_name(name), expected)
+
+    def test_blackwell_datacenter_guard(self):
+        # B100/B200 must resolve to sm_100 even when "Blackwell" appears in the name
+        cases = [
+            ("NVIDIA B100", "sm_100"),
+            ("NVIDIA B200", "sm_100"),
+            ("NVIDIA B100 Blackwell", "sm_100"),
+            ("NVIDIA B200 Blackwell", "sm_100"),
+            ("NVIDIA B200 (Blackwell)", "sm_100"),
         ]
         for name, expected in cases:
             with self.subTest(name=name):

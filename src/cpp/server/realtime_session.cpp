@@ -1,9 +1,11 @@
 #include "lemon/realtime_session.h"
 #include "lemon/router.h"
+#include <algorithm>
 #include <random>
 #include <chrono>
 #include <iostream>
 #include <cmath>
+#include <thread>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
@@ -58,6 +60,7 @@ void RealtimeSessionManager::apply_turn_detection_config(
         session->vad.reset();
         session->vad_speech_window_open = false;
         session->last_interim_transcription_ms = 0;
+        session->interim_generation.fetch_add(1, std::memory_order_relaxed);
         return;
     }
 
@@ -117,6 +120,9 @@ std::string RealtimeSessionManager::create_session(
         apply_turn_detection_config(session, config["turn_detection"]);
     }
 
+    // Attempt to connect to a streaming backend if one is available
+    connect_streaming_backend(session);
+
     {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
         sessions_[session_id] = std::move(session);
@@ -153,6 +159,9 @@ void RealtimeSessionManager::update_session(const std::string& session_id, const
         apply_turn_detection_config(session, config["turn_detection"]);
     }
 
+    // Reconnect streaming backend if model changed
+    connect_streaming_backend(session);
+
     // Send session updated message (OpenAI-compatible)
     if (session->send_message) {
         json updated_msg = {
@@ -170,6 +179,12 @@ void RealtimeSessionManager::update_session(const std::string& session_id, const
 void RealtimeSessionManager::append_audio(const std::string& session_id, const std::string& base64_audio) {
     auto session = get_session(session_id);
     if (!session || !session->session_active) {
+        return;
+    }
+
+    // If connected to a streaming backend, forward audio directly
+    if (session->use_streaming_backend.load()) {
+        forward_streaming_audio(session, base64_audio);
         return;
     }
 
@@ -285,13 +300,20 @@ void RealtimeSessionManager::transcribe_interim(std::shared_ptr<RealtimeSession>
     auto wav_data = session->audio_buffer.get_wav_padded(500);
     std::string model = session->model;
     session->last_interim_transcription_ms = session->audio_buffer.duration_ms();
+    const std::uint64_t generation =
+        session->interim_generation.load(std::memory_order_relaxed);
 
     LOG(DEBUG, "RealtimeSession") << "Firing interim transcription at "
               << session->last_interim_transcription_ms << "ms" << std::endl;
 
     auto future = std::async(std::launch::async,
-        [this, session, wav_data = std::move(wav_data), model = std::move(model)]() {
-            transcribe_wav(session, wav_data, model, /*is_interim=*/true);
+        [this, session, wav_data = std::move(wav_data), model = std::move(model), generation]() {
+            transcribe_wav(
+                session,
+                wav_data,
+                model,
+                /*is_interim=*/true,
+                generation);
             session->interim_in_flight.store(false);
         });
 
@@ -314,6 +336,12 @@ void RealtimeSessionManager::commit_audio(const std::string& session_id) {
         return;
     }
 
+    // If streaming backend is active, forward commit and skip buffering
+    if (session->use_streaming_backend.load()) {
+        forward_streaming_commit(session);
+        return;
+    }
+
     if (session->turn_detection_enabled.load() && !session->vad_speech_window_open.load()) {
         if (!session->audio_buffer.empty()) {
             LOG(DEBUG, "RealtimeSession")
@@ -323,6 +351,7 @@ void RealtimeSessionManager::commit_audio(const std::string& session_id) {
         session->audio_buffer.clear();
         session->vad.reset();
         session->last_interim_transcription_ms = 0;
+        session->interim_generation.fetch_add(1, std::memory_order_relaxed);
 
         if (session->send_message) {
             json msg = {
@@ -356,9 +385,19 @@ void RealtimeSessionManager::clear_audio(const std::string& session_id) {
         return;
     }
 
+    // Forward clear to the streaming backend, keeping the stream open so
+    // subsequent appends keep streaming. The backend replies with
+    // input_audio_buffer.cleared, which is forwarded to the client.
+    if (session->use_streaming_backend.load()) {
+        forward_streaming_clear(session);
+        return;
+    }
+
     session->audio_buffer.clear();
     session->vad.reset();
     session->vad_speech_window_open = false;
+    session->last_interim_transcription_ms = 0;
+    session->interim_generation.fetch_add(1, std::memory_order_relaxed);
 
     if (session->send_message) {
         json msg = {
@@ -380,6 +419,8 @@ void RealtimeSessionManager::transcribe_and_send(std::shared_ptr<RealtimeSession
     session->vad.reset();
     session->vad_speech_window_open = false;
     session->last_interim_transcription_ms = 0;  // Reset for next utterance
+    // A final result supersedes any interim jobs that have not started yet.
+    session->interim_generation.fetch_add(1, std::memory_order_relaxed);
 
     // Dispatch transcription to worker thread so it doesn't block the WebSocket callback
     auto future = std::async(std::launch::async,
@@ -405,8 +446,25 @@ void RealtimeSessionManager::transcribe_and_send(std::shared_ptr<RealtimeSession
 void RealtimeSessionManager::transcribe_wav(
     std::shared_ptr<RealtimeSession> session,
     std::vector<uint8_t> wav_data, std::string model,
-    bool is_interim) {
+    bool is_interim,
+    std::uint64_t interim_generation) {
     try {
+        const char* tag = is_interim ? "interim" : "final";
+        std::unique_lock<std::mutex> transcription_lock(session->transcription_mutex);
+
+        if (!session->session_active.load()) {
+            LOG(DEBUG, "RealtimeSession") << "Skipping " << tag
+                      << " transcription for closed session" << std::endl;
+            return;
+        }
+
+        if (is_interim &&
+            session->interim_generation.load(std::memory_order_relaxed) != interim_generation) {
+            LOG(DEBUG, "RealtimeSession") << "Skipping stale interim transcription"
+                      << std::endl;
+            return;
+        }
+
         // Convert WAV bytes to a string for the router (expects file_data as string)
         std::string file_data(reinterpret_cast<const char*>(wav_data.data()), wav_data.size());
 
@@ -418,18 +476,44 @@ void RealtimeSessionManager::transcribe_wav(
         };
 
         // Call router for transcription
-        const char* tag = is_interim ? "interim" : "final";
         LOG(DEBUG, "RealtimeSession") << "Calling Whisper " << tag << " transcription ("
                   << wav_data.size() << " bytes)..." << std::endl;
         json response = router_->audio_transcriptions(request);
+
+        // Drop stale result (including stale errors) instead of publishing it.
+        if (is_interim &&
+            session->interim_generation.load(std::memory_order_relaxed) != interim_generation) {
+            LOG(DEBUG, "RealtimeSession") << "Discarding stale interim transcription result"
+                      << std::endl;
+            return;
+        }
+
         LOG(DEBUG, "RealtimeSession") << "Whisper " << tag << " response: " << response.dump() << std::endl;
+
+        if (response.contains("error")) {
+            const json& error = response["error"];
+            std::string message = "Whisper backend returned an error";
+            if (error.is_object()) {
+                message = error.value("message", message);
+            } else if (error.is_string()) {
+                message = error.get<std::string>();
+            }
+
+            const std::string prefix = "Transcription failed: ";
+            if (message.rfind(prefix, 0) == 0) {
+                message.erase(0, prefix.size());
+            }
+            throw std::runtime_error(message);
+        }
+
+        if (!response.contains("text") || !response["text"].is_string()) {
+            throw std::runtime_error(
+                "Whisper backend response did not contain a string 'text' field");
+        }
 
         // Send transcription result if session is still active
         if (session->send_message && session->session_active.load()) {
-            std::string transcript;
-            if (response.contains("text")) {
-                transcript = response["text"].get<std::string>();
-            }
+            std::string transcript = response["text"].get<std::string>();
 
             LOG(DEBUG, "RealtimeSession") << "Sending " << tag << " transcript to client: \""
                       << transcript << "\"" << std::endl;
@@ -467,13 +551,146 @@ void RealtimeSessionManager::transcribe_wav(
     }
 }
 
-void RealtimeSessionManager::close_session(const std::string& session_id) {
-    std::lock_guard<std::mutex> lock(sessions_mutex_);
+void RealtimeSessionManager::connect_streaming_backend(std::shared_ptr<RealtimeSession> session) {
+    if (!session || !router_) {
+        return;
+    }
 
-    auto it = sessions_.find(session_id);
-    if (it != sessions_.end()) {
-        it->second->session_active = false;
-        sessions_.erase(it);
+    std::string address = router_->get_streaming_transcription_address(session->model);
+    if (address.empty()) {
+        // Backend does not support streaming transcription
+        disconnect_streaming_backend(session);
+        return;
+    }
+
+    {
+        // If already connected to the same address, nothing to do
+        std::lock_guard<std::mutex> lock(session->streaming_mutex);
+        if (session->use_streaming_backend.load() && session->streaming_client &&
+            session->streaming_client->is_connected()) {
+            return;
+        }
+    }
+
+    // Disconnect any existing streaming connection
+    disconnect_streaming_backend(session);
+
+    // Capture weak_ptr: the session owns the client, and the client's read
+    // thread owns this callback — a shared_ptr capture would be a cycle.
+    std::weak_ptr<RealtimeSession> weak_session = session;
+    auto client = std::make_unique<utils::TcpJsonlClient>();
+    auto callback = [weak_session](const json& msg) {
+        auto session = weak_session.lock();
+        if (!session || !session->session_active.load() || !session->send_message) {
+            return;
+        }
+        // Forward backend events to the WebSocket client. The streaming
+        // backend speaks OpenAI Realtime event types; pass through the text
+        // events (delta/completed) and the stream-level audio events
+        // (speech_started/speech_stopped/committed) the UI listens for.
+        std::string event_type = msg.value("type", "");
+        if (event_type == "conversation.item.input_audio_transcription.delta" ||
+            event_type == "conversation.item.input_audio_transcription.completed" ||
+            event_type == "input_audio_buffer.speech_started" ||
+            event_type == "input_audio_buffer.speech_stopped" ||
+            event_type == "input_audio_buffer.committed" ||
+            event_type == "input_audio_buffer.cleared" ||
+            event_type == "session.updated") {
+            session->send_message(msg);
+        }
+    };
+
+    // Retry with backoff: the backend's TCP listener starts on a separate
+    // thread from its HTTP health endpoint, so a session created right after
+    // model load can otherwise race it and silently lose streaming.
+    bool ok = false;
+    for (int attempt = 0; attempt < 10 && !ok; ++attempt) {
+        if (attempt > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        ok = client->connect(address, callback);
+    }
+
+    if (ok) {
+        std::lock_guard<std::mutex> lock(session->streaming_mutex);
+        session->streaming_client = std::move(client);
+        session->use_streaming_backend.store(true);
+        LOG(INFO, "RealtimeSession") << "Connected to streaming backend at " << address << std::endl;
+    } else {
+        LOG(WARNING, "RealtimeSession") << "Failed to connect to streaming backend at " << address << std::endl;
+    }
+}
+
+void RealtimeSessionManager::disconnect_streaming_backend(std::shared_ptr<RealtimeSession> session) {
+    if (!session) {
+        return;
+    }
+    session->use_streaming_backend.store(false);
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
+    if (session->streaming_client) {
+        session->streaming_client->close();
+        session->streaming_client.reset();
+    }
+}
+
+void RealtimeSessionManager::forward_streaming_audio(std::shared_ptr<RealtimeSession> session,
+                                                     const std::string& base64_audio) {
+    if (!session) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
+    if (!session->streaming_client || !session->streaming_client->is_connected()) {
+        return;
+    }
+    json msg = {
+        {"type", "input_audio_buffer.append"},
+        {"audio", base64_audio}
+    };
+    session->streaming_client->send(msg);
+}
+
+void RealtimeSessionManager::forward_streaming_commit(std::shared_ptr<RealtimeSession> session) {
+    if (!session) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
+    if (!session->streaming_client || !session->streaming_client->is_connected()) {
+        return;
+    }
+    json msg = {
+        {"type", "input_audio_buffer.commit"}
+    };
+    session->streaming_client->send(msg);
+}
+
+void RealtimeSessionManager::forward_streaming_clear(std::shared_ptr<RealtimeSession> session) {
+    if (!session) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
+    if (!session->streaming_client || !session->streaming_client->is_connected()) {
+        return;
+    }
+    json msg = {
+        {"type", "input_audio_buffer.clear"}
+    };
+    session->streaming_client->send(msg);
+}
+
+void RealtimeSessionManager::close_session(const std::string& session_id) {
+    std::shared_ptr<RealtimeSession> session;
+    {
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
+        auto it = sessions_.find(session_id);
+        if (it != sessions_.end()) {
+            session = it->second;
+            session->session_active = false;
+            session->interim_generation.fetch_add(1, std::memory_order_relaxed);
+            sessions_.erase(it);
+        }
+    }
+    if (session) {
+        disconnect_streaming_backend(session);
     }
 }
 

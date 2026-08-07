@@ -9,6 +9,8 @@ User=lemonade
 Group=lemonade
 StateDirectory=lemonade
 StateDirectoryMode=0750
+RuntimeDirectory=lemonade
+RuntimeDirectoryMode=0700
 WorkingDirectory=%S/lemonade
 # Server settings (port, host, models_dir, …) live in config.json, not env vars.
 # The env-file drop-in is kept for the few env vars lemond still reads:

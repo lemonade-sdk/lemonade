@@ -115,6 +115,23 @@ int main(int argc, char** argv) {
         if (!config->extra_models_dir().empty()) {
             LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
         }
+        if (config->telemetry_enabled()) {
+            std::string endpoint = config->telemetry_otlp_endpoint();
+            std::vector<std::string> semantics = config->telemetry_otlp_semantics();
+            std::string semantics_str = "";
+            for (size_t i = 0; i < semantics.size(); ++i) {
+                if (i > 0) semantics_str += ", ";
+                semantics_str += semantics[i];
+            }
+            if (endpoint.empty()) {
+                LOG(INFO) << "  Telemetry: enabled (no endpoint configured, semantics: [" << semantics_str << "])" << std::endl;
+            } else {
+                LOG(INFO) << "  Telemetry: enabled (" << config->telemetry_otlp_protocol()
+                          << " -> " << endpoint << ", semantics: [" << semantics_str << "])" << std::endl;
+            }
+        } else {
+            LOG(INFO) << "  Telemetry: disabled" << std::endl;
+        }
 
         Server server(config, cli_config.cache_dir);
 
@@ -141,6 +158,14 @@ int main(int argc, char** argv) {
 
         server.run();
         g_server_instance = nullptr;
+
+        // Startup aborted (e.g. port already in use): exit non-zero now and skip
+        // destructors, whose teardown logging would bury the error message.
+        if (server.startup_failed()) {
+            std::cout.flush();
+            std::cerr.flush();
+            std::_Exit(1);
+        }
 
         return 0;
 

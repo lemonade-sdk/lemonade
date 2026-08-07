@@ -29,6 +29,7 @@ export interface ModelRegistrationData {
   checkpoints?: Record<string, string>;
   components?: string[];
   recipe: string;
+  source?: 'huggingface' | 'modelscope';
   mmproj?: string;
   labels?: string[];
   reasoning?: boolean;
@@ -470,7 +471,10 @@ export async function deleteModel(modelName: string): Promise<void> {
  * - Download Manager progress tracking (always on by default)
  * - Pause/cancel from Download Manager UI (throws DownloadAbortError)
  * - Custom model registration data
- * - Dispatches `modelsUpdated` event on success
+ *
+ * The streaming download path dispatches `modelsUpdated` on success. The
+ * `registrationOnly` fast path does not - it transfers no bytes, so its
+ * callers are responsible for refreshing the models context.
  *
  * @throws DownloadAbortError if the user pauses or cancels via Download Manager
  * @throws Error on download failure
@@ -484,8 +488,42 @@ export async function pullModel(
     /** Declared model size in GB from the registry, used as the download
      *  total when the server can't emit a cumulative size (e.g. FLM pull). */
     declaredSizeGB?: number;
+    /** Force a Hugging Face update check even when the model is already
+     *  cached. Defaults to false (cache-first): an already-downloaded model is
+     *  reused without contacting Hugging Face. Only explicit "update" actions
+     *  should set this to true. */
+    upgrade?: boolean;
+    /** Persist a model/collection definition without downloading anything.
+     *  Used when all required files are already present (e.g. saving an Omni
+     *  collection whose components are downloaded): the server registers the
+     *  record and transfers no bytes, so there is no progress to show. */
+    registrationOnly?: boolean;
   }
 ): Promise<void> {
+  // Registration-only fast path: persist the definition with a synchronous,
+  // non-streaming pull. No Download Manager entry or SSE progress, because
+  // nothing is downloaded. Stays cache-first unless the caller opts into upgrade.
+  if (options?.registrationOnly) {
+    const requestBody: Record<string, unknown> = {
+      model_name: modelName,
+      ...(options.registrationData ?? {}),
+      stream: false,
+      subscribe: false,
+      do_not_upgrade: options.upgrade !== true,
+    };
+    const response = await serverFetch('/pull', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(extractServerErrorMessage(errorText, response.statusText));
+    }
+    return;
+  }
+
   const showInDownloadManager = options?.showInDownloadManager ?? true;
   const abortController = new AbortController();
   const declaredTotalBytes = options?.declaredSizeGB
@@ -537,6 +575,11 @@ export async function pullModel(
     if (options?.registrationData) {
       Object.assign(requestBody, options.registrationData);
     }
+
+    // Cache-first by default: an already-downloaded model is reused instead of
+    // triggering a Hugging Face update check (and a possible full re-download).
+    // Set after registrationData so the helper's decision is authoritative.
+    requestBody.do_not_upgrade = options?.upgrade !== true;
 
     const response = await serverFetch('/pull', {
       method: 'POST',
@@ -622,7 +665,7 @@ function extractExplicitBackend(loadBody?: Record<string, unknown>): { recipe: s
 
 /**
  * Universal pre-flight check for all inference requests.
- * Ensures backend is installed, model is downloaded, and model is loaded —
+ * Ensures backend is installed, model is downloaded, and model is loaded -
  * all through tracked SSE paths visible in the Download Manager.
  *
  * Steps:
@@ -687,11 +730,11 @@ async function ensureModelReadyInternal(
             (m: any) => m.model_name === modelName
           );
           if (isLoaded) {
-            return; // Model is already loaded — fast path
+            return; // Model is already loaded - fast path
           }
         }
       } catch {
-        // Health check failed — continue with the full pre-flight
+        // Health check failed - continue with the full pre-flight
       }
     }
 
@@ -702,7 +745,11 @@ async function ensureModelReadyInternal(
     const recipe = modelInfo?.recipe;
     if (recipe) {
       // If loadBody specifies an explicit backend, install that one specifically
-      const explicitBackend = extractExplicitBackend(options?.loadBody);
+      const selectedBackendOptions = {
+        ...(modelInfo?.recipe_options ?? {}),
+        ...(options?.loadBody ?? {}),
+      };
+      const explicitBackend = extractExplicitBackend(selectedBackendOptions);
       if (explicitBackend) {
         const freshSystemData = await fetchSystemInfoData();
         const freshRecipes = freshSystemData.info?.recipes;
@@ -739,7 +786,7 @@ async function ensureModelReadyInternal(
           isDownloaded = freshModel?.downloaded === true;
         }
       } catch {
-        // If re-check fails, proceed — pull will be a no-op if already downloaded
+        // If re-check fails, proceed - pull will be a no-op if already downloaded
       }
     }
 

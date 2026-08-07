@@ -184,7 +184,7 @@ Save the prompt cache of a specific slot to a file. This allows you to persist t
 
 > **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/slots/{id}?action=save` endpoint.
 
-> **Note:** The llama.cpp server must be started with the `--slot-save-path` argument for save operations to work. See [Server Configuration](../server/configuration.md) for details on configuring backend arguments.
+> **Note:** The llama.cpp server must be started with the `--slot-save-path` argument for save operations to work. See [Server Configuration](../guide/configuration/README.md) for details on configuring backend arguments.
 >
 > Example configuration:
 > ```bash

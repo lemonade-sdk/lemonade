@@ -98,7 +98,14 @@ export function useAudioCapture(
 
       setIsRecording(true);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to access microphone';
+      let errorMessage = 'Failed to access microphone';
+      if (err instanceof Error) {
+        if (err.name === 'NotAllowedError' || err.message.includes('not allowed')) {
+          errorMessage = 'Microphone access denied. Please allow microphone permission in your browser settings for this site, then refresh.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
       setError(errorMessage);
       console.error('Failed to start recording:', err);
     }
