@@ -422,6 +422,178 @@ jobs:
           # - backend: cuda
           #   runner: [self-hosted, Windows, 128gb, cuda]
     steps:
+      - name: Capture Vulkan runner configuration
+        if: matrix.backend == 'vulkan'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          $outDir = Join-Path $env:RUNNER_TEMP "vulkan-runner-config"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          # General system / Windows / BIOS information
+          $os = Get-CimInstance Win32_OperatingSystem
+          $computer = Get-CimInstance Win32_ComputerSystem
+          $bios = Get-CimInstance Win32_BIOS
+
+          [pscustomobject]@{
+            CapturedUtc        = (Get-Date).ToUniversalTime()
+            RunnerName         = $env:RUNNER_NAME
+            Manufacturer       = $computer.Manufacturer
+            Model              = $computer.Model
+            PhysicalMemoryGiB  = [math]::Round(
+              $computer.TotalPhysicalMemory / 1GB,
+              2
+            )
+            WindowsCaption     = $os.Caption
+            WindowsVersion     = $os.Version
+            WindowsBuild       = $os.BuildNumber
+            OSArchitecture     = $os.OSArchitecture
+            LastBootUpTime     = $os.LastBootUpTime
+            UptimeHours        = [math]::Round(
+              ((Get-Date) - $os.LastBootUpTime).TotalHours,
+              2
+            )
+            BIOSManufacturer   = $bios.Manufacturer
+            BIOSVersion        = $bios.SMBIOSBIOSVersion
+            BIOSReleaseDate    = $bios.ReleaseDate
+          } |
+            Format-List |
+            Out-File (Join-Path $outDir "system.txt") -Encoding utf8
+
+          # GPU model, PCI device ID and Windows display-driver information
+          Get-CimInstance Win32_VideoController |
+            Select-Object `
+              Name,
+              VideoProcessor,
+              PNPDeviceID,
+              DriverVersion,
+              DriverDate,
+              Status |
+            Format-List |
+            Out-File (Join-Path $outDir "gpu.txt") -Encoding utf8
+
+          Get-CimInstance Win32_PnPSignedDriver |
+            Where-Object { $_.DeviceClass -eq "DISPLAY" } |
+            Select-Object `
+              DeviceName,
+              Manufacturer,
+              DriverProviderName,
+              DriverVersion,
+              DriverDate,
+              InfName,
+              DeviceID |
+            Format-List |
+            Out-File (Join-Path $outDir "display-drivers.txt") -Encoding utf8
+
+          # Current Windows power scheme
+          powercfg /getactivescheme 2>&1 |
+            Out-File (Join-Path $outDir "power.txt") -Encoding utf8
+
+          # Reboot-frequency proxy plus exact current boot time above
+          $bootEvents = @(
+            Get-WinEvent -FilterHashtable @{
+              LogName   = "System"
+              Id        = 6005
+              StartTime = (Get-Date).AddDays(-30)
+            } -ErrorAction SilentlyContinue
+          )
+
+          "Event Log service starts in last 30 days: $($bootEvents.Count)" |
+            Out-File (Join-Path $outDir "reboots.txt") -Encoding utf8
+
+          # Relevant workloads present before validation cleanup
+          $processes = @(
+            Get-Process -Name @(
+              "lemond",
+              "llama-server",
+              "lemonade",
+              "LemonadeServer",
+              "flm",
+              "ort-server",
+              "moonshine-server"
+            ) -ErrorAction SilentlyContinue
+          )
+
+          if ($processes.Count -gt 0) {
+            $processes |
+              Select-Object ProcessName, Id, StartTime, CPU, WorkingSet64 |
+              Format-Table -AutoSize |
+              Out-File (Join-Path $outDir "processes-before-cleanup.txt") `
+                -Encoding utf8
+          } else {
+            "No known inference processes detected." |
+              Out-File (Join-Path $outDir "processes-before-cleanup.txt") `
+                -Encoding utf8
+          }
+
+          # Best-effort AMD cache-directory state.
+          # This does not modify or clear any cache.
+          $amdRoot = if ($env:LOCALAPPDATA) {
+            Join-Path $env:LOCALAPPDATA "AMD"
+          } else {
+            $null
+          }
+
+          if ($amdRoot -and (Test-Path $amdRoot)) {
+            Get-ChildItem $amdRoot -Directory -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match "cache" } |
+              Select-Object Name, CreationTimeUtc, LastWriteTimeUtc |
+              Format-Table -AutoSize |
+              Out-File (Join-Path $outDir "amd-cache-state.txt") `
+                -Encoding utf8
+          } else {
+            "AMD local cache directory not found." |
+              Out-File (Join-Path $outDir "amd-cache-state.txt") `
+                -Encoding utf8
+          }
+
+          # Vulkan device, driver, memory heaps and capabilities
+          $vulkaninfo = Get-Command vulkaninfo -ErrorAction SilentlyContinue
+
+          if ($vulkaninfo) {
+            & $vulkaninfo.Source --summary *>&1 |
+              Out-File (Join-Path $outDir "vulkaninfo-summary.txt") `
+                -Encoding utf8
+            $summaryExitCode = $LASTEXITCODE
+
+            & $vulkaninfo.Source *>&1 |
+              Out-File (Join-Path $outDir "vulkaninfo.txt") `
+                -Encoding utf8
+            $fullExitCode = $LASTEXITCODE
+
+            Write-Host "=== vulkaninfo --summary ==="
+            Get-Content (Join-Path $outDir "vulkaninfo-summary.txt")
+
+            Write-Host "vulkaninfo summary exit code: $summaryExitCode"
+            Write-Host "vulkaninfo full exit code: $fullExitCode"
+          } else {
+            "vulkaninfo was not found in PATH." |
+              Out-File (Join-Path $outDir "vulkaninfo-unavailable.txt") `
+                -Encoding utf8
+            Write-Warning "vulkaninfo was not found in PATH."
+          }
+
+          Write-Host "=== Runner configuration ==="
+          Get-Content (Join-Path $outDir "system.txt")
+          Get-Content (Join-Path $outDir "gpu.txt")
+          Get-Content (Join-Path $outDir "display-drivers.txt")
+          Get-Content (Join-Path $outDir "power.txt")
+          Get-Content (Join-Path $outDir "reboots.txt")
+          Get-Content (Join-Path $outDir "processes-before-cleanup.txt")
+
+          # Environment collection should never make validation fail.
+          exit 0
+
+      - name: Upload Vulkan runner configuration
+        if: always() && matrix.backend == 'vulkan'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vulkan-runner-config
+          path: ${{ runner.temp }}/vulkan-runner-config/
+          retention-days: 30
+          if-no-files-found: warn
+
       - name: Cleanup prior validation processes
         if: runner.os == 'Windows'
         shell: PowerShell
