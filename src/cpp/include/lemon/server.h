@@ -276,7 +276,8 @@ private:
     void auto_load_model_if_needed(
         const std::string& model_name,
         const json& request_options = json::object(),
-        LoadPurpose load_purpose = LoadPurpose::UserInference);
+        LoadPurpose load_purpose = LoadPurpose::UserInference,
+        std::atomic<bool>* cancel_flag = nullptr);
 
     // Helper: persist the registry's installed-providers list into config.json
     // by overlaying onto the current runtime-config snapshot. Called after

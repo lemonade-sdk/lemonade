@@ -636,7 +636,10 @@ json WrappedServer::forward_get_request(const std::string& endpoint, long timeou
     }
 }
 
-json WrappedServer::forward_request(const std::string& endpoint, const json& request, long timeout_seconds) {
+json WrappedServer::forward_request(const std::string& endpoint,
+                                     const json& request,
+                                     long timeout_seconds,
+                                     std::function<bool()> cancel_checker) {
     if (!is_backend_alive()) {
         if (was_watchdog_triggered() || has_backend_process_exited()) {
             if (!was_watchdog_triggered()) {
@@ -652,6 +655,13 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     std::string url = get_base_url() + endpoint;
     std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
 
+    auto* cancel_flag = current_request_cancel();
+    if ((cancel_flag && cancel_flag->load()) || (cancel_checker && !cancel_checker())) {
+        LOG(WARNING, "WrappedServer") << "Client request already cancelled before forwarding non-streaming request; aborting." << std::endl;
+        abort_request();
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
+    }
+
     try {
         auto response = utils::HttpClient::post(
             url,
@@ -659,7 +669,8 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
             headers,
             timeout_seconds,
             utils::HttpSecurityPolicy::TrustedLoopback,
-            current_request_cancel());
+            cancel_flag,
+            cancel_checker);
         note_backend_activity();
 
         if (response.status_code == 200) {
@@ -680,6 +691,13 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
             );
         }
     } catch (const std::exception& e) {
+        std::string err_str = e.what();
+        if (err_str.find("Callback aborted transfer") != std::string::npos ||
+            err_str.find("Client disconnected") != std::string::npos) {
+            LOG(WARNING, "WrappedServer") << "Aborting non-streaming request due to client disconnect: " << e.what() << std::endl;
+            abort_request();
+            return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
+        }
         if (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) {
             if (!was_watchdog_triggered()) {
                 const std::string reset_reason = has_backend_process_exited()
@@ -695,7 +713,8 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
 
 json WrappedServer::forward_multipart_request(const std::string& endpoint,
                                                const std::vector<utils::MultipartField>& fields,
-                                               long timeout_seconds) {
+                                               long timeout_seconds,
+                                               std::function<bool()> cancel_checker) {
     if (!is_backend_alive()) {
         if (was_watchdog_triggered() || has_backend_process_exited()) {
             if (!was_watchdog_triggered()) {
@@ -788,6 +807,20 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
 
     try {
 
+        auto cancel_checker = [&sink]() -> bool {
+            if (sink.is_writable && !sink.is_writable()) {
+                return false;
+            }
+            auto* flag = current_request_cancel();
+            return flag ? !flag->load() : true;
+        };
+
+        if (!cancel_checker()) {
+            LOG(WARNING, "WrappedServer") << "Client disconnected before streaming request dispatched to backend; aborting." << std::endl;
+            abort_request();
+            return;
+        }
+
         if (sse) {
             // Use StreamingProxy to forward the SSE stream with telemetry callback
             // Use INFERENCE_TIMEOUT_SECONDS (0 = infinite) as chat completions can take a long time
@@ -802,14 +835,22 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                     }
                 },
                 timeout_seconds,
-                mark_stream_progress
+                mark_stream_progress,
+                cancel_checker
             );
         } else {
             StreamingProxy::forward_byte_stream(url, request_body, sink, timeout_seconds,
-                mark_stream_progress
+                mark_stream_progress,
+                cancel_checker
             );
         }
     } catch (const std::exception& e) {
+        std::string err_str = e.what();
+        if (err_str.find("Client disconnected") != std::string::npos) {
+            LOG(WARNING, "WrappedServer") << "Aborting backend request due to client disconnect: " << e.what() << std::endl;
+            abort_request();
+            return;
+        }
         // Log the error but don't crash the server
         LOG(ERROR, "WrappedServer") << "Streaming request failed: " << e.what() << std::endl;
 

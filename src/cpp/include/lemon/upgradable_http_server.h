@@ -26,6 +26,16 @@
 
 #include <httplib.h>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <mstcpip.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#endif
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -35,6 +45,55 @@
 #include <thread>
 
 namespace lemon {
+
+inline void configure_tcp_keepalive(socket_t sock, int idle_sec = 15, int intvl_sec = 5, int cnt = 3) {
+    if (sock == INVALID_SOCKET) return;
+#ifdef _WIN32
+    BOOL optval = TRUE;
+    ::setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, reinterpret_cast<const char*>(&optval), sizeof(optval));
+
+    #if defined(TCP_KEEPIDLE)
+    DWORD idle = idle_sec, intvl = intvl_sec, count = cnt;
+    ::setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, reinterpret_cast<const char*>(&idle), sizeof(idle));
+    ::setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, reinterpret_cast<const char*>(&intvl), sizeof(intvl));
+    ::setsockopt(sock, IPPROTO_TCP, TCP_KCNT, reinterpret_cast<const char*>(&count), sizeof(count));
+    #else
+    struct tcp_keepalive keepalive_vals{};
+    keepalive_vals.onoff = 1;
+    keepalive_vals.keepalivetime = idle_sec * 1000;
+    keepalive_vals.keepaliveinterval = intvl_sec * 1000;
+    DWORD bytes_returned = 0;
+    ::WSAIoctl(sock, SIO_KEEPALIVE_VALS, &keepalive_vals, sizeof(keepalive_vals),
+               nullptr, 0, &bytes_returned, nullptr, nullptr);
+    #endif
+#elif defined(__APPLE__)
+    int optval = 1;
+    ::setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
+    int idle = idle_sec, intvl = intvl_sec, count = cnt;
+    ::setsockopt(sock, IPPROTO_TCP, TCP_KEEPALIVE, &idle, sizeof(idle));
+    ::setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
+#ifdef TCP_KEEPCNT
+    ::setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &count, sizeof(count));
+#elif defined(TCP_KCNT)
+    ::setsockopt(sock, IPPROTO_TCP, TCP_KCNT, &count, sizeof(count));
+#endif
+#else
+    int optval = 1;
+    ::setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
+    int idle = idle_sec, intvl = intvl_sec, count = cnt;
+#ifdef TCP_KEEPIDLE
+    ::setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
+#endif
+#ifdef TCP_KEEPINTVL
+    ::setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
+#endif
+#ifdef TCP_KEEPCNT
+    ::setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &count, sizeof(count));
+#elif defined(TCP_KCNT)
+    ::setsockopt(sock, IPPROTO_TCP, TCP_KCNT, &count, sizeof(count));
+#endif
+#endif
+}
 
 bool is_websocket_endpoint(const std::string& path);
 
@@ -139,6 +198,7 @@ public:
 
 private:
     bool process_and_close_socket(socket_t sock) override {
+        configure_tcp_keepalive(sock);
         if (upgrade_handler_ && detail::peek_websocket_upgrade(sock)) {
             if (upgrade_handler_(sock)) {
                 return true;  // ownership transferred to the WebSocket server

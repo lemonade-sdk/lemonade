@@ -115,7 +115,8 @@ public:
         const std::map<std::string, std::string>& headers = {},
         long timeout_seconds = 300,
         HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
-        std::atomic<bool>* cancel_flag = nullptr);
+        std::atomic<bool>* cancel_flag = nullptr,
+        std::function<bool()> cancel_checker = nullptr);
 
     // Multipart form data POST request. Redirects are never followed.
     static HttpResponse post_multipart(
@@ -135,7 +136,8 @@ public:
         const std::map<std::string, std::string>& headers = {},
         long timeout_seconds = 300,
         std::function<void(int status_code)> on_status = nullptr,
-        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        std::function<bool()> cancel_checker = nullptr);
 
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,

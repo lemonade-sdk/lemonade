@@ -70,7 +70,8 @@ void StreamingProxy::forward_sse_stream(
     httplib::DataSink& sink,
     std::function<void(const TelemetryData&)> on_complete,
     long timeout_seconds,
-    std::function<void()> on_chunk) {
+    std::function<void()> on_chunk,
+    std::function<bool()> cancel_checker) {
 
     TelemetryData telemetry;
     try {
@@ -85,6 +86,7 @@ void StreamingProxy::forward_sse_stream(
     bool has_first_token = false;
     double time_to_first_token = 0.0;
     const auto start_time = std::chrono::steady_clock::now();
+    const auto last_sse_write = std::make_shared<std::chrono::steady_clock::time_point>(start_time);
 
     auto process_line = [&telemetry](const std::string& line) {
         std::string json_str;
@@ -101,14 +103,34 @@ void StreamingProxy::forward_sse_stream(
         }
     };
 
+    std::function<bool()> effective_checker = [&sink, cancel_checker, last_sse_write]() -> bool {
+        if (sink.is_writable && !sink.is_writable()) {
+            return false;
+        }
+        if (cancel_checker && !cancel_checker()) {
+            return false;
+        }
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - *last_sse_write).count() >= 1000) {
+            *last_sse_write = now;
+            static const char ping_comment[] = ": ping\n\n";
+            if (!sink.write(ping_comment, sizeof(ping_comment) - 1)) {
+                return false;
+            }
+        }
+        return true;
+    };
+
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
         [&sink, &line_buffer, &has_done_marker, &has_first_token,
-         &time_to_first_token, &start_time, &on_chunk, &process_line](const char* data, size_t length) {
+         &time_to_first_token, &start_time, &last_sse_write, &on_chunk, &process_line](const char* data, size_t length) {
             if (on_chunk) {
                 on_chunk();
             }
+
+            *last_sse_write = std::chrono::steady_clock::now();
 
             line_buffer.append(data, length);
             process_sse_lines(line_buffer, process_line);
@@ -133,17 +155,19 @@ void StreamingProxy::forward_sse_stream(
         {},
         timeout_seconds,
         nullptr,
-        utils::HttpSecurityPolicy::TrustedLoopback
+        utils::HttpSecurityPolicy::TrustedLoopback,
+        effective_checker
     );
 
     const bool transport_interrupted =
         result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
 
     if (result.curl_code != CURLE_OK) {
-        if (result.curl_code == CURLE_WRITE_ERROR) {
+        if (result.curl_code == CURLE_WRITE_ERROR || result.curl_code == CURLE_ABORTED_BY_CALLBACK) {
             stream_error = true;
             LOG(WARNING, "StreamingProxy") << "Client disconnected during SSE stream (CURL error: " << result.curl_error << ")" << std::endl;
             telemetry.error_message = "Client disconnected during stream";
+            throw std::runtime_error("Client disconnected during SSE stream");
         } else if (transport_interrupted) {
             if (!has_done_marker) {
                 // This is the important crash path: HTTP headers may have been sent and
@@ -217,7 +241,8 @@ void StreamingProxy::forward_byte_stream(
     const std::string& request_body,
     httplib::DataSink& sink,
     long timeout_seconds,
-    std::function<void()> on_chunk) {
+    std::function<void()> on_chunk,
+    std::function<bool()> cancel_checker) {
 
     bool stream_error = false;
 
@@ -227,6 +252,16 @@ void StreamingProxy::forward_byte_stream(
     int backend_status = 200;
     std::string error_body;
     static constexpr size_t max_error_body = 64 * 1024;
+
+    std::function<bool()> effective_checker = [&sink, cancel_checker]() -> bool {
+        if (sink.is_writable && !sink.is_writable()) {
+            return false;
+        }
+        if (cancel_checker && !cancel_checker()) {
+            return false;
+        }
+        return true;
+    };
 
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
@@ -252,7 +287,8 @@ void StreamingProxy::forward_byte_stream(
         {},
         timeout_seconds,
         [&backend_status](int status) { backend_status = status; },
-        utils::HttpSecurityPolicy::TrustedLoopback
+        utils::HttpSecurityPolicy::TrustedLoopback,
+        effective_checker
     );
 
     const bool transport_interrupted =
@@ -260,8 +296,9 @@ void StreamingProxy::forward_byte_stream(
 
     if (result.curl_code != CURLE_OK) {
         stream_error = true;
-        if (result.curl_code == CURLE_WRITE_ERROR) {
+        if (result.curl_code == CURLE_WRITE_ERROR || result.curl_code == CURLE_ABORTED_BY_CALLBACK) {
             LOG(WARNING, "StreamingProxy") << "Client disconnected during byte stream (CURL error: " << result.curl_error << ")" << std::endl;
+            throw std::runtime_error("Client disconnected during byte stream");
         } else if (transport_interrupted) {
             // Keep byte streams consistent with SSE: an interrupted transport is a
             // backend failure, not a clean stream completion. The caller will mark

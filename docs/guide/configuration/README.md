@@ -463,6 +463,14 @@ lemonade config set host=0.0.0.0
 
 > **Warning:** Using `host: "0.0.0.0"` allows connections from any machine on the network — including to the internal control endpoints (`/internal/*`, e.g. shutdown and config). Only do this on trusted networks, and set an API key to manage access. `LEMONADE_API_KEY` secures all endpoints; `LEMONADE_ADMIN_API_KEY` on its own secures only `/internal/*` and leaves the inference and model-management endpoints (`/api`, `/v0`, `/v1`) open, so set `LEMONADE_API_KEY` to protect those too. The server logs a warning at startup when bound to a non-loopback host without the regular key.
 
+## Socket Options & Connection Robustness
+
+Lemonade Server configures socket-level TCP keep-alives in a zero-config posture across all platforms:
+- **Linux**: Active `SO_KEEPALIVE` with `TCP_KEEPIDLE` (15s idle), `TCP_KEEPINTVL` (5s interval), `TCP_KEEPCNT` (3 probes).
+- **macOS**: Active `SO_KEEPALIVE` with `TCP_KEEPALIVE` (15s idle), `TCP_KEEPINTVL` (5s interval), `TCP_KEEPCNT` (3 probes).
+- **Windows**: Active `SO_KEEPALIVE` with Winsock `SIO_KEEPALIVE_VALS` (15s idle, 5s interval) or Win10+ `TCP_KEEPIDLE`.
+- **SSE Keep-Alives**: Active Server-Sent Events streams automatically emit periodic `: ping\n\n` comments every 10 seconds to keep connection state alive across reverse proxies (Nginx / Cloudflare) without corrupting client SSE parsers.
+
 ## Next Steps
 
 The [Server Specification](../../api/README.md) provides more information about how to integrate Lemonade Server into an application.

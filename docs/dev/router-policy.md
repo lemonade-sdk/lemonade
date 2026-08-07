@@ -240,3 +240,11 @@ The router `model` must be one of `components`. At request time the engine asks 
 to pick a candidate, and that desugars into the same first-match engine and
 `Decision`/trace as the rule form. `routing.router.type` must be `"llm"`, and the
 block is **mutually exclusive** with `routing.rules` and `routing.classifiers`.
+
+## Request Cancellation & Connection Robustness
+
+When an HTTP client disconnects or times out mid-request:
+1. **Socket Progress Interception**: `utils::HttpClient` progress callbacks (`CURLOPT_XFERINFOFUNCTION`) monitor client socket liveness during prefill and generation.
+2. **Direct Slot Cancellation**: `WrappedServer::abort_request` issues non-blocking slot cancellation (`POST /slots/{slot_id}?action=cancel`) directly to the backend process without re-entering `Router` mutex scopes.
+3. **SSE Heartbeat Keep-Alives**: Active SSE streams emit periodic `: ping\n\n` comments every 10 seconds to prevent reverse proxy (Nginx / Cloudflare) gateway timeouts.
+4. **Isolated Disconnect Handling**: Client disconnects are recorded with HTTP status 499 in event streams without triggering nuclear model reloads or disrupting concurrent clients.
