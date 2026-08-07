@@ -8,9 +8,10 @@ Usage:
     python server_3d.py --wrapped-server trellis --backend vulkan
     python server_3d.py --wrapped-server trellis --backend rocm
 
-Note: 3D reconstruction is slow (minutes per mesh even at the 512 cascade).
-The negative tests run first and never pull the model; only the generation
-test downloads it.
+Note: 3D reconstruction is slow, so the generation test runs at the 512
+cascade with classifier-free guidance disabled (see setUpClass). The negative
+tests run first and never pull the model; only the generation test downloads
+it.
 """
 
 import base64
@@ -23,6 +24,7 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     pull_model_with_retry,
+    set_server_config,
 )
 from utils.capabilities import get_test_model
 from utils.test_models import (
@@ -65,6 +67,15 @@ class Model3DTests(ServerTestBase):
     """Tests for the /3d/generations endpoint."""
 
     _model_pulled = False
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Disabling classifier-free guidance (gss/gsh 1) runs every pipeline
+        # stage with one forward pass per flow step instead of two and a
+        # sparser structure, cutting generation from ~99s to ~34s on a Strix
+        # Halo iGPU. CI validates the pipeline end-to-end, not output quality.
+        set_server_config({"trellis": {"args": "--gss 1 --gsh 1"}})
 
     @classmethod
     def _ensure_model_pulled(cls):
@@ -165,7 +176,7 @@ class Model3DTests(ServerTestBase):
         self._ensure_model_pulled()
         payload = self._generation_payload()
         print(f"[INFO] Sending 3D generation request with model {payload['model']}")
-        print(f"[INFO] Using the 512 cascade for CI speed; this still takes minutes")
+        print(f"[INFO] Using the 512 cascade with guidance disabled for CI speed")
 
         response = requests.post(
             f"{self.base_url}/3d/generations",

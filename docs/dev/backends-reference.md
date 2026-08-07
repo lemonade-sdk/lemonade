@@ -144,6 +144,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
+| `trellis_args` | `--trellis-args` | ARGS | "" | Custom arguments to pass to trellis-server |
 
 #### `vllm` — vLLM ROCm (experimental)
 

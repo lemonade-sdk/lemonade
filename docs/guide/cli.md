@@ -402,6 +402,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--trellis BACKEND` | Trellis backend to use | Auto-detected |
+| `--trellis-args ARGS` | Custom arguments to pass to trellis-server | `""` |
 
 #### OpenMOSS TTS (`openmoss` recipe)
 

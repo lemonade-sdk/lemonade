@@ -202,6 +202,9 @@ SECOND_TEST_MODEL_EVICTION = "Phi-4-mini-instruct-GGUF"
 # Tertiary model for LRU eviction testing
 MULTI_MODEL_TERTIARY = "Qwen3-0.6B-GGUF"
 
+# Quaternary model for multi-model testing (small, fast to pull and load)
+MULTI_MODEL_QUATERNARY = "Llama-3.2-1B-Instruct-GGUF"
+
 # Whisper test configuration
 WHISPER_MODEL = "Whisper-Tiny"
 TEST_AUDIO_URL = (
