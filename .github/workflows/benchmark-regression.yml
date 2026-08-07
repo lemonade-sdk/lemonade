@@ -146,19 +146,46 @@ jobs:
           echo "LEMOND_EXE=$lemondPath"   >> $env:GITHUB_ENV
           echo "LEMONADE_EXE=$lemonadePath" >> $env:GITHUB_ENV
 
-      - name: Locate lemonade (Linux)
+      - name: Install lemonade (Linux)
         if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # lemond is at /usr/bin/lemond — installed via .deb by cpp_server_build_test_release.yml
-          LEMOND=$(which lemond 2>/dev/null || echo "")
-          if [ -z "$LEMOND" ]; then
-            echo "ERROR: lemond not found. Has cpp_server_build_test_release.yml run on this runner?"
+          set -e
+          # Use already-installed lemond if available
+          if command -v lemond >/dev/null 2>&1; then
+            echo "lemond already installed: $(which lemond)"
+            lemond --version
+            echo "LEMOND_EXE=$(which lemond)"     >> $GITHUB_ENV
+            echo "LEMONADE_EXE=$(which lemonade)" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          # Download and install latest lemonade .deb using curl + GitHub API
+          echo "lemond not in PATH — downloading .deb from latest release..."
+          DEB_URL=$(curl -sf \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest" \
+            | python3 -c "
+import sys, json
+assets = json.load(sys.stdin)['assets']
+deb = next((a['browser_download_url'] for a in assets
+            if 'amd64' in a['name'] and 'server' in a['name'] and a['name'].endswith('.deb')), None)
+print(deb or '')
+")
+          if [ -z "$DEB_URL" ]; then
+            echo "ERROR: no amd64 server .deb found in latest release"
             exit 1
           fi
-          LEMONADE=$(which lemonade 2>/dev/null || echo "$LEMOND")
-          $LEMOND --version
-          echo "LEMOND_EXE=$LEMOND"     >> $GITHUB_ENV
-          echo "LEMONADE_EXE=$LEMONADE" >> $GITHUB_ENV
+          echo "Downloading: $DEB_URL"
+          curl -sfL -H "Authorization: Bearer $GH_TOKEN" \
+            -o /tmp/lemonade-server.deb "$DEB_URL"
+          sudo dpkg -i /tmp/lemonade-server.deb || sudo apt-get install -f -y
+          rm -f /tmp/lemonade-server.deb
+          lemond --version
+          echo "LEMOND_EXE=$(which lemond)"     >> $GITHUB_ENV
+          echo "LEMONADE_EXE=$(which lemonade)" >> $GITHUB_ENV
 
       # ── Python venv ───────────────────────────────────────────────────────
       - name: Setup Python and venv
