@@ -5771,6 +5771,38 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
+    def test_021ya_extra_same_quant_non_shard_files_remain_separate(self):
+        """An -imatrix file beside the plain one is a second model, not a shard."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_imatrix_")
+        model_dir = os.path.join(extra_dir, "Local-Imatrix-GGUF")
+        plain = os.path.join(model_dir, "Model-Q4_K_M.gguf")
+        imatrix = os.path.join(model_dir, "Model-Q4_K_M-imatrix.gguf")
+        self._write_stub_gguf_file(plain)
+        self._write_stub_gguf_file(imatrix)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            # Sharing a quant token is not enough to make them one sharded model.
+            self.assertIn("Model-Q4_K_M", models_by_id)
+            self.assertIn("Model-Q4_K_M-imatrix", models_by_id)
+            self.assertEqual(models_by_id["Model-Q4_K_M"]["checkpoint"], plain)
+            self.assertEqual(
+                models_by_id["Model-Q4_K_M-imatrix"]["checkpoint"], imatrix
+            )
+
+            print("[OK] same-quant non-shard files remain separate models")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously

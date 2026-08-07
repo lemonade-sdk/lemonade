@@ -145,23 +145,38 @@ GgufVariantSet enumerate_gguf_variants(
         result.variants.push_back(std::move(v));
     }
 
-    // Root-file variants, grouped by extracted quant token. Files that share
-    // the same token (typically multi-shard root files like
-    // `model-Q4_K_M-00001-of-00003.gguf`) are merged into one sharded variant.
+    // Root-file variants. Files are merged into one sharded variant only when
+    // their names declare the same shard series, like
+    // `model-Q4_K_M-00001-of-00003.gguf`. Sharing a quant token is not enough:
+    // `Model-Q4_K_M.gguf` and `Model-Q4_K_M-imatrix.gguf` are separate models.
+    static const std::regex shard_re(R"(^(.+)[-._]\d{5}-of-\d{5}\.gguf$)", std::regex::icase);
     std::sort(root_files.begin(), root_files.end());
-    std::map<std::string, std::vector<std::string>> root_by_quant;
+    std::map<std::string, std::vector<std::string>> root_by_series;
+    std::map<std::string, std::string> quant_of_series;
+    std::map<std::string, int> series_per_quant;
     std::vector<std::string> root_unmatched;
     for (const auto& f : root_files) {
         std::string q;
-        if (extract_quant(f, q)) {
-            root_by_quant[q].push_back(f);
-        } else {
+        if (!extract_quant(f, q)) {
             root_unmatched.push_back(f);
+            continue;
         }
+        std::smatch m;
+        std::string key = std::regex_match(f, m, shard_re) ? m[1].str() : f;
+        if (root_by_series.find(key) == root_by_series.end()) {
+            quant_of_series[key] = q;
+            series_per_quant[q]++;
+        }
+        root_by_series[key].push_back(f);
     }
-    for (auto& kv : root_by_quant) {
+    for (auto& kv : root_by_series) {
+        const std::string& quant = quant_of_series[kv.first];
         GgufVariant v;
-        v.name = kv.first;
+        // Two variants can now share a quant token, so fall back to the primary
+        // file's stem to keep every name in the list distinct.
+        v.name = series_per_quant[quant] == 1
+                     ? quant
+                     : kv.second.front().substr(0, kv.second.front().find_last_of('.'));
         v.files = kv.second;
         v.primary_file = kv.second.front();
         v.sharded = kv.second.size() > 1;
