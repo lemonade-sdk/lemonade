@@ -42,28 +42,55 @@ env:
 
 jobs:
   # =========================================================================
-  # Build — mirrors validate_vllm.yml build job exactly (ubuntu-22.04)
+  # Get lemonade — download embeddable release package, no build needed.
+  # Uses curl + GitHub API only (no gh CLI, no sudo, no cmake).
+  # The embeddable package contains lemond + lemonade + resources/ — all
+  # that the bench jobs need to start lemond and run lemonade bench.
   # =========================================================================
-  build:
-    name: Build (Linux)
-    runs-on: ubuntu-22.04
+  get-lemonade:
+    name: Get lemonade (embeddable)
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-        with:
-          clean: true
-          fetch-depth: 0
-
-      - name: Build lemonade server
+      - name: Download lemonade embeddable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
-          ./setup.sh
-          cmake -DBUILD_WEB_APP=OFF --preset default
-          cmake --build --preset default
-          test -f build/lemond   || { echo "lemond not found!"; exit 1; }
-          test -f build/lemonade || { echo "lemonade not found!"; exit 1; }
-          echo "Build successful!"
+          set -euo pipefail
 
-      - name: Upload build artifacts
+          # Step 1: get latest release metadata
+          RELEASE=$(curl -sf \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest")
+
+          VERSION=$(echo "$RELEASE" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          echo "Latest lemonade: $VERSION"
+
+          # Step 2: find the ubuntu embeddable asset URL
+          ASSET_URL=$(echo "$RELEASE" | python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; url=next((a['browser_download_url'] for a in assets if 'embeddable' in a['name'] and 'ubuntu' in a['name'] and 'x64' in a['name']),None); print(url or 'NOT_FOUND')")
+
+          if [ "$ASSET_URL" = "NOT_FOUND" ]; then
+            echo "ERROR: no ubuntu embeddable asset found. Available assets:"
+            echo "$RELEASE" | python3 -c "import sys,json; [print(a['name']) for a in json.load(sys.stdin)['assets']]"
+            exit 1
+          fi
+
+          echo "Downloading: $ASSET_URL"
+
+          # Step 3: download and extract — strip top-level directory
+          mkdir -p build
+          curl -sfL "$ASSET_URL" | tar -xz --strip-components=1 -C build/
+
+          # Step 4: verify required files exist
+          test -f build/lemond   || { echo "ERROR: lemond missing from embeddable package"; ls -la build/; exit 1; }
+          test -f build/lemonade || { echo "ERROR: lemonade missing from embeddable package"; ls -la build/; exit 1; }
+          test -d build/resources || { echo "ERROR: resources/ missing — embeddable package incomplete"; ls -la build/; exit 1; }
+
+          chmod +x build/lemond build/lemonade
+          build/lemond --version
+          echo "Lemonade $VERSION ready"
+
+      - name: Upload lemonade artifacts
         uses: actions/upload-artifact@v7
         with:
           name: bench-build
@@ -79,8 +106,8 @@ jobs:
   # =========================================================================
   bench:
     name: Bench ${{ matrix.fork_id }}
-    needs: build
-    if: always() && needs.build.result == 'success'
+    needs: get-lemonade
+    if: always() && needs.get-lemonade.result == 'success'
     runs-on: [self-hosted, stx-halo, Linux, lemon-prod]
     strategy:
       fail-fast: false
