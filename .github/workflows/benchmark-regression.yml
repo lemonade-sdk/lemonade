@@ -191,7 +191,8 @@ jobs:
           echo "HOME=$HOME" >> "$GITHUB_ENV"
 
           FORK_ID="${{ matrix.fork_id }}"
-          MODEL_FILTER="${{ github.event.inputs.model_filter }}"
+          # TEMPORARY: single model for CI validation — remove when bench is confirmed working
+          MODEL_FILTER="Qwen3.6-35B-A3B-GGUF"
           CACHE_DIR="$RUNNER_TEMP/lemond-bench-cache-$FORK_ID"
           LOGS_DIR="$(pwd)/server-logs-$FORK_ID"
           mkdir -p "$CACHE_DIR" "$LOGS_DIR"
