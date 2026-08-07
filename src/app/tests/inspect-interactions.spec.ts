@@ -50,7 +50,23 @@ test.beforeEach(async ({ page }) => {
       contentType: 'application/json',
       body: JSON.stringify({
         data: [
-          { id: 'mock-model-1', name: 'mock-model-1', model_name: 'mock-model-1' }
+          {
+            id: 'mock-model-1',
+            name: 'mock-model-1',
+            model_name: 'mock-model-1'
+          },
+          {
+            id: 'mock-reasoning-model',
+            name: 'mock-reasoning-model',
+            model_name: 'mock-reasoning-model',
+            labels: ['reasoning']
+          },
+          {
+            id: 'ACE-Step-music',
+            name: 'ACE-Step-music',
+            model_name: 'ACE-Step-music',
+            labels: ['audio', 'music-generation']
+          }
         ]
       })
     });
@@ -76,6 +92,59 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('Session Inspector - Recent Improvements', () => {
+  test('Improve optimizer model selector only lists reasoning models', async ({ page }) => {
+    await page.goto('/#/dashboard/telemetry');
+    await expect(page.locator('.inspect-rail')).toBeVisible();
+
+    await page.evaluate(() => {
+      (window as any).inspectStore.setState({
+        traces: [{
+          id: 'mock-improve-trace',
+          traceId: 'trace-improve',
+          spanId: 'span-improve',
+          kind: 'LLM',
+          operation: 'chat.completions',
+          status: 'ok',
+          model: 'mock-reasoning-model',
+          timestamp: '12:00:00 PM',
+          startTimeMs: Date.now(),
+          dur: 1500,
+          messages: [{ role: 'user', content: 'Summarize this report.' }],
+          output: 'A response that needs improvement.',
+          improveData: {
+            critique: [],
+            parameter_diff: {
+              temperature: { suggested: 0.3, rationale: 'Improve consistency.' },
+              system_vs_user_split: false
+            },
+            optimized_prompt: {
+              system_instructions: null,
+              user_prompt: 'Summarize the report concisely.'
+            },
+            key_improvements: ['Reduced verbosity.']
+          }
+        }],
+        selectedTraceId: 'mock-improve-trace'
+      });
+    });
+
+    await page.getByRole('tab', { name: 'Improve' }).click();
+    const optimizerSelector = page.getByRole('combobox', { name: 'Select LLM Optimizer' });
+    await optimizerSelector.click();
+    await optimizerSelector.press('Control+A');
+    await optimizerSelector.press('Backspace');
+
+    await expect(page.getByRole('option', { name: 'mock-reasoning-model', exact: true })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'ACE-Step-music', exact: true })).toHaveCount(0);
+
+    await optimizerSelector.press('Escape');
+    await page.getByRole('button', { name: 'Test', exact: true }).click();
+    const testModelSelector = page.getByRole('combobox', { name: 'Select Test Model' });
+    await testModelSelector.click();
+    await testModelSelector.press('Control+A');
+    await testModelSelector.press('Backspace');
+    await expect(page.getByRole('option', { name: 'ACE-Step-music', exact: true })).toBeVisible();
+  });
 
   test('Decoupled Keyboard Selection in Trace List', async ({ page }) => {
     // 1. Navigate to the inspect view directly
