@@ -93,20 +93,32 @@ std::string BenchBackendResult::label() const {
 }
 
 static bool is_vision_scenario(const BenchScenario& scenario) {
-    std::string category = scenario.category;
-    std::transform(category.begin(), category.end(), category.begin(), ::tolower);
-    return category == "vision";
+    return scenario.category == "vision";
 }
 
 static std::filesystem::path resolve_image_path(const BenchScenario& scenario) {
-    if (scenario.image_path.empty()) return {};
-    std::filesystem::path source_dir = std::filesystem::path(scenario.source_file).parent_path();
+    if (scenario.image_path.empty()) {
+        throw std::runtime_error("Vision scenario '" + scenario.name + "' is missing image_path");
+    }
+    std::filesystem::path source_dir =
+        std::filesystem::absolute(std::filesystem::path(scenario.source_file).parent_path());
     std::filesystem::path image_file(scenario.image_path);
-    if (image_file.is_absolute()) return image_file;
-    return source_dir / image_file;
+    std::filesystem::path resolved = image_file.is_absolute() ? image_file : source_dir / image_file;
+
+    std::filesystem::path canon_dir = std::filesystem::weakly_canonical(source_dir);
+    std::filesystem::path canon_res = std::filesystem::weakly_canonical(resolved);
+
+    std::filesystem::path canon_image_dir = canon_res.parent_path();
+    if (canon_image_dir != canon_dir) {
+        throw std::runtime_error("Image path must be in the same directory as the scenario file: " +
+                                image_file.string());
+    }
+    return canon_res;
 }
 
 static void embed_image_into_message(json& message, const BenchScenario& scenario) {
+    if (!message.contains("role") || message["role"] != "user") return;
+
     auto abs_path = resolve_image_path(scenario);
     if (!std::filesystem::exists(abs_path)) {
         throw std::runtime_error("Image file not found: " + abs_path.string());
@@ -115,6 +127,9 @@ static void embed_image_into_message(json& message, const BenchScenario& scenari
     std::string image_data;
     {
         std::ifstream file(abs_path, std::ios::binary);
+        if (!file) {
+            throw std::runtime_error("Could not open image file: " + abs_path.string());
+        }
         image_data.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     }
     std::string b64_data = lemon::utils::JsonUtils::base64_encode(image_data);
@@ -130,8 +145,6 @@ static void embed_image_into_message(json& message, const BenchScenario& scenari
     };
 
     std::string mime_type = detect_mime_type(abs_path);
-
-    if (!message.contains("role") || message["role"] != "user") return;
 
     json content_array = json::array();
     if (message.contains("content")) {
@@ -223,8 +236,12 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
         } else if (scenario.category == "vision") {
             scenario.warmup_runs = 0;
 
-            if (item.contains("image_path") && item["image_path"].is_string())
-                scenario.image_path = item["image_path"].get<std::string>();
+            if (!item.contains("image_path") || !item["image_path"].is_string() ||
+                item["image_path"].get<std::string>().empty()) {
+                throw std::runtime_error("Vision scenario '" + scenario.name +
+                                        "' must define a non-empty image_path");
+            }
+            scenario.image_path = item["image_path"].get<std::string>();
 
             if (item.contains("messages") && item["messages"].is_array())
                 scenario.messages = item["messages"].get<std::vector<json>>();
@@ -544,7 +561,10 @@ static BenchStrategy make_textgen_strategy(const std::string& model, const Bench
             std::vector<json> messages = scenario.messages;
             if (is_vision_scenario(scenario)) {
                 for (auto& msg : messages) {
-                    embed_image_into_message(msg, scenario);
+                    if (msg.contains("role") && msg["role"] == "user") {
+                        embed_image_into_message(msg, scenario);
+                        break;
+                    }
                 }
             }
             json body;
