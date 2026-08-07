@@ -168,7 +168,9 @@ jobs:
 
           FORK_ID="${{ matrix.fork_id }}"
           MODEL_FILTER="${{ github.event.inputs.model_filter }}"
-          CACHE_DIR="$(pwd)/ci-bench-cache-$FORK_ID"
+          # Use RUNNER_TEMP so lemond's model cache persists across nightly runs.
+          # $(pwd)/ci-bench-cache-* is wiped by git clean; $RUNNER_TEMP is not.
+          CACHE_DIR="$RUNNER_TEMP/lemond-bench-cache-$FORK_ID"
           LOGS_DIR="$(pwd)/server-logs-$FORK_ID"
           mkdir -p "$CACHE_DIR" "$LOGS_DIR"
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
