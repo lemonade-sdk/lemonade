@@ -37,6 +37,7 @@
       "label": "llama.cpp gfx11 (AMD-Ecosystem)",
       "recipe": "llamacpp",
       "backend": "rocm-gfx11",
+      "install_as": "rocm-nightly",
       "repo": "AMD-Ecosystem/llama.cpp",
       "branch": "gfx11",
       "version_source": "github_latest",

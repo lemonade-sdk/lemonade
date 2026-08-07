@@ -478,7 +478,12 @@ def main() -> int:
             base_url = f"http://127.0.0.1:{args.port}"
         if not args.dry_run:
             try:
-                install_backend(base_url, fork["recipe"], fork["backend"])
+                # Use install_as if set — some forks use a custom backend name
+                # (e.g. rocm-gfx11) not in backend_versions.json, so install
+                # a compatible base backend (rocm-nightly) then override with
+                # the fork binary via env var
+                install_backend_name = fork.get("install_as", fork["backend"])
+                install_backend(base_url, fork["recipe"], install_backend_name)
             except Exception as e:
                 print(f"  [ERROR] Backend install failed: {e}")
                 continue
