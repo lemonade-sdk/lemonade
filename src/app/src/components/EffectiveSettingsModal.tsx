@@ -396,7 +396,10 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
 
           <section className="effective-settings__section">
             <h5 className="effective-settings__section-title">Settings by source</h5>
-            <p className="effective-settings__note"><Icon name="info" size={12} /> These rows show known sources for individual settings. The <strong>Effective load command</strong> below is authoritative — it includes architecture and global defaults applied by the server that may not appear here.</p>
+            <p className="effective-settings__note">
+              <Icon name="info" size={12} />
+              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Effective load command</strong> below is authoritative — it includes architecture and global defaults applied by the server that may not appear here.</span>
+            </p>
             <div className="effective-settings__rows">
               <div className="effective-settings__row">
                 <span className="effective-settings__row-label">Context size</span>

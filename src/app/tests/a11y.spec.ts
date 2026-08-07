@@ -3190,6 +3190,9 @@ test.describe('Effective Settings modal accessibility', () => {
     await expect(note).toBeVisible();
     await expect(note).toContainText('Effective load command');
     await expect(note).toContainText('authoritative');
+    const copy = note.locator('.effective-settings__note-copy');
+    await expect(copy).toHaveCount(1);
+    await expect(copy.locator('strong')).toHaveText('Effective load command');
   });
 
   test('A192 — modal passes a WCAG 2.1 AA axe-core scan with no critical/serious violations', async ({ page }) => {
