@@ -3,11 +3,13 @@
 #include <atomic>
 #include <string>
 #include <memory>
+#include <list>
 #include <map>
 #include <mutex>
 #include <set>
 #include <condition_variable>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 #include <optional>
 #include <nlohmann/json.hpp>
@@ -162,6 +164,13 @@ public:
 
     void update_prompt_tokens(const std::string& model_name, int prompt_tokens);
 
+    void update_cache_tokens(const std::string& model_name, int cache_tokens);
+
+    // Route-stability accounting for collection.router dispatch. The
+    // fingerprint is a metrics key only (hash of the conversation's stable
+    // prefix) — it never influences routing and stores no message content.
+    void note_route_decision(uint64_t conversation_fingerprint, const std::string& route_to);
+
     bool begin_exclusive(std::atomic<bool>* cancel = nullptr);
     void end_exclusive();
 
@@ -187,6 +196,13 @@ private:
     mutable std::mutex telemetry_mutex_;
     Telemetry aggregate_telemetry_;
     std::map<std::string, ModelTelemetryRecord> telemetry_by_model_;
+
+    uint64_t routing_decisions_total_ = 0;
+    uint64_t routing_switches_total_ = 0;
+    std::list<uint64_t> route_fingerprint_lru_;
+    std::unordered_map<uint64_t,
+                       std::pair<std::string, std::list<uint64_t>::iterator>>
+        route_last_target_;
 
     // Concurrency control for load operations
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_
@@ -239,6 +255,7 @@ private:
                                     double time_to_first_token,
                                     double tokens_per_second);
     void record_prompt_tokens_for_model(const ModelTelemetryIdentity& identity, int prompt_tokens);
+    void record_cache_tokens_for_model(const ModelTelemetryIdentity& identity, int cache_tokens);
 
     template<typename Func>
     auto execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr));

@@ -18,6 +18,7 @@
 #include "model_residency.h"
 #include "backend_manager.h"
 #include "recipe_options.h"
+#include "streaming_proxy.h"
 #include "backends/backend_descriptor.h"
 
 namespace lemon {
@@ -38,10 +39,12 @@ struct Telemetry {
     double time_to_first_token = 0.0;
     double tokens_per_second = 0.0;
     int prompt_tokens = 0;  // From usage.prompt_tokens (includes cached tokens)
+    int cache_tokens = 0;  // Prompt tokens served from the backend's prefix cache
     uint64_t request_count_total = 0;
     uint64_t input_tokens_total = 0;
     uint64_t output_tokens_total = 0;
     uint64_t prompt_tokens_total = 0;
+    uint64_t cache_tokens_total = 0;
 
     void reset() {
         input_tokens = 0;
@@ -49,10 +52,12 @@ struct Telemetry {
         time_to_first_token = 0.0;
         tokens_per_second = 0.0;
         prompt_tokens = 0;
+        cache_tokens = 0;
         request_count_total = 0;
         input_tokens_total = 0;
         output_tokens_total = 0;
         prompt_tokens_total = 0;
+        cache_tokens_total = 0;
     }
 
     json to_json() const {
@@ -62,10 +67,12 @@ struct Telemetry {
             {"time_to_first_token", time_to_first_token},
             {"tokens_per_second", tokens_per_second},
             {"prompt_tokens", prompt_tokens},
+            {"cache_tokens", cache_tokens},
             {"request_count_total", request_count_total},
             {"input_tokens_total", input_tokens_total},
             {"output_tokens_total", output_tokens_total},
-            {"prompt_tokens_total", prompt_tokens_total}
+            {"prompt_tokens_total", prompt_tokens_total},
+            {"cache_tokens_total", cache_tokens_total}
         };
     }
 };
@@ -387,11 +394,7 @@ public:
 
     // Forward streaming requests to the wrapped server (public for Router access)
     // Virtual so backends can transform request (e.g., FLM needs checkpoint in model field)
-    using TelemetryCallback = std::function<void(int input_tokens,
-                                                 int output_tokens,
-                                                 double time_to_first_token,
-                                                 double tokens_per_second,
-                                                 const std::string& error_message)>;
+    using TelemetryCallback = std::function<void(const StreamingProxy::TelemetryData& telemetry)>;
 
     virtual void forward_streaming_request(const std::string& endpoint,
                                            const std::string& request_body,

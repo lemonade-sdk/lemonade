@@ -17,6 +17,7 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
+#include "lemon/utils/conversation_fingerprint.h"
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -2780,6 +2781,8 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
     result.requested_model = collection_info.model_name;
     result.selected_model = decision.route_to;
     result.decision = std::move(decision);
+    router_->note_route_decision(utils::conversation_fingerprint(request_json),
+                                 result.selected_model);
     return result;
 }
 
@@ -3194,6 +3197,21 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 }
             }
 
+            int cache_tokens = -1;
+            if (response.contains("timings") && response["timings"].is_object() &&
+                response["timings"].contains("cache_n") && response["timings"]["cache_n"].is_number()) {
+                cache_tokens = response["timings"]["cache_n"].get<int>();
+            } else if (response.contains("usage") && response["usage"].is_object() &&
+                       response["usage"].contains("prompt_tokens_details") &&
+                       response["usage"]["prompt_tokens_details"].is_object() &&
+                       response["usage"]["prompt_tokens_details"].contains("cached_tokens") &&
+                       response["usage"]["prompt_tokens_details"]["cached_tokens"].is_number()) {
+                cache_tokens = response["usage"]["prompt_tokens_details"]["cached_tokens"].get<int>();
+            }
+            if (cache_tokens >= 0) {
+                router_->update_cache_tokens(request_json.value("model", ""), cache_tokens);
+            }
+
 
         }
 
@@ -3410,6 +3428,21 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                     int prompt_tokens = usage["prompt_tokens"].get<int>();
                     router_->update_prompt_tokens(request_json.value("model", ""), prompt_tokens);
                 }
+            }
+
+            int cache_tokens = -1;
+            if (response.contains("timings") && response["timings"].is_object() &&
+                response["timings"].contains("cache_n") && response["timings"]["cache_n"].is_number()) {
+                cache_tokens = response["timings"]["cache_n"].get<int>();
+            } else if (response.contains("usage") && response["usage"].is_object() &&
+                       response["usage"].contains("prompt_tokens_details") &&
+                       response["usage"]["prompt_tokens_details"].is_object() &&
+                       response["usage"]["prompt_tokens_details"].contains("cached_tokens") &&
+                       response["usage"]["prompt_tokens_details"]["cached_tokens"].is_number()) {
+                cache_tokens = response["usage"]["prompt_tokens_details"]["cached_tokens"].get<int>();
+            }
+            if (cache_tokens >= 0) {
+                router_->update_cache_tokens(request_json.value("model", ""), cache_tokens);
             }
         }
 

@@ -17,6 +17,9 @@ public:
     struct TelemetryData {
         int input_tokens = 0;
         int output_tokens = 0;
+        // Prompt tokens served from the backend's prefix cache. -1 = the
+        // backend did not report cache usage (0 is a real cold-prefill value).
+        int cache_tokens = -1;
         double time_to_first_token = 0.0;
         double tokens_per_second = 0.0;
         std::string error_message = "";

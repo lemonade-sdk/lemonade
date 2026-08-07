@@ -160,7 +160,6 @@ POLICY = {
 }
 
 
-
 class RouterTests(ServerTestBase):
     """End-to-end routing through a collection.router collection."""
 
@@ -353,6 +352,64 @@ class RouterTests(ServerTestBase):
         self.assertEqual(decision.get("outputs", {}).get("reason"), "privacy")
         self.assertEqual(header, "sensitive-stays-local")
         print(f"[OK] consent=denied coding prompt -> {DEFAULT_MODEL} (first-match)")
+
+    def test_605_route_switch_counter(self):
+        """Same-conversation requests that change candidates bump routing_switches_total."""
+
+        def stats():
+            resp = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(resp.status_code, 200, resp.text)
+            return resp.json()
+
+        def routed_chat(messages, metadata=None):
+            body = {
+                "model": COLLECTION_NAME,
+                "messages": messages,
+                "max_tokens": 8,
+                "temperature": 0.0,
+                "route_trace": True,
+            }
+            if metadata is not None:
+                body["metadata"] = metadata
+            resp = requests.post(
+                f"{self.base_url}/chat/completions", json=body, timeout=600
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"status {resp.status_code}: {resp.text}"
+            )
+            return resp.json().get("x_lemonade_route", {})
+
+        before = stats()
+
+        # All three requests share the conversation fingerprint (same first user
+        # message); the routed turn is the LAST user message, which changes.
+        first_turn = [{"role": "user", "content": "Give me a fun fact about otters."}]
+        decision_a = routed_chat(first_turn, metadata={"consent": "denied"})
+        self.assertEqual(decision_a.get("route_to"), DEFAULT_MODEL)
+
+        followup = first_turn + [
+            {"role": "assistant", "content": "Otters hold hands while sleeping."},
+            {"role": "user", "content": "Now write a function about otters."},
+        ]
+        decision_b = routed_chat(followup)
+        self.assertEqual(decision_b.get("route_to"), CAPABLE_MODEL)
+
+        decision_c = routed_chat(followup)
+        self.assertEqual(decision_c.get("route_to"), CAPABLE_MODEL)
+
+        after = stats()
+        self.assertEqual(
+            after["routing_decisions_total"] - before["routing_decisions_total"],
+            3,
+            f"before={before} after={after}",
+        )
+        self.assertEqual(
+            after["routing_switches_total"] - before["routing_switches_total"],
+            1,
+            "exactly one switch expected: default -> capable, then unchanged "
+            f"(before={before} after={after})",
+        )
+        print("[OK] route-switch counter: 3 decisions, 1 switch")
 
     def test_604_no_trace_when_not_requested(self):
         """Without route_trace the decision omits the per-condition trace."""
