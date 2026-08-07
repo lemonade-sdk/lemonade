@@ -4,11 +4,13 @@
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/http_client.h"
 #include "lemon/version.h"
+#include <algorithm>
 #include <cctype>
 #include <condition_variable>
 #include <cstdlib>
 #include <deque>
 #include <iomanip>
+#include <limits>
 #include <mutex>
 #include <queue>
 #include <random>
@@ -566,6 +568,7 @@ private:
                     std::string target_protocol = oldest_task.protocol;
                     auto oldest_arrival = oldest_task.arrival_time;
 
+                    static constexpr size_t MAX_BATCH_BYTES = 2097152; // 2MB max payload per OTLP POST batch
                     int batch_size = 100;
                     double timeout_s = 1.0;
                     if (auto* config = RuntimeConfig::global()) {
@@ -574,35 +577,42 @@ private:
                     }
 
                     int matching_count = 0;
+                    size_t matching_bytes = 0;
                     for (const auto& task : queue_) {
                         if (task.endpoint == target_endpoint &&
                             task.headers == target_headers &&
                             task.protocol == target_protocol) {
                             matching_count++;
+                            matching_bytes += task.approx_bytes;
                         }
                     }
 
                     auto now = std::chrono::steady_clock::now();
                     double elapsed_s = std::chrono::duration<double>(now - oldest_arrival).count();
 
-                    if (matching_count >= batch_size || elapsed_s >= timeout_s) {
+                    if (matching_count >= batch_size || matching_bytes >= MAX_BATCH_BYTES || elapsed_s >= timeout_s) {
                         batch_endpoint = target_endpoint;
                         batch_headers = target_headers;
                         batch_protocol = target_protocol;
 
+                        size_t accumulated_batch_bytes = 0;
                         auto it = queue_.begin();
                         while (it != queue_.end() && static_cast<int>(batch_spans.size()) < batch_size) {
                             if (it->endpoint == target_endpoint &&
                                 it->headers == target_headers &&
                                 it->protocol == target_protocol) {
+                                if (!batch_spans.empty() && accumulated_batch_bytes + it->approx_bytes > MAX_BATCH_BYTES) {
+                                    break;
+                                }
+                                accumulated_batch_bytes += it->approx_bytes;
                                 remove_task_at(it, batch_spans);
                             } else {
                                 ++it;
                             }
                         }
 
-                        LOG(DEBUG, "Telemetry") << "Batch target size reached or timeout elapsed. Exporting batch of "
-                                                << batch_spans.size() << " spans..." << std::endl;
+                        LOG(DEBUG, "Telemetry") << "Batch target size/byte limit reached or timeout elapsed. Exporting batch of "
+                                                << batch_spans.size() << " spans (" << accumulated_batch_bytes << " bytes)..." << std::endl;
                         break;
                     } else {
                         double remaining_s = timeout_s - elapsed_s;
@@ -765,6 +775,11 @@ public:
     }
 
     void push(nlohmann::json span_details, std::string endpoint, std::map<std::string, std::string> headers, std::string protocol) {
+        size_t task_bytes = span_details.dump().size() + endpoint.size() + protocol.size();
+        for (const auto& [k, v] : headers) {
+            task_bytes += k.size() + v.size();
+        }
+
         std::unique_lock<std::mutex> lock(mutex_);
         if (shutdown_) return;
 
@@ -774,11 +789,6 @@ public:
             endpoint_unreachable_ = false;
         }
 
-        size_t task_bytes = span_details.dump().size() + endpoint.size() + protocol.size();
-        for (const auto& [k, v] : headers) {
-            task_bytes += k.size() + v.size();
-        }
-
         size_t max_capacity = MAX_CAPACITY;
         int64_t max_queue_bytes = 134217728; // 128MB default
         if (auto* config = RuntimeConfig::global()) {
@@ -786,7 +796,18 @@ public:
             max_queue_bytes = config->telemetry_max_queue_bytes();
         }
 
-        size_t max_bytes = static_cast<size_t>(max_queue_bytes);
+        size_t max_bytes = static_cast<size_t>(std::min<int64_t>(max_queue_bytes, std::numeric_limits<size_t>::max()));
+
+        if (max_bytes > 0 && task_bytes > max_bytes) {
+            dropped_spans_count_++;
+            if (dropped_spans_count_ % 100 == 1) {
+                LOG(WARNING, "Telemetry") << "Single span size (" << task_bytes
+                                          << " bytes) exceeds max_queue_bytes (" << max_bytes
+                                          << " bytes). Dropped span immediately. Total dropped: "
+                                          << dropped_spans_count_ << std::endl;
+            }
+            return;
+        }
 
         while (!queue_.empty() && (
             (max_bytes > 0 && current_bytes_ + task_bytes > max_bytes) ||
