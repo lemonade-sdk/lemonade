@@ -382,16 +382,20 @@ static void test_reclaim_rearms_when_rescued_before_commit(Router& router) {
     StubWrappedServer* helper =
         RoutingHelperTestHook::add_server(router, make_helper("rescue.helper"));
 
+    // Take the residency slot first, while the helper is still idle, so
+    // begin_exclusive grants immediately. (begin_exclusive drains all in-flight
+    // requests before granting, so it can never be acquired while this helper
+    // already holds one — the reclaim must be parked behind an exclusive session
+    // that began idle, then rescued mid-session, exactly as in production.)
+    bool acquired = router.begin_exclusive();
+
     // A request is in flight and the policy drops the helper: prune arms the
     // release-triggered reclaim.
     helper->acquire_for_inference();
     RoutingHelperTestHook::reconcile(router, {});
     bool armed_survives = RoutingHelperTestHook::has_helper(router, "rescue.helper");
 
-    // Hold the residency slot so the dispatched reclaim parks instead of running.
-    bool acquired = router.begin_exclusive();
-
-    // The final release consumes the pending intent (take_pending_reclaim_if_idle
+    // The release consumes the pending intent (take_pending_reclaim_if_idle
     // clears it) and dispatches the reclaim, which now blocks on the held slot.
     // The helper is thus in the exact state the bug required: intent consumed,
     // reclaim in flight but not yet committed.
