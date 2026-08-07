@@ -167,13 +167,7 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest" \
-            | python3 -c "
-import sys, json
-assets = json.load(sys.stdin)['assets']
-deb = next((a['browser_download_url'] for a in assets
-            if 'amd64' in a['name'] and 'server' in a['name'] and a['name'].endswith('.deb')), None)
-print(deb or '')
-")
+            | python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; deb=next((a['browser_download_url'] for a in assets if 'amd64' in a['name'] and 'server' in a['name'] and a['name'].endswith('.deb')),None); print(deb or '')")
           if [ -z "$DEB_URL" ]; then
             echo "ERROR: no amd64 server .deb found in latest release"
             exit 1
