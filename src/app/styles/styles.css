@@ -3320,6 +3320,20 @@ input::-webkit-calendar-picker-indicator {
     color: var(--color-5);
 }
 
+.model-selector-section-label {
+    font-size: 0.55rem;
+    color: var(--text-quaternary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 6px 8px 3px;
+}
+
+.model-selector-section-label.with-separator {
+    border-top: 1px solid var(--border-4);
+    margin-top: 3px;
+}
+
 .model-selector-search-bar {
     padding: 4px 2px 4px;
     border-top: 1px solid var(--border-secondary);

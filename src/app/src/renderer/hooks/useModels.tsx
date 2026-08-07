@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ModelsData, ModelInfo, USER_MODEL_PREFIX, fetchSupportedModelsData } from '../utils/modelData';
-import { onServerPortChange } from '../utils/serverConfig';
+import { onServerPortChange, serverFetch } from '../utils/serverConfig';
 import { isModelEffectivelyDownloaded } from '../utils/collectionModels';
 
 // Default model to use when no models are downloaded (first-time user experience)
@@ -22,6 +22,10 @@ interface ModelsContextValue {
 
   // List of downloaded models (derived from modelsData)
   downloadedModels: DownloadedModel[];
+
+  // IDs of models currently loaded in the server (used to float them to the
+  // top of the chat model dropdown)
+  loadedModelIds: string[];
 
   // List of suggested models for Model Manager (derived from modelsData)
   suggestedModels: SuggestedModel[];
@@ -51,6 +55,7 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [selectedModel, setSelectedModelState] = useState<string>('');
   const [isDefaultModelPending, setIsDefaultModelPending] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadedModelIds, setLoadedModelIds] = useState<string[]>([]);
   const userHasSelectedModelRef = useRef(false);
 
   // Derive downloaded models from modelsData
@@ -115,10 +120,50 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setSelectedModelState(model);
   }, []);
 
+  // Fetch which models are currently loaded in the server
+  const fetchLoadedModels = useCallback(async () => {
+    try {
+      const response = await serverFetch('/health');
+      const data = await response.json();
+      const loaded: Array<{ model_name?: string }> = Array.isArray(data?.all_models_loaded)
+        ? data.all_models_loaded
+        : [];
+      const ids = loaded
+        .map((entry) => entry?.model_name)
+        .filter((name): name is string => typeof name === 'string' && name.length > 0);
+      setLoadedModelIds((prev) =>
+        prev.length === ids.length && prev.every((id, i) => id === ids[i]) ? prev : ids
+      );
+    } catch (error) {
+      console.error('Failed to fetch loaded models:', error);
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Track loaded models: poll periodically and react to load/unload events so
+  // the chat dropdown can float loaded models to the top. Polling also picks up
+  // changes made by other clients driving the same server.
+  useEffect(() => {
+    fetchLoadedModels();
+
+    const handleChange = () => fetchLoadedModels();
+    window.addEventListener('modelLoadStart', handleChange);
+    window.addEventListener('modelLoadEnd', handleChange);
+    window.addEventListener('modelUnload', handleChange);
+
+    const interval = setInterval(fetchLoadedModels, 5000);
+
+    return () => {
+      window.removeEventListener('modelLoadStart', handleChange);
+      window.removeEventListener('modelLoadEnd', handleChange);
+      window.removeEventListener('modelUnload', handleChange);
+      clearInterval(interval);
+    };
+  }, [fetchLoadedModels]);
 
   // Listen for modelsUpdated and backendsUpdated events
   // (backend installs/uninstalls can change which models are available)
@@ -141,14 +186,16 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const unsubscribe = onServerPortChange(() => {
       console.log('Server port changed, refreshing models...');
       refresh();
+      fetchLoadedModels();
     });
 
     return unsubscribe;
-  }, [refresh]);
+  }, [refresh, fetchLoadedModels]);
 
   const value: ModelsContextValue = {
     modelsData,
     downloadedModels,
+    loadedModelIds,
     suggestedModels,
     selectedModel,
     setSelectedModel,

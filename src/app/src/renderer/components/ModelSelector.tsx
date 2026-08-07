@@ -17,6 +17,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled, filterLabel, ef
   const {
     downloadedModels,
     modelsData,
+    loadedModelIds,
     selectedModel,
     setSelectedModel,
     isDefaultModelPending,
@@ -63,6 +64,12 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled, filterLabel, ef
       })
     : allModels;
 
+  // Float loaded models to the top of the dropdown, separated from the rest.
+  const loadedIdSet = new Set(loadedModelIds);
+  const loadedModels = dropdownModels.filter((model) => loadedIdSet.has(model.id));
+  const otherModels = dropdownModels.filter((model) => !loadedIdSet.has(model.id));
+  const showSections = loadedModels.length > 0 && otherModels.length > 0;
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -90,6 +97,19 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled, filterLabel, ef
   const displayedModel = effectiveModel ?? selectedModel;
   const displayedModelInfo = allModels.find((model) => model.id === displayedModel)?.info ?? modelsData[displayedModel];
 
+  const renderOption = (model: SelectorModel) => (
+    <div
+      key={model.id}
+      className={`model-selector-option${model.id === displayedModel ? ' selected' : ''}${model.info?.recipe === COLLECTION_ROUTER_MODEL_RECIPE ? ' router-option' : isCustomCollectionModel(model.id, model.info) ? ' collection-option' : ''}${model.unavailable ? ' unavailable' : ''}`}
+      onClick={() => handleSelect(model)}
+      title={model.unavailable ? `${model.id} is not available until all component models are downloaded.` : model.id}
+      aria-disabled={model.unavailable ? true : undefined}
+      style={model.unavailable ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
+    >
+      {renderModelLabel(model.id, model.info)}{model.unavailable ? ' (not available)' : ''}
+    </div>
+  );
+
   return (
     <div
       ref={containerRef}
@@ -110,18 +130,18 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled, filterLabel, ef
       {isOpen && (
         <div className="model-selector-dropdown">
           <div className="model-selector-list">
-            {dropdownModels.length > 0 ? dropdownModels.map((model) => (
-              <div
-                key={model.id}
-                className={`model-selector-option${model.id === displayedModel ? ' selected' : ''}${model.info?.recipe === COLLECTION_ROUTER_MODEL_RECIPE ? ' router-option' : isCustomCollectionModel(model.id, model.info) ? ' collection-option' : ''}${model.unavailable ? ' unavailable' : ''}`}
-                onClick={() => handleSelect(model)}
-                title={model.unavailable ? `${model.id} is not available until all component models are downloaded.` : model.id}
-                aria-disabled={model.unavailable ? true : undefined}
-                style={model.unavailable ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
-              >
-                {renderModelLabel(model.id, model.info)}{model.unavailable ? ' (not available)' : ''}
-              </div>
-            )) : (
+            {dropdownModels.length > 0 ? (
+              showSections ? (
+                <>
+                  <div className="model-selector-section-label">Loaded</div>
+                  {loadedModels.map(renderOption)}
+                  <div className="model-selector-section-label with-separator">Available</div>
+                  {otherModels.map(renderOption)}
+                </>
+              ) : (
+                dropdownModels.map(renderOption)
+              )
+            ) : (
               <div className="model-selector-empty">No models match</div>
             )}
           </div>
