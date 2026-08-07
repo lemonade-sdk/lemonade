@@ -1044,6 +1044,26 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     return info;
 }
 
+// Record a discovered model without ever overwriting one already found. Two
+// extra_models_dir folders can hold identically named files; qualifying the
+// newcomer with its folder keeps both and leaves the first model's id alone.
+static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
+                            const std::string& base_name,
+                            const fs::path& folder,
+                            ModelInfo info) {
+    const std::string prefix(EXTRA_MODEL_PREFIX);
+    std::string id = prefix + base_name;
+    if (discovered.count(id)) {
+        const std::string qualified = folder.filename().string() + "-" + base_name;
+        id = prefix + qualified;
+        for (int n = 2; discovered.count(id); ++n) {
+            id = prefix + qualified + "-" + std::to_string(n);
+        }
+    }
+    info.model_name = id;
+    discovered.emplace(id, std::move(info));
+}
+
 std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     std::map<std::string, ModelInfo> discovered;
 
@@ -1111,7 +1131,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.size = 0.0;
         }
 
-        discovered[model_name] = info;
+        add_extra_model(discovered, gguf_path.stem().string(), gguf_path.parent_path(), std::move(info));
     }
 
     // Process directories (multimodal and multi-shard models)
@@ -1217,7 +1237,7 @@ void ModelManager::discover_extra_models_in_directory(
                 info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + dir_name);
             }
 
-            discovered[variant_id] = info;
+            add_extra_model(discovered, visible_extra_variant_name(v), dir_path, std::move(info));
         }
     } else {
         // Keep the folder as one model when splitting would be ambiguous.
@@ -1233,7 +1253,7 @@ void ModelManager::discover_extra_models_in_directory(
             info.labels.push_back("vision");
         }
         info.type = get_model_type_from_labels(info.labels);
-        discovered[model_id] = info;
+        add_extra_model(discovered, dir_name, dir_path, std::move(info));
     }
 }
 

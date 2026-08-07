@@ -2155,6 +2155,39 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
+    def test_021y_extra_identical_filenames_in_two_folders_stay_distinct(self):
+        """Two folders holding the same variant filenames keep every model."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_collision_")
+        expected = []
+        for folder in ("Llama-Local-GGUF", "Mistral-Local-GGUF"):
+            for name in ("model-Q4_K_M.gguf", "model-Q8_0.gguf"):
+                path = os.path.join(extra_dir, folder, name)
+                self._write_stub_gguf_file(path)
+                expected.append(path)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            found = {
+                model["id"]: model["checkpoint"]
+                for model in models_response.json()["data"]
+                if model.get("checkpoint") in expected
+            }
+
+            # Four files, four models: no folder may overwrite another's entry.
+            self.assertEqual(
+                len(found), len(expected), f"expected 4 models, got {found}"
+            )
+            self.assertEqual(sorted(found.values()), sorted(expected))
+
+            print("[OK] identical filenames in two extra folders stay distinct")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously
@@ -2369,7 +2402,6 @@ class EndpointTests(ServerTestBase):
         )
         print("[OK] system-info contains release_url for backends")
 
-
     # =========================================================================
     # PULL/VARIANTS TESTS
     # The two error-only tests (030, 031) run in every CI environment because
@@ -2421,7 +2453,9 @@ class EndpointTests(ServerTestBase):
             data["error"],
             f"Expected 'owner/name' format hint in error message, got: {data['error']}",
         )
-        print("[OK] Malformed checkpoint (no slash) returns 400 with owner/name format hint")
+        print(
+            "[OK] Malformed checkpoint (no slash) returns 400 with owner/name format hint"
+        )
 
     @unittest.skipUnless(
         os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
@@ -2455,7 +2489,9 @@ class EndpointTests(ServerTestBase):
             data["error"],
             f"Unexpected 404 error message: {data['error']}",
         )
-        print("[OK] Nonexistent HuggingFace checkpoint returns 404 with descriptive error")
+        print(
+            "[OK] Nonexistent HuggingFace checkpoint returns 404 with descriptive error"
+        )
 
     @unittest.skipUnless(
         os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
@@ -2511,7 +2547,9 @@ class EndpointTests(ServerTestBase):
             self.assertIn("files", v)
             self.assertIn("sharded", v)
             self.assertIn(
-                "size_bytes", v, f"Variant '{v.get('name')}' is missing 'size_bytes' field"
+                "size_bytes",
+                v,
+                f"Variant '{v.get('name')}' is missing 'size_bytes' field",
             )
             self.assertIsInstance(v["files"], list)
             self.assertGreater(
