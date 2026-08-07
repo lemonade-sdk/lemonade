@@ -1067,7 +1067,7 @@ Labels describe what a model can do. A model may carry multiple labels.
 |-------|----------|-------------|
 | `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). Mutually exclusive with LLM deployment. |
 | `embeddings` | `/embeddings` | Produces text embedding vectors. |
-| `reranking` | `/rerank` | Scores and reranks a list of passages given a query. Also reachable at the alias `/reranking`. |
+| `reranking` | `/rerank` | Scores and reranks a list of passages given a query. Also reachable at the aliases `/reranking` and `/reranker`. |
 | `image` | `/images/generations` | Text-to-image generation model. |
 | `edit` | Image editing model; supports the `/images/edits` endpoint. |
 | `tts` | `/audio/speech` | Text-to-speech synthesis model. |

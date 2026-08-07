@@ -20,7 +20,7 @@ Reranking API for llama.cpp-compatible reranker models. You provide a query and 
 
 > **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/v1/rerank` endpoint.
 
-> **Note:** Lemonade also accepts `/reranking` as an alias — both route to the same handler and behave identically.
+> **Note:** Lemonade also accepts `/reranking` and `/reranker` as aliases — all three route to the same handler and behave identically.
 
 > **Note:** The endpoint is available under all four path prefixes: `/api/v0/`, `/api/v1/`, `/v0/`, and `/v1/`.
 

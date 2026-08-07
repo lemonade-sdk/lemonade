@@ -1074,8 +1074,9 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     // Reranking.
     // `/rerank` is the de-facto convention that most clients expect.
-    // `/reranking` is Lemonade's original path, kept as an alias for backward compatibility.
-    for (const char* rerank_path : {"rerank", "reranking"}) {
+    // `/reranking` (Lemonade's original path) is kept as an alias for backward compatibility.
+    // `/reranker` is added as an additional alias.
+    for (const char* rerank_path : {"rerank", "reranking", "reranker"}) {
         register_post(rerank_path, [this](const httplib::Request& req, httplib::Response& res) {
             handle_reranking(req, res);
         });

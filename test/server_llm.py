@@ -707,6 +707,43 @@ class LLMTests(ServerTestBase):
             f"Expected food-related documents {expected_top_3} in top 3, got {actual_top_3}",
         )
 
+    @skip_if_unsupported("reranking")
+    def test_018c_reranker_alias(self):
+        """Test that the /reranker alias behaves like /rerank."""
+        model = self.get_test_model("reranking")
+
+        query = "A man is eating pasta."
+        documents = [
+            "A man is eating food.",
+            "The girl is carrying a baby.",
+            "A man is riding a horse.",
+            "A young girl is playing violin.",
+            "A man is eating a piece of bread.",
+            "A man is eating noodles.",
+        ]
+        payload = {"query": query, "documents": documents, "model": model}
+        expected_top_3 = {0, 4, 5}  # Food-related documents
+
+        response = requests.post(
+            f"{self.base_url}/reranker", json=payload, timeout=TIMEOUT_MODEL_OPERATION
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        results = result.get("results", [])
+        results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+
+        top_3_indices = [r["index"] for r in results[:3]]
+        expected_top_3 = {0, 4, 5}  # Food-related documents
+        actual_top_3 = set(top_3_indices)
+
+        print(f"/reranker top 3 indices: {top_3_indices}")
+        self.assertEqual(
+            actual_top_3,
+            expected_top_3,
+            f"Expected food-related documents {expected_top_3} in top 3, got {actual_top_3}",
+        )
+
     # =========================================================================
     # MULTI-MODEL TESTS
     # =========================================================================

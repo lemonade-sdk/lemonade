@@ -180,6 +180,7 @@ class EndpointTests(ServerTestBase):
             "system-info",
             "rerank",
             "reranking",
+            "reranker",
             "audio/transcriptions",
             "images/generations",
             "install",
