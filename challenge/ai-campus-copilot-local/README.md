@@ -83,6 +83,21 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the detailed design.
 
 ---
 
+## Live demo
+
+A hosted build is published at **https://jerome-prakash-l.github.io/lemonade/**
+
+It runs the same code, but with no server behind it: your browser calls your own Lemonade
+Server directly at an address you enter on the Setup page. The AI still runs on your
+machine — GitHub only serves static files.
+
+Browsers restrict pages served from the internet from contacting your local machine, so
+the hosted build may fail to connect depending on your browser and version. **Running
+locally is the supported path** and has none of those constraints. See
+[`docs/HOSTED_DEMO.md`](docs/HOSTED_DEMO.md) for the full comparison.
+
+---
+
 ## Requirements
 
 - **Lemonade Server**, installed and running — [installation guide](https://lemonade-server.ai/docs/guide/install/)
@@ -190,6 +205,7 @@ npm run typecheck # tsc --noEmit, strict mode
 npm run test      # Vitest unit tests
 npm run test:e2e  # Playwright end-to-end test
 npm run build     # production build
+npm run build:static # static export for the hosted demo (outputs to out/)
 npm run check     # lint + typecheck + test + build
 ```
 

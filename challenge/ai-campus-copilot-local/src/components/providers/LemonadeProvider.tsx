@@ -10,7 +10,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createBrowserClient, type LemonadeClient } from "@/lib/lemonade/client";
+import {
+  createBrowserClient,
+  DEFAULT_DIRECT_URL,
+  IS_DIRECT_MODE,
+  normaliseServerUrl,
+  type LemonadeClient,
+} from "@/lib/lemonade/client";
 import { isLemonadeError } from "@/lib/lemonade/errors";
 import {
   chatModels,
@@ -55,12 +61,46 @@ export interface LemonadeContextValue {
   settingsLoaded: boolean;
   /** True only when the server responded AND both models are chosen. */
   isReady: boolean;
+  /** True for the hosted static build, where the browser dials Lemonade itself. */
+  isDirectMode: boolean;
+  /** Only meaningful in direct mode; null when proxied. */
+  serverUrl: string | null;
+  setServerUrl: (url: string) => boolean;
 }
 
 const LemonadeContext = createContext<LemonadeContextValue | null>(null);
 
+const SERVER_URL_STORAGE_KEY = "accl.serverUrl";
+
 export function LemonadeProvider({ children }: { children: ReactNode }) {
-  const client = useMemo(() => createBrowserClient(), []);
+  const [serverUrl, setServerUrlState] = useState<string | null>(
+    IS_DIRECT_MODE ? DEFAULT_DIRECT_URL : null,
+  );
+
+  // Restore the saved address before the first health check in direct mode, so
+  // a user who configured a non-default port is not shown a spurious failure.
+  const [urlRestored, setUrlRestored] = useState(!IS_DIRECT_MODE);
+  useEffect(() => {
+    if (!IS_DIRECT_MODE) return;
+    const stored = window.localStorage.getItem(SERVER_URL_STORAGE_KEY);
+    const valid = stored ? normaliseServerUrl(stored) : null;
+    if (valid) setServerUrlState(valid);
+    setUrlRestored(true);
+  }, []);
+
+  const client = useMemo(
+    () => createBrowserClient(serverUrl ? { baseUrl: serverUrl } : {}),
+    [serverUrl],
+  );
+
+  const setServerUrl = useCallback((url: string) => {
+    const valid = normaliseServerUrl(url);
+    if (!valid) return false;
+    window.localStorage.setItem(SERVER_URL_STORAGE_KEY, valid);
+    setServerUrlState(valid);
+    return true;
+  }, []);
+
   const [status, setStatus] = useState<ConnectionStatus>("checking");
   const [statusDetail, setStatusDetail] = useState<string | null>(null);
   const [health, setHealth] = useState<LemonadeHealth | null>(null);
@@ -154,8 +194,9 @@ export function LemonadeProvider({ children }: { children: ReactNode }) {
   }, [client, beginRequest]);
 
   useEffect(() => {
+    if (!urlRestored) return;
     void refresh();
-  }, [refresh]);
+  }, [refresh, urlRestored]);
 
   const setChatModel = useCallback(async (id: string | null) => {
     setChatModelState(id);
@@ -195,6 +236,9 @@ export function LemonadeProvider({ children }: { children: ReactNode }) {
       client,
       settingsLoaded,
       isReady: status === "connected" && chatModelInstalled && embeddingModelInstalled,
+      isDirectMode: IS_DIRECT_MODE,
+      serverUrl,
+      setServerUrl,
     }),
     [
       status,
@@ -216,6 +260,8 @@ export function LemonadeProvider({ children }: { children: ReactNode }) {
       settingsLoaded,
       chatModelInstalled,
       embeddingModelInstalled,
+      serverUrl,
+      setServerUrl,
     ],
   );
 

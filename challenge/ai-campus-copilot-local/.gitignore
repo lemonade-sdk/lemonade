@@ -5,6 +5,7 @@
 node_modules/
 .next/
 out/
+.static-build-stash/
 build/
 *.tsbuildinfo
 next-env.d.ts

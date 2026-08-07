@@ -10,6 +10,8 @@ const config = [
   {
     ignores: [
       ".next/**",
+      "out/**",
+      ".static-build-stash/**",
       "node_modules/**",
       "next-env.d.ts",
       "playwright-report/**",
