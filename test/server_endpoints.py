@@ -178,6 +178,7 @@ class EndpointTests(ServerTestBase):
             "health",
             "stats",
             "system-info",
+            "rerank",
             "reranking",
             "audio/transcriptions",
             "images/generations",
@@ -3741,7 +3742,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 400, response.text)
         self.assertIn("undeclared-classifier-model", response.json()["error"])
-        print("[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400")
+        print(
+            "[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400"
+        )
 
     def test_021zm_routing_validate_llm_router_fails_open_returns_200(self):
         """The 'llm' router type is fully implemented: the parser desugars
@@ -3792,7 +3795,9 @@ class EndpointTests(ServerTestBase):
             [rule["id"] for rule in normalized_routing["rules"]],
             ["__route_0", "__route_1"],
         )
-        print("[OK] /routing/validate ran an llm router live and failed open to the default model")
+        print(
+            "[OK] /routing/validate ran an llm router live and failed open to the default model"
+        )
 
     def test_021zn_routing_validate_has_images_flag(self):
         """The has_images request flag flows through to a has_images match
@@ -3981,7 +3986,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response_bad_has_tools.status_code, 400)
         self.assertIn("has_tools", response_bad_has_tools.json()["error"])
-        print("[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400")
+        print(
+            "[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400"
+        )
 
     def test_021zj_router_llm_l0a_live(self):
         """L0a live path (#2405), deterministic: the router component is a mock
@@ -6264,7 +6271,6 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
-
     def test_037_model_update_check_lifecycle(self):
         """A successful re-pull clears a staged per-model update marker.
 
@@ -6317,9 +6323,7 @@ class EndpointTests(ServerTestBase):
             processed_models,
             "Pulled model must have a processed snapshot entry",
         )
-        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get(
-            "snapshot_id", ""
-        )
+        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get("snapshot_id", "")
         self.assertTrue(original_snapshot, "Processed snapshot must not be empty")
 
         stale_snapshot = "0" * 40
