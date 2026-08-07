@@ -271,7 +271,7 @@ const App: React.FC = () => {
   const utilityMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const navigationSearchRef = useRef<HTMLInputElement>(null);
   const [isDesktop, setIsDesktop] = useState(false);
-  const navigationSearchShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl K';
+  const navigationSearchShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl+K';
 
   useEffect(() => {
     let cancelled = false;
@@ -780,7 +780,7 @@ const App: React.FC = () => {
                       aria-label={navigationSearchShortcut === '⌘ K' ? 'Command K' : 'Control K'}
                       title={`Search shortcut: ${navigationSearchShortcut}`}
                     >
-                      <Icon name="terminal-square" size={13} aria-hidden="true" />
+                      {navigationSearchShortcut}
                     </kbd>
                   </div>
                   {navigationSearchOpen && (
