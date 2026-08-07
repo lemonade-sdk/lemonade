@@ -411,18 +411,10 @@ def main() -> int:
 
     print(f"Forks ({len(forks)}): {[f['fork_id'] for f in forks]}")
 
-    # Determine model list — from registry if lemond is running, else from filter
+    # Determine model list — from --model-filter or later from registry (after lemond starts)
     models = model_filter
-    if not models:
-        base_url = "http://127.0.0.1:8000"
-        if args.port:
-            base_url = f"http://127.0.0.1:{args.port}"
-        models = get_models_from_registry(base_url)
-        if models:
-            print(f"Models from registry ({len(models)}): {models}")
-        else:
-            print("[WARN] Could not reach registry — no models to bench")
-            return 1
+    if models:
+        print(f"Models (from filter): {models}")
 
     print(f"Scenarios: {SCENARIOS}")
     print()
@@ -472,7 +464,17 @@ def main() -> int:
                 print(f"  [ERROR] Backend install failed: {e}")
                 continue
 
-        for model in models:
+        # Fetch model list from registry now that lemond is confirmed running
+        run_models = models
+        if not run_models and not args.dry_run:
+            run_models = get_models_from_registry(base_url)
+            if run_models:
+                print(f"  Models from registry ({len(run_models)}): {run_models}")
+            else:
+                print("  [ERROR] No models from registry and no --model-filter set")
+                continue
+
+        for model in run_models:
             print(f"\n  Model: {model}")
             run_file    = output_dir / fork_id / model / f"run-{timestamp}.json"
             prev_result = find_previous_result(output_dir, fork_id, model)

@@ -207,39 +207,8 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      # ── Download fork binary ─────────────────────────────────────────────
-      - name: Download fork binary (Windows)
-        if: runner.os == 'Windows'
-        shell: PowerShell
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FORK_ID: ${{ matrix.fork_id }}
-          BINARIES_DIR: ${{ matrix.binaries_dir }}
-          MODEL_FILTER: ${{ github.event.inputs.model_filter }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          & ".\.venv\Scripts\python.exe" ci/run_regression.py `
-            --forks ci/benchmark_forks.json `
-            --output ci/results `
-            --binaries-dir "$env:BINARIES_DIR" `
-            --fork-filter "$env:FORK_ID" `
-            --model-filter "$env:MODEL_FILTER" `
-            --dry-run
-          Write-Host "Dry run OK — binary URL resolved"
-
-      - name: Download fork binary (Linux)
-        if: runner.os == 'Linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FORK_ID: ${{ matrix.fork_id }}
-          BINARIES_DIR: ${{ matrix.binaries_dir }}
-        run: |
-          .venv/bin/python ci/run_regression.py \
-            --forks ci/benchmark_forks.json \
-            --output ci/results \
-            --binaries-dir "$BINARIES_DIR" \
-            --fork-filter "$FORK_ID" \
-            --dry-run
+      # Fork binary is downloaded inside run_regression.py during the real run.
+      # No separate pre-download step — lemond must be running first for registry lookup.
 
       # ── Start lemond — Windows (port 13305, mirrors validate_llamacpp.yml) ─
       - name: Start lemond (Windows)
