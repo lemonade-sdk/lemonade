@@ -103,10 +103,26 @@ docker run -d \
   -v lemonade-recipe:/opt/lemonade/.cache/lemonade \
   --device=/dev/kfd \
   --device=/dev/dri \
+  --group-add video \
+  --group-add render \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
 > This will run the server using the ROCm backend as the default for llama.cpp.
+
+> **GPU device permissions on Linux**
+>
+> The container runs as an unprivileged user (UID 10001), so it must belong to
+> the host groups that own `/dev/kfd` and `/dev/dri` (usually `render` and
+> `video`) or ROCm device access is denied. Docker resolves group *names*
+> against the container's `/etc/group`, so if `--group-add render` fails, pass
+> the host's numeric group ID instead. Find it on the host with:
+>
+> ```bash
+> getent group render video
+> ```
+>
+> Then use the numbers, e.g. `--group-add 992 --group-add 44`.
 
 ### Docker Run with AMD GPU Passthrough using ROCm on WSL
 
@@ -162,6 +178,13 @@ services:
       # Persist model options and other backend binaries
       - lemonade-recipe:/opt/lemonade/.cache/lemonade
     restart: unless-stopped
+    # For AMD GPU (ROCm) on Linux only, also add:
+    # devices:
+    #   - /dev/kfd:/dev/kfd
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - video
+    #   - render
 
 volumes:
   lemonade-cache:
@@ -179,6 +202,9 @@ volumes:
 > ```
 
 > You can add more services as needed, or add host devices for the ROCM backend.
+> The `devices`/`group_add` block above is only needed for the ROCm backend on
+> Linux. If Docker cannot resolve the `render`/`video` group names, replace them
+> with the host's numeric group IDs from `getent group render video`.
 
 3. Run the following command in the directory containing your docker-compose.yml:
 
