@@ -1385,7 +1385,9 @@ jobs:
           fi
 
   # Same gate pattern as packaging-gate, for the self-hosted inference rigs
-  # that PR pushes skip.
+  # that PR pushes skip. The job name below belongs in main's required status
+  # checks — that registration is what makes the merge-queue strictness bind,
+  # so renaming the job requires a matching branch-protection update.
   backends-gate:
     name: Inference backend tests
     needs: [build-lemonade-server-installer, build-lemonade-deb, test-exe-inference, test-deb-inference]

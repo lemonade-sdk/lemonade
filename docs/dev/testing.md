@@ -136,7 +136,7 @@ python test/test_schema_lock.py
 
 ## CI Expectations
 
-Every PR runs the C++ `cpp-ci` tests, the endpoint/CLI suites on Windows and Linux, routing schema checks, app typecheck and regression tests, and the docs drift and link checks. Inference suites run on self-hosted AMD hardware runners ([details](./self-hosted-runners.md)) in the merge queue.
+Every PR runs the C++ `cpp-ci` tests, the endpoint/CLI suites on Windows and Linux, routing schema checks, app typecheck and regression tests, and the docs drift and link checks. Inference suites run on self-hosted AMD hardware runners ([details](./self-hosted-runners.md)); [What defers to the merge queue](#what-defers-to-the-merge-queue) covers when they run.
 
 - Relevant local tests should pass before requesting review. All required CI must be green before final approval and merge.
 - Claiming a failure is a pre-existing flake requires evidence: link a `main` run with the identical failure signature. Fix flaky tests at the root cause; don't widen thresholds or add retries.
@@ -154,7 +154,7 @@ Packaging, distro, PPA, backend-validation, self-hosted inference and most macOS
 | llama.cpp, vLLM, stable-diffusion.cpp validation | `llama.cpp validation`, `vLLM validation`, `stable-diffusion.cpp validation` | `ci:upgrades` |
 | `Test .exe - *` and `Test .deb - *` inference suites on the self-hosted rigs | `Inference backend tests` | `ci:backends` |
 
-Every gated job is reachable from a PR by label — nothing is merge-queue-only. Apply the label when your change plausibly affects that surface (a backend version pin wants `ci:upgrades`, packaging or install-path changes want `ci:distros`, `#ifdef __APPLE__` or CMake changes want `ci:macos`, a wrapped-server or inference-path change wants `ci:backends`); the label takes effect immediately, without a push. Note that `Test .dmg - macOS inference` exercises the same wrapped servers but lives in the macOS group — a wrapped-server change that could break on Metal wants `ci:macos` too. `Build Embeddable Lemonade (macOS)` still runs on every PR as the AppleClang compile check.
+Every gated job is reachable from a PR by label — nothing is merge-queue-only. Apply the label when your change plausibly affects that surface (a backend version pin wants `ci:upgrades`, packaging or install-path changes want `ci:distros`, `#ifdef __APPLE__` or CMake changes want `ci:macos`, a wrapped-server or inference-path change wants `ci:backends`); the label takes effect immediately, without a push. Note that `Test .dmg - macOS inference` exercises several of the same wrapped servers (llama.cpp, whisper.cpp, moonshine, kokoro) on Metal but lives in the macOS group — a change to one of those that could break on Metal wants `ci:macos` too. `Build Embeddable Lemonade (macOS)` still runs on every PR as the AppleClang compile check.
 
 Two consequences worth knowing:
 
