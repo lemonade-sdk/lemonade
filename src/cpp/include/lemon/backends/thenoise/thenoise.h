@@ -1,0 +1,61 @@
+#pragma once
+
+#include "lemon/backends/backend_descriptor.h"
+
+namespace lemon {
+namespace backends {
+namespace thenoise {
+
+// The thenoise backend descriptor (plain data). Header-only `inline const` so it
+// links into both the lemonade CLI and lemond without a separate source file.
+inline const BackendDescriptor descriptor = {
+    /*recipe*/          "thenoise",
+    /*display_name*/    "TheNoise ROCm (experimental)",
+    /*binary*/          "thenoise",
+    /*config_section*/  "thenoise",
+    /*default_device*/  DEVICE_GPU,
+    /*slot_policy*/     SlotPolicy::Standard,
+    /*selectable_backend*/ true,
+    /*uses_ctx_size*/   false,
+    /*dynamic_models*/  false,
+    /*options*/ {
+        {"thenoise_backend", "--thenoise", "", "BACKEND",
+         "TheNoise backend to use", "TheNoise Options"},
+        {"thenoise_args", "--thenoise-args", "", "ARGS",
+         "Custom arguments to pass to thenoise (must not conflict with managed args)", "TheNoise Options"},
+        // Image generation defaults (recipe-level only, not CLI flags).
+        {"steps", "", 8, "SIZE", "Number of denoising steps", "TheNoise Options"},
+        {"guidance_scale", "", 1.0, "SIZE", "CFG scale (<= 1.0 disables CFG)", "TheNoise Options"},
+        {"width", "", 1024, "SIZE", "Output image width", "TheNoise Options"},
+        {"height", "", 1024, "SIZE", "Output image height", "TheNoise Options"},
+        {"sampler", "", "", "ARGS", "Denoising solver (euler | er_sde)", "TheNoise Options"},
+        {"negative_prompt", "", "", "ARGS", "Negative prompt", "TheNoise Options"},
+        {"upscale", "", false, "BOOL", "2x latent upscale with refine denoise", "TheNoise Options"},
+        {"qwen_vae_enhance", "", false, "BOOL", "Nyquist notch post-filter (removes 2px grid artifacts)", "TheNoise Options"},
+        {"film_grain", "", 0.0, "SIZE", "Film grain strength (0.0-10.0)", "TheNoise Options"},
+        {"sharpening", "", 0.0, "SIZE", "RCAS sharpening strength (0.0-1.0)", "TheNoise Options"},
+        {"lora_specs", "", "", "ARGS", "Comma-separated LoRA specs, e.g. \"style:0.8,sub/detail:0.5\"", "TheNoise Options"},
+        {"lora_dir", "", "", "ARGS", "Directory containing LoRA .safetensors files (subdirectories allowed); load-time only, not per-request", "TheNoise Options"},
+    },
+    /*support*/ {
+        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151"}}}, "Strix Halo/Strix Point iGPU (gfx1151/gfx1150)"},
+    },
+    /*default_labels*/  {"image"},
+    /*required_checkpoints*/ {"main"},  // text_encoder+vae validated together in load()
+    /*modality*/        "Image generation",
+    /*experimental*/    true,
+    /*web_display_name*/ "thenoise",
+    /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels
+    /*exposes_prometheus_metrics*/ false,
+    /*rocm_requires_cwsr_fix*/ true,
+    /*version_policy*/  VersionPolicy::Exact,
+    /*self_manages_downloads*/ false,
+    /*takes_args*/      true,
+    /*arg_variants*/    {},
+    /*bin_variants*/    {},
+    /*config_extra*/    {{"steps", 8}, {"guidance_scale", 1.0}, {"width", 1024}, {"height", 1024}},
+};
+
+}  // namespace thenoise
+}  // namespace backends
+}  // namespace lemon
