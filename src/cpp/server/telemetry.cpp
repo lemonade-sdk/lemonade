@@ -451,10 +451,12 @@ private:
         std::map<std::string, std::string> headers;
         std::string protocol;
         std::chrono::steady_clock::time_point arrival_time;
+        size_t approx_bytes = 0;
     };
 
     static constexpr size_t MAX_CAPACITY = 1000;
     std::deque<Task> queue_;
+    size_t current_bytes_ = 0;
     std::mutex mutex_;
     std::condition_variable cv_;
     std::thread worker_;
@@ -465,6 +467,27 @@ private:
     bool last_enabled_ = false;
     bool flush_requested_ = false;
     std::condition_variable cv_flush_;
+
+    void remove_task_at(std::deque<Task>::iterator it, std::vector<nlohmann::json>& batch_spans) {
+        batch_spans.push_back(std::move(it->span_details));
+        if (current_bytes_ >= it->approx_bytes) {
+            current_bytes_ -= it->approx_bytes;
+        } else {
+            current_bytes_ = 0;
+        }
+        queue_.erase(it);
+    }
+
+    void pop_front_task() {
+        if (!queue_.empty()) {
+            if (current_bytes_ >= queue_.front().approx_bytes) {
+                current_bytes_ -= queue_.front().approx_bytes;
+            } else {
+                current_bytes_ = 0;
+            }
+            queue_.pop_front();
+        }
+    }
 
     void worker_loop() {
         while (true) {
@@ -495,8 +518,7 @@ private:
                             if (it->endpoint == batch_endpoint &&
                                 it->headers == batch_headers &&
                                 it->protocol == batch_protocol) {
-                                batch_spans.push_back(std::move(it->span_details));
-                                it = queue_.erase(it);
+                                remove_task_at(it, batch_spans);
                             } else {
                                 ++it;
                             }
@@ -524,8 +546,7 @@ private:
                             if (it->endpoint == batch_endpoint &&
                                 it->headers == batch_headers &&
                                 it->protocol == batch_protocol) {
-                                batch_spans.push_back(std::move(it->span_details));
-                                it = queue_.erase(it);
+                                remove_task_at(it, batch_spans);
                             } else {
                                 ++it;
                             }
@@ -574,8 +595,7 @@ private:
                             if (it->endpoint == target_endpoint &&
                                 it->headers == target_headers &&
                                 it->protocol == target_protocol) {
-                                batch_spans.push_back(std::move(it->span_details));
-                                it = queue_.erase(it);
+                                remove_task_at(it, batch_spans);
                             } else {
                                 ++it;
                             }
@@ -754,18 +774,32 @@ public:
             endpoint_unreachable_ = false;
         }
 
-        size_t max_capacity = MAX_CAPACITY;
-        if (auto* config = RuntimeConfig::global()) {
-            max_capacity = config->telemetry_max_queue_capacity();
+        size_t task_bytes = span_details.dump().size() + endpoint.size() + protocol.size();
+        for (const auto& [k, v] : headers) {
+            task_bytes += k.size() + v.size();
         }
 
-        if (queue_.size() >= max_capacity) {
+        size_t max_capacity = MAX_CAPACITY;
+        int64_t max_queue_bytes = 134217728; // 128MB default
+        if (auto* config = RuntimeConfig::global()) {
+            max_capacity = static_cast<size_t>(config->telemetry_max_queue_capacity());
+            max_queue_bytes = config->telemetry_max_queue_bytes();
+        }
+
+        size_t max_bytes = static_cast<size_t>(max_queue_bytes);
+
+        while (!queue_.empty() && (
+            (max_bytes > 0 && current_bytes_ + task_bytes > max_bytes) ||
+            queue_.size() >= max_capacity
+        )) {
             dropped_spans_count_++;
             if (dropped_spans_count_ % 100 == 1) {
-                LOG(WARNING, "Telemetry") << "Telemetry queue full (capacity " << max_capacity
-                                          << "). Dropped oldest span. Total dropped: " << dropped_spans_count_ << std::endl;
+                LOG(WARNING, "Telemetry") << "Telemetry queue limit reached (spans: " << queue_.size()
+                                          << "/" << max_capacity << ", bytes: " << current_bytes_
+                                          << "/" << max_bytes << "). Dropped oldest span. Total dropped: "
+                                          << dropped_spans_count_ << std::endl;
             }
-            queue_.pop_front();
+            pop_front_task();
         }
 
         int batch_size = 100;
@@ -774,7 +808,8 @@ public:
         }
         LOG(DEBUG, "Telemetry") << "Accumulating span to batch (size " << (queue_.size() + 1) << "/" << batch_size << ")..." << std::endl;
 
-        queue_.push_back({std::move(span_details), std::move(endpoint), std::move(headers), std::move(protocol), std::chrono::steady_clock::now()});
+        current_bytes_ += task_bytes;
+        queue_.push_back({std::move(span_details), std::move(endpoint), std::move(headers), std::move(protocol), std::chrono::steady_clock::now(), task_bytes});
         cv_.notify_one();
     }
 };
@@ -809,8 +844,8 @@ static uint64_t get_unix_nano() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
 }
 
-static std::string truncate_string(const std::string& str, size_t max_len) {
-    if (str.length() <= max_len) {
+std::string truncate_string(const std::string& str, size_t max_len) {
+    if (max_len == 0 || str.length() <= max_len) {
         return str;
     }
     if (max_len <= 15) {
@@ -833,7 +868,7 @@ InferenceSpan::InferenceSpan(const std::string& span_kind, const std::string& na
     }
     span_id_ = generate_hex_id(8);
 
-    size_t max_len = 4096;
+    size_t max_len = 0;
     if (auto* config = RuntimeConfig::global()) {
         max_len = static_cast<size_t>(config->telemetry_max_attribute_length());
     }

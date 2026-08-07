@@ -164,7 +164,9 @@ void StreamingProxy::forward_sse_stream(
     if (result.status_code != 200) {
         stream_error = true;
         LOG(ERROR, "StreamingProxy") << "Backend returned error: " << result.status_code << std::endl;
-        telemetry.error_message = "Backend returned error status code: " + std::to_string(result.status_code);
+        if (result.curl_code != CURLE_WRITE_ERROR || telemetry.error_message.empty()) {
+            telemetry.error_message = "Backend returned error status code: " + std::to_string(result.status_code);
+        }
     }
 
     if (!stream_error) {
