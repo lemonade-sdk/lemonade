@@ -36,7 +36,7 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
 
   const ttsModelOptions = React.useMemo(() => {
     const ids = downloadedModels
-      .filter(m => m.info?.labels?.includes('tts') && getTtsVoiceMode(m.info) !== 'design')
+      .filter(m => m.info?.labels?.includes('tts'))
       .map(m => m.id);
     const current = settings.tts.model.value;
     return current && !ids.includes(current) ? [current, ...ids] : ids;
