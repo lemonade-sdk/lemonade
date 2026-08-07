@@ -868,8 +868,10 @@ jobs:
     name: Test .exe - ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-server-installer
-    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && inputs.disable_macos_signing != true }}
+    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch).
+    # Self-hosted rig capacity is the binding constraint, so the merge queue runs
+    # these instead of PR pushes. Label a PR `ci::backends` to opt it back in.
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && inputs.disable_macos_signing != true && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci::backends')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -1130,8 +1132,10 @@ jobs:
     name: Test .deb - ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-deb
-    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && inputs.disable_macos_signing != true }}
+    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch).
+    # Self-hosted rig capacity is the binding constraint, so the merge queue runs
+    # these instead of PR pushes. Label a PR `ci::backends` to opt it back in.
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && inputs.disable_macos_signing != true && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci::backends')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -1349,6 +1353,34 @@ jobs:
   packaging-gate:
     name: Packaging builds
     needs: [build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+          # Fail if any job broke. In the merge queue, also fail if any never ran.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
+          fi
+
+  # Same gate pattern as packaging-gate, for the self-hosted inference rigs
+  # that PR pushes skip.
+  backends-gate:
+    name: Inference backend tests
+    needs: [test-exe-inference, test-deb-inference]
     if: always()
     runs-on: ubuntu-latest
     steps:
