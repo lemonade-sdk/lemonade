@@ -46,85 +46,13 @@ env:
 
 jobs:
   # =========================================================================
-  # Build Windows binaries — mirrors validate_llamacpp.yml build job exactly
-  # =========================================================================
-  build-windows:
-    name: Build (Windows)
-    runs-on: windows-latest
-    steps:
-      - name: Kill stale processes
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Continue"
-          $patterns = @("lemonade","lemond","llama-server","llama","flm","ort-server","moonshine-server","wscript","LemonadeServer")
-          foreach ($p in $patterns) {
-            Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-          }
-
-      - uses: actions/checkout@v5
-        with:
-          clean: true
-          fetch-depth: 0
-
-      - name: Build lemonade server
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          cmake --preset vs18
-          cmake --build build --config Release
-          if (-not (Test-Path "build\Release\lemond.exe"))   { exit 1 }
-          if (-not (Test-Path "build\Release\lemonade.exe")) { exit 1 }
-          Write-Host "Build OK"
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: bench-lemonade-windows
-          path: |
-            build/Release/lemond.exe
-            build/Release/lemonade.exe
-            build/resources/
-          retention-days: 3
-
-  # =========================================================================
-  # Build Linux binaries — mirrors validate_vllm.yml build job exactly
-  # =========================================================================
-  build-linux:
-    name: Build (Linux)
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          clean: true
-          fetch-depth: 0
-
-      - name: Build lemonade server
-        run: |
-          set -e
-          ./setup.sh
-          cmake -DBUILD_WEB_APP=OFF --preset default
-          cmake --build --preset default
-          test -f build/lemond   || { echo "lemond not found!"; exit 1; }
-          test -f build/lemonade || { echo "lemonade not found!"; exit 1; }
-          echo "Build OK"
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: bench-lemonade-linux
-          path: |
-            build/lemond
-            build/lemonade
-            build/resources/
-          retention-days: 3
-
-  # =========================================================================
-  # Perf regression — one job per fork, mirroring validate_llamacpp/vllm patterns
+  # Perf regression — uses lemonade already installed on self-hosted runners.
+  # No build step — runners have lemonade from validate_llamacpp/vllm runs.
+  # TODO: switch to downloading a release artifact once bench logic is stable.
   # =========================================================================
   bench:
     name: Bench ${{ matrix.fork_id }}
-    needs: [build-windows, build-linux]
-    if: always() && !failure() && !cancelled()
+    if: always()
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -165,39 +93,50 @@ jobs:
         if: runner.os == 'Windows'
         uses: ./.github/actions/cleanup-processes-windows
 
-      # ── Download build artifacts ─────────────────────────────────────────
-      - name: Download lemonade binaries (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/download-artifact@v7
-        with:
-          name: bench-lemonade-windows
-          path: build
-
-      - name: Download lemonade binaries (Linux)
-        if: runner.os == 'Linux'
-        uses: actions/download-artifact@v7
-        with:
-          name: bench-lemonade-linux
-          path: build
-
-      # ── Verify binaries ───────────────────────────────────────────────────
-      - name: Verify binaries (Windows)
+      # ── Locate prebuilt lemonade on the runner ───────────────────────────
+      - name: Locate lemonade (Windows)
         if: runner.os == 'Windows'
         shell: PowerShell
         run: |
-          if (-not (Test-Path "build\Release\lemond.exe")) {
-            Write-Host "ERROR: lemond.exe not found"; Get-ChildItem -Recurse build | Select FullName; exit 1
+          # Runners have lemonade installed by validate_llamacpp.yml nightly runs
+          $candidates = @(
+            "$env:ProgramFiles\Lemonade\lemond.exe",
+            "$env:LOCALAPPDATA\lemonade_server\bin\lemond.exe",
+            "C:\lemonade\lemond.exe"
+          )
+          $found = $null
+          foreach ($c in $candidates) {
+            if (Test-Path $c) { $found = $c; break }
           }
-          & "build\Release\lemond.exe" --version
-          Write-Host "Binaries verified"
+          # Also try PATH
+          if (-not $found) {
+            $found = (Get-Command lemond -ErrorAction SilentlyContinue)?.Source
+          }
+          if (-not $found) {
+            Write-Host "ERROR: lemond not found on runner. Checked: $($candidates -join ', ')"
+            exit 1
+          }
+          Write-Host "lemond: $found"
+          & $found --version
+          $lemonadeExe = $found -replace "lemond.exe","lemonade.exe"
+          echo "LEMOND_EXE=$found" >> $env:GITHUB_ENV
+          echo "LEMONADE_EXE=$lemonadeExe" >> $env:GITHUB_ENV
 
-      - name: Verify binaries (Linux)
+      - name: Locate lemonade (Linux)
         if: runner.os == 'Linux'
         run: |
-          chmod +x build/lemond build/lemonade
-          build/lemond --version
-          build/lemonade --version
-          echo "Binaries verified"
+          # Runners have lemonade installed by validate_vllm.yml and other CI runs
+          LEMOND=$(which lemond 2>/dev/null || echo "")
+          if [ -z "$LEMOND" ]; then
+            echo "ERROR: lemond not found in PATH on this runner"
+            exit 1
+          fi
+          LEMONADE=$(which lemonade 2>/dev/null || echo "")
+          echo "lemond   : $LEMOND"
+          echo "lemonade : $LEMONADE"
+          $LEMOND --version
+          echo "LEMOND_EXE=$LEMOND"   >> $GITHUB_ENV
+          echo "LEMONADE_EXE=$LEMONADE" >> $GITHUB_ENV
 
       # ── Python venv ───────────────────────────────────────────────────────
       - name: Setup Python and venv
@@ -221,7 +160,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $logsDir  | Out-Null
 
           $proc = Start-Process `
-            -FilePath "build\Release\lemond.exe" `
+            -FilePath "$env:LEMOND_EXE" `
             -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
             -RedirectStandardOutput "$logsDir\lemond.stdout.log" `
             -RedirectStandardError  "$logsDir\lemond.stderr.log" `
@@ -256,7 +195,7 @@ jobs:
           for start_attempt in $(seq 1 5); do
             PORT=$(pick_free_port) || { echo "ERROR: could not find a free port"; exit 1; }
             echo "Attempt $start_attempt: starting lemond on 127.0.0.1:$PORT..."
-            build/lemond "$CACHE_DIR" --port "$PORT" --host 127.0.0.1 \
+            $LEMOND_EXE "$CACHE_DIR" --port "$PORT" --host 127.0.0.1 \
               > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
             LEMOND_PID=$!
             for i in $(seq 1 30); do

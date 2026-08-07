@@ -105,7 +105,10 @@ def find_binary(install_dir: Path, exe_name: str) -> Path | None:
 
 
 def find_lemonade_bin() -> str:
-    # CI artifacts first
+    # CI sets LEMONADE_EXE from the locate step
+    if os.environ.get("LEMONADE_EXE"):
+        return os.environ["LEMONADE_EXE"]
+    # CI artifacts (build job path)
     for c in [Path("build/Release/lemonade.exe"),
               Path("build/lemonade"),
               Path("build/Release/lemonade")]:
@@ -116,7 +119,6 @@ def find_lemonade_bin() -> str:
         local = Path(os.environ.get("LOCALAPPDATA", "")) / "lemonade_server/bin/lemonade.exe"
         if local.exists():
             return str(local)
-    # Fall back to PATH — but warn if it's the Python lemonade (wrong one)
     return "lemonade"
 
 
