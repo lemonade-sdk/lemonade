@@ -2,6 +2,8 @@ name: Build and Push Container Image
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -36,9 +38,19 @@ jobs:
         id: tag
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
-            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              # Tagged release: publish the version tag and move latest.
+              echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+              echo "push_latest=true" >> $GITHUB_OUTPUT
+            else
+              # Push to main: publish a rolling edge tag plus an immutable sha tag.
+              echo "tag=edge" >> $GITHUB_OUTPUT
+              echo "sha_tag=sha-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+              echo "push_latest=false" >> $GITHUB_OUTPUT
+            fi
           else
             echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "push_latest=${{ inputs.add_latest }}" >> $GITHUB_OUTPUT
             git checkout "refs/tags/${{ inputs.tag }}"
           fi
 
@@ -60,5 +72,5 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
-            ${{ github.event_name == 'push' && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
-            ${{ github.event_name == 'workflow_dispatch' && inputs.add_latest && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
+            ${{ steps.tag.outputs.sha_tag != '' && format('{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, steps.tag.outputs.sha_tag) || '' }}
+            ${{ steps.tag.outputs.push_latest == 'true' && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}

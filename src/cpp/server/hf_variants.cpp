@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <unordered_map>
 
+#include "lemon/model_types.h"
+#include "lemon/model_registry.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 
@@ -193,49 +195,32 @@ GgufVariantSet enumerate_gguf_variants(
     return result;
 }
 
-nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_found) {
+nlohmann::json fetch_pull_variants(const std::string& checkpoint,
+                                   const std::string& registry_source,
+                                   bool& not_found) {
     not_found = false;
 
     if (checkpoint.empty() || checkpoint.find('/') == std::string::npos) {
-        throw std::runtime_error("checkpoint must be a Hugging Face repo id of the form 'owner/name'");
+        throw std::runtime_error("checkpoint must be a repository id of the form 'owner/name'");
     }
 
-    std::map<std::string, std::string> headers;
-    const char* hf_token = std::getenv("HF_TOKEN");
-    if (hf_token && hf_token[0]) {
-        headers["Authorization"] = "Bearer " + std::string(hf_token);
-    }
-
-    // `?blobs=true` makes HF include per-file `size` in each siblings entry,
-    // which we forward to the variant set so the CLI menu can show real sizes.
-    std::string url = "https://huggingface.co/api/models/" + checkpoint + "?blobs=true";
-    auto response = HttpClient::get(url, headers);
-    // HuggingFace returns 401 (not 404) for nonexistent public repos to mimic
-    // the behavior of gated repos. Treat both as "not found" from the user's
-    // perspective so the CLI can give a clean error message.
-    if (response.status_code == 404 || response.status_code == 401) {
+    const auto source = parse_remote_registry_source(registry_source);
+    const auto& registry = model_registry(source);
+    RegistryRepository repository;
+    try {
+        repository = registry.fetch_repository(checkpoint);
+    } catch (const RegistryNotFoundError&) {
         not_found = true;
         return {};
     }
-    if (response.status_code != 200) {
-        throw std::runtime_error(
-            "Hugging Face API returned status " + std::to_string(response.status_code));
-    }
 
-    auto info = JsonUtils::parse(response.body);
-    if (!info.contains("siblings") || !info["siblings"].is_array()) {
-        throw std::runtime_error("Hugging Face response missing 'siblings' array");
-    }
-
+    const auto headers = registry.auth_headers();
     std::vector<std::string> repo_files;
     std::vector<std::pair<std::string, uint64_t>> file_sizes;
-    for (const auto& s : info["siblings"]) {
-        if (!s.contains("rfilename")) continue;
-        std::string name = s["rfilename"].get<std::string>();
-        repo_files.push_back(name);
-        if (s.contains("size") && s["size"].is_number()) {
-            file_sizes.emplace_back(name, s["size"].get<uint64_t>());
-        }
+    for (const auto& file : repository.files) {
+        if (file.directory) continue;
+        repo_files.push_back(file.path);
+        if (file.size > 0) file_sizes.emplace_back(file.path, file.size);
     }
 
     // Detect repo kind: GGUF (existing path) vs ONNX RyzenAI vs unknown.
@@ -275,6 +260,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
 
         nlohmann::json out;
         out["checkpoint"] = checkpoint;
+        out["source"] = remote_registry_source_name(source);
         out["recipe"] = "ryzenai-llm";
         out["repo_kind"] = "onnx-ryzenai";
         out["suggested_name"] = suggested_name;
@@ -284,9 +270,82 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
         return out;
     }
 
+    // Omni collection branch. This function only INSPECTS the repo and reports
+    // what it is — it never downloads anything to disk. A repo published from
+    // `lemonade export` carries its collection manifest as <RepoName>.json (see
+    // "Share a collection" in the custom models guide). The filename is the
+    // discovery key; the content is read here only to confirm it really is a
+    // collection manifest (a same-named file that is not a manifest is an error,
+    // not a fall-through). The manifest itself is NOT returned — /pull downloads
+    // it to disk as the actual pull step, exactly as the .gguf is pulled for a
+    // regular model.
+    const std::string manifest_filename = suggested_name + ".json";
+    if (!has_gguf &&
+        std::find(repo_files.begin(), repo_files.end(), manifest_filename) != repo_files.end()) {
+        // Manifests are small (KBs); refuse to inspect absurdly large files.
+        static constexpr uint64_t kMaxManifestBytes = 5ull * 1024 * 1024;
+        for (const auto& kv : file_sizes) {
+            if (kv.first == manifest_filename && kv.second > kMaxManifestBytes) {
+                throw std::runtime_error(
+                    "Repository " + checkpoint + " contains '" + manifest_filename +
+                    "' but it is too large to be a Lemonade Omni collection manifest");
+            }
+        }
+
+        std::string manifest_url = registry.resolve_file_url(
+            checkpoint, repository.revision, manifest_filename);
+        auto manifest_response = HttpClient::get(manifest_url, headers);
+        if (manifest_response.status_code != 200) {
+            throw std::runtime_error(
+                "Failed to read '" + manifest_filename + "' from repository " + checkpoint +
+                " (HTTP " + std::to_string(manifest_response.status_code) + ")");
+        }
+
+        nlohmann::json manifest;
+        try {
+            manifest = JsonUtils::parse(manifest_response.body);
+        } catch (const std::exception&) {
+            manifest = nlohmann::json();
+        }
+        bool valid_manifest = manifest.is_object() &&
+            is_omni_collection_recipe(manifest.value("recipe", std::string())) &&
+            manifest.contains("components") && manifest["components"].is_array() &&
+            !manifest["components"].empty() &&
+            manifest.contains("models") && manifest["models"].is_array();
+        if (!valid_manifest) {
+            throw std::runtime_error(
+                "Repository " + checkpoint + " contains '" + manifest_filename +
+                "' but it is not a Lemonade Omni collection manifest (expected an exported "
+                "collection JSON with recipe \"collection.omni\", a non-empty 'components' "
+                "array, and a 'models' array)");
+        }
+
+        // Inspection result only: what it is, its name, and (for the CLI's
+        // display line) its size and component count. The manifest content is
+        // deliberately omitted — /pull re-downloads it to disk.
+        nlohmann::json out;
+        out["checkpoint"] = checkpoint;
+        out["source"] = remote_registry_source_name(source);
+        out["recipe"] = "collection.omni";
+        out["repo_kind"] = "collection";
+        out["suggested_name"] = suggested_name;
+        out["suggested_labels"] = nlohmann::json::array();
+        out["mmproj_files"] = nlohmann::json::array();
+        out["variants"] = nlohmann::json::array();
+        if (manifest.contains("size") && manifest["size"].is_number()) {
+            out["size"] = manifest["size"];
+        }
+        out["component_count"] = manifest["components"].size();
+        return out;
+    }
+
     auto vset = enumerate_gguf_variants(repo_files, file_sizes);
     if (vset.variants.empty()) {
-        throw std::runtime_error("No supported model files (.gguf or ONNX RyzenAI) found in repository " + checkpoint);
+        throw std::runtime_error(
+            "No supported model files found in repository " + checkpoint +
+            ". Supported repository types: GGUF models (*.gguf), ONNX RyzenAI models, and "
+            "Lemonade Omni collections (a '" + manifest_filename +
+            "' manifest exported by 'lemonade export')");
     }
 
     // Suggested labels.
@@ -300,6 +359,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
 
     nlohmann::json out;
     out["checkpoint"] = checkpoint;
+    out["source"] = remote_registry_source_name(source);
     out["recipe"] = "llamacpp";
     out["repo_kind"] = "gguf";
     out["suggested_name"] = suggested_name;

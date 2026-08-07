@@ -158,24 +158,25 @@ class ServerConfig {
   }
 
   /**
-   * Build a WebSocket URL for an endpoint served on the websocket port
-   * advertised by /health. Going through URL rather than string concat is
-   * what makes this correct for IPv6 literals — URL.host preserves the
-   * brackets that hostname does not. The configured API key is appended
-   * automatically when set.
+   * Build a WebSocket URL. With wsPort, targets the dedicated websocket port
+   * advertised by /health; without it, targets the main HTTP port (which
+   * accepts WebSocket upgrades for /realtime and /logs/stream). Going through
+   * URL rather than string concat is what makes this correct for IPv6
+   * literals — URL.host preserves the brackets that hostname does not. The
+   * API key is NOT included in the URL — the caller should pass it via
+   * Sec-WebSocket-Protocol instead (see websocketClient.ts).
    */
-  buildWebSocketUrl(path: string, wsPort: number, query?: URLSearchParams): string {
+  buildWebSocketUrl(path: string, wsPort?: number, query?: URLSearchParams): string {
     const url = new URL(this.getServerBaseUrl());
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    url.port = String(wsPort);
+    if (wsPort !== undefined) {
+      url.port = String(wsPort);
+    }
     url.pathname = url.pathname.replace(/\/$/, '') + path;
 
-    const params = new URLSearchParams(query);
-    const apiKey = this.getAPIKey();
-    if (apiKey) {
-      params.set('api_key', apiKey);
+    if (query) {
+      url.search = query.toString();
     }
-    url.search = params.toString();
     return url.toString();
   }
 
@@ -204,7 +205,7 @@ class ServerConfig {
 
   private setUpdatedAPIKey(apiKey: string) {
     if (this.apiKey != apiKey) {
-      console.log(`API Key updated: ${this.apiKey} -> ${apiKey}`);
+      console.log('API Key updated');
       this.apiKey = apiKey;
       this.notifyPortListeners();
       this.notifyUrlListeners();
@@ -317,7 +318,9 @@ class ServerConfig {
 
     const fullUrl = endpoint.startsWith('http')
       ? endpoint
-      : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+      : endpoint.startsWith('/internal/')
+        ? `${this.getServerBaseUrl()}${endpoint}`
+        : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
     const options = { ...opts };
 
@@ -358,13 +361,46 @@ class ServerConfig {
 // Export singleton instance
 export const serverConfig = new ServerConfig();
 
+/**
+ * Registered application subprotocol. The server advertises only this protocol,
+ * so the client must offer it for libwebsockets to negotiate the upgrade and
+ * echo a subprotocol back (browsers fail the socket otherwise).
+ */
+export const WS_APP_PROTOCOL = 'lemonade-realtime';
+
+function base64UrlEncode(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const b of bytes) {
+    binary += String.fromCharCode(b);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Build the Sec-WebSocket-Protocol list for an authenticated WebSocket upgrade,
+ * shared by the realtime and log-stream clients. Offers the registered
+ * application protocol plus a base64url-encoded credential (base64url keeps the
+ * key within the token characters a subprotocol value permits). Awaits config
+ * initialization so the API key is populated before it is read. Returns
+ * undefined when no API key is configured, leaving the upgrade unauthenticated.
+ */
+export async function webSocketProtocols(): Promise<string[] | undefined> {
+  await serverConfig.waitForInit();
+  const apiKey = serverConfig.getAPIKey();
+  if (!apiKey) {
+    return undefined;
+  }
+  return [WS_APP_PROTOCOL, `bearer.${base64UrlEncode(apiKey)}`];
+}
+
 // Export convenience functions
 export const getApiBaseUrl = () => serverConfig.getApiBaseUrl();
 export const getServerBaseUrl = () => serverConfig.getServerBaseUrl();
 export const getAPIKey = () => serverConfig.getAPIKey();
 export const getServerPort = () => serverConfig.getPort();
 export const discoverServerPort = () => serverConfig.discoverPort();
-export const buildWebSocketUrl = (path: string, wsPort: number, query?: URLSearchParams) =>
+export const buildWebSocketUrl = (path: string, wsPort?: number, query?: URLSearchParams) =>
   serverConfig.buildWebSocketUrl(path, wsPort, query);
 export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);

@@ -66,6 +66,18 @@ json JsonUtils::merge(const json& base, const json& overlay) {
     return result;
 }
 
+void JsonUtils::add_legacy_max_tokens_alias(json& request) {
+    if (request.contains("max_completion_tokens") && !request.contains("max_tokens")) {
+        request["max_tokens"] = request["max_completion_tokens"];
+    }
+}
+
+json JsonUtils::with_legacy_max_tokens_alias(const json& request) {
+    json modified = request;
+    add_legacy_max_tokens_alias(modified);
+    return modified;
+}
+
 bool JsonUtils::has_key(const json& j, const std::string& key) {
     return j.contains(key) && !j[key].is_null();
 }

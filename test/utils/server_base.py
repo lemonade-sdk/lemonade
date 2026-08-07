@@ -45,6 +45,7 @@ from .test_models import (
     STANDARD_MESSAGES,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
+    TIMEOUT_ROCM_INSTALL,
     get_default_cli_binary,
 )
 
@@ -188,6 +189,38 @@ def _is_transient_pull_status(status_code):
     return status_code in {408, 409, 429, 500, 502, 503, 504}
 
 
+def _pull_model_streaming(model_name, port):
+    """Pull via the SSE streaming mode and block until the download completes.
+
+    Large models (10+ GB) exceed any fixed read timeout on the synchronous
+    /pull; the progress events keep the connection alive so the timeout only
+    applies between events, not to the whole download.
+    """
+    with requests.post(
+        f"http://localhost:{port}/api/v1/pull",
+        json={"model_name": model_name, "stream": True},
+        stream=True,
+        timeout=TIMEOUT_MODEL_OPERATION,
+    ) as response:
+        if response.status_code != 200:
+            return response.status_code, response.text[:1000]
+
+        event = ""
+        for raw_line in response.iter_lines(decode_unicode=True):
+            if raw_line is None:
+                continue
+            line = raw_line.strip()
+            if line.startswith("event:"):
+                event = line[len("event:") :].strip()
+            elif line.startswith("data:") and event == "error":
+                body = line[len("data:") :].strip()[:1000]
+                status = 400 if "unknown_model" in body else 500
+                return status, body
+            elif line.startswith("data:") and event == "complete":
+                return 200, ""
+        return 500, "SSE stream ended without a 'complete' event"
+
+
 def pull_model_with_retry(model_name, attempts=3, port=PORT):
     """Pull a model with bounded retry for transient setup failures.
 
@@ -203,11 +236,7 @@ def pull_model_with_retry(model_name, attempts=3, port=PORT):
             time.sleep(min(30, 2 ** (attempt - 1)))
 
         try:
-            response = requests.post(
-                f"http://localhost:{port}/api/v1/pull",
-                json={"model_name": model_name},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
+            status, body = _pull_model_streaming(model_name, port)
         except requests.RequestException as exc:
             last_error = exc
             if attempt < attempts:
@@ -218,16 +247,16 @@ def pull_model_with_retry(model_name, attempts=3, port=PORT):
                 continue
             break
 
-        if response.status_code == 200:
-            return response
+        if status == 200:
+            return
 
-        last_status = response.status_code
-        last_body = response.text[:1000]
+        last_status = status
+        last_body = body
 
-        if _is_transient_pull_status(response.status_code) and attempt < attempts:
+        if _is_transient_pull_status(status) and attempt < attempts:
             print(
                 f"Transient /pull setup failure for {model_name}: "
-                f"status={response.status_code}, attempt={attempt}/{attempts}. "
+                f"status={status}, attempt={attempt}/{attempts}. "
                 "Retrying..."
             )
             continue
@@ -267,6 +296,14 @@ def _build_runtime_config(additional_server_args=None):
         config["sdcpp"] = {"backend": backend}
     elif wrapped_server == "whispercpp" and backend:
         config["whispercpp"] = {"backend": backend}
+    elif wrapped_server == "thinksound" and backend:
+        config["thinksound"] = {"backend": backend}
+    elif wrapped_server == "acestep" and backend:
+        config["acestep"] = {"backend": backend}
+    elif wrapped_server == "trellis" and backend:
+        config["trellis"] = {"backend": backend}
+    elif wrapped_server == "openmoss" and backend:
+        config["openmoss"] = {"backend": backend}
 
     # Parse additional_server_args for known flags
     additional = list(_config.get("additional_server_args", []))
@@ -298,6 +335,64 @@ def _build_runtime_config(additional_server_args=None):
             i += 1
 
     return config
+
+
+# Recipes whose "rocm" backend resolves to the rocm-stable channel and therefore
+# trigger a TheRock runtime download on a cold cache (see will_install_therock in
+# backend_manager.cpp). Other rocm consumers (vllm, llamacpp rocm-nightly) bundle
+# their own runtime and do not need this.
+_THEROCK_RECIPES = (
+    "llamacpp",
+    "sd-cpp",
+    "thinksound",
+    "acestep",
+    "trellis",
+    "openmoss",
+)
+
+
+def ensure_rocm_runtime():
+    """
+    Pre-warm the ROCm (TheRock) runtime before running rocm-backend tests.
+
+    On a cold cache, loading a rocm-stable model triggers a ~4.5 GB TheRock
+    download inside the first inference request, which can exceed the tighter
+    per-request inference timeout. Doing it here, as an explicit setup step with
+    a generous timeout, keeps that cost out of the test body and surfaces a
+    download/runtime failure as a clear, distinct setup error rather than a
+    confusing inference timeout.
+
+    No-op unless the active backend is "rocm" and the recipe is one that uses
+    the TheRock runtime. Idempotent: the server skips the download when TheRock
+    is already installed, so this is a fast check on a warm cache.
+    """
+    if _config.get("backend") != "rocm":
+        return
+    recipe = _config.get("wrapped_server")
+    if recipe not in _THEROCK_RECIPES:
+        return
+    if requests is None:
+        raise RuntimeError(
+            "ROCM_INSTALL_FAILED: the `requests` package is required to pre-warm "
+            "the ROCm (TheRock) runtime; install it with `pip install requests`."
+        )
+
+    print(f"\n=== Ensuring ROCm (TheRock) runtime for {recipe}:rocm ===")
+    try:
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/install",
+            json={"recipe": recipe, "backend": "rocm", "stream": False},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_ROCM_INSTALL,
+        )
+        response.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(
+            f"ROCM_INSTALL_FAILED: ROCm runtime (TheRock) install failed for "
+            f"{recipe}:rocm. This is an environment/setup failure, not a test "
+            f"failure. Detail: {e}"
+        ) from e
+    print(f"ROCm (TheRock) runtime ready for {recipe}:rocm")
 
 
 class ServerTestBase(unittest.TestCase):
@@ -341,6 +436,10 @@ class ServerTestBase(unittest.TestCase):
             )
         print("Server is reachable on port %d" % PORT)
 
+        # Pre-warm the ROCm (TheRock) runtime so its cold-cache download does not
+        # blow the per-request inference timeout inside the first test.
+        ensure_rocm_runtime()
+
         # Build and apply runtime config from CLI args + class-level args
         runtime_config = _build_runtime_config(cls.additional_server_args)
 
@@ -368,6 +467,7 @@ class ServerTestBase(unittest.TestCase):
         print(f"\n=== Starting test: {self._testMethodName} ===")
 
         self.base_url = f"http://localhost:{PORT}/api/v1"
+        self.internal_url = f"http://localhost:{PORT}/internal"
         self.messages = STANDARD_MESSAGES.copy()
 
     def tearDown(self):
@@ -457,7 +557,12 @@ def run_server_tests(
 
     # Create and run test suite
     loader = unittest.TestLoader()
-    suite = loader.loadTestsFromTestCase(test_class)
+    if isinstance(test_class, (list, tuple)):
+        suite = unittest.TestSuite()
+        for tc in test_class:
+            suite.addTests(loader.loadTestsFromTestCase(tc))
+    else:
+        suite = loader.loadTestsFromTestCase(test_class)
 
     runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
     result = runner.run(suite)

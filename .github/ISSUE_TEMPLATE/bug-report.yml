@@ -53,6 +53,8 @@ body:
         - FastFlowLM / NPU
         - RyzenAI
         - Desktop App / UI
+        - lemonade (cli)
+        - lemond (server)
         - Other / Not sure
     validations:
       required: true
@@ -110,7 +112,7 @@ body:
 
         **Additional diagnostic commands (run these and paste the output):**
         - `lemonade status` — shows server info and loaded models
-         
+
         - `lemonade backends` — shows installed backends and driver status
 
         **Platform-specific tips:**

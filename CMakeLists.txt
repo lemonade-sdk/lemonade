@@ -5,7 +5,89 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.6.0)
+project(lemon_cpp VERSION 11.5.2)
+
+include(CTest)
+
+# Aggregate build target for the C++ tests selected by packaging CI.
+# Platform-specific tests add themselves only inside their existing if() block.
+if(NOT TARGET cpp-ci-tests)
+    add_custom_target(cpp-ci-tests)
+endif()
+
+# Label a CTest test for the packaging CI and make the aggregate build target
+# depend on every executable/helper target needed by that test. Internal helper
+# used by add_cpp_ci_test(); call add_cpp_ci_test() instead of this directly.
+#
+# Usage:
+#   register_cpp_ci_test(TestName test_target [additional_target...])
+function(register_cpp_ci_test test_name)
+    set_tests_properties(
+        ${test_name}
+        PROPERTIES
+            LABELS "cpp-ci"
+    )
+
+    if(ARGN)
+        add_dependencies(
+            cpp-ci-tests
+            ${ARGN}
+        )
+    endif()
+endfunction()
+
+# Declare a CTest test with an explicit CI decision. This is the ONLY supported
+# way to add a test: direct add_test() is disabled (see the override installed
+# before the test section) so that every test states, at its call site, whether
+# it runs in the packaging CI (`ctest -L cpp-ci`).
+#
+#   * CI ON  -> the test is labeled cpp-ci and its build target(s) become a
+#               dependency of the cpp-ci-tests aggregate target.
+#   * CI OFF -> the test is created for local/other runs but excluded from CI.
+#
+# Usage:
+#   add_cpp_ci_test(<TestName>
+#                   CI <ON|OFF>                 # required, explicit CI decision
+#                   COMMAND <command> [args...] # required, what CTest runs
+#                   [DEPENDS <target>...])      # CI build deps; defaults to the
+#                                               # first COMMAND token (the test
+#                                               # executable target)
+function(add_cpp_ci_test test_name)
+    cmake_parse_arguments(ACT "" "CI" "COMMAND;DEPENDS" ${ARGN})
+
+    if(ACT_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR
+            "add_cpp_ci_test(${test_name}): unexpected argument(s) '${ACT_UNPARSED_ARGUMENTS}' "
+            "(check for a misspelled CI/COMMAND/DEPENDS keyword)")
+    endif()
+    if(NOT DEFINED ACT_CI)
+        message(FATAL_ERROR
+            "add_cpp_ci_test(${test_name}): required 'CI <ON|OFF>' argument is missing")
+    endif()
+    string(TOUPPER "${ACT_CI}" _act_ci)
+    if(NOT _act_ci STREQUAL "ON" AND NOT _act_ci STREQUAL "OFF")
+        message(FATAL_ERROR
+            "add_cpp_ci_test(${test_name}): CI must be exactly ON or OFF, got '${ACT_CI}'")
+    endif()
+    if(NOT ACT_COMMAND)
+        message(FATAL_ERROR
+            "add_cpp_ci_test(${test_name}): required 'COMMAND <command>' argument is missing")
+    endif()
+
+    # _add_test is the built-in add_test preserved by the override below, so this
+    # helper stays exempt from the direct-add_test() ban it enforces.
+    _add_test(NAME ${test_name} COMMAND ${ACT_COMMAND})
+
+    if(_act_ci STREQUAL "ON")
+        if(ACT_DEPENDS)
+            register_cpp_ci_test(${test_name} ${ACT_DEPENDS})
+        else()
+            list(GET ACT_COMMAND 0 _act_ci_target)
+            register_cpp_ci_test(${test_name} ${_act_ci_target})
+        endif()
+    endif()
+endfunction()
+
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -32,6 +114,43 @@ include(GNUInstallDirs)
           ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade.1
           DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
      )
+
+# ============================================================
+# Self-describing backends registry
+# ============================================================
+# The authoritative backend list. Each entry is "<recipe>|<stem>":
+#   recipe - the recipe string used in server_models.json (may contain dashes)
+#   stem   - identifier-safe name and folder. Each backend lives in its own
+#            folder, shipping (in namespace lemon::backends::<stem>):
+#              include/lemon/backends/<stem>/<stem>.h         inline const descriptor (CLI-safe data)
+#              include/lemon/backends/<stem>/<stem>_server.h  WrappedServer subclass + create() decl
+#              server/backends/<stem>/<stem>_server.cpp       implementation + create() def
+#
+# Adding a backend is one line here plus that folder. The codegen later in this
+# file (see "Self-describing backends registry codegen") compiles the server
+# source and regenerates the registry headers, which bind each descriptor to its
+# create(). Because this list is a tracked input, editing it forces regeneration
+# on the next build (a file(GLOB) would silently miss a newly added backend). The
+# descriptor is a header-only inline const, so it links into both the lemonade
+# CLI and lemond; only lemond links the server sources.
+set(LEMON_BACKENDS
+    # "<recipe>|<stem>"
+    "llamacpp|llamacpp"
+    "whispercpp|whispercpp"
+    "moonshine|moonshine"
+    "kokoro|kokoro"
+    "sd-cpp|sdcpp"
+    "flm|fastflowlm"
+    "ryzenai-llm|ryzenai"
+    "vllm|vllm"
+    "cloud|cloud"
+    "thinksound|thinksound"
+    "acestep|acestep"
+    "onnxruntime|onnxruntime"
+    "trellis|trellis"
+    "openmoss|openmoss"
+)
+
 # ============================================================
 # Tauri app source paths (used by both runtime and installers)
 # ============================================================
@@ -86,13 +205,14 @@ find_package(nlohmann_json ${MIN_NLOHMANN_JSON_VERSION} QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(CURL QUIET libcurl>=${MIN_CURL_VERSION})
     pkg_check_modules(ZSTD QUIET libzstd>=${MIN_ZSTD_VERSION})
-    # Debian ships the package as `cpp-httplib`, Nixpkgs as `httplib` — search
-    # both. No IMPORTED_TARGET: we build our own interface target below so we
-    # can skip the .pc Cflags (see there for why).
-    pkg_search_module(HTTPLIB QUIET
-        cpp-httplib>=${MIN_HTTPLIB_VERSION}
-        httplib>=${MIN_HTTPLIB_VERSION})
     pkg_check_modules(LWS QUIET libwebsockets>=${MIN_LWS_VERSION})
+endif()
+
+include(${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+if(NOT APPLE)
+    detect_system_httplib(${MIN_HTTPLIB_VERSION})
+else()
+    set(HTTPLIB_FOUND FALSE)
 endif()
 find_path(CLI11_INCLUDE_DIRS "CLI/CLI.hpp")
 # Verify CLI11 version if found
@@ -191,7 +311,7 @@ if(APPLE)
     # brotli (MIT License) - required by httplib for compression on macOS
     FetchContent_Declare(brotli
         GIT_REPOSITORY https://github.com/google/brotli.git
-        GIT_TAG v1.1.0
+        GIT_TAG ed738e842d2fbdf2d6459e39267a633c4a9b2f5d  # v1.1.0
         GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL
     )
@@ -201,7 +321,7 @@ endif()
 if(NOT USE_SYSTEM_JSON)
     FetchContent_Declare(json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG v${MIN_NLOHMANN_JSON_VERSION}
+        GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03  # v3.11.3
         GIT_SHALLOW TRUE
     )
     set(JSON_BuildTests OFF CACHE INTERNAL "")
@@ -213,7 +333,7 @@ endif()
 if(NOT USE_SYSTEM_CLI11)
     FetchContent_Declare(CLI11
         GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-        GIT_TAG v${MIN_CLI11_VERSION}
+        GIT_TAG 6c7b07a878ad834957b98d0f9ce1dbe0cb204fc9  # v2.4.2
         GIT_SHALLOW TRUE
     )
     set(CLI11_BUILD_TESTS OFF CACHE INTERNAL "")
@@ -223,10 +343,9 @@ endif()
 
 # === curl ===
 if(NOT USE_SYSTEM_CURL)
-    string(REPLACE "." "_" CURL_TAG_VERSION "${MIN_CURL_VERSION}")
     FetchContent_Declare(curl
         GIT_REPOSITORY https://github.com/curl/curl.git
-        GIT_TAG curl-${CURL_TAG_VERSION}
+        GIT_TAG 55b5fafb094ebe07ca8a5d4f79813c8b40670795  # curl-8_5_0
         GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL
     )
@@ -251,7 +370,7 @@ endif()
 if(NOT USE_SYSTEM_ZSTD)
     FetchContent_Declare(zstd
         GIT_REPOSITORY https://github.com/facebook/zstd.git
-        GIT_TAG v${DOWNLOAD_ZSTD_VERSION}
+        GIT_TAG ac66b19e6bd6b83238bf008eecc1298105298532  # v1.5.7
         GIT_SHALLOW TRUE
         SOURCE_SUBDIR build/cmake
         EXCLUDE_FROM_ALL
@@ -305,7 +424,7 @@ endif()
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG v${MIN_HTTPLIB_VERSION}
+        GIT_TAG fe332fa06bac76a1c6d402c08f414052999347da  # v0.47.0
         GIT_SHALLOW TRUE
     )
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
@@ -321,21 +440,183 @@ if(NOT USE_SYSTEM_HTTPLIB)
             ${zstd_SOURCE_DIR}/lib/common
         )
     endif()
+endif()
+
+# ============================================================
+# Download digest verification dependency (mbedTLS)
+# ============================================================
+if(NOT TARGET lemonade-digest-crypto)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(MBEDTLS QUIET mbedtls mbedx509 mbedcrypto)
+    endif()
+
+    add_library(lemonade-digest-crypto INTERFACE)
+
+    if(MBEDTLS_FOUND)
+        message(STATUS "Using system mbedtls for CLI HTTPS and digest verification")
+        if(MBEDTLS_INCLUDE_DIRS)
+            target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_INCLUDE_DIRS})
+        endif()
+        if(MBEDTLS_LIBRARY_DIRS)
+            target_link_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_LIBRARY_DIRS})
+        endif()
+        target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDTLS_LIBRARIES})
+        if(MBEDTLS_CFLAGS_OTHER)
+            target_compile_options(lemonade-digest-crypto INTERFACE ${MBEDTLS_CFLAGS_OTHER})
+        endif()
+    else()
+        find_path(MBEDTLS_INCLUDE_DIR NAMES mbedtls/ssl.h)
+        find_library(MBEDTLS_LIBRARY NAMES mbedtls)
+        find_library(MBEDX509_LIBRARY NAMES mbedx509)
+        find_library(MBEDCRYPTO_LIBRARY NAMES mbedcrypto)
+
+        if(MBEDTLS_INCLUDE_DIR AND MBEDTLS_LIBRARY AND MBEDX509_LIBRARY AND MBEDCRYPTO_LIBRARY)
+            message(STATUS "Using system mbedtls libraries for CLI HTTPS and digest verification")
+            target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_INCLUDE_DIR})
+            target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDTLS_LIBRARY} ${MBEDX509_LIBRARY} ${MBEDCRYPTO_LIBRARY})
+        else()
+            if(FETCHCONTENT_FULLY_DISCONNECTED AND NOT FETCHCONTENT_SOURCE_DIR_MBEDTLS)
+                message(FATAL_ERROR
+                    "System mbedtls was not found and FetchContent is fully disconnected. "
+                    "Install the distro development package (for Debian/Ubuntu: libmbedtls-dev) "
+                    "or provide FETCHCONTENT_SOURCE_DIR_MBEDTLS.")
+            endif()
+
+            message(STATUS "System mbedtls not found; fetching mbedTLS for CLI HTTPS and digest verification")
+            include(FetchContent)
+            FetchContent_Declare(mbedtls
+                GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
+                GIT_TAG 107ea89daaefb9867ea9121002fbbdf926780e98
+                EXCLUDE_FROM_ALL
+            )
+            set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+            set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+            set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+            set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
+            set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
+            FetchContent_MakeAvailable(mbedtls)
+
+            target_include_directories(lemonade-digest-crypto INTERFACE ${mbedtls_SOURCE_DIR}/include)
+            if(TARGET MbedTLS::mbedtls AND TARGET MbedTLS::mbedx509 AND TARGET MbedTLS::mbedcrypto)
+                target_link_libraries(lemonade-digest-crypto INTERFACE MbedTLS::mbedtls MbedTLS::mbedx509 MbedTLS::mbedcrypto)
+            elseif(TARGET mbedtls AND TARGET mbedx509 AND TARGET mbedcrypto)
+                target_link_libraries(lemonade-digest-crypto INTERFACE mbedtls mbedx509 mbedcrypto)
+            else()
+                message(FATAL_ERROR "mbedTLS FetchContent did not create expected targets")
+            endif()
+        endif()
+    endif()
+endif()
+
+if(UNIX AND NOT APPLE)
+    find_package(Threads REQUIRED)
+endif()
+
+# ============================================================
+# lemonade-httplib target (Single Source of Truth for HTTPS)
+# ============================================================
+add_library(lemonade-httplib INTERFACE)
+
+if(NOT USE_SYSTEM_HTTPLIB)
+    # Bundled cpp-httplib path: wraps httplib::httplib and attaches MbedTLS support
+    target_link_libraries(lemonade-httplib INTERFACE httplib::httplib lemonade-digest-crypto)
+    target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_MBEDTLS_SUPPORT)
+    if(APPLE)
+        find_library(SECURITY_FRAMEWORK Security REQUIRED)
+        target_link_libraries(lemonade-httplib INTERFACE ${SECURITY_FRAMEWORK})
+    endif()
 else()
-    # System cpp-httplib: a local interface target carrying the include dirs
-    # and link lib (empty for a header-only install like Nixpkgs, the compiled
-    # .so on Debian). We deliberately skip HTTPLIB_CFLAGS_OTHER: the .pc Cflags
-    # carry cpp-httplib's feature macros (-DCPPHTTPLIB_OPENSSL_SUPPORT, etc.),
-    # which would flip on header features needing link deps (libcrypto) we
-    # don't provide. Created at top level, so it is visible to the cli/tray
-    # subdirs added later.
-    add_library(lemonade-httplib INTERFACE)
-    target_include_directories(lemonade-httplib INTERFACE ${HTTPLIB_INCLUDE_DIRS})
-    if(HTTPLIB_LINK_LIBRARIES)
+    # System cpp-httplib path
+    if(HTTPLIB_INCLUDE_DIRS)
+        target_include_directories(lemonade-httplib INTERFACE ${HTTPLIB_INCLUDE_DIRS})
+    endif()
+
+    if(TARGET httplib::httplib)
+        target_link_libraries(lemonade-httplib INTERFACE httplib::httplib)
+    elseif(HTTPLIB_LINK_LIBRARIES)
         target_link_libraries(lemonade-httplib INTERFACE ${HTTPLIB_LINK_LIBRARIES})
     else()
         target_link_libraries(lemonade-httplib INTERFACE ${HTTPLIB_LIBRARIES})
         target_link_directories(lemonade-httplib INTERFACE ${HTTPLIB_LIBRARY_DIRS})
+    endif()
+
+    if(UNIX AND NOT APPLE AND TARGET Threads::Threads)
+        target_link_libraries(lemonade-httplib INTERFACE Threads::Threads)
+    endif()
+
+    # Propagate compiler options from pkg-config (e.g. -DCPPHTTPLIB_OPENSSL_SUPPORT)
+    if(HTTPLIB_CFLAGS_OTHER)
+        target_compile_options(lemonade-httplib INTERFACE ${HTTPLIB_CFLAGS_OTHER})
+    endif()
+
+    # Determine and propagate the TLS backend configured on system httplib
+    set(SYSTEM_HTTPLIB_HAS_TLS FALSE)
+    set(SYSTEM_HTTPLIB_USES_OPENSSL FALSE)
+    set(SYSTEM_HTTPLIB_USES_MBEDTLS FALSE)
+    set(SYSTEM_HTTPLIB_USES_WOLFSSL FALSE)
+    set(SYSTEM_HTTPLIB_USES_SCHANNEL FALSE)
+
+    # 1. Use exported configuration variables from find_package(httplib)
+    if(HTTPLIB_IS_USING_OPENSSL)
+        set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+        set(SYSTEM_HTTPLIB_USES_OPENSSL TRUE)
+    elseif(HTTPLIB_IS_USING_MBEDTLS)
+        set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+        set(SYSTEM_HTTPLIB_USES_MBEDTLS TRUE)
+    elseif(HTTPLIB_IS_USING_WOLFSSL)
+        set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+        set(SYSTEM_HTTPLIB_USES_WOLFSSL TRUE)
+    endif()
+
+    # 2. Fall back to checking pkg-config flags
+    if(NOT SYSTEM_HTTPLIB_HAS_TLS AND HTTPLIB_CFLAGS_OTHER)
+        if(HTTPLIB_CFLAGS_OTHER MATCHES "CPPHTTPLIB_OPENSSL_SUPPORT")
+            set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+            set(SYSTEM_HTTPLIB_USES_OPENSSL TRUE)
+        elseif(HTTPLIB_CFLAGS_OTHER MATCHES "CPPHTTPLIB_MBEDTLS_SUPPORT")
+            set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+            set(SYSTEM_HTTPLIB_USES_MBEDTLS TRUE)
+        elseif(HTTPLIB_CFLAGS_OTHER MATCHES "CPPHTTPLIB_WOLFSSL_SUPPORT")
+            set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+            set(SYSTEM_HTTPLIB_USES_WOLFSSL TRUE)
+        elseif(HTTPLIB_CFLAGS_OTHER MATCHES "CPPHTTPLIB_SCHANNEL_SUPPORT")
+            set(SYSTEM_HTTPLIB_HAS_TLS TRUE)
+            set(SYSTEM_HTTPLIB_USES_SCHANNEL TRUE)
+        endif()
+    endif()
+
+    # 3. Propagate definitions and link requirements
+    if(SYSTEM_HTTPLIB_USES_OPENSSL)
+        target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_OPENSSL_SUPPORT)
+        find_package(OpenSSL REQUIRED)
+        target_link_libraries(lemonade-httplib INTERFACE OpenSSL::SSL OpenSSL::Crypto)
+    elseif(SYSTEM_HTTPLIB_USES_MBEDTLS)
+        target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_MBEDTLS_SUPPORT)
+        target_link_libraries(lemonade-httplib INTERFACE lemonade-digest-crypto)
+        if(APPLE)
+            find_library(SECURITY_FRAMEWORK Security REQUIRED)
+            target_link_libraries(lemonade-httplib INTERFACE ${SECURITY_FRAMEWORK})
+        endif()
+    elseif(SYSTEM_HTTPLIB_USES_WOLFSSL)
+        target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_WOLFSSL_SUPPORT)
+    elseif(SYSTEM_HTTPLIB_USES_SCHANNEL)
+        target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_SCHANNEL_SUPPORT)
+        if(WIN32)
+            target_link_libraries(lemonade-httplib INTERFACE crypt32 secur32)
+        endif()
+    endif()
+
+    # 4. If neither target nor pkg-config explicitly defined a TLS backend, configure MbedTLS fallback for header-only
+    if(NOT SYSTEM_HTTPLIB_HAS_TLS AND NOT HTTPLIB_IS_COMPILED)
+        if(HTTPLIB_VERSION AND NOT HTTPLIB_VERSION VERSION_LESS "0.31.0")
+            target_compile_definitions(lemonade-httplib INTERFACE CPPHTTPLIB_MBEDTLS_SUPPORT)
+            target_link_libraries(lemonade-httplib INTERFACE lemonade-digest-crypto)
+            if(APPLE)
+                find_library(SECURITY_FRAMEWORK Security REQUIRED)
+                target_link_libraries(lemonade-httplib INTERFACE ${SECURITY_FRAMEWORK})
+            endif()
+        endif()
     endif()
 endif()
 
@@ -347,9 +628,14 @@ if(NOT USE_SYSTEM_LWS)
         cmake_policy(SET CMP0148 OLD)
     endif()
     set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+    # pkg_check_modules(LWS ...) caches LWS_LIBRARIES even when the system lib
+    # is unused; libwebsockets' own CMake unsets the directory variable, which
+    # un-shadows the stale cache entry and duplicates the "websockets" target
+    # in its export set — a hard error on CMake >= 4. Clear it before the fetch.
+    unset(LWS_LIBRARIES CACHE)
     FetchContent_Declare(libwebsockets
         GIT_REPOSITORY https://github.com/warmcat/libwebsockets.git
-        GIT_TAG v${MIN_LWS_VERSION}
+        GIT_TAG 4415e84c095857629863804e941b9e1c2e9347ef  # v4.3.3
         GIT_SHALLOW TRUE
     )
     # Build as static library, disable features we don't need
@@ -368,13 +654,40 @@ if(NOT USE_SYSTEM_LWS)
     FetchContent_Populate(libwebsockets)
     # Patch the CMakeLists.txt files to remove -Werror
     file(READ "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" LWS_CMAKE_MAIN)
+    # CRLF-safe: normalize CR before any line-based patching (autocrlf leaves \r\n on Windows)
+    string(REPLACE "\r" "" LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
     string(REPLACE "-Werror" "" LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
+    # remove directory from OUTPUT list (MSBuild interprets it as file path — MSB8065)
+    string(REPLACE "\t\t\t\${PROJECT_BINARY_DIR}/include/libwebsockets\n" ""
+           LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
+    # copy_directory only adds/overwrites — wipe the destination first so stale
+    # headers removed upstream don't survive a GENHDR rerun across a dep update.
+    # Works on every generator (ADDITIONAL_CLEAN_FILES below is Make/Ninja only).
+    if(NOT LWS_CMAKE_MAIN MATCHES "rm -rf.*include/libwebsockets")
+        string(REPLACE
+            "COMMAND \${CMAKE_COMMAND} -E copy_directory \${CMAKE_CURRENT_SOURCE_DIR}/include/libwebsockets/"
+            "COMMAND \${CMAKE_COMMAND} -E rm -rf \${CMAKE_CURRENT_BINARY_DIR}/include/libwebsockets\n\t\tCOMMAND \${CMAKE_COMMAND} -E copy_directory \${CMAKE_CURRENT_SOURCE_DIR}/include/libwebsockets/"
+            LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
+    endif()
     file(WRITE "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" "${LWS_CMAKE_MAIN}")
     file(READ "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" LWS_CMAKE_LIB)
+    string(REPLACE "\r" "" LWS_CMAKE_LIB "${LWS_CMAKE_LIB}")
     string(REPLACE "-Werror" "" LWS_CMAKE_LIB "${LWS_CMAKE_LIB}")
     file(WRITE "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" "${LWS_CMAKE_LIB}")
     # Now add the subdirectory
     add_subdirectory(${libwebsockets_SOURCE_DIR} ${libwebsockets_BINARY_DIR})
+    # Removing the directory from OUTPUT above also drops it from the GENHDR clean
+    # rules. Re-attach it as an additional clean file so stale LWS headers don't
+    # survive a `clean` target across a dependency update (copy_directory only
+    # adds/overwrites, never deletes).
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.15")
+        set_property(
+            TARGET GENHDR
+            APPEND
+            PROPERTY ADDITIONAL_CLEAN_FILES
+            "${libwebsockets_BINARY_DIR}/include/libwebsockets"
+        )
+    endif()
     message(STATUS "libwebsockets will be fetched (v${MIN_LWS_VERSION})")
 endif()
 
@@ -403,8 +716,8 @@ add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
 
 # Platform-specific compiler definitions
 if(WIN32)
-    # Set Windows target version to Windows 10 for httplib v0.26.0
-    add_compile_definitions(_WIN32_WINNT=0x0A00)
+    # Set Windows target version to Windows 10 for httplib v0.26.0, and prevent Windows.h min/max macro definitions
+    add_compile_definitions(_WIN32_WINNT=0x0A00 NOMINMAX)
     if(MSVC)
         # Add security-hardening compiler flags for MSVC
         # Control Flow Guard - prevents control flow hijacking
@@ -577,16 +890,31 @@ include_directories(
 set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/collection_orchestrator.cpp
+    src/cpp/server/jobs/job_ops.cpp
+    src/cpp/server/jobs/job_manager.cpp
     src/cpp/server/router.cpp
+    src/cpp/server/global_vram_monitor.cpp
+    src/cpp/server/eviction_engine.cpp
     src/cpp/server/cli_parser.cpp
+    src/cpp/server/cloud_provider_registry.cpp
     src/cpp/server/config_file.cpp
+    src/cpp/server/directory_watcher.cpp
     src/cpp/server/model_manager.cpp
+    src/cpp/server/model_registry.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/streaming_proxy.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
+    src/cpp/server/routing_classifier_services.cpp
+    src/cpp/server/routing_classifier_services_router.cpp
+    src/cpp/server/thinking_controls.cpp
+    src/cpp/server/routing_policy.cpp
+    src/cpp/server/routing_policy_parser.cpp
+    src/cpp/server/routing_policy_store.cpp
+    src/cpp/server/route_decision_response.cpp
     src/cpp/server/runtime_config.cpp
+    src/cpp/server/telemetry.cpp
     src/cpp/server/logging_config.cpp
     src/cpp/server/log_stream.cpp
     src/cpp/server/prometheus_metrics.cpp
@@ -594,20 +922,17 @@ set(SOURCES_CORE
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
     src/cpp/server/utils/path_utils.cpp
+    src/cpp/server/utils/url_utils.cpp
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
-    src/cpp/server/backends/llamacpp_server.cpp
-    src/cpp/server/backends/fastflowlm_server.cpp
-    src/cpp/server/backends/ryzenaiserver.cpp
-    src/cpp/server/backends/whisper_server.cpp
-    src/cpp/server/backends/kokoro_server.cpp
-    src/cpp/server/backends/sd_server.cpp
-    src/cpp/server/backends/vllm_server.cpp
+    src/cpp/server/utils/tcp_jsonl_client.cpp
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
     src/cpp/server/anthropic_api.cpp
+    src/cpp/server/mcp_client.cpp
+    src/cpp/server/mcp_server.cpp
     src/cpp/server/streaming_audio_buffer.cpp
     src/cpp/server/vad.cpp
     src/cpp/server/realtime_session.cpp
@@ -615,10 +940,83 @@ set(SOURCES_CORE
 )
 
 # Add platform-specific source files to core
-if(APPLE)
+if(WIN32)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/suspend_stub.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/network_windows.cpp)
+elseif(APPLE)
     list(APPEND SOURCES_CORE src/cpp/server/macos_system_info.mm)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_macos.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_macos.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/suspend_stub.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_unix.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_macos.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/network_unix.cpp)
     set_source_files_properties(src/cpp/server/macos_system_info.mm PROPERTIES LANGUAGE OBJCXX)
+elseif(UNIX)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_linux.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_linux.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/suspend_linux.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_unix.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_linux.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/network_unix.cpp)
 endif()
+
+# ============================================================
+# Self-describing backends registry codegen
+# ============================================================
+# Consumes LEMON_BACKENDS (defined near the top of this file): the foreach below
+# compiles each backend's server source and regenerates the registry headers that
+# bind every descriptor to its create().
+set(LEMON_DESCRIPTOR_INCLUDES "")
+set(LEMON_DESCRIPTOR_ENTRIES "")
+set(LEMON_FACTORY_INCLUDES "")
+set(LEMON_FACTORY_ENTRIES "")
+# The data registry (descriptors, header-only) links into both binaries; the
+# factory registry + per-backend server sources are server-only.
+# Absolute paths so the CLI subdirectory can reuse LEMON_BACKEND_DESCRIPTOR_SOURCES.
+set(LEMON_BACKEND_DESCRIPTOR_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptor_registry.cpp)
+set(LEMON_BACKEND_FACTORY_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_ops.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/hf_cache_util.cpp)
+foreach(_backend_entry ${LEMON_BACKENDS})
+    string(REPLACE "|" ";" _backend_parts "${_backend_entry}")
+    list(GET _backend_parts 1 _backend_stem)
+    # The descriptor is header-only (no source). Compile every .cpp in the
+    # backend's folder (server class + any backend-private helpers like GGUF
+    # parsing) — CONFIGURE_DEPENDS re-globs when a file is added/removed so a new
+    # helper in a folder needs no CMake edit. (The backend LIST is still explicit
+    # above so a whole new backend is never silently missed.)
+    file(GLOB _backend_srcs CONFIGURE_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/${_backend_stem}/*.cpp)
+    list(APPEND LEMON_BACKEND_FACTORY_SOURCES ${_backend_srcs})
+    string(APPEND LEMON_DESCRIPTOR_INCLUDES
+        "#include \"lemon/backends/${_backend_stem}/${_backend_stem}.h\"\n")
+    string(APPEND LEMON_DESCRIPTOR_ENTRIES
+        "        &lemon::backends::${_backend_stem}::descriptor,\n")
+    string(APPEND LEMON_FACTORY_INCLUDES
+        "#include \"lemon/backends/${_backend_stem}/${_backend_stem}_server.h\"\n")
+    string(APPEND LEMON_FACTORY_ENTRIES
+        "        { &lemon::backends::${_backend_stem}::descriptor, &lemon::backends::${_backend_stem}::create, lemon::backends::${_backend_stem}::spec(), lemon::backends::${_backend_stem}::ops() },\n")
+endforeach()
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_descriptors_generated.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/backend_descriptors_generated.h
+    @ONLY)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_factories_generated.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/backend_factories_generated.h
+    @ONLY)
+
+# lemond gets both descriptor data and factories; the CLI gets only the data
+# (see src/cpp/cli/CMakeLists.txt, which reuses LEMON_BACKEND_DESCRIPTOR_SOURCES).
+list(APPEND SOURCES_CORE ${LEMON_BACKEND_DESCRIPTOR_SOURCES} ${LEMON_BACKEND_FACTORY_SOURCES})
 
 # ============================================================
 # Server core OBJECT library (shared by lemond and Lemonade.exe)
@@ -647,9 +1045,10 @@ if(WIN32)
             /NXCOMPAT         # Data Execution Prevention (DEP)
             /GUARD:CF         # Control Flow Guard
         )
-        # Embed manifest file
+        # Embed manifest file. /MANIFESTINPUT's path must be quoted; unquoted,
+        # a path containing a space breaks the linker with LNK1181.
         set_target_properties(${EXECUTABLE_NAME} PROPERTIES
-            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest"
+            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:\"${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest\""
         )
     endif()
 endif()
@@ -659,13 +1058,10 @@ endif()
 # Server core dependencies (PUBLIC — inherited by consumers)
 # ============================================================
 
-target_link_libraries(lemonade-server-core PUBLIC nlohmann_json::nlohmann_json)
-
-if(USE_SYSTEM_HTTPLIB)
-    target_link_libraries(lemonade-server-core PUBLIC lemonade-httplib)
-else()
-    target_link_libraries(lemonade-server-core PUBLIC httplib::httplib)
-endif()
+target_link_libraries(lemonade-server-core PUBLIC
+    nlohmann_json::nlohmann_json
+    lemonade-httplib
+)
 
 if(USE_SYSTEM_CLI11)
     target_include_directories(lemonade-server-core PUBLIC ${CLI11_INCLUDE_DIRS})
@@ -686,6 +1082,59 @@ if(USE_SYSTEM_ZSTD)
     target_include_directories(lemonade-server-core PUBLIC ${ZSTD_INCLUDE_DIRS})
     target_link_directories(lemonade-server-core PUBLIC ${ZSTD_LIBRARY_DIRS})
     target_compile_options(lemonade-server-core PUBLIC ${ZSTD_CFLAGS_OTHER})
+endif()
+
+# Disable direct add_test() from here on: every test below must be declared with
+# add_cpp_ci_test(... CI <ON|OFF> ...) so its CI status is explicit. Overriding
+# the built-in command preserves the original as _add_test (used by the helper
+# above). Installed after all third-party dependencies are configured so their
+# vendored test suites keep working.
+function(add_test)
+    message(FATAL_ERROR
+        "Direct add_test() is disabled in this project. Declare the test with "
+        "add_cpp_ci_test(<Name> CI <ON|OFF> COMMAND <...>) so its CI status is explicit.")
+endfunction()
+
+set(VLLM_ARG_RESOLVER_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_arg_resolver.cpp")
+if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
+    add_executable(test_vllm_arg_resolver
+        ${VLLM_ARG_RESOLVER_TEST_SOURCE}
+        src/cpp/server/backends/vllm/vllm_arg_resolver.cpp
+    )
+    target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(vllm_arg_resolver CI OFF COMMAND test_vllm_arg_resolver)
+endif()
+
+set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_request.cpp")
+if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
+    add_executable(test_llamacpp_request
+        ${LLAMACPP_REQUEST_TEST_SOURCE}
+        src/cpp/server/backends/llamacpp/llamacpp_request.cpp
+    )
+    target_link_libraries(test_llamacpp_request PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(llamacpp_request CI OFF COMMAND test_llamacpp_request)
+endif()
+
+set(MCP_CLIENT_CONFIG_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mcp_client_config.cpp")
+if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    find_package(Threads REQUIRED)
+
+    add_executable(test_mcp_client_config
+        ${MCP_CLIENT_CONFIG_TEST_SOURCE}
+        src/cpp/server/mcp_client.cpp
+    )
+    target_link_libraries(test_mcp_client_config PRIVATE nlohmann_json::nlohmann_json Threads::Threads lemonade-httplib)
+
+    if(Python3_Interpreter_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/mock_mcp_stdio_server.py")
+        file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" LEMONADE_TEST_PYTHON_PATH)
+        file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/mock_mcp_stdio_server.py" LEMONADE_TEST_MCP_STDIO_SERVER_PATH)
+        target_compile_definitions(test_mcp_client_config PRIVATE
+            "LEMONADE_TEST_PYTHON=\"${LEMONADE_TEST_PYTHON_PATH}\""
+            "LEMONADE_TEST_MCP_STDIO_SERVER=\"${LEMONADE_TEST_MCP_STDIO_SERVER_PATH}\"")
+    endif()
+
+    add_cpp_ci_test(mcp_client_config CI ON COMMAND test_mcp_client_config)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
@@ -712,6 +1161,7 @@ if(WIN32)
         wbemuuid
         ole32
         oleaut32
+        shell32
     )
 elseif(APPLE)
     target_link_libraries(lemonade-server-core PUBLIC
@@ -738,7 +1188,10 @@ elseif(UNIX)
 
     # Link libcap for capability management on Linux
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        target_link_libraries(lemonade-server-core PRIVATE ${CMAKE_DL_LIBS})
+        target_link_libraries(lemonade-server-core PRIVATE
+            ${CMAKE_DL_LIBS}
+            drm_amdgpu
+        )
 
         if(PkgConfig_FOUND)
             pkg_check_modules(LIBCAP QUIET libcap)
@@ -1148,11 +1601,11 @@ if(APPLE)
     endif()
 endif()
 
-# Add tray application subdirectory
-add_subdirectory(src/cpp/tray)
-
 # Add CLI application subdirectory
 add_subdirectory(src/cpp/cli)
+
+# Add tray application subdirectory
+add_subdirectory(src/cpp/tray)
 
 # Wire WiX installer targets to the binaries and frontend artifacts they package.
 # Doing this after the subdirectories are added ensures MSBuild gets real project refs.
@@ -1297,6 +1750,10 @@ if(APPLE)
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
 
+    # Declare the package arm64-only so the macOS Installer does not assume our
+    # postflight script needs x86_64 and prompt to install Rosetta on Apple Silicon.
+    set(CPACK_APPLE_PKG_INSTALLER_CONTENT "<hostArchitectures><hostArchitecture>arm64</hostArchitecture></hostArchitectures>")
+
     set(CPACK_PRODUCTBUILD_DOMAIN "system")
 
     if(INSTALLER_IDENTITY)
@@ -1378,6 +1835,34 @@ if(UNIX AND NOT APPLE)
         PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     )
 
+    # Helper: create a systemd unit symlink with fatal-error-on-failure semantics
+    function(lemonade_install_systemd_symlink link_path target_path)
+        get_filename_component(_link_dir "${link_path}" DIRECTORY)
+
+        install(CODE "
+            set(_link \"\$ENV{DESTDIR}${link_path}\")
+            set(_target \"${target_path}\")
+
+            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}${_link_dir}\")
+
+            if(IS_SYMLINK \"\${_link}\")
+                file(REMOVE \"\${_link}\")
+            elseif(EXISTS \"\${_link}\")
+                message(FATAL_ERROR \"Refusing to replace existing non-symlink: \${_link}\")
+            endif()
+
+            execute_process(
+                COMMAND \"${CMAKE_COMMAND}\" -E create_symlink \"\${_target}\" \"\${_link}\"
+                RESULT_VARIABLE _result
+                ERROR_VARIABLE _error
+            )
+
+            if(NOT _result EQUAL 0)
+                message(FATAL_ERROR \"Failed to create systemd symlink \${_link} -> \${_target}: \${_error}\")
+            endif()
+        ")
+    endfunction()
+
     # Configure systemd service file (uses CMAKE_INSTALL_FULL_* variables)
     configure_file(
         ${CMAKE_SOURCE_DIR}/data/lemond.service.in
@@ -1389,17 +1874,17 @@ if(UNIX AND NOT APPLE)
     install(FILES ${CMAKE_BINARY_DIR}/lemond.service
         DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
     )
-    # Create symlink in standard systemd search path only if not installing to /usr
+    # Create symlinks in standard systemd search paths only if not installing to /usr
     # (if prefix is /usr, the service is already in the standard location)
     if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-        install(CODE "
-            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/lib/systemd/system\")
-            execute_process(
-                COMMAND ${CMAKE_COMMAND} -E create_symlink
-                    ${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service
-                    \"\$ENV{DESTDIR}/usr/lib/systemd/system/lemond.service\"
-            )
-        ")
+        lemonade_install_systemd_symlink(
+            "/usr/lib/systemd/system/lemond.service"
+            "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service"
+        )
+        lemonade_install_systemd_symlink(
+            "/usr/lib/systemd/user/lemond.service"
+            "${CMAKE_INSTALL_PREFIX}/lib/systemd/user/lemond.service"
+        )
     endif()
 
     # Install sysusers.d snippet so the 'lemonade' system user is created
@@ -1588,7 +2073,11 @@ elseif(APPLE)
         set(EMBEDDABLE_PLATFORM "macos-x64")
     endif()
 else()
-    set(EMBEDDABLE_PLATFORM "ubuntu-x64")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+        set(EMBEDDABLE_PLATFORM "ubuntu-arm64")
+    else()
+        set(EMBEDDABLE_PLATFORM "ubuntu-x64")
+    endif()
 endif()
 
 set(EMBEDDABLE_DIR_NAME "lemonade-embeddable-${PROJECT_VERSION}-${EMBEDDABLE_PLATFORM}")
@@ -1626,6 +2115,9 @@ add_custom_target(embeddable
         "$<TARGET_FILE_DIR:lemond>/resources/backend_versions.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/vllm_model_config.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/defaults.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
@@ -1645,3 +2137,654 @@ add_custom_target(embeddable
 
 message(STATUS "Embeddable archive target available: cmake --build . --target embeddable")
 message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
+
+# ============================================================
+# C++ Unit Tests
+# ============================================================
+
+set(_ARCHIVE_PLATFORM_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_archive_platform.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ARCHIVE_PLATFORM_TEST_SRC}")
+    add_executable(test_archive_platform
+        test/cpp/test_archive_platform.cpp
+    )
+    target_include_directories(test_archive_platform PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    add_cpp_ci_test(ArchivePlatformTest CI ON COMMAND test_archive_platform)
+endif()
+
+# ProcessManager zombie detection and non-mutating reap contract.
+if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(_PROCESS_MANAGER_TEST_SRC
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_process_manager.cpp"
+    )
+    if(EXISTS "${_PROCESS_MANAGER_TEST_SRC}")
+        add_executable(test_process_manager
+            test/cpp/test_process_manager.cpp
+            src/cpp/server/utils/process_manager.cpp
+            src/cpp/server/utils/platform/process_linux.cpp
+        )
+        target_include_directories(test_process_manager PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+            ${CMAKE_CURRENT_BINARY_DIR}/include
+        )
+        find_package(Threads REQUIRED)
+        target_link_libraries(test_process_manager PRIVATE Threads::Threads)
+        add_cpp_ci_test(ProcessManagerTest CI ON COMMAND test_process_manager)
+    endif()
+endif()
+
+# FastFlowLM argument validation. Keep this test independent from the server
+set(_FLM_ARG_RESOLVER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_arg_resolver.cpp"
+)
+set(_FLM_ARG_RESOLVER_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/fastflowlm/flm_arg_resolver.cpp"
+)
+if(EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_ARG_RESOLVER_SRC}")
+    add_executable(test_flm_arg_resolver
+        test/cpp/test_flm_arg_resolver.cpp
+        src/cpp/server/backends/fastflowlm/flm_arg_resolver.cpp
+    )
+    target_include_directories(test_flm_arg_resolver PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    add_cpp_ci_test(FlmArgResolverTest CI OFF COMMAND test_flm_arg_resolver)
+endif()
+
+# Custom arg parsing helpers (header-only utility shared by all arg resolvers).
+set(_CUSTOM_ARGS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_custom_args.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CUSTOM_ARGS_TEST_SRC}")
+    add_executable(test_custom_args ${_CUSTOM_ARGS_TEST_SRC})
+    target_include_directories(test_custom_args PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    add_cpp_ci_test(CustomArgsTest CI ON COMMAND test_custom_args)
+endif()
+
+set(_DIR_WATCHER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_directory_watcher.cpp"
+)
+set(_DIR_WATCHER_LIB_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/directory_watcher.cpp"
+)
+if(EXISTS "${_DIR_WATCHER_TEST_SRC}" AND EXISTS "${_DIR_WATCHER_LIB_SRC}")
+    add_executable(test_directory_watcher
+        test/cpp/test_directory_watcher.cpp
+        src/cpp/server/directory_watcher.cpp
+    )
+    target_include_directories(test_directory_watcher PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    if(UNIX)
+        target_link_libraries(test_directory_watcher PRIVATE pthread)
+        target_link_options(test_directory_watcher PRIVATE -pthread)
+    endif()
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_cpp_ci_test(DirectoryWatcherTest CI ON COMMAND test_directory_watcher)
+endif()
+
+# GGUF capability detection (MTP / vision / tool-calling label logic).
+# Header-only unit under test, so no extra source files are required.
+set(_GGUF_CAPS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_capabilities.cpp"
+)
+if(EXISTS "${_GGUF_CAPS_TEST_SRC}")
+    add_executable(test_gguf_capabilities
+        test/cpp/test_gguf_capabilities.cpp
+    )
+    target_include_directories(test_gguf_capabilities PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_cpp_ci_test(GgufCapabilitiesTest CI OFF COMMAND test_gguf_capabilities)
+endif()
+
+# Model residency role/pool contract for router dependencies
+set(_MODEL_RESIDENCY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_residency.cpp"
+)
+if(EXISTS "${_MODEL_RESIDENCY_TEST_SRC}")
+    add_executable(test_model_residency
+        test/cpp/test_model_residency.cpp
+    )
+    target_include_directories(test_model_residency PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    include(CTest)
+    add_cpp_ci_test(ModelResidencyTest CI ON COMMAND test_model_residency)
+endif()
+
+# Pure version-resolution policy test (lemon::resolve_latest_pin). Header-only
+# logic, so the test links nothing beyond the standard library — regression
+# coverage for #2265 (fall back to the installed binary when the GitHub
+# "latest" lookup fails).
+set(_LATEST_FALLBACK_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_latest_version_fallback.cpp"
+)
+if(EXISTS "${_LATEST_FALLBACK_TEST_SRC}")
+    add_executable(test_latest_version_fallback
+        test/cpp/test_latest_version_fallback.cpp
+    )
+    target_include_directories(test_latest_version_fallback PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    include(CTest)
+    add_cpp_ci_test(LatestVersionFallbackTest CI ON COMMAND test_latest_version_fallback)
+endif()
+
+# Job engine pure core: the `when`/`branch` expression evaluator + reference
+# resolution, and step-graph validation (forward-only ⇒ no loops). Header-only,
+# so these link only nlohmann/json.
+set(_JOB_EXPR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_expr.cpp")
+if(EXISTS "${_JOB_EXPR_TEST_SRC}")
+    add_executable(test_job_expr test/cpp/test_job_expr.cpp)
+    target_include_directories(test_job_expr PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_job_expr PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_cpp_ci_test(JobExprTest CI ON COMMAND test_job_expr)
+endif()
+
+set(_JOB_GRAPH_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_graph.cpp")
+if(EXISTS "${_JOB_GRAPH_TEST_SRC}")
+    add_executable(test_job_graph test/cpp/test_job_graph.cpp)
+    target_include_directories(test_job_graph PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_job_graph PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_cpp_ci_test(JobGraphTest CI ON COMMAND test_job_graph)
+endif()
+
+# Backend install atomicity (staging + verified atomic swap).
+# Header-only unit under test, so no extra source files are required.
+set(_INSTALL_ATOMICITY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_install_atomicity.cpp"
+)
+if(EXISTS "${_INSTALL_ATOMICITY_TEST_SRC}")
+    add_executable(test_install_atomicity
+        test/cpp/test_install_atomicity.cpp
+    )
+    target_include_directories(test_install_atomicity PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_cpp_ci_test(InstallAtomicityTest CI OFF COMMAND test_install_atomicity)
+endif()
+
+# Routing engine contract surface (issue #2407). Header-only foundation: the
+# shared types/interfaces in routing_policy.h plus the fake ClassifierServices.
+# The test loads the L0a-L3 fixtures from the source tree via ROUTING_FIXTURE_DIR.
+set(_ROUTING_CONTRACT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_contract.cpp"
+)
+if(EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
+    add_executable(test_routing_policy_contract
+        test/cpp/test_routing_policy_contract.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_contract PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_contract PRIVATE nlohmann_json::nlohmann_json)
+    target_compile_definitions(test_routing_policy_contract PRIVATE
+        ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
+    )
+
+    include(CTest)
+    add_cpp_ci_test(RoutingPolicyContractTest CI ON COMMAND test_routing_policy_contract)
+endif()
+
+# Routing match evaluator (issue #2378): composite Condition nodes,
+# classifier-band leaf evaluation, MatchExpr compilation, trace and memoization.
+set(_ROUTING_EVALUATOR_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_evaluator.cpp"
+)
+if(EXISTS "${_ROUTING_EVALUATOR_TEST_SRC}")
+    add_executable(test_routing_policy_evaluator
+        test/cpp/test_routing_policy_evaluator.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_evaluator PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_evaluator PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingPolicyEvaluatorTest CI ON COMMAND test_routing_policy_evaluator)
+endif()
+
+# Routing classifier/condition registry (issue #2379): classifier JSON
+# instantiation, classifier leaf resolution, deterministic leaf dispatch seams.
+set(_ROUTING_REGISTRY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_registry.cpp"
+)
+if(EXISTS "${_ROUTING_REGISTRY_TEST_SRC}")
+    add_executable(test_routing_policy_registry
+        test/cpp/test_routing_policy_registry.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_registry PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_registry PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingPolicyRegistryTest CI ON COMMAND test_routing_policy_registry)
+endif()
+
+# Routing semantic_similarity classifier (issue #2381): max-cosine scoring over
+# reference phrases, reference-phrase embedding caching, inclusive band
+# boundaries, and on_error handling, all against a fake embedder.
+set(_ROUTING_SEMANTIC_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_semantic.cpp"
+)
+if(EXISTS "${_ROUTING_SEMANTIC_TEST_SRC}")
+    add_executable(test_routing_policy_semantic
+        test/cpp/test_routing_policy_semantic.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_semantic PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_semantic PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingPolicySemanticTest CI ON COMMAND test_routing_policy_semantic)
+endif()
+
+# LLM router classifier + routing.router desugaring (issue #2405): the L0a
+# on-ramp. Unit + parser + end-to-end tests against FakeClassifierServices.
+set(_ROUTING_LLM_ROUTER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_llm_router.cpp"
+)
+if(EXISTS "${_ROUTING_LLM_ROUTER_TEST_SRC}")
+    add_executable(test_routing_policy_llm_router
+        test/cpp/test_routing_policy_llm_router.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+    )
+    target_include_directories(test_routing_policy_llm_router PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_llm_router PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingPolicyLlmRouterTest CI ON COMMAND test_routing_policy_llm_router)
+endif()
+
+# Routing deterministic leaf conditions (issue #2380): keywords/regex/min_chars/
+# max_chars/has_*/metadata conditions and their leaf-factory map.
+set(_ROUTING_DETERMINISTIC_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_deterministic.cpp"
+)
+if(EXISTS "${_ROUTING_DETERMINISTIC_TEST_SRC}")
+    add_executable(test_routing_policy_deterministic
+        test/cpp/test_routing_policy_deterministic.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_deterministic PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_deterministic PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingPolicyDeterministicTest CI ON COMMAND test_routing_policy_deterministic)
+endif()
+
+# Routing engine assembly (issue #2382): RoutingPolicyEngine constructor rule
+# compilation, first-match-wins route(), default fail-open, trace opt-in,
+# on_error error paths, and concurrent route() consistency against a fake.
+set(_ROUTING_ENGINE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_engine.cpp"
+)
+if(EXISTS "${_ROUTING_ENGINE_TEST_SRC}")
+    add_executable(test_routing_policy_engine
+        test/cpp/test_routing_policy_engine.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_engine PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_engine PRIVATE nlohmann_json::nlohmann_json)
+    find_package(Threads REQUIRED)
+    target_link_libraries(test_routing_policy_engine PRIVATE Threads::Threads)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingPolicyEngineTest CI ON COMMAND test_routing_policy_engine)
+endif()
+
+# Routing policy parser (issue #2383): collection.router JSON -> RoutePolicy,
+# schema/parser key parity, component resolution, and validation errors.
+set(_ROUTING_PARSER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_parser.cpp"
+)
+if(EXISTS "${_ROUTING_PARSER_TEST_SRC}")
+    add_executable(test_routing_policy_parser
+        test/cpp/test_routing_policy_parser.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+    )
+    target_include_directories(test_routing_policy_parser PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_parser PRIVATE nlohmann_json::nlohmann_json)
+    target_compile_definitions(test_routing_policy_parser PRIVATE
+        ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
+        ROUTING_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/schemas/route_policy.schema.json"
+    )
+
+    include(CTest)
+    add_cpp_ci_test(RoutingPolicyParserTest CI ON COMMAND test_routing_policy_parser)
+endif()
+
+
+# Routing policy store (issue #2383): directory-backed policy loading and
+# DirectoryWatcher-triggered shared_ptr snapshot swaps.
+set(_ROUTING_STORE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_store.cpp"
+)
+if(EXISTS "${_ROUTING_STORE_TEST_SRC}")
+    add_executable(test_routing_policy_store
+        test/cpp/test_routing_policy_store.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+        src/cpp/server/routing_policy_store.cpp
+        src/cpp/server/directory_watcher.cpp
+    )
+    target_include_directories(test_routing_policy_store PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_store PRIVATE nlohmann_json::nlohmann_json)
+    find_package(Threads REQUIRED)
+    target_link_libraries(test_routing_policy_store PRIVATE Threads::Threads)
+    target_compile_definitions(test_routing_policy_store PRIVATE
+        ROUTING_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/routing"
+    )
+
+    include(CTest)
+    add_cpp_ci_test(RoutingPolicyStoreTest CI ON COMMAND test_routing_policy_store)
+endif()
+
+set(_ROUTE_DECISION_RESPONSE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_route_decision_response.cpp"
+)
+if(EXISTS "${_ROUTE_DECISION_RESPONSE_TEST_SRC}")
+    add_executable(test_route_decision_response
+        test/cpp/test_route_decision_response.cpp
+        src/cpp/server/route_decision_response.cpp
+    )
+    target_include_directories(test_route_decision_response PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_route_decision_response PRIVATE nlohmann_json::nlohmann_json)
+    if(USE_SYSTEM_HTTPLIB)
+        target_link_libraries(test_route_decision_response PRIVATE lemonade-httplib)
+    else()
+        target_link_libraries(test_route_decision_response PRIVATE httplib::httplib)
+    endif()
+
+    include(CTest)
+    add_cpp_ci_test(RouteDecisionResponseTest CI OFF COMMAND test_route_decision_response)
+endif()
+
+# Router back-compat conformance corpus (issue #2425): replays the golden
+# policy -> Decision cases under test/conformance/routing/ through the real
+# engine and asserts each emitted Decision equals its recorded expectation.
+set(_ROUTING_CONFORMANCE_CORPUS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_conformance_corpus.cpp"
+)
+if(EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
+    add_executable(test_routing_conformance_corpus
+        test/cpp/test_routing_conformance_corpus.cpp
+        src/cpp/server/route_decision_response.cpp
+        src/cpp/server/routing_classifier_services.cpp
+        src/cpp/server/thinking_controls.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+    )
+    target_include_directories(test_routing_conformance_corpus PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_conformance_corpus PRIVATE nlohmann_json::nlohmann_json)
+    if(USE_SYSTEM_HTTPLIB)
+        target_link_libraries(test_routing_conformance_corpus PRIVATE lemonade-httplib)
+    else()
+        target_link_libraries(test_routing_conformance_corpus PRIVATE httplib::httplib)
+    endif()
+    target_compile_definitions(test_routing_conformance_corpus PRIVATE
+        CONFORMANCE_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/conformance/routing"
+    )
+
+    include(CTest)
+    add_cpp_ci_test(RoutingConformanceCorpusTest CI ON COMMAND test_routing_conformance_corpus)
+endif()
+
+# ModelManager collection validation for collection.router registration:
+# /pull-style validation rejects malformed routing and preserves the routing
+# block in ModelInfo::extras after user-model registration.
+set(_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_manager_collection_validation.cpp"
+)
+if(EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
+    add_executable(test_model_manager_collection_validation
+        test/cpp/test_model_manager_collection_validation.cpp
+    )
+    target_link_libraries(test_model_manager_collection_validation PRIVATE lemonade-server-core)
+    add_dependencies(test_model_manager_collection_validation copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelManagerCollectionValidationTest CI ON COMMAND test_model_manager_collection_validation)
+endif()
+
+# Remote model registry source parsing, cache namespaces, snapshot fingerprints,
+# and persistence of ModelScope provenance in ModelInfo.
+set(_MODEL_REGISTRY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_registry.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_REGISTRY_TEST_SRC}")
+    add_executable(test_model_registry test/cpp/test_model_registry.cpp)
+    target_link_libraries(test_model_registry PRIVATE lemonade-server-core)
+    add_dependencies(test_model_registry copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelRegistryTest CI OFF COMMAND test_model_registry)
+endif()
+
+# Router-backed ClassifierServices wiring (issue #2384): binds the pure engine's
+# embed/run_classifier/chat lambdas to Router-style JSON calls.
+set(_ROUTING_CLASSIFIER_SERVICES_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_classifier_services.cpp"
+)
+if(EXISTS "${_ROUTING_CLASSIFIER_SERVICES_TEST_SRC}")
+    add_executable(test_routing_classifier_services
+        test/cpp/test_routing_classifier_services.cpp
+        src/cpp/server/routing_classifier_services.cpp
+        src/cpp/server/thinking_controls.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_classifier_services PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_classifier_services PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingClassifierServicesTest CI ON COMMAND test_routing_classifier_services)
+endif()
+
+# Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
+# Covers head_count_kv_per_layer, sliding_window_pattern, SWA precise weighted sum,
+# full_attention_interval exact count, and scalar fallback paths.
+set(_AUTO_TUNE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_auto_tune.cpp"
+)
+if(EXISTS "${_AUTO_TUNE_TEST_SRC}")
+    add_executable(test_auto_tune
+        test/cpp/test_auto_tune.cpp
+    )
+    target_include_directories(test_auto_tune PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    include(CTest)
+    add_cpp_ci_test(AutoTuneTest CI OFF COMMAND test_auto_tune)
+endif()
+
+set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")
+if(EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
+    add_executable(test_telemetry_helpers test/cpp/test_telemetry_helpers.cpp)
+    target_link_libraries(test_telemetry_helpers PRIVATE lemonade-server-core)
+    add_cpp_ci_test(TelemetryHelpersTest CI OFF COMMAND test_telemetry_helpers)
+endif()
+
+set(_SUSPEND_INHIBITOR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_suspend_inhibitor.cpp")
+if(EXISTS "${_SUSPEND_INHIBITOR_TEST_SRC}")
+    add_executable(test_suspend_inhibitor test/cpp/test_suspend_inhibitor.cpp)
+    target_link_libraries(test_suspend_inhibitor PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SuspendInhibitorTest CI OFF COMMAND test_suspend_inhibitor)
+endif()
+
+set(_CONFIG_MIGRATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_migration.cpp")
+if(EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
+    add_executable(test_config_migration test/cpp/test_config_migration.cpp)
+    target_link_libraries(test_config_migration PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigMigrationTest CI OFF COMMAND test_config_migration)
+endif()
+
+set(_CONFIG_TELEMETRY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_telemetry.cpp")
+if(EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
+    add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
+    target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigTelemetryTest CI OFF COMMAND test_config_telemetry)
+endif()
+
+# ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
+# external-ROCm detection that lets Lemonade skip the bundled TheRock download.
+set(_ROCM_ROOT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_root_resolution.cpp")
+if(EXISTS "${_ROCM_ROOT_TEST_SRC}")
+    add_executable(test_rocm_root_resolution test/cpp/test_rocm_root_resolution.cpp)
+    target_link_libraries(test_rocm_root_resolution PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RocmRootResolutionTest CI OFF COMMAND test_rocm_root_resolution)
+endif()
+
+set(_GPU_ENV_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_gpu_env.cpp")
+if(EXISTS "${_GPU_ENV_TEST_SRC}")
+    add_executable(test_backend_utils_gpu_env test/cpp/test_backend_utils_gpu_env.cpp)
+    target_link_libraries(test_backend_utils_gpu_env PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendUtilsGpuEnvTest CI OFF COMMAND test_backend_utils_gpu_env)
+endif()
+
+set(_NETWORK_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_network_utils.cpp")
+if(EXISTS "${_NETWORK_UTILS_TEST_SRC}")
+    add_executable(test_network_utils test/cpp/test_network_utils.cpp)
+    target_link_libraries(test_network_utils PRIVATE lemonade-server-core)
+    add_cpp_ci_test(NetworkUtilsTest CI ON COMMAND test_network_utils)
+endif()
+
+set(_URL_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_url_utils.cpp")
+if(EXISTS "${_URL_UTILS_TEST_SRC}")
+    add_executable(test_url_utils test/cpp/test_url_utils.cpp)
+    target_link_libraries(test_url_utils PRIVATE lemonade-server-core)
+    add_cpp_ci_test(UrlUtilsTest CI OFF COMMAND test_url_utils)
+endif()
+
+# vLLM CDNA gating: the vllm descriptor support row + asset-family resolution for
+# AMD Instinct (gfx942), alongside the existing RDNA families.
+set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gating.cpp")
+if(EXISTS "${_VLLM_CDNA_TEST_SRC}")
+    add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
+    target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
+    add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
+endif()
+
+# llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is
+# published, so the shared Windows/Linux support row must not advertise Windows
+# or nightly installs for gfx950.
+set(_LLAMACPP_GFX950_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_gfx950_gating.cpp")
+if(EXISTS "${_LLAMACPP_GFX950_TEST_SRC}")
+    add_executable(test_llamacpp_gfx950_gating test/cpp/test_llamacpp_gfx950_gating.cpp)
+    target_link_libraries(test_llamacpp_gfx950_gating PRIVATE lemonade-server-core)
+    add_cpp_ci_test(LlamacppGfx950GatingTest CI OFF COMMAND test_llamacpp_gfx950_gating)
+endif()
+
+set(_HTTP_CLIENT_SECURITY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_security.cpp")
+if(EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
+    add_executable(test_http_client_security test/cpp/test_http_client_security.cpp)
+    target_link_libraries(test_http_client_security PRIVATE lemonade-server-core)
+    add_cpp_ci_test(HttpClientSecurityTest CI OFF COMMAND test_http_client_security)
+endif()
+
+set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")
+if(EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
+    add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
+    target_link_libraries(test_cloud_discovery_policy PRIVATE lemonade-server-core)
+    add_cpp_ci_test(CloudDiscoveryPolicyTest CI OFF COMMAND test_cloud_discovery_policy)
+endif()
+
+set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
+if(EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
+    add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
+    target_link_libraries(test_origin_utils PRIVATE lemonade-server-core)
+    add_cpp_ci_test(OriginUtilsTest CI ON COMMAND test_origin_utils)
+endif()
+
+if(BUILD_TESTING)
+    add_cpp_ci_test(HttplibDetection_config_only CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_config_only -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=config_only -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_cpp_ci_test(HttplibDetection_old_header CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_old_header -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=old_header -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_cpp_ci_test(HttplibDetection_modern_header CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_modern_header -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=modern_header -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_cpp_ci_test(HttplibDetection_openssl_target CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_openssl_target -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=openssl_target -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_cpp_ci_test(HttplibDetection_disabled_generator_expression CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_disabled_generator_expression -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=disabled_generator_expression -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_cpp_ci_test(HttplibDetection_too_old_config CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_too_old_config -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=too_old_config -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_cpp_ci_test(HttplibDetection_compiled_no_tls CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_compiled_no_tls -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=compiled_no_tls -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_cpp_ci_test(HttplibDetection_too_old_config_multiarch CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_too_old_config_multiarch -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=too_old_config_multiarch -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_cpp_ci_test(HttplibDetection_header_only_pkgconfig CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_header_only_pkgconfig -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=header_only_pkgconfig -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_cpp_ci_test(HttplibDetection_cli_composition_mbedtls_isolation CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_cli_composition_mbedtls_isolation -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=cli_composition_mbedtls_isolation -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_cpp_ci_test(HttplibDetection_custom_httplib_dir_precheck CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_custom_httplib_dir_precheck -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=custom_httplib_dir_precheck -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    add_cpp_ci_test(HttplibDetection_polluted_target_fatal CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_polluted_target_fatal -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=polluted_target_fatal -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+    set_tests_properties(HttplibDetection_polluted_target_fatal PROPERTIES WILL_FAIL TRUE)
+    add_cpp_ci_test(HttplibDetection_wolfssl_target CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_wolfssl_target -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=wolfssl_target -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+endif()

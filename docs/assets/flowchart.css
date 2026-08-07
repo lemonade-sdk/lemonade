@@ -1,0 +1,771 @@
+/* ============================================================================
+   Flowchart animation framework — appearance
+   ----------------------------------------------------------------------------
+   Styles for the glowing-dot router diagrams rendered by flowchart.js.
+   This file owns APPEARANCE only (colors, blur, stroke widths); the animation
+   TIMING is computed in flowchart.js (SMIL keyTimes cannot live in CSS).
+   ============================================================================ */
+.hp-router-demo {
+  position: relative;
+  height: 420px;
+  padding: 1rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(252, 216, 70, 0.16), transparent 42%),
+    radial-gradient(circle at 18% 50%, rgba(255, 255, 255, 0.06), transparent 24%),
+    linear-gradient(145deg, #26231a, #1b1810);
+}
+
+.hp-router-flowchart {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.hp-router-wire {
+  fill: none;
+  stroke: rgba(252, 216, 70, 0.16);
+  stroke-width: 1.35;
+  stroke-linecap: round;
+}
+
+.hp-router-flow-segment {
+  fill: none;
+  stroke-linecap: round;
+}
+
+/* Wire trail = a filament heating up as the dot passes: a crisp bright core
+   thread with only a soft, narrow warm bleed to the sides (the halo). Keep the
+   halo restrained — it should read as residual heat, not a blaze. */
+.hp-router-flow-halo {
+  stroke: rgba(252, 216, 70, 0.2);
+  stroke-width: 7;
+  filter: url(#hpRouterGlow);
+}
+
+.hp-router-flow-core {
+  stroke: #ffe76a;
+  stroke-width: 2.6;
+  filter: url(#hpRouterGlow);
+}
+
+/* Pill = a frosted-glass lampshade lit from within by the dot: a gentle,
+   diffuse warm fill, not a saturated panel. The diffusion comes from the
+   wide #hpRouterBloom blur; keep the alpha low so it stays a soft glow. */
+.hp-router-pill-glow {
+  fill: rgba(255, 228, 150, 0.28);
+  filter: url(#hpRouterBloom);
+}
+
+.hp-router-traveler-dot {
+  fill: #fff8c2;
+  stroke: rgba(252, 216, 70, 0.92);
+  stroke-width: 2.2;
+  filter: url(#hpRouterGlow);
+}
+
+/* Model pill: an SVG rect, translucent enough that the glowing dot behind it
+   reads as a soft frosted glow (no backdrop-filter needed). */
+.hp-router-node {
+  fill: rgba(26, 25, 20, 0.46);
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 1;
+}
+
+.hp-router-node-label {
+  fill: #f8f3da;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+/* ---- Request / response artifacts -------------------------------------
+   The request/response pill is ONE persistent frosted rect (.hp-router-iopill)
+   that morphs between pill size and artifact size -- same element, same style,
+   so the container never visually changes mode. The per-route content (prompt,
+   waveform, image, reply, code-plan glyph) rides on top. Pure appearance; the
+   expand/reveal timing is generated in flowchart.js. */
+/* Near-opaque fill so the request/response pill OCCLUDES the travelling dot
+   (it holds the artifact, so the dot should read as behind it -- unlike the
+   translucent model pills, which the dot shines through). */
+.hp-router-iopill {
+  fill: rgba(28, 27, 21, 0.93);
+  stroke: rgba(255, 255, 255, 0.13);
+  stroke-width: 1;
+}
+
+.hp-router-iopill-label {
+  fill: #f8f3da;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.hp-router-art-tag {
+  fill: rgba(252, 216, 70, 0.72);
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.hp-router-art-prompt {
+  fill: #efe9d3;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-style: italic;
+}
+
+.hp-router-art-out {
+  fill: #f4efdc;
+  font-family: var(--font-body);
+  font-size: 16px;
+}
+
+.hp-router-art-glyph {
+  fill: #ffe76a;
+  font-family: var(--font-mono);
+  font-size: 38px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.hp-router-art-glyph-label {
+  fill: #f4efdc;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.hp-router-art-badge rect {
+  fill: rgba(252, 216, 70, 0.13);
+  stroke: rgba(252, 216, 70, 0.28);
+  stroke-width: 0.75;
+}
+
+.hp-router-art-badge text {
+  fill: #ffe9a8;
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* Audio-input waveform: SVG bars (each pulsed by its own SMIL animation,
+   gated visible by the artifact group's opacity). */
+.hp-router-wavebar {
+  fill: #fcd846;
+  opacity: 0.85;
+}
+
+/* ---- Hybrid "cloud and server routing" --------------------------------
+   Tier cards (icon + name + value sub-line + optional badge). The .hp-router-hub
+   styles below drive the optional smart-router node (gated on `config.hub` in
+   flowchart.js; the current hybrid demo fans straight from the prompt and does
+   not use it). Appearance only; geometry/timing live in flowchart.js. Reuses
+   .hp-router-node for the frosted fill and .hp-cap-glyph for the pure-SVG icons. */
+.hp-router-tier {
+  fill: rgba(30, 28, 21, 0.62);
+}
+
+.hp-router-tier-name {
+  fill: #f8f3da;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.hp-router-tier-sub {
+  fill: rgba(244, 239, 220, 0.62);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.hp-router-tier-badge rect {
+  fill: rgba(252, 216, 70, 0.16);
+  stroke: rgba(252, 216, 70, 0.34);
+  stroke-width: 0.75;
+}
+
+.hp-router-tier-badge text {
+  fill: #ffe9a8;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+/* The router hub: a touch warmer than the tier cards so it reads as the active
+   decision point the three branches fan out of. */
+.hp-router-hub {
+  fill: rgba(40, 36, 24, 0.7);
+  stroke: rgba(252, 216, 70, 0.3);
+}
+
+.hp-router-hub-label {
+  fill: rgba(252, 216, 70, 0.82);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The hybrid demo renders into a wider (780-unit) viewBox than omni, so it is
+   scaled down more to fit the same stage. Scale its label type up here so the
+   apparent on-screen size matches the rest of the router diagrams. The prompt
+   text is sized/line-spaced inline from flowchart.js (so font and line-height
+   stay coherent), and is upright -- not italic -- for a clean, normalized look. */
+.hp-router-hybrid-demo .hp-router-art-prompt { font-style: normal; }
+.hp-router-hybrid-demo .hp-router-iopill-label { font-size: 20px; }
+.hp-router-hybrid-demo .hp-router-art-glyph { font-size: 46px; }
+.hp-router-hybrid-demo .hp-router-art-glyph-label { font-size: 18px; }
+.hp-router-hybrid-demo .hp-router-art-tag { font-size: 11px; }
+
+/* Response visualizations (drawn, not typed). Local = a ticked action-item
+   checklist (fresh-green checks read as "captured"); on-prem = a scanned
+   contract whose flagged clauses pop in red. Bars are abstract "text lines" so
+   the graphic is language-free and fits the small response area. */
+.hp-router-bar { fill: rgba(244, 239, 220, 0.18); }
+.hp-router-bar-flagged { fill: rgba(255, 122, 102, 0.26); }
+
+.hp-router-check-ring { fill: none; stroke: rgba(126, 224, 138, 0.45); stroke-width: 1.6; }
+.hp-router-check {
+  fill: none;
+  stroke: #7ee08a;
+  stroke-width: 2.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hp-router-flag { fill: #ff6a5a; }
+.hp-router-flag-pole { stroke: rgba(255, 150, 132, 0.85); stroke-width: 1.6; stroke-linecap: round; }
+
+/* ---- Spawn diagram ("Start lemond subprocess") -------------------------
+   Rendered inside the unified .hp-app-window chrome (dark theme) -- same window
+   as every other demo. The SVG body ignites a lemon-slice (lemond) whose six
+   segments hold the AI capabilities, lighting up in a cascade. Plays once and
+   freezes. */
+.hp-spawn-svg {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: block;
+}
+
+.hp-spawn-callbg { fill: rgba(252, 216, 70, 0.16); }
+
+.hp-spawn-call {
+  fill: #e9e4cf;
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+.hp-spawn-call .run { fill: #ffd84a; }
+.hp-spawn-call .kw { fill: #c4b5fd; font-weight: 700; }
+
+.hp-spawn-spark {
+  fill: #fff8c2;
+  stroke: rgba(252, 216, 70, 0.92);
+  stroke-width: 2;
+  filter: url(#hpRouterGlow);
+}
+
+.hp-spawn-flash {
+  fill: none;
+  stroke: rgba(255, 244, 190, 0.9);
+  stroke-width: 2.5;
+  filter: url(#hpRouterGlow);
+}
+
+/* lemond as a lemon slice: glowing rind, pale flesh, segment membranes, hub. */
+.hp-lemon-rind {
+  fill: none;
+  stroke: #fcd846;
+  stroke-width: 13;
+  stroke-linecap: round;
+  filter: url(#hpRouterGlow);
+}
+
+.hp-lemon-flesh {
+  fill: rgba(255, 243, 190, 0.12);
+  stroke: rgba(252, 216, 70, 0.28);
+  stroke-width: 1;
+}
+
+.hp-lemon-membrane {
+  stroke: rgba(255, 243, 200, 0.32);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.hp-lemon-hub {
+  fill: rgba(252, 216, 70, 0.6);
+  filter: url(#hpRouterGlow);
+}
+
+/* Capability glyphs: hand-drawn SVG geometry (NOT icon-font <text>), so they are
+   correct-by-construction across Chrome/WebKit/Firefox -- no ligature width,
+   baseline, or text-anchor divergence. Each glyph is centred on the origin and
+   positioned by a group transform (see capGlyph in flowchart.js). Outlines/lines
+   inherit the stroke here; solid nodes opt into a fill via .hp-cap-dot. */
+.hp-cap-glyph {
+  fill: none;
+  stroke: #ffe76a;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hp-cap-glyph .hp-cap-dot {
+  fill: #ffe76a;
+  stroke: none;
+}
+
+/* ---- Deploy-everywhere diagram (dev "Deploy everywhere") -----------------
+   On a dark stage (same surface as the Smart Router / "The stack" demos, not an
+   app-window chrome). A gallery of supported device/OS combos in three different
+   form factors: "Your App" (a window with a lemon mark + tagline) fans wires to a
+   Windows laptop, a macOS all-in-one, and a Linux monitor (its screen carries an
+   even 2x2 distro-logo grid). A dot cascades to each and the machine powers on:
+   screen backlight + OS logos brighten, a gold frame lights, labels brighten.
+   Pure SVG; appearance only here, timing in flowchart.js. */
+.hp-deploy-demo {
+  position: relative;
+  height: 420px;
+  padding: 1rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(252, 216, 70, 0.14), transparent 46%),
+    linear-gradient(145deg, #26231a, #1b1810);
+}
+.hp-deploy-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* "Your App" window -- the wire origin. The title bar names the APP; the body
+   holds the embedded "lemond" component (lemon mark + gold wordmark).
+   A near-opaque dark fill (NOT translucent) so the stage's top gold-radial glow
+   is occluded behind it -- otherwise the lemon's glow blooms into that bright
+   wash. This gives the lemon the same dark backdrop as the Engines & Hardware
+   slide, so the two marks read identically. */
+.hp-deploy-app rect {
+  fill: rgba(22, 20, 13, 0.92);
+  stroke: rgba(248, 243, 218, 0.5);
+  stroke-width: 1.5;
+}
+.hp-deploy-app line { stroke: rgba(248, 243, 218, 0.28); stroke-width: 1; }
+/* Direct child only: the title-bar dots. A bare `.hp-deploy-app circle` would
+   also win over the nested lemon's .hp-stack-lemon-rind/-hub (same specificity
+   class, but this descendant rule outranks them), filling the lemon's interior
+   and hub with this pale colour -- which read as the "washed" lemon. */
+.hp-deploy-app > circle { fill: rgba(248, 243, 218, 0.5); }
+/* Title-bar app name. */
+.hp-deploy-apptitle {
+  fill: #f4efdc;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+}
+/* The embedded component: "lemond" gold wordmark (matches the stack slide) + sub. */
+.hp-deploy-lemond {
+  fill: #ffe76a;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 900;
+}
+.hp-deploy-appsub {
+  fill: rgba(248, 243, 218, 0.55);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* macOS logo art is black; force it white so it reads on the dark/lit screen. */
+.hp-deploy-logo-white { filter: brightness(0) invert(1); }
+
+/* Wires fanning to each machine + the dot that cascades down them. */
+.hp-deploy-wire { fill: none; stroke: rgba(252, 216, 70, 0.18); stroke-width: 1.5; }
+.hp-deploy-dot {
+  fill: #fff8c2;
+  stroke: rgba(252, 216, 70, 0.92);
+  stroke-width: 2;
+  filter: url(#hpRouterGlow);
+}
+
+/* Resting device outline (the "off" machine): screen border + form-factor base. */
+.hp-deploy-dev rect,
+.hp-deploy-dev path,
+.hp-deploy-dev line {
+  fill: none;
+  stroke: rgba(248, 243, 218, 0.55);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* OS name under each device. */
+.hp-deploy-osname {
+  fill: rgba(248, 243, 218, 0.92);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+/* ---- Hardware layer: four vendor pills the OSes branch down to. ------------- */
+/* Weighty pill/card: a solid frosted surface with a clear border. */
+.hp-deploy-pill {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(248, 243, 218, 0.34);
+  stroke-width: 1.3;
+}
+/* Rim that lights as the sweep passes (a smooth wave, not a per-device flash). */
+.hp-deploy-pill-glow {
+  fill: none;
+  stroke: #ffe76a;
+  stroke-width: 1.8;
+  filter: url(#hpRouterGlow);
+}
+/* The CPU/chip glyph inside each pill (geometry; group sets stroke, die opts in). */
+.hp-deploy-chip {
+  fill: none;
+  stroke: rgba(248, 243, 218, 0.72);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hp-deploy-chip-die { fill: rgba(252, 216, 70, 0.55); stroke: none; }
+.hp-deploy-vendorname {
+  fill: rgba(248, 243, 218, 0.92);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+/* ---- Backends: "The stack" + "Ever-expanding models" (dev persona) --------
+   The stack proves lemond is the abstraction layer (Your App -> lemond module
+   over engines-on-devices); it uses the standard dark app-window chrome (titled
+   "Your App"), so its SVG body is a flex child of the window like the spawn /
+   private-stack demos. The models diagram is a dark stage with a Your App window
+   receiving models that rise from the engines below. Pure SVG + SMIL; appearance
+   only here, timing in flowchart.js. */
+.hp-stack-svg { flex: 1 1 auto; width: 100%; min-height: 0; display: block; }
+
+.hp-models-demo {
+  position: relative;
+  height: 420px;
+  padding: 1rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(252, 216, 70, 0.14), transparent 46%),
+    linear-gradient(145deg, #26231a, #1b1810);
+}
+.hp-models-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.hp-stack-wire { fill: none; stroke: rgba(252, 216, 70, 0.3); stroke-width: 1.5; }
+
+/* The dev's own code, calling lemond across its API. */
+.hp-stack-code rect {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(248, 243, 218, 0.32);
+  stroke-width: 1.2;
+}
+.hp-stack-codelabel {
+  fill: rgba(248, 243, 218, 0.78);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 600;
+}
+.hp-stack-apisub {
+  fill: rgba(255, 231, 138, 0.7);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+/* lemond module: the part of the app the dev embeds (engines over devices). */
+.hp-stack-slab {
+  fill: rgba(255, 255, 255, 0.025);
+  stroke: rgba(252, 216, 70, 0.18);
+  stroke-width: 1.2;
+}
+.hp-stack-wordmark {
+  fill: #ffe76a;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 900;
+}
+.hp-stack-bandlabel {
+  fill: rgba(248, 243, 218, 0.4);
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+/* lemond mark: a small lemon slice (rind + segment membranes + hub). */
+.hp-stack-lemon-rind { fill: none; stroke: #fcd846; stroke-width: 2.2; filter: url(#hpRouterGlow); }
+.hp-stack-lemon-seg { stroke: rgba(255, 243, 200, 0.5); stroke-width: 1; }
+.hp-stack-lemon-hub { fill: rgba(252, 216, 70, 0.7); }
+
+/* Resting engine/device chips = the visible breadth. */
+.hp-stack-chip rect {
+  fill: rgba(26, 25, 20, 0.5);
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 1;
+}
+.hp-stack-chip-name {
+  fill: rgba(248, 243, 218, 0.82);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+}
+.hp-stack-chip-sub {
+  fill: rgba(248, 243, 218, 0.45);
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+/* Lit overlay + pathway + travelling dot: lemond selecting an engine->device. */
+.hp-stack-glow rect {
+  fill: rgba(255, 228, 150, 0.12);
+  stroke: #ffe76a;
+  stroke-width: 1.8;
+  filter: url(#hpRouterGlow);
+}
+/* fill/stroke are driven per-frame by SMIL (request-yellow -> response-green),
+   so they are set as presentation attributes on the circle, not here. */
+.hp-stack-dot {
+  stroke-width: 2;
+  filter: url(#hpRouterGlow);
+}
+/* Glowing trace the dot leaves behind (code -> engine -> device), drawn as the
+   request travels out and faded once the response is on its way home. */
+.hp-stack-trace {
+  fill: none;
+  stroke: #ffe27a;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: url(#hpRouterGlow);
+}
+/* "Execute" ripple emanating from the device chip during inference. */
+.hp-stack-exec-ring {
+  fill: none;
+  stroke: #ffe76a;
+  stroke-width: 2;
+  filter: url(#hpRouterGlow);
+}
+
+/* "Ever-expanding models": a left-to-right assembly line. A model chip is
+   released (NEW) -> an engine pops up and stamps it (check = support added) ->
+   it docks into Your App. Numbered zone headers label the three stages. */
+.hp-flow-num { fill: #ffd84a; }
+.hp-flow-numtext {
+  fill: #11110d;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 900;
+}
+.hp-flow-zonelabel {
+  fill: rgba(248, 243, 218, 0.82);
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+/* The conveyor rail, flow chevrons, and the upstream "release" source. */
+.hp-flow-rail { stroke: rgba(252, 216, 70, 0.22); stroke-width: 1.5; }
+.hp-flow-chevron {
+  fill: none;
+  stroke: rgba(252, 216, 70, 0.5);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hp-flow-source circle {
+  fill: rgba(255, 228, 150, 0.12);
+  stroke: #ffe76a;
+  stroke-width: 1.6;
+  filter: url(#hpRouterGlow);
+}
+.hp-flow-source path { stroke: #ffe76a; stroke-width: 1.6; stroke-linecap: round; }
+
+/* Your App panel (the dock) + empty slots that light as models land. */
+.hp-flow-app rect {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(248, 243, 218, 0.5);
+  stroke-width: 1.5;
+}
+.hp-flow-app circle { fill: rgba(248, 243, 218, 0.5); }
+.hp-flow-slot {
+  fill: rgba(255, 255, 255, 0.02);
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.hp-flow-slot-glow {
+  fill: rgba(255, 228, 150, 0.1);
+  stroke: #ffe76a;
+  stroke-width: 1.6;
+  filter: url(#hpRouterGlow);
+}
+
+/* The travelling model chip + its NEW badge + its support check. */
+.hp-flow-chip {
+  fill: rgba(40, 38, 24, 0.96);
+  stroke: #ffe76a;
+  stroke-width: 1.4;
+  filter: url(#hpRouterGlow);
+}
+.hp-flow-chip-label {
+  fill: #fff4be;
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.hp-flow-new rect { fill: #ffd84a; }
+.hp-flow-new text {
+  fill: #11110d;
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+.hp-flow-check circle { fill: #ffd84a; filter: url(#hpRouterGlow); }
+.hp-flow-check path {
+  fill: none;
+  stroke: #11110d;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The engine node on the rail that the model flies into, + the soft catch flash. */
+.hp-flow-engine rect {
+  fill: rgba(40, 38, 24, 0.96);
+  stroke: #ffe76a;
+  stroke-width: 1.4;
+  filter: url(#hpRouterGlow);
+}
+.hp-flow-engine-label {
+  fill: #fff4be;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+}
+.hp-flow-merge { fill: rgba(255, 228, 150, 0.22); filter: url(#hpRouterGlow); }
+
+/* The "engine + model" package that leaves the engine and docks in the app. */
+.hp-flow-pkg {
+  fill: rgba(40, 38, 24, 0.97);
+  stroke: #ffe76a;
+  stroke-width: 1.4;
+  filter: url(#hpRouterGlow);
+}
+.hp-flow-pkg-model {
+  fill: #fff4be;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 800;
+}
+.hp-flow-pkg-via {
+  fill: rgba(248, 243, 218, 0.6);
+  font-family: var(--font-display);
+  font-size: 8.5px;
+  font-weight: 600;
+}
+
+/* "Serve the whole household" -- a sleek Lemonade server on a LIGHT stage, wired
+   down to three household devices (laptop/server/phone); a warm pulse cascades
+   down each wire and the device screen lights up on arrival. Same hub-and-spoke
+   layout as "Deploy everywhere". */
+.hp-household-demo {
+  position: relative;
+  height: 420px;
+  padding: 1rem;
+  overflow: hidden;
+  /* Same light stage as the featured-apps board (.hp-appboard) -- reused, not
+     reinvented, so the two slides share one light theme. */
+  background:
+    radial-gradient(circle at 82% 6%, rgba(252, 216, 70, 0.22), transparent 44%),
+    linear-gradient(160deg, #fffdf4, #f5f3e8);
+}
+
+.hp-household-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.hh-wire {
+  fill: none;
+  stroke: rgba(214, 150, 36, 0.5);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+/* Server emblem card (the wire origin). */
+.hh-card {
+  fill: #ffffff;
+  stroke: rgba(40, 34, 18, 0.1);
+  stroke-width: 1;
+}
+.hh-card-title {
+  fill: #2a2419;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+}
+.hh-card-ip {
+  fill: #a08f5e;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.hh-srv-glyph rect,
+.hh-srv-glyph line {
+  fill: none;
+  stroke: rgba(58, 50, 30, 0.62);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.hh-srv-led { fill: #f5a623; }
+
+/* Devices: stroked geometry, screens that warm up, soft contact shadows. */
+.hh-shadow { fill: rgba(60, 48, 16, 0.14); }
+/* Clean radial falloff (no blur filter) -- a soft halo, not a murky cloud. */
+.hh-halo { fill: url(#hhHalo); }
+
+.hh-dev rect,
+.hh-dev line,
+.hh-dev path {
+  fill: none;
+  stroke: rgba(54, 47, 30, 0.66);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hh-led { fill: rgba(54, 47, 30, 0.42); stroke: none; }
+.hh-screen { fill: #ffffff; }
+.hh-screen-warm { fill: url(#hhScreenOn); }
+.hh-screen-frame {
+  fill: none;
+  stroke: #f7ad33;
+  stroke-width: 1.7;
+}
+
+.hh-label {
+  fill: rgba(44, 38, 26, 0.84);
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+/* The cascading pulse: a small crisp gradient core, a tight soft glow, and a
+   bright spark highlight -- a refined point of light, not a big blur. */
+.hh-dot-halo { fill: rgba(255, 170, 30, 0.5); filter: url(#hhGlow); }
+.hh-dot-core { fill: url(#hhDotFill); }
+.hh-dot-spark { fill: #fff7e0; }

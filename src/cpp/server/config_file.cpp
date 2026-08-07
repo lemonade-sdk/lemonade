@@ -1,7 +1,9 @@
 #include "lemon/config_file.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 
@@ -26,9 +28,25 @@ static json load_json_file(const fs::path& path) {
     }
 }
 
-json ConfigFile::get_defaults() {
+json ConfigFile::base_defaults() {
     json defaults = load_json_file(utils::path_from_utf8(
         utils::get_resource_path("resources/defaults.json")));
+
+    // Seed each backend's config.json section from its descriptor.
+    // resources/defaults.json is the generated, committed mirror; re-seeding here
+    // keeps the descriptor authoritative even if that file lags.
+    for (const auto* d : backends::all_descriptors()) {
+        json block = d->config_defaults();
+        if (!block.empty()) {
+            defaults[d->effective_config_section()] = block;
+        }
+    }
+
+    return defaults;
+}
+
+json ConfigFile::get_defaults() {
+    json defaults = base_defaults();
 
 #ifndef _WIN32
     fs::path distro_defaults = "/usr/share/lemonade/defaults.json";
@@ -36,6 +54,12 @@ json ConfigFile::get_defaults() {
         defaults = utils::JsonUtils::merge(defaults, load_json_file(distro_defaults));
     }
 #endif
+
+    // Packagers on non-FHS distros (Nix, Guix) can't write the /usr/share
+    // file above; this seeds the same defaults from any path.
+    if (const char* env = std::getenv("LEMONADE_DEFAULTS_PATH"); env && *env && fs::exists(env)) {
+        defaults = utils::JsonUtils::merge(defaults, load_json_file(env));
+    }
 
     return defaults;
 }
@@ -100,7 +124,28 @@ json ConfigFile::load(const std::string& cache_dir) {
         return defaults;
     }
 
+    // Deep-merge: user values override defaults, missing fields filled from defaults.
     json merged = utils::JsonUtils::merge(defaults, loaded);
+
+    // Capture the original config version BEFORE merge, so that migration
+    // can see past the defaults-injected version number.
+    int original_version = config_get_version(loaded);
+
+    // Apply migrations if the config is older than the current version.
+    // The inline config_migrate() handles version bumping and field removal.
+    bool migrated = config_migrate(merged, defaults, original_version);
+    if (migrated) {
+        // Log migration details for user visibility.
+        if (original_version < config_get_version(defaults)) {
+            if (loaded.contains("ctx_size") && loaded["ctx_size"].is_number_integer()
+                && loaded["ctx_size"].get<int>() == 4096) {
+                LOG(INFO) << "Migrating config: ctx_size 4096 -> -1 (auto-tune enabled)"
+                          << std::endl;
+            }
+        }
+        save(cache_dir, merged);
+    }
+
     return merged;
 }
 
@@ -137,5 +182,6 @@ void ConfigFile::save(const std::string& cache_dir, const json& config) {
         fs::remove(temp_path);
     }
 }
+
 
 } // namespace lemon

@@ -4,7 +4,7 @@ This file provides guidance to agent driven code reviews when working with this 
 
 ## Project Overview
 
-Lemonade is a local LLM server providing GPU and NPU acceleration for running large language models on consumer hardware. It exposes OpenAI-compatible, Ollama-compatible, and Anthropic-compatible REST APIs, plus a WebSocket Realtime API. It supports multiple backends: llama.cpp, FastFlowLM, RyzenAI, whisper.cpp, stable-diffusion.cpp, and Kokoro TTS.
+Lemonade is a local LLM server providing GPU and NPU acceleration for running large language models on consumer hardware. It exposes OpenAI-compatible, Ollama-compatible, and Anthropic-compatible REST APIs, plus a WebSocket Realtime API. It supports multiple backends: llama.cpp, FastFlowLM, RyzenAI, whisper.cpp, stable-diffusion.cpp, Kokoro TTS, and Moonshine.
 
 ## Architecture
 
@@ -28,6 +28,7 @@ Lemonade is a local LLM server providing GPU and NPU acceleration for running la
 | whisper.cpp | `WhisperServer` | Audio | CPU | Audio transcription |
 | stable-diffusion.cpp | `SdServer` | Image | CPU | Image generation, editing, variations |
 | Kokoro | `KokoroServer` | TTS | CPU | Text-to-speech |
+| Moonshine | `MoonshineServer` | Audio | CPU | Streaming speech-to-text (ONNX-based) |
 
 Capability interfaces: `ICompletionServer`, `IEmbeddingsServer`, `IRerankingServer`, `ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer` (defined in `server_capabilities.h`). Use `supports_capability<T>(server)` template for runtime checks.
 
@@ -47,13 +48,17 @@ All core endpoints are registered under **4 path prefixes**:
 - `/v0/` — Legacy short
 - `/v1/` — OpenAI SDK / LiteLLM compatibility
 
-**Core endpoints:** `chat/completions`, `completions`, `embeddings`, `reranking`, `models`, `models/{id}`, `health`, `pull`, `load`, `unload`, `delete`, `params`, `install`, `uninstall`, `audio/transcriptions`, `audio/speech`, `images/generations`, `images/edits`, `images/variations`, `responses`, `stats`, `system-info`, `system-stats`, `log-level`, `logs/stream`
+**Core endpoints:** `chat/completions`, `completions`, `embeddings`, `reranking`, `models`, `models/{id}`, `health`, `pull`, `pull/variants`, `registry/search`, `load`, `unload`, `delete`, `params`, `install`, `uninstall`, `audio/transcriptions`, `audio/speech`, `images/generations`, `images/edits`, `images/variations`, `responses`, `stats`, `system-info`, `system-stats`, `log-level`, `logs/stream`, `jobs`, `jobs/{id}`, `jobs/{id}/pause`, `jobs/{id}/interrupt`, `jobs/{id}/resume`
+
+**Job engine** (`POST jobs`, `GET jobs`, `GET/DELETE jobs/{id}`, `POST jobs/{id}/{pause,interrupt,resume}`): server-side sequences of ops (`system_info`, `system_stats`, `models`, `sleep`, `load`, `unload`, `chat`) with data passing, forward-only branching, and a pause/interrupt/resume lifecycle persisted across restart. Exclusive ops hold a Router slot so normal traffic queues. See `docs/dev/job-system.md` and `docs/dev/job-expression-language.md`.
 
 **Ollama-compatible endpoints** (under `/api/` without version prefix): `chat`, `generate`, `tags`, `show`, `delete`, `pull`, `embed`, `embeddings`, `ps`, `version`
 
 **Anthropic-compatible endpoint:** `POST /api/messages` — supports message completion, tool use, and SSE streaming.
 
-**WebSocket Realtime API**: OpenAI-compatible Realtime protocol for real-time audio transcription. Binds to an OS-assigned port (9000+), exposed via the `websocket_port` field in the `/health` endpoint response.
+**MCP gateway endpoint:** `POST /mcp` — Model Context Protocol (Streamable HTTP transport, spec `2025-06-18`). Single JSON-RPC 2.0 endpoint exposing 5 tools (`lemonade_list_models`, `lemonade_chat`, `lemonade_transcribe_audio`, `lemonade_generate_image`, `lemonade_omni`). GET returns 405.
+
+**WebSocket Realtime API**: OpenAI-compatible Realtime protocol for real-time audio transcription. `/realtime` and `/logs/stream` accept WebSocket upgrades directly on the main HTTP port; a dedicated listener on an OS-assigned port (9000+, exposed via the `websocket_port` field in the `/health` response) also remains for backward compatibility.
 
 **Internal endpoints:** `POST /internal/shutdown`
 
@@ -134,7 +139,42 @@ python test/server_sd.py
 
 Test utilities in `test/utils/` with `server_base.py` as the base class. Test dependencies include `requests`, `httpx`, `openai`, `huggingface_hub`, `psutil`, `numpy`, `websockets`, and `ollama`.
 
+### C++ unit tests
+
+C++ unit tests live in `test/cpp/` and are wired up in the root `CMakeLists.txt`. The packaging workflow builds the `cpp-ci-tests` aggregate target and runs `ctest -L cpp-ci`, so a test only runs in CI if it is both labeled `cpp-ci` **and** a dependency of that aggregate target.
+
+**Direct `add_test()` is disabled** (the built-in is overridden to fail with a fatal error just before the test section). Every test MUST be declared with the `add_cpp_ci_test()` helper, which forces an explicit `CI <ON|OFF>` decision at the call site so a test is never silently omitted from — or accidentally added to — CI:
+
+```cmake
+add_executable(test_my_feature test/cpp/test_my_feature.cpp ...)
+# ...target_include_directories / target_link_libraries...
+
+include(CTest)
+add_cpp_ci_test(MyFeatureTest CI ON COMMAND test_my_feature)
+```
+
+```cmake
+add_cpp_ci_test(<TestName>
+                CI <ON|OFF>                 # required — run under `ctest -L cpp-ci`?
+                COMMAND <command> [args...] # required — what CTest runs
+                [DEPENDS <target>...])      # CI build deps; defaults to the
+                                            # first COMMAND token (the test target)
+```
+
+- `CI ON` labels the test `cpp-ci` and makes its build target(s) a dependency of `cpp-ci-tests`.
+- `CI OFF` still creates the CTest test (for local/other runs) but keeps it out of packaging CI. Use this only for tests that are intentionally excluded (e.g. tests that need a backend, are platform-gated, or are slow CMake-configuration tests).
+
+Pass `DEPENDS` only when the CI build needs targets beyond the `COMMAND` executable. `add_cpp_ci_test` calls `register_cpp_ci_test()` internally; do not call `add_test()` or `register_cpp_ci_test()` directly.
+
 ## Code Style
+
+### Comments & Documentation
+
+**Default to writing no comments.** Only add a comment when the WHY is non-obvious: a hidden constraint, a subtle invariant, a workaround for a specific bug, or behavior that would surprise a reader. If removing the comment wouldn't confuse a future reader, don't write it.
+
+**Never write comments that explain WHAT the code does** — well-named identifiers already do that. Don't reference the current task, fix, or callers ("used by X", "added for the Y flow", "handles the case from issue #123") — those belong in the PR description and rot as the codebase evolves.
+
+**PR descriptions should be concise.** 1-3 sentences for the summary. No essays. The diff shows what changed; the description explains why and any non-obvious context. Bullet points over paragraphs.
 
 ### C++
 - C++17, `lemon::` namespace
@@ -164,8 +204,10 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 | `src/cpp/include/lemon/server_capabilities.h` | Backend capability interfaces |
 | `src/cpp/resources/server_models.json` | Model registry |
 | `src/cpp/resources/backend_versions.json` | Backend version pins |
+| `docs/tools/gen_backend_boilerplate.py` | Regenerates committed artifacts from the C++ backend descriptors. Outputs: the whole of `src/cpp/resources/defaults.json` (per-recipe sections only; global keys stay hand-maintained in that file), and `<!-- BEGIN/END GENERATED -->` regions in `docs/dev/backends-reference.md`, root `README.md`, `docs/guide/cli.md`, `docs/guide/configuration/{README,multi-model,custom-models}.md`, and `docs/assets/models.js`. Don't hand-edit those regions/sections; CI runs `--check` and fails on drift. |
 | `src/cpp/server/anthropic_api.cpp` | Anthropic API compatibility |
 | `src/cpp/server/ollama_api.cpp` | Ollama API compatibility |
+| `src/cpp/server/mcp_server.cpp` | MCP gateway (POST /mcp) |
 | `src/cpp/include/lemon/websocket_server.h` | WebSocket Realtime API server |
 | `src/cpp/include/lemon/model_types.h` | Model type and device type enums |
 | `src/cpp/include/lemon/config_file.h` | config.json load/save/migrate |
@@ -178,17 +220,17 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 
 These MUST be maintained in all changes:
 
-1. **Quad-prefix registration** — Every new endpoint MUST be registered under `/api/v0/`, `/api/v1/`, `/v0/`, AND `/v1/`.
+1. **Quad-prefix registration** — Every new endpoint MUST be registered under `/api/v0/`, `/api/v1/`, `/v0/`, AND `/v1/`. Documented exceptions: Ollama (`/api/*` without version prefix), Anthropic (`POST /v1/messages` only), and MCP (`POST /mcp`) — each of those protocols mandates a fixed URL shape that conflicts with the quad-prefix scheme.
 2. **NPU exclusivity** — Exclusive-NPU recipes (`ryzenai-llm`, `whispercpp` on NPU) evict ALL other NPU models before loading. FastFlowLM (`flm`) can coexist with other FLM types (max 1 per FLM type) but not with exclusive-NPU recipes.
 3. **WrappedServer contract** — New backends MUST implement all core virtual methods: `load()`, `unload()`, `chat_completion()`, `completion()`, `responses()`.
-4. **Subprocess model** — Backends run as subprocesses (llama-server, whisper-server, sd-server, koko, flm, ryzenai-server). They must NOT run in-process.
-5. **Recipe integrity** — Changes to `server_models.json` must have valid recipes referencing backends in `backend_versions.json`.
+4. **Subprocess model** — Backends run as subprocesses (llama-server, whisper-server, sd-server, koko, flm, ryzenai-server, moonshine-server). They must NOT run in-process.
+5. **Recipe integrity** — Changes to `server_models.json` must have valid recipes referencing backends in `backend_versions.json`. When adding or updating `vllm` models, also update `src/cpp/resources/vllm_model_config.json` if the model family needs vLLM-specific args such as tool-call parser settings.
 6. **Cross-platform** — Code must compile on Windows (MSVC), Linux (GCC/Clang), macOS (AppleClang). Platform-specific code must use `#ifdef` guards.
 7. **No hardcoded paths** — Use path utilities. Windows/Linux/macOS paths differ.
 8. **Thread safety** — Router serves concurrent HTTP requests. Shared state must be properly guarded.
 9. **Ollama compatibility** — Changes to model listing or management must not break `/api/*` Ollama endpoints.
 10. **API key passthrough** — When `LEMONADE_API_KEY` is set, all API routes must enforce authentication.
-11. **Many-clients-one-server topology** — A single `lemond` can be driven by multiple desktop/tray/CLI clients, potentially on different machines. Per-client state (settings, layout, zoom, base URL, API key) MUST live locally in the client, never in `lemond`. Do not move `app_settings.json` behind an HTTP endpoint.
+11. **Many-clients-one-server topology** — A single `lemond` can be driven by multiple desktop/tray/CLI clients, potentially on different machines. Per-client UI state (layout, zoom, view selection, the client's own base URL and API key) MUST live locally in the client, never in `lemond`. Do not move `app_settings.json` behind an HTTP endpoint. **Shared infrastructure config** (cloud provider URLs, backend version pins) lives in `lemond`'s `config.json` so it's visible to every client and to the CLI. **Cloud API keys** specifically MUST NOT be written to disk: they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or in `lemond`'s process memory via `POST /v1/cloud/auth` (ephemeral, dies on restart).
 12. **Web-app dependencies constrained by Debian native packaging** — `src/web-app/package.json` is kept separate from `src/app/package.json` because the native Debian package (`lemonade-server` .deb) must build using only npm modules available in Debian's `/usr/share/nodejs` (see `USE_SYSTEM_NODEJS_MODULES` in `src/web-app/webpack.config.js`). The old Electron app depended on packages Debian does not ship. Do NOT consolidate the two `package.json` files — the split is required for reproducible distro packaging.
 13. **Desktop app is on-demand; `lemond` runs independently** — On Windows, `LemonadeServer.exe` (which embeds `lemond` + tray icon) is the always-on process, auto-started via the Windows startup folder. The Tauri desktop app (`lemonade-app.exe`) is opened on demand when the user wants the UI and must not be added to startup. The desktop app must not embed or manage `lemond`'s lifecycle — it discovers the already-running server (UDP beacon for local, explicit base URL for remote) and speaks to it over HTTP.
 

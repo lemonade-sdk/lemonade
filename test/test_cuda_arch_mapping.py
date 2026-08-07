@@ -24,6 +24,7 @@ CUDA_SUPPORTED_ARCHS = {
     "sm_90",  # Hopper
     "sm_100",  # Blackwell DC
     "sm_120",  # Blackwell consumer
+    "sm_121",  # Blackwell GB10 / Thor SoC
 }
 
 
@@ -56,6 +57,8 @@ def compute_cap_to_sm(compute_cap: str) -> str:
 _DC_BLACKWELL = ["b100", "b200"]
 
 _NAME_ARCH_TABLE = [
+    # GB10 Thor SoC (sm_121)
+    (["gb10"], "sm_121"),
     # Blackwell consumer/workstation (sm_120). The generic "blackwell" keyword
     # covers current and future RTX 50 / RTX PRO Blackwell GPUs; explicit model
     # numbers cover names that do not include "Blackwell".
@@ -147,6 +150,7 @@ def identify_cuda_arch_from_name(device_name: str) -> str:
         "b100",
         "b200",
         "l40",
+        "gb10",
     ]
     if not any(kw in name for kw in nvidia_ids):
         return ""
@@ -174,6 +178,7 @@ class TestComputeCapToSm(unittest.TestCase):
             ("9.0", "sm_90"),
             ("10.0", "sm_100"),
             ("12.0", "sm_120"),
+            ("12.1", "sm_121"),
         ]
         for cap, expected in cases:
             with self.subTest(cap=cap):
@@ -190,7 +195,7 @@ class TestComputeCapToSm(unittest.TestCase):
                 self.assertEqual(compute_cap_to_sm(bad), "")
 
     def test_supported_arch_membership(self):
-        for cap in ["7.5", "8.0", "8.6", "8.9", "9.0", "10.0", "12.0"]:
+        for cap in ["7.5", "8.0", "8.6", "8.9", "9.0", "10.0", "12.0", "12.1"]:
             sm = compute_cap_to_sm(cap)
             self.assertIn(
                 sm, CUDA_SUPPORTED_ARCHS, f"{cap} -> {sm} not in supported set"
@@ -216,6 +221,8 @@ class TestIdentifyCudaArchFromName(unittest.TestCase):
             ("NVIDIA A100-SXM4-80GB", "sm_80"),
             ("NVIDIA A10", "sm_86"),
             ("NVIDIA A40", "sm_86"),
+            ("NVIDIA GB10", "sm_121"),
+            ("GB10", "sm_121"),
             # RTX PRO Blackwell (sm_120) — both the generic "Blackwell" keyword
             # and the explicit RTX PRO model numbers must resolve to sm_120.
             ("NVIDIA RTX PRO 3000 Blackwell Generation Laptop GPU", "sm_120"),

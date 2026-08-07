@@ -2,25 +2,37 @@ const GITHUB_REPO = 'lemonade-sdk/lemonade';
 const TAGS_URL = `https://api.github.com/repos/${GITHUB_REPO}/tags?per_page=100`;
 const RAW_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/lemonade';
 
+/* BEGIN GENERATED: models-js-recipes */
 const RECIPE_PRIORITY = [
-  'llamacpp',
-  'ryzenai-llm',
+  'acestep',
   'flm',
-  'whispercpp',
+  'kokoro',
+  'llamacpp',
+  'moonshine',
+  'onnxruntime',
+  'openmoss',
+  'ryzenai-llm',
   'sd-cpp',
-  'oga-hybrid',
-  'oga-npu',
-  'oga-cpu',
-  'kokoro'
+  'thinksound',
+  'trellis',
+  'vllm',
+  'whispercpp'
 ];
 
 const RECIPE_DISPLAY_NAMES = {
   llamacpp: 'llama.cpp GPU',
-  'ryzenai-llm': 'Ryzen AI SW NPU',
-  flm: 'FastFlowLM NPU',
   whispercpp: 'whisper.cpp',
-  'sd-cpp': 'stable-diffusion.cpp'
+  'sd-cpp': 'stable-diffusion.cpp',
+  flm: 'FastFlowLM NPU',
+  'ryzenai-llm': 'Ryzen AI SW NPU',
+  vllm: 'vLLM ROCm (experimental)',
+  thinksound: 'ThinkSound',
+  acestep: 'ACE-Step',
+  onnxruntime: 'ONNX Runtime',
+  trellis: 'TRELLIS.2',
+  openmoss: 'OpenMOSS TTS'
 };
+/* END GENERATED: models-js-recipes */
 
 const state = {
   tag: null,
@@ -179,10 +191,18 @@ function buildModelTableRows(name, details) {
   const checkpoint = parseCheckpoint(name, details);
 
   if (checkpoint.repo) {
+    const registrySource = details.registry_source
+      || (details.source === 'modelscope' || details.source === 'huggingface'
+        ? details.source
+        : 'huggingface');
+    const checkpointUrl = registrySource === 'modelscope'
+      ? `https://modelscope.cn/models/${escapeHtml(checkpoint.repo)}/summary`
+      : `https://huggingface.co/${escapeHtml(checkpoint.repo)}`;
     rows.push({
       key: 'Checkpoint',
-      value: `<a href="https://huggingface.co/${escapeHtml(checkpoint.repo)}" target="_blank" rel="noopener">${escapeHtml(checkpoint.repo)}</a>`
+      value: `<a href="${checkpointUrl}" target="_blank" rel="noopener">${escapeHtml(checkpoint.repo)}</a>`
     });
+    rows.push({ key: 'Model Source', value: registrySource === 'modelscope' ? 'ModelScope' : 'Hugging Face' });
     if (checkpoint.variant) {
       rows.push({ key: 'GGUF Variant', value: escapeHtml(checkpoint.variant) });
     }

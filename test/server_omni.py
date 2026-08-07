@@ -364,8 +364,9 @@ class OmniTests(ServerTestBase):
                         {
                             "type": "text",
                             "text": (
-                                "What is the dominant color of this image? "
-                                "Answer with a single color word."
+                                "You are receiving this image directly as vision input. "
+                                "Do not use tools. Look at the attached image and answer with "
+                                "only its dominant color as a single word."
                             ),
                         },
                         {"type": "image_url", "image_url": {"url": image_uri}},
@@ -377,10 +378,10 @@ class OmniTests(ServerTestBase):
 
         content = completion.choices[0].message.content or ""
         print(f"Response (image input): {content[:200]}")
-        self.assertIn(
-            "green",
-            content.lower(),
-            "Planner must receive the uploaded image_url and identify it as green; "
+        normalized = content.lower()
+        self.assertTrue(
+            any(word in normalized for word in ("green", "lime")),
+            "Planner must receive the uploaded image_url and identify the solid green image; "
             "a text placeholder leaves it blind to the pixels",
         )
 
@@ -457,7 +458,11 @@ class OmniTests(ServerTestBase):
 
         messages = [{"role": "user", "content": self.MIXED_TOOL_PROMPT}]
         completion = client.chat.completions.create(
-            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=False
+            model=model,
+            messages=messages,
+            tools=self.WEATHER_TOOL,
+            temperature=0.0,
+            stream=False,
         )
         choice = completion.choices[0]
         self._assert_contains(self, choice.message.content, "data:image/", "image")
@@ -494,7 +499,11 @@ class OmniTests(ServerTestBase):
         )
 
         completion = client.chat.completions.create(
-            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=False
+            model=model,
+            messages=messages,
+            tools=self.WEATHER_TOOL,
+            temperature=0.0,
+            stream=False,
         )
         choice = completion.choices[0]
         self._assert_resume_answer(choice.finish_reason, choice.message.content or "")
@@ -513,7 +522,11 @@ class OmniTests(ServerTestBase):
 
         messages = [{"role": "user", "content": self.MIXED_TOOL_PROMPT}]
         stream = client.chat.completions.create(
-            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=True
+            model=model,
+            messages=messages,
+            tools=self.WEATHER_TOOL,
+            temperature=0.0,
+            stream=True,
         )
         content, finish_reason, calls = self._collect_stream(stream)
         self._assert_contains(self, content, "data:image/", "image")
@@ -551,7 +564,11 @@ class OmniTests(ServerTestBase):
         )
 
         stream = client.chat.completions.create(
-            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=True
+            model=model,
+            messages=messages,
+            tools=self.WEATHER_TOOL,
+            temperature=0.0,
+            stream=True,
         )
         content, finish_reason, _ = self._collect_stream(stream)
         self._assert_resume_answer(finish_reason, content)

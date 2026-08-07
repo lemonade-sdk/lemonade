@@ -147,25 +147,25 @@
         "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.84
+        "size": 7.34
     },
     "Mistral-7B-Instruct-v0.2-Hybrid": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.2-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.84
+        "size": 7.34
     },
     "Mistral-7B-Instruct-v0.3-Hybrid": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.85
+        "size": 7.35
     },
     "Mistral-7B-v0.3-Hybrid": {
         "checkpoint": "amd/Mistral-7B-v0.3-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.85
+        "size": 7.35
     },
     "Phi-3-mini-128k-instruct-Hybrid": {
         "checkpoint": "amd/Phi-3-mini-128k-instruct-onnx-ryzenai-1.7-hybrid",
@@ -536,6 +536,109 @@
         "suggested": true,
         "size": 13.4
     },
+    "MiniCPM5-1B-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "hot",
+            "reasoning"
+        ],
+        "size": 0.69
+    },
+    "MiniCPM4.1-8B-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM4.1-8B-GGUF:MiniCPM4.1-8B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "reasoning"
+        ],
+        "size": 4.97
+    },
+    "MiniCPM4-8B-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM4-8B-GGUF:MiniCPM4-8B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 4.97
+    },
+    "MiniCPM3-4B-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM3-4B-GGUF:minicpm3-4b-q4_k_m.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 2.47
+    },
+    "MiniCPM-V-4.6-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "hot",
+            "vision"
+        ],
+        "size": 1.64
+    },
+    "MiniCPM-V-4.6-Thinking-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-V-4.6-Thinking-gguf:MiniCPM-V-4_6-Thinking-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "vision"
+        ],
+        "size": 1.64
+    },
+    "MiniCPM-V-4.5-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-V-4_5-gguf:MiniCPM-V-4_5-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 6.12
+    },
+    "MiniCPM-V-4-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-V-4-gguf:ggml-model-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 3.15
+    },
+    "MiniCPM-o-4.5-Vision-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-o-4_5-gguf:MiniCPM-o-4_5-Q4_K_M.gguf",
+        "mmproj": "vision/MiniCPM-o-4_5-vision-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 6.12
+    },
+    "MiniCPM-o-2.6-Vision-GGUF": {
+        "source": "modelscope",
+        "checkpoint": "OpenBMB/MiniCPM-o-2_6-gguf:Model-7.6B-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 5.73
+    },
     "Qwen3-0.6B-GGUF": {
         "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
         "recipe": "llamacpp",
@@ -690,13 +793,65 @@
     },
     "Gemma-4-12B-it-GGUF": {
         "checkpoint": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
             "tool-calling",
+            "vision",
             "llamacpp"
         ],
-        "size": 7.12
+        "size": 7.29
+    },
+    "Gemma-4-26B-A4B-it-MTP-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
+            "draft": "unsloth/gemma-4-26B-A4B-it-GGUF:mtp-gemma-4-26B-A4B-it.gguf",
+            "mmproj": "unsloth/gemma-4-26B-A4B-it-GGUF:mmproj-F16.gguf"
+        },
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "hot",
+            "tool-calling",
+            "vision",
+            "llamacpp",
+            "mtp"
+        ],
+        "size": 18.5
+    },
+    "Gemma-4-31B-it-MTP-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
+            "draft": "unsloth/gemma-4-31B-it-GGUF:mtp-gemma-4-31B-it.gguf",
+            "mmproj": "unsloth/gemma-4-31B-it-GGUF:mmproj-F16.gguf"
+        },
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "hot",
+            "tool-calling",
+            "vision",
+            "llamacpp",
+            "mtp"
+        ],
+        "size": 20.0
+    },
+    "Gemma-4-12B-it-MTP-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+            "draft": "unsloth/gemma-4-12b-it-GGUF:mtp-gemma-4-12b-it.gguf",
+            "mmproj": "unsloth/gemma-4-12b-it-GGUF:mmproj-F16.gguf"
+        },
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "tool-calling",
+            "llamacpp",
+            "vision",
+            "mtp"
+        ],
+        "size": 7.75
     },
     "Gemma-4-E4B-it-GGUF": {
         "checkpoint": "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
@@ -1313,6 +1468,40 @@
         ],
         "size": 1.62
     },
+    "Moonshine-Tiny-Streaming": {
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/tiny",
+        "recipe": "moonshine",
+        "moonshine_arch": 2,
+        "suggested": true,
+        "labels": [
+            "transcription",
+            "realtime-transcription"
+        ],
+        "size": 0.202
+    },
+    "Moonshine-Small-Streaming": {
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/small",
+        "recipe": "moonshine",
+        "moonshine_arch": 4,
+        "suggested": true,
+        "labels": [
+            "transcription",
+            "realtime-transcription"
+        ],
+        "size": 0.431
+    },
+    "Moonshine-Medium-Streaming": {
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/medium",
+        "recipe": "moonshine",
+        "moonshine_arch": 5,
+        "suggested": true,
+        "labels": [
+            "transcription",
+            "realtime-transcription",
+            "hot"
+        ],
+        "size": 1.08
+    },
     "SD-Turbo": {
         "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
         "recipe": "sd-cpp",
@@ -1495,26 +1684,16 @@
         }
     },
     "LMX-Omni-52B-Halo": {
-        "checkpoint": "",
+        "checkpoint": "lemonade-sdk/LMX-Omni-52B-Halo",
         "recipe": "collection.omni",
         "suggested": true,
-        "components": [
-            "Qwen3.6-35B-A3B-MTP-GGUF",
-            "Flux-2-Klein-9B-GGUF",
-            "Whisper-Large-v3-Turbo",
-            "kokoro-v1"
-        ]
+        "size": 44.77
     },
     "LMX-Omni-5.5B-Lite": {
-        "checkpoint": "",
+        "checkpoint": "lemonade-sdk/LMX-Omni-5.5B-Lite",
         "recipe": "collection.omni",
         "suggested": true,
-        "components": [
-            "Qwen3.5-4B-MTP-GGUF",
-            "SD-Turbo",
-            "Whisper-Tiny",
-            "kokoro-v1"
-        ]
+        "size": 9.30
     },
     "Ultra Collection": {
         "checkpoint": "",
@@ -1538,6 +1717,12 @@
             "kokoro-v1"
         ]
     },
+    "RPG-HaloTales-V1": {
+        "checkpoint": "lemonade-sdk/RPG-HaloTales-V1",
+        "recipe": "collection.omni",
+        "suggested": true,
+        "size": 39.77
+    },
     "kokoro-v1": {
         "checkpoint": "mikkoph/kokoro-onnx",
         "recipe": "kokoro",
@@ -1546,6 +1731,52 @@
             "tts"
         ],
         "size": 0.354
+    },
+    "ThinkSound-SFX": {
+        "checkpoint": "ilintar/thinksound-gguf",
+        "recipe": "thinksound",
+        "suggested": true,
+        "labels": [
+            "audio-generation"
+        ],
+        "size": 6.4
+    },
+    "ACE-Step-Music": {
+        "checkpoint": "Serveurperso/ACE-Step-1.5-GGUF:acestep-v15-xl-sft-Q8_0.gguf",
+        "recipe": "acestep",
+        "suggested": true,
+        "labels": [
+            "audio-generation"
+        ],
+        "size": 10.5
+    },
+    "TRELLIS-3D": {
+        "checkpoint": "ilintar/trellis2-gguf",
+        "recipe": "trellis",
+        "suggested": true,
+        "labels": [
+            "3d"
+        ],
+        "size": 15.4
+    },
+    "OpenMOSS-TTS": {
+        "checkpoint": "ilintar/moss-tts-gguf:moss-tts-1.5-q8_0.gguf",
+        "recipe": "openmoss",
+        "suggested": true,
+        "labels": [
+            "tts"
+        ],
+        "size": 12.5
+    },
+    "MOSS-VoiceGen": {
+        "checkpoint": "ilintar/moss-voicegen-gguf:moss-voicegen.gguf",
+        "recipe": "openmoss",
+        "suggested": true,
+        "labels": [
+            "tts",
+            "voice-design"
+        ],
+        "size": 7.3
     },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
@@ -1567,7 +1798,7 @@
         ],
         "size": 0.017
     },
-    "Qwen3.5-0.8B-vLLM": {
+    "Qwen3.5-0.8B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-0.8B",
         "recipe": "vllm",
         "suggested": true,
@@ -1576,32 +1807,131 @@
         ],
         "size": 1.77
     },
-    "Qwen3.5-2B-vLLM": {
+    "Qwen3.5-2B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-2B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning"
+            "reasoning",
+            "tool-calling"
         ],
         "size": 4.57
     },
-    "Qwen3.5-4B-vLLM": {
+    "Qwen3.5-4B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-4B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
             "reasoning",
-            "hot"
+            "hot",
+            "tool-calling"
         ],
         "size": 9.34
     },
-    "Qwen3.5-9B-vLLM": {
+    "Qwen3.5-9B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-9B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning"
+            "reasoning",
+            "tool-calling"
         ],
         "size": 19.3
+    },
+    "Qwen3.6-27B-FP16-vLLM": {
+        "checkpoint": "Qwen/Qwen3.6-27B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 55.59
+    },
+    "Qwen3.6-27B-FP8-vLLM-lowconc": {
+        "checkpoint": "Qwen/Qwen3.6-27B-FP8",
+        "recipe": "vllm",
+        "suggested": false,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 27.8
+    },
+    "Qwen3.6-27B-FP8-vLLM-highconc": {
+        "checkpoint": "Qwen/Qwen3.6-27B-FP8",
+        "recipe": "vllm",
+        "suggested": false,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 27.8
+    },
+    "Qwen3.6-35B-A3B-FP16-vLLM": {
+        "checkpoint": "Qwen/Qwen3.6-35B-A3B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 71.93
+    },
+    "Qwen3.6-35B-A3B-FP8-vLLM-lowconc": {
+        "checkpoint": "Qwen/Qwen3.6-35B-A3B-FP8",
+        "recipe": "vllm",
+        "suggested": false,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 36.0
+    },
+    "Qwen3.6-35B-A3B-FP8-vLLM-highconc": {
+        "checkpoint": "Qwen/Qwen3.6-35B-A3B-FP8",
+        "recipe": "vllm",
+        "suggested": false,
+        "labels": [
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 36.0
+    },
+    "GLM-4.7-Flash-FP16-vLLM": {
+        "checkpoint": "zai-org/GLM-4.7-Flash",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 62.47
+    },
+    "Bert-Phishing-ONNX": {
+        "checkpoint": "lemonade-sdk/bert-finetuned-phishing-ONNX",
+        "recipe": "onnxruntime",
+        "labels": [
+            "classification"
+        ],
+        "size": 1.34
+    },
+    "Phishing-Email-Detection-ONNX": {
+        "checkpoint": "lemonade-sdk/phishing-email-detection-distilbert-ONNX",
+        "recipe": "onnxruntime",
+        "labels": [
+            "classification"
+        ],
+        "size": 0.27
     }
 }

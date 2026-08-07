@@ -31,13 +31,14 @@ jobs:
           run: |
             git config --global user.name "Lemonade Bot"
             git config --global user.email "lemonade@amd.com"
-        - name: Capture main branch commit hash
+        - name: Capture release commit hash
           run: |
-            echo "MAIN_COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+            echo "RELEASE_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
+            echo "RELEASE_COMMIT_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
         - name: Merge into website branch
           run: |
             git checkout website
-            git merge origin/main -X theirs
+            git merge "$RELEASE_COMMIT" -X theirs
         - name: Update README with marketplace apps
           run: |
             venvPython=".venv/bin/python"
@@ -52,6 +53,6 @@ jobs:
             if git diff --staged --quiet; then
               echo "No changes to commit, skipping commit step"
             else
-              git commit -m "Update website for: ${MAIN_COMMIT_HASH}"
+              git commit -m "Update website for: ${RELEASE_COMMIT_SHORT}"
             fi
             git push

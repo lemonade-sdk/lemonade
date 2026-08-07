@@ -10,6 +10,7 @@ Contents:
 - [Runtime Settings Management](#runtime-settings-management)
   - [`GET /internal/config`](#get-internalconfig)
   - [`POST /internal/set`](#post-internalset)
+  - [`POST /internal/pin`](#post-internalpin)
 
 ## Launching
 
@@ -113,6 +114,8 @@ Your app can manage its `lemond` instance at runtime by using `/internal` endpoi
 |--------|------|-------------|
 | `POST` | `/internal/set` | Unified config setter (see below) |
 | `GET`  | `/internal/config` | Returns the full runtime config snapshot |
+| `GET`  | `/internal/config/defaults` | Returns the canonical default config (factory defaults) |
+| `POST` | `/internal/pin` | Pin or unpin a loaded model (prevents auto-eviction) |
 
 The settings defined in `config.json` can all be changed at runtime without restarting `lemond` with the `/internal/set` endpoint. See the [Configuration Guide](../guide/configuration/README.md) for details on all settings.
 
@@ -133,6 +136,23 @@ Returns the full runtime configuration as a flat JSON object containing all serv
 
     ```bash
     curl http://localhost:8000/internal/config
+    ```
+
+#### `GET /internal/config/defaults`
+
+Returns the canonical default configuration — the values a brand-new `config.json` is seeded with, independent of this instance's current config or any deployment override. The per-recipe sections are derived from the backend descriptors, so this is the authoritative source for "what are the factory defaults." It is what `docs/tools/gen_backend_boilerplate.py` reads to regenerate `src/cpp/resources/defaults.json`.
+
+**Example:**
+=== "Windows (cmd.exe)"
+
+    ```cmd
+    curl http://localhost:8000/internal/config/defaults
+    ```
+
+=== "Linux (bash)"
+
+    ```bash
+    curl http://localhost:8000/internal/config/defaults
     ```
 
 #### `POST /internal/set`
@@ -167,7 +187,6 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `cfg_scale` | number |
 | `width` | int (positive) |
 | `height` | int (positive) |
-| `flm_args` | string |
 
 **Example:**
 === "Windows (cmd.exe)"
@@ -185,3 +204,40 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
       -H "Content-Type: application/json" \
       -d '{"ctx_size": 8192, "max_loaded_models": 3, "log_level": "debug"}'
     ```
+
+#### `POST /internal/pin`
+
+Pin or unpin a loaded model in memory. Pinned models are excluded from the Least Recently Used (LRU) eviction policy.
+
+**Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_name` | Yes | Name of the loaded model to pin or unpin. |
+| `pinned` | Yes | Boolean. Set to `true` to pin the model, or `false` to unpin it. |
+
+**Example:**
+=== "Windows (cmd.exe)"
+
+    ```cmd
+    curl -X POST http://localhost:8000/internal/pin ^
+      -H "Content-Type: application/json" ^
+      -d "{\"model_name\": \"Qwen3-0.6B-GGUF\", \"pinned\": true}"
+    ```
+
+=== "Linux (bash)"
+
+    ```bash
+    curl -X POST http://localhost:8000/internal/pin \
+      -H "Content-Type: application/json" \
+      -d '{"model_name": "Qwen3-0.6B-GGUF", "pinned": true}'
+    ```
+
+**Response format:**
+```json
+{
+  "status": "success",
+  "model_name": "Qwen3-0.6B-GGUF",
+  "pinned": true
+}
+```

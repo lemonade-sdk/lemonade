@@ -17,10 +17,12 @@ import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
-import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
-import { EjectIcon } from './components/Icons';
+import { COLLECTION_ROUTER_MODEL_RECIPE, RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
+import { EjectIcon, PinIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
 import { getCollectionDisplayName, isCollectionEditableAsCustom } from './utils/customCollections';
+import { mergeWithDefaultSettings } from './utils/appSettings';
+import { tauriReady } from './tauriShim';
 
 interface ModelFamily {
   displayName: string;
@@ -200,6 +202,26 @@ interface HFModelInfo {
   pipeline_tag?: string;
 }
 
+interface RegistrySearchResult {
+  repository_id?: string;
+  display_name?: string;
+  source?: string;
+  description?: string;
+  tags?: string[];
+  task?: string;
+  downloads?: number;
+  likes?: number;
+  has_gguf?: boolean;
+}
+
+interface RegistrySearchResponse {
+  results?: RegistrySearchResult[];
+  error?: string | {
+    message?: string;
+    path?: string;
+  };
+}
+
 interface HFSibling {
   rfilename: string;
 }
@@ -224,6 +246,22 @@ interface DetectedBackend {
   mmprojFiles?: string[];
   suggestedLabels?: string[];
 }
+
+interface ModelScopeVariantCacheEntry {
+  backend: DetectedBackend;
+  selectedQuantization: string;
+  size?: number;
+}
+
+interface ValidatedModelScopeResult extends ModelScopeVariantCacheEntry {
+  model: HFModelInfo;
+  order: number;
+}
+
+const MODELSCOPE_SEARCH_LIMIT = 14;
+const MODELSCOPE_MAX_RESULTS = 10;
+const MODELSCOPE_VALIDATION_CONCURRENCY = 4;
+const MODELSCOPE_SEARCH_DEBOUNCE_MS = 400;
 
 // Strip the canonical prefix (if any) to get the bare model name. Used for
 // family-regex matching and family grouping.
@@ -267,6 +305,11 @@ function buildModelList(
     const members: { label: string; name: string; info: ModelInfo }[] = [];
     for (const m of models) {
       if (consumed.has(m.name)) continue;
+      // Cloud models are grouped under their provider and rendered with the
+      // provider prefix stripped; keep them as flat individual rows rather
+      // than folding them into local model families (whose labels assume the
+      // bare/canonical-prefixed local naming, not "<provider>.<model>").
+      if (m.info.recipe === 'cloud') continue;
       if (family.recipe && m.info.recipe !== family.recipe) continue;
       const match = family.regex.exec(stripCanonicalPrefix(m.name));
       if (match) {
@@ -351,6 +394,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
   const [showFilterPanel, setShowFilterPanel] = useState(false);
 const [searchQuery, setSearchQuery] = useState('');
   const [loadedModels, setLoadedModels] = useState<Set<string>>(new Set());
+  const [pinnedModels, setPinnedModels] = useState<Set<string>>(new Set());
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [optionsModel, setOptionsModel] = useState<string | null>(null);
@@ -369,9 +413,59 @@ const [searchQuery, setSearchQuery] = useState('');
   const [detectingBackendFor, setDetectingBackendFor] = useState<string | null>(null);
   const hfSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ModelScope mirrors the proven Hugging Face UX, but uses lemond for search
+  // and variant discovery so endpoint/token configuration stays server-side.
+  const [modelScopeSearchResults, setModelScopeSearchResults] = useState<HFModelInfo[]>([]);
+  const [isSearchingModelScope, setIsSearchingModelScope] = useState(false);
+  const [modelScopeRateLimited, setModelScopeRateLimited] = useState(false);
+  const [modelScopeSearchError, setModelScopeSearchError] = useState<string | null>(null);
+  const [modelScopeModelBackends, setModelScopeModelBackends] = useState<Record<string, DetectedBackend | null>>({});
+  const [modelScopeSelectedQuantizations, setModelScopeSelectedQuantizations] = useState<Record<string, string>>({});
+  const [modelScopeModelSizes, setModelScopeModelSizes] = useState<Record<string, number | undefined>>({});
+  const modelScopeSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modelScopeSearchRequestRef = useRef(0);
+  const modelScopeVariantCacheRef = useRef(new Map<string, ModelScopeVariantCacheEntry>());
+
+  const updateCheckDoneRef = useRef(false);
+
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
+
+  useEffect(() => {
+    const loadModelManagerSettings = async () => {
+      try {
+        await tauriReady;
+        if (!window.api?.getSettings) return;
+        const settings = mergeWithDefaultSettings(await window.api.getSettings());
+        setShowDownloadedOnly(settings.modelManager.showDownloadedOnly);
+      } catch (error) {
+        console.error('Failed to load model manager settings:', error);
+      }
+    };
+
+    loadModelManagerSettings();
+  }, []);
+
+  const updateShowDownloadedOnly = useCallback(async (checked: boolean) => {
+    setShowDownloadedOnly(checked);
+    setShowFilterPanel(false);
+
+    try {
+      await tauriReady;
+      if (!window.api?.getSettings || !window.api?.saveSettings) return;
+      const currentSettings = await window.api.getSettings();
+      await window.api.saveSettings({
+        ...currentSettings,
+        modelManager: {
+          ...currentSettings.modelManager,
+          showDownloadedOnly: checked,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to save model manager settings:', error);
+    }
+  }, []);
 
   const fetchCurrentLoadedModel = useCallback(async () => {
     try {
@@ -385,17 +479,34 @@ const [searchQuery, setSearchQuery] = useState('');
         );
         setLoadedModels(loadedModelNames);
 
+        // Extract pinned models from the all_models_loaded array
+        const pinnedModelNames = new Set<string>(
+          data.all_models_loaded
+            .filter((model: any) => model.pinned === true)
+            .map((model: any) => model.model_name)
+        );
+        setPinnedModels(pinnedModelNames);
+
         // Remove loaded models from loading state
         setLoadingModels(prev => {
           const newSet = new Set(prev);
           loadedModelNames.forEach(modelName => newSet.delete(modelName));
           return newSet;
         });
+
+        // Once the server's background update check completes, refresh models
+        // to pick up update_available flags
+        if (data.update_check_done && !updateCheckDoneRef.current) {
+          updateCheckDoneRef.current = true;
+          refreshModels();
+        }
       } else {
         setLoadedModels(new Set());
+        setPinnedModels(new Set());
       }
     } catch (error) {
       setLoadedModels(new Set());
+      setPinnedModels(new Set());
       console.error('Failed to fetch current loaded model:', error);
     }
   }, []);
@@ -508,16 +619,30 @@ const [searchQuery, setSearchQuery] = useState('');
     return filtered;
   };
 
+  // Cloud models all share recipe='cloud', but each configured provider
+  // should get its own bucket so adding a second provider produces a
+  // second sub-heading rather than mixing into one. The bucket key for
+  // a cloud model is `<provider>-cloud` (e.g. "fireworks-cloud"); falls
+  // back to plain "cloud" if cloud_provider isn't on the entry yet.
+  const recipeBucketKey = (info: ModelInfo): string => {
+    const recipe = info.recipe || 'other';
+    if (recipe !== 'cloud') return recipe;
+    const provider = (info as { cloud_provider?: unknown }).cloud_provider;
+    return typeof provider === 'string' && provider.length > 0
+      ? `${provider}-cloud`
+      : 'cloud';
+  };
+
   const groupModelsByRecipe = () => {
     const grouped: { [key: string]: Array<{ name: string; info: ModelInfo }> } = {};
     const filteredModels = getFilteredModels();
 
     filteredModels.forEach(model => {
-      const recipe = model.info.recipe || 'other';
-      if (!grouped[recipe]) {
-        grouped[recipe] = [];
+      const bucket = recipeBucketKey(model.info);
+      if (!grouped[bucket]) {
+        grouped[bucket] = [];
       }
-      grouped[recipe].push(model);
+      grouped[bucket].push(model);
     });
 
     // Inject empty categories for supported recipes that have no models
@@ -668,8 +793,35 @@ const [searchQuery, setSearchQuery] = useState('');
     return expandedCategories.has(category);
   };
 
+  // Proper-cased display names for known cloud providers. The provider
+  // name in config is constrained to lowercase (so we have a single
+  // canonical id used for env-var lookup, model prefix, etc.); this map
+  // is the one place we restore camel/acronym casing for the UI.
+  const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+    'openai':     'OpenAI',
+    'fireworks':  'Fireworks',
+    'together':   'Together',
+    'openrouter': 'OpenRouter',
+    'groq':       'Groq',
+    'deepinfra':  'DeepInfra',
+    'mistral':    'Mistral',
+    'mistralai':  'MistralAI',
+    'anthropic':  'Anthropic',
+    'cohere':     'Cohere',
+  };
+
   const getDisplayLabel = (key: string): string => {
     if (organizationMode === 'recipe') {
+      // Per-provider cloud buckets ("fireworks-cloud" -> "Fireworks") are
+      // synthesised in recipeBucketKey and won't be in RECIPE_DISPLAY_NAMES,
+      // so format them here. The bucket is labelled with the provider's
+      // registered name (with camel/acronym casing restored) — no " Cloud"
+      // suffix, matching how the model names themselves are prefixed.
+      if (key.endsWith('-cloud') && key !== 'cloud') {
+        const provider = key.slice(0, -'-cloud'.length);
+        return PROVIDER_DISPLAY_NAMES[provider]
+          ?? `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`;
+      }
       return RECIPE_DISPLAY_NAMES[key] || key;
     } else {
       return getCategoryLabel(key);
@@ -761,6 +913,215 @@ const [searchQuery, setSearchQuery] = useState('');
     }
   }, []);
 
+  const searchModelScope = useCallback(async (
+    query: string,
+    requestId: number,
+    signal: AbortSignal,
+  ) => {
+    const normalizedQuery = query.trim();
+    if (normalizedQuery.length < 3) return;
+
+    setIsSearchingModelScope(true);
+    setModelScopeRateLimited(false);
+    setModelScopeSearchError(null);
+    setModelScopeSearchResults([]);
+    setModelScopeModelBackends({});
+    setModelScopeSelectedQuantizations({});
+    setModelScopeModelSizes({});
+
+    try {
+      const response = await serverFetch(
+        `/registry/search?source=modelscope&query=${encodeURIComponent(normalizedQuery)}&limit=${MODELSCOPE_SEARCH_LIMIT}&format=gguf`,
+        { signal },
+      );
+
+      let payload: RegistrySearchResponse = {};
+      try {
+        payload = await response.json();
+      } catch {
+        // Use the HTTP status below when the response body is not JSON.
+      }
+
+      if (!response.ok) {
+        const errorPayload = payload.error;
+        const baseMessage = typeof errorPayload === 'string'
+          ? errorPayload
+          : errorPayload?.message || `ModelScope search failed (${response.status})`;
+        const path = typeof errorPayload === 'object' ? errorPayload?.path : undefined;
+        const error = new Error(path ? `${baseMessage} [${path}]` : baseMessage) as Error & { status?: number };
+        error.status = response.status;
+        throw error;
+      }
+
+      if (requestId !== modelScopeSearchRequestRef.current) return;
+
+      const deduplicated = new Map<string, HFModelInfo>();
+      for (const result of Array.isArray(payload.results) ? payload.results : []) {
+        const id = typeof result.repository_id === 'string' ? result.repository_id.trim() : '';
+        const source = typeof result.source === 'string' ? result.source.toLowerCase() : 'modelscope';
+        if (!id || (source !== 'modelscope' && source !== 'ms')) continue;
+        if (!deduplicated.has(id)) {
+          deduplicated.set(id, {
+            id,
+            author: id.split('/')[0] ?? '',
+            downloads: typeof result.downloads === 'number' ? result.downloads : 0,
+            likes: typeof result.likes === 'number' ? result.likes : 0,
+            tags: Array.isArray(result.tags) ? result.tags : [],
+            pipeline_tag: typeof result.task === 'string' ? result.task : undefined,
+          });
+        }
+      }
+
+      // The server performs provider-aware relevance ranking. Preserve that
+      // order while the file-level compatibility checks finish asynchronously.
+      const candidates = [...deduplicated.values()]
+        .slice(0, MODELSCOPE_SEARCH_LIMIT)
+        .map((model, order) => ({ model, order }));
+
+      const validated: ValidatedModelScopeResult[] = [];
+      const maxResults = MODELSCOPE_MAX_RESULTS;
+      let nextCandidate = 0;
+
+      const publishValidated = (): void => {
+        if (requestId !== modelScopeSearchRequestRef.current) return;
+        const ordered = [...validated]
+          .sort((a, b) => a.order - b.order)
+          .slice(0, maxResults);
+
+        const backends: Record<string, DetectedBackend | null> = {};
+        const selectedQuantizations: Record<string, string> = {};
+        const sizes: Record<string, number | undefined> = {};
+        for (const result of ordered) {
+          backends[result.model.id] = result.backend;
+          selectedQuantizations[result.model.id] = result.selectedQuantization;
+          sizes[result.model.id] = result.size;
+        }
+
+        setModelScopeModelBackends(backends);
+        setModelScopeSelectedQuantizations(selectedQuantizations);
+        setModelScopeModelSizes(sizes);
+        setModelScopeSearchResults(ordered.map(result => result.model));
+        // Stop presenting the search as blocked once the first usable result is
+        // available; remaining probes continue to fill the list incrementally.
+        if (ordered.length > 0) setIsSearchingModelScope(false);
+      };
+
+      const validateCandidate = async (
+        model: HFModelInfo,
+        order: number,
+      ): Promise<ValidatedModelScopeResult | null> => {
+        const cached = modelScopeVariantCacheRef.current.get(model.id);
+        if (cached) return { model, order, ...cached };
+
+        const variantsRes = await serverFetch(
+          `/pull/variants?source=modelscope&checkpoint=${encodeURIComponent(model.id)}`,
+          { signal },
+        );
+        if (!variantsRes.ok) return null;
+
+        const variantsPayload: {
+          variants?: Array<{
+            name: string;
+            primary_file: string;
+            files: string[];
+            sharded: boolean;
+            size_bytes: number;
+          }>;
+          mmproj_files?: string[];
+          recipe?: string;
+          suggested_name?: string;
+          suggested_labels?: string[];
+        } = await variantsRes.json();
+
+        const variants = Array.isArray(variantsPayload.variants)
+          ? variantsPayload.variants
+          : [];
+        if (variants.length === 0) return null;
+
+        const quantizations: GGUFQuantization[] = variants.map(variant => ({
+          filename: variant.name,
+          quantization: variant.name,
+          size: variant.size_bytes || undefined,
+        }));
+        const suggestedLabels = Array.isArray(variantsPayload.suggested_labels)
+          ? variantsPayload.suggested_labels.filter(
+              (label): label is string => typeof label === 'string'
+            )
+          : [];
+        const firstVariant = quantizations[0];
+
+        const cacheEntry: ModelScopeVariantCacheEntry = {
+          selectedQuantization: firstVariant.filename,
+          size: firstVariant.size,
+          backend: {
+            recipe: variantsPayload.recipe || 'llamacpp',
+            label: 'GGUF',
+            suggestedName: variantsPayload.suggested_name,
+            quantizations,
+            mmprojFiles: variantsPayload.mmproj_files?.length
+              ? variantsPayload.mmproj_files
+              : undefined,
+            suggestedLabels,
+          },
+        };
+        modelScopeVariantCacheRef.current.set(model.id, cacheEntry);
+        return { model, order, ...cacheEntry };
+      };
+
+      const worker = async (): Promise<void> => {
+        while (
+          requestId === modelScopeSearchRequestRef.current &&
+          !signal.aborted &&
+          validated.length < maxResults &&
+          nextCandidate < candidates.length
+        ) {
+          const candidate = candidates[nextCandidate++];
+          try {
+            const result = await validateCandidate(candidate.model, candidate.order);
+            if (
+              result &&
+              requestId === modelScopeSearchRequestRef.current &&
+              validated.length < maxResults &&
+              !validated.some(item => item.model.id === result.model.id)
+            ) {
+              validated.push(result);
+              // Publish immediately instead of waiting for every file-tree probe.
+              // This is the main latency improvement for ModelScope search.
+              publishValidated();
+            }
+          } catch {
+            // Search metadata is only a candidate hint. Invalid or inaccessible
+            // repositories are silently omitted from marketplace results.
+          }
+        }
+      };
+
+      await Promise.all(
+        Array.from({
+          length: Math.min(MODELSCOPE_VALIDATION_CONCURRENCY, candidates.length),
+        }, () => worker())
+      );
+    } catch (error) {
+      if (requestId !== modelScopeSearchRequestRef.current || signal.aborted) return;
+      setModelScopeSearchResults([]);
+      setModelScopeModelBackends({});
+      setModelScopeSelectedQuantizations({});
+      setModelScopeModelSizes({});
+      const status = (error as Error & { status?: number }).status;
+      if (status === 429) {
+        setModelScopeRateLimited(true);
+      } else {
+        setModelScopeSearchError(
+          error instanceof Error ? error.message : 'ModelScope search failed'
+        );
+      }
+    } finally {
+      if (requestId === modelScopeSearchRequestRef.current && !signal.aborted) {
+        setIsSearchingModelScope(false);
+      }
+    }
+  }, []);
+
   const detectBackend = useCallback(async (modelId: string) => {
     if (hfModelBackends[modelId] !== undefined) return;
     setDetectingBackendFor(modelId);
@@ -837,6 +1198,14 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
 
+      // Moonshine streaming STT — must run before the generic ONNX detection
+      // (moonshine repos are ONNX-based and would be misclassified as ryzenai-llm)
+      if (modelId.toLowerCase().includes('moonshine') && files.some(f => f.endsWith('.onnx'))) {
+        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe: 'moonshine', label: 'Moonshine' } }));
+        if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
+        return;
+      }
+
       // ONNX detection
       if (files.some(f => f.endsWith('.onnx') || f.endsWith('.onnx_data'))) {
         const id = modelId.toLowerCase();
@@ -871,8 +1240,7 @@ const [searchQuery, setSearchQuery] = useState('');
     }
   }, [hfModelBackends, hfSelectedQuantizations]);
 
-
-  const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
+  const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData, upgrade?: boolean) => {
     let downloadId: string | null = null;
 
     try {
@@ -931,6 +1299,7 @@ const [searchQuery, setSearchQuery] = useState('');
         registrationData,
         collectionComponents,
         declaredSizeGB: modelsData[modelName]?.size,
+        upgrade,
       });
 
       await fetchCurrentLoadedModel();
@@ -974,16 +1343,55 @@ const [searchQuery, setSearchQuery] = useState('');
     return `${modelId}:${quantObj?.quantization ?? selectedFilename}`;
   }, [hfSelectedQuantizations]);
 
-  const resolveHfModelName = useCallback((modelId: string, backend: DetectedBackend): string => {
-    const suggestedName = backend.suggestedName || modelId.split('/').pop() || modelId;
-    if (backend.recipe !== 'llamacpp') return suggestedName;
+  const resolveHfModelName = useCallback((modelId: string, backend: DetectedBackend, checkpoint?: string): string => {
+    const getOwnerSuffixName = (modelName: string): string => {
+      const owner = modelId.split('/')[0]?.trim();
+      if (!owner) return modelName;
+      const safeOwner = owner.replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
+      return safeOwner ? `${modelName}-${safeOwner}` : modelName;
+    };
+    const lookupModelInfo = (modelName: string): ModelInfo | undefined => {
+      return modelsData[`user.${modelName}`] ?? modelsData[modelName];
+    };
 
-    const selectedFilename = hfSelectedQuantizations[modelId];
-    if (!selectedFilename) return suggestedName;
-    const quantObj = backend.quantizations?.find(q => q.filename === selectedFilename);
-    const variantName = quantObj?.quantization ?? selectedFilename;
-    return `${suggestedName}-${variantName}`;
-  }, [hfSelectedQuantizations]);
+    const matchesCheckpoint = (info: ModelInfo | undefined): boolean => {
+      if (!info || !checkpoint) return false;
+      const registrySource = info.registry_source
+        ?? (info.source === 'modelscope' || info.source === 'huggingface' ? info.source : 'huggingface');
+      return registrySource === 'huggingface'
+        && (info.checkpoint === checkpoint || info.checkpoints?.main === checkpoint);
+    };
+
+    const suggestedName = backend.suggestedName || modelId.split('/').pop() || modelId;
+    let defaultName = suggestedName;
+
+    if (backend.recipe === 'llamacpp') {
+      const selectedFilename = hfSelectedQuantizations[modelId];
+      if (selectedFilename) {
+        const quantObj = backend.quantizations?.find(q => q.filename === selectedFilename);
+        const variantName = quantObj?.quantization ?? selectedFilename;
+        defaultName = `${suggestedName}-${variantName}`;
+      }
+    }
+
+    if (!checkpoint) return defaultName;
+
+    const existingDefault = lookupModelInfo(defaultName);
+    if (!existingDefault || matchesCheckpoint(existingDefault)) {
+      return defaultName;
+    }
+
+    const fallbackBase = getOwnerSuffixName(defaultName);
+    let candidate = fallbackBase;
+    let suffix = 2;
+    let existingCandidate = lookupModelInfo(candidate);
+    while (existingCandidate && !matchesCheckpoint(existingCandidate)) {
+      candidate = `${fallbackBase}-${suffix}`;
+      suffix += 1;
+      existingCandidate = lookupModelInfo(candidate);
+    }
+    return candidate;
+  }, [hfSelectedQuantizations, modelsData]);
 
   const handleInstallHFModel = useCallback((hfModel: HFModelInfo) => {
     const backend = hfModelBackends[hfModel.id];
@@ -991,13 +1399,14 @@ const [searchQuery, setSearchQuery] = useState('');
     const checkpoint = backend.recipe === 'llamacpp'
       ? resolveGgufCheckpoint(hfModel.id, backend)
       : hfModel.id;
-    const modelName = `user.${resolveHfModelName(hfModel.id, backend)}`;
+    const modelName = `user.${resolveHfModelName(hfModel.id, backend, checkpoint)}`;
     const labels = new Set(backend.suggestedLabels ?? []);
     const mmproj = backend.mmprojFiles?.[0];
     if (mmproj) labels.add('vision');
     handleDownloadModel(modelName, {
       checkpoint,
       recipe: backend.recipe,
+      source: 'huggingface',
       mmproj,
       labels: Array.from(labels),
       vision: labels.has('vision'),
@@ -1005,6 +1414,80 @@ const [searchQuery, setSearchQuery] = useState('');
       reranking: labels.has('reranking'),
     });
   }, [hfModelBackends, resolveGgufCheckpoint, resolveHfModelName, handleDownloadModel]);
+
+  const resolveModelScopeGgufCheckpoint = useCallback((modelId: string, backend: DetectedBackend): string => {
+    const selectedFilename = modelScopeSelectedQuantizations[modelId];
+    if (!selectedFilename) return modelId;
+    const quantObj = backend.quantizations?.find(q => q.filename === selectedFilename);
+    return `${modelId}:${quantObj?.quantization ?? selectedFilename}`;
+  }, [modelScopeSelectedQuantizations]);
+
+  const resolveModelScopeModelName = useCallback((modelId: string, backend: DetectedBackend, checkpoint?: string): string => {
+    const lookupModelInfo = (modelName: string): ModelInfo | undefined =>
+      modelsData[`user.${modelName}`] ?? modelsData[modelName];
+
+    const matchesModelScopeCheckpoint = (info: ModelInfo | undefined): boolean => {
+      if (!info || !checkpoint) return false;
+      const registrySource = info.registry_source
+        ?? (info.source === 'modelscope' || info.source === 'huggingface' ? info.source : 'huggingface');
+      return registrySource === 'modelscope'
+        && (info.checkpoint === checkpoint || info.checkpoints?.main === checkpoint);
+    };
+
+    const suggestedName = backend.suggestedName || modelId.split('/').pop() || modelId;
+    const selectedFilename = modelScopeSelectedQuantizations[modelId];
+    const quantObj = backend.quantizations?.find(q => q.filename === selectedFilename);
+    const defaultName = backend.recipe === 'llamacpp' && selectedFilename
+      ? `${suggestedName}-${quantObj?.quantization ?? selectedFilename}`
+      : suggestedName;
+
+    const existingDefault = lookupModelInfo(defaultName);
+    if (!existingDefault || matchesModelScopeCheckpoint(existingDefault)) return defaultName;
+
+    // A mirrored HF repository may already own the default name. Keep the
+    // ModelScope entry distinct while preserving the source+repository identity.
+    const owner = modelId.split('/')[0]?.trim();
+    const safeOwner = owner?.replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
+    const fallbackBase = safeOwner ? `${defaultName}-${safeOwner}` : `${defaultName}-modelscope`;
+    let candidate = fallbackBase;
+    let suffix = 2;
+    let existingCandidate = lookupModelInfo(candidate);
+    while (existingCandidate && !matchesModelScopeCheckpoint(existingCandidate)) {
+      candidate = `${fallbackBase}-${suffix}`;
+      suffix += 1;
+      existingCandidate = lookupModelInfo(candidate);
+    }
+    return candidate;
+  }, [modelScopeSelectedQuantizations, modelsData]);
+
+  const handleInstallModelScopeModel = useCallback((model: HFModelInfo) => {
+    const backend = modelScopeModelBackends[model.id];
+    if (!backend) return;
+
+    const checkpoint = backend.recipe === 'llamacpp'
+      ? resolveModelScopeGgufCheckpoint(model.id, backend)
+      : model.id;
+    const modelName = `user.${resolveModelScopeModelName(model.id, backend, checkpoint)}`;
+    const labels = new Set(backend.suggestedLabels ?? []);
+    const mmproj = backend.mmprojFiles?.[0];
+    if (mmproj) labels.add('vision');
+
+    handleDownloadModel(modelName, {
+      checkpoint,
+      recipe: backend.recipe,
+      source: 'modelscope',
+      mmproj,
+      labels: Array.from(labels),
+      vision: labels.has('vision'),
+      embedding: labels.has('embeddings'),
+      reranking: labels.has('reranking'),
+    });
+  }, [
+    modelScopeModelBackends,
+    resolveModelScopeGgufCheckpoint,
+    resolveModelScopeModelName,
+    handleDownloadModel,
+  ]);
 
   // Debounced HF search effect - to avoid HF API rate limit error
   useEffect(() => {
@@ -1025,6 +1508,69 @@ const [searchQuery, setSearchQuery] = useState('');
       if (hfModelBackends[model.id] === undefined) detectBackend(model.id);
     });
   }, [hfSearchResults, hfModelBackends, detectBackend]);
+
+  // ModelScope follows the same query and placement as Hugging Face, but has
+  // its own debounce and request generation so neither provider can cancel or
+  // overwrite the other provider's state.
+  useEffect(() => {
+    if (modelScopeSearchTimeoutRef.current) {
+      clearTimeout(modelScopeSearchTimeoutRef.current);
+      modelScopeSearchTimeoutRef.current = null;
+    }
+
+    const requestId = ++modelScopeSearchRequestRef.current;
+
+    if (currentView !== 'models') {
+      setIsSearchingModelScope(false);
+      setModelScopeSearchResults([]);
+      setModelScopeModelBackends({});
+      setModelScopeSelectedQuantizations({});
+      setModelScopeModelSizes({});
+      setModelScopeRateLimited(false);
+      setModelScopeSearchError(null);
+      return;
+    }
+
+    const query = searchQuery.trim();
+    if (query.length >= 3) {
+      setModelScopeSearchResults([]);
+      setModelScopeModelBackends({});
+      setModelScopeSelectedQuantizations({});
+      setModelScopeModelSizes({});
+      setModelScopeRateLimited(false);
+      setModelScopeSearchError(null);
+      // ModelScope is server-proxied and does not share Hugging Face's browser
+      // rate limit, so a shorter debounce keeps the secondary provider responsive.
+      setIsSearchingModelScope(true);
+      const controller = new AbortController();
+      modelScopeSearchTimeoutRef.current = setTimeout(() => {
+        void searchModelScope(query, requestId, controller.signal);
+      }, MODELSCOPE_SEARCH_DEBOUNCE_MS);
+
+      return () => {
+        controller.abort();
+        if (modelScopeSearchTimeoutRef.current) {
+          clearTimeout(modelScopeSearchTimeoutRef.current);
+          modelScopeSearchTimeoutRef.current = null;
+        }
+      };
+    } else {
+      setIsSearchingModelScope(false);
+      setModelScopeSearchResults([]);
+      setModelScopeModelBackends({});
+      setModelScopeSelectedQuantizations({});
+      setModelScopeModelSizes({});
+      setModelScopeRateLimited(false);
+      setModelScopeSearchError(null);
+    }
+
+    return () => {
+      if (modelScopeSearchTimeoutRef.current) {
+        clearTimeout(modelScopeSearchTimeoutRef.current);
+        modelScopeSearchTimeoutRef.current = null;
+      }
+    };
+  }, [searchQuery, currentView, searchModelScope]);
 
   // Separate useEffect for download resume/retry to avoid stale closure issues
   useEffect(() => {
@@ -1177,6 +1723,22 @@ const [searchQuery, setSearchQuery] = useState('');
     } catch (error) {
       console.error('Error unloading model:', error);
       showError(`Failed to unload model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleTogglePin = async (modelName: string, pin: boolean) => {
+    try {
+      const response = await serverFetch('/internal/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: modelName, pinned: pin })
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to pin model: ${response.statusText}`);
+      }
+      await fetchCurrentLoadedModel();
+    } catch (error) {
+      showError(`Failed to update pin: ${error instanceof Error ? error.message : 'Unknown'}`);
     }
   };
 
@@ -1346,26 +1908,32 @@ const [searchQuery, setSearchQuery] = useState('');
     </button>
   );
 
-  const renderCustomCollectionOptionsButton = (modelName: string) => (
-    <button
-      className="model-action-btn load-btn"
-      onClick={(e) => {
-        e.stopPropagation();
-        window.dispatchEvent(new CustomEvent('editCustomCollection', { detail: { collectionId: modelName } }));
-      }}
-      title="Omni Model options"
-    >
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-           xmlns="http://www.w3.org/2000/svg">
-        <path
-          d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
-          stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"
-          strokeLinejoin="round"/>
-        <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
-                strokeWidth="1.2"/>
-      </svg>
-    </button>
+  const gearIcon = (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
+        stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx="8" cy="8.5" r="2.5" stroke="currentColor" strokeWidth="1.2"/>
+    </svg>
   );
+
+  const renderCustomCollectionOptionsButton = (modelName: string) => {
+    const recipe = modelsData[modelName]?.recipe;
+    const isRouter = recipe === COLLECTION_ROUTER_MODEL_RECIPE;
+    return (
+      <button
+        className="model-action-btn load-btn"
+        onClick={(e) => {
+          e.stopPropagation();
+          const event = isRouter ? 'editRouterCollection' : 'editCustomCollection';
+          window.dispatchEvent(new CustomEvent(event, { detail: { collectionId: modelName } }));
+        }}
+        title={isRouter ? 'Hybrid Router options' : 'Omni Model options'}
+      >
+        {gearIcon}
+      </button>
+    );
+  };
 
   const renderDeleteButton = (modelName: string, title = 'Delete model') => {
     const blockedByDownload = hasActiveDownloadForModel(modelName);
@@ -1395,7 +1963,13 @@ const [searchQuery, setSearchQuery] = useState('');
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
     const info = modelsData[modelName];
     const isUpscaling = info?.labels?.includes('upscaling');
+    const hasUpdate = info?.update_available === true;
     const isCollection = isCollectionModel(info);
+    // Cloud-recipe rows have no local artifact (Delete is meaningless and
+    // dynamic discovery would re-add anyway) and no per-model knobs the
+    // ModelOptionsModal can edit (provider config lives in the Backends
+    // panel). Show Load / Unload only.
+    const isCloud = info?.recipe === 'cloud';
     const isEditableCollection = isCollectionEditableAsCustom(info);
     const isBuiltInCollection = isCollection && info?.suggested === true &&
       !(info?.labels ?? []).includes('custom') &&
@@ -1421,6 +1995,19 @@ const [searchQuery, setSearchQuery] = useState('');
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
           </>
         )}
+        {isDownloaded && hasUpdate && (
+          <button
+            className="model-action-btn update-btn"
+            onClick={(e) => { e.stopPropagation(); handleDownloadModel(modelName, undefined, true); }}
+            title="Update available — click to re-download"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+        )}
         {isDownloaded && !isLoaded && !isLoading && isUpscaling && (
           <>
             {renderDeleteButton(modelName)}
@@ -1437,9 +2024,9 @@ const [searchQuery, setSearchQuery] = useState('');
                 <polygon points="5 3 19 12 5 21" fill="currentColor" />
               </svg>
             </button>
-            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
+            {canDeleteFromRow && !isCloud && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
-            {!isCollection && renderLoadOptionsButton(modelName)}
+            {!isCloud && !isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
         {isLoaded && (
@@ -1455,9 +2042,9 @@ const [searchQuery, setSearchQuery] = useState('');
                 <path d="M5 20H19" />
               </svg>
             </button>
-            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
+            {canDeleteFromRow && !isCloud && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
-            {!isCollection && renderLoadOptionsButton(modelName)}
+            {!isCloud && !isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
       </>
@@ -1490,7 +2077,7 @@ const [searchQuery, setSearchQuery] = useState('');
         return s ? `• ${c} (${s.toFixed(1)} GB)` : `• ${c}`;
       });
       nameTooltip = `Omni Model with ${components.length} component models:\n${lines.join('\n')}`;
-    } else if (displayName || getModelDisplayName(modelName) !== modelName) {
+    } else if (displayName || getModelDisplayName(modelName, modelInfo) !== modelName) {
       nameTooltip = modelName;
     }
 
@@ -1504,8 +2091,10 @@ const [searchQuery, setSearchQuery] = useState('');
         <div className="model-item-content">
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-            <span className="model-name" title={nameTooltip}>{displayName ?? (isCollectionModel(modelInfo) ? getCollectionDisplayName(modelName) : getModelDisplayName(modelName))}</span>
-            <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
+            <span className="model-name" title={nameTooltip}>{displayName ?? (isCollectionModel(modelInfo) ? getCollectionDisplayName(modelName) : getModelDisplayName(modelName, modelInfo))}</span>
+            {modelInfo.recipe !== 'cloud' && (
+              <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
+            )}
             {renderActionButtons(modelName, isHovered)}
           </div>
           {modelInfo.labels && modelInfo.labels.length > 0 && (
@@ -1616,6 +2205,16 @@ const [searchQuery, setSearchQuery] = useState('');
       />
     );
   };
+
+  const compatibleHfSearchResults = hfSearchResults.filter((model: HFModelInfo) => {
+    const backend = hfModelBackends[model.id];
+    return backend !== null && !(backend != null && ['sd-cpp', 'whispercpp', 'moonshine'].includes(backend.recipe));
+  });
+
+  const noCompatibleModelScopeResults = !isSearchingModelScope
+    && !modelScopeRateLimited
+    && !modelScopeSearchError
+    && modelScopeSearchResults.length === 0;
 
   const renderModelsView = () => (
     <>
@@ -1777,8 +2376,7 @@ const [searchQuery, setSearchQuery] = useState('');
                     <span className="toggle-label-text">Downloaded only</span>
                     <div className="toggle-switch">
                       <input type="checkbox" checked={showDownloadedOnly} onChange={(e) => {
-                        setShowDownloadedOnly(e.target.checked);
-                        setShowFilterPanel(false);
+                        updateShowDownloadedOnly(e.target.checked);
                       }} />
                       <span className="toggle-slider"></span>
                     </div>
@@ -1808,9 +2406,18 @@ const [searchQuery, setSearchQuery] = useState('');
                       <span className="loaded-model-name" title={modelName}>{getModelDisplayName(modelName)}</span>
                     </div>
                     {!isLoading && (
-                      <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
-                        <EjectIcon />
-                      </button>
+                      <div className="active-model-actions">
+                        <button
+                          className={`model-action-btn pin-btn ${pinnedModels.has(modelName) ? 'pinned' : ''}`}
+                          onClick={() => handleTogglePin(modelName, !pinnedModels.has(modelName))}
+                          title={pinnedModels.has(modelName) ? "Unpin model" : "Pin model"}
+                        >
+                          <PinIcon fill={pinnedModels.has(modelName) ? 'currentColor' : 'none'} />
+                        </button>
+                        <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
+                          <EjectIcon />
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -1828,61 +2435,154 @@ const [searchQuery, setSearchQuery] = useState('');
                 {renderModelsView()}
               </div>
             )}
-            {currentView === 'models' && searchQuery.trim().length >= 3 && ( // Rendering the HF models by searching
-              <div className="hf-search-section widget">
-                <div className="available-models-header">
-                  <div className="loaded-model-label">FROM HUGGING FACE</div>
-                  {isSearchingHF && <span className="hf-search-spinner" />}
-                </div>
-                {hfRateLimited && (
-                  <div className="hf-search-message">Rate limited — try again shortly.</div>
-                )}
-                {!hfRateLimited && !isSearchingHF && (
-                  hfSearchResults.length === 0 ||
-                  (hfSearchResults.length > 0 &&
-                    detectingBackendFor === null &&
-                    hfSearchResults.every((m: HFModelInfo) => {
-                      const backend = hfModelBackends[m.id];
-                      return backend === null || (backend != null && ['sd-cpp', 'whispercpp'].includes(backend.recipe));
-                    }))
-                ) && (
-                  <div className="hf-search-message">No compatible models found.</div>
-                )}
-                {hfSearchResults.filter((hfModel: HFModelInfo) => {
-                  const backend = hfModelBackends[hfModel.id];
-                  return backend !== null && !(backend != null && ['sd-cpp', 'whispercpp'].includes(backend.recipe));
-                }).map((hfModel: HFModelInfo) => {
-                  const backend = hfModelBackends[hfModel.id];
-                  const isDetecting = detectingBackendFor === hfModel.id;
-                  const quants = backend?.quantizations ?? [];
-                  const selectedQuant = hfSelectedQuantizations[hfModel.id];
-                  const size = hfModelSizes[hfModel.id];
-                  return (
-                    <div key={hfModel.id} className="hf-model-item">
-                      <div className="hf-model-left">
-                        <span className="hf-model-name" title={hfModel.id}>{hfModel.id}</span>
-                        {size !== undefined && <span className="hf-model-size">{formatSize(size / (1024 ** 3))}</span>}
-                        <span className="hf-model-meta">↓ {formatDownloads(hfModel.downloads)}</span>
-                        {isDetecting && <span className="hf-search-spinner" />}
-                        <div className="hf-model-actions">
-                          {!isDetecting && backend && (
-                            <>
+            {currentView === 'models' && searchQuery.trim().length >= 3 && (
+              <div className="hf-search-section widget registry-search-section">
+                <section className="registry-provider-group" aria-label="Hugging Face search results">
+                  <div className="available-models-header registry-provider-header">
+                    <div className="loaded-model-label">FROM HUGGING FACE</div>
+                    {isSearchingHF && <span className="hf-search-spinner" />}
+                  </div>
+                  {hfRateLimited && (
+                    <div className="hf-search-message">Rate limited — try again shortly.</div>
+                  )}
+                  {!hfRateLimited && !isSearchingHF && compatibleHfSearchResults.length === 0 && (
+                    <div className="hf-search-message">No compatible models found.</div>
+                  )}
+                  <div className="registry-provider-results">
+                    {compatibleHfSearchResults.map((hfModel: HFModelInfo) => {
+                    const backend = hfModelBackends[hfModel.id];
+                    const isDetecting = detectingBackendFor === hfModel.id;
+                    const quants = backend?.quantizations ?? [];
+                    const selectedQuant = hfSelectedQuantizations[hfModel.id];
+                    const size = hfModelSizes[hfModel.id];
+                    return (
+                      <div key={hfModel.id} className="hf-model-item">
+                        <div className="hf-model-left">
+                          <span className="hf-model-name" title={hfModel.id}>{hfModel.id}</span>
+                          <span className="registry-result-source-badge huggingface" title="Hugging Face">HF</span>
+                          {size !== undefined && <span className="hf-model-size">{formatSize(size / (1024 ** 3))}</span>}
+                          <span className="hf-model-meta">↓ {formatDownloads(hfModel.downloads)}</span>
+                          {isDetecting && <span className="hf-search-spinner" />}
+                          <div className="hf-model-actions">
+                            {!isDetecting && backend && (
+                              <>
+                                <button
+                                  className="model-action-btn edit-btn"
+                                  title="Edit before adding"
+                                  onClick={(e: React.MouseEvent) => {
+                                    e.stopPropagation();
+                                    const checkpoint = backend.recipe === 'llamacpp'
+                                      ? resolveGgufCheckpoint(hfModel.id, backend)
+                                      : hfModel.id;
+                                    const idLower = hfModel.id.toLowerCase();
+                                    const labels = backend.suggestedLabels ?? [];
+                                    window.dispatchEvent(new CustomEvent('openAddModel', {
+                                      detail: {
+                                        initialValues: {
+                                          name: resolveHfModelName(hfModel.id, backend, checkpoint),
+                                          checkpoint,
+                                          recipe: backend.recipe,
+                                          source: 'huggingface',
+                                          mmprojOptions: backend.mmprojFiles,
+                                          labels,
+                                          vision: labels.includes('vision') || (backend.mmprojFiles?.length ?? 0) > 0,
+                                          reranking: labels.includes('reranking') || idLower.includes('rerank'),
+                                          embedding: labels.includes('embeddings') || idLower.includes('embed'),
+                                        },
+                                      },
+                                    }));
+                                  }}
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  className="model-action-btn download-btn"
+                                  title="Download from Hugging Face"
+                                  onClick={() => handleInstallHFModel(hfModel)}
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                  </svg>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="hf-model-right">
+                          {!isDetecting && backend && quants.length > 1 && (
+                            <select
+                              className="hf-quant-select"
+                              value={selectedQuant ?? ''}
+                              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                                const q = quants.find((x: GGUFQuantization) => x.filename === e.target.value);
+                                setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [hfModel.id]: e.target.value }));
+                                if (q?.size !== undefined) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [hfModel.id]: q.size }));
+                              }}
+                            >
+                              {quants.map((q: GGUFQuantization) => (
+                                <option key={q.filename} value={q.filename}>{q.quantization}</option>
+                              ))}
+                            </select>
+                          )}
+                          {!isDetecting && backend && <span className="hf-backend-badge">{backend.label}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  </div>
+                </section>
+
+                <section className="registry-provider-group modelscope-provider-group" aria-label="ModelScope search results">
+                  <div className="available-models-header registry-provider-header modelscope-provider-header">
+                    <div className="loaded-model-label">FROM MODELSCOPE</div>
+                    {isSearchingModelScope && <span className="hf-search-spinner" />}
+                  </div>
+                  {modelScopeRateLimited && (
+                    <div className="hf-search-message">Rate limited — try again shortly.</div>
+                  )}
+                  {!modelScopeRateLimited && modelScopeSearchError && (
+                    <div className="hf-search-message">{modelScopeSearchError}</div>
+                  )}
+                  {noCompatibleModelScopeResults && (
+                    <div className="hf-search-message">No compatible models found.</div>
+                  )}
+                  <div className="registry-provider-results">
+                    {modelScopeSearchResults.map((model: HFModelInfo) => {
+                      const backend = modelScopeModelBackends[model.id];
+                      if (!backend) return null;
+                      const quants = backend.quantizations ?? [];
+                      const selectedQuant = modelScopeSelectedQuantizations[model.id];
+                      const size = modelScopeModelSizes[model.id];
+                      return (
+                        <div key={`modelscope:${model.id}`} className="hf-model-item">
+                          <div className="hf-model-left">
+                            <span className="hf-model-name" title={model.id}>{model.id}</span>
+                            <span className="registry-result-source-badge modelscope" title="ModelScope">MS</span>
+                            {size !== undefined && <span className="hf-model-size">{formatSize(size / (1024 ** 3))}</span>}
+                            <span className="hf-model-meta">↓ {formatDownloads(model.downloads)}</span>
+                            <div className="hf-model-actions">
                               <button
                                 className="model-action-btn edit-btn"
                                 title="Edit before adding"
                                 onClick={(e: React.MouseEvent) => {
                                   e.stopPropagation();
                                   const checkpoint = backend.recipe === 'llamacpp'
-                                    ? resolveGgufCheckpoint(hfModel.id, backend)
-                                    : hfModel.id;
-                                  const idLower = hfModel.id.toLowerCase();
+                                    ? resolveModelScopeGgufCheckpoint(model.id, backend)
+                                    : model.id;
                                   const labels = backend.suggestedLabels ?? [];
+                                  const idLower = model.id.toLowerCase();
                                   window.dispatchEvent(new CustomEvent('openAddModel', {
                                     detail: {
                                       initialValues: {
-                                        name: resolveHfModelName(hfModel.id, backend),
+                                        name: resolveModelScopeModelName(model.id, backend, checkpoint),
                                         checkpoint,
                                         recipe: backend.recipe,
+                                        source: 'modelscope',
                                         mmprojOptions: backend.mmprojFiles,
                                         labels,
                                         vision: labels.includes('vision') || (backend.mmprojFiles?.length ?? 0) > 0,
@@ -1900,8 +2600,8 @@ const [searchQuery, setSearchQuery] = useState('');
                               </button>
                               <button
                                 className="model-action-btn download-btn"
-                                title="Download from Hugging Face"
-                                onClick={() => handleInstallHFModel(hfModel)}
+                                title="Download from ModelScope"
+                                onClick={() => handleInstallModelScopeModel(model)}
                               >
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -1909,31 +2609,33 @@ const [searchQuery, setSearchQuery] = useState('');
                                   <line x1="12" y1="15" x2="12" y2="3" />
                                 </svg>
                               </button>
-                            </>
-                          )}
+                            </div>
+                          </div>
+                          <div className="hf-model-right">
+                            {quants.length > 1 && (
+                              <select
+                                className="hf-quant-select"
+                                value={selectedQuant ?? ''}
+                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                                  const quant = quants.find((item: GGUFQuantization) => item.filename === e.target.value);
+                                  setModelScopeSelectedQuantizations(prev => ({ ...prev, [model.id]: e.target.value }));
+                                  if (quant?.size !== undefined) {
+                                    setModelScopeModelSizes(prev => ({ ...prev, [model.id]: quant.size }));
+                                  }
+                                }}
+                              >
+                                {quants.map((quant: GGUFQuantization) => (
+                                  <option key={quant.filename} value={quant.filename}>{quant.quantization}</option>
+                                ))}
+                              </select>
+                            )}
+                            <span className="hf-backend-badge">{backend.label}</span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="hf-model-right">
-                        {!isDetecting && backend && quants.length > 1 && (
-                          <select
-                            className="hf-quant-select"
-                            value={selectedQuant ?? ''}
-                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                              const q = quants.find((x: GGUFQuantization) => x.filename === e.target.value);
-                              setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [hfModel.id]: e.target.value }));
-                              if (q?.size !== undefined) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [hfModel.id]: q.size }));
-                            }}
-                          >
-                            {quants.map((q: GGUFQuantization) => (
-                              <option key={q.filename} value={q.filename}>{q.quantization}</option>
-                            ))}
-                          </select>
-                        )}
-                        {!isDetecting && backend && <span className="hf-backend-badge">{backend.label}</span>}
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                </section>
               </div>
             )}
             {currentView === 'marketplace' && (
@@ -1948,6 +2650,7 @@ const [searchQuery, setSearchQuery] = useState('');
                 searchQuery={searchQuery}
                 showError={showError}
                 showSuccess={showSuccess}
+                showWarning={showWarning}
               />
             )}
             {currentView === 'settings' && <SettingsPanel isVisible={true} searchQuery={searchQuery} />}

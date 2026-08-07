@@ -51,144 +51,152 @@ Write-Info "Operating System: Windows"
 Write-Host ""
 
 # Check and install pre-commit
-Write-Info "Checking pre-commit installation..."
+if ($env:CI -or $env:GITHUB_ACTIONS) {
+    Write-Info "Running in CI, skipping pre-commit check."
+} else {
+    Write-Info "Checking pre-commit installation..."
 
-if (-not (Command-Exists "pre-commit")) {
-    Write-Warning "pre-commit not found, installing..."
+    if (-not (Command-Exists "pre-commit")) {
+        Write-Warning "pre-commit not found, installing..."
 
-    if (Command-Exists "pip") {
-        pip install pre-commit
-    } elseif (Command-Exists "pip3") {
-        pip3 install pre-commit
-    } elseif (Command-Exists "py") {
-        Write-Warning "Pip or Pip3 not found. Installing using py."
-        py -m pip install pre-commit
-        Write-Warning "If you encounter issues, please ensure the Python Scripts directory is in your PATH."
+        if (Command-Exists "pip") {
+            pip install pre-commit
+        } elseif (Command-Exists "pip3") {
+            pip3 install pre-commit
+        } elseif (Command-Exists "py") {
+            Write-Warning "Pip or Pip3 not found. Installing using py."
+            py -m pip install pre-commit
+            Write-Warning "If you encounter issues, please ensure the Python Scripts directory is in your PATH."
+        } else {
+            Write-Error-Custom "Neither pip nor pip3 found. Please install Python 3 first."
+            exit 1
+        }
+
+        Write-Success "pre-commit installed"
     } else {
-        Write-Error-Custom "Neither pip nor pip3 found. Please install Python 3 first."
-        exit 1
+        Write-Success "pre-commit is already installed"
     }
 
-    Write-Success "pre-commit installed"
-} else {
-    Write-Success "pre-commit is already installed"
-}
-
-# Install pre-commit hooks
-if (Test-Path ".pre-commit-config.yaml") {
-    Write-Info "Installing pre-commit hooks..."
-    pre-commit install
-    Write-Success "pre-commit hooks installed"
-} else {
-    Write-Warning "No .pre-commit-config.yaml found, skipping hook installation"
+    # Install pre-commit hooks
+    if (Test-Path ".pre-commit-config.yaml") {
+        Write-Info "Installing pre-commit hooks..."
+        pre-commit install
+        Write-Success "pre-commit hooks installed"
+    } else {
+        Write-Warning "No .pre-commit-config.yaml found, skipping hook installation"
+    }
 }
 
 Write-Host ""
 
 # Step 3: Check and install Node.js and npm
-Write-Info "Step 3: Checking Node.js and npm installation..."
-
-if (-not (Command-Exists "node")) {
-    Write-Error-Custom "Node.js not found"
-    Write-Info "Please install Node.js from https://nodejs.org/"
-    Write-Info "You can also use Chocolatey if installed: choco install nodejs"
-    exit 1
+if ($env:LEMONADE_SKIP_FRONTEND_DEPS -eq "1" -or $env:LEMONADE_SKIP_FRONTEND_DEPS -eq "true") {
+    Write-Info "LEMONADE_SKIP_FRONTEND_DEPS is enabled. Skipping Node, NPM, and Rust checks."
 } else {
-    Write-Success "Node.js is installed"
-}
+    Write-Info "Step 3: Checking Node.js and npm installation..."
 
-if (-not (Command-Exists "npm")) {
-    Write-Error-Custom "npm is not available"
-    Write-Info "Please reinstall Node.js or ensure npm is in your PATH"
-    exit 1
-} else {
-    Write-Success "npm is installed"
-}
-
-Write-Host ""
-
-Write-Info "Checking Rust toolchain installation..."
-
-# rustup may have installed cargo into ~/.cargo/bin without it being on PATH
-# yet for this PowerShell session (the installer updates the user PATH but
-# existing shells don't pick that up until they restart).
-if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
-    $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
-    if (Test-Path (Join-Path $cargoBin "cargo.exe")) {
-        $env:PATH = "$cargoBin;$env:PATH"
+    if (-not (Command-Exists "node")) {
+        Write-Error-Custom "Node.js not found"
+        Write-Info "Please install Node.js from https://nodejs.org/"
+        Write-Info "You can also use Chocolatey if installed: choco install nodejs"
+        exit 1
+    } else {
+        Write-Success "Node.js is installed"
     }
-}
 
-$rustNeedsInstall = $false
-if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
-    $rustNeedsInstall = $true
-    Write-Info "Rust toolchain not found"
-} else {
-    Write-Success "Rust toolchain is installed"
-}
+    if (-not (Command-Exists "npm")) {
+        Write-Error-Custom "npm is not available"
+        Write-Info "Please reinstall Node.js or ensure npm is in your PATH"
+        exit 1
+    } else {
+        Write-Success "npm is installed"
+    }
 
-if ($rustNeedsInstall) {
-    Write-Info "Installing Rust toolchain automatically..."
-    $rustInstalled = $false
+    Write-Host ""
 
-    if (Command-Exists "winget") {
-        Write-Info "Trying Windows package manager install first..."
-        & winget install --exact --id Rustlang.Rustup --accept-package-agreements --accept-source-agreements --disable-interactivity --scope user
-        if ($LASTEXITCODE -eq 0) {
-            $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-            $env:PATH = "$userPath;$machinePath;$env:PATH"
+    Write-Info "Checking Rust toolchain installation..."
 
-            if (Command-Exists "rustup") {
-                & rustup default stable | Out-Null
-                $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
-                if (Test-Path (Join-Path $cargoBin "cargo.exe")) {
-                    $env:PATH = "$cargoBin;$env:PATH"
+    # rustup may have installed cargo into ~/.cargo/bin without it being on PATH
+    # yet for this PowerShell session (the installer updates the user PATH but
+    # existing shells don't pick that up until they restart).
+    if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
+        $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+        if (Test-Path (Join-Path $cargoBin "cargo.exe")) {
+            $env:PATH = "$cargoBin;$env:PATH"
+        }
+    }
+
+    $rustNeedsInstall = $false
+    if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
+        $rustNeedsInstall = $true
+        Write-Info "Rust toolchain not found"
+    } else {
+        Write-Success "Rust toolchain is installed"
+    }
+
+    if ($rustNeedsInstall) {
+        Write-Info "Installing Rust toolchain automatically..."
+        $rustInstalled = $false
+
+        if (Command-Exists "winget") {
+            Write-Info "Trying Windows package manager install first..."
+            & winget install --exact --id Rustlang.Rustup --accept-package-agreements --accept-source-agreements --disable-interactivity --scope user
+            if ($LASTEXITCODE -eq 0) {
+                $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+                $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+                $env:PATH = "$userPath;$machinePath;$env:PATH"
+
+                if (Command-Exists "rustup") {
+                    & rustup default stable | Out-Null
+                    $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+                    if (Test-Path (Join-Path $cargoBin "cargo.exe")) {
+                        $env:PATH = "$cargoBin;$env:PATH"
+                    }
+                    if ((Command-Exists "cargo") -and (Command-Exists "rustc")) {
+                        $rustInstalled = $true
+                    }
                 }
-                if ((Command-Exists "cargo") -and (Command-Exists "rustc")) {
-                    $rustInstalled = $true
-                }
+            } else {
+                Write-Warning "winget Rust install failed (exit code $LASTEXITCODE)"
             }
         } else {
-            Write-Warning "winget Rust install failed (exit code $LASTEXITCODE)"
+            Write-Warning "winget not available, skipping package-manager Rust install"
         }
-    } else {
-        Write-Warning "winget not available, skipping package-manager Rust install"
-    }
 
-    if (-not $rustInstalled) {
-        Write-Warning "Falling back to rustup-init.exe download..."
-        $rustupInit = Join-Path $env:TEMP "rustup-init.exe"
-        $downloadOk = $true
-        try {
-            Invoke-WebRequest -UseBasicParsing -Uri "https://win.rustup.rs/x86_64" -OutFile $rustupInit
-        } catch {
-            Write-Error-Custom "Failed to download rustup-init.exe: $_"
+        if (-not $rustInstalled) {
+            Write-Warning "Falling back to rustup-init.exe download..."
+            $rustupInit = Join-Path $env:TEMP "rustup-init.exe"
+            $downloadOk = $true
+            try {
+                Invoke-WebRequest -UseBasicParsing -Uri "https://win.rustup.rs/x86_64" -OutFile $rustupInit
+            } catch {
+                Write-Error-Custom "Failed to download rustup-init.exe: $_"
+                exit 1
+            }
+
+            if ($downloadOk) {
+                & $rustupInit -y --default-toolchain stable --no-modify-path | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Error-Custom "rustup install failed (exit code $LASTEXITCODE)"
+                    exit 1
+                } else {
+                    $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+                    $env:PATH = "$cargoBin;$env:PATH"
+
+                    if ((Command-Exists "cargo") -and (Command-Exists "rustc")) {
+                        $rustInstalled = $true
+                    }
+                }
+            }
+        }
+
+        if (-not $rustInstalled) {
+            Write-Error-Custom "Rust installation completed, but cargo/rustc are still unavailable"
             exit 1
         }
 
-        if ($downloadOk) {
-            & $rustupInit -y --default-toolchain stable --no-modify-path | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                Write-Error-Custom "rustup install failed (exit code $LASTEXITCODE)"
-                exit 1
-            } else {
-                $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
-                $env:PATH = "$cargoBin;$env:PATH"
-
-                if ((Command-Exists "cargo") -and (Command-Exists "rustc")) {
-                    $rustInstalled = $true
-                }
-            }
-        }
+        Write-Success "Rust toolchain installed"
     }
-
-    if (-not $rustInstalled) {
-        Write-Error-Custom "Rust installation completed, but cargo/rustc are still unavailable"
-        exit 1
-    }
-
-    Write-Success "Rust toolchain installed"
 }
 
 Write-Host ""

@@ -15,5 +15,6 @@ This spec details all supported endpoints. It is organized into pages that corre
 | [OpenAI-Compatible API](./openai.md) | Start here for the main API surface used by most SDKs and clients. |
 | [Ollama-Compatible API](./ollama.md) | Use this if your client expects Ollama-style behavior and routes. |
 | [Anthropic-Compatible API](./anthropic.md) | Use this for clients built around Anthropic's message format. |
+| [MCP Gateway](./mcp.md) | Use this to expose Lemonade as a Model Context Protocol server (POST /mcp). |
 | [llama.cpp-Specific API](./llamacpp.md) | Reference for llama.cpp-specific compatibility and conventions. |
 | [Lemonade-Specific API](./lemonade.md) | Local-first API for managing lifecycle, configuration, backends, etc. |

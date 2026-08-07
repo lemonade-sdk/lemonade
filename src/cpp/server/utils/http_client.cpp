@@ -13,6 +13,7 @@
 #include <cctype>
 #include <fstream>
 #include <memory>
+#include <string_view>
 #include <vector>
 #include <mbedtls/md.h>
 
@@ -39,6 +40,10 @@ static std::string lower_copy(std::string value) {
         return static_cast<char>(std::tolower(c));
     });
     return value;
+}
+
+static size_t curl_off_to_size(curl_off_t value) {
+    return value > 0 ? static_cast<size_t>(value) : 0;
 }
 
 static bool is_hex_digest(const std::string& value, size_t expected_len) {
@@ -249,10 +254,21 @@ static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* st
     return written;
 }
 
-// Callback for download progress
+static int cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t, curl_off_t,
+                                    curl_off_t) {
+    auto* flag = static_cast<std::atomic<bool>*>(clientp);
+    return (flag && flag->load()) ? 1 : 0;
+}
+
 struct ProgressData {
     ProgressCallback callback;
-    bool cancelled = false;  // Set to true when callback returns false
+    bool cancelled = false;
+    bool stalled = false;
+    bool waiting_for_first_byte = false;
+    long current_response_code = 0;
+    int no_progress_timeout = 0;
+    curl_off_t last_downloaded = 0;
+    std::chrono::steady_clock::time_point last_progress_time = std::chrono::steady_clock::now();
 };
 
 static fs::path get_disk_space_probe_path(const fs::path& output_path) {
@@ -270,29 +286,151 @@ static fs::path get_disk_space_probe_path(const fs::path& output_path) {
     return fs::path(".");
 }
 
-// CURL progress callback - returns non-zero to abort transfer
+static size_t header_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
+    const size_t total = size * nitems;
+    ProgressData* data = static_cast<ProgressData*>(userdata);
+    if (!data || total == 0) {
+        return total;
+    }
+
+    std::string line(buffer, total);
+
+    if (line.rfind("HTTP/", 0) == 0) {
+        data->waiting_for_first_byte = false;
+        data->current_response_code = 0;
+        data->last_progress_time = std::chrono::steady_clock::now();
+
+        std::istringstream iss(line);
+        std::string http_version;
+        long status_code = 0;
+        iss >> http_version >> status_code;
+        data->current_response_code = status_code;
+        return total;
+    }
+
+    if (line == "\r\n" || line == "\n") {
+        const bool response_can_have_body =
+            data->current_response_code >= 200 &&
+            data->current_response_code < 300 &&
+            data->current_response_code != 204 &&
+            data->current_response_code != 304;
+
+        if (response_can_have_body) {
+            data->waiting_for_first_byte = true;
+            data->last_progress_time = std::chrono::steady_clock::now();
+        }
+    }
+
+    return total;
+}
+
 static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
                              curl_off_t ultotal, curl_off_t ulnow) {
+    (void)ultotal;
+    (void)ulnow;
+
     ProgressData* data = static_cast<ProgressData*>(clientp);
     if (!data) return 0;
 
-    // Check if already cancelled
     if (data->cancelled) {
-        return 1;  // Abort transfer
+        return 1;
     }
 
-    if (dltotal > 0 && data->callback) {
-        // Call user callback - returns false to cancel
-        if (!data->callback(dlnow, dltotal)) {
-            data->cancelled = true;
-            return 1;  // Abort transfer
+    if (data->callback &&
+        !data->callback(curl_off_to_size(dlnow), curl_off_to_size(dltotal))) {
+        data->cancelled = true;
+        return 1;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (dlnow > data->last_downloaded) {
+        data->waiting_for_first_byte = false;
+        data->last_downloaded = dlnow;
+        data->last_progress_time = now;
+    } else if (data->no_progress_timeout > 0) {
+        const auto idle_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+            now - data->last_progress_time).count();
+
+        const long stall_timeout =
+            data->waiting_for_first_byte
+                ? static_cast<long>(data->no_progress_timeout) * 5L
+                : static_cast<long>(data->no_progress_timeout);
+
+        if (idle_seconds >= stall_timeout) {
+            data->stalled = true;
+            return 1;
         }
     }
-    return 0;  // Continue transfer
+
+    return 0;
 }
 
+namespace {
+// Applies scheme and redirect restrictions for a trust boundary. Redirect
+// behavior is supplied separately so extending policy enforcement to POST
+// paths does not silently change their existing no-redirect semantics.
+// Returns false if any security-relevant option fails to apply, allowing each
+// caller to fail closed instead of issuing an unrestricted request.
+bool apply_http_security_policy(
+    CURL* curl,
+    HttpSecurityPolicy policy,
+    bool follow_redirects) {
+    auto set = [curl](CURLoption option, auto value) {
+        return curl_easy_setopt(curl, option, value) == CURLE_OK;
+    };
+
+    const auto set_proto = [&](CURLoption opt_str, CURLoption opt_bit, const char* str_val, long bit_val) {
+        if (set(opt_str, str_val)) {
+            return true;
+        }
+        return set(opt_bit, bit_val);
+    };
+
+    const auto apply_protocols = [&](const char* protocols,
+                                     const char* redirect_protocols) {
+        std::string_view p(protocols);
+        std::string_view r(redirect_protocols);
+        bool p_has_https = (p.find("https") != std::string_view::npos || p.find("HTTPS") != std::string_view::npos);
+        bool p_has_http = (p.find("http,") != std::string_view::npos || p.find("HTTP,") != std::string_view::npos ||
+                           p.find(",http") != std::string_view::npos || p.find(",HTTP") != std::string_view::npos ||
+                           p == "http" || p == "HTTP");
+        bool r_has_https = (r.find("https") != std::string_view::npos || r.find("HTTPS") != std::string_view::npos);
+        bool r_has_http = (r.find("http,") != std::string_view::npos || r.find("HTTP,") != std::string_view::npos ||
+                           r.find(",http") != std::string_view::npos || r.find(",HTTP") != std::string_view::npos ||
+                           r == "http" || r == "HTTP");
+
+        long proto_mask = (p_has_https ? 2L : 0L) | (p_has_http ? 1L : 0L);
+        long redir_mask = (r_has_https ? 2L : 0L) | (r_has_http ? 1L : 0L);
+
+        if (!set(CURLOPT_FOLLOWLOCATION, follow_redirects ? 1L : 0L) ||
+            !set_proto(CURLOPT_PROTOCOLS_STR, CURLOPT_PROTOCOLS, protocols, proto_mask)) {
+            return false;
+        }
+        if (!follow_redirects) {
+            return true;
+        }
+        return set(CURLOPT_MAXREDIRS, 5L) &&
+               set_proto(CURLOPT_REDIR_PROTOCOLS_STR, CURLOPT_REDIR_PROTOCOLS, redirect_protocols, redir_mask);
+    };
+
+    switch (policy) {
+        case HttpSecurityPolicy::TrustedLoopback:
+            // Managed loopback backends are plain HTTP and must never redirect.
+            return set(CURLOPT_FOLLOWLOCATION, 0L) &&
+                   set_proto(CURLOPT_PROTOCOLS_STR, CURLOPT_PROTOCOLS, "HTTP", 1L /* CURLPROTO_HTTP */);
+        case HttpSecurityPolicy::AllowInsecureHttp:
+            return apply_protocols("HTTP,HTTPS", "HTTP,HTTPS");
+        case HttpSecurityPolicy::ExternalHttpsOnly:
+        default:
+            return apply_protocols("HTTPS", "HTTPS");
+    }
+}
+} // namespace
+
 HttpResponse HttpClient::get(const std::string& url,
-                             const std::map<std::string, std::string>& headers) {
+                             const std::map<std::string, std::string>& headers,
+                             long timeout_seconds,
+                             HttpSecurityPolicy policy) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -304,8 +442,12 @@ HttpResponse HttpClient::get(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, default_timeout_seconds_.load());
+    if (!apply_http_security_policy(curl, policy, true)) {
+        curl_easy_cleanup(curl);
+        throw std::runtime_error("Failed to apply HTTP security policy");
+    }
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT,
+                     timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
@@ -341,7 +483,9 @@ HttpResponse HttpClient::get(const std::string& url,
 HttpResponse HttpClient::post(const std::string& url,
                               const std::string& body,
                               const std::map<std::string, std::string>& headers,
-                              long timeout_seconds) {
+                              long timeout_seconds,
+                              HttpSecurityPolicy policy,
+                              std::atomic<bool>* cancel_flag) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -351,15 +495,38 @@ HttpResponse HttpClient::post(const std::string& url,
     std::string response_body;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    if (!apply_http_security_policy(curl, policy, false)) {
+        curl_easy_cleanup(curl);
+        throw std::runtime_error("Failed to apply HTTP security policy");
+    }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
-     // Add custom headers
+    if (cancel_flag) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel_flag);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
+
+    // Add custom headers
+    bool has_content_type = false;
+    for (const auto& header : headers) {
+        std::string key = header.first;
+        for (auto& c : key) c = std::tolower(static_cast<unsigned char>(c));
+        if (key == "content-type") {
+            has_content_type = true;
+            break;
+        }
+    }
+
     struct curl_slist* header_list = nullptr;
-    header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    if (!has_content_type) {
+        header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    }
     for (const auto& header : headers) {
         std::string header_str = header.first + ": " + header.second;
         header_list = curl_slist_append(header_list, header_str.c_str());
@@ -388,7 +555,8 @@ HttpResponse HttpClient::post(const std::string& url,
 
 HttpResponse HttpClient::post_multipart(const std::string& url,
                                          const std::vector<MultipartField>& fields,
-                                         long timeout_seconds) {
+                                         long timeout_seconds,
+                                         HttpSecurityPolicy policy) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -415,6 +583,11 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    if (!apply_http_security_policy(curl, policy, false)) {
+        curl_mime_free(mime);
+        curl_easy_cleanup(curl);
+        throw std::runtime_error("Failed to apply HTTP security policy");
+    }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
@@ -442,6 +615,9 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
 struct StreamCallbackData {
     StreamCallback* callback;
     std::string* buffer;
+    CURL* curl = nullptr;
+    std::function<void(int)>* on_status = nullptr;
+    bool status_reported = false;
 };
 
 // Static C-style callback function
@@ -453,6 +629,13 @@ static size_t stream_write_callback(char* ptr, size_t size, size_t nmemb, void* 
         if (!data || !data->callback || !*(data->callback)) {
             LOG(ERROR, "HttpClient") << "Callback data is null!" << std::endl;
             return 0;
+        }
+
+        if (!data->status_reported && data->on_status && *(data->on_status) && data->curl) {
+            long code = 0;
+            curl_easy_getinfo(data->curl, CURLINFO_RESPONSE_CODE, &code);
+            (*(data->on_status))(static_cast<int>(code));
+            data->status_reported = true;
         }
 
         if (!(*(data->callback))(ptr, total_size)) {
@@ -473,7 +656,9 @@ HttpResponse HttpClient::post_stream(const std::string& url,
                                      const std::string& body,
                                      StreamCallback stream_callback,
                                      const std::map<std::string, std::string>& headers,
-                                     long timeout_seconds) {
+                                     long timeout_seconds,
+                                     std::function<void(int)> on_status,
+                                     HttpSecurityPolicy policy) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -485,17 +670,36 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     StreamCallbackData callback_data;
     callback_data.callback = &stream_callback;
     callback_data.buffer = nullptr;
+    callback_data.curl = curl;
+    callback_data.on_status = &on_status;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
+    if (!apply_http_security_policy(curl, policy, false)) {
+        curl_easy_cleanup(curl);
+        throw std::runtime_error("Failed to apply HTTP security policy");
+    }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
+    bool has_content_type = false;
+    for (const auto& header : headers) {
+        std::string key = header.first;
+        for (auto& c : key) c = std::tolower(static_cast<unsigned char>(c));
+        if (key == "content-type") {
+            has_content_type = true;
+            break;
+        }
+    }
+
     struct curl_slist* header_list = nullptr;
-    header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    if (!has_content_type) {
+        header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    }
     for (const auto& header : headers) {
         std::string header_str = header.first + ": " + header.second;
         header_list = curl_slist_append(header_list, header_str.c_str());
@@ -508,20 +712,26 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     long response_code;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     response.status_code = static_cast<int>(response_code);
+    response.curl_code = static_cast<int>(res);
+    response.curl_error = (res == CURLE_OK) ? std::string() : std::string(curl_easy_strerror(res));
 
-    // For streaming, CURLE_PARTIAL_FILE or CURLE_RECV_ERROR at the end is normal
-    // (backend closes connection after sending all data)
-    if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR) {
-        std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
+    // For streaming, libcurl can report CURLE_PARTIAL_FILE or CURLE_RECV_ERROR
+    // after a backend closes the connection. Do not throw here because the SSE
+    // layer knows whether it saw the protocol-level [DONE] marker. It will treat
+    // the same transport code as success after [DONE] and as backend failure
+    // before [DONE]. Other CURL errors are still exceptional.
+    if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR && res != CURLE_WRITE_ERROR) {
+        std::string error = "CURL error: " + response.curl_error;
         LOG(ERROR, "HttpClient") << "" << error << std::endl;
         curl_slist_free_all(header_list);
         curl_easy_cleanup(curl);
         throw std::runtime_error(error);
     }
 
-    // Log if we got a non-OK CURL code but continue (normal for streaming)
+    // Log if we got a non-OK CURL code but continue so the stream layer can make
+    // the protocol-aware decision.
     if (res != CURLE_OK) {
-        LOG(ERROR, "HttpClient") << "Stream ended with: " << curl_easy_strerror(res)
+        LOG(WARNING, "HttpClient") << "Stream ended with: " << response.curl_error
                   << " (response code: " << response_code << ")" << std::endl;
     }
 
@@ -536,7 +746,9 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
                                             size_t resume_from,
                                             ProgressCallback callback,
                                             const std::map<std::string, std::string>& headers,
-                                            const DownloadOptions& options) {
+                                            const DownloadOptions& options,
+                                            bool initial_range_request,
+                                            HttpSecurityPolicy policy) {
     DownloadResult result;
 
     CURL* curl = curl_easy_init();
@@ -562,7 +774,12 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_file_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    if (!apply_http_security_policy(curl, policy, true)) {
+        result.error_message = "Failed to apply HTTP security policy";
+        fclose(fp);
+        curl_easy_cleanup(curl);
+        return result;
+    }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, static_cast<long>(options.connect_timeout));
@@ -571,14 +788,21 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     if (resume_from > 0) {
         curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(resume_from));
+    } else if (initial_range_request) {
+        curl_easy_setopt(curl, CURLOPT_RANGE, "0-");
     }
 
-    ProgressData* prog_data = nullptr;
-    if (callback) {
-        prog_data = new ProgressData();
+    const int no_progress_timeout = options.no_progress_timeout;
+    std::unique_ptr<ProgressData> prog_data;
+    if (callback || no_progress_timeout > 0) {
+        prog_data = std::make_unique<ProgressData>();
         prog_data->callback = callback;
+        prog_data->no_progress_timeout = no_progress_timeout;
+        prog_data->last_progress_time = std::chrono::steady_clock::now();
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, prog_data.get());
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data.get());
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     }
 
@@ -594,8 +818,8 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     CURLcode res = curl_easy_perform(curl);
 
-    // Check if download was cancelled by user callback
     bool was_cancelled = (prog_data && prog_data->cancelled);
+    bool was_stalled = (prog_data && prog_data->stalled);
 
     curl_off_t downloaded = 0;
     curl_off_t total = 0;
@@ -614,9 +838,22 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     curl_easy_cleanup(curl);
 
-    // Clean up progress data
-    if (prog_data) {
-        delete prog_data;
+    if (was_stalled) {
+        size_t current_file_size = 0;
+        if (fs::exists(output_path_fs)) {
+            current_file_size = fs::file_size(output_path_fs);
+        }
+
+        result.cancelled = false;
+        result.can_resume = current_file_size > 0;
+        std::ostringstream oss;
+        oss << "Download stalled: no bytes received for "
+            << no_progress_timeout << " seconds";
+        if (current_file_size > 0) {
+            oss << "\n  Partial file size: " << (current_file_size / (1024.0 * 1024.0)) << " MB (resumable)";
+        }
+        result.error_message = oss.str();
+        return result;
     }
 
     // Handle user cancellation
@@ -642,6 +879,15 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
             case CURLE_PARTIAL_FILE:
             case CURLE_SSL_CONNECT_ERROR:
                 retryable = true;
+                break;
+            // A rejected scheme (e.g. an https-only policy hit on an http URL or
+            // a disallowed redirect target) and a malformed URL can never
+            // succeed on retry. Fail permanently so the outer loop stops
+            // immediately and preserves any existing partial file.
+            case CURLE_UNSUPPORTED_PROTOCOL:
+            case CURLE_URL_MALFORMAT:
+                result.permanent = true;
+                retryable = false;
                 break;
             case CURLE_WRITE_ERROR: {
                 // CURLE_WRITE_ERROR (23) typically means disk full.
@@ -698,7 +944,12 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
             if (head_curl) {
                 curl_easy_setopt(head_curl, CURLOPT_URL, url.c_str());
                 curl_easy_setopt(head_curl, CURLOPT_NOBODY, 1L);  // HEAD request
-                curl_easy_setopt(head_curl, CURLOPT_FOLLOWLOCATION, 1L);
+                if (!apply_http_security_policy(head_curl, policy, true)) {
+                    curl_easy_cleanup(head_curl);
+                    result.error_message = "Resume failed (HTTP 416) - could not apply security policy";
+                    result.can_resume = false;
+                    return result;
+                }
                 curl_easy_setopt(head_curl, CURLOPT_TIMEOUT, 30L);
 
                 // Add headers
@@ -764,7 +1015,8 @@ DownloadResult HttpClient::download_file(const std::string& url,
                                          const std::string& output_path,
                                          ProgressCallback callback,
                                          const std::map<std::string, std::string>& headers,
-                                         const DownloadOptions& options) {
+                                         const DownloadOptions& options,
+                                         HttpSecurityPolicy policy) {
     DownloadResult final_result;
     int retry_delay_ms = options.initial_retry_delay_ms;
     const ExpectedHash expected_hash = parse_expected_hash(options);
@@ -872,20 +1124,22 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
         ProgressCallback adjusted_callback = nullptr;
         if (callback) {
-            // Adjust progress to account for resume offset
-            // curl reports: current = bytes downloaded this session, total = remaining bytes
-            // We want to show: (resume_offset + current) / (resume_offset + total)
             adjusted_callback = [callback, resume_offset](size_t current, size_t total) -> bool {
-                if (total > 0) {  // Only call when we have valid progress info
+                if (total > 0) {
                     return callback(resume_offset + current, resume_offset + total);
                 }
-                return true;  // Continue if no progress info yet
+                return callback(resume_offset + current, 0);
             };
         }
 
-        // Download to .partial file
+        const bool retrying_without_partial = (attempt > 0 && resume_offset == 0);
+        const bool initial_range_request =
+            options.force_initial_range_request ||
+            (retrying_without_partial && options.range_retry_on_zero_byte_retry);
+
         final_result = download_attempt(url, partial_path, resume_offset,
-                                        adjusted_callback, headers, options);
+                                        adjusted_callback, headers, options,
+                                        initial_range_request, policy);
 
         // If cancelled by user, return immediately without retrying
         if (final_result.cancelled) {
@@ -939,6 +1193,14 @@ DownloadResult HttpClient::download_file(const std::string& url,
             return final_result;
         }
 
+        // A permanent transport failure (unsupported protocol, malformed URL)
+        // can never succeed on retry. Stop immediately and leave any partial
+        // file in place rather than removing it on each doomed attempt.
+        if (final_result.permanent) {
+            LOG(ERROR, "HttpClient") << "[Download] " << final_result.error_message << std::endl;
+            break;
+        }
+
         // Don't retry permanent HTTP failures (4xx client errors).
         // 408 Request Timeout and 429 Too Many Requests are transient and still retried.
         bool is_permanent_4xx = (final_result.http_code >= 400 && final_result.http_code < 500
@@ -987,7 +1249,9 @@ DownloadResult HttpClient::download_file(const std::string& url,
     return final_result;
 }
 
-bool HttpClient::is_reachable(const std::string& url, int timeout_seconds) {
+bool HttpClient::is_reachable(const std::string& url,
+                              int timeout_seconds,
+                              HttpSecurityPolicy policy) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         return false;
@@ -1000,6 +1264,10 @@ bool HttpClient::is_reachable(const std::string& url, int timeout_seconds) {
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    if (!apply_http_security_policy(curl, policy, false)) {
+        curl_easy_cleanup(curl);
+        return false;
+    }
 
     CURLcode res = curl_easy_perform(curl);
 

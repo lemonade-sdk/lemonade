@@ -139,17 +139,51 @@ std::string normalize_user_model_name(std::string name) {
     return prefix + name;
 }
 
-std::string strip_huggingface_url_prefix(const std::string& arg) {
-    static const std::string prefix = "https://huggingface.co/";
-    if (arg.rfind(prefix, 0) == 0) {
-        return arg.substr(prefix.size());
+std::string normalize_source(std::string source) {
+    source = to_lower(std::move(source));
+    if (source.empty() || source == "hf" || source == "huggingface") return "huggingface";
+    if (source == "ms" || source == "modelscope") return "modelscope";
+    return source;
+}
+
+std::string strip_query_fragment(std::string value) {
+    const size_t pos = value.find_first_of("?#");
+    if (pos != std::string::npos) value.resize(pos);
+    while (!value.empty() && value.back() == '/') value.pop_back();
+    return value;
+}
+
+std::string first_repo_segments(const std::string& path) {
+    const size_t slash = path.find('/');
+    if (slash == std::string::npos) return path;
+    const size_t second = path.find('/', slash + 1);
+    return second == std::string::npos ? path : path.substr(0, second);
+}
+
+std::string normalize_registry_url(const std::string& arg,
+                                   std::string& source) {
+    static const std::vector<std::pair<std::string, std::string>> prefixes = {
+        {"https://huggingface.co/", "huggingface"},
+        {"http://huggingface.co/", "huggingface"},
+        {"https://modelscope.cn/models/", "modelscope"},
+        {"https://www.modelscope.cn/models/", "modelscope"},
+        {"http://modelscope.cn/models/", "modelscope"},
+        {"http://www.modelscope.cn/models/", "modelscope"},
+        {"https://modelscope.ai/models/", "modelscope"},
+        {"https://www.modelscope.ai/models/", "modelscope"},
+    };
+    for (const auto& [prefix, detected] : prefixes) {
+        if (arg.rfind(prefix, 0) != 0) continue;
+        source = detected;
+        std::string path = strip_query_fragment(arg.substr(prefix.size()));
+        return first_repo_segments(path);
     }
-    return arg;
+    return strip_query_fragment(arg);
 }
 
 void split_checkpoint_variant(const std::string& arg,
                               std::string& checkpoint, std::string& variant) {
-    // HF repo ids never contain ':', so split on the last ':'.
+    // Supported registry repo ids never contain ':', so split on the last ':'.
     size_t pos = arg.rfind(':');
     if (pos == std::string::npos) {
         checkpoint = arg;
@@ -172,34 +206,49 @@ std::string format_variant_label(const json& v) {
 
 }  // namespace
 
-std::string normalize_huggingface_checkpoint_arg(const std::string& arg) {
-    return strip_huggingface_url_prefix(arg);
+std::string normalize_registry_checkpoint_arg(const std::string& arg,
+                                              const std::string& source_hint,
+                                              std::string* detected_source) {
+    std::string source = normalize_source(source_hint);
+    std::string checkpoint = normalize_registry_url(arg, source);
+    if (detected_source) *detected_source = source;
+    return checkpoint;
 }
 
-int hf_pull_flow(lemonade::LemonadeClient& client,
-                 const std::string& model_arg,
-                 bool assume_yes) {
+std::string normalize_huggingface_checkpoint_arg(const std::string& arg) {
+    return normalize_registry_checkpoint_arg(arg, "huggingface", nullptr);
+}
+
+int registry_pull_flow(lemonade::LemonadeClient& client,
+                       const std::string& model_arg,
+                       bool assume_yes,
+                       const std::string& registry_source) {
+    std::string source;
     std::string checkpoint;
     std::string variant;
-    std::string normalized_model_arg = normalize_huggingface_checkpoint_arg(model_arg);
+    std::string normalized_model_arg = normalize_registry_checkpoint_arg(
+        model_arg, registry_source, &source);
     split_checkpoint_variant(normalized_model_arg, checkpoint, variant);
 
     if (checkpoint.find('/') == std::string::npos) {
         std::cerr << "Error: '" << model_arg
-                  << "' does not look like a Hugging Face checkpoint (expected owner/repo)."
+                  << "' does not look like a model registry checkpoint (expected owner/repo)."
                   << std::endl;
         return 1;
     }
 
     // Fetch variants from the local server.
-    std::string path = "/api/v1/pull/variants?checkpoint=" + url_encode(checkpoint);
+    std::string path = "/api/v1/pull/variants?checkpoint=" + url_encode(checkpoint) +
+                       "&source=" + url_encode(source);
     json variants_response;
     try {
         std::string body = client.make_request(path, "GET");
         variants_response = json::parse(body);
     } catch (const lemonade::HttpError& e) {
         if (e.status_code() == 404) {
-            std::cerr << "Checkpoint '" << checkpoint << "' not found on Hugging Face." << std::endl;
+            std::cerr << "Checkpoint '" << checkpoint << "' not found on "
+                      << (source == "modelscope" ? "ModelScope" : "Hugging Face")
+                      << "." << std::endl;
             return 1;
         }
         std::cerr << "Error fetching variants: " << lemonade::extract_server_error_message(e) << std::endl;
@@ -207,6 +256,45 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
     } catch (const std::exception& e) {
         std::cerr << "Error fetching variants: " << e.what() << std::endl;
         return 1;
+    }
+
+    // Omni collection repos: /pull/variants only inspected the repo and told us
+    // it is a collection. Send a *pointer* /pull body — model name + recipe +
+    // the repo as the checkpoint. /pull does the actual downloading: it fetches
+    // <RepoName>.json to disk and then pulls each component's weights. (We do not
+    // forward the manifest content; /pull re-downloads it as the pull step, which
+    // keeps inspection and download cleanly separated and mirrors regular models,
+    // where the .gguf is downloaded by /pull rather than carried in the body.)
+    if (variants_response.value("repo_kind", "") == "collection") {
+        if (!variant.empty()) {
+            std::cerr << "warning: variant '" << variant
+                      << "' ignored for Omni collection repositories" << std::endl;
+        }
+
+        std::string model_name = normalize_user_model_name(
+            variants_response.value("suggested_name", checkpoint));
+
+        json pull_body;
+        pull_body["model_name"] = model_name;
+        pull_body["recipe"] = "collection.omni";
+        pull_body["source"] = source;
+        // The repo is the checkpoint pointer; /pull resolves components from the
+        // manifest it downloads to disk, and a later `lemonade pull <name>`
+        // refreshes them from the recorded remote registry.
+        pull_body["checkpoints"] = json::object();
+        pull_body["checkpoints"]["main"] = checkpoint;
+
+        std::string display_name = model_name.substr(std::string("user.").size());
+        size_t component_count = variants_response.value("component_count", static_cast<size_t>(0));
+        std::cout << "Pulling Omni collection " << checkpoint << " as " << display_name
+                  << " (" << component_count
+                  << (component_count == 1 ? " component" : " components");
+        if (variants_response.contains("size") && variants_response["size"].is_number()) {
+            std::cout << ", ~" << variants_response["size"].get<double>() << " GB";
+        }
+        std::cout << ")" << std::endl;
+
+        return client.pull_model(pull_body, display_name, /*upgrade=*/true);
     }
 
     if (!variants_response.contains("variants") || !variants_response["variants"].is_array() ||
@@ -217,11 +305,12 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
 
     const auto& variants = variants_response["variants"];
     std::string recipe = variants_response.value("recipe", std::string("llamacpp"));
+    std::string repo_kind = variants_response.value("repo_kind", std::string("gguf"));
 
-    // Non-llamacpp recipes (currently: ONNX RyzenAI) ship as a single
-    // installable unit — no per-variant menu, no `:variant` checkpoint
-    // suffix, no `-VARIANT` model name tail.
-    if (recipe != "llamacpp") {
+    // Non-GGUF repos (currently: ONNX RyzenAI) ship as a single installable
+    // unit — no per-variant menu, no `:variant` checkpoint suffix, no
+    // `-VARIANT` model name tail. (Collections returned earlier above.)
+    if (repo_kind != "gguf") {
         if (!variant.empty()) {
             std::cerr << "warning: variant '" << variant << "' ignored for "
                       << recipe << " checkpoints" << std::endl;
@@ -273,6 +362,7 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
         pull_body["model_name"] = "user." + suggested_name;
         pull_body["checkpoint"] = checkpoint;
         pull_body["recipe"] = recipe;
+        pull_body["source"] = source;
 
         std::cout << "Pulling " << checkpoint
                   << " as " << suggested_name << std::endl;
@@ -323,6 +413,7 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
     pull_body["model_name"] = normalize_user_model_name(model_name);
     pull_body["checkpoint"] = checkpoint + ":" + variant_name;
     pull_body["recipe"] = recipe;
+    pull_body["source"] = source;
 
     if (variants_response.contains("suggested_labels") &&
         variants_response["suggested_labels"].is_array() &&
@@ -340,6 +431,13 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
               << " as " << model_name << std::endl;
 
     return client.pull_model(pull_body, model_name, /*upgrade=*/true);
+}
+
+
+int hf_pull_flow(lemonade::LemonadeClient& client,
+                 const std::string& model_arg,
+                 bool assume_yes) {
+    return registry_pull_flow(client, model_arg, assume_yes, "huggingface");
 }
 
 }  // namespace lemon_cli
