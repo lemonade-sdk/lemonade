@@ -218,7 +218,7 @@ const CAPABILITY_DESCRIPTIONS: Record<CapabilityCol, string> = {
 };
 
 const BACKEND_VIEW_FILTERS: Array<[BackendViewFilter, string, string, IconName]> = [
-  ['all', 'All backends', 'Complete compatibility matrix', 'layers'],
+  ['all', 'All Backends', 'Complete compatibility matrix', 'layers'],
   ['installed', 'Installed', 'Ready on this machine', 'check'],
   ['available', 'Available', 'Ready to install', 'download'],
   ['updates', 'Updates', 'Newer runtime available', 'rotate-ccw'],
