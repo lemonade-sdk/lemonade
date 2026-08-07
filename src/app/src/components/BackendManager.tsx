@@ -218,7 +218,7 @@ const CAPABILITY_DESCRIPTIONS: Record<CapabilityCol, string> = {
 };
 
 const BACKEND_VIEW_FILTERS: Array<[BackendViewFilter, string, string, IconName]> = [
-  ['all', 'All backends', 'Complete compatibility matrix', 'layers'],
+  ['all', 'All Backends', 'Complete compatibility matrix', 'layers'],
   ['installed', 'Installed', 'Ready on this machine', 'check'],
   ['available', 'Available', 'Ready to install', 'download'],
   ['updates', 'Updates', 'Newer runtime available', 'rotate-ccw'],
@@ -639,6 +639,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [error, setError] = useState<string | null>(null);
   const [showTech, setShowTech] = useState(false);
   const [showUnsupported, setShowUnsupported] = useState(false);
+  const [showLogos, setShowLogos] = useState(true);
   const [viewFilter, setViewFilter] = useState<BackendViewFilter>('all');
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -1037,24 +1038,31 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     return (
       <article className="workspace-card backend-card" key={recipe} data-recipe={recipe}>
         <div className="workspace-card__head">
-          <h3 className="sr-only">{engineName}</h3>
-          <div
-            className={`backend-card__logo${logo?.plate === 'dark' ? ' backend-card__logo--dark' : ''}${logo && !logo.showName ? ' backend-card__logo--image-only' : ''}`}
-            aria-hidden="true"
-          >
-            {logo && (
-              <img
-                src={`${ENGINE_LOGO_BASE}${logo.file}`}
-                alt=""
-                loading="lazy"
-                onError={event => {
-                  event.currentTarget.style.display = 'none';
-                  event.currentTarget.parentElement!.className = 'backend-card__logo';
-                }}
-              />
-            )}
-            <span className="backend-card__logo-name">{engineName}</span>
-          </div>
+          {showLogos ? (
+            <>
+              <h3 className="sr-only">{engineName}</h3>
+              <div
+                className={`backend-card__logo${logo?.plate === 'dark' ? ' backend-card__logo--dark' : ''}${logo && !logo.showName ? ' backend-card__logo--image-only' : ''}`}
+                aria-hidden="true"
+                data-backend-logo
+              >
+                {logo && (
+                  <img
+                    src={`${ENGINE_LOGO_BASE}${logo.file}`}
+                    alt=""
+                    loading="lazy"
+                    onError={event => {
+                      event.currentTarget.style.display = 'none';
+                      event.currentTarget.parentElement!.className = 'backend-card__logo';
+                    }}
+                  />
+                )}
+                <span className="backend-card__logo-name">{engineName}</span>
+              </div>
+            </>
+          ) : (
+            <h3 className="workspace-card__name backend-card__name">{engineName}</h3>
+          )}
         </div>
 
         <div className="backend-card__variants">
@@ -1222,7 +1230,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         </div>
       </article>
     );
-  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, showTech]);
+  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, showLogos, showTech]);
 
 
   /* ── Render ───────────────────────────────────────────── */
@@ -1274,6 +1282,15 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               data-backends-unsupported-toggle
             />
             <span>Show unsupported backends</span>
+          </label>
+          <label className="backends__toggle">
+            <input
+              type="checkbox"
+              checked={showLogos}
+              onChange={e => setShowLogos(e.target.checked)}
+              data-backends-logo-toggle
+            />
+            <span>Show logos</span>
           </label>
           {sysInfo && (
             <div className="backends__runtime-meta">

@@ -217,7 +217,7 @@ const AppsView: React.FC<AppsViewProps> = ({
   const categoryFilters = useMemo<CatalogFilterDefinition<string>[]>(() => [
     {
       id: ALL_APPS_SECTION,
-      label: 'All apps',
+      label: 'All Apps',
       description: marketplaceLoading
         ? 'Loading directory'
         : marketplaceError
