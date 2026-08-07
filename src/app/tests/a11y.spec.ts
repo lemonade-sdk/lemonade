@@ -2709,6 +2709,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
         contentType: 'application/json',
         body: JSON.stringify([
           { id: 'org/Mistral-7B-GGUF', modelId: 'org/Mistral-7B-GGUF', likes: 10, downloads: 999, tags: ['gguf', 'text-generation'], pipeline_tag: 'text-generation' },
+          { id: 'org/Mistral-Image-GGUF', modelId: 'org/Mistral-Image-GGUF', likes: 7, downloads: 700, tags: ['gguf', 'text-to-image'], pipeline_tag: 'text-to-image' },
           { id: 'org/Phi-3-GGUF', modelId: 'org/Phi-3-GGUF', likes: 5, downloads: 500, tags: ['gguf'], pipeline_tag: 'text-generation' },
         ]),
       }),
@@ -2731,9 +2732,10 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await expect(hfZone).toBeVisible();
     await expect(hfZone).toContainText('HuggingFace');
 
-    // HF result cards are present in the zone.
+    // GUI2's compatibility filters remove non-LLM pipeline categories.
     const hfRows = page.locator('.zone--hf .row--hf');
     await expect(hfRows).toHaveCount(2);
+    await expect(hfZone).not.toContainText('Mistral-Image');
 
     // Clearing the search removes the HF zone entirely.
     await search.fill('');
