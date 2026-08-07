@@ -44,6 +44,12 @@ function truncateText(text: string, maxChars: number): string {
 
 export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
   const availableModels = api.allModels;
+  const optimizerModels = useMemo(
+    () => availableModels.filter((model) =>
+      (model.labels || []).some((label) => label.trim().toLowerCase() === 'reasoning')
+    ),
+    [availableModels]
+  );
   const [improveModel, setImproveModel] = useState('');
   const [improveCritique, setImproveCritique] = useState('The response was too verbose and failed to strictly answer in the requested format.');
   const [improveOutput, setImproveOutput] = useState('');
@@ -196,10 +202,15 @@ export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
 
   // Set default model when models load
   useEffect(() => {
-    if (availableModels.length > 0 && !improveModel) {
-      setImproveModel(availableModels[0].name || availableModels[0].id || '');
+    const selectedModelAvailable = optimizerModels.some(
+      (model) => (model.name || model.id || '') === improveModel
+    );
+    if (optimizerModels.length > 0 && !selectedModelAvailable) {
+      setImproveModel(optimizerModels[0].name || optimizerModels[0].id || '');
+    } else if (optimizerModels.length === 0 && improveModel) {
+      setImproveModel('');
     }
-  }, [availableModels, improveModel]);
+  }, [optimizerModels, improveModel]);
 
   // Sync edits when prompt parsed data changes
   useEffect(() => {
@@ -788,7 +799,7 @@ ${truncatedCritique}
           label="Select LLM Optimizer"
           value={improveModel}
           onChange={setImproveModel}
-          availableModels={availableModels}
+          availableModels={optimizerModels}
         />
 
         <div className="flex-col gap-6">
@@ -816,7 +827,7 @@ ${truncatedCritique}
         <button
           type="button"
           className="improve-btn primary"
-          disabled={improveRunning}
+          disabled={improveRunning || !improveModel}
           onClick={handleRunImprovement}
           style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}
         >
