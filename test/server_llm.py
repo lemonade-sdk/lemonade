@@ -569,9 +569,10 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("embeddings")
     def test_015b_embeddings_missing_model_returns_400(self):
         """Test embeddings request without model returns a helpful 400 error."""
-        # Ensure the server cannot satisfy a missing-model request from a
-        # previously loaded model left behind by another test.
-        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
 
         response = requests.post(
             f"{self.base_url}/embeddings",
@@ -579,13 +580,19 @@ class LLMTests(ServerTestBase):
                 "input": "Hello, how are you today?",
                 "encoding_format": "float",
             },
+            headers=headers,
             timeout=TIMEOUT_DEFAULT,
         )
 
-        self.assertEqual(response.status_code, 400)
-        error = response.json().get("error", "")
-        self.assertIn("model", error.lower())
-        self.assertIn("No model loaded", error)
+        self.assertEqual(response.status_code, 400, response.text)
+
+        error = response.json().get("error")
+        self.assertIsInstance(error, dict, response.text)
+        self.assertEqual(error.get("type"), "invalid_request")
+        self.assertIn(
+            "no model specified",
+            error.get("message", "").lower(),
+        )
 
     @skip_if_unsupported("embeddings_batch")
     def test_016_embeddings_array_of_strings(self):
