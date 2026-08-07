@@ -93,49 +93,71 @@ jobs:
         if: runner.os == 'Windows'
         uses: ./.github/actions/cleanup-processes-windows
 
-      # ── Locate prebuilt lemonade on the runner ───────────────────────────
-      - name: Locate lemonade (Windows)
+      # ── Get lemonade binaries ─────────────────────────────────────────────
+      # Windows: download artifact from latest successful validate_llamacpp run
+      # Linux:   lemond is at /usr/bin/lemond (installed via .deb by release CI)
+      - name: Download lemonade artifact (Windows)
         if: runner.os == 'Windows'
         shell: PowerShell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Runners have lemonade installed by validate_llamacpp.yml nightly runs
-          $candidates = @(
-            "$env:ProgramFiles\Lemonade\lemond.exe",
-            "$env:LOCALAPPDATA\lemonade_server\bin\lemond.exe",
-            "C:\lemonade\lemond.exe"
-          )
-          $found = $null
-          foreach ($c in $candidates) {
-            if (Test-Path $c) { $found = $c; break }
+          $ErrorActionPreference = "Stop"
+          # Find latest successful run of validate_llamacpp.yml that has llamacpp-build artifact
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = "application/vnd.github+json" }
+          $runs = Invoke-RestMethod `
+            -Uri "https://api.github.com/repos/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml/runs?status=success&per_page=5" `
+            -Headers $headers
+          $runId = $runs.workflow_runs[0].id
+          Write-Host "Using artifacts from run $runId"
+
+          $artifacts = Invoke-RestMethod `
+            -Uri "https://api.github.com/repos/lemonade-sdk/lemonade/actions/runs/$runId/artifacts" `
+            -Headers $headers
+          $artifact = $artifacts.artifacts | Where-Object { $_.name -like "lemonade-windows*" -or $_.name -like "*windows*release*" } | Select-Object -First 1
+          if (-not $artifact) {
+            # Fall back: check validate_llamacpp.yml runs
+            $runs2 = Invoke-RestMethod `
+              -Uri "https://api.github.com/repos/lemonade-sdk/lemonade/actions/workflows/validate_llamacpp.yml/runs?status=success&per_page=5" `
+              -Headers $headers
+            $runId = $runs2.workflow_runs[0].id
+            $artifacts = Invoke-RestMethod `
+              -Uri "https://api.github.com/repos/lemonade-sdk/lemonade/actions/runs/$runId/artifacts" `
+              -Headers $headers
+            $artifact = $artifacts.artifacts | Where-Object { $_.name -like "llamacpp-build*" } | Select-Object -First 1
           }
-          # Also try PATH
-          if (-not $found) {
-            $found = (Get-Command lemond -ErrorAction SilentlyContinue)?.Source
-          }
-          if (-not $found) {
-            Write-Host "ERROR: lemond not found on runner. Checked: $($candidates -join ', ')"
-            exit 1
-          }
-          Write-Host "lemond: $found"
-          & $found --version
-          $lemonadeExe = $found -replace "lemond.exe","lemonade.exe"
-          echo "LEMOND_EXE=$found" >> $env:GITHUB_ENV
-          echo "LEMONADE_EXE=$lemonadeExe" >> $env:GITHUB_ENV
+          if (-not $artifact) { Write-Host "ERROR: no lemonade Windows artifact found"; exit 1 }
+
+          Write-Host "Downloading artifact: $($artifact.name) (ID $($artifact.id))"
+          $zipPath = "$env:TEMP\lemonade-artifact.zip"
+          Invoke-WebRequest `
+            -Uri "https://api.github.com/repos/lemonade-sdk/lemonade/actions/artifacts/$($artifact.id)/zip" `
+            -Headers $headers `
+            -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath "build" -Force
+
+          # Locate lemond.exe anywhere in the extracted tree
+          $lemondPath = Get-ChildItem -Recurse build -Filter "lemond.exe" | Select-Object -First 1 -ExpandProperty FullName
+          $lemonadePath = Get-ChildItem -Recurse build -Filter "lemonade.exe" | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $lemondPath) { Write-Host "ERROR: lemond.exe not in artifact"; exit 1 }
+          Write-Host "lemond   : $lemondPath"
+          Write-Host "lemonade : $lemonadePath"
+          & $lemondPath --version
+          echo "LEMOND_EXE=$lemondPath"   >> $env:GITHUB_ENV
+          echo "LEMONADE_EXE=$lemonadePath" >> $env:GITHUB_ENV
 
       - name: Locate lemonade (Linux)
         if: runner.os == 'Linux'
         run: |
-          # Runners have lemonade installed by validate_vllm.yml and other CI runs
+          # lemond is at /usr/bin/lemond — installed via .deb by cpp_server_build_test_release.yml
           LEMOND=$(which lemond 2>/dev/null || echo "")
           if [ -z "$LEMOND" ]; then
-            echo "ERROR: lemond not found in PATH on this runner"
+            echo "ERROR: lemond not found. Has cpp_server_build_test_release.yml run on this runner?"
             exit 1
           fi
-          LEMONADE=$(which lemonade 2>/dev/null || echo "")
-          echo "lemond   : $LEMOND"
-          echo "lemonade : $LEMONADE"
+          LEMONADE=$(which lemonade 2>/dev/null || echo "$LEMOND")
           $LEMOND --version
-          echo "LEMOND_EXE=$LEMOND"   >> $GITHUB_ENV
+          echo "LEMOND_EXE=$LEMOND"     >> $GITHUB_ENV
           echo "LEMONADE_EXE=$LEMONADE" >> $GITHUB_ENV
 
       # ── Python venv ───────────────────────────────────────────────────────
