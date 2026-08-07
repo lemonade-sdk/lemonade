@@ -97,7 +97,7 @@ The Python above will work with Lemonade Server, along with a variety of other c
 
 ## Local and Cloud Routing in the Same Server
 
-Lemonade can route inference to a remote OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, Together, …) **alongside** locally-loaded models. Cloud-routed models appear in the same `/v1/models` listing as local ones, dot-namespaced by provider (e.g. `fireworks.kimi-k2p5`), and accept identical chat-completion requests. From an application's perspective the routing is invisible — the same OpenAI API call reaches a local backend or a remote provider depending on which model was named.
+Lemonade can route inference to a remote OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, OrcaRouter, Together, …) **alongside** locally-loaded models. Cloud-routed models appear in the same `/v1/models` listing as local ones, dot-namespaced by provider (e.g. `fireworks.kimi-k2p5`), and accept identical chat-completion requests. From an application's perspective the routing is invisible — the same OpenAI API call reaches a local backend or a remote provider depending on which model was named.
 
 API keys are configured server-side (env var or in-memory only — never written to disk by `lemond`), so every connecting client sees the same cloud catalog without per-client setup. See the [Cloud Offload guide](./configuration/cloud.md) for the full workflow.
 
