@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.5.1)
+project(lemon_cpp VERSION 11.5.2)
 
 include(CTest)
 
@@ -654,13 +654,40 @@ if(NOT USE_SYSTEM_LWS)
     FetchContent_Populate(libwebsockets)
     # Patch the CMakeLists.txt files to remove -Werror
     file(READ "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" LWS_CMAKE_MAIN)
+    # CRLF-safe: normalize CR before any line-based patching (autocrlf leaves \r\n on Windows)
+    string(REPLACE "\r" "" LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
     string(REPLACE "-Werror" "" LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
+    # remove directory from OUTPUT list (MSBuild interprets it as file path — MSB8065)
+    string(REPLACE "\t\t\t\${PROJECT_BINARY_DIR}/include/libwebsockets\n" ""
+           LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
+    # copy_directory only adds/overwrites — wipe the destination first so stale
+    # headers removed upstream don't survive a GENHDR rerun across a dep update.
+    # Works on every generator (ADDITIONAL_CLEAN_FILES below is Make/Ninja only).
+    if(NOT LWS_CMAKE_MAIN MATCHES "rm -rf.*include/libwebsockets")
+        string(REPLACE
+            "COMMAND \${CMAKE_COMMAND} -E copy_directory \${CMAKE_CURRENT_SOURCE_DIR}/include/libwebsockets/"
+            "COMMAND \${CMAKE_COMMAND} -E rm -rf \${CMAKE_CURRENT_BINARY_DIR}/include/libwebsockets\n\t\tCOMMAND \${CMAKE_COMMAND} -E copy_directory \${CMAKE_CURRENT_SOURCE_DIR}/include/libwebsockets/"
+            LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
+    endif()
     file(WRITE "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" "${LWS_CMAKE_MAIN}")
     file(READ "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" LWS_CMAKE_LIB)
+    string(REPLACE "\r" "" LWS_CMAKE_LIB "${LWS_CMAKE_LIB}")
     string(REPLACE "-Werror" "" LWS_CMAKE_LIB "${LWS_CMAKE_LIB}")
     file(WRITE "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" "${LWS_CMAKE_LIB}")
     # Now add the subdirectory
     add_subdirectory(${libwebsockets_SOURCE_DIR} ${libwebsockets_BINARY_DIR})
+    # Removing the directory from OUTPUT above also drops it from the GENHDR clean
+    # rules. Re-attach it as an additional clean file so stale LWS headers don't
+    # survive a `clean` target across a dependency update (copy_directory only
+    # adds/overwrites, never deletes).
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.15")
+        set_property(
+            TARGET GENHDR
+            APPEND
+            PROPERTY ADDITIONAL_CLEAN_FILES
+            "${libwebsockets_BINARY_DIR}/include/libwebsockets"
+        )
+    endif()
     message(STATUS "libwebsockets will be fetched (v${MIN_LWS_VERSION})")
 endif()
 

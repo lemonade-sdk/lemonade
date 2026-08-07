@@ -83,6 +83,7 @@ nav:
     - Working Groups: dev/working-groups/README.md
     - Contribute: dev/contribute.md
     - Documentation Guide: dev/documentation.md
+    - Testing: dev/testing.md
     - C++: dev/getting-started.md
     - Adding a Backend: dev/adding-a-backend.md
     - Backends Reference: dev/backends-reference.md
