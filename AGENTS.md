@@ -139,6 +139,33 @@ python test/server_sd.py
 
 Test utilities in `test/utils/` with `server_base.py` as the base class. Test dependencies include `requests`, `httpx`, `openai`, `huggingface_hub`, `psutil`, `numpy`, `websockets`, and `ollama`.
 
+### C++ unit tests
+
+C++ unit tests live in `test/cpp/` and are wired up in the root `CMakeLists.txt`. The packaging workflow builds the `cpp-ci-tests` aggregate target and runs `ctest -L cpp-ci`, so a test only runs in CI if it is both labeled `cpp-ci` **and** a dependency of that aggregate target.
+
+**Direct `add_test()` is disabled** (the built-in is overridden to fail with a fatal error just before the test section). Every test MUST be declared with the `add_cpp_ci_test()` helper, which forces an explicit `CI <ON|OFF>` decision at the call site so a test is never silently omitted from — or accidentally added to — CI:
+
+```cmake
+add_executable(test_my_feature test/cpp/test_my_feature.cpp ...)
+# ...target_include_directories / target_link_libraries...
+
+include(CTest)
+add_cpp_ci_test(MyFeatureTest CI ON COMMAND test_my_feature)
+```
+
+```cmake
+add_cpp_ci_test(<TestName>
+                CI <ON|OFF>                 # required — run under `ctest -L cpp-ci`?
+                COMMAND <command> [args...] # required — what CTest runs
+                [DEPENDS <target>...])      # CI build deps; defaults to the
+                                            # first COMMAND token (the test target)
+```
+
+- `CI ON` labels the test `cpp-ci` and makes its build target(s) a dependency of `cpp-ci-tests`.
+- `CI OFF` still creates the CTest test (for local/other runs) but keeps it out of packaging CI. Use this only for tests that are intentionally excluded (e.g. tests that need a backend, are platform-gated, or are slow CMake-configuration tests).
+
+Pass `DEPENDS` only when the CI build needs targets beyond the `COMMAND` executable. `add_cpp_ci_test` calls `register_cpp_ci_test()` internally; do not call `add_test()` or `register_cpp_ci_test()` directly.
+
 ## Code Style
 
 ### Comments & Documentation
