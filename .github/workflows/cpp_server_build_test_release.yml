@@ -195,7 +195,11 @@ jobs:
               )
           }
 
-          cmake --build build --config Release --target $target
+          # /m lets MSBuild overlap independent projects — the lemonade CLI and
+          # LemonadeServer otherwise wait for lemonade-server-core to finish.
+          # Passed straight through rather than via --parallel, which makes
+          # CMake set CL_MPCount=1 and cancel the /MP in CMakeLists.txt.
+          cmake --build build --config Release --target $target -- /m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify outputs
@@ -287,7 +291,7 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          cmake --build build --config Release --target wix_installer_full
+          cmake --build build --config Release --target wix_installer_full -- /m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $failures = @()
@@ -906,7 +910,7 @@ jobs:
           cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          cmake --build build --config Release --target embeddable
+          cmake --build build --config Release --target embeddable -- /m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $archive = "build\lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64.zip"
