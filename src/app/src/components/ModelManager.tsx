@@ -2744,6 +2744,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         onTagFiltersChange={setTagFilters}
         providerEnabled={providerEnabled}
         providerCounts={providerCounts}
+        searchActive={searchActive}
         onToggleProvider={toggleProvider}
         storageInfo={storageInfo}
         collapsed={navRailCollapsed}

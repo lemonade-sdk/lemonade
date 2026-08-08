@@ -96,28 +96,33 @@ assert.match(listPanelSource, /if \(filter === 'llm'\) return cap === 'chat' && 
 assert.match(listPanelSource, /if \(filter === 'omni'\) return modelIsOmni\(m\);/,
   'Omni models must match the dedicated Omni task filter');
 
-assert.match(nav, />Online Catalogs</,
-  'remote provider controls must use the Online Catalogs label');
-assert.match(nav, /<Icon name="cloud" size=\{14\}/,
-  'Online Catalogs must be prefixed by the cloud icon');
-assert.match(nav, /providerEnabled\.huggingface \? providerCounts\.huggingface : 0/,
-  'the aggregate count must include enabled Hugging Face results');
-assert.match(nav, /providerEnabled\.modelscope \? providerCounts\.modelscope : 0/,
-  'the aggregate count must include enabled ModelScope results');
-assert.match(nav, /\{hasEnabledProvider && \([\s\S]*\{providerResultCount\}/,
-  'the aggregate result count must remain visible, including zero, while at least one catalog is enabled');
+assert.match(nav, /const \[catalogsOpen, setCatalogsOpen\] = useState\(true\)/, 'Online Catalogs must be independently collapsible');
+assert.match(nav, /aria-expanded=\{catalogsOpen\}[\s\S]*aria-controls="nav-online-catalogs"[\s\S]*setCatalogsOpen/, 'Online Catalogs must use the standard collapsible section header');
+assert.match(nav, /\{catalogsOpen && \([\s\S]*id="nav-online-catalogs"/, 'catalog checkboxes must hide when collapsed');
+assert.match(nav, /className="model-nav-rail__section-toggle"[\s\S]*aria-expanded=\{catalogsOpen\}[\s\S]*>\s*<Icon name=\{catalogsOpen \? 'chevron-down' : 'chevron-right'\}[\s\S]*<span>Online Catalogs<\/span>/,
+  'Online Catalogs must use the same collapsible heading treatment as the other filter sections');
+assert.match(nav, /className="backends__toggle model-nav-rail__provider-option"/,
+  'online catalogs must reuse the Backends checkbox treatment');
 assert.match(nav, /type="checkbox"[\s\S]*checked=\{enabled\}[\s\S]*onChange=\{\(\) => onToggleProvider\(provider\.key\)\}/,
-  'remote catalogs must use native checkboxes for enabled state');
-assert.ok(nav.indexOf('Online Catalogs') < nav.indexOf('model-nav-rail__section--tasks'),
-  'Online Catalogs must sit directly below the primary model navigation');
-assert.doesNotMatch(nav, /model-nav-rail__section--providers/,
-  'Online Catalogs must not be separated from Favorites by its own filter section');
-assert.doesNotMatch(nav, /model-nav-rail__provider-item/,
-  'remote catalogs must not use the old button/highlight treatment');
-assert.match(styles, /\.model-nav-rail__provider-option input \{[\s\S]*appearance: none;[\s\S]*width: 16px;[\s\S]*height: 16px;[\s\S]*border-radius: 3px;/,
-  'catalog checkboxes must match the custom checkbox geometry used in the Backends tab');
-assert.match(styles, /\.model-nav-rail__provider-option input:checked \{[\s\S]*background: var\(--accent\);[\s\S]*border-color: var\(--accent\);/,
-  'catalog checkboxes must match the Backends checked state');
+  'online catalogs must use explicit checkbox toggles');
+assert.match(nav, /const showCount = searchActive && primaryFilter === 'all' && enabled;/,
+  'provider counts must only render while that provider is actually participating in an online search');
+assert.match(nav, /\{showCount && \([\s\S]*model-nav-rail__nav-count[\s\S]*\{count\}/,
+  'each provider must show its own result count, including zero during an active search');
+assert.doesNotMatch(nav, /providerCounts\.huggingface \+ providerCounts\.modelscope/,
+  'provider counts must not be aggregated on the Online Catalogs heading');
+assert.ok(nav.indexOf('model-nav-rail__section--backends') < nav.indexOf('Online Catalogs'),
+  'Online Catalogs must be below Backends');
+assert.ok(nav.indexOf('Online Catalogs') < nav.indexOf('aria-controls="nav-tags"'),
+  'Online Catalogs must remain directly before Tags');
+assert.doesNotMatch(styles, /model-nav-rail__section--providers\s*\{[\s\S]*border-top:/,
+  'Online Catalogs must not add a divider below Backends');
+assert.match(styles, /\.model-nav-rail__provider-list \{[\s\S]*padding: 2px var\(--space-2\) 0;/,
+  'catalog checkboxes must align horizontally with the task/backend controls');
+assert.match(styles, /\.backends__toggle input \{[\s\S]*width: 16px;[\s\S]*height: 16px;[\s\S]*border-radius: 3px;/,
+  'catalog checkboxes must inherit the exact Backends checkbox geometry');
+assert.match(manager, /providerCounts=\{providerCounts\}[\s\S]*searchActive=\{searchActive\}/,
+  'ModelManager must pass the existing search activity signal to the nav rail');
 
 const { remoteCapabilityEvidence } = loadTypeScriptModule(path.join(root, 'src/remoteModelCapabilities.ts'));
 const { capabilityFromModelInfo, modelCapabilityTags } = loadTypeScriptModule(path.join(root, 'src/modelCapabilities.ts'));

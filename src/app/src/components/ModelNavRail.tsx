@@ -130,6 +130,7 @@ export interface ModelNavRailProps {
   onTagFiltersChange: (next: Set<string>) => void;
   providerEnabled: Record<ModelRegistryProvider, boolean>;
   providerCounts: Record<ModelRegistryProvider, number>;
+  searchActive: boolean;
   onToggleProvider: (provider: ModelRegistryProvider) => void;
   /** Real disk usage of the model-storage drive, when available (else null →
       derived fallback). Sourced from api.getStorageInfo(). */
@@ -160,6 +161,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   onTagFiltersChange,
   providerEnabled,
   providerCounts,
+  searchActive,
   onToggleProvider,
   storageInfo,
   id = 'model-nav-rail',
@@ -171,15 +173,11 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
 }) => {
   const [tasksOpen, setTasksOpen] = useState(true);
   const [backendsOpen, setBackendsOpen] = useState(true);
+  const [catalogsOpen, setCatalogsOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(true);
   const [backendVisibility, setBackendVisibility] = useState<BackendRailVisibilityState | null>(null);
   const [customTags, setCustomTags] = useState<string[]>(loadCustomFilterTags);
   const [customTagDraft, setCustomTagDraft] = useState('');
-
-  const hasEnabledProvider = providerEnabled.huggingface || providerEnabled.modelscope;
-  const providerResultCount =
-    (providerEnabled.huggingface ? providerCounts.huggingface : 0) +
-    (providerEnabled.modelscope ? providerCounts.modelscope : 0);
 
   // ── Client-side derived counts ──────────────────────────────
   const primaryCounts = useMemo<Record<PrimaryFilter, number>>(() => {
@@ -376,40 +374,8 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
           );
         })}
 
-        <li className="model-nav-rail__catalogs">
-          <div
-            className="workspace-filter-list__item model-nav-rail__catalog-heading"
-            id="nav-online-catalogs-heading"
-          >
-            <Icon name="cloud" size={14} aria-hidden="true" className="workspace-filter-list__icon model-nav-rail__nav-icon" />
-            <span className="workspace-filter-list__label model-nav-rail__nav-label">Online Catalogs</span>
-            {hasEnabledProvider && (
-              <>
-                <span className="workspace-filter-list__count model-nav-rail__nav-count" aria-hidden="true">{providerResultCount}</span>
-                <span className="sr-only">{`, ${providerResultCount} online catalog results`}</span>
-              </>
-            )}
-          </div>
-          <ul className="model-nav-rail__provider-list" role="list" aria-labelledby="nav-online-catalogs-heading">
-            {MODEL_PROVIDERS.map(provider => {
-              const enabled = providerEnabled[provider.key];
-              const title = `${provider.label} ${enabled ? 'will be searched' : 'will not be searched'} during online model search`;
-              return (
-                <li key={provider.key}>
-                  <label className="model-nav-rail__provider-option" title={title}>
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      onChange={() => onToggleProvider(provider.key)}
-                    />
-                    <span>{provider.label}</span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-        </li>
       </ul>
+
 
       <section className="model-nav-rail__section model-nav-rail__section--tasks">
         <h2 className="model-nav-rail__section-head">
@@ -506,6 +472,49 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
               </button>
             )}
           </div>
+        )}
+      </section>
+
+      <section className="model-nav-rail__section model-nav-rail__section--providers">
+        <h2 className="model-nav-rail__section-head">
+          <button
+            type="button"
+            className="model-nav-rail__section-toggle"
+            aria-expanded={catalogsOpen}
+            aria-controls="nav-online-catalogs"
+            onClick={() => setCatalogsOpen(value => !value)}
+          >
+            <Icon name={catalogsOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
+            <span>Online Catalogs</span>
+          </button>
+        </h2>
+        {catalogsOpen && (
+          <ul className="model-nav-rail__provider-list" id="nav-online-catalogs" role="list">
+            {MODEL_PROVIDERS.map(provider => {
+              const enabled = providerEnabled[provider.key];
+              const count = providerCounts[provider.key];
+              const showCount = searchActive && primaryFilter === 'all' && enabled;
+              const title = `${provider.label} ${enabled ? 'will be searched' : 'will not be searched'} during online model search`;
+              return (
+                <li key={provider.key}>
+                  <label className="backends__toggle model-nav-rail__provider-option" title={title}>
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={() => onToggleProvider(provider.key)}
+                    />
+                    <span className="model-nav-rail__provider-label">{provider.label}</span>
+                    {showCount && (
+                      <>
+                        <span className="model-nav-rail__nav-count" aria-hidden="true">{count}</span>
+                        <span className="sr-only">{`, ${count} search results`}</span>
+                      </>
+                    )}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
 
