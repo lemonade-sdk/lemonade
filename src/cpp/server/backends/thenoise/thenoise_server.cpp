@@ -52,7 +52,7 @@ InstallParams TheNoiseServer::get_install_params(const std::string& backend, con
 
     InstallParams params;
     params.repo = "lemonade-sdk/thenoise";
-    params.filename = version + "-rocm7.14" + target_arch + "-x64.tar.gz";
+    params.filename = version + "-" + target_arch + "-x64.tar.gz";
     return params;
 }
 
