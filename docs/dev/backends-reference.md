@@ -140,7 +140,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `thenoise_backend` | `--thenoise` | BACKEND | "" | TheNoise backend to use |
-| `thenoise_args` | `--thenoise-args` | ARGS | "" | Custom arguments to pass to thenoise (must not conflict with managed args) |
 | `steps` | — | SIZE | 8 | Number of denoising steps |
 | `guidance_scale` | — | SIZE | 1.0 | CFG scale (<= 1.0 disables CFG) |
 | `width` | — | SIZE | 1024 | Output image width |
@@ -152,7 +151,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `film_grain` | — | SIZE | 0.0 | Film grain strength (0.0-10.0) |
 | `sharpening` | — | SIZE | 0.0 | RCAS sharpening strength (0.0-1.0) |
 | `lora_specs` | — | ARGS | "" | Comma-separated LoRA specs, e.g. "style:0.8,sub/detail:0.5" |
-| `lora_dir` | — | ARGS | "" | Directory containing LoRA .safetensors files (subdirectories allowed); load-time only, not per-request |
+| `lora_dir` | — | ARGS | "" | Directory containing LoRA .safetensors files (subdirectories allowed) |
 
 #### `thinksound` — ThinkSound
 

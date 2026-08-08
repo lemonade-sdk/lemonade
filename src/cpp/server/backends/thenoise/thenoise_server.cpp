@@ -88,7 +88,6 @@ void TheNoiseServer::load(const std::string& model_name,
     if (backend.empty()) {
         backend = "rocm";
     }
-    std::string thenoise_args = options.get_option("thenoise_args");
 
     RuntimeConfig::validate_backend_choice("thenoise", backend);
 
@@ -139,29 +138,6 @@ void TheNoiseServer::load(const std::string& model_name,
     if (!lora_dir.empty()) {
         args.push_back("--lora-dir");
         args.push_back(lora_dir);
-    }
-
-    std::set<std::string> reserved_flags = {
-        "--dit",
-        "--vae",
-        "--text-encoder",
-        "--host",
-        "--port",
-        "--lora-dir",
-        "--device"
-    };
-
-    if (!thenoise_args.empty()) {
-        std::string validation_error = validate_custom_args(thenoise_args, reserved_flags);
-        if (!validation_error.empty()) {
-            throw std::invalid_argument(
-                "Invalid custom thenoise arguments:\n" + validation_error
-            );
-        }
-
-        LOG(DEBUG, "TheNoise") << "Adding custom arguments: " << thenoise_args << std::endl;
-        std::vector<std::string> custom_args_vec = parse_custom_args(thenoise_args);
-        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
     }
 
     // The portable thenoise launcher sets up LD_LIBRARY_PATH / CC / ROCm env itself.
@@ -300,7 +276,7 @@ json TheNoiseServer::build_request(const json& request) const {
     // cfg_scale -> guidance_scale
     float guidance_scale = image_defaults_.has_defaults
                               ? image_defaults_.cfg_scale
-                              : static_cast<float>(recipe_options_.get_option("guidance_scale"));
+                              : static_cast<float>(recipe_options_.get_option("cfg_scale"));
     guidance_scale = resolve_float("cfg_scale", guidance_scale);
     if (guidance_scale > 0.0f) {
         body["guidance_scale"] = guidance_scale;

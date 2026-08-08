@@ -38,7 +38,7 @@ inline const BackendDescriptor descriptor = {
         {"lora_dir", "", "", "ARGS", "Directory containing LoRA .safetensors files (subdirectories allowed); load-time only, not per-request", "TheNoise Options"},
     },
     /*support*/ {
-        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151"}}}, "Strix Halo/Strix Point iGPU (gfx1151/gfx1150)"},
+        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152"}}}, "Supported AMD ROCm iGPU families"},
     },
     /*default_labels*/  {"image"},
     /*required_checkpoints*/ {"main"},  // text_encoder+vae validated together in load()
@@ -50,10 +50,10 @@ inline const BackendDescriptor descriptor = {
     /*rocm_requires_cwsr_fix*/ true,
     /*version_policy*/  VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
-    /*takes_args*/      true,
+    /*takes_args*/      false,
     /*arg_variants*/    {},
     /*bin_variants*/    {},
-    /*config_extra*/    {{"steps", 8}, {"guidance_scale", 1.0}, {"width", 1024}, {"height", 1024}},
+    /*config_extra*/    {{"lora_dir", ""}},
 };
 
 }  // namespace thenoise
