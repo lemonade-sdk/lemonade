@@ -23,10 +23,10 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     pull_model_with_retry,
+    unload_model,
 )
 from utils.capabilities import get_test_model
 from utils.test_models import (
-    PORT,
     TIMEOUT_DEFAULT,
 )
 
@@ -80,11 +80,12 @@ class Model3DTests(ServerTestBase):
         # The guidance-free args belong to the backend subprocess this suite
         # started, so retire it rather than let it serve later requests.
         try:
-            requests.post(
-                f"http://localhost:{PORT}/api/v1/unload",
-                json={"model_name": get_test_model("model3d")},
-                timeout=TIMEOUT_DEFAULT,
-            )
+            response = unload_model(get_test_model("model3d"))
+            if response.status_code not in (200, 404):
+                print(
+                    "Warning: Failed to unload the 3D backend: "
+                    f"{response.status_code} {response.text[:200]}"
+                )
         except Exception as e:
             print(f"Warning: Failed to unload the 3D backend: {e}")
         super().tearDownClass()
@@ -188,9 +189,9 @@ class Model3DTests(ServerTestBase):
         self._ensure_model_pulled()
         payload = self._generation_payload()
 
-        # Load up front so the args apply to this request only; /load without
-        # save_options does not write them to the server's config.json, and the
-        # generation below reuses this process instead of auto-loading.
+        # Load up front so the args apply to this run only; /load without
+        # save_options persists nothing, and the generation below reuses this
+        # process instead of auto-loading.
         load = requests.post(
             f"{self.base_url}/load",
             json={

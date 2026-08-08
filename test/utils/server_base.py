@@ -185,6 +185,18 @@ def unload_all_models(port=PORT):
     return response
 
 
+def unload_model(model_name, port=PORT):
+    """POST /api/v1/unload for one model, leaving anything else resident."""
+    response = requests.post(
+        f"http://localhost:{port}/api/v1/unload",
+        json={"model_name": model_name},
+        headers=_auth_headers(),
+        timeout=30,
+    )
+    # 200 = unloaded, 404 = not loaded — both OK
+    return response
+
+
 def _is_transient_pull_status(status_code):
     return status_code in {408, 409, 429, 500, 502, 503, 504}
 
@@ -580,6 +592,7 @@ __all__ = [
     "wait_for_server",
     "set_server_config",
     "unload_all_models",
+    "unload_model",
     "pull_model_with_retry",
     "run_server_tests",
     "OpenAI",
