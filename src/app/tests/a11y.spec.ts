@@ -1652,7 +1652,8 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
 
 // ─── 23. Master-detail model view (#2355 Slice 1) ─────────────────────────────
 //
-// Covers: model list panel, detail panel tablist, funnel filter button,
+// Covers: model list panel, detail panel tablist, and filter ownership.
+// The duplicate middle-panel funnel was removed by #2936; filters live in the left rail.
 // Range: A91–A105.
 
 test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () => {
@@ -1723,24 +1724,24 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     expect(emptyVisible || (countText ?? '').startsWith('0')).toBeTruthy();
   });
 
-  // ── Funnel filter ────────────────────────────────────────────────────────────
+  // ── Filter ownership (#2936) ─────────────────────────────────────────────────
 
-  test('A95 — funnel filter button has aria-expanded and aria-haspopup', async ({ page }) => {
+  test('A95 — models middle panel has no duplicate funnel dialog trigger', async ({ page }) => {
     await goToModels(page);
-    const btn = page.locator('[aria-haspopup="dialog"]').filter({ has: page.locator('[aria-label*="filter" i], [aria-label*="Filter" i]') }).first();
-    // Fallback: any button with the funnel SVG class or the filter popover trigger
-    const filterBtn = page.locator('button[aria-haspopup="dialog"]').first();
-    await expect(filterBtn).toBeAttached();
-    await expect(filterBtn).toHaveAttribute('aria-expanded');
+    const middlePanel = page.locator('.model-list-panel');
+    await expect(middlePanel.locator('.model-list-panel__filter-btn')).toHaveCount(0);
+    await expect(middlePanel.locator('button[aria-haspopup="dialog"]')).toHaveCount(0);
+    await expect(middlePanel.locator('.model-list-panel__filter-popover')).toHaveCount(0);
   });
 
-  test('A96 — funnel filter popover opens on button click and has role=dialog', async ({ page }) => {
-    await goToModels(page);
-    const filterBtn = page.locator('button[aria-haspopup="dialog"]').first();
-    await filterBtn.click();
-    const popover = page.locator('[role="dialog"]').first();
-    await expect(popover).toBeVisible();
-    await expect(filterBtn).toHaveAttribute('aria-expanded', 'true');
+  test('A96 — left-rail task filtering remains usable after funnel removal', async ({ page }) => {
+    await goToModelsWithMock(page);
+    const chatTask = page.locator('.model-nav-rail__task-chip').filter({ hasText: /^Chat/ });
+    await expect(chatTask).toBeVisible();
+    await chatTask.click();
+    await expect(chatTask).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.model-list-panel__count')).toContainText('(Chat)');
+    await expect(page.locator('.model-list-item')).toHaveCount(2);
   });
 
   // ── List keyboard navigation ─────────────────────────────────────────────────
@@ -2496,8 +2497,8 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
 // Five review items: (1) a favorite STAR toggle in the model DETAIL panel that
 // reuses the existing client-local pin store and updates the Favorites nav
 // the updated A136); (3) "Back to models" hidden on desktop, shown on narrow;
-// (4) the funnel filter scoped to CAPABILITIES with a solid opaque popover
-// background; (5) the left rail scrolls independently instead of clipping the
+// (4) the middle-panel funnel filter was later removed by #2936 so filtering
+// lives only in the left rail; (5) the left rail scrolls independently instead of clipping the
 // lower part of the screen when its sections are expanded.
 // Range: A142–A148.
 
@@ -2601,42 +2602,23 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await expect(page.locator('.model-detail-panel__back-btn')).toBeHidden();
   });
 
-  // ── 4. Funnel filter: capabilities only + opaque background ───────────────
+  // ── 4. Filters live only in the left rail (#2936) ─────────────────────────
 
-  test('A145 — the funnel filter popover filters by functional capability tags and has a solid background', async ({ page }) => {
+  test('A145 — the models middle panel has no duplicate funnel filter control', async ({ page }) => {
     await goToModelsRefined(page);
-    const filterBtn = page.locator('.model-list-panel__filter-btn');
-    await filterBtn.click();
-    await page.waitForTimeout(120);
-    const popover = page.locator('.model-list-panel__filter-popover');
-    await expect(popover).toBeVisible();
-    await expect(popover).toContainText(/capabilit/i);
-
-    // Options are the functional capability tags PRESENT in the data — the four
-    // mock models expose Chat, Tool use, Audio and Image (multi-select toggles).
-    const options = popover.locator('.model-list-panel__filter-option');
-    await expect(options).toHaveCount(4);
-    await expect(popover).toContainText(/Tool use/i);
-    await expect(popover).toContainText(/Audio/i);
-
-    // Background must be opaque (not transparent) so list content does not bleed through.
-    const bg = await popover.evaluate(el => getComputedStyle(el).backgroundColor);
-    expect(bg).not.toBe('rgba(0, 0, 0, 0)');
-    expect(bg).not.toBe('transparent');
+    await expect(page.locator('.model-list-panel__filter-btn')).toHaveCount(0);
+    await expect(page.locator('.model-list-panel__filter-popover')).toHaveCount(0);
+    await expect(page.locator('.model-nav-rail')).toBeVisible();
   });
 
-  test('A146 — toggling a capability in the funnel popover filters the list (multi-select)', async ({ page }) => {
+  test('A146 — removing the funnel does not degrade model search', async ({ page }) => {
     await goToModelsRefined(page);
-    await page.locator('.model-list-panel__filter-btn').click();
-    await page.waitForTimeout(120);
-    const audio = page.locator('.model-list-panel__filter-option').filter({ hasText: /Audio/ });
-    await audio.click();
+    const search = page.locator('#model-list-search');
+    await search.fill('Whisper');
     await page.waitForTimeout(150);
-    // The toggle reports its pressed state (multi-select stays open).
-    await expect(audio).toHaveAttribute('aria-pressed', 'true');
     const rows = page.locator('.model-list-item');
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText('Whisper');
+    await expect(rows.first()).toContainText('Whisper-Large-v3');
   });
 
   // ── 5. Left rail scrolls instead of clipping ─────────────────────────────
