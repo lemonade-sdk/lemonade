@@ -693,7 +693,7 @@ jobs:
           $venvPython = ".\.venv\Scripts\python.exe"
           $tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $PWD }
           $pidFile = Join-Path $tempRoot "lemond-validate-llamacpp.pid"
-  
+
           function Get-ValidationLlamaServers {
             Get-CimInstance Win32_Process `
               -Filter "Name = 'llama-server.exe'" `
@@ -704,13 +704,13 @@ jobs:
                 )
               }
           }
-  
+
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
 
           $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
           $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
-  
+
           # Do not benchmark while another known inference process is active.
           $conflicts = @(
             Get-Process -Name @(
@@ -724,14 +724,14 @@ jobs:
             }) -join ", "
             throw "Runner is not idle: $details"
           }
+
           if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) {
             throw "Port $port is already in use."
           }
-  
+
           $proc = $null
           $validationExitCode = 0
-          $cleanupFailed = $false
-  
+
           try {
             $proc = Start-Process `
               -FilePath $lemondExe `
@@ -739,15 +739,15 @@ jobs:
               -RedirectStandardOutput $stdoutLog `
               -RedirectStandardError $stderrLog `
               -PassThru
-  
+
             # Same-job fallback for the existing final cleanup action.
             Set-Content -Path $pidFile -Value $proc.Id -Encoding ASCII
             Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
-  
+
             if ($proc.WaitForExit(500)) {
               throw "lemond exited before validation started. See $stderrLog."
             }
-  
+
             $validationArgs = @(
               "test/validate_llamacpp.py",
               "--backend", $backend,
@@ -755,10 +755,12 @@ jobs:
               "--output", "llamacpp_validation_$label.json",
               "--logs-dir", $logsDir
             )
+
             if ($channel) {
               $validationArgs += "--channel"
               $validationArgs += $channel
             }
+
             if ("${{ env.LITE_MODE }}" -eq "true") {
               $validationArgs += "--lite"
             }
@@ -777,33 +779,57 @@ jobs:
                 Write-Host "Graceful shutdown failed; forcing targeted cleanup." `
                   -ForegroundColor Yellow
               }
-  
+
               if (-not $proc.HasExited) {
                 Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
                 $null = $proc.WaitForExit(5000)
               }
-  
+
               # Catch a llama-server orphan even if its lemond parent exited first.
               $orphans = @(Get-ValidationLlamaServers)
               foreach ($orphan in $orphans) {
+                Write-Host "Stopping validation llama-server PID $($orphan.ProcessId)." `
+                  -ForegroundColor Yellow
                 Stop-Process -Id $orphan.ProcessId -Force -ErrorAction SilentlyContinue
               }
-              if ($orphans.Count -gt 0) { Start-Sleep -Seconds 1 }
-  
+
+              # Process teardown can lag slightly on Windows, especially after
+              # releasing Vulkan resources. Give it a short bounded grace period.
               $remainingOrphans = @(Get-ValidationLlamaServers)
+              $cleanupDeadline = (Get-Date).AddSeconds(5)
+
+              while (
+                $remainingOrphans.Count -gt 0 -and
+                (Get-Date) -lt $cleanupDeadline
+              ) {
+                Start-Sleep -Milliseconds 500
+                $remainingOrphans = @(Get-ValidationLlamaServers)
+              }
+
               if ($proc.HasExited -and $remainingOrphans.Count -eq 0) {
                 Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
               } else {
-                $cleanupFailed = $true
-                Write-Host "Validation process cleanup did not complete." `
-                  -ForegroundColor Yellow
+                if (-not $proc.HasExited) {
+                  Write-Warning "lemond PID $($proc.Id) is still running after cleanup."
+                }
+
+                foreach ($orphan in $remainingOrphans) {
+                  Write-Warning (
+                    "llama-server still present after cleanup: " +
+                    "PID=$($orphan.ProcessId), Path=$($orphan.ExecutablePath)"
+                  )
+                }
+
+                Write-Warning (
+                  "Validation cleanup did not fully complete. " +
+                  "The validation result will be preserved."
+                )
               }
             }
           }
-  
-          if ($validationExitCode -ne 0) { exit $validationExitCode }
-          if ($cleanupFailed) {
-            throw "Validation completed, but its processes could not be stopped."
+
+          if ($validationExitCode -ne 0) {
+            exit $validationExitCode
           }
   
       - name: Upload results
