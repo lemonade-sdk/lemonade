@@ -135,12 +135,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "trust_incoming_trace_context": false
   },
   "thenoise": {
-    "args": "",
     "backend": "auto",
-    "cfg_scale": 1.0,
-    "height": 1024,
-    "steps": 8,
-    "width": 1024
+    "lora_dir": ""
   },
   "thinksound": {
     "backend": "auto",

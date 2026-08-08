@@ -384,7 +384,6 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
-| `--thenoise-args ARGS` | Custom arguments to pass to thenoise (must not conflict with managed args) | `""` |
 
 #### ThinkSound (`thinksound` recipe)
 

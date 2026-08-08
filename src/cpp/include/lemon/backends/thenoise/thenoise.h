@@ -21,8 +21,6 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {
         {"thenoise_backend", "--thenoise", "", "BACKEND",
          "TheNoise backend to use", "TheNoise Options"},
-        {"thenoise_args", "--thenoise-args", "", "ARGS",
-         "Custom arguments to pass to thenoise (must not conflict with managed args)", "TheNoise Options"},
         // Image generation defaults (recipe-level only, not CLI flags).
         {"steps", "", 8, "SIZE", "Number of denoising steps", "TheNoise Options"},
         {"cfg_scale", "", 1.0, "SIZE", "CFG scale (<= 1.0 disables CFG)", "TheNoise Options"},
@@ -35,7 +33,7 @@ inline const BackendDescriptor descriptor = {
         {"film_grain", "", 0.0, "SIZE", "Film grain strength (0.0-10.0)", "TheNoise Options"},
         {"sharpening", "", 0.0, "SIZE", "RCAS sharpening strength (0.0-1.0)", "TheNoise Options"},
         {"lora_specs", "", "", "ARGS", "Comma-separated LoRA specs, e.g. \"style:0.8,sub/detail:0.5\"", "TheNoise Options"},
-        {"lora_dir", "", "", "ARGS", "Directory containing LoRA .safetensors files (subdirectories allowed); load-time only, not per-request", "TheNoise Options"},
+        {"lora_dir", "", "", "ARGS", "Directory containing LoRA .safetensors files (subdirectories allowed)", "TheNoise Options"},
     },
     /*support*/ {
         {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152"}}}, "Supported AMD ROCm iGPU families"},
