@@ -86,9 +86,6 @@ void StreamingProxy::forward_sse_stream(
     double time_to_first_token = 0.0;
     const auto start_time = std::chrono::steady_clock::now();
 
-    // On a non-200 the backend body is an error description, not SSE payload:
-    // divert it here instead of the client sink, so it can be reframed as an
-    // SSE event below rather than reaching the client as unparsable bytes.
     int backend_status = 200;
     std::string error_body;
     static constexpr size_t max_error_body = 64 * 1024;
@@ -182,11 +179,9 @@ void StreamingProxy::forward_sse_stream(
                                      << (error_body.empty() ? "" : ": " + error_body) << std::endl;
         telemetry.error_message = "Backend returned error status code: " + std::to_string(status);
 
-        // The response is already committed as 200 text/event-stream, so the only
-        // way to surface the failure is as an SSE event: an unframed body is
-        // dropped by every spec-compliant client parser. Same payload shape as
-        // forward_byte_stream(). No [DONE] follows, matching OpenAI's behavior
-        // for in-stream errors.
+        // The response is already committed as 200 text/event-stream, so an
+        // unframed error body is dropped by every spec-compliant client parser.
+        // No [DONE] follows, matching OpenAI's behavior for in-stream errors.
         json payload;
         try {
             payload = json::parse(error_body);

@@ -213,10 +213,9 @@ class StreamingErrorTests(ServerTestBase):
     def test_004a_context_overflow_error_is_sse_framed(self):
         """Backend non-200 during a stream reaches the client as an SSE event.
 
-        test_004 sends the same request and only checks that the stream
-        terminates. An SSE parser drops any line that is not a recognized
-        field, so an error body written without framing is invisible to every
-        OpenAI-style client even though its bytes are on the wire.
+        An SSE parser drops any line that is not a recognized field, so an
+        error body written without framing is invisible to every OpenAI-style
+        client even though its bytes are on the wire.
         """
         self._ensure_test_model_loaded()
 
@@ -249,8 +248,6 @@ class StreamingErrorTests(ServerTestBase):
 
         self.assertTrue(errors, f"No error event in stream. Lines: {lines[:10]}")
 
-        # A generic message would still be a framed error event, so assert the
-        # backend's own description survived rather than the router's fallback.
         self.assertNotEqual(errors[0].get("type"), "backend_error", errors[0])
         self.assertIn("context", errors[0].get("message", "").lower(), errors[0])
         print(
