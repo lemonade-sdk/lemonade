@@ -3530,6 +3530,11 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
 
         // Call router's reranking method
         auto response = router_->reranking(request_json);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3698,6 +3703,11 @@ void Server::handle_slots(const httplib::Request& req, httplib::Response& res) {
 
         // Call router's get_slots method
         auto response = router_->get_slots();
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3765,6 +3775,11 @@ void Server::handle_slots_by_id(const httplib::Request& req, httplib::Response& 
 
         // Call router's slots_action method with slot ID, action, and request body
         auto response = router_->slots_action(slot_id, action_param, request_body);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3812,6 +3827,11 @@ void Server::handle_tokenize(const httplib::Request& req, httplib::Response& res
 
         // Forward request to router
         auto response = router_->tokenize(request_body);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {

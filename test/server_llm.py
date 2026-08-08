@@ -772,6 +772,30 @@ class LLMTests(ServerTestBase):
             f"Expected food-related documents {expected_top_3} in top 3, got {actual_top_3}",
         )
 
+    @skip_if_unsupported("reranking")
+    def test_018d_reranking_error_is_not_reported_as_success(self):
+        """Test reranking a model that cannot rerank returns an error status."""
+        model = self.get_test_model("llm")
+
+        payload = {
+            "query": "A man is eating pasta.",
+            "documents": ["A man is eating food.", "A man is riding a horse."],
+            "model": model,
+        }
+
+        response = requests.post(
+            f"{self.base_url}/rerank", json=payload, timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+        print(
+            f"/rerank with {model}: HTTP {response.status_code} {response.text[:200]}"
+        )
+        self.assertGreaterEqual(response.status_code, 400, response.text)
+
+        error = response.json().get("error")
+        self.assertIsInstance(error, dict, response.text)
+        self.assertTrue(error.get("message"), response.text)
+
     # =========================================================================
     # MULTI-MODEL TESTS
     # =========================================================================
