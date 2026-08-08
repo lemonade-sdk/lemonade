@@ -376,6 +376,29 @@ jobs:
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
 
+      - name: Use the compiler cache primed into the build image
+        # Release builds deliberately opt out. dpkg puts the package version in
+        # -fdebug-prefix-map, which changes on every commit, so that flag has to
+        # be excluded from the ccache hash for anything to hit at all — and a
+        # reused object then records the version it was first compiled for in
+        # its debug paths. Fine for a test artifact, not for a shipped -dbgsym.
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Tolerate an image published before the prime was added, so this does
+          # not break until the nightly build-container run catches up.
+          if ! command -v ccache > /dev/null 2>&1; then
+            echo "No ccache in this build image yet; compiling without it."
+            exit 0
+          fi
+          {
+            echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
+            echo "CCACHE_IGNOREOPTIONS=-fdebug-prefix-map=*"
+          } >> "$GITHUB_ENV"
+          ccache -z
+
       - name: Prepare Debian build
         id: get_version
         uses: ./.github/actions/prepare-debian-build
@@ -389,6 +412,11 @@ jobs:
         with:
           package-type: binary
           deb-version: ${{ steps.get_version.outputs.version }}
+
+      - name: Report compiler cache hit rate
+        if: ${{ always() && !startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
+        run: command -v ccache > /dev/null 2>&1 && ccache -s || true
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7

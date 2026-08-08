@@ -49,6 +49,38 @@ RUN UBUNTU_VERSION="$(. /etc/os-release && echo "$VERSION_ID")" && \
         fi; \
     fi && \
     rm -rf /var/lib/apt/lists/*
+
+# Ship a primed compiler cache for the Debian package build. GitHub Actions
+# caches cannot do this job: they are scoped per git ref, so merge-queue runs —
+# which every merge passes through — can never restore one. This image is
+# rebuilt nightly, so a day of drift still leaves every source a PR did not
+# touch as a cache hit.
+#
+# Primed under /__w/lemonade/lemonade because that is where a container job
+# checks the repository out. The absolute -I paths reach the compiler command
+# line, and ccache hashes them, so the prime has to happen at the same path.
+#
+# amd64 only: every workflow using this image runs on ubuntu-latest, and
+# priming the arm64 variant would run the whole build under QEMU emulation.
+ENV CCACHE_DIR=/opt/ccache
+COPY . /__w/lemonade/lemonade
+RUN apt update && apt install -y ccache && rm -rf /var/lib/apt/lists/* && \
+    if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        cd /__w/lemonade/lemonade && \
+        mv contrib/debian . && \
+        sed -e "s|@@DEB_VERSION@@|0~ccache-prime|g" \
+            -e "s|@@DEB_CODENAME@@|$(. /etc/os-release && echo "$UBUNTU_CODENAME")|g" \
+            -e "s|@@DEB_DATE@@|$(date -R)|g" \
+            debian/changelog.in > debian/changelog && \
+        ccache -M 1G && \
+        CCACHE_IGNOREOPTIONS='-fdebug-prefix-map=*' \
+        CMAKE_C_COMPILER_LAUNCHER=ccache \
+        CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            dpkg-buildpackage -us -uc -b && \
+        ccache -s; \
+    fi && \
+    rm -rf /__w /root/.npm /root/.cache/pip
+
 WORKDIR /workspace
 
 CMD ["/bin/bash"]
