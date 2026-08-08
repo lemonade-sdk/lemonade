@@ -1280,9 +1280,17 @@ const App: React.FC = () => {
                 <ConnectView
                   status={status}
                   isActive={view === 'connect'}
-                  activeSection={route.view === 'connect' ? route.section : lastWorkspaceSectionsRef.current.connect}
-                  onSectionChange={section => navigateToRoute({ view: 'connect', section })}
+                  activeSection={
+                    route.view === 'connect'
+                      ? route.section
+                      : lastWorkspaceSectionsRef.current.connect
+                  }
+                  onSectionChange={section =>
+                    navigateToRoute({ view: 'connect', section })
+                  }
                   onLocalDataReset={handleLocalDataReset}
+                  models={loadedModelViewState.knownInfos}
+                  loadedModels={loadedModels}
                 />
               </Suspense>
             </ViewErrorBoundary>
