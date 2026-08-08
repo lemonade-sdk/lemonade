@@ -116,6 +116,7 @@ const managerSource = fs.readFileSync(path.join(root, 'src/components/ModelManag
 const panelSource = fs.readFileSync(path.join(root, 'src/components/GlobalModelSettingsPanel.tsx'), 'utf8');
 const connectSource = fs.readFileSync(path.join(root, 'src/components/ConnectView.tsx'), 'utf8');
 const navigationSource = fs.readFileSync(path.join(root, 'src/features/navigation/workspaceNavigation.ts'), 'utf8');
+const stylesSource = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
 const chatSource = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
 
 assert.doesNotMatch(listSource, /onOpenGlobalSettings|Open global model settings|Global model settings/);
@@ -135,6 +136,7 @@ assert.match(connectSource, /activeSection === 'chat'[\s\S]*?<GlobalModelSetting
 assert.match(connectSource, /activeSection === 'memory'[\s\S]*?<GlobalModelSettingsPanel section="memory"/);
 assert.match(connectSource, /activeSection === 'model-storage'[\s\S]*?<GlobalModelSettingsPanel section="updates"/);
 assert.match(navigationSource, /defineSection\('chat',[\s\S]*?defineSection\('memory'/);
+assert.match(stylesSource, /\.connect__section > \.global-model-settings__body\s*\{[\s\S]*?width:\s*min\(var\(--content-form-width\), 100%\);/);
 assert.match(chatSource, /defaultThinkingOpen=\{!globalModelSettings\.collapseThinkingByDefault\}/);
 assert.match(chatSource, /GLOBAL_MODEL_SETTINGS_EVENT/);
 assert.match(chatSource, /loadModelWithPolicy/);
