@@ -626,9 +626,7 @@ input, textarea {
 .rail__item:hover { background: var(--surface-2); }
 
 .rail__item.is-active {
-  background: linear-gradient(90deg,
-    var(--accent-soft) 0%,
-    var(--surface-3) 80%);
+  background: var(--accent-soft);
 }
 
 .rail__item.is-active::before {
@@ -740,12 +738,7 @@ input, textarea {
   letter-spacing: var(--tracking-tight);
   line-height: var(--leading-tight);
   margin: 0 0 var(--space-3);
-  background: linear-gradient(180deg,
-    var(--text-primary) 0%,
-    var(--text-secondary) 130%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--text-primary);
 }
 
 .hero__subtitle {
@@ -818,9 +811,7 @@ input, textarea {
 }
 
 .active-card {
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--surface-2) 92%, var(--accent) 8%) 0%,
-    var(--surface-1) 100%);
+  background: var(--surface-1);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
@@ -1059,8 +1050,8 @@ input, textarea {
 }
 
 .message--assistant .message__avatar {
-  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
-  color: var(--accent-on);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
 }
 
 .message__body { flex: 1; min-width: 0; }
@@ -1394,7 +1385,7 @@ input, textarea {
 .composer {
   grid-area: composer;
   padding: var(--space-3) var(--space-6) var(--space-4);
-  background: linear-gradient(180deg, transparent 0%, var(--surface-base) 25%);
+  background: var(--surface-base);
   position: relative;
 }
 
@@ -11170,9 +11161,7 @@ optgroup {
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
-  background:
-    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--surface-3) 72%, transparent), transparent 60%),
-    var(--surface-0);
+  background: var(--surface-0);
 }
 
 .model3d-viewer canvas {
