@@ -522,6 +522,7 @@ export interface ModelListPanelProps {
   onSelectModel: (id: string) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  onlineSearchEnabled: boolean;
   /** Selected left-rail tasks. Empty means all; selections are OR-ed. */
   taskFilters?: ReadonlySet<FilterTab>;
   /** Selected functional capability tags (multi-select funnel). Empty = no filter. */
@@ -564,6 +565,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   onSelectModel,
   searchQuery,
   onSearchChange,
+  onlineSearchEnabled,
   taskFilters,
   capabilityFilter,
   onCapabilityFilterChange,
@@ -870,7 +872,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
             role="searchbox"
             type="text"
               className="model-list-panel__search-input manager__search-input"
-            placeholder="Search models… (Ctrl+K)"
+            placeholder={onlineSearchEnabled ? 'Search built-in and online catalogs…' : 'Search built-in catalogs…'}
             value={searchQuery}
             onChange={e => onSearchChange(e.target.value)}
             aria-label="Search models"

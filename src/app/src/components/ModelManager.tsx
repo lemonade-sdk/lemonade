@@ -2606,18 +2606,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
 
-  /* ── Keyboard shortcut ───────────────────────────────────── */
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
-
   /* ── Stats ───────────────────────────────────────────────── */
   const searchActive = searchQuery.trim().length >= 2;
   const hasHuggingFaceActivity = searchActive && primaryFilter === 'all' && providerEnabled.huggingface;
@@ -2786,6 +2774,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        onlineSearchEnabled={providerEnabled.huggingface || providerEnabled.modelscope}
         taskFilters={taskFilters}
         capabilityFilter={capabilityFilter}
         onCapabilityFilterChange={setCapabilityFilter}
