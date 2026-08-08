@@ -43,7 +43,7 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
-    SECOND_TEST_MODEL_EVICTION,
+    MULTI_MODEL_QUATERNARY,
     MULTI_MODEL_TERTIARY,
     get_default_lemond_binary,
     SHARED_REPO_MODEL_A_NAME,
@@ -4199,7 +4199,7 @@ class EndpointTests(ServerTestBase):
         """
         router_model = MULTI_MODEL_TERTIARY
         candidate_model = ENDPOINT_TEST_MODEL
-        third_model = SECOND_TEST_MODEL_EVICTION
+        third_model = MULTI_MODEL_QUATERNARY
         for model in (router_model, candidate_model, third_model):
             pull_model_with_retry(model)
 

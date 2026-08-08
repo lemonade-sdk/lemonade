@@ -1833,6 +1833,9 @@ jobs:
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
+        env:
+          # No persistent HF cache here, so prefer the 2 GB GGUF build.
+          LEMONADE_TEST_SD_MODEL: SD-Turbo-GGUF
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu ollama"
           .venv/bin/python test/test_ollama.py --cli-binary lemonade
@@ -2047,6 +2050,9 @@ jobs:
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
+        env:
+          # No persistent HF cache here, so prefer the 2 GB GGUF build.
+          LEMONADE_TEST_SD_MODEL: SD-Turbo-GGUF
         run: |
           $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "windows-latest ollama"
           $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"

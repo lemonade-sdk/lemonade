@@ -110,6 +110,7 @@
     "vulkan_bin": "builtin"
   },
   "trellis": {
+    "args": "",
     "backend": "auto",
     "cuda_bin": "builtin",
     "rocm_bin": "builtin",
