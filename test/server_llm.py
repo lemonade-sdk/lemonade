@@ -24,6 +24,8 @@ import os
 import time
 import requests
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
 from utils.server_base import (
     ServerTestBase,
@@ -138,6 +140,84 @@ class LLMTests(ServerTestBase):
             completion.usage.total_tokens,
             completion.usage.prompt_tokens + completion.usage.completion_tokens,
         )
+
+    @skip_if_unsupported("chat_completions")
+    def test_001b_chat_completions_concurrent_requests(self):
+        """Test simultaneous non-streaming chat completion requests."""
+        model = self.get_test_model("llm")
+        concurrency = 5
+        barrier = threading.Barrier(concurrency)
+    
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": model},
+            headers=headers,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        load_response.raise_for_status()
+    
+        def make_request(index):
+            # Release all workers at approximately the same time.
+            barrier.wait(timeout=TIMEOUT_DEFAULT)
+    
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": f"Reply briefly to request {index}.",
+                        }
+                    ],
+                    "max_tokens": 8,
+                    "stream": False,
+                },
+                headers=headers,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            response.raise_for_status()
+    
+            return index, response.json()
+    
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = [
+                executor.submit(make_request, index)
+                for index in range(concurrency)
+            ]
+            results = [future.result() for future in futures]
+    
+        self.assertEqual(len(results), concurrency)
+    
+        for index, payload in results:
+            self.assertNotIn(
+                "error",
+                payload,
+                f"Concurrent request {index} returned an error: {payload}",
+            )
+            self.assertIn(
+                "choices",
+                payload,
+                f"Concurrent request {index} returned no choices: {payload}",
+            )
+            self.assertGreater(
+                len(payload["choices"]),
+                0,
+                f"Concurrent request {index} returned an empty choices list",
+            )
+    
+            message = payload["choices"][0].get("message", {})
+            content = message.get("content", "")
+    
+            self.assertTrue(
+                content.strip(),
+                f"Concurrent request {index} returned empty content",
+            )
 
     @skip_if_unsupported("chat_completions_streaming")
     def test_002_chat_completions_streaming(self):
