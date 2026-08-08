@@ -406,7 +406,8 @@ For `sd-cpp` recipe models, you can specify default image generation parameters:
             "steps": 20,
             "cfg_scale": 7.0,
             "width": 512,
-            "height": 512
+            "height": 512,
+            "upscale_model": "RealESRGAN-x4plus"
         }
     }
 }
