@@ -200,6 +200,9 @@ def load_model(model_name, port=PORT, timeout=30, **options):
 
 def unload_model(model_name, port=PORT):
     """POST /api/v1/unload for one model, leaving anything else resident."""
+    if not model_name:
+        # The server reads an empty name as "unload everything".
+        raise ValueError("unload_model needs a model name; use unload_all_models()")
     response = requests.post(
         f"http://localhost:{port}/api/v1/unload",
         json={"model_name": model_name},

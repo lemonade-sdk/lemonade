@@ -204,6 +204,23 @@ class Model3DTests(ServerTestBase):
             f"Loading {payload['model']} with {FAST_GENERATION_ARGS} failed: "
             f"{load.text[:1000]}",
         )
+
+        # An option the server does not recognize is dropped silently, which
+        # would put the slow full-guidance path back without failing anything.
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        applied = next(
+            (
+                model.get("recipe_options", {})
+                for model in health.get("all_models_loaded", [])
+                if model.get("model_name") == payload["model"]
+            ),
+            {},
+        )
+        self.assertEqual(
+            applied.get("trellis_args"),
+            FAST_GENERATION_ARGS,
+            f"trellis_args never reached the backend; applied options: {applied}",
+        )
         print(f"[INFO] Sending 3D generation request with model {payload['model']}")
         print("[INFO] Using the 512 cascade with guidance disabled for CI speed")
 
