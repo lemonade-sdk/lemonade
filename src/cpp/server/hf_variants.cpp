@@ -137,7 +137,9 @@ GgufVariantSet enumerate_gguf_variants(
 
         GgufVariant v;
         std::string q;
-        v.name = extract_quant(folder, q) ? q : folder;
+        bool has_quant = extract_quant(folder, q);
+        v.name = has_quant ? q : folder;
+        v.quant = has_quant ? q : "";
         v.files = files;
         v.primary_file = files.front();
         v.sharded = true;
@@ -173,10 +175,12 @@ GgufVariantSet enumerate_gguf_variants(
         const std::string& quant = quant_of_series[kv.first];
         GgufVariant v;
         // Two variants can now share a quant token, so fall back to the primary
-        // file's stem to keep every name in the list distinct.
+        // file's stem to keep every name in the list distinct. The quant is kept
+        // separately: widening the name must not change where this variant sorts.
         v.name = series_per_quant[quant] == 1
                      ? quant
                      : kv.second.front().substr(0, kv.second.front().find_last_of('.'));
+        v.quant = quant;
         v.files = kv.second;
         v.primary_file = kv.second.front();
         v.sharded = kv.second.size() > 1;
@@ -198,11 +202,15 @@ GgufVariantSet enumerate_gguf_variants(
         }
     }
 
-    // Sort by quant priority then name.
+    // Sort by quant priority then name. Ordering reads `quant`, never `name`:
+    // `name` widens to a file stem when two variants share a quant, and a stem
+    // is not a key in the priority table, so sorting on it silently demoted
+    // every disambiguated variant into the "everything else" bucket — putting
+    // Q8_0 ahead of Q4_K_M and making `pull --yes` take the wrong default.
     std::sort(result.variants.begin(), result.variants.end(),
               [](const GgufVariant& a, const GgufVariant& b) {
-                  int pa = quant_priority(a.name);
-                  int pb = quant_priority(b.name);
+                  int pa = a.quant.empty() ? 100 : quant_priority(a.quant);
+                  int pb = b.quant.empty() ? 100 : quant_priority(b.quant);
                   if (pa != pb) return pa < pb;
                   return a.name < b.name;
               });
