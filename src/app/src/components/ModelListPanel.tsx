@@ -536,7 +536,7 @@ export interface ModelListPanelProps {
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
   onOpenCustomModels?: () => void;
   onOpenRouter?: () => void;
-  onOpenGlobalSettings?: () => void;
+  onUpdateAllModels?: () => void;
   /** Lowercased set of pinned model names. Pinned rows float to the top. Client-local. */
   pinnedNames?: Set<string>;
   /** Toggle a model's pinned state. Receives the model name. */
@@ -573,7 +573,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   searchInputRef,
   onOpenCustomModels,
   onOpenRouter,
-  onOpenGlobalSettings,
+  onUpdateAllModels,
   pinnedNames,
   onTogglePin,
   favoriteNames,
@@ -845,14 +845,14 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               title="Create or edit a model router"
             />
           )}
-          {onOpenGlobalSettings && (
+          {onUpdateAllModels && (
             <WorkspaceActionButton
               size="toolbar"
-              icon="settings"
+              icon="rotate-ccw"
               iconOnly
-              onClick={onOpenGlobalSettings}
-              aria-label="Open global model settings"
-              title="Global model settings"
+              onClick={onUpdateAllModels}
+              aria-label="Update all models"
+              title="Update all downloaded models"
             />
           )}
         </WorkspaceActionGroup>
