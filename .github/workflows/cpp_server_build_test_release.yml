@@ -161,28 +161,50 @@ jobs:
 
       - name: Build installers
         shell: PowerShell
+        env:
+          # The Tauri desktop app (cargo + webpack) is roughly a third of this
+          # build, and it only ends up in lemonade.msi. Every downstream test
+          # job installs lemonade-server-minimal.msi, so on the PR and
+          # merge-queue paths the full installer is pure critical-path latency;
+          # build-lemonade-desktop-installer covers it off the critical path.
+          BUILD_FULL_INSTALLER: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true) && 'true' || 'false' }}
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Building C++ server, Tauri app, web app, and MSI installers..." -ForegroundColor Cyan
-
-          # Single build command: wix_installers depends on all C++ targets,
-          # tauri-app, and web-app via CMake dependency graph.
           # Build by directory (not --preset) so we follow whichever generator
           # setup.ps1 auto-detected for the installed Visual Studio version.
-          cmake --build build --config Release --target wix_installers
+          if ($env:BUILD_FULL_INSTALLER -eq 'true') {
+              Write-Host "Building C++ server, Tauri app, web app, and MSI installers..." -ForegroundColor Cyan
+              $target = "wix_installers"
+              $expected = @(
+                  "build\Release\lemond.exe",
+                  "build\Release\LemonadeServer.exe",
+                  "build\app\lemonade-app.exe",
+                  "build\resources\web-app\index.html",
+                  "lemonade-server-minimal.msi",
+                  "lemonade.msi"
+              )
+          } else {
+              Write-Host "Building C++ server, web app, and the minimal MSI installer..." -ForegroundColor Cyan
+              $target = "wix_installer_minimal"
+              $expected = @(
+                  "build\Release\lemond.exe",
+                  "build\Release\LemonadeServer.exe",
+                  "build\resources\web-app\index.html",
+                  "lemonade-server-minimal.msi"
+              )
+          }
+
+          # /m lets MSBuild overlap independent projects — the lemonade CLI and
+          # LemonadeServer otherwise wait for lemonade-server-core to finish.
+          # Passed straight through rather than via --parallel, which makes
+          # CMake set CL_MPCount=1 and cancel the /MP in CMakeLists.txt.
+          cmake --build build --config Release --target $target -- /m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify outputs
           $failures = @()
-          @(
-              "build\Release\lemond.exe",
-              "build\Release\LemonadeServer.exe",
-              "build\app\lemonade-app.exe",
-              "build\resources\web-app\index.html",
-              "lemonade-server-minimal.msi",
-              "lemonade.msi"
-          ) | ForEach-Object {
+          $expected | ForEach-Object {
               if (-not (Test-Path $_)) {
                   Write-Host "ERROR: $_ not found!" -ForegroundColor Red
                   $failures += $_
@@ -210,10 +232,81 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: Lemonade_Server_MSI
-          path: |
-            lemonade-server-minimal.msi
-            lemonade.msi
+          # Glob rather than two literal paths: lemonade.msi is only built on
+          # the release/signing path (see BUILD_FULL_INSTALLER above).
+          path: lemonade*.msi
           retention-days: 7
+
+  build-lemonade-desktop-installer:
+    name: Build Lemonade Desktop Installer
+    # Packaging-only variant: it builds the Tauri desktop app and lemonade.msi,
+    # which no test job installs. The merge queue gates every merge, so PR
+    # pushes skip it and any desktop/full-MSI break still blocks at merge-queue
+    # time. Label a PR `ci:desktop` to opt it back in. The release paths are
+    # excluded because the build above already produces lemonade.msi there.
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      inputs.enable_signing != true &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:desktop'))
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Install WiX Toolset 5.0.2 (CLI)
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $wixUri = "https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi"
+          $msiPath = "$env:RUNNER_TEMP\wix-cli-x64.msi"
+          Invoke-WebRequest -UseBasicParsing -Uri $wixUri -OutFile $msiPath
+          $p = Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$msiPath`"", "/qn", "/norestart") -PassThru -Wait
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+
+          # The CLI MSI does not reliably add itself to PATH in a silent install.
+          $wixDir = "C:\Program Files\WiX Toolset v5.0\bin"
+          if (-not (Test-Path (Join-Path $wixDir "wix.exe"))) {
+            Write-Host "ERROR: wix.exe not found after installation." -ForegroundColor Red
+            exit 1
+          }
+          "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v5
+        with:
+          path: build/_deps
+          key: fetchcontent-windows-desktop-vs2026-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            fetchcontent-windows-desktop-vs2026-
+
+      - name: Run setup.ps1 to configure environment
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\setup.ps1
+
+      - name: Build desktop installer
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          cmake --build build --config Release --target wix_installer_full -- /m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $failures = @()
+          @(
+              "build\app\lemonade-app.exe",
+              "build\resources\web-app\index.html",
+              "lemonade.msi"
+          ) | ForEach-Object {
+              if (-not (Test-Path $_)) {
+                  Write-Host "ERROR: $_ not found!" -ForegroundColor Red
+                  $failures += $_
+              }
+          }
+          if ($failures.Count -gt 0) { exit 1 }
+          Write-Host "Desktop installer built successfully!" -ForegroundColor Green
 
   sign-msi-installers:
     name: Sign MSI Installers with SignPath
@@ -297,19 +390,39 @@ jobs:
           package-type: binary
           deb-version: ${{ steps.get_version.outputs.version }}
 
-      - name: Run C++ unit tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          cmake --preset default
-          cmake --build --preset default --target cpp-ci-tests
-          ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-deb
           path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
           retention-days: 7
+
+  cpp-unit-tests:
+    name: C++ unit tests
+    # Own job rather than a step of build-lemonade-deb: it shares nothing with
+    # the packaging build (different configure, different flags), so as a step
+    # it just added its full build time to the critical path that gates every
+    # .deb test job. Same build-environment image, so the configure resolves
+    # the same system dependencies.
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Build and run C++ unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --preset default
+          cmake --build --preset default --target cpp-ci-tests
+          ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"
 
   build-lemonade-debian13:
     name: Build Lemonade .deb Package (Debian 13)${{ matrix.job-suffix }}
@@ -797,7 +910,7 @@ jobs:
           cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          cmake --build build --config Release --target embeddable
+          cmake --build build --config Release --target embeddable -- /m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $archive = "build\lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64.zip"
@@ -1365,7 +1478,7 @@ jobs:
   # to run on ordinary pull request pushes.
   packaging-gate:
     name: Packaging builds
-    needs: [build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package]
+    needs: [build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package, build-lemonade-desktop-installer]
     if: always()
     runs-on: ubuntu-latest
     steps:

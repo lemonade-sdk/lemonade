@@ -725,6 +725,14 @@ if(WIN32)
         add_compile_options(/guard:cf)
         # Buffer Security Check - stack buffer overflow detection
         add_compile_options(/GS)
+        # MSBuild parallelizes across projects, but within one project cl.exe
+        # compiles a single file at a time, which leaves most cores idle.
+        # Ninja already schedules per file, so /MP would oversubscribe there.
+        # Do not pass --parallel to `cmake --build` with a Visual Studio
+        # generator: CMake then sets CL_MPCount=1, which disables this.
+        if(CMAKE_GENERATOR MATCHES "Visual Studio")
+            add_compile_options(/MP)
+        endif()
     endif()
 endif()
 
@@ -2184,7 +2192,7 @@ set(_FLM_ARG_RESOLVER_TEST_SRC
 set(_FLM_ARG_RESOLVER_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/fastflowlm/flm_arg_resolver.cpp"
 )
-if(EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_ARG_RESOLVER_SRC}")
+if(BUILD_TESTING AND EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_ARG_RESOLVER_SRC}")
     add_executable(test_flm_arg_resolver
         test/cpp/test_flm_arg_resolver.cpp
         src/cpp/server/backends/fastflowlm/flm_arg_resolver.cpp
@@ -2215,7 +2223,7 @@ set(_DIR_WATCHER_TEST_SRC
 set(_DIR_WATCHER_LIB_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/directory_watcher.cpp"
 )
-if(EXISTS "${_DIR_WATCHER_TEST_SRC}" AND EXISTS "${_DIR_WATCHER_LIB_SRC}")
+if(BUILD_TESTING AND EXISTS "${_DIR_WATCHER_TEST_SRC}" AND EXISTS "${_DIR_WATCHER_LIB_SRC}")
     add_executable(test_directory_watcher
         test/cpp/test_directory_watcher.cpp
         src/cpp/server/directory_watcher.cpp
@@ -2239,7 +2247,7 @@ endif()
 set(_GGUF_CAPS_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_capabilities.cpp"
 )
-if(EXISTS "${_GGUF_CAPS_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_GGUF_CAPS_TEST_SRC}")
     add_executable(test_gguf_capabilities
         test/cpp/test_gguf_capabilities.cpp
     )
@@ -2257,7 +2265,7 @@ endif()
 set(_MODEL_RESIDENCY_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_residency.cpp"
 )
-if(EXISTS "${_MODEL_RESIDENCY_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_MODEL_RESIDENCY_TEST_SRC}")
     add_executable(test_model_residency
         test/cpp/test_model_residency.cpp
     )
@@ -2277,7 +2285,7 @@ endif()
 set(_LATEST_FALLBACK_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_latest_version_fallback.cpp"
 )
-if(EXISTS "${_LATEST_FALLBACK_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_LATEST_FALLBACK_TEST_SRC}")
     add_executable(test_latest_version_fallback
         test/cpp/test_latest_version_fallback.cpp
     )
@@ -2294,7 +2302,7 @@ endif()
 # resolution, and step-graph validation (forward-only ⇒ no loops). Header-only,
 # so these link only nlohmann/json.
 set(_JOB_EXPR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_expr.cpp")
-if(EXISTS "${_JOB_EXPR_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_JOB_EXPR_TEST_SRC}")
     add_executable(test_job_expr test/cpp/test_job_expr.cpp)
     target_include_directories(test_job_expr PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
@@ -2306,7 +2314,7 @@ if(EXISTS "${_JOB_EXPR_TEST_SRC}")
 endif()
 
 set(_JOB_GRAPH_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_graph.cpp")
-if(EXISTS "${_JOB_GRAPH_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_JOB_GRAPH_TEST_SRC}")
     add_executable(test_job_graph test/cpp/test_job_graph.cpp)
     target_include_directories(test_job_graph PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
@@ -2322,7 +2330,7 @@ endif()
 set(_INSTALL_ATOMICITY_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_install_atomicity.cpp"
 )
-if(EXISTS "${_INSTALL_ATOMICITY_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_INSTALL_ATOMICITY_TEST_SRC}")
     add_executable(test_install_atomicity
         test/cpp/test_install_atomicity.cpp
     )
@@ -2342,7 +2350,7 @@ endif()
 set(_ROUTING_CONTRACT_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_contract.cpp"
 )
-if(EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_CONTRACT_TEST_SRC}")
     add_executable(test_routing_policy_contract
         test/cpp/test_routing_policy_contract.cpp
         src/cpp/server/routing_policy.cpp
@@ -2366,7 +2374,7 @@ endif()
 set(_ROUTING_EVALUATOR_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_evaluator.cpp"
 )
-if(EXISTS "${_ROUTING_EVALUATOR_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_EVALUATOR_TEST_SRC}")
     add_executable(test_routing_policy_evaluator
         test/cpp/test_routing_policy_evaluator.cpp
         src/cpp/server/routing_policy.cpp
@@ -2386,7 +2394,7 @@ endif()
 set(_ROUTING_REGISTRY_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_registry.cpp"
 )
-if(EXISTS "${_ROUTING_REGISTRY_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_REGISTRY_TEST_SRC}")
     add_executable(test_routing_policy_registry
         test/cpp/test_routing_policy_registry.cpp
         src/cpp/server/routing_policy.cpp
@@ -2408,7 +2416,7 @@ endif()
 set(_ROUTING_SEMANTIC_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_semantic.cpp"
 )
-if(EXISTS "${_ROUTING_SEMANTIC_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_SEMANTIC_TEST_SRC}")
     add_executable(test_routing_policy_semantic
         test/cpp/test_routing_policy_semantic.cpp
         src/cpp/server/routing_policy.cpp
@@ -2429,7 +2437,7 @@ endif()
 set(_ROUTING_LLM_ROUTER_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_llm_router.cpp"
 )
-if(EXISTS "${_ROUTING_LLM_ROUTER_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_LLM_ROUTER_TEST_SRC}")
     add_executable(test_routing_policy_llm_router
         test/cpp/test_routing_policy_llm_router.cpp
         src/cpp/server/routing_policy.cpp
@@ -2451,7 +2459,7 @@ endif()
 set(_ROUTING_DETERMINISTIC_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_deterministic.cpp"
 )
-if(EXISTS "${_ROUTING_DETERMINISTIC_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_DETERMINISTIC_TEST_SRC}")
     add_executable(test_routing_policy_deterministic
         test/cpp/test_routing_policy_deterministic.cpp
         src/cpp/server/routing_policy.cpp
@@ -2473,7 +2481,7 @@ endif()
 set(_ROUTING_ENGINE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_engine.cpp"
 )
-if(EXISTS "${_ROUTING_ENGINE_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_ENGINE_TEST_SRC}")
     add_executable(test_routing_policy_engine
         test/cpp/test_routing_policy_engine.cpp
         src/cpp/server/routing_policy.cpp
@@ -2496,7 +2504,7 @@ endif()
 set(_ROUTING_PARSER_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_parser.cpp"
 )
-if(EXISTS "${_ROUTING_PARSER_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_PARSER_TEST_SRC}")
     add_executable(test_routing_policy_parser
         test/cpp/test_routing_policy_parser.cpp
         src/cpp/server/routing_policy.cpp
@@ -2523,7 +2531,7 @@ endif()
 set(_ROUTING_STORE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_store.cpp"
 )
-if(EXISTS "${_ROUTING_STORE_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_STORE_TEST_SRC}")
     add_executable(test_routing_policy_store
         test/cpp/test_routing_policy_store.cpp
         src/cpp/server/routing_policy.cpp
@@ -2550,7 +2558,7 @@ endif()
 set(_ROUTE_DECISION_RESPONSE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_route_decision_response.cpp"
 )
-if(EXISTS "${_ROUTE_DECISION_RESPONSE_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTE_DECISION_RESPONSE_TEST_SRC}")
     add_executable(test_route_decision_response
         test/cpp/test_route_decision_response.cpp
         src/cpp/server/route_decision_response.cpp
@@ -2576,7 +2584,7 @@ endif()
 set(_ROUTING_CONFORMANCE_CORPUS_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_conformance_corpus.cpp"
 )
-if(EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
     add_executable(test_routing_conformance_corpus
         test/cpp/test_routing_conformance_corpus.cpp
         src/cpp/server/route_decision_response.cpp
@@ -2609,7 +2617,7 @@ endif()
 set(_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_manager_collection_validation.cpp"
 )
-if(EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
     add_executable(test_model_manager_collection_validation
         test/cpp/test_model_manager_collection_validation.cpp
     )
@@ -2639,7 +2647,7 @@ endif()
 set(_ROUTING_CLASSIFIER_SERVICES_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_classifier_services.cpp"
 )
-if(EXISTS "${_ROUTING_CLASSIFIER_SERVICES_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_CLASSIFIER_SERVICES_TEST_SRC}")
     add_executable(test_routing_classifier_services
         test/cpp/test_routing_classifier_services.cpp
         src/cpp/server/routing_classifier_services.cpp
@@ -2662,7 +2670,7 @@ endif()
 set(_AUTO_TUNE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_auto_tune.cpp"
 )
-if(EXISTS "${_AUTO_TUNE_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
     add_executable(test_auto_tune
         test/cpp/test_auto_tune.cpp
     )
@@ -2676,28 +2684,28 @@ if(EXISTS "${_AUTO_TUNE_TEST_SRC}")
 endif()
 
 set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")
-if(EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
     add_executable(test_telemetry_helpers test/cpp/test_telemetry_helpers.cpp)
     target_link_libraries(test_telemetry_helpers PRIVATE lemonade-server-core)
     add_cpp_ci_test(TelemetryHelpersTest CI OFF COMMAND test_telemetry_helpers)
 endif()
 
 set(_SUSPEND_INHIBITOR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_suspend_inhibitor.cpp")
-if(EXISTS "${_SUSPEND_INHIBITOR_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_SUSPEND_INHIBITOR_TEST_SRC}")
     add_executable(test_suspend_inhibitor test/cpp/test_suspend_inhibitor.cpp)
     target_link_libraries(test_suspend_inhibitor PRIVATE lemonade-server-core)
     add_cpp_ci_test(SuspendInhibitorTest CI OFF COMMAND test_suspend_inhibitor)
 endif()
 
 set(_CONFIG_MIGRATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_migration.cpp")
-if(EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
     add_executable(test_config_migration test/cpp/test_config_migration.cpp)
     target_link_libraries(test_config_migration PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfigMigrationTest CI OFF COMMAND test_config_migration)
 endif()
 
 set(_CONFIG_TELEMETRY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_telemetry.cpp")
-if(EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
     target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfigTelemetryTest CI OFF COMMAND test_config_telemetry)
@@ -2706,28 +2714,28 @@ endif()
 # ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
 # external-ROCm detection that lets Lemonade skip the bundled TheRock download.
 set(_ROCM_ROOT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_root_resolution.cpp")
-if(EXISTS "${_ROCM_ROOT_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROCM_ROOT_TEST_SRC}")
     add_executable(test_rocm_root_resolution test/cpp/test_rocm_root_resolution.cpp)
     target_link_libraries(test_rocm_root_resolution PRIVATE lemonade-server-core)
     add_cpp_ci_test(RocmRootResolutionTest CI OFF COMMAND test_rocm_root_resolution)
 endif()
 
 set(_GPU_ENV_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_gpu_env.cpp")
-if(EXISTS "${_GPU_ENV_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_GPU_ENV_TEST_SRC}")
     add_executable(test_backend_utils_gpu_env test/cpp/test_backend_utils_gpu_env.cpp)
     target_link_libraries(test_backend_utils_gpu_env PRIVATE lemonade-server-core)
     add_cpp_ci_test(BackendUtilsGpuEnvTest CI OFF COMMAND test_backend_utils_gpu_env)
 endif()
 
 set(_NETWORK_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_network_utils.cpp")
-if(EXISTS "${_NETWORK_UTILS_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     add_executable(test_network_utils test/cpp/test_network_utils.cpp)
     target_link_libraries(test_network_utils PRIVATE lemonade-server-core)
     add_cpp_ci_test(NetworkUtilsTest CI ON COMMAND test_network_utils)
 endif()
 
 set(_URL_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_url_utils.cpp")
-if(EXISTS "${_URL_UTILS_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_URL_UTILS_TEST_SRC}")
     add_executable(test_url_utils test/cpp/test_url_utils.cpp)
     target_link_libraries(test_url_utils PRIVATE lemonade-server-core)
     add_cpp_ci_test(UrlUtilsTest CI OFF COMMAND test_url_utils)
@@ -2736,7 +2744,7 @@ endif()
 # vLLM CDNA gating: the vllm descriptor support row + asset-family resolution for
 # AMD Instinct (gfx942), alongside the existing RDNA families.
 set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gating.cpp")
-if(EXISTS "${_VLLM_CDNA_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
     target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
     add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
@@ -2746,28 +2754,28 @@ endif()
 # published, so the shared Windows/Linux support row must not advertise Windows
 # or nightly installs for gfx950.
 set(_LLAMACPP_GFX950_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_gfx950_gating.cpp")
-if(EXISTS "${_LLAMACPP_GFX950_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_LLAMACPP_GFX950_TEST_SRC}")
     add_executable(test_llamacpp_gfx950_gating test/cpp/test_llamacpp_gfx950_gating.cpp)
     target_link_libraries(test_llamacpp_gfx950_gating PRIVATE lemonade-server-core)
     add_cpp_ci_test(LlamacppGfx950GatingTest CI OFF COMMAND test_llamacpp_gfx950_gating)
 endif()
 
 set(_HTTP_CLIENT_SECURITY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_security.cpp")
-if(EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_executable(test_http_client_security test/cpp/test_http_client_security.cpp)
     target_link_libraries(test_http_client_security PRIVATE lemonade-server-core)
     add_cpp_ci_test(HttpClientSecurityTest CI OFF COMMAND test_http_client_security)
 endif()
 
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")
-if(EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
     target_link_libraries(test_cloud_discovery_policy PRIVATE lemonade-server-core)
     add_cpp_ci_test(CloudDiscoveryPolicyTest CI OFF COMMAND test_cloud_discovery_policy)
 endif()
 
 set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
-if(EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
     add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
     target_link_libraries(test_origin_utils PRIVATE lemonade-server-core)
     add_cpp_ci_test(OriginUtilsTest CI ON COMMAND test_origin_utils)
@@ -2793,7 +2801,7 @@ endif()
 # Routing-helper reconciliation: durable needed-set + non-blocking prune that
 # skips busy/pinned helpers, plus a policy-update-vs-busy concurrency race.
 set(_ROUTING_HELPER_RECONCILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_helper_reconcile.cpp")
-if(EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
     add_executable(test_routing_helper_reconcile test/cpp/test_routing_helper_reconcile.cpp)
     target_link_libraries(test_routing_helper_reconcile PRIVATE lemonade-server-core)
     add_cpp_ci_test(RoutingHelperReconcileTest CI ON COMMAND test_routing_helper_reconcile)
