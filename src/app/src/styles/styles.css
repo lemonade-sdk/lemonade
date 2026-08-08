@@ -5164,6 +5164,10 @@ optgroup {
   color: var(--success);
 }
 
+.connect__section--directories .connect__notice {
+  margin-top: var(--space-1);
+}
+
 .dash2-card--notice {
   border-style: dashed;
   background: var(--surface-2);

@@ -270,7 +270,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
       const saved = await api.saveDirectorySettings(directories.modelsDir, directories.extraModelsDir);
       setDirectories(saved);
       setDirectoryNotice(saved.canPersist
-        ? 'Directory settings saved. Restart or rescan the Lemonade server for model discovery changes to take effect.'
+        ? 'Directory settings saved.'
         : 'This runtime cannot persist directory settings; use the desktop app host bridge or start lemond with --extra-models-dir.');
     } catch (err) {
       setDirectoryError(friendlyErrorMessage(err));
