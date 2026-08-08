@@ -566,6 +566,34 @@ class LLMTests(ServerTestBase):
         self.assertGreater(len(response.data[0].embedding), 0)
         print(f"Embedding dimension: {len(response.data[0].embedding)}")
 
+    @skip_if_unsupported("embeddings")
+    def test_015b_embeddings_missing_model_returns_400(self):
+        """Test embeddings request without model returns a helpful 400 error."""
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        response = requests.post(
+            f"{self.base_url}/embeddings",
+            json={
+                "input": "Hello, how are you today?",
+                "encoding_format": "float",
+            },
+            headers=headers,
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        self.assertEqual(response.status_code, 400, response.text)
+
+        error = response.json().get("error")
+        self.assertIsInstance(error, dict, response.text)
+        self.assertEqual(error.get("type"), "invalid_request")
+        self.assertIn(
+            "no model specified",
+            error.get("message", "").lower(),
+        )
+
     @skip_if_unsupported("embeddings_batch")
     def test_016_embeddings_array_of_strings(self):
         """Test embeddings with array of strings."""
