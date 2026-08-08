@@ -185,7 +185,7 @@ def unload_all_models(port=PORT):
     return response
 
 
-def load_model(model_name, port=PORT, timeout=30, **options):
+def load_model(model_name, port=PORT, timeout=TIMEOUT_MODEL_OPERATION, **options):
     """POST /api/v1/load for one model, forwarding any recipe options."""
     payload = {"model_name": model_name}
     payload.update(options)

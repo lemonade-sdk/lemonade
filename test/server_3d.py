@@ -216,9 +216,11 @@ class Model3DTests(ServerTestBase):
             ),
             {},
         )
+        # Compare tokens, not the string: merging with a server that already
+        # carries trellis args rewrites the value in alphabetical order.
         self.assertEqual(
-            applied.get("trellis_args"),
-            FAST_GENERATION_ARGS,
+            sorted(str(applied.get("trellis_args", "")).split()),
+            sorted(FAST_GENERATION_ARGS.split()),
             f"trellis_args never reached the backend; applied options: {applied}",
         )
         print(f"[INFO] Sending 3D generation request with model {payload['model']}")
