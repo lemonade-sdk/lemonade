@@ -62,6 +62,9 @@ RUN UBUNTU_VERSION="$(. /etc/os-release && echo "$VERSION_ID")" && \
 #
 # amd64 only: every workflow using this image runs on ubuntu-latest, and
 # priming the arm64 variant would run the whole build under QEMU emulation.
+#
+# Stops at the build target rather than producing a package: only the compile
+# populates the cache, and the install step wants paths .dockerignore strips.
 ENV CCACHE_DIR=/opt/ccache
 COPY . /__w/lemonade/lemonade
 RUN apt update && apt install -y ccache && rm -rf /var/lib/apt/lists/* && \
@@ -76,7 +79,7 @@ RUN apt update && apt install -y ccache && rm -rf /var/lib/apt/lists/* && \
         CCACHE_IGNOREOPTIONS='-fdebug-prefix-map=*' \
         CMAKE_C_COMPILER_LAUNCHER=ccache \
         CMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            dpkg-buildpackage -us -uc -b && \
+            dpkg-buildpackage -us -uc --rules-target=build && \
         ccache -s; \
     fi && \
     rm -rf /__w /root/.npm /root/.cache/pip
