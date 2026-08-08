@@ -2795,6 +2795,5 @@ set(_ROUTING_HELPER_RECONCILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/tes
 if(EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
     add_executable(test_routing_helper_reconcile test/cpp/test_routing_helper_reconcile.cpp)
     target_link_libraries(test_routing_helper_reconcile PRIVATE lemonade-server-core)
-    add_test(NAME RoutingHelperReconcileTest COMMAND test_routing_helper_reconcile)
-    register_cpp_ci_test(RoutingHelperReconcileTest test_routing_helper_reconcile)
+    add_cpp_ci_test(RoutingHelperReconcileTest CI ON COMMAND test_routing_helper_reconcile)
 endif()
