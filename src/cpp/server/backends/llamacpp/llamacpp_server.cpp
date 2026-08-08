@@ -154,6 +154,15 @@ static std::string trim_to_major_minor(const std::string& version) {
 }
 
 static std::string get_therock_version() {
+    // BackendManager sets this when the resolved llama.cpp release tag
+    // diverges from the statically pinned one (rocm_bin="latest" or an
+    // explicit custom tag) and it discovered the real ROCm version from that
+    // release's own asset names — the static pin can't be assumed to apply.
+    std::string override_version = SystemInfo::get_rocm_therock_version_override();
+    if (!override_version.empty()) {
+        return trim_to_major_minor(override_version);
+    }
+
     auto config = JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
     if (!config.contains("therock") || !config["therock"].is_object() ||
         !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
@@ -196,16 +205,6 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         params.filename = "llama-" + version + "-ubuntu-rocm-" + target_arch + "-x64.zip";
 #else
         throw std::runtime_error("ROCm nightly llamacpp only supported on Windows and Linux");
-#endif
-    } else if (resolved_backend == "rocm-stable") {
-        params.repo = "lemonade-sdk/llama.cpp";
-        std::string therock_ver = get_therock_version();
-#ifdef _WIN32
-        params.filename = "llama-" + version + "-bin-win-rocm-" + therock_ver + "-x64.zip";
-#elif defined(__linux__)
-        params.filename = "llama-" + version + "-bin-ubuntu-rocm-" + therock_ver + "-x64.tar.gz";
-#else
-        throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
 #endif
     } else if (resolved_backend == "cuda") {
         params.repo = "lemonade-sdk/llama.cpp";
@@ -301,6 +300,28 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Install llama-server if needed (use per-model backend)
     backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
+
+    // Which ROCm/TheRock version this install actually resolved to (may differ
+    // from the static pin), so the runtime library path below doesn't pick up
+    // a stale version left on disk from an earlier default install. Prefer the
+    // marker install_backend() persists (survives a restart, works offline);
+    // fall back to live re-resolution only for pre-marker installs.
+    std::string rocm_stable_therock_version;
+    if (llamacpp_backend == "rocm-stable") {
+        rocm_stable_therock_version =
+            BackendUtils::read_therock_version_marker(llamacpp::spec()->recipe, llamacpp_backend);
+        if (rocm_stable_therock_version.empty()) {
+            try {
+                rocm_stable_therock_version =
+                    backend_manager_->get_install_params(llamacpp::spec()->recipe, llamacpp_backend)
+                        .discovered_therock_version;
+            } catch (const std::exception& e) {
+                LOG(WARNING, "LlamaCpp") << "Could not resolve TheRock runtime version after "
+                                            "install; falling back to the static pin for runtime "
+                                            "library path selection: " << e.what() << std::endl;
+            }
+        }
+    }
 
     // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
     // sources the weights itself via -hf; those models may not have local files.
@@ -435,7 +456,8 @@ void LlamaCppServer::load(const std::string& model_name,
         if (llamacpp_backend == "rocm-stable") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
-                std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
+                std::string therock_lib =
+                    BackendUtils::get_therock_lib_path(rocm_arch, rocm_stable_therock_version);
                 if (!therock_lib.empty()) {
                     lib_path = therock_lib + ":" + lib_path;
                 }
@@ -474,7 +496,8 @@ void LlamaCppServer::load(const std::string& model_name,
         if (llamacpp_backend == "rocm-stable") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
-                std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
+                std::string therock_bin =
+                    BackendUtils::get_therock_lib_path(rocm_arch, rocm_stable_therock_version);
                 if (!therock_bin.empty()) {
                     new_path = path_to_utf8(fs::absolute(path_from_utf8(therock_bin)));
                 }

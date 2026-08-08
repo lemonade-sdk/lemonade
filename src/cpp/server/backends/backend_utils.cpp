@@ -1129,6 +1129,11 @@ namespace lemon::backends {
         );
 
         if (!download_result.success) {
+            // install_dir was created above (before the download) and is still
+            // empty at this point — remove it rather than leaving a directory
+            // behind with no version.txt, so a later scan/retry can't mistake
+            // it for a real (if outdated) install.
+            fs::remove_all(install_dir);
             throw std::runtime_error("Failed to download TheRock from: " + url +
                                     " - " + download_result.error_message);
         }
@@ -1193,36 +1198,116 @@ namespace lemon::backends {
 #endif
     }
 
-    std::string BackendUtils::get_therock_lib_path(const std::string& rocm_arch) {
+    namespace {
+        std::string read_therock_version_file(const fs::path& version_file) {
+            if (!fs::exists(version_file)) {
+                return "";
+            }
+            std::ifstream file(version_file);
+            if (!file.is_open()) {
+                return "";
+            }
+            std::string version;
+            std::getline(file, version);
+            return version;
+        }
+    }
+
+    std::string BackendUtils::get_therock_lib_path(const std::string& rocm_arch,
+                                                    const std::string& expected_version) {
 #if !defined(__linux__) && !defined(_WIN32)
         return "";
 #else
-        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-        json config = utils::JsonUtils::load_from_file(config_path);
+        std::string version = expected_version;
+        if (version.empty()) {
+            // No per-install resolved version was given (caller doesn't track
+            // one, or discovery wasn't applicable) — use the static pin, as
+            // before.
+            std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+            json config = utils::JsonUtils::load_from_file(config_path);
 
-        if (!config.contains("therock") || !config["therock"].contains("version")) {
-            throw std::runtime_error("backend_versions.json is missing 'therock.version'");
+            if (!config.contains("therock") || !config["therock"].contains("version")) {
+                throw std::runtime_error("backend_versions.json is missing 'therock.version'");
+            }
+            version = config["therock"]["version"].get<std::string>();
         }
 
-        std::string version = config["therock"]["version"].get<std::string>();
-
-        // Only return the path if TheRock is already installed
+        // Only trust this install if it's actually complete: a version.txt
+        // matching `version` is written only after a successful download,
+        // extraction, and bin/lib verification (see install_therock). A
+        // directory that exists without one is either mid-install or was
+        // left behind by a failed download — never a usable runtime.
         std::string install_dir = get_therock_install_dir(rocm_arch, version);
-        if (fs::exists(install_dir)) {
+        std::string installed_version =
+            read_therock_version_file(fs::path(install_dir) / "version.txt");
+        if (installed_version == version) {
+            std::string lib_path;
 #ifdef _WIN32
             // On Windows, DLLs are in bin/ (lib/ contains only import .lib files)
-            std::string lib_path = (fs::path(install_dir) / "bin").string();
+            lib_path = (fs::path(install_dir) / "bin").string();
 #else
             // On Linux, shared libraries are in lib/
-            std::string lib_path = (fs::path(install_dir) / "lib").string();
+            lib_path = (fs::path(install_dir) / "lib").string();
 #endif
             LOG(DEBUG, "BackendUtils") << "Returning TheRock runtime path: " << lib_path << std::endl;
             return lib_path;
         }
 
+        if (installed_version.empty()) {
+            LOG(DEBUG, "BackendUtils") << "TheRock " << rocm_arch << "-" << version
+                                       << " not installed" << std::endl;
+        } else {
+            LOG(WARNING, "BackendUtils") << "TheRock install at " << install_dir
+                                        << " has version.txt '" << installed_version
+                                        << "', expected '" << version
+                                        << "' — treating as not installed" << std::endl;
+        }
         return "";
 #endif
     }
+
+    namespace {
+        fs::path therock_version_marker_path(const std::string& recipe, const std::string& backend) {
+            return fs::path(BackendUtils::get_install_directory(recipe, backend)) / "therock_version.txt";
+        }
+    }
+
+    void BackendUtils::write_therock_version_marker(const std::string& recipe, const std::string& backend,
+                                                     const std::string& therock_version) {
+        if (therock_version.empty()) {
+            return;
+        }
+        std::error_code ec;
+        fs::path marker_path = therock_version_marker_path(recipe, backend);
+        fs::create_directories(marker_path.parent_path(), ec);
+        if (ec) {
+            LOG(WARNING, "BackendUtils") << "Could not create directory for TheRock version marker "
+                                        << marker_path << ": " << ec.message() << std::endl;
+            return;
+        }
+        std::ofstream f(marker_path);
+        if (!f.is_open()) {
+            LOG(WARNING, "BackendUtils") << "Could not write TheRock version marker "
+                                        << marker_path << std::endl;
+            return;
+        }
+        f << therock_version;
+    }
+
+    std::string BackendUtils::read_therock_version_marker(const std::string& recipe, const std::string& backend) {
+        fs::path marker_path = therock_version_marker_path(recipe, backend);
+        if (!fs::exists(marker_path)) {
+            return "";
+        }
+        std::ifstream f(marker_path);
+        if (!f.is_open()) {
+            return "";
+        }
+        std::string version;
+        std::getline(f, version);
+        return version;
+    }
+
     void BackendUtils::apply_cuda_env_vars(
             std::vector<std::pair<std::string, std::string>>& env_vars,
             const std::string& log_tag,

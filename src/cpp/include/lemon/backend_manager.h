@@ -48,6 +48,11 @@ public:
         std::string repo;
         std::string filename;
         std::string version;
+        // ROCm/TheRock version (e.g. "7.14.0") discovered from the resolved
+        // release's own asset name; empty if not applicable or discovery
+        // wasn't needed. Only populated for recipe=="llamacpp" — see
+        // resolve_rocm_asset_version for why sd-cpp isn't covered.
+        std::string discovered_therock_version;
     };
 
     // Unlike the enrichment helpers above, this returns the repo and lets
@@ -99,6 +104,20 @@ private:
     // describing what went wrong. `false` (status path) returns "" silently.
     std::string fetch_latest_github_tag(const std::string& repo,
                                         bool throw_on_failure);
+
+    // Discover the actual ROCm/TheRock major.minor version (e.g. "7.14")
+    // embedded in the release asset filenames for (repo, tag), by querying
+    // GitHub's release-by-tag API. Cached per (repo, tag) for the lifetime of
+    // this BackendManager. Returns "" on any failure (offline,
+    // no_fetch_executables=true, network error, no matching asset name) so
+    // callers fall back to the static backend_versions.json pin. No-throw.
+    std::string resolve_rocm_asset_version(const std::string& repo, const std::string& tag);
+
+    // Cached (repo + "@" + tag) -> discovered ROCm asset version, from
+    // resolve_rocm_asset_version(). Separate from latest_version_cache_
+    // because it's keyed by a concrete tag, not just the repo.
+    std::unordered_map<std::string, std::string> rocm_asset_version_cache_;
+    std::mutex rocm_asset_version_cache_mutex_;
 };
 
 } // namespace lemon

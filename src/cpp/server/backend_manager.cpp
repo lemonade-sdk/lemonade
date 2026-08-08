@@ -15,6 +15,8 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <regex>
+#include <set>
 #include <thread>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
@@ -218,17 +220,32 @@ bool backend_update_required(const std::string& recipe, const std::string& backe
     return false;
 }
 
-bool will_install_therock(const std::string& os, const json& backend_versions) {
+// Prefer a version discovered from the resolved release's own assets (see
+// BackendManager::InstallParams::discovered_therock_version) over the static
+// backend_versions.json pin, when one was found — it's what this specific
+// install was actually verified to need.
+std::string resolve_therock_runtime_version(const json& backend_versions,
+                                            const std::string& override_version) {
+    if (!override_version.empty()) {
+        return override_version;
+    }
+    if (!backend_versions.contains("therock") || !backend_versions["therock"].contains("version")) {
+        return "";
+    }
+    return backend_versions["therock"]["version"].get<std::string>();
+}
+
+bool will_install_therock(const std::string& os, const json& backend_versions,
+                          const std::string& override_version = "") {
     // TheRock is needed on Linux and Windows for ROCm stable channel.
     if (os != "linux" && os != "windows") {
         return false;
     }
 
-    // Get TheRock version from backend_versions.json
-    if (!backend_versions.contains("therock") || !backend_versions["therock"].contains("version")) {
+    std::string therock_version = resolve_therock_runtime_version(backend_versions, override_version);
+    if (therock_version.empty()) {
         return false;
     }
-    std::string therock_version = backend_versions["therock"]["version"].get<std::string>();
     std::string expected_rocm_version = normalize_runtime_version(therock_version);
 
     // Check if system ROCm matches TheRock version - if so, don't need TheRock.
@@ -267,9 +284,10 @@ bool will_install_therock(const std::string& os, const json& backend_versions) {
     return true;
 }
 
-bool is_therock_installed_for_current_arch(const json& backend_versions) {
-    if (!backend_versions.contains("therock") ||
-        !backend_versions["therock"].contains("version")) {
+bool is_therock_installed_for_current_arch(const json& backend_versions,
+                                           const std::string& override_version = "") {
+    const std::string version = resolve_therock_runtime_version(backend_versions, override_version);
+    if (version.empty()) {
         return false;
     }
 
@@ -278,7 +296,6 @@ bool is_therock_installed_for_current_arch(const json& backend_versions) {
         return false;
     }
 
-    const std::string version = backend_versions["therock"]["version"].get<std::string>();
     const fs::path version_file =
         fs::path(backends::BackendUtils::get_therock_install_dir(rocm_arch, version)) / "version.txt";
 
@@ -286,13 +303,14 @@ bool is_therock_installed_for_current_arch(const json& backend_versions) {
 }
 
 void install_therock_if_needed(const std::string& os, const json& backend_versions,
+                              const std::string& override_version = "",
                               DownloadProgressCallback progress_cb = nullptr) {
-    if (!will_install_therock(os, backend_versions)) {
+    if (!will_install_therock(os, backend_versions, override_version)) {
         return;
     }
 
     std::string rocm_arch = SystemInfo::get_rocm_arch();
-    std::string version = backend_versions["therock"]["version"].get<std::string>();
+    std::string version = resolve_therock_runtime_version(backend_versions, override_version);
 
     // Install TheRock for this architecture
     backends::BackendUtils::install_therock(rocm_arch, version, progress_cb);
@@ -427,6 +445,91 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
     return tag;
 }
 
+std::string BackendManager::resolve_rocm_asset_version(const std::string& repo,
+                                                        const std::string& tag) {
+    const std::string cache_key = repo + "@" + tag;
+    {
+        std::lock_guard<std::mutex> lock(rocm_asset_version_cache_mutex_);
+        auto it = rocm_asset_version_cache_.find(cache_key);
+        if (it != rocm_asset_version_cache_.end()) {
+            return it->second;
+        }
+    }
+
+    auto* cfg = RuntimeConfig::global();
+    if (cfg && (cfg->no_fetch_executables() || cfg->offline())) {
+        return "";
+    }
+
+    const std::string url = "https://api.github.com/repos/" + repo + "/releases/tags/" + tag;
+    std::map<std::string, std::string> headers = {
+        {"User-Agent", "lemonade"},
+        {"Accept", "application/vnd.github+json"},
+    };
+
+    LOG(DEBUG, "BackendManager") << "Resolving ROCm asset version for " << repo << "@" << tag
+                                 << " via " << url << std::endl;
+    utils::HttpResponse resp;
+    try {
+        resp = utils::HttpClient::get(url, headers);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "BackendManager") << "GitHub query for " << repo << "@" << tag
+                                       << " failed: " << e.what() << std::endl;
+        return "";
+    }
+    if (resp.status_code < 200 || resp.status_code >= 300) {
+        LOG(WARNING, "BackendManager") << "GitHub returned HTTP " << resp.status_code
+                                       << " for " << repo << "@" << tag << std::endl;
+        return "";
+    }
+
+    std::set<std::string> discovered_versions;
+    try {
+        auto body = json::parse(resp.body);
+        static const std::regex rocm_version_re(R"(-rocm-([0-9]+\.[0-9]+)-)");
+        for (const auto& asset : body.value("assets", json::array())) {
+            std::string name = asset.value("name", "");
+            std::smatch match;
+            if (std::regex_search(name, match, rocm_version_re)) {
+                discovered_versions.insert(match[1].str());
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG(WARNING, "BackendManager") << "Failed to parse GitHub release response for "
+                                       << repo << "@" << tag << ": " << e.what() << std::endl;
+        return "";
+    }
+
+    if (discovered_versions.empty()) {
+        LOG(WARNING, "BackendManager") << "No ROCm-versioned asset found for " << repo
+                                       << "@" << tag << std::endl;
+        return "";
+    }
+
+    const std::string preferred = runtime_version_major_minor(
+        resolve_therock_runtime_version(backend_versions_, ""));
+    std::string discovered;
+    if (discovered_versions.count(preferred) != 0) {
+        discovered = preferred;
+    } else if (discovered_versions.size() == 1) {
+        discovered = *discovered_versions.begin();
+    } else {
+        LOG(WARNING, "BackendManager")
+            << "Release " << repo << "@" << tag
+            << " has multiple ROCm asset versions and none match the pinned TheRock "
+            << preferred << "; refusing to choose by GitHub asset order" << std::endl;
+        return "";
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(rocm_asset_version_cache_mutex_);
+        rocm_asset_version_cache_[cache_key] = discovered;
+    }
+    LOG(INFO, "BackendManager") << "Resolved ROCm asset version for " << repo << "@" << tag
+                                << " -> " << discovered << std::endl;
+    return discovered;
+}
+
 std::string BackendManager::resolve_user_version(const std::string& recipe,
                                                   const std::string& resolved_backend,
                                                   const std::string& pinned_version,
@@ -522,12 +625,61 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     auto pinned_params = spec->install_params_fn(resolved_backend, pinned);
     std::string resolved_version = resolve_user_version(
         recipe, resolved_backend, pinned, pinned_params.repo);
+
+    // Only llamacpp's rocm-stable filename embeds a ROCm/TheRock version using
+    // release-wide runtime variants. When a release publishes more than one,
+    // resolve_rocm_asset_version prefers the statically pinned TheRock version
+    // rather than depending on GitHub's asset order. sd-cpp remains excluded:
+    // its ROCm variants can differ by GPU generation and require arch-aware
+    // disambiguation. Other rocm-stable recipes don't read therock.version.
+    const bool uses_therock_version =
+        resolved_backend == "rocm-stable" && recipe == "llamacpp";
+
+    // Always cleared before returning so it can't leak to unrelated callers.
+    struct TherockOverrideGuard {
+        ~TherockOverrideGuard() { SystemInfo::set_rocm_therock_version_override(""); }
+    } therock_override_guard;
+
+    std::string discovered_major_minor;
+    if (uses_therock_version) {
+        // Always verify against the resolved release's own asset names rather
+        // than trusting the static pin — self-heals if the pin ever drifts out
+        // of sync with the pinned llama.cpp tag, not just on rocm_bin divergence.
+        discovered_major_minor = resolve_rocm_asset_version(pinned_params.repo, resolved_version);
+        if (!discovered_major_minor.empty()) {
+            SystemInfo::set_rocm_therock_version_override(discovered_major_minor);
+        } else if (resolved_version != pinned) {
+            // Can't verify what ROCm version this non-pinned release needs;
+            // falling back to the static pin here would risk reconstructing
+            // the exact stale-version 404 this lookup prevents.
+            auto* rt_cfg = RuntimeConfig::global();
+            const bool excused = rt_cfg && (rt_cfg->offline() || rt_cfg->no_fetch_executables());
+            if (!excused) {
+                throw std::runtime_error(
+                    "Could not verify the ROCm version for " + pinned_params.repo + "@" +
+                    resolved_version + " (GitHub unreachable or rate-limited). Refusing to "
+                    "guess using the pinned therock.version, which may not match this "
+                    "release and would likely 404 on download. Retry, or pin " + recipe +
+                    "." + backend + "_bin to a known-good release tag instead of \"latest\".");
+            }
+        }
+    }
+
     auto final_params = spec->install_params_fn(resolved_backend, resolved_version);
     // Allow backends to override the release tag (e.g. per-GPU-target releases)
     std::string release_version = final_params.version_override.empty()
                                       ? resolved_version
                                       : final_params.version_override;
-    return {final_params.repo, final_params.filename, release_version};
+
+    InstallParams result{final_params.repo, final_params.filename, release_version, ""};
+    if (!discovered_major_minor.empty()) {
+        // TheRock's own tarball releases have never shipped a non-".0" patch
+        // (verified against repo.amd.com and TheRock's own major.minor-only
+        // GitHub release tags), so the discovered major.minor fully
+        // determines the runtime package version too.
+        result.discovered_therock_version = discovered_major_minor + ".0";
+    }
+    return result;
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
@@ -593,14 +745,15 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     const bool is_rocm_stable_backend =
         backends::recipe_has_rocm_channels(recipe) &&
         resolved_backend == "rocm-stable";
+    const std::string& therock_override = params.discovered_therock_version;
     const bool therock_applicable =
-        is_rocm_stable_backend && will_install_therock(os, backend_versions_);
+        is_rocm_stable_backend && will_install_therock(os, backend_versions_, therock_override);
     const bool rocm_runtime_update_required =
         therock_applicable && backend_update_required(recipe, backend);
     const bool needs_therock_download =
         therock_applicable &&
         (rocm_runtime_update_required ||
-         !is_therock_installed_for_current_arch(backend_versions_));
+         !is_therock_installed_for_current_arch(backend_versions_, therock_override));
 
     struct RuntimeInstallStep {
         std::string name;
@@ -611,14 +764,15 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     if (needs_therock_download) {
         runtime_steps.push_back({
             "TheRock runtime",
-            [this, os, rocm_runtime_update_required](DownloadProgressCallback runtime_progress_cb) {
+            [this, os, rocm_runtime_update_required, therock_override](DownloadProgressCallback runtime_progress_cb) {
                 if (rocm_runtime_update_required) {
                     const std::string rocm_arch = SystemInfo::get_rocm_arch();
                     if (rocm_arch.empty()) {
                         throw std::runtime_error("Cannot repair TheRock runtime: ROCm architecture could not be detected");
                     }
 
-                    const std::string version = backend_versions_["therock"]["version"].get<std::string>();
+                    const std::string version =
+                        resolve_therock_runtime_version(backend_versions_, therock_override);
                     const std::string install_dir =
                         backends::BackendUtils::get_therock_install_dir(rocm_arch, version);
 
@@ -630,7 +784,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
                     }
                 }
 
-                install_therock_if_needed(os, backend_versions_, runtime_progress_cb);
+                install_therock_if_needed(os, backend_versions_, therock_override, runtime_progress_cb);
             }
         });
     }
@@ -773,6 +927,13 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             fs::remove_all(backend_install_dir, cleanup_ec);
         }
         throw;
+    }
+
+    if (recipe == "llamacpp" && resolved_backend == "rocm-stable") {
+        // Persist the resolved version — the discovery behind it lives in an
+        // in-memory cache that won't survive a restart. See LlamaCppServer::load().
+        backends::BackendUtils::write_therock_version_marker(
+            recipe, resolved_backend, resolve_therock_runtime_version(backend_versions_, therock_override));
     }
 }
 

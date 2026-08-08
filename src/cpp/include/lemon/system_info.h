@@ -130,6 +130,17 @@ public:
     // affect concurrent requests.
     static void set_rocm_arch_override(const std::string& arch);
 
+    // When set non-empty on the calling thread, llamacpp's rocm-stable install
+    // path uses this discovered ROCm major.minor version (e.g. "7.14") instead
+    // of the static therock.version pin when building the llama-server
+    // download filename. Set by BackendManager::get_install_params. The
+    // matching TheRock runtime package is handled separately via
+    // InstallParams::discovered_therock_version, since that path doesn't go
+    // through llamacpp's install_params_fn callback. Per-thread; cleared
+    // immediately after use.
+    static void set_rocm_therock_version_override(const std::string& version);
+    static std::string get_rocm_therock_version_override();
+
     // True if (recipe, backend) is published for the given ROCm family/ISA, per
     // the backend support matrix. Lets callers tell "this arch should have an
     // asset" from "this arch is intentionally not built" without duplicating the
