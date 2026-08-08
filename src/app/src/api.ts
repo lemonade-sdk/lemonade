@@ -6,6 +6,7 @@
 
 import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './modelConfiguration';
 import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
+import { filterHuggingFaceSearchResults, HUGGING_FACE_SEARCH_LIMIT } from './features/models/huggingFaceSearch';
 
 function detectDefaultBaseUrl(): string {
   if (typeof window !== 'undefined' && window.location) {
@@ -2696,7 +2697,7 @@ export async function searchHuggingFace(
     filter: 'gguf',
     sort: 'downloads',
     direction: '-1',
-    limit: '20',
+    limit: String(HUGGING_FACE_SEARCH_LIMIT),
   });
   // Variant/file details are fetched on demand via pullVariants()
   const resp = await fetch(
@@ -2708,7 +2709,8 @@ export async function searchHuggingFace(
   }
   const data = await resp.json();
   return Array.isArray(data)
-    ? data.map((item: HFModelResult) => ({ ...item, source: 'huggingface' as const }))
+    ? filterHuggingFaceSearchResults(data)
+      .map((item: HFModelResult) => ({ ...item, source: 'huggingface' as const }))
     : [];
 }
 
