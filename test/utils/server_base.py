@@ -161,6 +161,17 @@ def _auth_headers():
     return {}
 
 
+def get_server_config(port=PORT):
+    """GET /internal/config to read the current server config."""
+    response = requests.get(
+        f"http://localhost:{port}/internal/config",
+        headers=_auth_headers(),
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def set_server_config(config: dict, port=PORT):
     """POST /internal/set to update server config at runtime."""
     response = requests.post(
@@ -578,6 +589,7 @@ __all__ = [
     "get_config",
     "get_cli_binary",
     "wait_for_server",
+    "get_server_config",
     "set_server_config",
     "unload_all_models",
     "pull_model_with_retry",

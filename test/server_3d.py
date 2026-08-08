@@ -24,6 +24,7 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     pull_model_with_retry,
+    get_server_config,
     set_server_config,
 )
 from utils.capabilities import get_test_model
@@ -67,15 +68,32 @@ class Model3DTests(ServerTestBase):
     """Tests for the /3d/generations endpoint."""
 
     _model_pulled = False
+    _saved_trellis_args = None
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        # Disabling classifier-free guidance (gss/gsh 1) runs every pipeline
-        # stage with one forward pass per flow step instead of two and a
-        # sparser structure, cutting generation from ~99s to ~34s on a Strix
-        # Halo iGPU. CI validates the pipeline end-to-end, not output quality.
-        set_server_config({"trellis": {"args": "--gss 1 --gsh 1"}})
+        # Guidance strengths of 1 disable classifier-free guidance, so each flow
+        # step costs one forward pass instead of two. These tests cover that the
+        # pipeline returns a valid mesh, not how good the mesh looks.
+        try:
+            cls._saved_trellis_args = (
+                get_server_config().get("trellis", {}).get("args", "")
+            )
+            set_server_config({"trellis": {"args": "--gss 1 --gsh 1"}})
+        except Exception as e:
+            print(f"Warning: Failed to disable guidance for CI speed: {e}")
+
+    @classmethod
+    def tearDownClass(cls):
+        # /internal/set writes through to config.json, so a value left behind
+        # would degrade every later generation this server performs.
+        if cls._saved_trellis_args is not None:
+            try:
+                set_server_config({"trellis": {"args": cls._saved_trellis_args}})
+            except Exception as e:
+                print(f"Warning: Failed to restore trellis args: {e}")
+        super().tearDownClass()
 
     @classmethod
     def _ensure_model_pulled(cls):
