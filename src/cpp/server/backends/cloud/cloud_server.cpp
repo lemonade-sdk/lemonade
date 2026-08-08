@@ -423,6 +423,34 @@ json CloudServer::rewrite_model_field(const json& request) const {
     return modified;
 }
 
+json CloudServer::normalize_response_model(json response, const json& original_request) const {
+    if (response.is_object() && response.contains("model")) {
+        response["model"] = original_request.value("model", get_model_name());
+    }
+    return response;
+}
+
+std::string CloudServer::rewrite_sse_model_line(const std::string& line,
+                                                const std::string& public_model) {
+    if (public_model.empty() || line.rfind("data: ", 0) != 0) {
+        return line;
+    }
+    const std::string payload = line.substr(6);
+    if (payload.empty() || payload == "[DONE]") {
+        return line;
+    }
+    try {
+        json chunk = json::parse(payload);
+        if (chunk.is_object() && chunk.contains("model")) {
+            chunk["model"] = public_model;
+            return "data: " + chunk.dump();
+        }
+    } catch (const json::exception&) {
+        // Best-effort: leave the frame alone if it is not JSON.
+    }
+    return line;
+}
+
 json CloudServer::post_with_auth(const std::string& path, const json& request,
                                   const ResolvedCreds& creds, long timeout_seconds) {
     if (!loaded_) {
@@ -473,12 +501,16 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
 
 json CloudServer::chat_completion(const json& request) {
     json modified = rewrite_model_field(request);
-    return post_with_auth("/chat/completions", modified, resolve_creds());
+    return normalize_response_model(
+        post_with_auth("/chat/completions", modified, resolve_creds()),
+        request);
 }
 
 json CloudServer::completion(const json& request) {
     json modified = rewrite_model_field(request);
-    return post_with_auth("/completions", modified, resolve_creds());
+    return normalize_response_model(
+        post_with_auth("/completions", modified, resolve_creds()),
+        request);
 }
 
 json CloudServer::responses(const json& /*request*/) {
@@ -530,14 +562,19 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     // fails the body forwards verbatim — most providers will then 400 with
     // a body the client can interpret, which is more informative than
     // refusing locally.
+    // Keep the client-facing public name so SSE frames can be normalized
+    // on the way back (providers echo the upstream id).
     std::string forwarded_body = request_body;
+    std::string public_model;
     try {
         json req = json::parse(request_body);
+        public_model = req.value("model", get_model_name());
         req["model"] = upstream_model_;
         utils::JsonUtils::add_legacy_max_tokens_alias(req);
         forwarded_body = req.dump();
     } catch (const json::exception&) {
         // Best-effort: forward whatever we got.
+        public_model = get_model_name();
     }
 
     ResolvedCreds creds = resolve_creds();
@@ -626,9 +663,18 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                             has_done_marker = true;
                         }
 
-                        // Parse SSE lines
+                        // Parse SSE lines; rewrite echoed upstream model ids
+                        // back to the public name before flushing to the client.
                         sse_line_buffer.append(data, length);
-                        StreamingProxy::process_sse_lines(sse_line_buffer, process_cloud_line);
+                        bool ok = true;
+                        StreamingProxy::process_sse_lines(sse_line_buffer, [&](const std::string& line) {
+                            process_cloud_line(line);
+                            std::string out = rewrite_sse_model_line(line, public_model);
+                            out.push_back('\n');
+                            if (!sink.write(out.data(), out.size())) {
+                                ok = false;
+                            }
+                        });
 
                         if (!has_first_token && std::string_view(data, length).find("data: ") != std::string_view::npos) {
                             has_first_token = true;
@@ -636,7 +682,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                                 std::chrono::steady_clock::now() - start_time).count();
                         }
 
-                        return sink.write(data, length);
+                        return ok;
                     }
                     body_buffer.append(data, length);
                     return true;
