@@ -43,6 +43,7 @@ public:
     bool telemetry_hide_thinking() const;
     bool telemetry_trust_incoming_trace_context() const;
     int telemetry_max_queue_capacity() const;
+    int64_t telemetry_max_queue_bytes() const;
     int telemetry_max_attribute_length() const;
     std::string telemetry_otlp_endpoint() const;
     std::string telemetry_otlp_protocol() const;
@@ -137,6 +138,7 @@ private:
     // and fallback to config JSON under a shared lock.
     bool get_bool_opt(const char* env_name, const std::vector<std::string>& path, bool default_val) const;
     int get_int_opt(const char* env_name, const std::vector<std::string>& path, int default_val) const;
+    int64_t get_int64_opt(const char* env_name, const std::vector<std::string>& path, int64_t default_val) const;
     double get_double_opt(const char* env_name, const std::vector<std::string>& path, double default_val) const;
     std::string get_string_opt(const char* env_name, const std::vector<std::string>& path, const std::string& default_val) const;
 

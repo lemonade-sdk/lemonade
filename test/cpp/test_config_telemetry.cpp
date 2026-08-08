@@ -179,6 +179,58 @@ int main() {
     }
     check(threw_unknown_otlp, "rejects unknown telemetry.otlp subkey");
 
+    // 4. Test max_attribute_length and max_queue_bytes defaults and validation
+    check(config.telemetry_max_attribute_length() == 0, "telemetry_max_attribute_length defaults to 0");
+    check(config.telemetry_max_queue_bytes() == 134217728, "telemetry_max_queue_bytes defaults to 134217728 (128MB)");
+
+    bool threw_invalid_max_attr_len = false;
+    try {
+        json invalid_max_attr = {
+            {"telemetry", {
+                {"max_attribute_length", -1}
+            }}
+        };
+        config.set(invalid_max_attr);
+    } catch (const std::invalid_argument& e) {
+        threw_invalid_max_attr_len = true;
+        std::printf("Expected exception caught: %s\n", e.what());
+    }
+    check(threw_invalid_max_attr_len, "rejects negative telemetry.max_attribute_length");
+
+    bool threw_invalid_max_queue_bytes = false;
+    try {
+        json invalid_max_bytes = {
+            {"telemetry", {
+                {"max_queue_bytes", -1}
+            }}
+        };
+        config.set(invalid_max_bytes);
+    } catch (const std::invalid_argument& e) {
+        threw_invalid_max_queue_bytes = true;
+        std::printf("Expected exception caught: %s\n", e.what());
+    }
+    check(threw_invalid_max_queue_bytes, "rejects negative telemetry.max_queue_bytes");
+
+    json valid_max_attr = {
+        {"telemetry", {
+            {"max_attribute_length", 8192},
+            {"max_queue_bytes", 268435456}
+        }}
+    };
+    config.set(valid_max_attr);
+    check(config.telemetry_max_attribute_length() == 8192, "updates max_attribute_length to 8192");
+    check(config.telemetry_max_queue_bytes() == 268435456, "updates max_queue_bytes to 268435456 (256MB)");
+
+    json reset_max_attr = {
+        {"telemetry", {
+            {"max_attribute_length", 0},
+            {"max_queue_bytes", 134217728}
+        }}
+    };
+    config.set(reset_max_attr);
+    check(config.telemetry_max_attribute_length() == 0, "resets max_attribute_length to 0");
+    check(config.telemetry_max_queue_bytes() == 134217728, "resets max_queue_bytes to 134217728");
+
     std::vector<std::string> cli_args = {
         "telemetry.otlp.endpoint=http://127.0.0.1:5555/v1/traces",
         "telemetry.otlp.protocol=http/json",
