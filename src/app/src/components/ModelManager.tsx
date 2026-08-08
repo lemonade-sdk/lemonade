@@ -6,6 +6,7 @@ import { Icon } from './Icon';
 import { storageKey } from '../storage';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
+import { isCompatibleHuggingFaceVariantResult } from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
 import { ModelListPanel, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
@@ -1097,6 +1098,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const pullRemoteAbortRef = useRef<Record<string, AbortController>>({});
   const [remoteVariants, setRemoteVariants] = useState<Record<string, PullVariantsResult>>({});
   const [remoteVariantsLoading, setRemoteVariantsLoading] = useState<Record<string, boolean>>({});
+  const [incompatibleHfVariantKeys, setIncompatibleHfVariantKeys] = useState<Set<string>>(() => new Set());
 
   const [customModels, setCustomModels] = useState<ModelInfo[]>(() => loadCustomModels().map(customModelToModelInfo));
   const [routerModels, setRouterModels] = useState<ModelInfo[]>(() => loadRouterRecords().map(routerRecordToModelInfo));
@@ -1372,12 +1374,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       while (!cancelled && next < candidates.length) {
         const candidate = candidates[next++];
         const key = providerKey('huggingface', candidate.id);
-        if (remoteVariants[key]) continue;
+        if (remoteVariants[key] || incompatibleHfVariantKeys.has(key)) continue;
         try {
           const variants = await loadRemoteVariants('huggingface', candidate.id);
-          if (variants && !cancelled) setRemoteVariants(prev => ({ ...prev, [key]: variants }));
+          if (cancelled) continue;
+          if (variants && isCompatibleHuggingFaceVariantResult(variants)) {
+            setRemoteVariants(prev => ({ ...prev, [key]: variants }));
+          } else {
+            setIncompatibleHfVariantKeys(prev => new Set(prev).add(key));
+          }
         } catch {
-          // Capability enrichment is best effort; the search result remains usable.
+          if (!cancelled) setIncompatibleHfVariantKeys(prev => new Set(prev).add(key));
         }
       }
     };
@@ -1389,6 +1396,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setExpandedRemoteModel(null);
     setSelectedRemoteModel(null);
   }, [searchQuery]);
+
+  useEffect(() => {
+    if (!selectedRemoteModel || selectedRemoteProvider !== 'huggingface') return;
+    const key = providerKey('huggingface', selectedRemoteModel.id);
+    const variants = remoteVariants[key];
+    if (!incompatibleHfVariantKeys.has(key) && (!variants || isCompatibleHuggingFaceVariantResult(variants))) return;
+    setExpandedRemoteModel(null);
+    setSelectedRemoteModel(null);
+    setMobileDetailOpen(false);
+  }, [incompatibleHfVariantKeys, remoteVariants, selectedRemoteModel, selectedRemoteProvider]);
 
   /* ── Actions ─────────────────────────────────────────────── */
 
@@ -2376,13 +2393,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (!providerEnabled[provider] || searchQuery.trim().length < 2 || primaryFilter !== 'all') return [];
     return results.filter(result => {
       if (localRegistryRefs.has(result.id.toLowerCase())) return false;
-      const info = remoteResultAsModelInfo(result, remoteVariants[providerKey(provider, result.id)]);
+      const key = providerKey(provider, result.id);
+      const variants = remoteVariants[key];
+      if (provider === 'huggingface'
+        && (incompatibleHfVariantKeys.has(key)
+          || (variants && !isCompatibleHuggingFaceVariantResult(variants)))) return false;
+      const info = remoteResultAsModelInfo(result, variants);
       if (!modelMatchesTasks(info, taskFilters)) return false;
       if (!modelMatchesBackends(info, backendFilters)) return false;
       if (!modelMatchesTags(info, tagFilters)) return false;
       return true;
     });
-  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, taskFilters, backendFilters, tagFilters]);
+  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, incompatibleHfVariantKeys, taskFilters, backendFilters, tagFilters]);
 
   const filteredHfResults = useMemo(
     () => filterRemoteResults('huggingface', hfResults),

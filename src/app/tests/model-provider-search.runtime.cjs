@@ -129,7 +129,11 @@ assert.match(manager, /providerCounts=\{providerCounts\}[\s\S]*searchActive=\{se
 
 const { remoteCapabilityEvidence } = loadTypeScriptModule(path.join(root, 'src/remoteModelCapabilities.ts'));
 const { capabilityFromModelInfo, modelCapabilityTags } = loadTypeScriptModule(path.join(root, 'src/modelCapabilities.ts'));
-const { filterHuggingFaceSearchResults, HUGGING_FACE_SEARCH_LIMIT } = loadTypeScriptModule(huggingFaceSearchPath);
+const {
+  filterHuggingFaceSearchResults,
+  HUGGING_FACE_SEARCH_LIMIT,
+  isCompatibleHuggingFaceVariantResult,
+} = loadTypeScriptModule(huggingFaceSearchPath);
 
 const rankedHuggingFaceResults = Array.from({ length: 14 }, (_, index) => ({
   id: `org/model-${index + 1}`,
@@ -143,6 +147,19 @@ assert.ok(
   filteredHuggingFaceResults.every(result => result.pipeline_tag !== 'image-text-to-image'),
   'non-LLM image pipelines must be excluded from model search',
 );
+assert.equal(isCompatibleHuggingFaceVariantResult(null), false, 'failed variant discovery must remove the result');
+assert.equal(isCompatibleHuggingFaceVariantResult({ recipe: 'llamacpp', variants: [] }), false,
+  'repositories without downloadable variants must be removed');
+assert.equal(isCompatibleHuggingFaceVariantResult({ recipe: 'llamacpp', variants: [{}] }), true,
+  'downloadable llama.cpp repositories must remain visible');
+for (const recipe of ['sd-cpp', 'whispercpp', 'moonshine']) {
+  assert.equal(isCompatibleHuggingFaceVariantResult({ recipe, variants: [{}] }), false,
+    `${recipe} repositories must match GUI2's backend compatibility exclusions`);
+}
+assert.match(manager, /incompatibleHfVariantKeys\.has\(key\)/,
+  'Hugging Face results must be removed when server-side variant discovery fails');
+assert.match(manager, /isCompatibleHuggingFaceVariantResult\(variants\)/,
+  'Hugging Face results must apply backend compatibility after enrichment');
 
 const unknownByNameOnly = remoteCapabilityEvidence({
   id: 'org/embedding-chat-reranker-name-only',

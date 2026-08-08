@@ -24,8 +24,20 @@ const EXCLUDED_PIPELINE_TAGS = new Set([
   'video-to-video',
 ]);
 
+const EXCLUDED_RECIPES = new Set(['sd-cpp', 'whispercpp', 'moonshine']);
+
+interface HuggingFaceVariantResult {
+  recipe?: string;
+  variants?: unknown[];
+}
+
 export function filterHuggingFaceSearchResults<T extends { pipeline_tag?: string }>(results: T[]): T[] {
   return results
     .slice(0, HUGGING_FACE_SEARCH_LIMIT)
     .filter(result => !result.pipeline_tag || !EXCLUDED_PIPELINE_TAGS.has(result.pipeline_tag.toLowerCase()));
+}
+
+export function isCompatibleHuggingFaceVariantResult(result: HuggingFaceVariantResult | null | undefined): boolean {
+  if (!result?.variants?.length) return false;
+  return !EXCLUDED_RECIPES.has(String(result.recipe || '').trim().toLowerCase());
 }
