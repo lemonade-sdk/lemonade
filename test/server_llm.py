@@ -1007,17 +1007,19 @@ class LLMTests(ServerTestBase):
                     print(f"Slots erase response: {erase_data}")
                     if "id_slot" in erase_data:
                         self.assertEqual(erase_data["id_slot"], slot_id_to_erase)
-                    elif "error" in erase_data:
-                        # Received an error response from the erase endpoint, this may be because the server
-                        # was not started with the --slot-save-path argument
-                        print(
-                            f"Slots erase backend error response: {erase_data['error']}"
-                        )
-                        pass
                     else:
                         self.fail(
                             f"Unexpected response from slots erase endpoint: {erase_data}"
                         )
+                elif erase_response.status_code == 501:
+                    error_data = erase_response.json()
+                    print(f"Slots erase backend error response: {error_data}")
+                    self.assertIn("error", error_data)
+                    self.assertEqual(error_data["error"].get("type"), "not_supported_error")
+                    self.assertIn(
+                        "--slot-save-path",
+                        error_data["error"].get("message", ""),
+                    )
                 else:
                     error_data = erase_response.json()
                     print(f"Slots erase error response: {error_data}")
@@ -1025,7 +1027,6 @@ class LLMTests(ServerTestBase):
                         f"Failed to erase slot with id {slot_id_to_erase}, "
                         f"status code: {erase_response.status_code}"
                     )
-
             else:
                 self.fail("No slot id found to erase in /api/v1/slots response")
         else:
