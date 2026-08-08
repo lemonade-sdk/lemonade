@@ -132,6 +132,20 @@ int get_error_status_code(const json& response, int default_status_code = 500) {
         }
     }
 
+    if (error.contains("type") && error["type"].is_string()) {
+        const std::string type = error["type"].get<std::string>();
+
+        if (type == ErrorType::INVALID_REQUEST ||
+            type == "invalid_request_error" ||
+            type == ErrorType::UNSUPPORTED_OPERATION) {
+            return 400;
+        }
+
+        if (type == ErrorType::MODEL_NOT_LOADED) {
+            return 404;
+        }
+    }
+
     return default_status_code;
 }
 
@@ -1072,10 +1086,15 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_embeddings(req, res);
     });
 
-    // Reranking
-    register_post("reranking", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_reranking(req, res);
-    });
+    // Reranking.
+    // `/rerank` is the de-facto convention that most clients expect.
+    // `/reranking` (Lemonade's original path) is kept as an alias for backward compatibility.
+    // `/reranker` is added as an additional alias.
+    for (const char* rerank_path : {"rerank", "reranking", "reranker"}) {
+        register_post(rerank_path, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_reranking(req, res);
+        });
+    }
 
     register_post("classify", [this](const httplib::Request& req, httplib::Response& res) {
         handle_classify(req, res);
@@ -3453,6 +3472,11 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
 
         // Call router's embeddings method
         auto response = router_->embeddings(request_json);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
