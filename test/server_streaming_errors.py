@@ -248,7 +248,11 @@ class StreamingErrorTests(ServerTestBase):
                 errors.append(parsed["error"])
 
         self.assertTrue(errors, f"No error event in stream. Lines: {lines[:10]}")
-        self.assertTrue(errors[0].get("message"), errors[0])
+
+        # A generic message would still be a framed error event, so assert the
+        # backend's own description survived rather than the router's fallback.
+        self.assertNotEqual(errors[0].get("type"), "backend_error", errors[0])
+        self.assertIn("context", errors[0].get("message", "").lower(), errors[0])
         print(
             f"[OK] Context overflow: error event framed ({errors[0]['message'][:80]})"
         )
