@@ -14,6 +14,7 @@
 #include <lemon/backends/cloud/cloud_server.h>
 #include <lemon/backends/fastflowlm/fastflowlm_models.h>
 #include <lemon/cloud_provider_registry.h>
+#include <lemon/gguf_shard_utils.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -527,9 +528,12 @@ static void cleanup_empty_parents(const fs::path& file_path, const fs::path& sto
     }
 }
 
-// Return the on-disk size of a resolved model path. Some recipes (for
-// example Moonshine streaming) resolve to a directory of artifacts rather than
-// to a single model file. std::filesystem::file_size() fails on directories
+// Return the on-disk size of a single resolved model path (a file or, for
+// recipes that resolve to a directory of artifacts such as Moonshine, the
+// recursive sum of that directory). Per-file size only — shard aggregation
+// lives in refresh_on_disk_size() so /v1/models/{id}/files keeps reporting the
+// real size of each individual file. std::filesystem::file_size() fails on
+// directories.
 static uintmax_t resolved_path_size_bytes(const fs::path& path) {
     std::error_code ec;
     if (!safe_exists(path)) {
@@ -565,12 +569,18 @@ static uintmax_t resolved_path_size_bytes(const fs::path& path) {
 
 // Replace the static registry size with the aggregate on-disk size once the
 // files exist, so directory-checkpoint models (whose repos can carry more than
-// the registry estimate) report what was actually downloaded.
+// the registry estimate) report what was actually downloaded. For sharded GGUF
+// checkpoints the resolved path points at a single shard (the first file of a
+// folder-sharded quant layout, for example), so the whole shard family is
+// summed here — not in resolved_path_size_bytes(), which keeps reporting the
+// per-file size for /v1/models/{id}/files.
 static void refresh_on_disk_size(ModelInfo& info) {
     uintmax_t total_size = 0;
     for (auto& [type, path] : info.resolved_paths) {
         (void)type;
-        total_size += resolved_path_size_bytes(path_from_utf8(path));
+        fs::path resolved = path_from_utf8(path);
+        uintmax_t shard_total = lemon::sharded_gguf_size_bytes(resolved);
+        total_size += (shard_total > 0) ? shard_total : resolved_path_size_bytes(resolved);
     }
     if (total_size == 0) {
         return;

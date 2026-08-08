@@ -2253,6 +2253,27 @@ if(EXISTS "${_GGUF_CAPS_TEST_SRC}")
     add_cpp_ci_test(GgufCapabilitiesTest CI OFF COMMAND test_gguf_capabilities)
 endif()
 
+# Sharded GGUF on-disk size aggregation (src/cpp/include/lemon/gguf_shard_utils.h).
+# Regression coverage for #2972: folder-sharded quants must sum all sibling
+# shards, unrelated GGUF files and bare-numbered files must not be merged.
+# Header-only unit under test, plus real temp-directory filesystem I/O.
+set(_GGUF_SHARD_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_shard_files.cpp"
+)
+if(EXISTS "${_GGUF_SHARD_TEST_SRC}")
+    add_executable(test_gguf_shard_files
+        test/cpp/test_gguf_shard_files.cpp
+    )
+    target_include_directories(test_gguf_shard_files PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_cpp_ci_test(GgufShardFilesTest CI ON COMMAND test_gguf_shard_files)
+endif()
+
 # Model residency role/pool contract for router dependencies
 set(_MODEL_RESIDENCY_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_residency.cpp"
