@@ -169,13 +169,17 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   onMobileClose,
   railRef,
 }) => {
-  const [providersOpen, setProvidersOpen] = useState(true);
   const [tasksOpen, setTasksOpen] = useState(true);
   const [backendsOpen, setBackendsOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(true);
   const [backendVisibility, setBackendVisibility] = useState<BackendRailVisibilityState | null>(null);
   const [customTags, setCustomTags] = useState<string[]>(loadCustomFilterTags);
   const [customTagDraft, setCustomTagDraft] = useState('');
+
+  const hasEnabledProvider = providerEnabled.huggingface || providerEnabled.modelscope;
+  const providerResultCount =
+    (providerEnabled.huggingface ? providerCounts.huggingface : 0) +
+    (providerEnabled.modelscope ? providerCounts.modelscope : 0);
 
   // ── Client-side derived counts ──────────────────────────────
   const primaryCounts = useMemo<Record<PrimaryFilter, number>>(() => {
@@ -372,57 +376,40 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
           );
         })}
 
-      </ul>
-
-      <section className="model-nav-rail__section model-nav-rail__section--providers">
-        <h2 className="model-nav-rail__section-head">
-          <button
-            type="button"
-            className="model-nav-rail__section-toggle"
-            aria-expanded={providersOpen}
-            aria-controls="nav-model-providers"
-            onClick={() => setProvidersOpen(v => !v)}
+        <li className="model-nav-rail__catalogs">
+          <div
+            className="workspace-filter-list__item model-nav-rail__catalog-heading"
+            id="nav-online-catalogs-heading"
           >
-            <Icon name={providersOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
-            <span>Model-Provider</span>
-            {!providersOpen && (
-              <span className="model-nav-rail__section-count" aria-label={`${providerCounts.huggingface + providerCounts.modelscope} provider search results`}>
-                {providerCounts.huggingface + providerCounts.modelscope}
-              </span>
+            <Icon name="cloud" size={14} aria-hidden="true" className="workspace-filter-list__icon model-nav-rail__nav-icon" />
+            <span className="workspace-filter-list__label model-nav-rail__nav-label">Online Catalogs</span>
+            {hasEnabledProvider && (
+              <>
+                <span className="workspace-filter-list__count model-nav-rail__nav-count" aria-hidden="true">{providerResultCount}</span>
+                <span className="sr-only">{`, ${providerResultCount} online catalog results`}</span>
+              </>
             )}
-          </button>
-        </h2>
-        {providersOpen && (
-          <ul className="model-nav-rail__provider-list" id="nav-model-providers" role="list">
+          </div>
+          <ul className="model-nav-rail__provider-list" role="list" aria-labelledby="nav-online-catalogs-heading">
             {MODEL_PROVIDERS.map(provider => {
               const enabled = providerEnabled[provider.key];
-              const count = enabled ? providerCounts[provider.key] : 0;
-              const title = `${provider.label} search ${enabled ? 'enabled — click to disable' : 'disabled — click to enable'}`;
+              const title = `${provider.label} ${enabled ? 'will be searched' : 'will not be searched'} during online model search`;
               return (
                 <li key={provider.key}>
-                  <button
-                    type="button"
-                    className={`model-nav-rail__provider-item${enabled ? ' model-nav-rail__provider-item--enabled' : ' model-nav-rail__provider-item--disabled'}`}
-                    aria-pressed={enabled}
-                    title={title}
-                    onClick={() => onToggleProvider(provider.key)}
-                  >
-                    <span className="model-nav-rail__provider-label">{provider.label}</span>
-                    <span className="model-nav-rail__nav-count" aria-hidden="true">{count}</span>
-                    <Icon
-                      name={enabled ? 'cloud' : 'cloud-off'}
-                      size={14}
-                      aria-hidden="true"
-                      className="model-nav-rail__provider-status"
+                  <label className="model-nav-rail__provider-option" title={title}>
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={() => onToggleProvider(provider.key)}
                     />
-                    <span className="sr-only">{`, ${count} results, search ${enabled ? 'enabled' : 'disabled'}`}</span>
-                  </button>
+                    <span>{provider.label}</span>
+                  </label>
                 </li>
               );
             })}
           </ul>
-        )}
-      </section>
+        </li>
+      </ul>
 
       <section className="model-nav-rail__section model-nav-rail__section--tasks">
         <h2 className="model-nav-rail__section-head">
