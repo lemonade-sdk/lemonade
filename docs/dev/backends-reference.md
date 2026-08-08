@@ -141,7 +141,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|----------|------|---------|-------------|
 | `thenoise_backend` | `--thenoise` | BACKEND | "" | TheNoise backend to use |
 | `steps` | — | SIZE | 8 | Number of denoising steps |
-| `guidance_scale` | — | SIZE | 1.0 | CFG scale (<= 1.0 disables CFG) |
+| `cfg_scale` | — | SIZE | 1.0 | CFG scale (<= 1.0 disables CFG) |
 | `width` | — | SIZE | 1024 | Output image width |
 | `height` | — | SIZE | 1024 | Output image height |
 | `sampler` | — | ARGS | "" | Denoising solver (euler \| er_sde) |
@@ -425,9 +425,9 @@ the generator instead. Prose outside the markers is preserved. -->
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
-| `Anima-aesthetic-v1.1` | 5.4 | image |
-| `Anima-base-v1.0` | 5.4 | image |
-| `Anima-turbo-v1.0` | 5.4 | image |
+| `Anima-Aesthetic` | 5.4 | image |
+| `Anima-Base` | 5.4 | image |
+| `Anima-Turbo` | 5.4 | image |
 | `Krea-2-Turbo` | 35 | image |
 
 #### `thinksound` — ThinkSound (1 models)

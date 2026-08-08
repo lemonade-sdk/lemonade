@@ -25,7 +25,7 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to thenoise (must not conflict with managed args)", "TheNoise Options"},
         // Image generation defaults (recipe-level only, not CLI flags).
         {"steps", "", 8, "SIZE", "Number of denoising steps", "TheNoise Options"},
-        {"guidance_scale", "", 1.0, "SIZE", "CFG scale (<= 1.0 disables CFG)", "TheNoise Options"},
+        {"cfg_scale", "", 1.0, "SIZE", "CFG scale (<= 1.0 disables CFG)", "TheNoise Options"},
         {"width", "", 1024, "SIZE", "Output image width", "TheNoise Options"},
         {"height", "", 1024, "SIZE", "Output image height", "TheNoise Options"},
         {"sampler", "", "", "ARGS", "Denoising solver (euler | er_sde)", "TheNoise Options"},

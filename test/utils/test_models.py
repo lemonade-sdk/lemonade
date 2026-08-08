@@ -220,7 +220,7 @@ SD_MODEL = os.environ.get("LEMONADE_TEST_SD_MODEL", "SD-Turbo")
 ESRGAN_MODEL = "RealESRGAN-x4plus"
 
 # TheNoise image generation test configuration (ROCm-only)
-THENOISE_MODEL = os.environ.get("LEMONADE_TEST_THENOISE_MODEL", "Anima-turbo-v1.0")
+THENOISE_MODEL = os.environ.get("LEMONADE_TEST_THENOISE_MODEL", "Anima-Turbo")
 
 # Text-to-Speech test configuration
 TTS_MODEL = "kokoro-v1"

@@ -41,7 +41,7 @@ public:
 
 private:
     // image_defaults from the currently loaded model's server_models.json entry.
-    // Applied when a request doesn't specify size / steps / guidance_scale / etc.
+    // Applied when a request doesn't specify size / steps / cfg_scale / etc.
     ImageDefaults image_defaults_;
 
     // Build the /text2image request body. Precedence: request -> image_defaults_

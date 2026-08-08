@@ -1778,7 +1778,7 @@
         ],
         "size": 7.3
     },
-    "Anima-base-v1.0": {
+    "Anima-Base": {
         "checkpoints": {
             "main": "circlestone-labs/Anima:split_files/diffusion_models/anima-base-v1.0.safetensors",
             "text_encoder": "circlestone-labs/Anima:split_files/text_encoders/qwen_3_06b_base.safetensors",
@@ -1791,13 +1791,13 @@
         ],
         "size": 5.4,
         "image_defaults": {
-            "steps": 20,
-            "cfg_scale": 2.5,
+            "steps": 30,
+            "cfg_scale": 4,
             "width": 1024,
             "height": 1024
         }
     },
-    "Anima-aesthetic-v1.1": {
+    "Anima-Aesthetic": {
         "checkpoints": {
             "main": "circlestone-labs/Anima:split_files/diffusion_models/anima-aesthetic-v1.1.safetensors",
             "text_encoder": "circlestone-labs/Anima:split_files/text_encoders/qwen_3_06b_base.safetensors",
@@ -1810,13 +1810,13 @@
         ],
         "size": 5.4,
         "image_defaults": {
-            "steps": 20,
-            "cfg_scale": 2.5,
+            "steps": 30,
+            "cfg_scale": 4,
             "width": 1024,
             "height": 1024
         }
     },
-    "Anima-turbo-v1.0": {
+    "Anima-Turbo": {
         "checkpoints": {
             "main": "circlestone-labs/Anima:split_files/diffusion_models/anima-turbo-v1.0.safetensors",
             "text_encoder": "circlestone-labs/Anima:split_files/text_encoders/qwen_3_06b_base.safetensors",

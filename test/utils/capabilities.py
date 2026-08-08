@@ -190,7 +190,7 @@ CAPABILITIES = {
                 "image_generation_b64": True,
             },
             "test_models": {
-                "image": "Anima-turbo-v1.0",
+                "image": "Anima-Turbo",
             },
         },
     },

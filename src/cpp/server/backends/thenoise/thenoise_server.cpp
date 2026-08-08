@@ -4,18 +4,13 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
-#include "lemon/utils/custom_args.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
-#include <httplib.h>
 #include <lemon/utils/aixlog.hpp>
 #include <ctime>
 #include <filesystem>
 #include <random>
-#include <set>
 #include <sstream>
 #include <string>
 
@@ -274,12 +269,12 @@ json TheNoiseServer::build_request(const json& request) const {
     }
 
     // cfg_scale -> guidance_scale
-    float guidance_scale = image_defaults_.has_defaults
+    float cfg_scale = image_defaults_.has_defaults
                               ? image_defaults_.cfg_scale
                               : static_cast<float>(recipe_options_.get_option("cfg_scale"));
-    guidance_scale = resolve_float("cfg_scale", guidance_scale);
-    if (guidance_scale > 0.0f) {
-        body["guidance_scale"] = guidance_scale;
+    cfg_scale = resolve_float("cfg_scale", cfg_scale);
+    if (cfg_scale > 0.0f) {
+        body["guidance_scale"] = cfg_scale;
     }
 
     // seed stays as-is; negative means "random" for thenoise. We still emit a
@@ -339,38 +334,26 @@ json TheNoiseServer::build_request(const json& request) const {
 }
 
 json TheNoiseServer::image_generations(const json& request) {
-    // thenoise /text2image returns a raw PNG (not JSON), and generates one image
-    // per request. Loop for `n` and wrap each result in the OpenAI-compatible
-    // {"data":[{"b64_json": ...}]} shape.
-    std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/text2image";
     int n = request.value("n", 1);
     if (n < 1) n = 1;
 
     json data = json::array();
     for (int i = 0; i < n; ++i) {
         json body = build_request(request);
+        body["out"] = "json";
 
         LOG(DEBUG, "TheNoise") << "Forwarding request to thenoise: " << body.dump(2) << std::endl;
 
-        // Image generation can take many minutes; avoid timeout.
-        auto resp = HttpClient::post(
-            url,
-            body.dump(),
-            {{"Content-Type", "application/json"}},
-            0,
-            utils::HttpSecurityPolicy::TrustedLoopback
-        );
+        json resp = forward_request("/text2image", body);
 
-        if (resp.status_code != 200) {
-            LOG(ERROR, "TheNoise") << "thenoise returned HTTP " << resp.status_code
-                                   << ": " << resp.body << std::endl;
+        if (!resp.contains("b64_json")) {
+            LOG(ERROR, "TheNoise") << "thenoise image generation failed: " << resp.dump() << std::endl;
             return ErrorResponse::from_exception(
-                BackendException("thenoise", "image generation failed (HTTP " +
-                                   std::to_string(resp.status_code) + "): " + resp.body)
+                BackendException("thenoise", "image generation returned no b64_json: " + resp.dump())
             );
         }
 
-        data.push_back({{"b64_json", JsonUtils::base64_encode(resp.body)}});
+        data.push_back(resp);
     }
 
     return {{"created", static_cast<long long>(std::time(nullptr))}, {"data", data}};

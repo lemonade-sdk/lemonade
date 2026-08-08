@@ -145,7 +145,7 @@ class TheNoiseTests(ServerTestBase):
 
     @skip_heavy
     def test_005_image_generation_with_cfg_scale(self):
-        """Test image generation with custom cfg_scale (maps to guidance_scale)."""
+        """Test image generation with custom cfg_scale."""
         result = self._generate(
             {
                 "model": THENOISE_MODEL,
