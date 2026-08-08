@@ -202,8 +202,8 @@ SECOND_TEST_MODEL_EVICTION = "Phi-4-mini-instruct-GGUF"
 # Tertiary model for LRU eviction testing
 MULTI_MODEL_TERTIARY = "Qwen3-0.6B-GGUF"
 
-# Third distinct standard LLM for router residency testing. Kept small because
-# the hosted CLI/Endpoints jobs re-download it on every run.
+# A fourth model, distinct from the three above, for the router residency test.
+# Kept small because the hosted CLI/Endpoints jobs re-download it every run.
 MULTI_MODEL_QUATERNARY = "Llama-3.2-1B-Instruct-GGUF"
 
 # Whisper test configuration
@@ -216,9 +216,10 @@ TEST_AUDIO_URL = (
 VISION_MODEL = "Qwen3.5-0.8B-GGUF"
 
 # Stable Diffusion test configuration
-# The GitHub-hosted CLI/Endpoints jobs override this with SD-Turbo-GGUF: they
-# have no persistent Hugging Face cache, so the safetensors build costs a
-# 5.2 GB download every run. Self-hosted jobs keep the safetensors default.
+# The ubuntu-latest and windows-latest ollama steps override this with
+# SD-Turbo-GGUF: those runners have no persistent Hugging Face cache and no GPU,
+# so the safetensors build costs a 5.2 GB download every run. Everything else,
+# including the self-hosted image jobs, keeps the safetensors default.
 SD_MODEL = os.environ.get("LEMONADE_TEST_SD_MODEL", "SD-Turbo")
 
 # ESRGAN upscale model test configuration

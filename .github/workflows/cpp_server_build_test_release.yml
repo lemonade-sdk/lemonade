@@ -1787,8 +1787,7 @@ jobs:
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
         env:
-          # Hosted runners have no persistent HF cache; the 2 GB GGUF beats
-          # the 5.2 GB safetensors pull. Self-hosted SD jobs keep the default.
+          # No persistent HF cache here, so prefer the 2 GB GGUF build.
           LEMONADE_TEST_SD_MODEL: SD-Turbo-GGUF
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu ollama"
@@ -2005,8 +2004,7 @@ jobs:
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
         env:
-          # Hosted runners have no persistent HF cache; the 2 GB GGUF beats
-          # the 5.2 GB safetensors pull. Self-hosted SD jobs keep the default.
+          # No persistent HF cache here, so prefer the 2 GB GGUF build.
           LEMONADE_TEST_SD_MODEL: SD-Turbo-GGUF
         run: |
           $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "windows-latest ollama"

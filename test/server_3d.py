@@ -8,10 +8,9 @@ Usage:
     python server_3d.py --wrapped-server trellis --backend vulkan
     python server_3d.py --wrapped-server trellis --backend rocm
 
-Note: 3D reconstruction is slow, so the generation test runs at the 512
-cascade with classifier-free guidance disabled (see setUpClass). The negative
-tests run first and never pull the model; only the generation test downloads
-it.
+Note: 3D reconstruction is slow, so the generation test loads the backend at
+the 512 cascade with classifier-free guidance disabled. The negative tests run
+first and never pull the model; only the generation test downloads it.
 """
 
 import base64
@@ -24,15 +23,20 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     pull_model_with_retry,
-    get_server_config,
-    set_server_config,
+    unload_all_models,
 )
 from utils.capabilities import get_test_model
 from utils.test_models import (
     TIMEOUT_DEFAULT,
+    TIMEOUT_MODEL_OPERATION,
 )
 
 TIMEOUT_3D_GENERATION = 1800
+
+# Guidance strengths of 1 disable classifier-free guidance, so each flow step
+# costs one forward pass instead of two. These tests cover that the pipeline
+# returns a valid mesh, not how good the mesh looks.
+FAST_GENERATION_ARGS = "--gss 1 --gsh 1"
 
 
 def make_input_png_b64(size=64):
@@ -68,31 +72,15 @@ class Model3DTests(ServerTestBase):
     """Tests for the /3d/generations endpoint."""
 
     _model_pulled = False
-    _saved_trellis_args = None
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        # Guidance strengths of 1 disable classifier-free guidance, so each flow
-        # step costs one forward pass instead of two. These tests cover that the
-        # pipeline returns a valid mesh, not how good the mesh looks.
-        try:
-            cls._saved_trellis_args = (
-                get_server_config().get("trellis", {}).get("args", "")
-            )
-            set_server_config({"trellis": {"args": "--gss 1 --gsh 1"}})
-        except Exception as e:
-            print(f"Warning: Failed to disable guidance for CI speed: {e}")
 
     @classmethod
     def tearDownClass(cls):
-        # /internal/set writes through to config.json, so a value left behind
-        # would degrade every later generation this server performs.
-        if cls._saved_trellis_args is not None:
-            try:
-                set_server_config({"trellis": {"args": cls._saved_trellis_args}})
-            except Exception as e:
-                print(f"Warning: Failed to restore trellis args: {e}")
+        # The fast-generation args live only in this process, so drop it rather
+        # than leave a guidance-free backend serving whatever comes next.
+        try:
+            unload_all_models()
+        except Exception as e:
+            print(f"Warning: Failed to unload the 3D backend: {e}")
         super().tearDownClass()
 
     @classmethod
@@ -193,8 +181,26 @@ class Model3DTests(ServerTestBase):
         """Test basic image-to-3D generation returns a GLB mesh."""
         self._ensure_model_pulled()
         payload = self._generation_payload()
+
+        # Load up front so the args apply to this request only; /load without
+        # save_options does not write them to the server's config.json, and the
+        # generation below reuses this process instead of auto-loading.
+        load = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": payload["model"],
+                "trellis_args": FAST_GENERATION_ARGS,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(
+            load.status_code,
+            200,
+            f"Loading {payload['model']} with {FAST_GENERATION_ARGS} failed: "
+            f"{load.text[:1000]}",
+        )
         print(f"[INFO] Sending 3D generation request with model {payload['model']}")
-        print(f"[INFO] Using the 512 cascade with guidance disabled for CI speed")
+        print("[INFO] Using the 512 cascade with guidance disabled for CI speed")
 
         response = requests.post(
             f"{self.base_url}/3d/generations",

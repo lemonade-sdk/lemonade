@@ -70,6 +70,18 @@ void TrellisServer::load(const std::string& model_name,
         throw std::runtime_error("Model path not found for checkpoint: " + model_info.checkpoint());
     }
 
+    // Validate before resolve_binary_path(), which can download a backend archive.
+    const std::string trellis_args = options.get_option("trellis_args");
+    if (!trellis_args.empty()) {
+        const std::set<std::string> reserved_flags = {"--models", "--host", "--port", "--res"};
+        const std::string validation_error =
+            utils::validate_custom_args(trellis_args, reserved_flags);
+        if (!validation_error.empty()) {
+            throw std::invalid_argument(
+                "Invalid custom trellis-server arguments:\n" + validation_error);
+        }
+    }
+
     std::string backend = options.get_option("trellis_backend");
     if (backend.empty()) {
         auto supported = SystemInfo::get_supported_backends("trellis");
@@ -94,15 +106,7 @@ void TrellisServer::load(const std::string& model_name,
         "--res", "512",
     };
 
-    const std::string trellis_args = options.get_option("trellis_args");
     if (!trellis_args.empty()) {
-        const std::set<std::string> reserved_flags = {"--models", "--host", "--port"};
-        const std::string validation_error =
-            utils::validate_custom_args(trellis_args, reserved_flags);
-        if (!validation_error.empty()) {
-            throw std::invalid_argument(
-                "Invalid custom trellis-server arguments:\n" + validation_error);
-        }
         LOG(DEBUG, "trellis-server") << "Adding custom arguments: " << trellis_args << std::endl;
         const std::vector<std::string> custom_args_vec = utils::parse_custom_args(trellis_args);
         args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
