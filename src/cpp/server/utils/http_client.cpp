@@ -22,6 +22,8 @@ namespace fs = std::filesystem;
 namespace lemon {
 namespace utils {
 
+std::atomic<bool> g_download_cancelled{false};
+
 std::atomic<long> HttpClient::default_timeout_seconds_{300};
 
 namespace {
@@ -328,6 +330,10 @@ static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow
                              curl_off_t ultotal, curl_off_t ulnow) {
     (void)ultotal;
     (void)ulnow;
+
+    if (g_download_cancelled.load()) {
+        return 1;  // Abort transfer
+    }
 
     ProgressData* data = static_cast<ProgressData*>(clientp);
     if (!data) return 0;
