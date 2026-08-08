@@ -22,16 +22,20 @@
 // Design north star: the engine does PURE model selection — boolean rules over
 // classifiers, first-match-wins, fail-open to default_model. It emits a Decision
 // plus an optional per-condition trace. Everything trust-specific (verdicts,
-// block, audit persistence, consent) is layered ON TOP via three seams that the
+// block, audit persistence, consent) is layered ON TOP via seams that the
 // engine never interprets:
 //   1. RouteContext::metadata   — caller-supplied routing inputs.
-//   2. Rule::outputs            — a pass-through bag copied verbatim into Decision.
+//   2. Rule::outputs            — a pass-through bag copied into Decision
+//      (the engine may also merge illustrative `estimated_cost` from
+//      CostServices after selecting route_to; it still never interprets trust
+//      vocabulary inside outputs).
 //   3. Decision::trace          — what the client/audit sink logs.
 //
 // INVARIANT: this header includes ONLY the standard library and nlohmann/json.
 // It must never include a backend or Router header. Backends are reached only
-// through ClassifierServices (a struct of std::function injection points), the
-// same subprocess-friendly seam pattern used by CollectionOrchestrator.
+// through ClassifierServices / CostServices (structs of std::function injection
+// points), the same subprocess-friendly seam pattern used by
+// CollectionOrchestrator.
 
 namespace lemon {
 
@@ -156,6 +160,41 @@ struct ClassifierServices {
     std::function<std::string(const std::string& model,
                               const std::string& prompt,
                               const std::string& input)> chat;
+};
+
+// Per-candidate cost metadata looked up after route_to is resolved. All fields
+// optional: a local GGUF typically sets only cost_tier (and maybe
+// latency_ms_hint); cloud-discovered models often carry the per-million prices.
+// Surfaced on Decision::outputs as illustrative `estimated_cost` — not a
+// billing figure.
+struct CostInfo {
+    std::optional<std::string> cost_tier;              // "free" | "low" | "medium" | "high"
+    std::optional<double> cost_input_per_million;      // USD per 1M input tokens
+    std::optional<double> cost_output_per_million;     // USD per 1M output tokens
+    std::optional<double> latency_ms_hint;             // local/compute proxy
+
+    // Serialize recognized fields for Decision::outputs["estimated_cost"].
+    // Returns {} when every field is empty so callers can skip attachment.
+    json to_json() const {
+        json estimated = json::object();
+        if (cost_tier) {
+            estimated["cost_tier"] = *cost_tier;
+        }
+        if (cost_input_per_million) {
+            estimated["cost_input_per_million"] = *cost_input_per_million;
+        }
+        if (cost_output_per_million) {
+            estimated["cost_output_per_million"] = *cost_output_per_million;
+        }
+        if (latency_ms_hint) {
+            estimated["latency_ms_hint"] = *latency_ms_hint;
+        }
+        return estimated;
+    }
+};
+
+struct CostServices {
+    std::function<CostInfo(const std::string& candidate)> cost_of;
 };
 
 // ---------------------------------------------------------------------------
@@ -397,11 +436,16 @@ struct RoutePolicy {
 // rather than mutating one in place.
 class RoutingPolicyEngine {
 public:
-    RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services);
+    RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services,
+                        CostServices cost_services = {});
 
     // Select a candidate for `ctx`. When `want_trace` is set, the returned
     // Decision carries a per-condition trace. Never throws: any unexpected
-    // failure fails open to default_model with default_used=true.
+    // failure fails open to default_model with default_used=true. After
+    // resolving route_to, non-null CostInfo fields are merged into
+    // outputs["estimated_cost"] when cost_services.cost_of is set and the
+    // matched rule didn't already set that key itself; a throwing cost_of is
+    // logged and ignored rather than propagated.
     Decision route(const RouteContext& ctx, bool want_trace) const;
 
     const RoutePolicy& policy() const { return policy_; }
@@ -409,6 +453,7 @@ public:
 private:
     RoutePolicy policy_;
     ClassifierServices services_;
+    CostServices cost_services_;
     // Compiled match tree per rule, parallel to policy_.rules. Immutable after
     // construction; each ConditionPtr is itself a shared_ptr to const-usable
     // state.

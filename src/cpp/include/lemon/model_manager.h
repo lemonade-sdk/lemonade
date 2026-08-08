@@ -109,7 +109,9 @@ struct ModelInfo {
     std::string cloud_provider;
     // Per-token price in USD per 1,000,000 tokens, when the provider reports it
     // (OpenRouter, Together). <0 means unknown (e.g. Fireworks doesn't publish
-    // pricing in /v1/models). Used for display only — never affects routing.
+    // pricing in /v1/models). Surfaced on /v1/models for display, and (when a
+    // collection.router policy is evaluated) attached to the decision as
+    // illustrative outputs.estimated_cost — not a billing figure.
     double cost_input_per_million = -1.0;
     double cost_output_per_million = -1.0;
 
