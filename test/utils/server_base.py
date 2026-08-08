@@ -185,6 +185,19 @@ def unload_all_models(port=PORT):
     return response
 
 
+def load_model(model_name, port=PORT, timeout=30, **options):
+    """POST /api/v1/load for one model, forwarding any recipe options."""
+    payload = {"model_name": model_name}
+    payload.update(options)
+    response = requests.post(
+        f"http://localhost:{port}/api/v1/load",
+        json=payload,
+        headers=_auth_headers(),
+        timeout=timeout,
+    )
+    return response
+
+
 def unload_model(model_name, port=PORT):
     """POST /api/v1/unload for one model, leaving anything else resident."""
     response = requests.post(
@@ -592,6 +605,7 @@ __all__ = [
     "wait_for_server",
     "set_server_config",
     "unload_all_models",
+    "load_model",
     "unload_model",
     "pull_model_with_retry",
     "run_server_tests",

@@ -23,6 +23,7 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     pull_model_with_retry,
+    load_model,
     unload_model,
 )
 from utils.capabilities import get_test_model
@@ -192,13 +193,10 @@ class Model3DTests(ServerTestBase):
         # Load up front so the args apply to this run only; /load without
         # save_options persists nothing, and the generation below reuses this
         # process instead of auto-loading.
-        load = requests.post(
-            f"{self.base_url}/load",
-            json={
-                "model_name": payload["model"],
-                "trellis_args": FAST_GENERATION_ARGS,
-            },
+        load = load_model(
+            payload["model"],
             timeout=TIMEOUT_3D_LOAD,
+            trellis_args=FAST_GENERATION_ARGS,
         )
         self.assertEqual(
             load.status_code,

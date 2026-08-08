@@ -73,7 +73,7 @@ void TrellisServer::load(const std::string& model_name,
     // Validate before resolve_binary_path(), which can download a backend archive.
     const std::string trellis_args = options.get_option("trellis_args");
     if (!trellis_args.empty()) {
-        const std::set<std::string> reserved_flags = {"--models", "--host", "--port", "--res"};
+        const std::set<std::string> reserved_flags = {"-m", "--models", "--host", "--port", "--res"};
         const std::string validation_error =
             utils::validate_custom_args(trellis_args, reserved_flags);
         if (!validation_error.empty()) {
