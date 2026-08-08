@@ -933,6 +933,8 @@ const App: React.FC = () => {
               activeSection={route.view === 'connect' ? route.section : lastWorkspaceSectionsRef.current.connect}
               onSectionChange={section => navigateToRoute({ view: 'connect', section })}
               onLocalDataReset={handleLocalDataReset}
+              models={loadedModelViewState.knownInfos}
+              loadedModels={loadedModels}
             />
           </ViewErrorBoundary>
         </div>

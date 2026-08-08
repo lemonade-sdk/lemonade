@@ -1,13 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { LoadedModel, ModelInfo } from '../api';
 import { capabilityFromModelInfo } from '../modelCapabilities';
-import { Icon } from './Icon';
-import {
-  WorkspaceActionButton,
-  WorkspaceActionGroup,
-  WorkspaceDetailPanel,
-  WorkspaceMetadataChip,
-} from './WorkspacePanels';
+import { loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
 import {
   DEFAULT_GLOBAL_MODEL_SETTINGS,
   estimatedLoadedSizeGb,
@@ -25,20 +19,15 @@ import {
   ttsReadModeFromSettings,
   type TtsReadMode,
 } from '../features/audio/ttsSettings';
+import { Icon } from './Icon';
+import { WorkspaceActionButton, WorkspaceActionGroup } from './WorkspacePanels';
 
-export interface UpdateAllModelsResult {
-  started: number;
-  skipped: number;
-  errors: string[];
-}
+export type GlobalSettingsSection = 'chat' | 'memory' | 'updates';
 
 interface GlobalModelSettingsPanelProps {
+  section: GlobalSettingsSection;
   models: ModelInfo[];
   loadedModels: LoadedModel[];
-  pinnedModels: string[];
-  onTogglePin: (modelName: string) => void;
-  onUpdateAllModels: () => Promise<UpdateAllModelsResult>;
-  onClose: () => void;
 }
 
 function modelName(model: ModelInfo): string {
@@ -64,41 +53,25 @@ const READ_MODES: Array<{ value: TtsReadMode; title: string; description: string
   { value: 'agent-and-user', title: 'Read agent and user', description: 'Read assistant responses and submitted user text.' },
 ];
 
-const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
-  models,
-  loadedModels,
-  pinnedModels,
-  onTogglePin,
-  onUpdateAllModels,
-  onClose,
-}) => {
+const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ section, models, loadedModels }) => {
   const [draft, setDraft] = useState<GlobalModelSettings>(() => loadGlobalModelSettings());
+  const [persistHistory, setPersistHistory] = useState(() => loadChatHistoryPreference());
   const [ttsModel, setTtsModel] = useState<string | null>(() => loadTtsPlaybackSettings().modelName);
   const [ttsReadMode, setTtsReadMode] = useState<TtsReadMode>(() => ttsReadModeFromSettings(loadTtsPlaybackSettings()));
-  const [pinCandidate, setPinCandidate] = useState('');
   const [saved, setSaved] = useState(false);
-  const [updating, setUpdating] = useState(false);
-  const [updateNotice, setUpdateNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(loadGlobalModelSettings());
+    setPersistHistory(loadChatHistoryPreference());
     const speech = loadTtsPlaybackSettings();
     setTtsModel(speech.modelName);
     setTtsReadMode(ttsReadModeFromSettings(speech));
     setSaved(false);
-    setUpdateNotice(null);
-  }, []);
+  }, [section]);
 
-  const pinnedSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
   const sortedModels = useMemo(() => [...models]
     .filter(model => modelName(model))
     .sort((a, b) => modelDisplayName(a).localeCompare(modelDisplayName(b))), [models]);
-  const pinOptions = useMemo(() => sortedModels.filter(model => !pinnedSet.has(modelName(model).toLowerCase())), [sortedModels, pinnedSet]);
-  const pinnedRows = useMemo(() => pinnedModels.map(name => {
-    const info = models.find(model => modelName(model).toLowerCase() === name.toLowerCase()) || null;
-    return { name, label: info ? modelDisplayName(info) : name, size: info ? Number((info as any).size || 0) : 0 };
-  }), [models, pinnedModels]);
-
   const ttsModels = useMemo(() => sortedModels.filter(model => capabilityFromModelInfo(model) === 'tts'), [sortedModels]);
   const kokoroModels = ttsModels.filter(model => modelRecipe(model).includes('kokoro'));
   const openMossModels = ttsModels.filter(model => modelRecipe(model).includes('openmoss') && !/voicegen/i.test(modelName(model)));
@@ -111,206 +84,200 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({
   };
 
   const handleSave = () => {
-    saveGlobalModelSettings(draft);
-    saveActiveTtsModel(ttsModel);
-    saveTtsReadMode(ttsReadMode);
+    const current = loadGlobalModelSettings();
+    const next = section === 'memory'
+      ? {
+          ...current,
+          resourceBudgetMode: draft.resourceBudgetMode,
+          resourceBudgetGb: draft.resourceBudgetGb,
+          autoEvictOnPressure: draft.autoEvictOnPressure,
+          loadingPolicy: draft.loadingPolicy,
+          evictionPolicy: draft.evictionPolicy,
+          protectPinnedModels: draft.protectPinnedModels,
+        }
+      : section === 'chat'
+        ? { ...current, collapseThinkingByDefault: draft.collapseThinkingByDefault }
+        : {
+            ...current,
+            automaticModelUpdates: draft.automaticModelUpdates,
+            lastAutomaticUpdateAt: draft.lastAutomaticUpdateAt,
+          };
+
+    const savedSettings = saveGlobalModelSettings(next);
+    setDraft(savedSettings);
+    if (section === 'chat') {
+      saveChatHistoryPreference(persistHistory);
+      saveActiveTtsModel(ttsModel);
+      saveTtsReadMode(ttsReadMode);
+    }
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1600);
   };
 
   const handleReset = () => {
-    setDraft({ ...DEFAULT_GLOBAL_MODEL_SETTINGS });
-    setTtsModel(null);
-    setTtsReadMode('on-demand');
+    if (section === 'memory') {
+      setDraft(current => ({
+        ...current,
+        resourceBudgetMode: DEFAULT_GLOBAL_MODEL_SETTINGS.resourceBudgetMode,
+        resourceBudgetGb: DEFAULT_GLOBAL_MODEL_SETTINGS.resourceBudgetGb,
+        autoEvictOnPressure: DEFAULT_GLOBAL_MODEL_SETTINGS.autoEvictOnPressure,
+        loadingPolicy: DEFAULT_GLOBAL_MODEL_SETTINGS.loadingPolicy,
+        evictionPolicy: DEFAULT_GLOBAL_MODEL_SETTINGS.evictionPolicy,
+        protectPinnedModels: DEFAULT_GLOBAL_MODEL_SETTINGS.protectPinnedModels,
+      }));
+    } else if (section === 'chat') {
+      setDraft(current => ({ ...current, collapseThinkingByDefault: DEFAULT_GLOBAL_MODEL_SETTINGS.collapseThinkingByDefault }));
+      setPersistHistory(false);
+      setTtsModel(null);
+      setTtsReadMode('on-demand');
+    } else {
+      setDraft(current => ({
+        ...current,
+        automaticModelUpdates: DEFAULT_GLOBAL_MODEL_SETTINGS.automaticModelUpdates,
+        lastAutomaticUpdateAt: DEFAULT_GLOBAL_MODEL_SETTINGS.lastAutomaticUpdateAt,
+      }));
+    }
     setSaved(false);
   };
 
-  const handleAddPin = () => {
-    if (!pinCandidate) return;
-    onTogglePin(pinCandidate);
-    setPinCandidate('');
-  };
-
-  const handleUpdateAll = async () => {
-    if (updating) return;
-    setUpdating(true);
-    setUpdateNotice(null);
-    try {
-      const result = await onUpdateAllModels();
-      const parts = [`Started ${result.started} model update${result.started === 1 ? '' : 's'}.`];
-      if (result.skipped) parts.push(`${result.skipped} skipped.`);
-      if (result.errors.length) parts.push(`${result.errors.length} failed to start.`);
-      setUpdateNotice(parts.join(' '));
-    } catch (error) {
-      setUpdateNotice(error instanceof Error ? error.message : String(error));
-    } finally {
-      setUpdating(false);
-    }
-  };
-
   return (
-    <WorkspaceDetailPanel
-      className="global-model-settings"
-      ariaLabel="Global model settings"
-      leading={<Icon name="settings" size={20} aria-hidden="true" />}
-      title={<h2 className="workspace-detail-panel__title">Global model settings</h2>}
-      metadata={<WorkspaceMetadataChip emphasis="high" tone="accent">Defaults</WorkspaceMetadataChip>}
-      description={<p>Defaults for model memory, loading, chat reasoning, speech, and updates.</p>}
-      actions={(
-        <WorkspaceActionGroup label="Global model settings actions">
-          <WorkspaceActionButton appearance="primary" icon="check" onClick={handleSave}>
-            {saved ? 'Saved' : 'Save settings'}
-          </WorkspaceActionButton>
-          <WorkspaceActionButton appearance="quiet" icon="rotate-ccw" onClick={handleReset}>Reset defaults</WorkspaceActionButton>
-          <span className="workspace-action-group__spacer" />
-          <WorkspaceActionButton appearance="secondary" icon="x" onClick={onClose}>Cancel</WorkspaceActionButton>
-        </WorkspaceActionGroup>
-      )}
-      onClose={onClose}
-      closeLabel="Close global model settings"
-    >
+    <div className="global-model-settings__body">
+      {section === 'chat' && (
+        <>
+          <section className="global-settings-card">
+            <div className="global-settings-card__head"><div><Icon name="chat" size={18} /><h3>Chat history</h3></div></div>
+            <label className="global-settings-toggle">
+              <input type="checkbox" checked={persistHistory} onChange={event => { setPersistHistory(event.target.checked); setSaved(false); }} />
+              <span><strong>Save chat history in this browser</strong><small>Chat media is never persisted.</small></span>
+            </label>
+          </section>
 
-      <div className="global-model-settings__body">
-        <section className="global-settings-card">
-          <div className="global-settings-card__head">
-            <div><Icon name="gauge" size={18} /><h3>Memory budget</h3></div>
-            <span>{loadedModels.length} loaded · {formatGb(loadedEstimate)} estimated</span>
-          </div>
-          <p className="global-settings-card__description">The client uses known model sizes to pre-evict before loading. Server-managed mode leaves memory decisions entirely to Lemonade.</p>
-          <div className="global-settings-grid global-settings-grid--two">
+          <section className="global-settings-card">
+            <div className="global-settings-card__head"><div><Icon name="brain" size={18} /><h3>Chat behavior</h3></div></div>
+            <label className="global-settings-toggle">
+              <input type="checkbox" checked={draft.collapseThinkingByDefault} onChange={event => patchDraft('collapseThinkingByDefault', event.target.checked)} />
+              <span><strong>Collapse thinking by default</strong><small>Reasoning remains available in an expandable section on every assistant message.</small></span>
+            </label>
+          </section>
+
+          <section className="global-settings-card">
+            <div className="global-settings-card__head"><div><Icon name="tts" size={18} /><h3>Chat speech</h3></div></div>
             <label className="global-settings-field">
-              <span>Budget source</span>
-              <select className="select" value={draft.resourceBudgetMode} onChange={event => patchDraft('resourceBudgetMode', event.target.value as ResourceBudgetMode)}>
-                <option value="server">Automatic / server managed</option>
-                <option value="vram">Custom VRAM budget</option>
-                <option value="memory">Custom system memory budget</option>
+              <span>Default TTS model</span>
+              <select className="select" value={ttsModel || ''} onChange={event => { setTtsModel(event.target.value || null); setSaved(false); }}>
+                <option value="">No default speech model</option>
+                <optgroup label="Kokoro · English">
+                  {kokoroModels.length
+                    ? kokoroModels.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)
+                    : <option disabled value="__kokoro_missing">Kokoro English · install kokoro-v1</option>}
+                </optgroup>
+                <optgroup label="OpenMOSS · Multilingual">
+                  {openMossModels.length
+                    ? openMossModels.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)
+                    : <option disabled value="__openmoss_missing">OpenMOSS multilingual · install OpenMOSS-TTS</option>}
+                </optgroup>
+                {otherTtsModels.length > 0 && <optgroup label="Other TTS models">
+                  {otherTtsModels.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)}
+                </optgroup>}
               </select>
             </label>
-            <label className="global-settings-field">
-              <span>Budget</span>
-              <div className="global-settings-number">
-                <input
-                  className="input"
-                  type="number"
-                  min={1}
-                  max={1024}
-                  step={0.5}
-                  disabled={draft.resourceBudgetMode === 'server'}
-                  value={draft.resourceBudgetGb}
-                  onChange={event => patchDraft('resourceBudgetGb', Number(event.target.value))}
-                />
-                <strong>GB</strong>
-              </div>
-            </label>
-          </div>
-          <label className="global-settings-toggle">
-            <input type="checkbox" checked={draft.autoEvictOnPressure} disabled={draft.evictionPolicy === 'manual'} onChange={event => patchDraft('autoEvictOnPressure', event.target.checked)} />
-            <span><strong>Auto-evict on memory or VRAM pressure</strong><small>On an OOM-style load failure, evict eligible models and retry once.</small></span>
-          </label>
-        </section>
-
-        <section className="global-settings-card">
-          <div className="global-settings-card__head"><div><Icon name="layers" size={18} /><h3>Loading and eviction</h3></div></div>
-          <div className="global-settings-grid global-settings-grid--two">
-            <label className="global-settings-field">
-              <span>Loading policy</span>
-              <select className="select" value={draft.loadingPolicy} onChange={event => patchDraft('loadingPolicy', event.target.value as ModelLoadingPolicy)}>
-                <option value="keep-loaded">Keep loaded models</option>
-                <option value="single-active">Single active model</option>
-                <option value="budget-aware">Stay within budget</option>
-              </select>
-            </label>
-            <label className="global-settings-field">
-              <span>Eviction order</span>
-              <select className="select" value={draft.evictionPolicy} onChange={event => patchDraft('evictionPolicy', event.target.value as ModelEvictionPolicy)}>
-                <option value="lru">Least recently used</option>
-                <option value="largest">Largest first</option>
-                <option value="oldest-process">Oldest process first</option>
-                <option value="manual">Manual only</option>
-              </select>
-            </label>
-          </div>
-          <label className="global-settings-toggle">
-            <input type="checkbox" checked={draft.protectPinnedModels} onChange={event => patchDraft('protectPinnedModels', event.target.checked)} />
-            <span><strong>Protect pinned models from automatic eviction</strong><small>Pinned models can still be unloaded manually.</small></span>
-          </label>
-        </section>
-
-        <section className="global-settings-card">
-          <div className="global-settings-card__head"><div><Icon name="pin" size={18} /><h3>Pinned models</h3></div><span>{pinnedRows.length} pinned</span></div>
-          <div className="global-settings-pin-add">
-            <select className="select" value={pinCandidate} onChange={event => setPinCandidate(event.target.value)}>
-              <option value="">Select a model to pin…</option>
-              {pinOptions.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)}
-            </select>
-            <WorkspaceActionButton icon="pin" disabled={!pinCandidate} onClick={handleAddPin}>Pin model</WorkspaceActionButton>
-          </div>
-          {pinnedRows.length ? (
-            <div className="global-settings-pinned-list">
-              {pinnedRows.map(row => (
-                <div key={row.name} className="global-settings-pinned-row">
-                  <Icon name="pin" size={14} />
-                  <span><strong>{row.label}</strong><small>{row.name}{row.size > 0 ? ` · ${formatGb(row.size)}` : ''}</small></span>
-                  <WorkspaceActionButton appearance="quiet" size="small" icon="x" iconOnly onClick={() => onTogglePin(row.name)} aria-label={`Unpin ${row.label}`} title={`Unpin ${row.label}`} />
-                </div>
+            <div className="global-settings-read-modes" role="radiogroup" aria-label="Global TTS playback mode">
+              {READ_MODES.map(mode => (
+                <button key={mode.value} type="button" role="radio" aria-checked={ttsReadMode === mode.value} className={ttsReadMode === mode.value ? 'is-active' : ''} onClick={() => { setTtsReadMode(mode.value); setSaved(false); }}>
+                  <strong>{mode.title}</strong><small>{mode.description}</small>
+                </button>
               ))}
             </div>
-          ) : <p className="global-settings-empty">No pinned models. Pinning keeps important models at the top and can protect them from eviction.</p>}
-        </section>
+          </section>
+        </>
+      )}
 
-        <section className="global-settings-card">
-          <div className="global-settings-card__head"><div><Icon name="brain" size={18} /><h3>Chat behavior</h3></div></div>
-          <label className="global-settings-toggle">
-            <input type="checkbox" checked={draft.collapseThinkingByDefault} onChange={event => patchDraft('collapseThinkingByDefault', event.target.checked)} />
-            <span><strong>Collapse thinking by default</strong><small>Reasoning remains available in an expandable section on every assistant message.</small></span>
-          </label>
-        </section>
+      {section === 'memory' && (
+        <>
+          <section className="global-settings-card">
+            <div className="global-settings-card__head">
+              <div><Icon name="gauge" size={18} /><h3>Memory budget</h3></div>
+              <span>{loadedModels.length} loaded · {formatGb(loadedEstimate)} estimated</span>
+            </div>
+            <p className="global-settings-card__description">The client uses known model sizes to pre-evict before loading. Server-managed mode leaves memory decisions entirely to Lemonade.</p>
+            <div className="global-settings-grid global-settings-grid--two">
+              <label className="global-settings-field">
+                <span>Budget source</span>
+                <select className="select" value={draft.resourceBudgetMode} onChange={event => patchDraft('resourceBudgetMode', event.target.value as ResourceBudgetMode)}>
+                  <option value="server">Automatic / server managed</option>
+                  <option value="vram">Custom VRAM budget</option>
+                  <option value="memory">Custom system memory budget</option>
+                </select>
+              </label>
+              <label className="global-settings-field">
+                <span>Budget</span>
+                <div className="global-settings-number">
+                  <input
+                    className="input"
+                    type="number"
+                    min={1}
+                    max={1024}
+                    step={0.5}
+                    disabled={draft.resourceBudgetMode === 'server'}
+                    value={draft.resourceBudgetGb}
+                    onChange={event => patchDraft('resourceBudgetGb', Number(event.target.value))}
+                  />
+                  <strong>GB</strong>
+                </div>
+              </label>
+            </div>
+            <label className="global-settings-toggle">
+              <input type="checkbox" checked={draft.autoEvictOnPressure} disabled={draft.evictionPolicy === 'manual'} onChange={event => patchDraft('autoEvictOnPressure', event.target.checked)} />
+              <span><strong>Auto-evict on memory or VRAM pressure</strong><small>On an OOM-style load failure, evict eligible models and retry once.</small></span>
+            </label>
+          </section>
 
-        <section className="global-settings-card">
-          <div className="global-settings-card__head"><div><Icon name="tts" size={18} /><h3>Chat speech</h3></div></div>
-          <label className="global-settings-field">
-            <span>Default TTS model</span>
-            <select className="select" value={ttsModel || ''} onChange={event => setTtsModel(event.target.value || null)}>
-              <option value="">No default speech model</option>
-              <optgroup label="Kokoro · English">
-                {kokoroModels.length
-                  ? kokoroModels.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)
-                  : <option disabled value="__kokoro_missing">Kokoro English · install kokoro-v1</option>}
-              </optgroup>
-              <optgroup label="OpenMOSS · Multilingual">
-                {openMossModels.length
-                  ? openMossModels.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)
-                  : <option disabled value="__openmoss_missing">OpenMOSS multilingual · install OpenMOSS-TTS</option>}
-              </optgroup>
-              {otherTtsModels.length > 0 && <optgroup label="Other TTS models">
-                {otherTtsModels.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)}
-              </optgroup>}
-            </select>
-          </label>
-          <div className="global-settings-read-modes" role="radiogroup" aria-label="Global TTS playback mode">
-            {READ_MODES.map(mode => (
-              <button key={mode.value} type="button" role="radio" aria-checked={ttsReadMode === mode.value} className={ttsReadMode === mode.value ? 'is-active' : ''} onClick={() => setTtsReadMode(mode.value)}>
-                <strong>{mode.title}</strong><small>{mode.description}</small>
-              </button>
-            ))}
-          </div>
-        </section>
+          <section className="global-settings-card">
+            <div className="global-settings-card__head"><div><Icon name="layers" size={18} /><h3>Loading and eviction</h3></div></div>
+            <div className="global-settings-grid global-settings-grid--two">
+              <label className="global-settings-field">
+                <span>Loading policy</span>
+                <select className="select" value={draft.loadingPolicy} onChange={event => patchDraft('loadingPolicy', event.target.value as ModelLoadingPolicy)}>
+                  <option value="keep-loaded">Keep loaded models</option>
+                  <option value="single-active">Single active model</option>
+                  <option value="budget-aware">Stay within budget</option>
+                </select>
+              </label>
+              <label className="global-settings-field">
+                <span>Eviction order</span>
+                <select className="select" value={draft.evictionPolicy} onChange={event => patchDraft('evictionPolicy', event.target.value as ModelEvictionPolicy)}>
+                  <option value="lru">Least recently used</option>
+                  <option value="largest">Largest first</option>
+                  <option value="oldest-process">Oldest process first</option>
+                  <option value="manual">Manual only</option>
+                </select>
+              </label>
+            </div>
+            <label className="global-settings-toggle">
+              <input type="checkbox" checked={draft.protectPinnedModels} onChange={event => patchDraft('protectPinnedModels', event.target.checked)} />
+              <span><strong>Protect pinned models from automatic eviction</strong><small>Pinned models can still be unloaded manually.</small></span>
+            </label>
+          </section>
+        </>
+      )}
 
+      {section === 'updates' && (
         <section className="global-settings-card">
           <div className="global-settings-card__head"><div><Icon name="rotate-ccw" size={18} /><h3>Model updates</h3></div></div>
           <label className="global-settings-toggle">
             <input type="checkbox" checked={draft.automaticModelUpdates} onChange={event => patchDraft('automaticModelUpdates', event.target.checked)} />
             <span><strong>Automatic model updates</strong><small>Off by default. When enabled, GUI3 checks downloaded models at most once per day.</small></span>
           </label>
-          <div className="global-settings-update-action">
-            <div><strong>Update all models now</strong><small>Starts a pull/update for every downloaded or currently loaded model.</small></div>
-            <WorkspaceActionButton icon="rotate-ccw" disabled={updating} onClick={handleUpdateAll}>{updating ? 'Starting…' : 'Update all'}</WorkspaceActionButton>
-          </div>
-          {updateNotice && <p className="global-settings-notice" role="status">{updateNotice}</p>}
         </section>
-      </div>
+      )}
 
-    </WorkspaceDetailPanel>
+      <WorkspaceActionGroup label={`${section} settings actions`}>
+        <WorkspaceActionButton appearance="primary" icon="check" onClick={handleSave}>
+          {saved ? 'Saved' : 'Save settings'}
+        </WorkspaceActionButton>
+        <WorkspaceActionButton appearance="quiet" icon="rotate-ccw" onClick={handleReset}>Reset defaults</WorkspaceActionButton>
+      </WorkspaceActionGroup>
+    </div>
   );
 };
 
