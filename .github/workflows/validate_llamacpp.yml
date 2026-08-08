@@ -8,6 +8,8 @@ on:
         type: boolean
         default: false
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  merge_group:
   schedule:
     # Sunday at 12:00 PM ET (17:00 UTC, 16:00 UTC during EDT)
     - cron: "0 16 * * 0"
@@ -16,11 +18,15 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
   HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
-  LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
+  LITE_MODE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
 
 jobs:
   # ========================================================================
@@ -28,7 +34,10 @@ jobs:
   # ========================================================================
   get-latest-releases:
     name: Get latest releases
-    if: github.event_name != 'pull_request'
+    # Only the auto-update runs resolve upstream releases. Everywhere else the
+    # build validates the pins committed in backend_versions.json, so a bad
+    # upstream release can't fail a merge or hide a broken pin.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       llamacpp_release: ${{ steps.llamacpp.outputs.release }}
@@ -68,7 +77,7 @@ jobs:
   verify-release-assets:
     name: Verify release assets
     needs: get-latest-releases
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       ggml_update_backends: ${{ steps.assets.outputs.ggml_update_backends }}
@@ -282,9 +291,23 @@ jobs:
   build:
     name: Build
     needs: [get-latest-releases, verify-release-assets]
-    if: always() && !failure() && !cancelled()
+    # Label a PR `ci:upgrades` to opt it back in.
+    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
     runs-on: windows-latest
     steps:
+      - name: Prepare Windows runner for long paths and stale workspace caches
+        if: runner.os == 'Windows'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          # 1. Kill any running/orphaned processes to release file locks
+          $patterns = @("lemonade", "lemond", "llama-server", "llama", "flm", "ort-server", "moonshine-server", "wscript", "LemonadeServer")
+          foreach ($p in $patterns) {
+              Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
+
       - uses: actions/checkout@v5
         with:
           clean: true
@@ -405,6 +428,19 @@ jobs:
           # - backend: cuda
           #   runner: [self-hosted, Windows, 128gb, cuda]
     steps:
+      - name: Prepare Windows runner for long paths and stale workspace caches
+        if: runner.os == 'Windows'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          # 1. Kill any running/orphaned processes to release file locks
+          $patterns = @("lemonade", "lemond", "llama-server", "llama", "flm", "ort-server", "moonshine-server", "wscript", "LemonadeServer")
+          foreach ($p in $patterns) {
+              Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
+
       - uses: actions/checkout@v5
         with:
           clean: true
@@ -744,3 +780,32 @@ jobs:
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"
+
+  # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
+  # successfully (otherwise the merge is blocked), and 2. these jobs do not need
+  # to run on ordinary pull request pushes.
+  validation-gate:
+    name: llama.cpp validation
+    needs: [build, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+          # Fail if any job broke. In the merge queue, also fail if any never ran.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
+          fi

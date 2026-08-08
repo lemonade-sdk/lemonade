@@ -4,7 +4,7 @@
  * and model downloads, and health polling.
  */
 
-import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './presetStore';
+import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './modelConfiguration';
 import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
 
 function detectDefaultBaseUrl(): string {
@@ -251,6 +251,19 @@ export interface ModelsData {
   data: ModelInfo[];
 }
 
+/**
+ * Canonical renderer-side snapshot of the server model registry and loaded
+ * model state. Components subscribe to this instead of maintaining independent
+ * copies and issuing their own startup requests.
+ */
+export interface ModelStateSnapshot {
+  status: ConnectionStatus;
+  health: HealthData | null;
+  models: ModelsData | null;
+  refreshing: boolean;
+  error: string | null;
+}
+
 /** One physical file backing a model (from GET /api/v1/models/{id}/files). */
 export interface ModelFileInfo {
   name: string;
@@ -278,6 +291,7 @@ export interface CloudProviderRow {
   env_var_set: boolean;
   runtime_key_set: boolean;
   models_discovered: number;
+  allow_insecure_http: boolean;
 }
 
 export interface DirectorySettings {
@@ -554,7 +568,7 @@ export interface RealtimeTranscriptionHandle {
 }
 
 
-export type McpTransport = 'stdio' | 'builtin';
+export type McpTransport = 'streamable-http' | 'stdio' | 'builtin';
 
 export interface McpToolDefinition {
   name: string;
@@ -567,6 +581,9 @@ export interface McpServerConfig {
   id: string;
   name: string;
   transport: McpTransport;
+  url?: string;
+  bearer_token?: string;
+  allow_insecure_http?: boolean;
   command?: string;
   args?: string[];
   env?: Record<string, string>;
@@ -630,6 +647,7 @@ export interface ChatMessage {
 }
 
 type StatusListener = (status: ConnectionStatus) => void;
+type ModelStateListener = () => void;
 
 
 type HostSettingsApi = {
@@ -719,6 +737,7 @@ function normalizeCloudProviderRow(value: unknown): CloudProviderRow | null {
     env_var_set: value.env_var_set === true,
     runtime_key_set: value.runtime_key_set === true,
     models_discovered: typeof value.models_discovered === 'number' ? value.models_discovered : 0,
+    allow_insecure_http: value.allow_insecure_http === true,
   };
 }
 
@@ -730,10 +749,31 @@ class LemonadeAPI {
   private _status: ConnectionStatus = 'disconnected';
   private _lastConnectionError: string | null = null;
   private _listeners: StatusListener[] = [];
+  private _modelStateListeners = new Set<ModelStateListener>();
   private _modelsChangedListeners: Array<() => void> = [];
   private _healthData: HealthData | null = null;
+  private _healthDataSignature = '';
   private _modelsData: ModelsData | null = null;
+  private _modelsDataSignature = '';
+  private _modelsFetchRevision = 0;
   private _systemInfoData: Record<string, unknown> | null = null;
+  private _modelStateSnapshot: ModelStateSnapshot = {
+    status: 'disconnected',
+    health: null,
+    models: null,
+    refreshing: false,
+    error: null,
+  };
+  private _modelsRequestInFlight = new Map<
+    boolean,
+    { mutationRevision: number; request: Promise<ModelsData> }
+  >();
+  private _modelsMutationRevision = 0;
+  private _refreshInFlight: Promise<{ health: HealthData; models: ModelsData } | null> | null = null;
+  private _refreshGenerationInFlight = -1;
+  private _connectInFlight: Promise<boolean> | null = null;
+  private _refreshQueued = false;
+  private _modelStateGeneration = 0;
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionApiKey = '';
   private _sessionAdminApiKey = '';
@@ -923,6 +963,7 @@ class LemonadeAPI {
   get highSecurity(): boolean | undefined { return this._healthData?.high_security; }
   get modelsData(): ModelsData | null { return this._modelsData; }
   get systemInfoData(): Record<string, unknown> | null { return this._systemInfoData; }
+  get modelStateSnapshot(): ModelStateSnapshot { return this._modelStateSnapshot; }
 
   get loadedModels(): LoadedModel[] {
     return Array.isArray(this._healthData?.all_models_loaded) ? this._healthData!.all_models_loaded : [];
@@ -937,19 +978,54 @@ class LemonadeAPI {
     return () => { this._listeners = this._listeners.filter(f => f !== fn); };
   }
 
+  onModelStateChange(fn: ModelStateListener): () => void {
+    this._modelStateListeners.add(fn);
+    return () => { this._modelStateListeners.delete(fn); };
+  }
+
   onModelsChanged(fn: () => void): () => void {
     this._modelsChangedListeners.push(fn);
     return () => { this._modelsChangedListeners = this._modelsChangedListeners.filter(f => f !== fn); };
   }
 
   private _notifyModelsChanged(): void {
+    this._modelsMutationRevision += 1;
+    this._modelStateGeneration += 1;
     this._modelsChangedListeners.forEach(fn => { try { fn(); } catch {} });
+    if (this.isConnected) void this.refresh();
   }
 
   private _setStatus(s: ConnectionStatus): void {
-    if (this._status === s) return;
+    const changed = this._status !== s;
     this._status = s;
-    this._listeners.forEach(fn => { try { fn(s); } catch {} });
+    if (changed) this._listeners.forEach(fn => { try { fn(s); } catch {} });
+    this._publishModelState();
+  }
+
+  private _setModelStateRefreshing(refreshing: boolean): void {
+    if (this._modelStateSnapshot.refreshing === refreshing) return;
+    this._modelStateSnapshot = { ...this._modelStateSnapshot, refreshing };
+    this._modelStateListeners.forEach(fn => { try { fn(); } catch {} });
+  }
+
+  private _publishModelState(): void {
+    const next: ModelStateSnapshot = {
+      status: this._status,
+      health: this._healthData,
+      models: this._modelsData,
+      refreshing: this._modelStateSnapshot.refreshing,
+      error: this._lastConnectionError,
+    };
+    const current = this._modelStateSnapshot;
+    if (
+      current.status === next.status
+      && current.health === next.health
+      && current.models === next.models
+      && current.refreshing === next.refreshing
+      && current.error === next.error
+    ) return;
+    this._modelStateSnapshot = next;
+    this._modelStateListeners.forEach(fn => { try { fn(); } catch {} });
   }
 
   // ── Fetch wrapper ───────────────────────────────────────────────
@@ -966,22 +1042,6 @@ class LemonadeAPI {
     if (includeSessionHeaders && this.sessionHeadersEnabled) {
       h['X-Client-Session-Id'] = this.clientSessionId;
 
-      // Add current account session token or guest ID to scope model caches
-      try {
-        const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
-        if (raw) {
-          const parsed = JSON.parse(raw) as { id?: string };
-          if (parsed.id) {
-            h['X-Account-Session-Id'] = parsed.id;
-          } else {
-            h['X-Account-Session-Id'] = 'guest';
-          }
-        } else {
-          h['X-Account-Session-Id'] = 'guest';
-        }
-      } catch {
-        h['X-Account-Session-Id'] = 'guest';
-      }
     }
 
     return h;
@@ -1064,9 +1124,13 @@ class LemonadeAPI {
       err.status = resp.status;
       err.url = url;
       err.endpoint = endpoint;
-      err.userMessage = resp.status === 403 && serverMessage.toLowerCase() === 'origin not allowed'
-        ? originNotAllowedMessage(this.baseUrl)
-        : `${url} returned ${resp.status} ${statusText}${serverMessage ? ` — ${serverMessage}` : ''}`;
+      err.userMessage = resp.status === 401
+        ? auth === 'admin'
+          ? 'The server rejected the admin API key. Enter the matching admin key in the MCP panel.'
+          : 'The server requires an API key or rejected the current one. Enter the matching key in Settings, then reconnect.'
+        : resp.status === 403 && serverMessage.toLowerCase() === 'origin not allowed'
+          ? originNotAllowedMessage(this.baseUrl)
+          : `${url} returned ${resp.status} ${statusText}${serverMessage ? ` — ${serverMessage}` : ''}`;
       throw err;
     }
     return resp;
@@ -1086,21 +1150,6 @@ class LemonadeAPI {
     const params = new URLSearchParams(query);
     if (this.apiKey) params.set('api_key', this.apiKey);
     params.set('client_session_id', this.clientSessionId);
-    try {
-      const raw = localStorage.getItem('lemonade_account_session_v1') || sessionStorage.getItem('lemonade_account_session_v1');
-      if (raw) {
-        const parsed = JSON.parse(raw) as { id?: string };
-        if (parsed.id) {
-          params.set('account_session_id', parsed.id);
-        } else {
-          params.set('account_session_id', 'guest');
-        }
-      } else {
-        params.set('account_session_id', 'guest');
-      }
-    } catch {
-      params.set('account_session_id', 'guest');
-    }
     url.search = params.toString();
     return url.toString();
   }
@@ -1264,17 +1313,54 @@ class LemonadeAPI {
 
   async health(): Promise<HealthData> {
     const data = normalizeHealth(await this._json<unknown>('/api/v1/health'));
-    this._healthData = data;
+    const signature = JSON.stringify(data);
+    if (!this._healthData || signature !== this._healthDataSignature) {
+      this._healthData = data;
+      this._healthDataSignature = signature;
+    }
     this._lastConnectionError = null;
     this._setStatus('connected');
-    return data;
+    return this._healthData;
   }
 
   async models(showAll = true): Promise<ModelsData> {
-    const qs = showAll ? '?show_all=true' : '';
-    const data = normalizeModels(await this._json<unknown>(`/api/v1/models${qs}`));
-    this._modelsData = data;
-    return data;
+    const mutationRevision = this._modelsMutationRevision;
+    const existing = this._modelsRequestInFlight.get(showAll);
+    if (existing && existing.mutationRevision === mutationRevision) {
+      return existing.request;
+    }
+
+    const request = (async () => {
+      const qs = showAll ? '?show_all=true' : '';
+      const data = normalizeModels(await this._json<unknown>(`/api/v1/models${qs}`));
+      if (showAll) {
+        // A registry read that began before a successful model write
+        // may complete later. Return it to its original caller, but
+        // never publish it or reuse it for post-write verification.
+        if (mutationRevision !== this._modelsMutationRevision) return data;
+
+        const signature = JSON.stringify(data);
+        if (!this._modelsData || signature !== this._modelsDataSignature) {
+          this._modelsData = data;
+          this._modelsDataSignature = signature;
+        }
+        this._modelsFetchRevision += 1;
+        this._lastConnectionError = null;
+        this._publishModelState();
+        return this._modelsData;
+      }
+      return data;
+    })();
+
+    const entry = { mutationRevision, request };
+    this._modelsRequestInFlight.set(showAll, entry);
+    try {
+      return await request;
+    } finally {
+      if (this._modelsRequestInFlight.get(showAll) === entry) {
+        this._modelsRequestInFlight.delete(showAll);
+      }
+    }
   }
 
   async modelDetail(id: string): Promise<ModelInfo> {
@@ -1303,7 +1389,12 @@ class LemonadeAPI {
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
-    const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
+    const body: Record<string, unknown> = {
+      model_name: modelName,
+      save_options: true,
+      ...(stagedOptions || {}),
+      ...recipeOptions,
+    };
     const result = await this._json('/api/v1/load', { method: 'POST', body });
     this._notifyModelsChanged();
     return result;
@@ -1324,24 +1415,20 @@ class LemonadeAPI {
     return result;
   }
 
-  /**
-   * Apply a *load-time* preset change to an already-loaded model (#2356).
-   *
-   * Simplified design (per @fl0rianr review + Lovell): there is NO dedicated
-   * update-preset endpoint and NO client-provided `mode` parameter — the UI is
-   * not the source of truth for runtime capability. Load-time fields (ctx_size,
-   * backend, device, model args via recipe_options) require a real reload, which
-   * today is literally an unload followed by a load, exactly as `main` does.
-   *
-   * This helper is named `reloadModel` (rather than inlining unload→load at every
-   * call site) so that if a real in-place backend reload ever lands, only this
-   * method's body changes; callers and tests stay identical.
-   *
-   * Request-time fields (system_prompt, sampling/temperature, tools) are NOT
-   * handled here — rebinding the active preset is the whole "live" operation and
-   * request composition (`samplingForModel`, `systemPromptTextForPreset`) carries
-   * the new values on the next generation request; nothing is POSTed.
-   */
+  async loadedModelContextSize(model: LoadedModel): Promise<number | null> {
+    const configured = Number(model.recipe_options?.ctx_size);
+    if (Number.isFinite(configured) && configured > 0) return configured;
+    try {
+      const runtime = await this._json<{ ctx_size?: unknown }>(
+        `/api/v1/models/${encodeURIComponent(model.model_name)}/runtime`,
+      );
+      const contextSize = Number(runtime.ctx_size);
+      return Number.isFinite(contextSize) && contextSize > 0 ? contextSize : null;
+    } catch {
+      return null;
+    }
+  }
+
   async reloadModel(
     modelName: string,
     recipeOptions?: Record<string, unknown>,
@@ -1410,11 +1497,17 @@ class LemonadeAPI {
     return providers.map(normalizeCloudProviderRow).filter((row): row is CloudProviderRow => Boolean(row));
   }
 
-  async installCloudProvider(provider: string, baseUrl: string, apiKey?: string): Promise<Record<string, unknown>> {
-    const body: Record<string, string> = {
+  async installCloudProvider(
+    provider: string,
+    baseUrl: string,
+    apiKey?: string,
+    allowInsecureHttp = false,
+  ): Promise<Record<string, unknown>> {
+    const body: Record<string, string | boolean> = {
       backend: 'cloud',
       provider: provider.trim(),
       base_url: baseUrl.trim(),
+      allow_insecure_http: allowInsecureHttp,
     };
     if (apiKey?.trim()) body.api_key = apiKey.trim();
     const result = await this._json<Record<string, unknown>>('/api/v1/install', { method: 'POST', body });
@@ -1448,7 +1541,7 @@ class LemonadeAPI {
 
   async listMcpServers(): Promise<McpServerState[]> {
     // External MCP administration is deliberately fail-closed on the server.
-    // Do not probe /internal/mcp/servers from ordinary preset/chat rendering
+    // Do not probe /internal/mcp/servers from ordinary chat rendering
     // when the app has no admin-capable credential: on a default keyless server
     // that request is guaranteed to be rejected and only produces noisy 403 logs.
     // The dedicated MCP panel prompts for a key before calling this method.
@@ -1473,11 +1566,30 @@ class LemonadeAPI {
     }
   }
 
-  async saveMcpServer(server: Omit<McpServerConfig, 'transport' | 'id'> & { id?: string; transport?: 'stdio' }): Promise<McpServerConfig> {
+  async saveMcpServer(
+    server: Omit<McpServerConfig, 'id' | 'transport'> & {
+      id?: string;
+      transport: Exclude<McpTransport, 'builtin'>;
+    },
+  ): Promise<McpServerConfig> {
     const data = await this._json<{ server: McpServerConfig }>('/internal/mcp/servers', {
       method: 'POST',
       auth: 'admin',
-      body: { server: { ...server, transport: 'stdio' } },
+      body: { server },
+    });
+    return data.server;
+  }
+
+  async testMcpServer(
+    server: Omit<McpServerConfig, 'id' | 'transport'> & {
+      id?: string;
+      transport: Exclude<McpTransport, 'builtin'>;
+    },
+  ): Promise<McpServerState> {
+    const data = await this._json<{ server: McpServerState }>('/internal/mcp/servers/test', {
+      method: 'POST',
+      auth: 'admin',
+      body: { server },
     });
     return data.server;
   }
@@ -1830,7 +1942,20 @@ class LemonadeAPI {
               : downloadPayloadErrorMessage(d);
             if (eventError) throw new Error(String(eventError));
             callbacks?.onProgress?.(d);
-            if (currentEventType === 'complete' || downloadPayloadCompleted(d)) sawTerminal = true;
+            const progressData = currentEventType === 'complete'
+              ? {
+                  ...d,
+                  status: 'completed',
+                  complete: true,
+                  running: false,
+                }
+              : d;
+
+            callbacks?.onProgress?.(progressData);
+
+            if (currentEventType === 'complete' || downloadPayloadCompleted(progressData)) {
+              sawTerminal = true;
+            }
           }
         }
 
@@ -2389,15 +2514,15 @@ class LemonadeAPI {
   // ── Connection management ───────────────────────────────────────
 
   async connect(): Promise<boolean> {
+    if (this._connectInFlight) return this._connectInFlight;
+
     this._setStatus('connecting');
+    const request = (async () => Boolean(await this.refresh()))();
+    this._connectInFlight = request;
     try {
-      await this.health();
-      return true;
-    } catch (err) {
-      this._lastConnectionError = friendlyErrorMessage(err);
-      this._setStatus('disconnected');
-      this._healthData = null;
-      return false;
+      return await request;
+    } finally {
+      if (this._connectInFlight === request) this._connectInFlight = null;
     }
   }
 
@@ -2416,33 +2541,82 @@ class LemonadeAPI {
       return true;
     } catch (err) {
       this._lastConnectionError = friendlyErrorMessage(err);
-      this._setStatus('disconnected');
       this._healthData = null;
+      this._healthDataSignature = '';
+      this._setStatus('disconnected');
       return false;
     }
   }
 
+  async ensureModelState(): Promise<{ health: HealthData; models: ModelsData } | null> {
+    if (this._healthData && this._modelsData) {
+      return { health: this._healthData, models: this._modelsData };
+    }
+    return this.refresh();
+  }
+
   async refresh(): Promise<{ health: HealthData; models: ModelsData } | null> {
-    try {
-      const health = await this.health();
-      let models: ModelsData;
-      try {
-        models = await this.models(true);
-      } catch (err) {
-        // Health is the connection source of truth. Some tests and lightweight
-        // servers expose health/MCP before the model registry is available; do
-        // not flip the whole app back to disconnected merely because /models
-        // failed after /health succeeded. Keep the previous registry if present,
-        // otherwise use an empty one until the next refresh.
-        this._lastConnectionError = friendlyErrorMessage(err);
-        models = this._modelsData || { data: [] };
+    if (this._refreshInFlight) {
+      if (this._refreshGenerationInFlight !== this._modelStateGeneration) {
+        this._refreshQueued = true;
       }
-      return { health, models };
-    } catch (err) {
-      this._lastConnectionError = friendlyErrorMessage(err);
-      this._setStatus('disconnected');
-      this._healthData = null;
-      return null;
+      const current = this._refreshInFlight;
+      const result = await current;
+      const followUp = this._refreshInFlight;
+      if (followUp && followUp !== current) return followUp;
+      if (this._refreshQueued && this._refreshInFlight === null) {
+        this._refreshQueued = false;
+        return this.refresh();
+      }
+      return result;
+    }
+
+    const generationAtStart = this._modelStateGeneration;
+    const modelsRevisionAtStart = this._modelsFetchRevision;
+    this._refreshGenerationInFlight = generationAtStart;
+    this._setModelStateRefreshing(true);
+    const request = (async (): Promise<{ health: HealthData; models: ModelsData } | null> => {
+      try {
+        const health = await this.health();
+        let models: ModelsData;
+        try {
+          models = this._modelsData && this._modelsFetchRevision > modelsRevisionAtStart
+            ? this._modelsData
+            : await this.models(true);
+        } catch (err) {
+          // Health is the connection source of truth. Some tests and lightweight
+          // servers expose health/MCP before the model registry is available; do
+          // not flip the whole app back to disconnected merely because /models
+          // failed after /health succeeded. Keep the previous registry if present,
+          // otherwise use an empty one until the next refresh.
+          this._lastConnectionError = friendlyErrorMessage(err);
+          models = this._modelsData || { data: [] };
+          if (!this._modelsData) {
+            this._modelsData = models;
+            this._modelsDataSignature = JSON.stringify(models);
+          }
+          this._publishModelState();
+        }
+        return { health, models };
+      } catch (err) {
+        this._lastConnectionError = friendlyErrorMessage(err);
+        this._healthData = null;
+        this._healthDataSignature = '';
+        this._setStatus('disconnected');
+        return null;
+      }
+    })();
+
+    this._refreshInFlight = request;
+    try {
+      return await request;
+    } finally {
+      if (this._refreshInFlight === request) this._refreshInFlight = null;
+      if (this._refreshGenerationInFlight === generationAtStart) this._refreshGenerationInFlight = -1;
+      const needsFollowUp = this._refreshQueued || generationAtStart !== this._modelStateGeneration;
+      this._refreshQueued = false;
+      if (needsFollowUp) void this.refresh();
+      else this._setModelStateRefreshing(false);
     }
   }
 

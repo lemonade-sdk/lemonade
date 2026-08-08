@@ -955,6 +955,12 @@ static bool is_strict_numeric(const std::string& s, bool allow_dot) {
 }
 
 static nlohmann::json parse_typed_value(const std::string& value) {
+    if (!value.empty() && (value.front() == '[' || value.front() == '{')) {
+        auto parsed = nlohmann::json::parse(value, nullptr, false);
+        if (!parsed.is_discarded()) {
+            return parsed;
+        }
+    }
     // Strict integer: optional minus, then digits only (no hex, no scientific)
     if (is_strict_numeric(value, false)) {
         try { return std::stoi(value); } catch (...) {}
@@ -1456,7 +1462,8 @@ int main(int argc, char* argv[]) {
         std::string clean_host;
         int clean_port = config.port;
         bool is_ssl = false;
-        lemonade::LemonadeClient::parse_target_url(config.host, clean_host, clean_port, is_ssl);
+        bool explicit_port = port_opt->count() > 0;
+        lemonade::LemonadeClient::parse_target_url(config.host, clean_host, clean_port, is_ssl, !explicit_port);
         config.host = clean_host;
         config.port = clean_port;
         config.is_ssl = is_ssl;

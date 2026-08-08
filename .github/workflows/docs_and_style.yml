@@ -13,8 +13,8 @@ jobs:
   app-regression-tests:
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.workflow }}-app-regression-${{ github.ref }}
-      cancel-in-progress: true
+      group: ${{ github.workflow }}-app-regression-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v5
       - name: Setup Node.js
@@ -40,8 +40,8 @@ jobs:
     # if the committed doc is stale — the same guarantee a lint provides.
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.workflow }}-backend-docs-${{ github.ref }}
-      cancel-in-progress: true
+      group: ${{ github.workflow }}-backend-docs-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     env:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -68,8 +68,8 @@ jobs:
   markdown-link-check:
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v5
       - name: Setup Node.js

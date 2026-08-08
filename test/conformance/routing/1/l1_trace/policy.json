@@ -1,0 +1,22 @@
+{
+  "version": "1",
+  "model_name": "user.Trace",
+  "recipe": "collection.router",
+  "components": ["local", "cloud"],
+  "routing": {
+    "candidates": ["local", "cloud"],
+    "default_model": "local",
+    "rules": [
+      { "id": "any-rule",
+        "match": { "any": [
+          { "keywords_any": ["alpha"] },
+          { "regex": "bravo" } ] },
+        "route_to": "cloud" },
+      { "id": "all-rule",
+        "match": { "all": [
+          { "keywords_any": ["charlie"] },
+          { "not": { "max_chars": 5 } } ] },
+        "route_to": "cloud" }
+    ]
+  }
+}

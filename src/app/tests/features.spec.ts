@@ -24,7 +24,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await expect(page.locator('.titlebar__lemon')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'App controls', exact: true })).not.toBeVisible();
-    await expect(page.locator('.titlebar__utility-menu .account-menu__trigger')).toBeVisible();
     await expect(page.locator('.titlebar__utility-menu').getByRole('button', { name: 'Toggle theme' })).toBeVisible();
     await expect(page.locator('.titlebar__utility-menu').getByRole('button', { name: 'Open download manager' })).toBeVisible();
 
@@ -35,10 +34,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const nav = page.locator('.titlebar__nav');
     await expect(nav.getByText('Chat')).toBeVisible();
     await expect(nav.getByText('Models')).toBeVisible();
-    await expect(nav.getByText('Presets')).toBeVisible();
     await expect(nav.getByText('Backends')).toBeVisible();
-    await expect(nav.getByText('Dashboard')).toBeVisible();
-    await expect(nav.getByText('Connect')).toBeVisible();
+    await expect(nav.getByText('Apps')).toBeVisible();
+    await expect(nav.getByText('Monitor')).toBeVisible();
+    await expect(nav.getByText('Settings')).toBeVisible();
 
     // Status dot visible
     await expect(page.locator('.titlebar__status-dot--brand')).toBeVisible();
@@ -48,11 +47,11 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
   // The tray and CLI deep-link into the app with `?view=<workspace>/<section>`
   // (tray_ui.cpp on_show_logs, cli/main.cpp logs). Those routes must resolve.
-  test('01a0 — host deep links address Dashboard sections directly', async ({ page }) => {
+  test('01a0 — host deep links address Monitor sections directly', async ({ page }) => {
     await page.goto('/?view=dashboard/logs');
     await page.waitForSelector('[data-view="dashboard"]');
     await expect(page).toHaveURL(/#\/dashboard\/logs$/);
-    await expect(page.getByRole('navigation', { name: 'Dashboard sections' })
+    await expect(page.getByRole('navigation', { name: 'Monitor sections' })
       .getByRole('button', { name: 'Logs', exact: true })).toHaveAttribute('aria-current', 'page');
 
     await page.goto('/?view=dashboard/telemetry');
@@ -60,20 +59,20 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
   });
 
-  test('01a — Dashboard labels and URL sections stay aligned', async ({ page }) => {
+  test('01a — Monitor labels and URL sections stay aligned', async ({ page }) => {
     await page.goto('/#/dashboard/telemetry');
     await page.waitForSelector('[data-view="dashboard"]');
 
     await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
-    await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toBeVisible();
+    await expect(page.locator('.titlebar__nav').getByText('Monitor')).toBeVisible();
     await expect(page.locator('.monitor-rail .workspace-rail__title')).toHaveText('Views');
-    const dashboardSections = page.getByRole('navigation', { name: 'Dashboard sections' });
+    const dashboardSections = page.getByRole('navigation', { name: 'Monitor sections' });
     await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
     await dashboardSections.getByRole('button', { name: 'Performance', exact: true }).click();
     await expect(page).toHaveURL(/#\/dashboard\/performance$/);
     await dashboardSections.getByRole('button', { name: 'Logs', exact: true }).click();
     await expect(page).toHaveURL(/#\/dashboard\/logs$/);
-    await expect(page.locator('.titlebar__nav').getByText('Monitor')).toHaveCount(0);
+    await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toHaveCount(0);
     await expect(page.locator('.titlebar__nav').getByText('Inspect')).toHaveCount(0);
     await expect(page.locator('.titlebar__nav').getByText('Logs')).toHaveCount(0);
 
@@ -81,7 +80,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page).toHaveURL(/#\/dashboard\/logs$/);
   });
 
-  test('01b — Dashboard and Connect share routed section navigation', async ({ page }) => {
+  test('01b — Monitor and Settings share routed section navigation', async ({ page }) => {
     await page.goto('/#/connect/cloud-providers');
     await page.waitForSelector('[data-view="connect"]');
 
@@ -93,7 +92,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
       ['Model storage', 'model-storage'],
       ['Cloud providers', 'cloud-providers'],
       ['MCP gateway', 'mcp-gateway'],
-      ['App directory', 'app-directory'],
       ['Help & support', 'help-and-support'],
     ] as const;
 
@@ -103,16 +101,106 @@ test.describe('Lemonade UI — Feature Parity', () => {
       await expect(page.locator('#connect-pane-title')).toHaveText(label);
     }
 
-    await page.locator('.titlebar__nav').getByRole('button', { name: 'Dashboard', exact: true }).click();
-    const dashboardSections = page.getByRole('navigation', { name: 'Dashboard sections' });
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Monitor', exact: true }).click();
+    const dashboardSections = page.getByRole('navigation', { name: 'Monitor sections' });
     await dashboardSections.getByRole('button', { name: 'Telemetry', exact: true }).click();
     await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
 
-    await page.locator('.titlebar__nav').getByRole('button', { name: 'Connect', exact: true }).click();
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true }).click();
     await expect(page).toHaveURL(/#\/connect\/help-and-support$/);
     await page.goBack();
     await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
     await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
+  });
+
+  test('01c — Apps is a standalone workspace with category rail navigation', async ({ page }) => {
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: {
+        data: [{
+          id: 'llama-search-model',
+          name: 'Llama Search Model',
+          type: 'llm',
+          labels: ['llm'],
+          recipe: 'llamacpp',
+          suggested: true,
+        }],
+      },
+    }));
+    await page.route('**/apps.json', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        apps: [
+          { id: 'chat-client', name: 'Chat Client', description: 'A conversational client.', category: ['Chat'] },
+          { id: 'creative-studio', name: 'Creative Studio', description: 'Image workflows.', category: ['creative tools'] },
+          { id: 'llama-app', name: 'Llama App', description: 'A llama.cpp companion.', category: ['tools'] },
+        ],
+      }),
+    }));
+
+    await page.goto('/#/apps');
+    await page.waitForSelector('[data-view="apps"]');
+
+    const appCategories = page.getByRole('navigation', { name: 'App categories' });
+    await expect(appCategories.getByRole('button', { name: 'All Apps', exact: true })).toHaveAttribute('aria-current', 'true');
+    await expect(appCategories.getByRole('button', { name: 'Chat', exact: true })).toBeVisible();
+    await expect(appCategories.getByRole('button', { name: 'Creative Tools', exact: true })).toBeVisible();
+    await expect(page.locator('#apps-pane-title')).toHaveText('Apps Marketplace');
+    await expect(page.getByText('Chat Client', { exact: true })).toBeVisible();
+    await expect(page.getByText('Creative Studio', { exact: true })).toBeVisible();
+    await expect(page.getByText('Llama App', { exact: true })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Search apps' })).toBeVisible();
+
+    const globalResults = page.locator('#titlebar-search-results [role="option"]');
+    const searchFromView = async (viewName: 'Chat' | 'Backends' | 'Apps' | 'Monitor' | 'Settings', query: string) => {
+      await page.locator('.titlebar__nav').getByRole('button', { name: viewName, exact: true }).click();
+      await page.keyboard.press('Control+K');
+      const accessibleName = viewName === 'Apps' ? 'Search apps' : 'Search Lemonade';
+      await page.getByRole('combobox', { name: accessibleName }).fill(query);
+    };
+
+    await searchFromView('Apps', 'llama');
+    await expect(globalResults.first()).toContainText('Llama App');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Backends', 'llama');
+    await expect(globalResults.first()).toContainText('llama.cpp');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Chat', 'llama');
+    await expect(globalResults.first()).toContainText('Llama Search Model');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Monitor', 'llama');
+    await expect(globalResults.first()).toContainText('Llama Search Model');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Settings', 'model');
+    await expect(globalResults.first()).toContainText('Model storage');
+    await page.keyboard.press('Escape');
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Apps', exact: true }).click();
+    await expect(page.locator('.apps__category-filters')).toHaveCount(0);
+
+    const chatCategory = appCategories.getByRole('button', { name: 'Chat', exact: true });
+    await chatCategory.click();
+    await expect(chatCategory).toHaveAttribute('aria-current', 'true');
+    await expect(page.locator('#apps-pane-title')).toHaveText('Apps Marketplace');
+    await expect(page.getByRole('heading', { name: 'Chat', exact: true, level: 2 })).toBeVisible();
+    await expect(page.getByText('Chat Client', { exact: true })).toBeVisible();
+    await expect(page.getByText('Creative Studio', { exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(/#\/apps$/);
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(page.getByRole('navigation', { name: 'Connect sections' })
+      .getByRole('button', { name: 'App directory', exact: true })).toHaveCount(0);
+
+    await page.goto('/#/connect/app-directory');
+    await expect(page).toHaveURL(/#\/apps$/);
+    await expect(page.locator('[data-view="apps"]')).toBeVisible();
   });
 
   test('02 — Chat view renders with composer', async ({ page }) => {
@@ -159,7 +247,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForSelector('.titlebar__nav');
 
     // Navigate to Connect
-    await page.locator('.titlebar__nav').getByText('Connect').click();
+    await page.locator('.titlebar__nav').getByText('Settings').click();
     await page.waitForSelector('.connect');
 
     await expect(page.locator('#connect-pane-title')).toHaveText('Server');
@@ -184,8 +272,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('.manager')).toBeVisible();
 
     // Switch to Connect
-    await page.locator('.titlebar__nav').getByText('Connect').click();
-    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Connect');
+    await page.locator('.titlebar__nav').getByText('Settings').click();
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Settings');
     await expect(page.locator('.connect')).toBeVisible();
 
     // Back to Chat
@@ -199,7 +287,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
   test('06 — Connect form connects to server', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
-    await page.locator('.titlebar__nav').getByText('Connect').click();
+    await page.locator('.titlebar__nav').getByText('Settings').click();
     await page.waitForSelector('.connect');
 
     // Fill in server URL (lemond should be running)
@@ -496,9 +584,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     const appControls = page.getByRole('button', { name: 'App controls', exact: true });
     await expect(appControls).toBeVisible();
-    await expect(appControls.locator('[data-icon="settings"]')).toBeVisible();
+    await expect(appControls.locator('[data-icon="sliders-horizontal"]')).toBeVisible();
     await appControls.click();
-    await expect(page.locator('.titlebar__utility-menu .account-menu__trigger')).toBeVisible();
     await expect(page.locator('.titlebar__utility-menu').getByRole('status')).toHaveAccessibleName(/Server (connected|connecting|offline)/i);
     await appControls.click();
 
@@ -510,10 +597,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
         dialog: 'Model filters',
         visibleControls: ['All Models', 'Downloaded', 'My Models', 'Favorites'],
       },
-      { tab: 'Presets', trigger: 'Open preset filters', dialog: 'Preset filters' },
       { tab: 'Backends', trigger: 'Open backend filters', dialog: 'Backend filters' },
-      { tab: 'Dashboard', trigger: 'Open dashboard views', dialog: 'Dashboard navigation' },
-      { tab: 'Connect', trigger: 'Open connection settings', dialog: 'Connection settings' },
+      { tab: 'Apps', trigger: 'Open app categories', dialog: 'App categories', visibleControls: ['All Apps'] },
+      { tab: 'Monitor', trigger: 'Open monitor views', dialog: 'Monitor navigation' },
+      { tab: 'Settings', trigger: 'Open connection settings', dialog: 'Connection settings' },
     ];
 
     const primaryNav = page.getByRole('navigation', { name: 'Primary' });
@@ -538,272 +625,37 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }
   });
 
-  test('13 — Presets v1.4 renders capability flow and stages bindings', async ({ page }) => {
-    let loadCalls = 0;
-    await page.addInitScript(() => {
-      localStorage.removeItem('lemonade_user_presets');
-      localStorage.removeItem('lemonade_applied_presets');
-    });
-    // Presets fetch /models directly, while the Models view only hydrates its
-    // list after the API client has a successful health state. Keep both views
-    // on the same deterministic mock server so the image fixture remains
-    // available after navigating from Presets to Models.
-    await page.route('**/api/v1/health**', route => route.fulfill({
-      json: { status: 'ok', version: 'test', all_models_loaded: [] },
-    }));
-    await page.route('**/api/v1/models**', async route => route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: [
-          { id: 'llama-chat', name: 'llama-chat', labels: ['llm'], recipe: 'llamacpp' },
-          { id: 'sd-image', name: 'sd-image', labels: ['image'], recipe: 'sd-cpp' },
-        ],
-      }),
-    }));
-    await page.route('**/api/v1/load', async route => {
-      loadCalls++;
-      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) });
-    });
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await expect(page.locator('.titlebar__status-dot').first()).toHaveClass(/titlebar__status-dot--connected/);
-
-    // Navigate to Presets
-    await page.locator('.titlebar__nav').getByText('Presets').click();
-    await page.waitForSelector('.recipes');
-
-    // Title visible
-    await expect(page.locator('.preset-list-panel .workspace-list-panel__heading h1')).toHaveText('Presets');
-
-    // Count subtitle visible
-    await expect(page.locator('.preset-list-panel .workspace-list-panel__subtitle')).toContainText('items');
-
-    // Lede explains the intent-to-tuning separation.
-    const lede = page.locator('.recipes__lede');
-    await expect(lede).toBeVisible();
-    await expect(lede).toContainText('Presets capture intent');
-    await expect(lede).toContainText('Model Tuning');
-
-    // Zone: Bundled starters (scope to recipes view to avoid hitting Models zones).
-    // User-created content sorts above the starters, so match by title.
-    const recipesView = page.locator('.recipes').last();
-    const starterZone = recipesView.locator('.zone').filter({ hasText: 'Bundled starters' });
-    await expect(starterZone.locator('.zone__title')).toContainText('Bundled starters');
-
-    // Six chat starters plus one configurable Speech starter.
-    const starterCards = recipesView.locator('[data-recipe-grid="starters"] .recipe-card');
-    await expect(starterCards).toHaveCount(7);
-
-    // Starter badge on first card
-    await expect(starterCards.first().locator('.starter-badge')).toContainText('Starter');
-
-    // Capability chip visible on cards (v1.4 applies_to schema)
-    await expect(starterCards.first().locator('.cap-chip')).toContainText('Chat');
-    await expect(starterCards.nth(6).locator('.cap-chip')).toContainText('TTS');
-    await expect(recipesView.locator('[data-recipe-id="s-speech"]')).toHaveCount(1);
-    await expect(recipesView.locator('[data-recipe-id="s-quality"], [data-recipe-id="s-preview"], [data-recipe-id="s-turbo"]')).toHaveCount(0);
-
-    // Zone: Your presets is genuinely empty on first run
-    await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
-    await expect(recipesView.locator('[data-empty="yours"]')).toContainText('Pick a starter, customize it, or create a preset from scratch');
-
-    // The empty-state shortcut brings keyboard and visual position to the start of starters.
-    await recipesView.locator('[data-empty="yours"] button').getByText('Pick a starter').click();
-    await expect(recipesView.locator('[data-starter-zone]')).toBeFocused();
-
-    // Click a preset row to open its persistent detail pane.
-    await starterCards.first().locator('.recipe-card__overlay-btn').click();
-    await page.waitForSelector('.slideover.is-open');
-
-    // Starter actions live in the detail pane rather than crowding the list.
-    await expect(page.locator('.slideover').getByRole('button', { name: 'Customize' })).toBeVisible();
-    await expect(page.locator('.slideover').getByRole('button', { name: 'Clone' })).toBeVisible();
-    const exportButton = page.locator('.slideover').getByRole('button', { name: 'Export' });
-    await expect(exportButton).toHaveClass(/btn--secondary/);
-    await expect(exportButton).not.toHaveClass(/btn--quiet/);
-
-    // Slide-over has preset name
-    await expect(page.locator('.slideover__title')).toBeVisible();
-    await expect(page.locator('.slideover .workspace-detail-panel__metadata .workspace-metadata-chip--medium')).toHaveCount(0);
-
-    // Slide-over shows capability chips
-    await expect(page.locator('.slideover .cap-chip').first()).toContainText('Chat');
-
-    // Slide-over exposes semantic intent controls and no concrete runtime controls.
-    await expect(page.locator('[data-preset-intent="temperature"]')).toBeVisible();
-    await expect(page.locator('[data-preset-intent="context"]')).toBeVisible();
-    await expect(page.locator('[data-preset-intent="thinking"]')).toBeVisible();
-    await expect(page.locator('[data-preset-intent="temperature"] [data-intent-value]')).toHaveCount(4);
-    await expect(page.locator('[data-preset-intent="context"] [data-intent-value]')).toHaveCount(4);
-    await expect(page.locator('[data-intent-value="smart"]')).toBeDisabled();
-    await expect(page.locator('[data-intent-value="smart-extra"]')).toBeDisabled();
-    await expect(page.locator('.slideover details.preset-advanced')).toHaveCount(0);
-    await expect(page.locator('.slideover .slider')).toHaveCount(0);
-
-    // Incompatible model options are disabled with an explanation tooltip
-    const imageOption = page.locator('[data-recipe-apply-target] option[value="sd-image"]');
-    await expect(imageOption).toBeDisabled();
-    await expect(imageOption).toHaveAttribute('title', /Incompatible/);
-
-    // Applying stages the binding only; it does not POST /load immediately.
-    await page.locator('[data-recipe-apply-target]').selectOption('llama-chat');
-    await page.locator('.slideover .btn--primary').getByText('Apply').click();
-    await expect(page.locator('.preset-success')).toContainText('Will apply on next load');
-    expect(loadCalls).toBe(0);
-
-    await page.locator('.slideover__close').click();
-    await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
-    const presetLibraryNav = page.getByRole('navigation', { name: 'Preset filters' });
-    await presetLibraryNav.getByRole('button', { name: 'Applied models', exact: true }).click();
-    await expect(recipesView.locator('[data-applied-row="llama-chat"] .preset-status-chip')).toContainText('Will apply on next load');
-    await presetLibraryNav.getByRole('button', { name: 'Starter library', exact: true }).click();
-
-    // The single Speech starter owns both TTS-family and voice selection. Its
-    // controls align on one baseline and the Apply action stays inside the panel.
-    await recipesView.locator('[data-recipe-id="s-speech"] .recipe-card__overlay-btn').click();
-    const ttsSelects = page.locator('[data-preset-fields="tts-voice"] select');
-    await expect(ttsSelects).toHaveCount(2);
-    const ttsBoxes = await ttsSelects.evaluateAll(elements => elements.map(element => {
-      const rect = element.getBoundingClientRect();
-      return { top: rect.top, height: rect.height };
-    }));
-    expect(Math.abs(ttsBoxes[0].top - ttsBoxes[1].top)).toBeLessThanOrEqual(1);
-    expect(Math.abs(ttsBoxes[0].height - ttsBoxes[1].height)).toBeLessThanOrEqual(1);
-    const applyButton = page.locator('.preset-apply-row .btn--primary');
-    await expect(applyButton).toBeVisible();
-    const applyFits = await applyButton.evaluate(button => {
-      const buttonRect = button.getBoundingClientRect();
-      const panelRect = button.closest('.slideover')!.getBoundingClientRect();
-      return buttonRect.right <= panelRect.right && buttonRect.left >= panelRect.left;
-    });
-    expect(applyFits).toBeTruthy();
-    await page.locator('.slideover__close').click();
-    await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
-
-    const zoneTitles = await recipesView.locator('.zone__title').allTextContents();
-    expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
-    expect(zoneTitles).not.toContain('Applied to models');
-
-    // New Preset action uses the same compact list-header template as Models.
-    await expect(page.locator('.preset-list-panel .workspace-list-panel__actions').getByRole('button', { name: 'New preset' })).toBeVisible();
-
-    await page.screenshot({ path: 'screenshots/13-presets-view.png', fullPage: true });
-
-    // Image presets remain deliberately disabled. Selecting an image-only model
-    // skips Presets and opens the Default baseline directly in Model Tuning.
-    await page.locator('.titlebar__nav').getByText('Models').click();
-    const imageModel = page.locator('.model-list-item').filter({ hasText: 'sd-image' }).first();
-    await expect(imageModel).toBeVisible();
-    await imageModel.click();
-    await expect(page.locator('#detail-tab-presets')).toHaveCount(0);
-    await expect(page.locator('#detail-tab-tuning')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('#detail-panel-tuning')).toBeVisible();
-    await expect(page.locator('[data-model-tuning-preset]')).toHaveValue('s-default');
-    await expect(page.locator('[data-model-tuning-preset]')).toBeDisabled();
-    await expect(page.locator('.detail-tuning__intro')).toContainText('image request override these model defaults');
-  });
-
-
-  test('13a — starter Customize and Clone create independent user copies', async ({ page }) => {
+  test('13c — Configuration tab shows runtime controls for a downloaded model', async ({ page }) => {
     await page.addInitScript(() => {
       for (const key of Object.keys(localStorage)) {
-        if (key.includes('user_presets') || key.includes('applied_presets')) localStorage.removeItem(key);
-      }
-    });
-    await page.route('**/api/v1/models**', route => route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({ data: [] }),
-    }));
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await page.locator('.titlebar__nav').getByText('Presets').click();
-    const recipesView = page.locator('.recipes').last();
-    await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
-
-    const defaultCard = recipesView.locator('[data-recipe-id="s-default"]');
-    await defaultCard.locator('.recipe-card__overlay-btn').click();
-    await page.locator('.slideover [data-recipe-clone]').click();
-    const yourCards = recipesView.locator('[data-recipe-grid="yours"] .recipe-card');
-    await expect(yourCards).toHaveCount(1);
-    await expect(yourCards.first()).toHaveClass(/recipe-card--flash/);
-    await expect(yourCards.first().locator('.recipe-card__name')).toHaveText('Default (copy)');
-    await expect(page.locator('.slideover.is-open')).toHaveCount(0);
-
-    const balancedCard = recipesView.locator('[data-recipe-id="s-balanced"]');
-    await balancedCard.locator('.recipe-card__overlay-btn').click();
-    await page.locator('.slideover [data-recipe-customize]').click();
-    await expect(yourCards).toHaveCount(2);
-    await expect(page.locator('.slideover.is-open')).toBeVisible();
-    await expect(page.locator('.slideover__title-input')).toHaveValue('Balanced (copy)');
-    const notes = page.getByPlaceholder('Notes (optional)');
-    await expect(notes).toBeVisible();
-    await expect(notes).toHaveAccessibleName('Notes');
-    const notesBox = await notes.boundingBox();
-    expect(notesBox?.height).toBeGreaterThanOrEqual(48);
-    expect(notesBox?.height).toBeLessThanOrEqual(72);
-    await expect(notes).toHaveCSS('resize', 'vertical');
-    expect(await notes.evaluate(element => element.previousElementSibling?.classList.contains('preset-intent-explainer'))).toBeTruthy();
-    await expect(page.locator('.slideover .workspace-detail-panel__metadata')).toHaveCount(0);
-    await page.locator('.slideover__close').click();
-
-    const zoneTitles = await recipesView.locator('.zone__title').allTextContents();
-    expect(zoneTitles.indexOf('Your presets')).toBeLessThan(zoneTitles.indexOf('Bundled starters'));
-  });
-
-  test('13b — Presets import rejects legacy schema', async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.removeItem('lemonade_user_presets');
-      localStorage.removeItem('lemonade_applied_presets');
-    });
-    await page.goto('/');
-    await page.waitForSelector('.titlebar__nav');
-    await page.locator('.titlebar__nav').getByText('Presets').click();
-    await page.waitForSelector('.recipes');
-
-    await page.locator('.dropdown__trigger').click();
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.locator('.dropdown__item').getByText('From file…').click();
-    const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles({
-      name: 'legacy-preset.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from(JSON.stringify({ id: 'legacy', name: 'Legacy', recipe: 'llamacpp' })),
-    });
-
-    await expect(page.locator('.preset-error')).toContainText('This file uses the legacy schema. Use the v1.4 export instead.');
-  });
-
-  test('13c — Model Presets resolves values, keeps Default selectable, and explains the flow', async ({ page }) => {
-    await page.addInitScript(() => {
-      for (const key of Object.keys(localStorage)) {
-        if (key.includes('applied_presets') || key.includes('model_tunings')) {
-          localStorage.removeItem(key);
-        }
+        if (key.includes('model_tunings')) localStorage.removeItem(key);
       }
     });
     await page.route('**/api/v1/health**', route => route.fulfill({
       json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: {
+        recipes: {
+          llamacpp: {
+            default_backend: 'cpu',
+            backends: { cpu: { state: 'installed', version: 'test' } },
+          },
+        },
+      },
     }));
     await page.route('**/api/v1/models**', route => route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
         data: [{
-          id: 'preset-beta-model',
-          name: 'preset-beta-model',
-          display_name: 'Preset Beta Model',
+          id: 'config-beta-model',
+          name: 'config-beta-model',
+          display_name: 'Config Beta Model',
           labels: ['llm'],
           recipe: 'llamacpp',
           downloaded: true,
           max_context_window: 65536,
           recipe_options: { ctx_size: 8192 },
-          preset_tunings: {
-            's-balanced': {
-              intent_values: {
-                temperature: { precise: 0.31, balanced: 0.63, exploratory: 0.87, creative: 1.23 },
-                context: { small: 6144, medium: 24576, large: 51200 },
-              },
-            },
-          },
         }],
       }),
     }));
@@ -811,47 +663,18 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(page.locator('.titlebar__status-dot--brand')).toHaveClass(/titlebar__status-dot--connected/);
-    await page.locator('.model-list-item').filter({ hasText: 'Preset Beta Model' }).click();
-    await page.getByRole('tab', { name: 'Presets' }).click();
+    await page.locator('.model-list-item').filter({ hasText: 'Config Beta Model' }).click();
+    await page.getByRole('tab', { name: 'Configuration' }).click();
 
-    const panel = page.locator('#detail-panel-presets');
+    const panel = page.locator('#detail-panel-config');
     await expect(panel).toBeVisible();
-    await expect(panel.locator('.detail-presets__explanation')).toBeVisible();
-    await expect(panel.getByText('Preset intent, translated for this model')).toBeVisible();
-
-    const headerSettings = page.locator('.model-detail-panel .workspace-detail-panel__metadata');
-    await expect(headerSettings).toContainText('Temperature');
-    await expect(headerSettings).toContainText('Balanced');
-    await expect(headerSettings).toContainText('0.70');
-    await expect(headerSettings).toContainText('Context');
-    await expect(headerSettings).toContainText('Model');
-    await expect(headerSettings).toContainText('8,192');
-    await expect(panel.getByRole('button', { name: /explanation/i })).toHaveCount(0);
-    await expect(panel.locator('.detail-presets__explanation-conclusion')).toBeVisible();
-
-    const balancedCard = panel.locator('.detail-presets__preset-card').filter({ hasText: 'Balanced' });
-    await expect(balancedCard.locator('.detail-presets__card-meta')).toContainText('temp 0.63');
-    await expect(balancedCard.locator('.detail-presets__card-meta')).toContainText('ctx 24576');
-    await balancedCard.getByRole('button').click();
-    await expect(panel.locator('.detail-presets__linked-card')).toContainText('Balanced');
-    await expect(headerSettings).toContainText('Balanced');
-    await expect(headerSettings).toContainText('0.63');
-    await expect(headerSettings).toContainText('24,576');
-
-    const creativeCard = panel.locator('.detail-presets__preset-card').filter({ hasText: 'Creative' });
-    await expect(creativeCard.locator('.detail-presets__card-meta')).toContainText('temp 1.23');
-    await expect(creativeCard.locator('.detail-presets__card-meta')).toContainText('ctx 24576');
-
-    const defaultCard = panel.locator('.detail-presets__preset-card').filter({ hasText: 'Default' });
-    await expect(defaultCard).toBeVisible();
-    await expect(defaultCard.getByRole('button', { name: /preset "Default"/ })).toBeVisible();
-    await defaultCard.getByRole('button', { name: /preset "Default"/ }).click();
-    await expect(panel.locator('.detail-presets__linked-card')).toContainText('Default');
-    await expect(panel.getByRole('button', { name: 'Change linked preset for preset-beta-model' })).toBeVisible();
-
-    await panel.getByRole('button', { name: 'Open Model Tuning for preset-beta-model' }).click();
-    await expect(page.getByRole('tab', { name: 'Model Tuning' })).toHaveAttribute('aria-selected', 'true');
+    await expect(panel.getByRole('heading', { name: 'Load settings' })).toBeVisible();
+    await expect(panel.getByLabel('Context size tokens')).toBeVisible();
+    await expect(panel.locator('[id$="llamacpp_backend"]')).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Save defaults' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Reset' })).toBeVisible();
   });
+
 
   test('14 — Backends view shows matrix and device info', async ({ page }) => {
     await page.goto('/');
@@ -887,20 +710,20 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/14-backends-view.png', fullPage: true });
   });
 
-  test('15 — Dashboard performance shows system gauges and scrollable graphs', async ({ page }) => {
+  test('15 — Monitor performance shows system gauges and scrollable graphs', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    // Dashboard nav button exists
-    await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toBeVisible();
+    // Monitor nav button exists
+    await expect(page.locator('.titlebar__nav').getByText('Monitor')).toBeVisible();
 
-    // Navigate to Dashboard performance
-    await page.locator('.titlebar__nav').getByText('Dashboard').click();
+    // Navigate to Monitor performance
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
     await page.waitForSelector('[data-view="dashboard"]');
 
     // Performance header and navigation visible
     await expect(page.locator('.dashboard-header').getByRole('heading', { name: 'Performance' })).toBeVisible();
-    await expect(page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: 'Performance', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Performance', exact: true })).toHaveAttribute('aria-current', 'page');
 
     // Connection indicator dot
     await expect(page.locator('.dash2-bar__dot')).toBeVisible();
@@ -947,14 +770,14 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/15-dashboard.png', fullPage: true });
   });
 
-  test('16 — Dashboard logs shows filters and live output', async ({ page }) => {
+  test('16 — Monitor logs shows filters and live output', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    await page.locator('.titlebar__nav').getByText('Dashboard').click();
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
     await page.waitForSelector('[data-view="dashboard"]');
 
-    await page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
     await page.waitForSelector('[data-view="logs"]');
 
     // Filter panel visible with controls
@@ -1019,10 +842,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
-    // Navigate to Dashboard logs
-    await page.locator('.titlebar__nav').getByText('Dashboard').click();
+    // Navigate to Monitor logs
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
     await page.waitForSelector('[data-view="dashboard"]');
-    await page.getByRole('navigation', { name: 'Dashboard sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
     await page.waitForSelector('.logs-output', { state: 'visible' });
 
     // Inject enough content to make the container scrollable, then scroll to bottom
@@ -1063,8 +886,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.titlebar__nav').getByText('Models').click();
     await page.waitForTimeout(500);
 
-    // Switch back to Dashboard, which preserves the active Logs section
-    await page.locator('.titlebar__nav').getByText('Dashboard').click();
+    // Switch back to Monitor, which preserves the active Logs section
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
     await page.waitForSelector('.logs-output', { state: 'visible' });
     await page.waitForTimeout(500);
 
@@ -1186,7 +1009,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForSelector('.titlebar__nav');
 
     // Connect to server first
-    await page.locator('.titlebar__nav').getByText('Connect').click();
+    await page.locator('.titlebar__nav').getByText('Settings').click();
     await page.waitForSelector('.connect');
     const testPort = process.env.LEMONADE_TEST_PORT || '13305';
     const urlInput = page.locator('#host-input');
@@ -1337,7 +1160,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const chatReqOff = requests.find(r => r.url.includes('/chat/completions'));
     expect(chatReqOff).toBeDefined();
     expect(chatReqOff!.headers['x-client-session-id']).toBeUndefined();
-    expect(chatReqOff!.headers['x-account-session-id']).toBeUndefined();
 
     // Now toggle capturing ON
     await page.evaluate(() => {
@@ -1364,7 +1186,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const chatReqOn = requestsAfterToggle.find(r => r.url.includes('/chat/completions'));
     expect(chatReqOn).toBeDefined();
     expect(chatReqOn!.headers['x-client-session-id']).toBeDefined();
-    expect(chatReqOn!.headers['x-account-session-id']).toBeDefined();
   });
 
   test('24 — fallback retry: retries without session headers on fetch preflight/network failure and disables them', async ({ page }) => {
@@ -1453,8 +1274,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     expect(finalEnabled).toBe(false);
   });
 
-  test('25 — Model Tuning maps every intent level while Max context stays fixed', async ({ page }) => {
-    const modelName = 'intent-map-model';
+  test('25 — Configuration tab saves model-specific defaults under the direct model key', async ({ page }) => {
+    const modelName = 'config-map-model';
+    await page.addInitScript(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.includes('model_tunings')) localStorage.removeItem(key);
+      }
+    });
     await page.route('**/api/v1/health**', route => route.fulfill({
       json: { status: 'ok', version: 'test', all_models_loaded: [] },
     }));
@@ -1487,76 +1313,71 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.titlebar__nav').getByText('Models').click();
     await page.waitForSelector('.model-list-item', { timeout: 5000 });
     await page.locator('.model-list-item').first().click();
-    await page.locator('#detail-tab-tuning').click();
+    await page.locator('#detail-tab-config').click();
 
-    const temperatureInputs = page.locator('[data-model-tuning-temperature-intent]');
-    await expect(temperatureInputs).toHaveCount(4);
-    for (const hint of ['precise', 'balanced', 'exploratory', 'creative']) {
-      await expect(page.locator(`[data-model-tuning-temperature-intent="${hint}"]`)).toBeVisible();
-    }
+    await expect(page.getByLabel('Context size tokens')).toBeVisible();
+    await expect(page.locator('[id$="llamacpp_backend"]')).toBeVisible();
 
-    const contextCards = page.locator('[data-model-tuning-context-intent]');
-    await expect(contextCards).toHaveCount(0);
-    await expect(page.locator('.detail-tuning__default-baseline')).toContainText('Default leaves context at the saved model value');
+    await page.getByLabel('Context size tokens').fill('16384');
+    await page.getByRole('button', { name: 'Save defaults' }).click();
 
-    await page.locator('[data-model-tuning-preset]').selectOption('s-code');
-    await expect(contextCards).toHaveCount(4);
-    for (const hint of ['small', 'medium', 'large']) {
-      await expect(page.locator(`button[data-model-tuning-context-intent="${hint}"]`)).toBeVisible();
-    }
-    const maxContext = page.locator('[data-model-tuning-context-intent="max"]');
-    await expect(maxContext).toBeVisible();
-    await expect(maxContext.locator('input')).toHaveCount(0);
-    await expect(maxContext).toContainText('128K');
-    await expect(page.locator('.detail-tuning__runtime .detail-tuning__field', { hasText: 'Context size' })).toHaveCount(0);
-
-    await page.locator('[data-model-tuning-temperature-intent="precise"]').fill('0.2');
-    await page.locator('[data-model-tuning-temperature-intent="balanced"]').fill('0.6');
-    await page.locator('[data-model-tuning-temperature-intent="exploratory"]').fill('0.8');
-    await page.locator('[data-model-tuning-temperature-intent="creative"]').fill('1.0');
-
-    await page.locator('button[data-model-tuning-context-intent="small"]').click();
-    const smallSlider = page.locator('[data-model-tuning-context-slider="small"]');
-    await expect(smallSlider).toHaveAttribute('min', '1024');
-    await page.locator('[data-model-tuning-context-number="small"]').fill('5120');
-
-    await page.locator('button[data-model-tuning-context-intent="medium"]').click();
-    const mediumSlider = page.locator('[data-model-tuning-context-slider="medium"]');
-    await expect(mediumSlider).toHaveAttribute('min', '5120');
-    await page.locator('[data-model-tuning-context-number="medium"]').fill('32768');
-
-    await page.locator('button[data-model-tuning-context-intent="large"]').click();
-    const largeSlider = page.locator('[data-model-tuning-context-slider="large"]');
-    await expect(largeSlider).toHaveAttribute('min', '32768');
-    await expect(largeSlider).toHaveAttribute('max', '131072');
-    await page.locator('[data-model-tuning-context-number="large"]').fill('65536');
-    await page.getByRole('button', { name: 'Save tuning' }).click();
-
-    const saved = await page.evaluate(({ model, preset }) => {
+    const saved = await page.evaluate(({ model }) => {
       for (const key of Object.keys(localStorage)) {
         if (!key.includes('model_tunings')) continue;
         try {
           const value = JSON.parse(localStorage.getItem(key) || '{}');
-          const tuning = value[`${model}@@${preset}`];
+          const tuning = value[model];
           if (tuning) return tuning;
         } catch { /* keep looking */ }
       }
       return null;
-    }, { model: modelName, preset: 's-code' });
+    }, { model: modelName });
 
-    expect(saved?.intent_values?.temperature).toEqual({
-      precise: 0.2,
-      balanced: 0.6,
-      exploratory: 0.8,
-      creative: 1.0,
+    expect(saved?.recipe_options?.ctx_size).toBe(16384);
+    expect(saved?.sampling ?? {}).toEqual({});
+  });
+
+  test('25a — Configuration tab Save shows persistent notice and model switch clears it', async ({ page }) => {
+    const modelA = 'notice-model-a';
+    const modelB = 'notice-model-b';
+    await page.addInitScript(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.includes('model_tunings')) localStorage.removeItem(key);
+      }
     });
-    expect(saved?.intent_values?.context).toEqual({
-      small: 5120,
-      medium: 32768,
-      large: 65536,
-    });
-    expect(saved?.intent_values?.context?.max).toBeUndefined();
-    expect(saved?.recipe_options?.ctx_size).toBeUndefined();
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed', version: 'test' } } } } },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: {
+        data: [
+          { id: modelA, name: modelA, labels: ['llm'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
+          { id: modelB, name: modelB, labels: ['llm'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
+        ],
+      },
+    }));
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-item', { timeout: 5000 });
+
+    // Select model A and open Configuration tab
+    await page.locator('.model-list-item').filter({ hasText: modelA }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+    await expect(panel).toBeVisible();
+
+    // Save — notice must appear and stay visible
+    await panel.getByRole('button', { name: 'Save defaults' }).click();
+    await expect(panel.locator('.detail-tuning__notice')).toBeVisible();
+    await expect(panel.locator('.detail-tuning__notice')).toContainText('Defaults saved for future loads.');
+
+    // Switch to model B — stale notice must be gone
+    await page.locator('.model-list-item').filter({ hasText: modelB }).click();
+    await expect(panel.locator('.detail-tuning__notice')).toHaveCount(0);
   });
 
 });

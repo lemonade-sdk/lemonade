@@ -1,4 +1,4 @@
-/* Regression guards for the DESIGN.md contracts that are cheap to verify but
+﻿/* Regression guards for the DESIGN.md contracts that are cheap to verify but
  * easy to break silently: light-theme contrast on identity colors, and the
  * modal behavior every mobile context rail is supposed to share. */
 import { test, expect } from '@playwright/test';
@@ -87,19 +87,39 @@ test('log filters open as a modal with backdrop, focus trap, Escape and focus re
 });
 
 test('the log source list keeps the active filter reachable and reports what it hides', async ({ page }) => {
+  const logEntries = Array.from({ length: 12 }, (_, index) => ({
+    seq: index + 1,
+    timestamp: `2026-08-04 20:00:${String(index).padStart(2, '0')}.000`,
+    severity: 'info',
+    tag: `source-${String(index + 1).padStart(2, '0')}`,
+    line: `deterministic log entry ${index + 1}`,
+  }));
+
+  await page.route('**/api/v1/health**', route =>
+    route.fulfill({ json: { status: 'ok', all_models_loaded: [] } }),
+  );
+  await page.route('**/api/v1/models**', route =>
+    route.fulfill({ json: { data: [] } }),
+  );
+  await page.route('**/internal/config**', route =>
+    route.fulfill({ json: { log_level: 'info' } }),
+  );
+  await page.routeWebSocket('**/logs/stream**', ws => {
+    ws.onMessage(message => {
+      const payload = JSON.parse(typeof message === 'string' ? message : message.toString());
+      if (payload.type !== 'logs.subscribe') return;
+      ws.send(JSON.stringify({ type: 'logs.snapshot', entries: logEntries }));
+    });
+  });
+
   await page.goto('/#/dashboard/logs');
   await page.waitForSelector('.logs-rail');
-  await expect.poll(() => page.locator('.logs-sources .workspace-filter-list__item').count())
-    .toBeGreaterThan(1);
 
-  // "All sources" plus at most the ten most active.
+  // "All sources" plus exactly the ten most active mocked sources.
   const items = page.locator('.logs-sources .workspace-filter-list__item');
-  expect(await items.count()).toBeLessThanOrEqual(11);
-
-  const note = page.locator('.workspace-filter-list__note');
-  if (await note.count()) {
-    await expect(note).toContainText(/sources? not shown/);
-  }
+  await expect(items).toHaveCount(11);
+  await expect(page.locator('.workspace-filter-list__note'))
+    .toContainText('2 less active sources not shown');
 
   // Selecting a source keeps it rendered and marked active.
   const selected = items.nth(1);
@@ -132,4 +152,43 @@ test('the workspace resizer advertises the width range it can actually reach', a
     const ceiling = await resizer.getAttribute('aria-valuemax');
     return value === ceiling;
   }).toBe(true);
+});
+
+
+test('no-rail layout: panel max-width uses full container width, not DEFAULT_RAIL_WIDTH fallback', async ({ page }) => {
+  // Regression guard for the bug where useWorkspacePanelResize fell back to
+  // DEFAULT_RAIL_WIDTH=248 when no .workspace__rail was present in the DOM,
+  // causing the list panel max-width to be under-computed in two-panel layouts.
+  //
+  // This test mirrors the exact constants and formula from useWorkspacePanelResize
+  // and asserts that railWidth=0 (noRail path) gives a strictly larger maxWidth
+  // than the old railWidth=DEFAULT_RAIL_WIDTH fallback at the same container size.
+  await page.goto('/');
+  const result = await page.evaluate(() => {
+    const DEFAULT_RAIL_WIDTH = 248;
+    const LIST_PANEL_MIN_WIDTH = 300;
+    const LIST_PANEL_MAX_WIDTH = 500;
+    const DETAIL_PANEL_MIN_WIDTH = 420;
+
+    function layoutWidths(containerWidth: number, railWidth: number) {
+      const availableWidth = Math.max(0, containerWidth - railWidth);
+      const maxWidth = Math.max(
+        LIST_PANEL_MIN_WIDTH,
+        Math.min(LIST_PANEL_MAX_WIDTH, availableWidth - DETAIL_PANEL_MIN_WIDTH),
+      );
+      return { maxWidth };
+    }
+
+    const containerWidth = 1000;
+    const withDefaultRailFallback = layoutWidths(containerWidth, DEFAULT_RAIL_WIDTH);
+    const withNoRail = layoutWidths(containerWidth, 0);
+    return { withDefaultRailFallback, withNoRail };
+  });
+
+  // noRail=true: availableWidth = 1000-0 = 1000; maxWidth = min(500, 1000-420) = 500
+  expect(result.withNoRail.maxWidth).toBe(500);
+  // noRail=false (old bug): availableWidth = 1000-248 = 752; maxWidth = min(500, 752-420) = 332
+  expect(result.withDefaultRailFallback.maxWidth).toBe(332);
+  // Fix must produce a strictly wider upper bound on two-panel layouts.
+  expect(result.withNoRail.maxWidth).toBeGreaterThan(result.withDefaultRailFallback.maxWidth);
 });

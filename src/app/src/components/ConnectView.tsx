@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import api, { CloudProviderRow, ConnectionStatus, DirectorySettings, friendlyErrorMessage, normalizeBaseUrl } from '../api';
-import { AccountSession, clearAllAccountsAndScopedData, clearCurrentSessionData, describeSession } from '../features/accounts/accountStore';
+import { clearClientStorage } from '../storage';
+import { loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
 import { Icon, IconName } from './Icon';
 import McpPanel from './McpPanel';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
@@ -18,22 +19,8 @@ interface ConnectViewProps {
   isActive: boolean;
   activeSection: ConnectSection;
   onSectionChange: (section: ConnectSection) => void;
-  accountSession: AccountSession;
   onLocalDataReset: () => void;
-  onSessionChange: (session: AccountSession) => void;
 }
-
-type MarketplaceApp = {
-  id: string;
-  name: string;
-  description?: string;
-  category?: string[];
-  logo?: string;
-  pinned?: boolean;
-  links?: { app?: string; guide?: string; video?: string };
-};
-
-const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 
 const HELP_LINKS: { label: string; href: string; icon: IconName; description: string }[] = [
   { label: 'Documentation', href: 'https://lemonade-server.ai/docs/', icon: 'book-open', description: 'Setup, APIs, and integration guides.' },
@@ -51,7 +38,7 @@ const CLOUD_QUICK_FILL = [
 
 const emptyDirectorySettings: DirectorySettings = { modelsDir: '', extraModelsDir: '', canPersist: false };
 
-const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSection, onSectionChange, accountSession, onLocalDataReset, onSessionChange }) => {
+const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSection, onSectionChange, onLocalDataReset }) => {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [host, setHost] = useState(api.baseUrl);
   const [apiKey, setApiKey] = useState(api.apiKey);
@@ -60,6 +47,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(api.lastConnectionError);
   const [notice, setNotice] = useState<string | null>(null);
+  const [persistHistory, setPersistHistory] = useState(() => loadChatHistoryPreference());
 
   const [providers, setProviders] = useState<CloudProviderRow[]>([]);
   const [providerName, setProviderName] = useState('');
@@ -77,11 +65,6 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
   const [savingDirectories, setSavingDirectories] = useState(false);
   const [directoryNotice, setDirectoryNotice] = useState<string | null>(null);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
-
-  const [marketplaceApps, setMarketplaceApps] = useState<MarketplaceApp[]>([]);
-  const [marketplaceSearch, setMarketplaceSearch] = useState('');
-  const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
-  const [marketplaceLoading, setMarketplaceLoading] = useState(false);
 
   const loadCloudProviders = useCallback(async () => {
     if (!api.isConnected) {
@@ -136,26 +119,6 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     else setProviders([]);
   }, [isActive, status, loadCloudProviders]);
 
-  useEffect(() => {
-    if (!isActive || marketplaceApps.length > 0) return;
-    let cancelled = false;
-    setMarketplaceLoading(true);
-    fetch(MARKETPLACE_URL)
-      .then(response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then(data => {
-        if (cancelled) return;
-        const apps = Array.isArray(data?.apps) ? data.apps as MarketplaceApp[] : [];
-        setMarketplaceApps(apps);
-        setMarketplaceError(null);
-      })
-      .catch(err => { if (!cancelled) setMarketplaceError(friendlyErrorMessage(err)); })
-      .finally(() => { if (!cancelled) setMarketplaceLoading(false); });
-    return () => { cancelled = true; };
-  }, [isActive, marketplaceApps.length]);
-
   const handleConnect = async () => {
     setConnecting(true);
     setError(null);
@@ -198,17 +161,10 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
   };
 
   const handleClearLocalData = async () => {
-    const target = accountSession.role === 'admin'
-      ? 'all scoped user/guest data plus global connection settings'
-      : `${describeSession(accountSession)} data plus global connection settings`;
-    const ok = window.confirm(`Clear ${target} on this device? Other signed-in users are protected unless you are admin.`);
+    const ok = window.confirm('Clear Lemonade browser data and connection settings on this device?');
     if (!ok) return;
 
-    if (accountSession.role === 'admin') {
-      onSessionChange(clearAllAccountsAndScopedData());
-    } else {
-      clearCurrentSessionData(accountSession);
-    }
+    clearClientStorage();
 
     for (const store of [localStorage, sessionStorage]) {
       Object.keys(store)
@@ -229,9 +185,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     setCanPersistApiKey(api.canPersistApiKey);
     setRememberApiKey(false);
     onLocalDataReset();
-    setNotice(accountSession.role === 'admin'
-      ? 'Admin cleared all scoped local user data and global connection settings.'
-      : 'Current profile data and global connection settings were cleared.');
+    setNotice('Local Lemonade data and global connection settings were cleared.');
     setError(clearSettingsError);
   };
 
@@ -324,13 +278,6 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
       setSavingDirectories(false);
     }
   };
-
-  const filteredMarketplaceApps = useMemo(() => {
-    const query = marketplaceSearch.trim().toLowerCase();
-    return marketplaceApps
-      .filter(app => !query || app.name.toLowerCase().includes(query) || (app.description || '').toLowerCase().includes(query) || (app.category || []).join(' ').toLowerCase().includes(query))
-      .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name));
-  }, [marketplaceApps, marketplaceSearch]);
 
   const openExternal = (url?: string) => {
     if (!url) return;
@@ -436,6 +383,21 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
               </WorkspaceActionButton>
             </WorkspaceActionGroup>
           </form>
+          <div className="connect__section">
+            <label className="connect__checkbox">
+              <input
+                type="checkbox"
+                checked={persistHistory}
+                onChange={event => {
+                  const persist = event.target.checked;
+                  setPersistHistory(persist);
+                  saveChatHistoryPreference(persist);
+                }}
+              />
+              <span>Save chat history in this browser</span>
+            </label>
+            <p className="connect__hint">Chat media is never persisted.</p>
+          </div>
         </section>
         )}
 
@@ -539,32 +501,6 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
           <McpPanel connectionStatus={status} isActive={isActive && activeSection === 'mcp-gateway'} />
         </div>
 
-        {activeSection === 'app-directory' && (
-        <section className="connect__section connect__section--marketplace">
-          <div className="connect__section-head connect__section-head--search">
-            <input className="input connect__marketplace-search" value={marketplaceSearch} onChange={e => setMarketplaceSearch(e.target.value)} placeholder="Search apps..." aria-label="Search marketplace apps" />
-          </div>
-          {marketplaceLoading ? <div className="connect__empty">Loading marketplace...</div> : marketplaceError ? <div className="connect__error">Marketplace unavailable: {marketplaceError}</div> : (
-            <WorkspaceResourceList label="Compatible apps">
-              {filteredMarketplaceApps.slice(0, 12).map(app => (
-                <WorkspaceResourceRow
-                  key={app.id || app.name}
-                  title={app.name}
-                  description={app.description || 'No description available.'}
-                  metadata={app.category?.[0]}
-                  leading={app.logo ? <img className="connect__app-logo" src={app.logo} alt="" /> : <span className="connect__app-logo connect__app-logo--fallback">{app.name.slice(0, 1).toUpperCase()}</span>}
-                  actions={<WorkspaceActionGroup className="connect__marketplace-actions" label={`Links for ${app.name}`}>
-                    {app.links?.app && <WorkspaceActionButton appearance="secondary" size="small" icon="globe" onClick={() => openExternal(app.links?.app)}>Visit</WorkspaceActionButton>}
-                    {app.links?.guide && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.guide)}>Guide</WorkspaceActionButton>}
-                    {app.links?.video && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.video)}>Video</WorkspaceActionButton>}
-                  </WorkspaceActionGroup>}
-                />
-              ))}
-              {filteredMarketplaceApps.length === 0 && <div className="connect__empty">No marketplace apps match your search.</div>}
-            </WorkspaceResourceList>
-          )}
-        </section>
-        )}
       </div>
       </section>
     </div>

@@ -30,7 +30,7 @@ type DefinedSection = ReturnType<typeof defineSection>;
 function defineWorkspace<
   Id extends string,
   Sections extends readonly DefinedSection[],
->(id: Id, sections: Sections): {
+>(id: Id, sections: Sections, label?: string): {
   id: Id;
   label: string;
   defaultSection: Sections[0]['id'];
@@ -38,7 +38,7 @@ function defineWorkspace<
 } {
   return {
     id,
-    label: workspaceRouteLabel(id),
+    label: label ?? workspaceRouteLabel(id),
     defaultSection: sections[0].id as Sections[0]['id'],
     sections,
   };
@@ -49,15 +49,14 @@ export const WORKSPACE_NAVIGATION = {
     defineSection('performance', 'Health and throughput', 'gauge'),
     defineSection('telemetry', 'Traces, replay and tuning', 'search-check'),
     defineSection('logs', 'Live server output', 'logs'),
-  ] as const),
+  ] as const, 'Monitor'),
   connect: defineWorkspace('connect', [
     defineSection('server', 'Endpoint and authentication', 'plug'),
     defineSection('model-storage', 'Cache and custom directories', 'hard-drive'),
     defineSection('cloud-providers', 'OpenAI-compatible services', 'cloud'),
     defineSection('mcp-gateway', 'Tools and external servers', 'tools'),
-    defineSection('app-directory', 'Compatible clients and tools', 'layers'),
     defineSection('help-and-support', 'Docs, releases and community', 'book-open'),
-  ] as const),
+  ] as const, 'Settings'),
 } as const;
 
 export type RoutedWorkspace = keyof typeof WORKSPACE_NAVIGATION;

@@ -9,23 +9,33 @@
  *
  * The rail surfaces filter dimensions that drive the middle list:
  *   1. Primary nav: All Models / Downloaded / My Models / Favorites.
- *   2. CATEGORIES (collapsible): All / LLM / Omni / Image / Audio / TTS / Embed.
- *   3. Backends (collapsible select): filter by recipe.
- *   4. TAGS (collapsible): model-family + size chips.
+ *   2. TASK (collapsible multi-select): Chat / Omni / Router / media tasks.
+ *   3. BACKENDS (collapsible multi-select): filter by concrete runtime recipe.
+ *   4. TAGS (collapsible multi-select): built-in and user-defined chips.
  *   5. Storage meter (role="progressbar").
  *
- * ALL counts/categories/tags/backends are derived CLIENT-SIDE from the model
+ * All counts/tasks/tags/backends are derived CLIENT-SIDE from the model
  * list the prototype already loads — no lemond calls. Storage uses derived
  * download sizes where available, falling back to MOCK placeholder values.
  */
 import React, { useMemo, useState } from 'react';
+import { storageKey } from '../storage';
 import type { ModelInfo, ModelRegistryProvider, StorageInfo } from '../api';
 import { Icon } from './Icon';
+import { backendColor } from '../modelPresentation';
 import type { IconName } from './Icon';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import {
+  DEFAULT_VISIBLE_BACKEND_COUNT,
+  hideBackendShortcut,
+  resolveBackendRailVisibility,
+  revealNextBackend,
+  type BackendRailVisibilityState,
+} from '../features/models/backendRailVisibility';
+import {
   listModelName,
   listRecipeBadgeText,
+  modelHasFilterableBackend,
   modelMatchesFilter,
   modelMatchesPrimary,
   modelMatchesTag,
@@ -44,22 +54,46 @@ const PRIMARY_ITEMS: Array<{ key: PrimaryFilter; label: string; iconName: IconNa
   { key: 'favorites', label: 'Favorites', iconName: 'star' },
 ];
 
-const CATEGORY_ITEMS: Array<{ key: FilterTab; label: string; iconName: IconName }> = [
-  { key: 'all', label: 'All', iconName: 'globe' },
-  { key: 'llm', label: 'LLM', iconName: 'chat' },
-  { key: 'omni', label: 'Omni', iconName: 'omni' },
-  { key: 'image', label: 'Image', iconName: 'image' },
-  { key: 'audio', label: 'Audio', iconName: 'audio' },
-  { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio' },
-  { key: 'tts', label: 'TTS', iconName: 'tts' },
-  { key: 'model3d', label: '3D', iconName: 'box' },
-  { key: 'embedding', label: 'Embed', iconName: 'embedding' },
+const TASK_ITEMS: Array<{ key: FilterTab; label: string; iconName: IconName; color: string }> = [
+  { key: 'all', label: 'All', iconName: 'globe', color: 'var(--text-tertiary)' },
+  { key: 'llm', label: 'Chat', iconName: 'chat', color: 'var(--cap-chat)' },
+  { key: 'omni', label: 'Omni', iconName: 'omni', color: 'var(--accent-fg)' },
+  { key: 'router', label: 'Router', iconName: 'router', color: 'var(--cap-tool, var(--accent-fg))' },
+  { key: 'image', label: 'Image', iconName: 'image', color: 'var(--cap-image)' },
+  { key: 'audio', label: 'Audio', iconName: 'audio', color: 'var(--cap-audio)' },
+  { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio', color: 'var(--cap-audio-generation)' },
+  { key: 'tts', label: 'TTS', iconName: 'tts', color: 'var(--cap-tts)' },
+  { key: 'model3d', label: '3D', iconName: 'box', color: 'var(--cap-model3d)' },
+  { key: 'embedding', label: 'Embed', iconName: 'embedding', color: 'var(--cap-embedding)' },
 ];
 
 const MODEL_PROVIDERS: Array<{ key: ModelRegistryProvider; label: string }> = [
   { key: 'huggingface', label: 'Hugging Face' },
   { key: 'modelscope', label: 'ModelScope' },
 ];
+
+
+const CUSTOM_TAGS_STORAGE_KEY = 'model_filter_custom_tags_v1';
+
+function loadCustomFilterTags(): string[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(storageKey(CUSTOM_TAGS_STORAGE_KEY)) || '[]');
+    if (!Array.isArray(raw)) return [];
+    return Array.from(new Set(raw.map((value: unknown) => String(value).trim()).filter(Boolean))) as string[];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomFilterTags(tags: string[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(storageKey(CUSTOM_TAGS_STORAGE_KEY), JSON.stringify(tags));
+  } catch {
+    // Filtering must remain usable when storage is unavailable or full.
+  }
+}
 
 /* ── Storage (POC) ───────────────────────────────────────────────
    Preferred source is real disk stats via `storageInfo` (api.getStorageInfo()).
@@ -88,12 +122,12 @@ export interface ModelNavRailProps {
   favoriteNames: Set<string>;
   primaryFilter: PrimaryFilter;
   onPrimaryFilterChange: (f: PrimaryFilter) => void;
-  categoryFilter: FilterTab;
-  onCategoryFilterChange: (f: FilterTab) => void;
-  backendFilter: string;
-  onBackendFilterChange: (b: string) => void;
-  tagFilter: string | null;
-  onTagFilterChange: (t: string | null) => void;
+  taskFilters: ReadonlySet<FilterTab>;
+  onTaskFiltersChange: (next: Set<FilterTab>) => void;
+  backendFilters: ReadonlySet<string>;
+  onBackendFiltersChange: (next: Set<string>) => void;
+  tagFilters: ReadonlySet<string>;
+  onTagFiltersChange: (next: Set<string>) => void;
   providerEnabled: Record<ModelRegistryProvider, boolean>;
   providerCounts: Record<ModelRegistryProvider, number>;
   onToggleProvider: (provider: ModelRegistryProvider) => void;
@@ -118,12 +152,12 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   favoriteNames,
   primaryFilter,
   onPrimaryFilterChange,
-  categoryFilter,
-  onCategoryFilterChange,
-  backendFilter,
-  onBackendFilterChange,
-  tagFilter,
-  onTagFilterChange,
+  taskFilters,
+  onTaskFiltersChange,
+  backendFilters,
+  onBackendFiltersChange,
+  tagFilters,
+  onTagFiltersChange,
   providerEnabled,
   providerCounts,
   onToggleProvider,
@@ -136,8 +170,12 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   railRef,
 }) => {
   const [providersOpen, setProvidersOpen] = useState(true);
-  const [categoriesOpen, setCategoriesOpen] = useState(true);
+  const [tasksOpen, setTasksOpen] = useState(true);
+  const [backendsOpen, setBackendsOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(true);
+  const [backendVisibility, setBackendVisibility] = useState<BackendRailVisibilityState | null>(null);
+  const [customTags, setCustomTags] = useState<string[]>(loadCustomFilterTags);
+  const [customTagDraft, setCustomTagDraft] = useState('');
 
   // ── Client-side derived counts ──────────────────────────────
   const primaryCounts = useMemo<Record<PrimaryFilter, number>>(() => {
@@ -152,12 +190,12 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
     return counts;
   }, [allModels, loadedNames, favoriteNames]);
 
-  const categoryCounts = useMemo<Record<string, number>>(() => {
+  const taskCounts = useMemo<Record<string, number>>(() => {
     const counts: Record<string, number> = {};
-    for (const item of CATEGORY_ITEMS) counts[item.key] = 0;
+    for (const item of TASK_ITEMS) counts[item.key] = 0;
     for (const m of allModels) {
       if (!listModelName(m)) continue;
-      for (const item of CATEGORY_ITEMS) {
+      for (const item of TASK_ITEMS) {
         if (modelMatchesFilter(m, item.key)) counts[item.key] += 1;
       }
     }
@@ -169,7 +207,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
     const counts = new Map<string, number>();
     for (const m of allModels) {
       const recipe = String((m as any).recipe || '').toLowerCase();
-      if (!recipe) continue;
+      if (!recipe || !modelHasFilterableBackend(m)) continue;
       counts.set(recipe, (counts.get(recipe) ?? 0) + 1);
     }
     return Array.from(counts.entries())
@@ -177,18 +215,101 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   }, [allModels]);
 
-  // Only show tag chips that match at least one model (keeps the rail honest).
+  const resolvedBackendVisibility = useMemo(
+    () => resolveBackendRailVisibility(backends.map(backend => backend.value), backendVisibility),
+    [backends, backendVisibility],
+  );
+
+  const visibleBackends = useMemo(() => {
+    const byValue = new Map(backends.map(backend => [backend.value, backend]));
+    return resolvedBackendVisibility.order
+      .slice(0, resolvedBackendVisibility.visibleCount)
+      .map(value => byValue.get(value))
+      .filter((backend): backend is { value: string; label: string; count: number } => Boolean(backend));
+  }, [backends, resolvedBackendVisibility]);
+
+  const hiddenBackendCount = Math.max(0, backends.length - visibleBackends.length);
+  const backendShortcutsRemovable = visibleBackends.length > DEFAULT_VISIBLE_BACKEND_COUNT;
+
+  const allTagChips = useMemo(
+    () => [...TAG_CHIPS, ...customTags.filter(tag => !TAG_CHIPS.some(builtIn => builtIn.toLowerCase() === tag.toLowerCase()))],
+    [customTags],
+  );
+
+  // Counts stay honest for both built-in and user-defined filters.
   const tagCounts = useMemo<Record<string, number>>(() => {
     const counts: Record<string, number> = {};
-    for (const tag of TAG_CHIPS) counts[tag] = 0;
+    for (const tag of allTagChips) counts[tag] = 0;
     for (const m of allModels) {
       if (!listModelName(m)) continue;
-      for (const tag of TAG_CHIPS) {
+      for (const tag of allTagChips) {
         if (modelMatchesTag(m, tag)) counts[tag] += 1;
       }
     }
     return counts;
-  }, [allModels]);
+  }, [allModels, allTagChips]);
+
+  const toggleTask = (task: FilterTab) => {
+    if (task === 'all') {
+      onTaskFiltersChange(new Set());
+      return;
+    }
+    const next = new Set(taskFilters);
+    if (next.has(task)) next.delete(task); else next.add(task);
+    next.delete('all');
+    onTaskFiltersChange(next);
+  };
+
+  const toggleBackend = (backend: string) => {
+    const next = new Set(backendFilters);
+    if (next.has(backend)) next.delete(backend); else next.add(backend);
+    onBackendFiltersChange(next);
+  };
+
+  const showNextBackend = () => {
+    setBackendVisibility(revealNextBackend(resolvedBackendVisibility));
+  };
+
+  const removeBackendShortcut = (backend: string) => {
+    setBackendVisibility(hideBackendShortcut(resolvedBackendVisibility, backend));
+    if (!backendFilters.has(backend)) return;
+    const next = new Set(backendFilters);
+    next.delete(backend);
+    onBackendFiltersChange(next);
+  };
+
+  const toggleTag = (tag: string) => {
+    const next = new Set(tagFilters);
+    if (next.has(tag)) next.delete(tag); else next.add(tag);
+    onTagFiltersChange(next);
+  };
+
+  const addCustomTag = () => {
+    const tag = customTagDraft.trim();
+    if (!tag) return;
+    const existing = allTagChips.find(value => value.toLowerCase() === tag.toLowerCase());
+    const canonical = existing || tag;
+    if (!existing) {
+      const nextCustomTags = [...customTags, tag];
+      setCustomTags(nextCustomTags);
+      saveCustomFilterTags(nextCustomTags);
+    }
+    const nextFilters = new Set(tagFilters);
+    nextFilters.add(canonical);
+    onTagFiltersChange(nextFilters);
+    setCustomTagDraft('');
+  };
+
+  const removeCustomTag = (tag: string) => {
+    const nextCustomTags = customTags.filter(value => value.toLowerCase() !== tag.toLowerCase());
+    setCustomTags(nextCustomTags);
+    saveCustomFilterTags(nextCustomTags);
+    const nextFilters = new Set(tagFilters);
+    for (const selected of nextFilters) {
+      if (selected.toLowerCase() === tag.toLowerCase()) nextFilters.delete(selected);
+    }
+    onTagFiltersChange(nextFilters);
+  };
 
   // ── Storage meter ───────────────────────────────────────────
   // Prefer REAL disk stats (storageInfo). When unavailable in the POC, derive
@@ -303,60 +424,104 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         )}
       </section>
 
-      <section className="model-nav-rail__section">
+      <section className="model-nav-rail__section model-nav-rail__section--tasks">
         <h2 className="model-nav-rail__section-head">
           <button
             type="button"
             className="model-nav-rail__section-toggle"
-            aria-expanded={categoriesOpen}
-            aria-controls="nav-categories"
-            onClick={() => setCategoriesOpen(v => !v)}
+            aria-expanded={tasksOpen}
+            aria-controls="nav-tasks"
+            onClick={() => setTasksOpen(value => !value)}
           >
-            <Icon name={categoriesOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
-            <span>Categories</span>
+            <Icon name={tasksOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
+            <span>{mobileOpen ? 'Categories' : 'Task'}</span>
           </button>
         </h2>
-        {categoriesOpen && (
-          <ul className="model-nav-rail__cat-list" id="nav-categories" role="list">
-            {CATEGORY_ITEMS.map(item => {
-              const active = categoryFilter === item.key;
+        {tasksOpen && (
+          <div className="model-nav-rail__chip-list model-nav-rail__task-list" id="nav-tasks" role="group" aria-label="Filter by task">
+            {TASK_ITEMS.map(item => {
+              const active = item.key === 'all' ? taskFilters.size === 0 : taskFilters.has(item.key);
               return (
-                <li key={item.key}>
-                  <button
-                    type="button"
-                    className={`model-nav-rail__cat-item${active ? ' model-nav-rail__cat-item--active' : ''}`}
-                    aria-current={active ? 'true' : undefined}
-                    onClick={() => onCategoryFilterChange(item.key)}
-                  >
-                    <Icon name={item.iconName} size={14} aria-hidden="true" className="model-nav-rail__cat-icon" />
-                    <span className="model-nav-rail__cat-label">{item.label}</span>
-                    <span className="model-nav-rail__nav-count" aria-hidden="true">{categoryCounts[item.key]}</span>
-                    <span className="sr-only">{`, ${categoryCounts[item.key]} models`}</span>
-                  </button>
-                </li>
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`model-nav-rail__filter-chip model-nav-rail__task-chip${active ? ' is-active' : ''}`}
+                  style={{ '--filter-chip-color': item.color } as React.CSSProperties}
+                  aria-pressed={active}
+                  onClick={() => toggleTask(item.key)}
+                >
+                  <Icon name={item.iconName} size={13} aria-hidden="true" className="model-nav-rail__task-icon" />
+                  <span>{item.label}</span>
+                  <span className="model-nav-rail__chip-count" aria-hidden="true">{taskCounts[item.key]}</span>
+                  <span className="sr-only">{`, ${taskCounts[item.key]} models`}</span>
+                </button>
               );
             })}
-          </ul>
+          </div>
         )}
       </section>
 
-      {/* 3. Backends select */}
-      <div className="model-nav-rail__backends">
-        <label htmlFor="nav-backend-select" className="model-nav-rail__backends-label">Backends</label>
-        <select
-          id="nav-backend-select"
-          className="model-nav-rail__backends-select"
-          value={backendFilter}
-          onChange={e => onBackendFilterChange(e.target.value)}
-        >
-          <option value="all">All backends</option>
-          {backends.map(b => (
-            <option key={b.value} value={b.value}>{`${b.label} (${b.count})`}</option>
-          ))}
-        </select>
-      </div>
+      <section className="model-nav-rail__section model-nav-rail__section--backends">
+        <h2 className="model-nav-rail__section-head">
+          <button
+            type="button"
+            className="model-nav-rail__section-toggle"
+            aria-expanded={backendsOpen}
+            aria-controls="nav-backends"
+            onClick={() => setBackendsOpen(value => !value)}
+          >
+            <Icon name={backendsOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
+            <span>Backends</span>
+          </button>
+        </h2>
+        {backendsOpen && (
+          <div className="model-nav-rail__chip-list model-nav-rail__backend-list" id="nav-backends" role="group" aria-label="Filter by backend">
+            {visibleBackends.map(backend => {
+              const active = backendFilters.has(backend.value);
+              return (
+                <span
+                  key={backend.value}
+                  className={`model-nav-rail__backend-wrap${backendShortcutsRemovable ? ' is-removable' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className={`model-nav-rail__filter-chip model-nav-rail__backend-chip${active ? ' is-active' : ''}`}
+                    style={{ '--filter-chip-color': backendColor(backend.value) } as React.CSSProperties}
+                    aria-pressed={active}
+                    onClick={() => toggleBackend(backend.value)}
+                  >
+                    <span>{backend.label}</span>
+                    <span className="model-nav-rail__chip-count" aria-hidden="true">{backend.count}</span>
+                    <span className="sr-only">{`, ${backend.count} models`}</span>
+                  </button>
+                  {backendShortcutsRemovable && (
+                    <button
+                      type="button"
+                      className="model-nav-rail__backend-remove"
+                      onClick={() => removeBackendShortcut(backend.value)}
+                      aria-label={`Hide ${backend.label} backend shortcut`}
+                    >
+                      <Icon name="x" size={10} aria-hidden="true" />
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+            {hiddenBackendCount > 0 && (
+              <button
+                type="button"
+                className="model-nav-rail__filter-chip model-nav-rail__backend-more"
+                onClick={showNextBackend}
+                aria-label={`Show one more backend, ${hiddenBackendCount} hidden`}
+              >
+                <Icon name="plus" size={11} aria-hidden="true" />
+                <span>{hiddenBackendCount}</span>
+              </button>
+            )}
+          </div>
+        )}
+      </section>
 
-      {/* 4. Tags (collapsible) */}
       <section className="model-nav-rail__section">
         <h2 className="model-nav-rail__section-head">
           <button
@@ -364,35 +529,65 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
             className="model-nav-rail__section-toggle"
             aria-expanded={tagsOpen}
             aria-controls="nav-tags"
-            onClick={() => setTagsOpen(v => !v)}
+            onClick={() => setTagsOpen(value => !value)}
           >
             <Icon name={tagsOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
             <span>Tags</span>
           </button>
         </h2>
         {tagsOpen && (
-          <div className="model-nav-rail__tags" id="nav-tags" role="group" aria-label="Filter by tag">
-            {TAG_CHIPS.filter(tag => tagCounts[tag] > 0).map(tag => {
-              const active = tagFilter?.toLowerCase() === tag.toLowerCase();
-              return (
-                <button
-                  key={tag}
-                  type="button"
-                  className={`model-nav-rail__tag${active ? ' model-nav-rail__tag--active' : ''}`}
-                  aria-pressed={active}
-                  onClick={() => onTagFilterChange(active ? null : tag)}
-                >
-                  {tag}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              className="model-nav-rail__tag model-nav-rail__tag--recommended"
-              aria-label="Show recommended tags"
-            >
-              + Recommended +
-            </button>
+          <div id="nav-tags">
+            <div className="model-nav-rail__chip-list model-nav-rail__tag-list" role="group" aria-label="Filter by tag">
+              {allTagChips.map(tag => {
+                const active = tagFilters.has(tag);
+                const isCustom = customTags.some(value => value.toLowerCase() === tag.toLowerCase());
+                return (
+                  <span key={tag} className={`model-nav-rail__tag-wrap${isCustom ? ' is-custom' : ''}`}>
+                    <button
+                      type="button"
+                      className={`model-nav-rail__filter-chip model-nav-rail__tag-chip${active ? ' is-active' : ''}`}
+                      aria-pressed={active}
+                      onClick={() => toggleTag(tag)}
+                    >
+                      <span>{tag}</span>
+                      <span className="model-nav-rail__chip-count" aria-hidden="true">{tagCounts[tag] || 0}</span>
+                      <span className="sr-only">{`, ${tagCounts[tag] || 0} models`}</span>
+                    </button>
+                    {isCustom && (
+                      <button
+                        type="button"
+                        className="model-nav-rail__custom-tag-remove"
+                        onClick={() => removeCustomTag(tag)}
+                        aria-label={`Remove custom tag ${tag}`}
+                        title={`Remove ${tag}`}
+                      >
+                        <Icon name="x" size={10} aria-hidden="true" />
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+            <div className="model-nav-rail__custom-tag-entry">
+              <label className="sr-only" htmlFor="nav-custom-tag">Add custom tag</label>
+              <input
+                id="nav-custom-tag"
+                type="text"
+                value={customTagDraft}
+                onChange={event => setCustomTagDraft(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    addCustomTag();
+                  }
+                }}
+                placeholder="Custom tag"
+                autoComplete="off"
+              />
+              <button type="button" onClick={addCustomTag} disabled={!customTagDraft.trim()} aria-label="Add custom tag">
+                <Icon name="plus" size={12} aria-hidden="true" />
+              </button>
+            </div>
           </div>
         )}
       </section>

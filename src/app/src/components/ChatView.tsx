@@ -3,7 +3,7 @@ import api, { ChatMessage, ChatCompletionStats, LoadedModel, ModelInfo, Realtime
 import { copyTextToClipboard } from '../clipboard';
 import MarkdownMessage from './MarkdownMessage';
 import LogViewer from './LogViewer';
-import { Icon, CapabilityIcon, PresetIcon } from './Icon';
+import { Icon, CapabilityIcon } from './Icon';
 import EffectiveSettingsModal from './EffectiveSettingsModal';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
@@ -30,29 +30,14 @@ import {
   snapshotFromModelInfo,
   snapshotFromName,
 } from '../modelCapabilities';
-import { AccountSession, describeSession, scopedStorageKey } from '../features/accounts/accountStore';
+import { storageKey } from '../storage';
+import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../features/chatHistory/historySettings';
 import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
 import { activeDownloadForModel, downloadsForModel, downloadStore, isDownloadTerminal, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { buildOmniToolRuntime } from '../tools/omniTools';
-import { buildSelectedMcpRuntime, composeMcpRuntimes } from '../tools/mcpRuntime';
-import {
-  DEFAULT_PRESET,
-  PRESET_STORE_EVENT,
-  type Preset,
-  activePresetForModel,
-  allStoredPresets,
-  isCompatible,
-  loadApplied,
-  saveApplied,
-  classifyPresetChange,
-  runningPresetIdForModel,
-  setRunningPreset,
-  systemPromptTextForPreset,
-  systemPromptNameForPreset,
-  presetMcpServerIds,
-  presetMcpDisplayText,
-} from '../presetStore';
+import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOLS, MAX_MCP_SERVER_SELECTION, buildSelectedMcpRuntime, composeMcpRuntimes, listMcpServerToolOptions, type McpServerToolOption } from '../tools/mcpRuntime';
+import { DEFAULT_CONTEXT_SIZE, loadModelTuning } from '../modelConfiguration';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import {
   LEMONADE_DEFAULT_CHAT_MODELS,
@@ -100,7 +85,6 @@ interface Conversation {
 
 const STORAGE_KEY = 'conversations';
 const ACTIVE_KEY = 'active_conversation';
-const PERSIST_KEY = 'persist_conversations';
 const STORAGE_VERSION = 3;
 
 const CHAT_LOGS_WIDTH_KEY = 'chat_logs_panel_width';
@@ -119,10 +103,10 @@ function clampChatLogsWidth(width: number, railExpanded = true): number {
   return Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(maxChatLogsWidthForViewport(railExpanded), Math.round(width)));
 }
 
-function loadChatLogsWidth(scope: string): number {
+function loadChatLogsWidth(): number {
   if (typeof window === 'undefined') return CHAT_LOGS_DEFAULT_WIDTH;
   try {
-    const stored = Number(window.localStorage.getItem(scopedKey(scope, CHAT_LOGS_WIDTH_KEY)));
+    const stored = Number(window.localStorage.getItem(scopedKey(CHAT_LOGS_WIDTH_KEY)));
     const width = Number.isFinite(stored) ? stored : CHAT_LOGS_DEFAULT_WIDTH;
     return clampChatLogsWidth(width, true);
   } catch {
@@ -134,12 +118,32 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function scopedKey(scope: string, key: string): string {
-  return scopedStorageKey(scope, key);
+function scopedKey(key: string): string {
+  return storageKey(key);
 }
 
-function loadPersistencePreference(scope: string): boolean {
-  try { return localStorage.getItem(scopedKey(scope, PERSIST_KEY)) === 'true'; } catch { return false; }
+function loadScopedStringArray(key: string): string[] | null {
+  try {
+    const raw = localStorage.getItem(scopedKey(key));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(value => String(value)).filter(Boolean) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveScopedStringArray(key: string, values: string[] | null): void {
+  try {
+    if (values === null) localStorage.removeItem(scopedKey(key));
+    else localStorage.setItem(scopedKey(key), JSON.stringify([...new Set(values.filter(Boolean))]));
+  } catch {
+    // Non-critical UI preference persistence.
+  }
+}
+
+function loadPersistencePreference(): boolean {
+  return loadChatHistoryPreference();
 }
 
 function normalizeSnapshot(raw: unknown): ModelSnapshot | null {
@@ -188,10 +192,10 @@ function normalizeConversation(raw: unknown): Conversation | null {
   };
 }
 
-function loadConversations(persist: boolean, scope: string): Conversation[] {
+function loadConversations(persist: boolean): Conversation[] {
   if (!persist) return [];
   try {
-    const raw = localStorage.getItem(scopedKey(scope, STORAGE_KEY));
+    const raw = localStorage.getItem(scopedKey(STORAGE_KEY));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     const list: unknown[] = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.conversations) ? parsed.conversations : []);
@@ -200,11 +204,11 @@ function loadConversations(persist: boolean, scope: string): Conversation[] {
   return [];
 }
 
-function saveConversations(convos: Conversation[], persist: boolean, scope: string) {
+function saveConversations(convos: Conversation[], persist: boolean) {
   if (!persist) {
     try {
-      localStorage.removeItem(scopedKey(scope, STORAGE_KEY));
-      localStorage.removeItem(scopedKey(scope, ACTIVE_KEY));
+      localStorage.removeItem(scopedKey(STORAGE_KEY));
+      localStorage.removeItem(scopedKey(ACTIVE_KEY));
     } catch { /* ignore */ }
     return;
   }
@@ -224,22 +228,22 @@ function saveConversations(convos: Conversation[], persist: boolean, scope: stri
       model3dName: undefined,
     })),
   }));
-  try { localStorage.setItem(scopedKey(scope, STORAGE_KEY), JSON.stringify({ version: STORAGE_VERSION, conversations: stripped })); } catch { /* ignore */ }
+  try { localStorage.setItem(scopedKey(STORAGE_KEY), JSON.stringify({ version: STORAGE_VERSION, conversations: stripped })); } catch { /* ignore */ }
 }
 
-function loadActiveId(persist: boolean, scope: string): string | null {
+function loadActiveId(persist: boolean): string | null {
   if (!persist) return null;
-  try { return localStorage.getItem(scopedKey(scope, ACTIVE_KEY)); } catch { return null; }
+  try { return localStorage.getItem(scopedKey(ACTIVE_KEY)); } catch { return null; }
 }
 
-function saveActiveId(id: string | null, persist: boolean, scope: string) {
+function saveActiveId(id: string | null, persist: boolean) {
   try {
     if (!persist) {
-      localStorage.removeItem(scopedKey(scope, ACTIVE_KEY));
+      localStorage.removeItem(scopedKey(ACTIVE_KEY));
     } else if (id) {
-      localStorage.setItem(scopedKey(scope, ACTIVE_KEY), id);
+      localStorage.setItem(scopedKey(ACTIVE_KEY), id);
     } else {
-      localStorage.removeItem(scopedKey(scope, ACTIVE_KEY));
+      localStorage.removeItem(scopedKey(ACTIVE_KEY));
     }
   } catch { /* ignore */ }
 }
@@ -268,6 +272,12 @@ function titleFromInput(text: string, hasImages: boolean, audioFiles: File[] = [
   return 'New conversation';
 }
 
+function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: string[]): string[] {
+  const selected = new Set(serverIds);
+  return servers
+    .filter(server => selected.has(server.id))
+    .flatMap(server => server.toolOptions.map(tool => tool.runtimeName));
+}
 
 const ModelModeIcons: React.FC<{
   capability: ModelCapability;
@@ -332,8 +342,8 @@ interface ChatViewProps {
   currentModel: string | null;
   loadedModels: LoadedModel[];
   onModelSelect: (model: string) => void;
+  onOpenModelDetails: (model: string) => void;
   onRefresh: () => void | Promise<void>;
-  accountSession: AccountSession;
 }
 
 interface ModelPreparationState {
@@ -343,7 +353,10 @@ interface ModelPreparationState {
 }
 
 const MCP_ENABLED_KEY = 'mcp_enabled';
+const MCP_SERVER_IDS_KEY = 'mcp_server_ids';
+const MCP_TOOL_NAMES_KEY = 'mcp_tool_names';
 const LEGACY_TOOLS_KEY = 'use_tools';
+const DEFAULT_MCP_SERVER_IDS = [LEMONADE_MCP_SERVER_ID];
 const MAX_IMAGE_DIM = 1024;
 const MAX_IMAGES = 4;
 const IMAGE_SIZE_OPTIONS = [256, 512, 768, 1024, 1536, 2048] as const;
@@ -492,17 +505,17 @@ function partialImageSettingsFromSource(source?: Record<string, unknown> | null)
   return next;
 }
 
-function imageDefaultsForModel(loadedModel: LoadedModel | null, modelInfo: ModelInfo | null, activePresetRecipeOptions?: Record<string, unknown> | null): ImageGenerationSettings {
+function imageDefaultsForModel(loadedModel: LoadedModel | null, modelInfo: ModelInfo | null, directRecipeOptions?: Record<string, unknown> | null): ImageGenerationSettings {
   const modelImageDefaults = partialImageSettingsFromSource(modelInfo?.image_defaults as Record<string, unknown> | undefined);
   const modelRecipeOptions = partialImageSettingsFromSource(modelInfo?.recipe_options as Record<string, unknown> | undefined);
   const loadedRecipeOptions = partialImageSettingsFromSource(loadedModel?.recipe_options);
-  const presetDefaults = partialImageSettingsFromSource(activePresetRecipeOptions);
+  const directDefaults = partialImageSettingsFromSource(directRecipeOptions);
   return {
     ...DEFAULT_IMAGE_SETTINGS,
     ...modelImageDefaults,
     ...modelRecipeOptions,
     ...loadedRecipeOptions,
-    ...presetDefaults,
+    ...directDefaults,
   };
 }
 
@@ -698,15 +711,14 @@ function friendlyChatError(message: string): string {
   return `I couldn't complete that request.\n\n${cleaned}`;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, onModelSelect, onRefresh, accountSession }) => {
-  const storageScope = accountSession.storageScope;
+const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, onModelSelect, onOpenModelDetails, onRefresh }) => {
   const [fallbackModelOverride, setFallbackModelOverride] = useState<string | null>(null);
-  const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName(storageScope));
-  const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName(storageScope));
-  const [modelPreparation, setModelPreparation] = useState<ModelPreparationState | null>(null);
-  const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference(storageScope));
-  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(loadPersistencePreference(storageScope), storageScope));
-  const [activeId, setActiveId] = useState<string | null>(() => loadActiveId(loadPersistencePreference(storageScope), storageScope));
+  const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName());
+  const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName());
+  const [modelPreparations, setModelPreparations] = useState<Record<string, ModelPreparationState>>({});
+  const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference());
+  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(loadPersistencePreference()));
+  const [activeId, setActiveId] = useState<string | null>(() => loadActiveId(loadPersistencePreference()));
   const [inputValue, setInputValue] = useState('');
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
@@ -724,10 +736,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [liveTranscript, setLiveTranscript] = useState('');
   const [liveError, setLiveError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
-  const [capabilityBusy, setCapabilityBusy] = useState(false);
-  const [presetVersion, setPresetVersion] = useState(0);
-  const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings(storageScope));
-  const [globalModelSettings, setGlobalModelSettings] = useState(() => loadGlobalModelSettings(storageScope));
+  const [capabilityBusyConvoIds, setCapabilityBusyConvoIds] = useState<Set<string>>(() => new Set());
+  const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings());
+  const [globalModelSettings, setGlobalModelSettings] = useState(() => loadGlobalModelSettings());
   const [railExpanded, setRailExpanded] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const sheetHandleRef = useRef<HTMLDivElement>(null);
@@ -735,14 +746,23 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const bottomSheetRef = useRef<HTMLDivElement>(null);
   const [useMcp, setUseMcp] = useState(() => {
     try {
-      const explicit = localStorage.getItem(scopedKey(storageScope, MCP_ENABLED_KEY));
+      const explicit = localStorage.getItem(scopedKey(MCP_ENABLED_KEY));
       if (explicit !== null) return explicit === 'true';
-      return localStorage.getItem(scopedKey(storageScope, LEGACY_TOOLS_KEY)) === 'true';
-    } catch { return false; }
+      const legacy = localStorage.getItem(scopedKey(LEGACY_TOOLS_KEY));
+      if (legacy !== null) return legacy === 'true';
+      return true;
+    } catch { return true; }
   });
-  const presetMcpSeedRef = useRef('');
+  const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(() => loadScopedStringArray(MCP_SERVER_IDS_KEY) || DEFAULT_MCP_SERVER_IDS);
+  const [selectedMcpToolNames, setSelectedMcpToolNames] = useState<string[] | null>(() => loadScopedStringArray(MCP_TOOL_NAMES_KEY));
+  const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
+  const [mcpPickerTab, setMcpPickerTab] = useState<'lemonade' | 'external'>('lemonade');
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [mcpOptions, setMcpOptions] = useState<McpServerToolOption[]>([]);
+  const [mcpPickerLoading, setMcpPickerLoading] = useState(false);
+  const [mcpPickerError, setMcpPickerError] = useState('');
   const [showInlineLogs, setShowInlineLogs] = useState(false);
-  const [chatLogsWidth, setChatLogsWidth] = useState(() => loadChatLogsWidth(storageScope));
+  const [chatLogsWidth, setChatLogsWidth] = useState(() => loadChatLogsWidth());
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerQuery, setModelPickerQuery] = useState('');
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
@@ -751,16 +771,15 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => chatBlockingDownloads(downloadStore.snapshot()));
   const downloadAvailabilityKeyRef = useRef(chatBlockingDownloadsKey(downloadItems));
   const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
-  const [presetPickerOpen, setPresetPickerOpen] = useState(false);
-  const [presetPickerQuery, setPresetPickerQuery] = useState('');
-  const [presetPickerApplying, setPresetPickerApplying] = useState<string | null>(null);
-  const [presetPickerError, setPresetPickerError] = useState<string | null>(null);
   const [effectiveSettingsOpen, setEffectiveSettingsOpen] = useState(false);
+  const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState(DEFAULT_CONTEXT_SIZE);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
-  const presetPickerRef = useRef<HTMLDivElement>(null);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+  const mcpReturnFocusEntryRef = useRef<'tools'>('tools');
+  const mcpBackButtonRef = useRef<HTMLButtonElement | null>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
   const scrollRafRef = useRef<number>(0);
@@ -790,12 +809,34 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const refreshDefaultContextSize = async () => {
+      try {
+        const value = await api.getDefaultContextSize();
+        if (!cancelled) setServerDefaultCtxSize(typeof value === 'number' ? value : DEFAULT_CONTEXT_SIZE);
+      } catch {
+        if (!cancelled) setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
+      }
+    };
+
+    void refreshDefaultContextSize();
+    const unsubscribe = api.onStatusChange(status => {
+      if (status === 'connected') void refreshDefaultContextSize();
+      else if (!cancelled) setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     try {
-      window.localStorage.setItem(scopedKey(storageScope, CHAT_LOGS_WIDTH_KEY), String(chatLogsWidth));
+      window.localStorage.setItem(scopedKey(CHAT_LOGS_WIDTH_KEY), String(chatLogsWidth));
     } catch {
       // Non-critical: inline log width persistence is best-effort only.
     }
-  }, [chatLogsWidth, storageScope]);
+  }, [chatLogsWidth]);
 
   const chatLayoutStyle = useMemo(() => ({
     '--chat-logs-width': `${chatLogsWidth}px`,
@@ -849,8 +890,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, [railExpanded]);
 
   const customModelInfos = useMemo(
-    () => loadCustomModels(storageScope).map(customModelToModelInfo),
-    [storageScope],
+    () => loadCustomModels().map(customModelToModelInfo),
+    [],
   );
   const knownModelInfos = useMemo(
     () => {
@@ -926,9 +967,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   useEffect(() => {
     if (!currentLoadedModel || (currentCapability !== 'chat' && currentCapability !== 'omni')) return;
-    saveLastReadyModelName(storageScope, currentLoadedModel.model_name);
+    saveLastReadyModelName(currentLoadedModel.model_name);
     setLastReadyModelName(currentLoadedModel.model_name);
-  }, [currentCapability, currentLoadedModel, storageScope]);
+  }, [currentCapability, currentLoadedModel]);
 
   const currentRecipe = String(currentModelSnapshot?.recipe || currentKnownModelInfo?.recipe || '').toLowerCase();
   const isAceStepAudio = currentCapability === 'audio-generation'
@@ -1001,34 +1042,22 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }), []);
 
   useEffect(() => {
-    const updatePresetVersion = () => setPresetVersion(v => v + 1);
-    window.addEventListener(PRESET_STORE_EVENT, updatePresetVersion);
-    return () => window.removeEventListener(PRESET_STORE_EVENT, updatePresetVersion);
-  }, []);
-
-  useEffect(() => {
-    const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings(storageScope));
+    const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings());
     reloadTtsSettings();
     window.addEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
     return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
-  }, [storageScope]);
+  }, []);
 
   useEffect(() => {
-    const reloadGlobalModelSettings = () => setGlobalModelSettings(loadGlobalModelSettings(storageScope));
+    const reloadGlobalModelSettings = () => setGlobalModelSettings(loadGlobalModelSettings());
     reloadGlobalModelSettings();
     window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
     return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
-  }, [storageScope]);
-
-  const allPresets = useMemo(() => allStoredPresets(), [presetVersion]);
-  const currentPreset = useMemo(
-    () => currentModel ? (currentCapability === 'image' ? DEFAULT_PRESET : activePresetForModel(currentModel)) : null,
-    [currentCapability, currentModel, presetVersion],
-  );
+  }, []);
 
   useEffect(() => {
     if (currentCapability !== 'audio-generation') return;
-    const recipeOptions = currentPreset?.recipe_options || {};
+    const recipeOptions = loadModelTuning(currentModel || '')?.recipe_options || {};
     setAudioGenerationSettings(prev => ({
       ...prev,
       duration: isAceStepAudio ? 150 : 10,
@@ -1036,16 +1065,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       cfg: typeof recipeOptions.cfg_scale === 'number' ? recipeOptions.cfg_scale : 4.5,
       lyrics: '',
     }));
-  }, [currentModel, currentCapability, currentPreset, isAceStepAudio]);
+  }, [currentModel, currentCapability, isAceStepAudio]);
 
   useEffect(() => {
     if (!isOpenMossTts) return;
     setOpenMossSettings({
       mode: 'plain',
-      voiceDescription: String(currentPreset?.recipe_options?.voice || ''),
+      voiceDescription: String(loadModelTuning(currentModel || '')?.recipe_options?.voice || ''),
     });
     setPendingAudioFiles([]);
-  }, [currentModel, currentPreset, isOpenMossTts]);
+  }, [currentModel, isOpenMossTts]);
 
   useEffect(() => {
     const keepsAudioAttachments = currentCapability === 'audio'
@@ -1061,17 +1090,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     isOpenMossTts,
     openMossSettings.mode,
   ]);
-
-  useEffect(() => {
-    if (!currentModel || !currentPreset) return;
-    const selectedIds = presetMcpServerIds(currentPreset);
-    const next = selectedIds.length > 0;
-    const seed = `${storageScope}:${currentModel}:${currentPreset.id}:${selectedIds.join(',')}:${next ? 'mcp-on' : 'mcp-off'}`;
-    if (presetMcpSeedRef.current === seed) return;
-    presetMcpSeedRef.current = seed;
-    setUseMcp(next);
-    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
-  }, [currentModel, currentPreset, storageScope]);
 
   const hasRealtimeAudio = useMemo(
     () => !!currentModel && modelSupportsRealtimeAudio(currentModel, currentKnownModelInfo, currentLoadedModel),
@@ -1097,9 +1115,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     () => imageDefaultsForModel(
       currentLoadedModel,
       currentKnownModelInfo,
-      currentCapability === 'image' ? (currentPreset?.recipe_options as Record<string, unknown> | undefined) : undefined,
+      currentCapability === 'image'
+        ? (loadModelTuning(currentModel || '')?.recipe_options as Record<string, unknown> | undefined)
+        : undefined,
     ),
-    [currentLoadedModel, currentKnownModelInfo, currentPreset, currentCapability],
+    [currentLoadedModel, currentKnownModelInfo, currentModel, currentCapability],
   );
   const defaultImageSettingsKey = useMemo(() => JSON.stringify(defaultImageSettings), [defaultImageSettings]);
 
@@ -1227,104 +1247,127 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return filtered.slice(0, 80);
   }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
 
-
-  const presetPickerTarget = currentKnownModelInfo || currentCustomModelInfo || currentModel || null;
-  const presetPickerOptions = useMemo(() => {
-    if (!currentModel || currentCapability === 'image') return [];
-    const q = presetPickerQuery.trim().toLowerCase();
-    return allPresets
-      .filter(preset => isCompatible(preset, presetPickerTarget))
-      .filter(preset => {
-        if (!q) return true;
-        return [
-          preset.name,
-          preset.description,
-          preset.applies_to.join(' '),
-          systemPromptNameForPreset(preset),
-          `mcp ${presetMcpDisplayText(preset)}`,
-        ].join(' ').toLowerCase().includes(q);
-      })
-      .slice(0, 80);
-  }, [allPresets, currentCapability, currentModel, presetPickerQuery, presetPickerTarget]);
-
-  const handlePresetPickerSelect = useCallback(async (preset: Preset) => {
-    if (!currentModel || presetPickerApplying) return;
-
-    const targetName = currentModel;
-    const previousApplied = loadApplied();
-    const previouslyLinkedPreset = currentPreset || activePresetForModel(targetName);
-    const runId = runningPresetIdForModel(targetName);
-    const runningPreset = runId
-      ? (allStoredPresets().find(p => p.id === runId) ?? previouslyLinkedPreset)
-      : previouslyLinkedPreset;
-    const changeKind = currentLoadedModel
-      ? classifyPresetChange(runningPreset, preset)
-      : 'none';
-
-    const nextApplied = { ...previousApplied };
-    if (preset.id === DEFAULT_PRESET.id) delete nextApplied[targetName];
-    else nextApplied[targetName] = preset.id;
-
-    setPresetPickerApplying(preset.id);
-    setPresetPickerError(null);
-    saveApplied(nextApplied);
-
-    const nextMcp = presetMcpServerIds(preset).length > 0;
-    setUseMcp(nextMcp);
-    try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(nextMcp)); } catch { /* ignore */ }
-
-    // Choosing a preset from the Chat composer is an explicit user action, just
-    // like choosing a different model. Apply the target state immediately: live
-    // request-time changes take effect on the next request; load-time changes
-    // trigger a reload so the running backend is actually using the selected
-    // preset instead of merely linking it for later.
-    try {
-      if (currentCapability === 'image') {
-        imageSettingsTouchedRef.current = false;
-        imageSettingsCommittedRef.current = false;
-        setImageSettings(imageDefaultsForModel(
-          currentLoadedModel,
-          currentKnownModelInfo,
-          preset.recipe_options as Record<string, unknown> | undefined,
-        ));
-        setImageMode('generate');
-      }
-
-      if (currentLoadedModel && changeKind === 'reload') {
-        await api.reloadModel(
-          targetName,
-          Object.keys(preset.recipe_options || {}).length > 0
-            ? preset.recipe_options as Record<string, unknown>
-            : undefined,
-          currentKnownModelInfo || currentCustomModelInfo || null,
-        );
-        await Promise.resolve(onRefresh());
-      }
-
-      if (currentLoadedModel) setRunningPreset(targetName, preset.id);
-      setPresetPickerOpen(false);
-      setPresetPickerQuery('');
-    } catch (err) {
-      setPresetPickerOpen(true);
-      setPresetPickerError(friendlyErrorMessage(err));
-    } finally {
-      setPresetPickerApplying(null);
-    }
-  }, [
-    currentCapability,
-    currentCustomModelInfo,
-    currentKnownModelInfo,
-    currentLoadedModel,
-    currentModel,
-    currentPreset,
-    onRefresh,
-    presetPickerApplying,
-    storageScope,
-  ]);
-
   const modeSupportsChatCompletions = currentCapability === 'chat' || currentCapability === 'omni';
   const modeSupportsMcp = modeSupportsChatCompletions;
   const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
+
+  const persistMcpEnabled = useCallback((next: boolean) => {
+    setUseMcp(next);
+    try { localStorage.setItem(scopedKey(MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
+  }, []);
+
+  const persistMcpSelection = useCallback((serverIds: string[], toolNames: string[] | null) => {
+    const uniqueServerIds = [...new Set(serverIds.filter(Boolean))].slice(0, MAX_MCP_SERVER_SELECTION);
+    const uniqueToolNames = toolNames === null ? null : [...new Set(toolNames.filter(Boolean))];
+    setSelectedMcpServerIds(uniqueServerIds);
+    setSelectedMcpToolNames(uniqueToolNames);
+    saveScopedStringArray(MCP_SERVER_IDS_KEY, uniqueServerIds);
+    saveScopedStringArray(MCP_TOOL_NAMES_KEY, uniqueToolNames);
+  }, []);
+
+  const startLemonadeToolPrompt = useCallback((text: string) => {
+    persistMcpEnabled(true);
+    persistMcpSelection([LEMONADE_MCP_SERVER_ID], null);
+    setInputValue(text);
+    inputRef.current?.focus();
+  }, [persistMcpEnabled, persistMcpSelection]);
+
+  const selectedMcpServerIdSet = useMemo(() => new Set(selectedMcpServerIds), [selectedMcpServerIds]);
+  const selectedMcpToolNameSet = useMemo(() => selectedMcpToolNames === null ? null : new Set(selectedMcpToolNames), [selectedMcpToolNames]);
+  const selectedMcpToolCount = useMemo(() => {
+    if (selectedMcpToolNames !== null) return selectedMcpToolNames.length;
+    const visibleToolCount = mcpToolNamesForServers(mcpOptions, selectedMcpServerIds).length;
+    if (visibleToolCount > 0) return visibleToolCount;
+    return selectedMcpServerIds.includes(LEMONADE_MCP_SERVER_ID) ? LEMONADE_MCP_TOOLS.length : 0;
+  }, [mcpOptions, selectedMcpServerIds, selectedMcpToolNames]);
+  const visibleMcpOptions = useMemo(
+    () => mcpOptions.filter(server => mcpPickerTab === 'lemonade' ? server.transport === 'builtin' : server.transport !== 'builtin'),
+    [mcpOptions, mcpPickerTab],
+  );
+
+  const loadMcpPickerOptions = useCallback(async () => {
+    setMcpPickerLoading(true);
+    setMcpPickerError('');
+    try {
+      setMcpOptions(await listMcpServerToolOptions());
+    } catch (error) {
+      setMcpPickerError(friendlyErrorMessage(error));
+    } finally {
+      setMcpPickerLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mcpPickerOpen || !modeSupportsMcp) return;
+    void loadMcpPickerOptions();
+  }, [loadMcpPickerOptions, mcpPickerOpen, modeSupportsMcp]);
+
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const root = addMenuRef.current;
+      if (!root || root.contains(event.target as Node)) return;
+      setAddMenuOpen(false);
+      setMcpPickerOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [addMenuOpen]);
+
+  const resetMcpSelection = useCallback(() => {
+    const nextIds = DEFAULT_MCP_SERVER_IDS;
+    persistMcpSelection(nextIds, null);
+    persistMcpEnabled(nextIds.length > 0);
+  }, [persistMcpEnabled, persistMcpSelection]);
+
+  const handleMcpServerToggle = useCallback((server: McpServerToolOption) => {
+    const selected = selectedMcpServerIdSet.has(server.id);
+    const nextIds = selected
+      ? selectedMcpServerIds.filter(id => id !== server.id)
+      : [...selectedMcpServerIds, server.id].slice(0, MAX_MCP_SERVER_SELECTION);
+    let nextToolNames = selectedMcpToolNames;
+    if (nextToolNames !== null) {
+      const serverToolNames = new Set(server.toolOptions.map(tool => tool.runtimeName));
+      nextToolNames = selected
+        ? nextToolNames.filter(name => !serverToolNames.has(name))
+        : [...new Set([...nextToolNames, ...serverToolNames])];
+    }
+    persistMcpSelection(nextIds, nextToolNames);
+    if (!useMcp && nextIds.length > 0) persistMcpEnabled(true);
+  }, [persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet, selectedMcpServerIds, selectedMcpToolNames, useMcp]);
+
+  const handleMcpToolToggle = useCallback((server: McpServerToolOption, runtimeName: string) => {
+    const allVisibleSelectedTools = mcpToolNamesForServers(mcpOptions, selectedMcpServerIds);
+    const base = selectedMcpToolNames === null ? allVisibleSelectedTools : selectedMcpToolNames;
+    const selected = base.includes(runtimeName);
+    const nextToolNames = selected
+      ? base.filter(name => name !== runtimeName)
+      : [...new Set([...base, runtimeName])];
+    const nextIds = selectedMcpServerIdSet.has(server.id)
+      ? selectedMcpServerIds
+      : [...selectedMcpServerIds, server.id].slice(0, MAX_MCP_SERVER_SELECTION);
+    persistMcpSelection(nextIds, nextToolNames);
+    if (!useMcp) persistMcpEnabled(true);
+  }, [mcpOptions, persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet, selectedMcpServerIds, selectedMcpToolNames, useMcp]);
+
+  const openMcpPicker = useCallback(() => {
+    mcpReturnFocusEntryRef.current = 'tools';
+    setMcpPickerOpen(true);
+  }, []);
+
+  const closeMcpPicker = useCallback(() => {
+    setMcpPickerOpen(false);
+    requestAnimationFrame(() => {
+      addMenuRef.current
+        ?.querySelector<HTMLButtonElement>(`[data-mcp-entry="${mcpReturnFocusEntryRef.current}"]`)
+        ?.focus();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!mcpPickerOpen) return;
+    requestAnimationFrame(() => mcpBackButtonRef.current?.focus());
+  }, [mcpPickerOpen]);
 
   const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
     if (!isLiveRecordingRef.current && liveFinalizeTimerRef.current === null) return;
@@ -1366,17 +1409,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     window.addEventListener('pointerdown', onPointerDown);
     return () => window.removeEventListener('pointerdown', onPointerDown);
   }, [modelPickerOpen]);
-
-  useEffect(() => {
-    if (!presetPickerOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      const root = presetPickerRef.current;
-      if (!root || root.contains(event.target as Node)) return;
-      setPresetPickerOpen(false);
-    };
-    window.addEventListener('pointerdown', onPointerDown);
-    return () => window.removeEventListener('pointerdown', onPointerDown);
-  }, [presetPickerOpen]);
 
   useEffect(() => {
     const selectedStillUsable = selectedModel && loadedModels.some(m => m.model_name === selectedModel && canSelectInComposer(m));
@@ -1426,14 +1458,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       loadedModels: currentLoaded,
       allModels: knownModelInfos,
       target,
-      pinnedNames: loadPinnedModelNames(storageScope),
+      pinnedNames: loadPinnedModelNames(),
       settings: globalModelSettings,
       unload: name => api.unloadModel(name),
       load: () => api.loadModel(modelName, recipeOptions, target),
     });
-  }, [globalModelSettings, knownModelInfos, loadedModels, storageScope]);
+  }, [globalModelSettings, knownModelInfos, loadedModels]);
 
-  const waitForExistingModelDownload = useCallback(async (modelName: string): Promise<boolean> => {
+  const waitForExistingModelDownload = useCallback(async (modelName: string, convoId: string): Promise<boolean> => {
     let sawDownload = false;
     const startedAt = Date.now();
 
@@ -1446,11 +1478,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         if (active.status === 'paused') {
           throw new Error(`Download for ${modelName} is paused. Resume it in Downloads, then send again.`);
         }
-        setModelPreparation({
-          modelName,
-          phase: 'waiting',
-          percent: Number.isFinite(active.percent) ? active.percent : undefined,
-        });
+        setModelPreparations(prev => ({
+          ...prev,
+          [convoId]: {
+            modelName,
+            phase: 'waiting',
+            percent: Number.isFinite(active.percent) ? active.percent : undefined,
+          },
+        }));
         await new Promise(resolve => window.setTimeout(resolve, 750));
         continue;
       }
@@ -1482,6 +1517,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const ensureChatModelReady = useCallback(async (
     modelName: string,
     initialInfo: ModelInfo | null,
+    convoId: string,
   ): Promise<ModelSnapshot> => {
     const loadedFrom = (models: LoadedModel[]) => models.find(
       model => model.model_name.toLowerCase() === modelName.toLowerCase(),
@@ -1490,14 +1526,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     let health = await api.health();
     let loaded = loadedFrom(health.all_models_loaded || []);
     if (loaded) {
-      saveLastReadyModelName(storageScope, loaded.model_name);
+      saveLastReadyModelName(loaded.model_name);
       setLastReadyModelName(loaded.model_name);
       return snapshotFromLoaded(loaded) || snapshotFromModelInfo(initialInfo) || snapshotFromName(modelName, [loaded])!;
     }
 
     let freshModels = await api.models(true).catch(() => ({ data: knownModelInfos }));
     let info = findModelInfoByName(freshModels.data, modelName) || initialInfo;
-    const existingFinished = await waitForExistingModelDownload(modelName);
+    const existingFinished = await waitForExistingModelDownload(modelName, convoId);
     if (existingFinished) {
       freshModels = await api.models(true).catch(() => freshModels);
       info = findModelInfoByName(freshModels.data, modelName) || info;
@@ -1507,16 +1543,19 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       let pullError: Error | null = null;
       let pullCompleted = false;
       downloadStore.markLocal(modelName, 'downloading', 'model');
-      setModelPreparation({ modelName, phase: 'downloading', percent: 0 });
+      setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'downloading', percent: 0 } }));
 
       await api.pullModel(modelName, {
         onProgress: data => {
           const item = downloadStore.upsertFromPull(modelName, data as Record<string, unknown>, 'model');
-          setModelPreparation({
-            modelName,
-            phase: 'downloading',
-            percent: item?.percent ?? (typeof data.percent === 'number' ? data.percent : undefined),
-          });
+          setModelPreparations(prev => ({
+            ...prev,
+            [convoId]: {
+              modelName,
+              phase: 'downloading',
+              percent: item?.percent ?? (typeof data.percent === 'number' ? data.percent : undefined),
+            },
+          }));
         },
         onComplete: data => {
           pullCompleted = true;
@@ -1544,21 +1583,21 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       }
     }
 
-    setModelPreparation({ modelName, phase: 'loading', percent: 100 });
+    setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'loading', percent: 100 } }));
     await loadModelWithPolicy(modelName, info || initialInfo);
     await Promise.resolve(onRefresh());
     health = await api.health();
     loaded = loadedFrom(health.all_models_loaded || []);
     if (!loaded) throw new Error(`${modelName} was downloaded but did not become ready for chat.`);
 
-    saveLastReadyModelName(storageScope, loaded.model_name);
+    saveLastReadyModelName(loaded.model_name);
     setLastReadyModelName(loaded.model_name);
     setFallbackModelOverride(null);
     onModelSelect(loaded.model_name);
     return snapshotFromLoaded(loaded)
       || snapshotFromModelInfo(info || initialInfo)
       || snapshotFromName(modelName, [loaded])!;
-  }, [knownModelInfos, loadModelWithPolicy, onModelSelect, onRefresh, storageScope, waitForExistingModelDownload]);
+  }, [knownModelInfos, loadModelWithPolicy, onModelSelect, onRefresh, waitForExistingModelDownload]);
 
   const speakWithPinnedTts = useCallback(async (text: string, source: 'assistant' | 'user', force = false) => {
     const trimmed = text.trim();
@@ -1578,10 +1617,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         (modelInfo as any)?.recipe
         || ((Array.isArray(modelInfo?.recipes) && modelInfo?.recipes?.[0]) ? (modelInfo.recipes[0] as any).recipe : ''),
       ).toLowerCase();
-      const presetOptions = activePresetForModel(modelName).recipe_options;
+      const directOptions = loadModelTuning(modelName)?.recipe_options || {};
       const voice = modelRecipe.includes('openmoss')
-        ? String(presetOptions.voice || '')
-        : ttsVoiceFromRecipeOptions(presetOptions);
+        ? String(directOptions.voice || '')
+        : ttsVoiceFromRecipeOptions(directOptions);
       const audio = await api.textToSpeech(modelName, trimmed, voice);
       stopAutoSpeech();
       const player = new Audio(audio.url);
@@ -1596,7 +1635,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     } catch (err) {
       console.warn(`Could not play ${source} text with TTS model:`, err);
     }
-  }, [knownModelInfos, loadModelWithPolicy, loadedModels, presetVersion, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
+  }, [knownModelInfos, loadModelWithPolicy, loadedModels, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
 
   // Streaming hook — owns token buffer, flush interval, abort controllers
   const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => {
@@ -1651,12 +1690,23 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   // Derived: is the CURRENT conversation streaming?
   const currentStream = activeId ? streaming.getStream(activeId) : undefined;
   const isStreaming = !!currentStream;
+  const modelPreparation = activeId ? modelPreparations[activeId] || null : null;
+  const capabilityBusy = activeId ? capabilityBusyConvoIds.has(activeId) : false;
   const isBusy = isStreaming || capabilityBusy || isLiveRecording || modelPreparation !== null;
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
   const streamingToolStatus = currentStream?.toolStatus || '';
   const streamingToolCalls = currentStream?.toolCalls || [];
   const currentLiveStats = activeId ? streaming.getLiveStats(activeId) : undefined;
+
+  const clearModelPreparation = useCallback((convoId: string) => {
+    setModelPreparations(prev => {
+      if (!prev[convoId]) return prev;
+      const next = { ...prev };
+      delete next[convoId];
+      return next;
+    });
+  }, []);
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
@@ -1711,14 +1761,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   // Persist conversations to localStorage only when the user explicitly opted in.
   useEffect(() => {
-    saveConversations(conversations, persistHistory, storageScope);
-    try { localStorage.setItem(scopedKey(storageScope, PERSIST_KEY), String(persistHistory)); } catch { /* ignore */ }
-  }, [conversations, persistHistory, storageScope]);
+    saveConversations(conversations, persistHistory);
+    try { localStorage.setItem(storageKey('persist_conversations'), String(persistHistory)); } catch { /* ignore */ }
+  }, [conversations, persistHistory]);
 
   // Persist active conversation id
   useEffect(() => {
-    saveActiveId(activeId, persistHistory, storageScope);
-  }, [activeId, persistHistory, storageScope]);
+    saveActiveId(activeId, persistHistory);
+  }, [activeId, persistHistory]);
 
   // Active ID can point at stale/missing data after manual localStorage edits or migrations.
   useEffect(() => {
@@ -2050,7 +2100,7 @@ ${finalText}`
     audioFiles: File[],
     images: string[] = [],
   ) => {
-    setCapabilityBusy(true);
+    setCapabilityBusyConvoIds(prev => new Set(prev).add(convoId));
     try {
       if (model.capability === 'image') {
         if (!text) throw new Error('Image mode needs a text prompt.');
@@ -2144,7 +2194,7 @@ ${finalText}`
       } else if (model.capability === 'tts') {
         if (!text) throw new Error('TTS mode needs text to speak.');
         let targetModel = model.name;
-        let voice = ttsVoiceFromRecipeOptions(activePresetForModel(model.name).recipe_options);
+        let voice = ttsVoiceFromRecipeOptions(loadModelTuning(model.name)?.recipe_options || {});
         let speechOptions: Record<string, unknown> = {};
         let content = 'Generated speech audio from your text.';
         let reloadTargetAfterVoiceDesign = false;
@@ -2225,13 +2275,18 @@ ${finalText}`
         isError: true,
       });
     } finally {
-      setCapabilityBusy(false);
+      setCapabilityBusyConvoIds(prev => {
+        if (!prev.has(convoId)) return prev;
+        const next = new Set(prev);
+        next.delete(convoId);
+        return next;
+      });
     }
   }, [
     appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings,
     isOpenMossTts, knownModelInfos, loadedModels, model3dSettings, onRefresh,
     loadModelWithPolicy, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
-    presetVersion, speakWithPinnedTts, trackGeneratedMediaUrl,
+    speakWithPinnedTts, trackGeneratedMediaUrl,
   ]);
 
   const startAssistantResponse = useCallback(async (
@@ -2341,19 +2396,20 @@ ${finalText}`
     if (useMcp && modeSupportsMcp) {
       try {
         selectedMcpRuntime = await buildSelectedMcpRuntime(
-          presetMcpServerIds(currentPreset || DEFAULT_PRESET),
+          selectedMcpServerIds,
           {
             attachedImages: images || [],
             attachedAudioFiles: audioFiles,
             previousImages: collectConversationImages(priorMessages),
           },
+          selectedMcpToolNames || undefined,
         );
       } catch (err) {
         // MCP availability must never dead-end the chat composer. Surface the
         // failure, switch MCP off for this chat, and continue the same request
         // as a normal model completion without tools.
-        setUseMcp(false);
-        try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), 'false'); } catch { /* ignore */ }
+        persistMcpEnabled(false);
+        try { localStorage.setItem(scopedKey(MCP_ENABLED_KEY), 'false'); } catch { /* ignore */ }
         appendAssistantMessage(convoId, {
           content: friendlyChatError(`MCP setup failed and was switched off for this chat. Continuing without tools: ${friendlyErrorMessage(err)}`),
           model: modelSnapshot,
@@ -2370,8 +2426,6 @@ ${finalText}`
     const chatMessages: ChatMessage[] = [];
 
     const systemPrompts: string[] = [];
-    const presetSystemPrompt = systemPromptTextForPreset(currentPreset);
-    if (presetSystemPrompt) systemPrompts.push(presetSystemPrompt);
     if (toolRuntime?.systemPrompt) systemPrompts.push(toolRuntime.systemPrompt);
 
     if (systemPrompts.length > 0) {
@@ -2422,17 +2476,18 @@ ${finalText}`
     currentKnownModelInfo,
     imageMode,
     currentModel,
-    currentPreset,
     knownModelInfos,
     loadedModels,
     modeSupportsChatCompletions,
     modeSupportsMcp,
     canUseAudioInput,
+    persistMcpEnabled,
+    selectedMcpServerIds,
+    selectedMcpToolNames,
     supportsChatImageInput,
     runCapabilityRequest,
     speakWithPinnedTts,
     streaming,
-    storageScope,
     updateConversation,
     useMcp,
   ]);
@@ -2498,11 +2553,12 @@ ${finalText}`
         model: initialSnapshot,
         isError: true,
       });
+      requestAnimationFrame(() => inputRef.current?.focus());
       return;
     }
 
     try {
-      const preparedSnapshot = await ensureChatModelReady(currentModel, currentKnownModelInfo);
+      const preparedSnapshot = await ensureChatModelReady(currentModel, currentKnownModelInfo, convoId);
       updateConversation(convoId, conversation => ({
         ...conversation,
         model: preparedSnapshot,
@@ -2513,7 +2569,7 @@ ${finalText}`
         )),
         updatedAt: Date.now(),
       }));
-      setModelPreparation(null);
+      clearModelPreparation(convoId);
       await startAssistantResponse(
         convoId,
         preparedSnapshot,
@@ -2529,7 +2585,8 @@ ${finalText}`
         isError: true,
       });
     } finally {
-      setModelPreparation(null);
+      clearModelPreparation(convoId);
+      requestAnimationFrame(() => inputRef.current?.focus());
     }
   };
 
@@ -2717,8 +2774,12 @@ ${finalText}`
     setPendingAudioFiles([]);
   }, []);
 
-  const handlePersistenceToggle = useCallback(() => {
-    setPersistHistory(prev => !prev);
+  useEffect(() => {
+    const onPreferenceChange = (event: Event) => {
+      setPersistHistory((event as CustomEvent<boolean>).detail);
+    };
+    window.addEventListener(CHAT_HISTORY_PREFERENCE_EVENT, onPreferenceChange);
+    return () => window.removeEventListener(CHAT_HISTORY_PREFERENCE_EVENT, onPreferenceChange);
   }, []);
 
   const handleModelPickerUnload = useCallback(async (modelName: string, e: React.MouseEvent) => {
@@ -2734,6 +2795,20 @@ ${finalText}`
     }
   }, [modelPickerUnloading, onRefresh]);
 
+  const handleLoadedCardUnload = useCallback((modelName: string) => {
+    if (modelPickerUnloading) return;
+    setModelPickerUnloading(modelName);
+    void (async () => {
+      try {
+        await api.unloadModel(modelName);
+        await Promise.resolve(onRefresh());
+        setUnloadAnnouncement(`${modelName} unloaded`);
+      } finally {
+        setModelPickerUnloading(null);
+      }
+    })();
+  }, [modelPickerUnloading, onRefresh]);
+
   const handleModelPickerSelect = useCallback(async (option: ModelPickerOption) => {
     if (option.loaded) {
       setFallbackModelOverride(null);
@@ -2747,7 +2822,7 @@ ${finalText}`
       const configuredDefault = lemonadeDefaultModel(option.name);
       setFallbackModelOverride(option.name);
       if (configuredDefault) {
-        const preferred = savePreferredDefaultModelName(storageScope, configuredDefault.name);
+        const preferred = savePreferredDefaultModelName(configuredDefault.name);
         setPreferredDefaultModelName(preferred);
       }
       onModelSelect(option.name);
@@ -2764,6 +2839,8 @@ ${finalText}`
     }
     setModelPickerError(null);
     setModelPickerLoading(option.name);
+    setFallbackModelOverride(option.name);
+    onModelSelect(option.name);
     try {
       await loadModelWithPolicy(option.name, option.info || null);
       await Promise.resolve(onRefresh());
@@ -2772,11 +2849,14 @@ ${finalText}`
       setModelPickerOpen(false);
       setModelPickerQuery('');
     } catch (err) {
+      setFallbackModelOverride(null);
+      if (currentModel) onModelSelect(currentModel);
       setModelPickerError(friendlyErrorMessage(err));
+      setModelPickerOpen(true);
     } finally {
       setModelPickerLoading(null);
     }
-  }, [loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh, storageScope]);
+  }, [currentModel, loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh]);
 
   // ── Option select from assistant messages ───────────────────
 
@@ -2934,13 +3014,6 @@ ${finalText}`
           <p className="rail__empty">No conversations yet</p>
         )}
 
-        <div className="rail__privacy">
-          <label className="rail__privacy-toggle">
-            <input type="checkbox" checked={persistHistory} onChange={handlePersistenceToggle} />
-            <span>{accountSession.isGuest ? 'Shared guest history' : 'Private local history'} {persistHistory ? 'ON' : 'OFF'}</span>
-          </label>
-          <span className="rail__privacy-note">{describeSession(accountSession)} · Media is never persisted.</span>
-        </div>
       </aside>
 
       {/* Mobile bottom sheet for conversations */}
@@ -3023,7 +3096,10 @@ ${finalText}`
               loadedModels={loadedModels}
               currentModel={currentModel}
               onModelSelect={onModelSelect}
-              onChipClick={(text) => setInputValue(text)}
+              onOpenModelDetails={onOpenModelDetails}
+              onUnloadModel={handleLoadedCardUnload}
+              unloadingModel={modelPickerUnloading}
+              onChipClick={startLemonadeToolPrompt}
               customModelInfos={customModelInfos}
             />
           ) : (
@@ -3033,7 +3109,7 @@ ${finalText}`
                   key={i}
                   message={msg}
                   activeModel={currentModelSnapshot}
-                  userLabel={accountSession.isGuest ? 'Guest' : accountSession.name}
+                  userLabel="You"
                   defaultThinkingOpen={!globalModelSettings.collapseThinkingByDefault}
                   onOptionSelect={handleOptionSelect}
                   onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}
@@ -3150,7 +3226,7 @@ ${finalText}`
               <button
                 type="button"
                 className="composer__model-button"
-                onClick={() => { setModelPickerOpen(v => !v); setPresetPickerOpen(false); setModelPickerError(null); }}
+                onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
                 aria-haspopup="listbox"
                 aria-expanded={modelPickerOpen}
               >
@@ -3199,7 +3275,7 @@ ${finalText}`
                           type="button"
                           className="composer__model-option"
                           onClick={() => handleModelPickerSelect(option)}
-                          disabled={!!modelPickerLoading || modelPickerUnloading === option.name}
+                          disabled={modelPickerLoading === option.name || modelPickerUnloading === option.name}
                           role="option"
                           aria-selected={option.name === currentModel}
                         >
@@ -3220,75 +3296,24 @@ ${finalText}`
                             type="button"
                             className="composer__model-option-unload"
                             onClick={(e) => handleModelPickerUnload(option.name, e)}
-                            disabled={!!modelPickerUnloading}
-                            aria-label={`Unload ${option.name}`}
+                            disabled={!!modelPickerUnloading || !!modelPickerLoading}
+                            aria-label={`Eject model ${option.name}`}
+                            title="Eject model"
                           >
-                            {modelPickerUnloading === option.name ? '…' : '×'}
+                            {modelPickerUnloading === option.name ? '…' : <Icon name="eject" size={16} aria-hidden="true" />}
                           </button>
                         )}
                       </div>
                     ))}
                     {modelPickerOptions.length === 0 && <div className="composer__model-empty">No matching models</div>}
                   </div>
+                  {modelPickerLoading && <div className="composer__model-loading-bar">Loading {modelPickerLoading}…</div>}
                   {modelPickerError && <div className="composer__model-error">{modelPickerError}</div>}
                 </div>
               )}
             </div>
           )}
-          {currentPreset && currentModel && currentCapability !== 'image' && (
-            <div className="composer__preset-picker" ref={presetPickerRef}>
-              <button
-                type="button"
-                className="composer__preset-badge composer__preset-badge--interactive"
-                onClick={() => { setPresetPickerOpen(v => !v); setModelPickerOpen(false); }}
-                title={`Active preset for this model. Prompt: ${systemPromptNameForPreset(currentPreset)}. MCP: ${presetMcpDisplayText(currentPreset || DEFAULT_PRESET)}. Click to change preset.`}
-                aria-haspopup="listbox"
-                aria-expanded={presetPickerOpen}
-              >
-                <PresetIcon preset={currentPreset} /> Preset: {currentPreset.name}
-                <span className="composer__model-button-caret">▾</span>
-              </button>
-              {presetPickerOpen && (
-                <div className="composer__model-menu composer__preset-menu" role="dialog" aria-label="Search presets">
-                  <label className="composer__model-search">
-                    <Icon name="search" size={14} />
-                    <input
-                      autoFocus
-                      value={presetPickerQuery}
-                      placeholder="Search presets…"
-                      onChange={e => setPresetPickerQuery(e.target.value)}
-                    />
-                  </label>
-                  <div className="composer__model-results" role="listbox">
-                    {presetPickerOptions.map(preset => {
-                      const isActive = preset.id === currentPreset.id;
-                      return (
-                        <button
-                          type="button"
-                          key={preset.id}
-                          className={`composer__model-option${isActive ? ' is-active' : ''}`}
-                          onClick={() => handlePresetPickerSelect(preset)}
-                          disabled={!!presetPickerApplying}
-                          role="option"
-                          aria-selected={isActive}
-                        >
-                          <PresetIcon preset={preset} />
-                          <span className="composer__model-option-text">
-                            <strong>{preset.name}</strong>
-                            <span>{preset.description || 'No description'} · Prompt: {systemPromptNameForPreset(preset)} · MCP {presetMcpDisplayText(preset)}</span>
-                          </span>
-                          {presetPickerApplying === preset.id && <span className="composer__model-option-loading">Applying…</span>}
-                        </button>
-                      );
-                    })}
-                    {presetPickerOptions.length === 0 && <div className="composer__model-empty">No matching presets</div>}
-                  </div>
-                  {presetPickerError && <div className="composer__model-error">{presetPickerError}</div>}
-                </div>
-              )}
-            </div>
-          )}
-          {currentPreset && currentModel && currentCapability !== 'image' && (
+          {currentModel && currentCapability !== 'image' && (
             <button
               type="button"
               className="composer__tools-toggle composer__effective-settings"
@@ -3300,21 +3325,6 @@ ${finalText}`
             </button>
           )}
           <button
-            className={`composer__tools-toggle ${useMcp && modeSupportsMcp ? 'composer__tools-toggle--active' : ''}`}
-            onClick={() => {
-              const next = !useMcp;
-              setUseMcp(next);
-              try { localStorage.setItem(scopedKey(storageScope, MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
-            }}
-            disabled={!modeSupportsMcp}
-            title={modeSupportsMcp
-              ? (useMcp ? `MCP enabled (${presetMcpDisplayText(currentPreset || DEFAULT_PRESET)}) — click to disable for this chat` : 'Enable the MCP servers selected by this preset')
-              : 'MCP is only available for chat-completion models'}
-            aria-pressed={useMcp && modeSupportsMcp}
-          >
-            <Icon name="plug" size={13} /> MCP {useMcp && modeSupportsMcp ? presetMcpServerIds(currentPreset || DEFAULT_PRESET).length : 'OFF'}
-          </button>
-          <button
             className={`composer__tools-toggle ${showInlineLogs ? 'composer__tools-toggle--active' : ''}`}
             onClick={() => setShowInlineLogs(v => !v)}
             aria-pressed={showInlineLogs}
@@ -3323,14 +3333,17 @@ ${finalText}`
             <Icon name="logs" size={13} /> Logs
           </button>
         </div>
-        {currentModel && currentPreset && (
+        {currentModel && (
           <EffectiveSettingsModal
             open={effectiveSettingsOpen}
             onClose={() => setEffectiveSettingsOpen(false)}
             modelName={currentModel}
             modelInfo={currentKnownModelInfo || currentCustomModelInfo || null}
-            preset={currentPreset}
             recipe={currentRecipe}
+            mcpEnabled={useMcp}
+            mcpServerIds={selectedMcpServerIds}
+            fallbackCtxSize={serverDefaultCtxSize}
+            loadedModel={currentLoadedModel}
             isModelLoaded={!!currentLoadedModel}
             onReload={async () => {
               await api.reloadModel(currentModel, undefined, currentKnownModelInfo || currentCustomModelInfo || null);
@@ -3676,31 +3689,194 @@ ${finalText}`
           </div>
         )}
         <div className="composer__bar">
-          <button
-            className="composer__attach"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!canAttach || !currentModel || isBusy || imageAttachmentLimitReached}
-            title={isOpenMossCloneMode
-              ? 'Attach WAV voice sample'
-              : currentCapability === 'model3d'
-                ? 'Attach reference image'
-                : acceptsImageAttachments && acceptsAudioAttachments
-                  ? 'Attach image or audio'
-                  : acceptsImageAttachments
-                    ? 'Attach image'
-                    : 'Attach audio'}
-            aria-label={isOpenMossCloneMode
-              ? 'Attach WAV voice sample'
-              : currentCapability === 'model3d'
-                ? 'Attach reference image'
-                : acceptsImageAttachments && acceptsAudioAttachments
-                  ? 'Attach image or audio'
-                  : acceptsImageAttachments
-                    ? 'Attach image'
-                    : 'Attach audio'}
-          >
-            <Icon name="paperclip" size={16} />
-          </button>
+          <div className="composer__add" ref={addMenuRef}>
+            <button
+              className="composer__attach composer__add-trigger"
+              onClick={() => {
+                setAddMenuOpen(open => {
+                  const next = !open;
+                  if (!next) setMcpPickerOpen(false);
+                  return next;
+                });
+              }}
+              disabled={!currentModel || isBusy || (!modeSupportsMcp && (!canAttach || imageAttachmentLimitReached))}
+              title="Add files, photos, or tools"
+              aria-label="Add files, photos, or tools"
+              aria-haspopup={mcpPickerOpen ? 'dialog' : 'menu'}
+              aria-expanded={addMenuOpen}
+            >
+              <Icon name="plus" size={18} />
+            </button>
+            {addMenuOpen && !mcpPickerOpen && (
+              <div className="composer__add-menu" role="menu" aria-label="Add to chat">
+                <button
+                  type="button"
+                  className="composer__add-row"
+                  role="menuitem"
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                    setAddMenuOpen(false);
+                  }}
+                  disabled={!canAttach || !currentModel || isBusy || imageAttachmentLimitReached}
+                >
+                  <span className="composer__add-icon"><Icon name="paperclip" size={16} /></span>
+                  <span className="composer__add-text">
+                    <strong>Add photos & files</strong>
+                    <small>{isOpenMossCloneMode
+                      ? 'Upload a WAV voice sample'
+                      : currentCapability === 'model3d'
+                        ? 'Upload a reference image'
+                        : acceptsImageAttachments && acceptsAudioAttachments
+                          ? 'Upload images or audio'
+                          : acceptsImageAttachments
+                            ? 'Upload images'
+                            : acceptsAudioAttachments
+                              ? 'Upload audio'
+                              : 'Not available for this model'}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={`composer__add-row${mcpPickerOpen ? ' is-active' : ''}`}
+                  role="menuitem"
+                  data-mcp-entry="tools"
+                  onClick={openMcpPicker}
+                  disabled={!modeSupportsMcp}
+                  aria-label="Tools"
+                  aria-haspopup="dialog"
+                >
+                  <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
+                  <span className="composer__add-text">
+                    <strong>Tools</strong>
+                    <small>{useMcp
+                      ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
+                      : 'Lemonade tools and external MCP servers'}</small>
+                  </span>
+                </button>
+              </div>
+            )}
+            {addMenuOpen && mcpPickerOpen && (
+              <div
+                className="composer__mcp-modal"
+                onMouseDown={event => {
+                  if (event.target === event.currentTarget) closeMcpPicker();
+                }}
+              >
+                <div
+                  className="composer__mcp-menu composer__mcp-menu--modal"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="composer-mcp-dialog-title"
+                  onKeyDown={event => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      closeMcpPicker();
+                    }
+                  }}
+                >
+                  <button ref={mcpBackButtonRef} type="button" className="composer__mcp-back" onClick={closeMcpPicker} aria-label="Back to add to chat options">
+                    <span aria-hidden="true">←</span>
+                    <span>Back</span>
+                  </button>
+                  <div className="composer__mcp-header">
+                    <label className="composer__mcp-master">
+                      <input
+                        type="checkbox"
+                        checked={useMcp && modeSupportsMcp}
+                        disabled={!modeSupportsMcp}
+                        onChange={event => persistMcpEnabled(event.target.checked)}
+                      />
+                      <span>
+                        <strong id="composer-mcp-dialog-title">Tools for this chat</strong>
+                        <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
+                      </span>
+                    </label>
+                    <button type="button" className="btn btn--ghost" onClick={resetMcpSelection}>Built-in default</button>
+                  </div>
+                  <div className="composer__mcp-tabs" role="tablist" aria-label="Tool providers">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={mcpPickerTab === 'lemonade'}
+                      className={`composer__mcp-tab${mcpPickerTab === 'lemonade' ? ' is-active' : ''}`}
+                      onClick={() => setMcpPickerTab('lemonade')}
+                    >
+                      Lemonade tools
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={mcpPickerTab === 'external'}
+                      className={`composer__mcp-tab${mcpPickerTab === 'external' ? ' is-active' : ''}`}
+                      onClick={() => setMcpPickerTab('external')}
+                    >
+                      External MCP servers
+                    </button>
+                  </div>
+                  {mcpPickerLoading ? (
+                    <p className="composer__mcp-empty">Loading MCP tools…</p>
+                  ) : mcpPickerError ? (
+                    <div className="composer__mcp-error" role="alert">{mcpPickerError}</div>
+                  ) : visibleMcpOptions.length === 0 ? (
+                    <p className="composer__mcp-empty">
+                      {mcpPickerTab === 'external' ? 'No external MCP servers are connected.' : 'No Lemonade tools available.'}
+                    </p>
+                  ) : (
+                    <div className="composer__mcp-servers">
+                      {visibleMcpOptions.map(server => {
+                        const serverSelected = selectedMcpServerIdSet.has(server.id);
+                        return (
+                          <section key={server.id} className={`composer__mcp-server${serverSelected ? ' is-selected' : ''}`}>
+                            <label className="composer__mcp-server-row">
+                              <input
+                                type="checkbox"
+                                checked={serverSelected}
+                                disabled={!useMcp || (!serverSelected && selectedMcpServerIds.length >= MAX_MCP_SERVER_SELECTION)}
+                                onChange={() => handleMcpServerToggle(server)}
+                              />
+                              <span className={`composer__mcp-status${server.connected ? ' is-connected' : ''}`} aria-hidden="true" />
+                              <span className="composer__mcp-server-text">
+                                <strong>{server.name}</strong>
+                                <small>{server.transport === 'builtin'
+                                  ? 'Built in'
+                                  : `${server.transport === 'streamable-http' ? 'HTTP endpoint' : 'Local process'} · ${server.status}`} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
+                              </span>
+                            </label>
+                            {serverSelected && (
+                              <div className="composer__mcp-tools">
+                                {server.toolOptions.length === 0 ? (
+                                  <p className="composer__mcp-empty">No tools discovered for this server.</p>
+                                ) : server.toolOptions.map(tool => {
+                                  const toolSelected = selectedMcpToolNameSet === null || selectedMcpToolNameSet.has(tool.runtimeName);
+                                  return (
+                                    <label key={tool.runtimeName} className="composer__mcp-tool" title={tool.description || tool.title || tool.name}>
+                                      <input
+                                        type="checkbox"
+                                        checked={toolSelected}
+                                        disabled={!useMcp}
+                                        onChange={() => handleMcpToolToggle(server, tool.runtimeName)}
+                                      />
+                                      <span>
+                                        <strong>{tool.title || tool.name}</strong>
+                                        {tool.runtimeName !== tool.name && <small>{tool.runtimeName}</small>}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </section>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="composer__mcp-footer">
+                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>Select all tools for selected servers</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -3763,36 +3939,39 @@ interface EmptyStateProps {
   loadedModels: LoadedModel[];
   currentModel: string | null;
   onModelSelect: (model: string) => void;
+  onOpenModelDetails: (model: string) => void;
+  onUnloadModel: (model: string) => void;
+  unloadingModel: string | null;
   onChipClick: (text: string) => void;
   customModelInfos: ModelInfo[];
 }
 
-const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onChipClick, customModelInfos }) => (
+const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onOpenModelDetails, onUnloadModel, unloadingModel, onChipClick, customModelInfos }) => (
   <>
     <div className="hero">
-      <h1 className="hero__title">What's on your mind?</h1>
+      <h1 className="hero__title">Get to know Lemonade</h1>
       <p className="hero__subtitle">
         {loadedModels.length > 0
-          ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} loaded. Choose the right mode, then start fresh.`
-          : 'Ask anything. Lemonade will reuse your last ready chat model or download the selected default automatically.'}
+          ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} ready. Ask a question or explore what Lemonade can do.`
+          : 'Ask a question to learn how Lemonade works and get started with your first model.'}
       </p>
 
       <div className="chips" role="list">
-        <button className="chip" role="listitem" onClick={() => onChipClick('Summarize this document for me')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="file" size={16} /></span>
-          Summarize a doc
+        <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
+          <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
+          How do I use Lemonade?
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('Review this code and suggest improvements')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="code" size={16} /></span>
-          Code review
+        <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
+          <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
+          How do I add a model?
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('Create an image of a cozy lemonade stand at sunset')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="image" size={16} /></span>
-          Create image
+        <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
+          <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
+          What are Lemonade tools?
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('Turn this text into natural speech')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="tts" size={16} /></span>
-          Text to speech
+        <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
+          <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
+          What can my hardware run?
         </button>
       </div>
     </div>
@@ -3812,11 +3991,18 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
             const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
             const isActive = currentModel === m.model_name;
             return (
-              <div className="active-card" key={m.model_name}>
+              <article className="active-card" key={m.model_name}>
                 <div className="active-card__head">
                   <div>
                     <div className="active-card__name-row">
-                      <div className="active-card__name">{m.model_name}</div>
+                      <button
+                        type="button"
+                        className="active-card__name"
+                        onClick={() => onOpenModelDetails(m.model_name)}
+                        title={`Open ${m.model_name} in Models`}
+                      >
+                        {m.model_name}
+                      </button>
                       <CopyInlineButton text={m.model_name} title="Copy model name" />
                     </div>
                     <div className="active-card__meta">{m.recipe || 'runtime'} · {m.checkpoint || 'default'}</div>
@@ -3826,16 +4012,32 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
                 <div className="active-card__badges">
                   <span className={`cap-badge cap-badge--${capabilityBadge(cap)}`}><ModelModeIcons capability={cap} audioInput={audioInput} size={13} /> {modeLabel}</span>
                 </div>
-                {isActive ? (
-                  <span className="active-card__status">● Active {modeLabel} mode</span>
-                ) : selectable ? (
-                  <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
-                    Use in {modeLabel} mode ▸
+                <div className="active-card__actions">
+                  {isActive ? (
+                    <span className="active-card__status">● Active {modeLabel} mode</span>
+                  ) : selectable ? (
+                    <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
+                      Use in {modeLabel}
+                    </button>
+                  ) : (
+                    <span className="active-card__status active-card__status--muted">Utility model only</span>
+                  )}
+                </div>
+                <div className="active-card__footer">
+                  <button type="button" className="active-card__details" onClick={() => onOpenModelDetails(m.model_name)}>
+                    View details
                   </button>
-                ) : (
-                  <span className="active-card__status active-card__status--muted">Utility model only</span>
-                )}
-              </div>
+                  <button
+                    type="button"
+                    className="active-card__eject"
+                    onClick={() => onUnloadModel(m.model_name)}
+                    disabled={unloadingModel === m.model_name}
+                    title={`Unload ${m.model_name}`}
+                  >
+                    {unloadingModel === m.model_name ? 'Unloading…' : 'Unload'}
+                  </button>
+                </div>
+              </article>
             );
           })}
         </div>

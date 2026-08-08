@@ -1,5 +1,5 @@
 import type { LoadedModel, ModelInfo } from '../../api';
-import { scopedStorageKey } from '../accounts/accountStore';
+import { storageKey } from '../../storage';
 
 export const GLOBAL_MODEL_SETTINGS_EVENT = 'lemonade:global-model-settings-changed';
 
@@ -31,12 +31,12 @@ export const DEFAULT_GLOBAL_MODEL_SETTINGS: GlobalModelSettings = {
   lastAutomaticUpdateAt: null,
 };
 
-function settingsKey(scope: string): string {
-  return scopedStorageKey(scope, 'global_model_settings');
+function settingsKey(): string {
+  return storageKey('global_model_settings');
 }
 
-function pinnedModelsKey(scope: string): string {
-  return scopedStorageKey(scope, 'pinned_models');
+function pinnedModelsKey(): string {
+  return storageKey('pinned_models');
 }
 
 function finiteBudget(value: unknown): number {
@@ -68,27 +68,27 @@ export function sanitizeGlobalModelSettings(value: unknown): GlobalModelSettings
   };
 }
 
-export function loadGlobalModelSettings(scope: string): GlobalModelSettings {
+export function loadGlobalModelSettings(): GlobalModelSettings {
   try {
-    const raw = localStorage.getItem(settingsKey(scope));
+    const raw = localStorage.getItem(settingsKey());
     return raw ? sanitizeGlobalModelSettings(JSON.parse(raw)) : { ...DEFAULT_GLOBAL_MODEL_SETTINGS };
   } catch {
     return { ...DEFAULT_GLOBAL_MODEL_SETTINGS };
   }
 }
 
-export function saveGlobalModelSettings(scope: string, settings: GlobalModelSettings): GlobalModelSettings {
+export function saveGlobalModelSettings(settings: GlobalModelSettings): GlobalModelSettings {
   const sanitized = sanitizeGlobalModelSettings(settings);
-  try { localStorage.setItem(settingsKey(scope), JSON.stringify(sanitized)); } catch { /* best effort */ }
+  try { localStorage.setItem(settingsKey(), JSON.stringify(sanitized)); } catch { /* best effort */ }
   try {
-    window.dispatchEvent(new CustomEvent(GLOBAL_MODEL_SETTINGS_EVENT, { detail: { scope, settings: sanitized } }));
+    window.dispatchEvent(new CustomEvent(GLOBAL_MODEL_SETTINGS_EVENT, { detail: { settings: sanitized } }));
   } catch { /* best effort */ }
   return sanitized;
 }
 
-export function loadPinnedModelNames(scope: string): string[] {
+export function loadPinnedModelNames(): string[] {
   try {
-    const raw = localStorage.getItem(pinnedModelsKey(scope));
+    const raw = localStorage.getItem(pinnedModelsKey());
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed)
       ? Array.from(new Set(parsed.map(value => String(value).trim()).filter(Boolean)))
@@ -98,9 +98,9 @@ export function loadPinnedModelNames(scope: string): string[] {
   }
 }
 
-export function savePinnedModelNames(scope: string, names: Iterable<string>): string[] {
+export function savePinnedModelNames(names: Iterable<string>): string[] {
   const normalized = Array.from(new Set([...names].map(name => String(name).trim()).filter(Boolean)));
-  try { localStorage.setItem(pinnedModelsKey(scope), JSON.stringify(normalized)); } catch { /* best effort */ }
+  try { localStorage.setItem(pinnedModelsKey(), JSON.stringify(normalized)); } catch { /* best effort */ }
   return normalized;
 }
 

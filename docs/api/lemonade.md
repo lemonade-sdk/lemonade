@@ -12,6 +12,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
 | `GET` | [`/v1/downloads`](#get-v1downloads) | List server-owned model download jobs |
 | `POST` | [`/v1/downloads/control`](#post-v1downloadscontrol) | Pause, cancel, or remove server-owned model download jobs |
+| `GET` | [`/v1/registry/search`](#get-v1registrysearch) | Search Hugging Face or ModelScope for model repositories |
 | `GET` | [`/v1/pull/variants`](#get-v1pullvariants) | Enumerate GGUF variants for a Hugging Face checkpoint |
 | `POST` | [`/v1/delete`](#post-v1delete) | Delete a model |
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
@@ -272,22 +273,68 @@ The `recipe` field defines which software framework and device will be used to l
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | Namespaced [Lemonade Server model name](https://lemonade-server.ai/models.html) to register and install. |
-| `checkpoint` | Yes | HuggingFace checkpoint to install. |
 | `recipe` | Yes | Lemonade API recipe to load the model with. |
+| `checkpoint` | Yes`*` | HuggingFace "main" checkpoint to install. |
+| `checkpoints` | No | HuggingFace checkpoints to install, for multi-checkpoint models. |
 | `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). Adds 'reasoning' label. |
 | `vision` | No | Whether the model has vision capabilities for processing images (default: false). Adds 'vision' label. |
 | `embedding` | No | Whether the model is an embedding model (default: false). Adds 'embeddings' label. |
 | `reranking` | No | Whether the model is a reranking model (default: false). Adds 'reranking' label. |
 | `mmproj` | No | Multimodal Projector (mmproj) file to use for vision models. |
 
+A model definition requires at least a `main` checkpoint. This can be either
+be specified with the `checkpoint` parameter, or a `main` key in the
+`checkpoints` dict.
+
+Other checkpoint types may also be specified depending on the model type.
+This list is not exhaustive, and may change or grow over time as models
+and backends evolve:
+* `mmproj` - used by vision models, if not already embedded in `main`
+* `draft` - used by dflash, eagle, and multitoken-prediction, if not already embedded in `main`
+* `text_encoder` - text-to-token encoder used by image generation
+* `vae` - variational autoencoder used by image generation
+
 Example request:
 
 ```bash
+# Single checkpoint
 curl -X POST http://localhost:13305/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "user.Phi-4-Mini-GGUF",
     "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M",
+    "recipe": "llamacpp"
+  }'
+```
+
+Instead of defining a model by `checkpoint` and `mmproj`, a model can also
+be defined with a dict of checkpoint types and paths. These requests do the
+same thing, but the syntax for pulling the mmproj differs.
+
+```bash
+# Multi-checkpoint
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.My-Gemma3",
+    "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+    "mmproj": "mmproj-model-f16.gguf",
+	"vision": true,
+    "recipe": "llamacpp"
+  }'
+```
+
+```bash
+# Multi-checkpoint
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.My-Gemma3",
+    "checkpoints": {
+        "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+        "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"
+    },
+	"vision": true,
     "recipe": "llamacpp"
   }'
 ```
@@ -522,6 +569,68 @@ If the job is already missing and `action` is `remove`, the endpoint returns:
 ```json
 {"status":"ok","missing":true}
 ```
+
+## `GET /v1/registry/search`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Search a remote model registry (Hugging Face or ModelScope) for repositories matching a text query. This endpoint returns **candidate repositories** based on registry metadata; it does not verify that a repository contains servable files. The desktop app's Model Manager follows up with [`/v1/pull/variants`](#get-v1pullvariants) on each candidate and only offers a download for repositories whose file listing passes that validation.
+
+Requires network access: returns 400 with code `lemond_offline` when the server is in offline mode.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `query` | Yes | Search text, minimum 3 characters after trimming. `q` is accepted as an alias. |
+| `source` | No | Registry to search: `huggingface` (default) or `modelscope`. Aliases `hf` and `ms` are accepted; the canonical name is echoed in the response. |
+| `limit` | No | Maximum number of results, an integer from 1 to 50. Default 12. |
+| `format` | No | The only accepted value is `gguf`. Biases search and ranking toward GGUF repositories and echoes `"format": "gguf"` in the response. |
+
+Example request:
+
+```bash
+curl 'http://localhost:13305/v1/registry/search?source=modelscope&query=qwen&format=gguf'
+```
+
+### Response
+
+```json
+{
+  "source": "modelscope",
+  "query": "qwen",
+  "format": "gguf",
+  "total": 128,
+  "results": [
+    {
+      "repository_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+      "display_name": "Qwen2.5-3B-Instruct-GGUF",
+      "source": "modelscope",
+      "repository_type": "model",
+      "description": "GGUF quantizations of Qwen2.5-3B-Instruct",
+      "tags": ["gguf", "chat"],
+      "task": "text-generation",
+      "downloads": 222500,
+      "likes": 12,
+      "has_gguf": true
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `source`, `query` | Echoed input (`source` canonicalized to `huggingface` or `modelscope`). |
+| `format` | Present only when `format=gguf` was requested. |
+| `total` | Total match count reported by the upstream registry; may exceed the number of returned results. |
+| `results[]` | Up to `limit` repositories, each with `repository_id`, `display_name`, `source`, `repository_type`, `description`, `tags`, `task`, `downloads`, `likes`, and `has_gguf`. `has_gguf` is a hint derived from registry metadata, not proof of a servable model — [`/v1/pull/variants`](#get-v1pullvariants) performs the authoritative file-level validation. |
+
+### Error responses
+
+| Status | Cause |
+|--------|-------|
+| 400 | `query` shorter than 3 characters, invalid `source`, `limit`, or `format`, or the server is in offline mode (`code: lemond_offline`). |
+| 429 | The upstream registry rate-limited the request. |
+| 502 | Other upstream transport or parsing failures; the body includes the upstream status code when available. |
 
 ## `GET /v1/pull/variants`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

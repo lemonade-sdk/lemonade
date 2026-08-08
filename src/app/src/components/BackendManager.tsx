@@ -1,18 +1,16 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { friendlyErrorMessage } from '../api';
 import {
-  PRESET_STORE_EVENT,
+  MODEL_CONFIGURATION_EVENT,
   BackendTuning,
   backendSupportsArgs,
   loadBackendTunings,
   resetBackendTuning,
   saveBackendTuning,
-} from '../presetStore';
+} from '../modelConfiguration';
 import { Icon, type IconName } from './Icon';
-import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
-import WorkspaceRailHeader from './WorkspaceRailHeader';
+import { WorkspaceCatalogLayout, WorkspaceCatalogSection } from './WorkspaceCatalogLayout';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspacePaneHeader } from './WorkspacePanels';
 
@@ -72,6 +70,7 @@ interface SystemInfoData {
 /** User-facing labels for recipes */
 const RECIPE_LABELS: Record<string, string> = {
   llamacpp:       'llama.cpp',
+  onnxruntime:    'ONNX Runtime',
   whispercpp:     'whisper.cpp',
   moonshine:      'Moonshine',
   'sd-cpp':       'stable-diffusion.cpp',
@@ -83,6 +82,41 @@ const RECIPE_LABELS: Record<string, string> = {
   thinksound:      'ThinkSound',
   openmoss:        'OpenMOSS TTS',
   trellis:         'TRELLIS.2',
+};
+
+const ENGINE_LOGO_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/engines/';
+
+/* plate 'dark' matches logos with a baked-in dark background fill; showName
+ * accompanies icon-only logos that don't spell out the engine name.
+ * stable_diffusion_cpp.png (near-square collage) and ryzen_ai_sw.png
+ * (gradient badge) are intentionally unmapped: they read badly at banner
+ * height, so those engines get the text plate instead. */
+type EngineLogo = { file: string; plate?: 'dark'; showName?: boolean };
+
+const ENGINE_LOGOS: Record<string, EngineLogo> = {
+  llamacpp:       { file: 'llama_cpp.png' },
+  onnxruntime:    { file: 'onnx_runtime.png' },
+  whispercpp:     { file: 'whisper_cpp.png', plate: 'dark' },
+  moonshine:      { file: 'moonshine.png', showName: true },
+  kokoro:         { file: 'kokoros.png' },
+  flm:            { file: 'fastflowlm.png' },
+  vllm:           { file: 'vllm.png' },
+  acestep:        { file: 'ace_step.png', plate: 'dark' },
+  openmoss:       { file: 'openmoss.png' },
+  trellis:        { file: 'trellis.png' },
+};
+
+/** User-facing labels for backend variants */
+const BACKEND_LABELS: Record<string, string> = {
+  cpu:      'CPU',
+  system:   'System',
+  vulkan:   'Vulkan',
+  rocm:     'ROCm',
+  cuda:     'CUDA',
+  metal:    'Metal',
+  npu:      'NPU',
+  directml: 'DirectML',
+  dml:      'DirectML',
 };
 
 /** Recipe → capability column for the matrix */
@@ -132,17 +166,6 @@ function isExperimentalBackend(recipe: string, recipeInfo: RecipeInfo, backendIn
 const DEVICE_ORDER = ['cpu', 'nvidia_gpu', 'amd_gpu', 'metal', 'amd_npu', 'gpu', 'accelerator', 'unknown'] as const;
 type DeviceKey = typeof DEVICE_ORDER[number];
 
-const DEVICE_LABELS: Record<DeviceKey, string> = {
-  cpu:         'CPU',
-  amd_gpu:     'GPU (AMD)',
-  nvidia_gpu:  'GPU (NVIDIA / CUDA)',
-  metal:       'GPU (Metal)',
-  amd_npu:     'NPU',
-  gpu:         'GPU',
-  accelerator: 'Accelerator',
-  unknown:     'Other device',
-};
-
 /** Backend → fallback row when the server does not expose BackendInfo.devices */
 const BACKEND_DEVICE: Record<string, DeviceKey> = {
   cpu:            'cpu',
@@ -169,10 +192,33 @@ const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS', '3D'] as const;
 
 type CapabilityCol = typeof CAPABILITY_COLS[number];
 type CellEntry = { recipe: string; backend: string; info: BackendInfo };
+type BackendCatalogVariant = CellEntry & { devices: DeviceKey[] };
+type BackendCatalogEntry = {
+  recipe: string;
+  variants: BackendCatalogVariant[];
+  devices: DeviceKey[];
+};
+type BackendCatalogSection = { capability: CapabilityCol; entries: BackendCatalogEntry[] };
 type BackendViewFilter = 'all' | 'installed' | 'available' | 'updates' | 'experimental';
 
+const CAPABILITY_LABELS: Record<CapabilityCol, string> = {
+  LLM: 'Language models',
+  Audio: 'Audio',
+  Image: 'Image generation',
+  TTS: 'Text to speech',
+  '3D': '3D generation',
+};
+
+const CAPABILITY_DESCRIPTIONS: Record<CapabilityCol, string> = {
+  LLM: 'Chat, completion, embedding, and reranking runtimes.',
+  Audio: 'Transcription and sound generation runtimes.',
+  Image: 'Image generation and editing runtimes.',
+  TTS: 'Text-to-speech runtimes.',
+  '3D': '3D asset generation runtimes.',
+};
+
 const BACKEND_VIEW_FILTERS: Array<[BackendViewFilter, string, string, IconName]> = [
-  ['all', 'All backends', 'Complete compatibility matrix', 'layers'],
+  ['all', 'All Backends', 'Complete compatibility matrix', 'layers'],
   ['installed', 'Installed', 'Ready on this machine', 'check'],
   ['available', 'Available', 'Ready to install', 'download'],
   ['updates', 'Updates', 'Newer runtime available', 'rotate-ccw'],
@@ -199,6 +245,152 @@ function backendDownloadMatches(download: DownloadListItem, recipe: string, back
 
 function backendProgressPercent(download: DownloadListItem): number {
   return Math.max(0, Math.min(100, Number.isFinite(download.percent) ? download.percent : 0));
+}
+
+type PendingBackendAction = {
+  isUpdate: boolean;
+  initialVersion: string;
+};
+
+type BackendSyncResult = {
+  state?: BackendInfo['state'];
+  version: string;
+  settled: boolean;
+  hadResponse: boolean;
+};
+
+const BACKEND_STATUS_RETRY_DELAYS_MS = [0, 250, 500, 1000, 2000, 4000, 8000] as const;
+
+class BackendDownloadMissingError extends Error {
+  constructor() {
+    super('Backend download disappeared before reaching a terminal state');
+    this.name = 'BackendDownloadMissingError';
+  }
+}
+
+function backendActionIsReflected(
+  info: BackendInfo | undefined,
+  action: PendingBackendAction | undefined,
+): boolean {
+  if (!info) return false;
+  if (info.state === 'installed') return true;
+  if (info.state !== 'update_available' || !action) return false;
+
+  if (!action.isUpdate) return true;
+  const currentVersion = cleanString(info.version);
+  return Boolean(currentVersion && currentVersion !== cleanString(action.initialVersion));
+}
+
+function waitForBackendDownloadTerminal(
+  recipe: string,
+  backend: string,
+  signal: AbortSignal,
+): Promise<DownloadListItem> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let sawDownload = false;
+    let unsubscribe: (() => void) | null = null;
+    let unsubscribeWhenReady = false;
+
+    const cleanup = () => {
+      signal.removeEventListener('abort', onAbort);
+      if (unsubscribe) unsubscribe();
+      else unsubscribeWhenReady = true;
+    };
+
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+
+    const onAbort = () => finish(() => {
+      const reason = signal.reason;
+      reject(reason instanceof Error ? reason : new Error('Backend download wait cancelled'));
+    });
+
+    const inspect = (items: DownloadListItem[]) => {
+      const item = items.find(download => backendDownloadMatches(download, recipe, backend));
+      if (!item) {
+        if (sawDownload) {
+          finish(() => reject(new BackendDownloadMissingError()));
+        }
+        return;
+      }
+      sawDownload = true;
+      if (isDownloadActive(item) || item.running === true) return;
+      if (item.status !== 'completed'
+        && item.status !== 'error'
+        && item.status !== 'cancelled'
+        && item.status !== 'paused') return;
+      finish(() => resolve(item));
+    };
+
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    unsubscribe = downloadStore.subscribe(inspect);
+    if (unsubscribeWhenReady) unsubscribe();
+  });
+}
+
+function buildBackendCatalog(cells: Map<string, CellEntry[]>): BackendCatalogSection[] {
+  const byCapability = new Map<CapabilityCol, Map<string, BackendCatalogEntry>>();
+
+  for (const [key, entries] of cells) {
+    const [device, capability] = key.split(':') as [DeviceKey, CapabilityCol];
+    const capabilityEntries = byCapability.get(capability) || new Map<string, BackendCatalogEntry>();
+    byCapability.set(capability, capabilityEntries);
+
+    for (const entry of entries) {
+      const existing = capabilityEntries.get(entry.recipe);
+      if (existing) {
+        if (!existing.devices.includes(device)) existing.devices.push(device);
+        const variant = existing.variants.find(item => item.backend === entry.backend);
+        if (variant) {
+          if (!variant.devices.includes(device)) variant.devices.push(device);
+        } else {
+          existing.variants.push({ ...entry, devices: [device] });
+        }
+      } else {
+        capabilityEntries.set(entry.recipe, {
+          recipe: entry.recipe,
+          variants: [{ ...entry, devices: [device] }],
+          devices: [device],
+        });
+      }
+    }
+  }
+
+  const stateRank: Record<BackendInfo['state'], number> = {
+    update_required: 0,
+    update_available: 1,
+    installed: 2,
+    action_required: 3,
+    installable: 4,
+    unsupported: 5,
+  };
+
+  const experimentalRank = (entry: BackendCatalogEntry): number =>
+    entry.variants.every(variant => variant.info.experimental) ? 1 : 0;
+
+  return CAPABILITY_COLS.map(capability => ({
+    capability,
+    entries: [...(byCapability.get(capability)?.values() || [])].sort((a, b) => (
+      experimentalRank(a) - experimentalRank(b)
+      || b.variants.length - a.variants.length
+      || (RECIPE_LABELS[a.recipe] || a.recipe).localeCompare(RECIPE_LABELS[b.recipe] || b.recipe)
+    )).map(entry => ({
+      ...entry,
+      variants: entry.variants.sort((a, b) => (
+        stateRank[a.info.state] - stateRank[b.info.state]
+        || a.backend.localeCompare(b.backend)
+      )),
+    })),
+  })).filter(section => section.entries.length > 0);
 }
 
 /* ── Helpers ─────────────────────────────────────────────── */
@@ -289,6 +481,44 @@ function canShowUninstall(info: BackendInfo): boolean {
     || info.state === 'update_available';
 }
 
+function releaseLink(info: BackendInfo): string {
+  const url = (info.release_url || '').trim();
+  if (!/^https?:\/\//.test(url)) return '';
+  const path = url.replace(/^https?:\/\//, '');
+  if (path.includes('//') || url.endsWith('/tag/')) return '';
+  return url;
+}
+
+function releaseVersion(url: string): string {
+  try {
+    const pathname = new URL(url).pathname;
+    const marker = '/releases/tag/';
+    const markerIndex = pathname.indexOf(marker);
+    if (markerIndex < 0) return '';
+    return decodeURIComponent(
+      pathname.slice(markerIndex + marker.length).replace(/\/$/, ''),
+    );
+  } catch {
+    return '';
+  }
+}
+
+function releaseLinkForVersion(url: string, version: string): string {
+  if (!url || !version) return '';
+  try {
+    const releaseUrl = new URL(url);
+    const marker = '/releases/tag/';
+    const markerIndex = releaseUrl.pathname.indexOf(marker);
+    if (markerIndex < 0) return '';
+    releaseUrl.pathname = `${releaseUrl.pathname.slice(0, markerIndex + marker.length)}${encodeURIComponent(version)}`;
+    releaseUrl.search = '';
+    releaseUrl.hash = '';
+    return releaseUrl.toString();
+  } catch {
+    return '';
+  }
+}
+
 interface BackendArgsDialogProps {
   backendKeyValue: string | null;
   tuning: BackendTuning | null;
@@ -356,7 +586,7 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
         </p>
         {tuning?.source === 'optimized' && (
           <p className="backend-args-dialog__notice" role="status">
-            AutoOpt last replaced this backend entry. Saving here changes it to a manual override.
+            These backend arguments were set by an optimizer. Saving here converts them to a manual override.
           </p>
         )}
         <label className="field__label" htmlFor="backend-args-value">Arguments</label>
@@ -409,15 +639,18 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [error, setError] = useState<string | null>(null);
   const [showTech, setShowTech] = useState(false);
   const [showUnsupported, setShowUnsupported] = useState(false);
+  const [showLogos, setShowLogos] = useState(true);
   const [viewFilter, setViewFilter] = useState<BackendViewFilter>('all');
-  const [railCollapsed, setRailCollapsed] = useState(false);
-  const mobileRail = useWorkspaceMobileRail();
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [backendTunings, setBackendTunings] = useState<Record<string, BackendTuning>>(loadBackendTunings);
   const [argsEditorKey, setArgsEditorKey] = useState<string | null>(null);
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const terminalBackendRefreshRef = useRef<Set<string>>(new Set());
+  const systemInfoRequestRef = useRef(0);
+  const pendingBackendActionsRef = useRef<Map<string, PendingBackendAction>>(new Map());
+  const backendSyncPromisesRef = useRef<Map<string, Promise<BackendSyncResult>>>(new Map());
+  const toastTimerRef = useRef<number | null>(null);
   const sysInfoRef = useRef<SystemInfoData | null>(null);
   const argsTriggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -427,8 +660,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   useEffect(() => {
     const reloadTuningState = () => setBackendTunings(loadBackendTunings());
-    window.addEventListener(PRESET_STORE_EVENT, reloadTuningState);
-    return () => window.removeEventListener(PRESET_STORE_EVENT, reloadTuningState);
+    window.addEventListener(MODEL_CONFIGURATION_EVENT, reloadTuningState);
+    return () => window.removeEventListener(MODEL_CONFIGURATION_EVENT, reloadTuningState);
   }, []);
 
   useEffect(() => {
@@ -437,27 +670,86 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   /* ── Fetch system-info ────────────────────────────────── */
 
+  const loadSystemInfo = useCallback(async (): Promise<SystemInfoData> => {
+    const requestId = ++systemInfoRequestRef.current;
+    let data: SystemInfoData;
+    try {
+      data = await api.systemInfo() as unknown as SystemInfoData;
+    } catch (err) {
+      // A superseded request must not replace a newer successful snapshot with
+      // an error banner merely because its slower network call failed later.
+      if (requestId !== systemInfoRequestRef.current && sysInfoRef.current) {
+        return sysInfoRef.current;
+      }
+      throw err;
+    }
+    if (requestId === systemInfoRequestRef.current) {
+      sysInfoRef.current = data;
+      setSysInfo(data);
+    }
+    return data;
+  }, []);
+
   const fetchInfo = useCallback(async (showSpinner = true) => {
     try {
       if (showSpinner) setLoading(true);
       setError(null);
       if (!api.healthData) await api.health().catch(() => null);
-      const data = await api.systemInfo() as unknown as SystemInfoData;
-      setSysInfo(data);
+      await loadSystemInfo();
     } catch (err) {
       setError(friendlyErrorMessage(err));
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, []);
+  }, [loadSystemInfo]);
+
+  const syncBackendStatus = useCallback((recipe: string, backend: string): Promise<BackendSyncResult> => {
+    const key = backendKey(recipe, backend);
+    const existing = backendSyncPromisesRef.current.get(key);
+    if (existing) return existing;
+
+    const task = (async (): Promise<BackendSyncResult> => {
+      const action = pendingBackendActionsRef.current.get(key);
+      let state: BackendInfo['state'] | undefined;
+      let version = '';
+      let hadResponse = false;
+
+      for (const delay of BACKEND_STATUS_RETRY_DELAYS_MS) {
+        if (delay > 0) {
+          await new Promise(resolve => window.setTimeout(resolve, delay));
+        }
+
+        try {
+          const freshInfo = await loadSystemInfo();
+          hadResponse = true;
+          const backendInfo = freshInfo.recipes?.[recipe]?.backends?.[backend];
+          state = backendInfo?.state;
+          version = cleanString(backendInfo?.version);
+          if (backendActionIsReflected(backendInfo, action)) {
+            return { state, version, settled: true, hadResponse };
+          }
+        } catch {
+          // The download is already terminal. Keep retrying transient system-info
+          // failures so the user does not need to clear the completed row manually.
+        }
+      }
+
+      return { state, version, settled: false, hadResponse };
+    })().finally(() => {
+      backendSyncPromisesRef.current.delete(key);
+    });
+
+    backendSyncPromisesRef.current.set(key, task);
+    return task;
+  }, [loadSystemInfo]);
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || pendingBackendActionsRef.current.size > 0) return;
     void fetchInfo(!sysInfoRef.current);
   }, [fetchInfo, isActive]);
 
   useEffect(() => api.onModelsChanged(() => {
-    if (isActive) void fetchInfo(false);
+    if (isActive && pendingBackendActionsRef.current.size === 0) void fetchInfo(false);
   }), [fetchInfo, isActive]);
 
   useEffect(() => downloadStore.subscribe((items) => {
@@ -466,67 +758,87 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       if (item.downloadType !== 'backend') continue;
       if (isDownloadActive(item)) continue;
       if (item.status !== 'completed' && item.status !== 'error' && item.status !== 'cancelled') continue;
+      if (!isActive) continue;
+
+      const name = item.modelName || item.id.replace(/^backend:/, '');
+      const separator = name.indexOf(':');
+      const key = separator > 0 ? backendKey(name.slice(0, separator), name.slice(separator + 1)) : '';
+      if (key && pendingBackendActionsRef.current.has(key)) continue;
+
       const refreshKey = `${item.id}:${item.status}:${item.terminalAt || item.updatedAt}`;
       if (terminalBackendRefreshRef.current.has(refreshKey)) continue;
       terminalBackendRefreshRef.current.add(refreshKey);
-      if (isActive) void fetchInfo(false);
+      void fetchInfo(false);
     }
   }), [fetchInfo, isActive]);
 
   /* ── Actions ──────────────────────────────────────────── */
 
   const toast = useCallback((msg: string) => {
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
     setToastMsg(msg);
-    window.setTimeout(() => setToastMsg(null), 3500);
+    toastTimerRef.current = window.setTimeout(() => {
+      toastTimerRef.current = null;
+      setToastMsg(null);
+    }, 3500);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
   }, []);
 
   const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false) => {
     const key = backendKey(recipe, backend);
+    const engineName = RECIPE_LABELS[recipe] || recipe;
     const actionLabel = isUpdate ? 'Updating' : 'Installing';
     const doneLabel = isUpdate ? 'updated' : 'installed';
-    setInstalling(key);
-    toast(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}…`);
+    const initialInfo = sysInfoRef.current?.recipes?.[recipe]?.backends?.[backend];
     const downloadName = backendDownloadName(recipe, backend);
+    const waitController = new AbortController();
+    let actionUrl = '';
+
+    pendingBackendActionsRef.current.set(key, {
+      isUpdate,
+      initialVersion: cleanString(initialInfo?.version),
+    });
+    setInstalling(key);
+    toast(`${actionLabel} ${engineName} · ${backend}…`);
     downloadStore.markLocal(downloadName, 'downloading', 'backend');
+    const terminalDownloadPromise = waitForBackendDownloadTerminal(recipe, backend, waitController.signal);
+    // Observe rejection immediately; the original promise is still awaited below,
+    // but this prevents an unhandled rejection if the API call itself fails first.
+    void terminalDownloadPromise.catch(() => undefined);
+
     try {
       await api.installBackend(recipe, backend, {
         onProgress: (d) => {
+          const rawStatus = typeof d.status === 'string' ? d.status : '';
+          const normalizedStatus = rawStatus.toLowerCase();
+          const completed = d.complete === true
+            || normalizedStatus === 'completed'
+            || normalizedStatus === 'complete'
+            || normalizedStatus === 'success'
+            || normalizedStatus === 'done';
           const percent = typeof d.percent === 'number' ? d.percent : undefined;
+          if (typeof d.action === 'string' && d.action.trim()) actionUrl = d.action.trim();
+
           downloadStore.upsertFromPull(downloadName, {
             ...d,
             id: backendDownloadId(recipe, backend),
             type: 'backend',
             name: downloadName,
-            status: 'downloading',
-            percent: percent ?? d.percent,
+            status: completed ? 'completed' : (rawStatus || 'downloading'),
+            complete: completed ? true : d.complete,
+            running: completed && typeof d.running !== 'boolean' ? false : d.running,
+            percent: completed ? 100 : (percent ?? d.percent),
           }, 'backend');
-          if (d.percent != null) {
-            setToastMsg(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}… ${d.percent}%`);
+
+          if (!completed && percent != null) {
+            toast(`${actionLabel} ${engineName} · ${backend}… ${percent}%`);
           }
         },
-        onComplete: async () => {
-          downloadStore.upsertFromPull(downloadName, {
-            id: backendDownloadId(recipe, backend),
-            type: 'backend',
-            name: downloadName,
-            status: 'completed',
-            complete: true,
-            percent: 100,
-          }, 'backend');
-          toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} ${doneLabel}`);
-          setInstalling(null);
-          try {
-            const fresh = await api.systemInfo() as unknown as SystemInfoData;
-            setSysInfo(fresh);
-            if (isUpdate && fresh?.recipes?.[recipe]?.backends?.[backend]) {
-              const newState = fresh.recipes[recipe].backends[backend].state;
-              if (newState === 'update_required' || newState === 'update_available') {
-                toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} still needs update — the existing binary may need to be removed manually`);
-              }
-            }
-          } catch {
-            void fetchInfo(false);
-          }
+        onComplete: () => {
+          void downloadStore.refresh();
         },
         onError: (err) => {
           downloadStore.upsertFromPull(downloadName, {
@@ -534,27 +846,73 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             type: 'backend',
             name: downloadName,
             status: 'error',
+            running: false,
             error: friendlyErrorMessage(err),
           }, 'backend');
-          toast(`${actionLabel} failed: ${friendlyErrorMessage(err)}`);
-          setInstalling(null);
         },
       });
-      await fetchInfo(false);
+
+      if (actionUrl) {
+        waitController.abort();
+        await terminalDownloadPromise.catch(() => undefined);
+        downloadStore.remove(backendDownloadId(recipe, backend));
+        window.open(actionUrl, '_blank', 'noopener,noreferrer');
+        toast(`${engineName} · ${backend} requires manual setup`);
+        return;
+      }
+
+      const terminalDownload = await terminalDownloadPromise;
+      if (terminalDownload.status === 'paused') {
+        toast(`${engineName} · ${backend} installation paused`);
+        return;
+      }
+      if (terminalDownload.status === 'cancelled') {
+        toast(`${engineName} · ${backend} installation cancelled`);
+        return;
+      }
+      if (terminalDownload.status === 'error') {
+        throw new Error(terminalDownload.error || 'Unknown backend install error');
+      }
+
+      const synced = await syncBackendStatus(recipe, backend);
+      if (synced.settled) {
+        toast(`${engineName} · ${backend} ${doneLabel}`);
+      } else if (synced.hadResponse) {
+        toast(`${engineName} · ${backend} download completed, but Lemonade still reports the previous backend status`);
+      } else {
+        toast(`${engineName} · ${backend} download completed, but the backend status could not be refreshed`);
+      }
     } catch (err) {
+      if (err instanceof BackendDownloadMissingError) {
+        const synced = await syncBackendStatus(recipe, backend);
+        if (synced.settled) {
+          toast(`${engineName} · ${backend} ${doneLabel}`);
+          return;
+        }
+      }
+
       const message = friendlyErrorMessage(err);
-      downloadStore.upsertFromPull(downloadName, {
-        id: backendDownloadId(recipe, backend),
-        type: 'backend',
-        name: downloadName,
-        status: 'error',
-        error: message,
-      }, 'backend');
+      const current = downloadStore.snapshot()
+        .find(download => backendDownloadMatches(download, recipe, backend));
+      if (current?.status !== 'error' && current?.status !== 'cancelled' && current?.status !== 'paused') {
+        downloadStore.upsertFromPull(downloadName, {
+          id: backendDownloadId(recipe, backend),
+          type: 'backend',
+          name: downloadName,
+          status: 'error',
+          running: false,
+          error: message,
+        }, 'backend');
+      }
       toast(`${actionLabel} failed: ${message}`);
-      setInstalling(null);
       void fetchInfo(false);
+    } finally {
+      waitController.abort();
+      pendingBackendActionsRef.current.delete(key);
+      setInstalling(current => current === key ? null : current);
+      void downloadStore.refresh();
     }
-  }, [fetchInfo, toast]);
+  }, [fetchInfo, syncBackendStatus, toast]);
 
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
     try {
@@ -610,17 +968,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   /* ── Build the matrix ─────────────────────────────────── */
 
-  const detectedDevices = useMemo(() => {
-    if (!sysInfo) return [] as DeviceKey[];
-    const devs: DeviceKey[] = [];
-    if (sysInfo.devices.cpu?.available) devs.push('cpu');
-    if ((sysInfo.devices.nvidia_gpu || []).some(g => g.available)) devs.push('nvidia_gpu');
-    if (amdGpuDevices(sysInfo).some(g => g.available)) devs.push('amd_gpu');
-    if (sysInfo.devices.metal?.available) devs.push('metal');
-    if (amdNpuDevice(sysInfo)?.available) devs.push('amd_npu');
-    return devs;
-  }, [sysInfo]);
-
   const matrixCells = useMemo(() => {
     if (!sysInfo?.recipes) return new Map<string, CellEntry[]>();
     const cells = new Map<string, CellEntry[]>();
@@ -633,8 +980,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           experimental: isExperimentalBackend(recipe, recipeInfo, backendInfo),
         };
         // Match GUI2: unsupported backends are not useful actions/statuses for
-        // the current system and should not take matrix space (#2568).
-        if (effectiveInfo.state === 'unsupported') continue;
+        // the current system and are hidden unless explicitly requested (#2568).
+        if (!showUnsupported && effectiveInfo.state === 'unsupported') continue;
         for (const device of devicesForBackend(recipe, backend, effectiveInfo)) {
           const key = `${device}:${cap}`;
           if (!cells.has(key)) cells.set(key, []);
@@ -643,62 +990,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       }
     }
     return cells;
-  }, [sysInfo]);
+  }, [showUnsupported, sysInfo]);
 
-  const unsupportedMatrixCells = useMemo(() => {
-    if (!sysInfo?.recipes) return new Map<string, CellEntry[]>();
-    const cells = new Map<string, CellEntry[]>();
-
-    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
-      const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
-      for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
-        const effectiveInfo: BackendInfo = {
-          ...backendInfo,
-          experimental: isExperimentalBackend(recipe, recipeInfo, backendInfo),
-        };
-        // Keep unsupported backends out of the primary matrix (#2568), but retain
-        // a collapsed same-shape matrix for debugging and technical-detail reasons.
-        if (effectiveInfo.state !== 'unsupported') continue;
-        for (const device of devicesForBackend(recipe, backend, effectiveInfo)) {
-          const key = `${device}:${cap}`;
-          if (!cells.has(key)) cells.set(key, []);
-          cells.get(key)!.push({ recipe, backend, info: effectiveInfo });
-        }
-      }
-    }
-    return cells;
-  }, [sysInfo]);
-
-  const matrixRows = useMemo(() => {
-    const referenced = new Set<DeviceKey>();
-    for (const key of matrixCells.keys()) {
-      const device = key.split(':')[0] as DeviceKey;
-      if (DEVICE_ORDER.includes(device)) referenced.add(device);
-    }
-    return DEVICE_ORDER.filter(d => detectedDevices.includes(d) || referenced.has(d));
-  }, [detectedDevices, matrixCells]);
-
-  const unsupportedMatrixRows = useMemo(() => {
-    const referenced = new Set<DeviceKey>();
-    for (const key of unsupportedMatrixCells.keys()) {
-      const device = key.split(':')[0] as DeviceKey;
-      if (DEVICE_ORDER.includes(device)) referenced.add(device);
-    }
-    return DEVICE_ORDER.filter(d => referenced.has(d));
-  }, [unsupportedMatrixCells]);
-
-  const unsupportedBackendCount = useMemo(() => {
-    const keys = new Set<string>();
-    for (const entries of unsupportedMatrixCells.values()) {
-      for (const { recipe, backend } of entries) keys.add(backendKey(recipe, backend));
-    }
-    return keys.size;
-  }, [unsupportedMatrixCells]);
-
-  // Keep the matrix skeleton mounted even when /system-info is unavailable.
-  // This preserves navigation/test affordances while the cells truthfully show
-  // no backend entries until the server reports real data.
-  const matrixRowsForRender = matrixRows.length > 0 ? matrixRows : (['cpu'] as DeviceKey[]);
+  const backendCatalog = useMemo(() => buildBackendCatalog(matrixCells), [matrixCells]);
 
   const updatesAvailable = useMemo(() => {
     if (!sysInfo?.recipes) return 0;
@@ -716,7 +1010,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     if (!sysInfo?.recipes) return counts;
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       for (const backendInfo of Object.values(recipeInfo.backends)) {
-        if (backendInfo.state === 'unsupported') continue;
+        if (backendInfo.state === 'unsupported' && !showUnsupported) continue;
         counts.all++;
         if (backendInfo.state === 'installed') counts.installed++;
         if (backendInfo.state === 'installable') counts.available++;
@@ -725,7 +1019,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       }
     }
     return counts;
-  }, [sysInfo]);
+  }, [showUnsupported, sysInfo]);
 
   const backendMatchesView = useCallback((entry: CellEntry) => {
     if (viewFilter === 'all') return true;
@@ -736,140 +1030,207 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     return recipeInfo ? isExperimentalBackend(entry.recipe, recipeInfo, entry.info) : Boolean(entry.info.experimental);
   }, [sysInfo, viewFilter]);
 
-  /* ── Device detail row ────────────────────────────────── */
-
-  const deviceDetail = useCallback((deviceKey: DeviceKey): string => {
-    if (!sysInfo) return '';
-    switch (deviceKey) {
-      case 'cpu': return sysInfo.devices.cpu?.name || '';
-      case 'amd_gpu': return amdGpuDevices(sysInfo).map(g => g.name).filter(Boolean).join(', ') || '';
-      case 'nvidia_gpu': return (sysInfo.devices.nvidia_gpu || []).map(g => g.name).join(', ') || '';
-      case 'metal': return sysInfo.devices.metal?.name || '';
-      case 'amd_npu': return amdNpuDevice(sysInfo)?.name || '';
-      default: return '';
-    }
-  }, [sysInfo]);
-
-  const renderBackendCell = useCallback(({ recipe, backend, info }: CellEntry) => {
-    const badge = stateBadge(info.state);
-    const cellKey = backendKey(recipe, backend);
-    const isInstalling = installing === cellKey;
-    const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
-    const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
-    const tuning = backendTunings[cellKey] || null;
+  const renderBackendCard = useCallback(({ recipe, variants }: BackendCatalogEntry) => {
+    const engineName = RECIPE_LABELS[recipe] || recipe;
     const supportsArgs = backendSupportsArgs(recipe);
+    const logo = ENGINE_LOGOS[recipe];
 
     return (
-      <div className="cell" key={`${recipe}-${backend}`} data-cell={cellKey}>
-        <span className={`cell__name${info.experimental ? ' cell__name--experimental' : ''}`}>
-          <span>
-            {RECIPE_LABELS[recipe] || recipe}
-            {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
-          </span>
-          {info.experimental && (
-            <span className="cell__experimental-icon" role="img" title="experimental" aria-label="experimental">
-              <Icon name="flask-conical" size={13} />
-            </span>
-          )}
-        </span>
-        <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
-        {showTech && info.version && <span className="cell__sha">{info.version}</span>}
-        {tuning && (
-          <span
-            className={`cell__args-state cell__args-state--${tuning.source}`}
-            data-cell-backend-args={tuning.source}
-            title={tuning.source === 'optimized'
-              ? 'Backend arguments last replaced by AutoOpt'
-              : 'Manual backend arguments'}
-          >
-            <Icon name="terminal-square" size={12} aria-hidden="true" />
-            Args · {tuning.source === 'optimized' ? 'AutoOpt' : 'Manual'}
-          </span>
-        )}
-        {showTech && info.message && <span className="cell__message">{info.message}</span>}
-        <div className="cell__actions" onClick={e => e.stopPropagation()}>
-          {supportsArgs && (
-            <WorkspaceActionButton
-              type="button"
-              size="toolbar"
-              appearance="quiet"
-              icon="terminal-square"
-              iconOnly
-              className={`cell__args-button${tuning ? ' is-active' : ''}`}
-              onClick={event => {
-                argsTriggerRef.current = event.currentTarget;
-                setArgsEditorKey(cellKey);
-              }}
-              title={tuning ? 'Edit backend arguments' : 'Add backend arguments'}
-              aria-label={`${tuning ? 'Edit' : 'Add'} backend arguments for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-              data-backend-args-button={cellKey}
-            />
-          )}
-          {(info.state === 'installable') && (
-            <WorkspaceActionButton
-              size="small"
-              appearance="primary"
-              icon="download"
-              className="cell__swap"
-              disabled={isInstalling}
-              aria-label={`Install ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-              onClick={() => handleInstall(recipe, backend)}>
-              {isInstalling ? 'Installing…' : 'Install'}
-            </WorkspaceActionButton>
-          )}
-          {(info.state === 'update_required' || info.state === 'update_available') && (
-            <WorkspaceActionButton
-              size="small"
-              appearance="primary"
-              icon="rotate-ccw"
-              className="cell__swap"
-              disabled={isInstalling}
-              aria-label={`Update ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-              onClick={() => handleInstall(recipe, backend, true)}>
-              {isInstalling ? 'Updating…' : 'Update'}
-            </WorkspaceActionButton>
-          )}
-          {info.state === 'action_required' && info.action && (
-            <WorkspaceActionButton
-              size="small"
-              appearance="secondary"
-              icon="book-open"
-              className="cell__swap"
-              aria-label={`Setup guide for ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-              onClick={() => handleAction(info.action)}>
-              Setup guide
-            </WorkspaceActionButton>
-          )}
-          {canShowUninstall(info) && (
-            <WorkspaceActionButton
-              size="small"
-              appearance="danger"
-              icon="trash"
-              className="cell__swap cell__swap--danger"
-              disabled={isInstalling}
-              aria-label={`Uninstall ${RECIPE_LABELS[recipe] || recipe} (${backend})`}
-              onClick={() => handleUninstall(recipe, backend)}>
-              {isInstalling ? 'Working…' : 'Uninstall'}
-            </WorkspaceActionButton>
+      <article className="workspace-card backend-card" key={recipe} data-recipe={recipe}>
+        <div className="workspace-card__head">
+          {showLogos ? (
+            <>
+              <h3 className="sr-only">{engineName}</h3>
+              <div
+                className={`backend-card__logo${logo?.plate === 'dark' ? ' backend-card__logo--dark' : ''}${logo && !logo.showName ? ' backend-card__logo--image-only' : ''}`}
+                aria-hidden="true"
+                data-backend-logo
+              >
+                {logo && (
+                  <img
+                    src={`${ENGINE_LOGO_BASE}${logo.file}`}
+                    alt=""
+                    loading="lazy"
+                    onError={event => {
+                      event.currentTarget.style.display = 'none';
+                      event.currentTarget.parentElement!.className = 'backend-card__logo';
+                    }}
+                  />
+                )}
+                <span className="backend-card__logo-name">{engineName}</span>
+              </div>
+            </>
+          ) : (
+            <h3 className="workspace-card__name backend-card__name">{engineName}</h3>
           )}
         </div>
-        {showBackendProgress && backendDownload && (
-          <div className="cell__download-progress" aria-label={`${backendProgressPercent(backendDownload).toFixed(0)}%`}>
-            <div className="cell__download-progress-track">
+
+        <div className="backend-card__variants">
+          {variants.map(({ backend, info }) => {
+            const badge = stateBadge(info.state);
+            const cellKey = backendKey(recipe, backend);
+            const isInstalling = installing === cellKey;
+            const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
+            const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
+            const tuning = backendTunings[cellKey] || null;
+            const name = `${engineName} · ${backend}`;
+            const version = cleanString(info.version);
+            const isUpdate =
+              info.state === 'update_required' || info.state === 'update_available';
+            const targetReleaseUrl = releaseLink(info);
+            const targetVersion = isUpdate ? releaseVersion(targetReleaseUrl) : '';
+            const installedReleaseUrl = isUpdate
+              ? releaseLinkForVersion(targetReleaseUrl, version)
+              : targetReleaseUrl;
+            const variantLabel = BACKEND_LABELS[backend] || backend;
+
+            return (
               <div
-                className="cell__download-progress-fill"
-                style={{ width: `${backendProgressPercent(backendDownload)}%` }}
-              />
-            </div>
-            <span className="cell__download-progress-text">{backendProgressPercent(backendDownload).toFixed(0)}%</span>
-          </div>
-        )}
-        {backendDownload?.status === 'error' && backendDownload.error && (
-          <span className="cell__download-error">{backendDownload.error}</span>
-        )}
-      </div>
+                className={`backend-card__variant${info.state === 'unsupported' ? ' backend-card__variant--unsupported' : ''}`}
+                key={cellKey}
+                data-cell={cellKey}
+              >
+                <div className="backend-card__variant-head">
+                  <h4 className="backend-card__variant-name">
+                    {variantLabel}
+                    {info.experimental && (
+                      <span className="cell__experimental-icon" role="img" aria-label="experimental" title="experimental">
+                        <Icon name="flask-conical" size={13} aria-hidden="true" />
+                      </span>
+                    )}
+                  </h4>
+                  {info.state !== 'installable' && <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>}
+                </div>
+
+                <div className="backend-card__variant-meta">
+                  {version && (installedReleaseUrl ? (
+                    <a
+                      className="backend-card__version"
+                      href={installedReleaseUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Open installed ${engineName} ${version} release page`}
+                    >
+                      {version}
+                      <Icon name="external-link" size={11} aria-hidden="true" />
+                    </a>
+                  ) : (
+                    <span className="backend-card__version">{version}</span>
+                  ))}
+                  {isUpdate && targetReleaseUrl && targetVersion && targetVersion !== version && (
+                    <a
+                      className="backend-card__version"
+                      href={targetReleaseUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Open ${engineName} ${targetVersion} update release page`}
+                    >
+                      <Icon name="chevron-right" size={11} aria-hidden="true" />
+                      {targetVersion}
+                      <Icon name="external-link" size={11} aria-hidden="true" />
+                    </a>
+                  )}
+                  {tuning && (
+                    <span className={`cell__args-state cell__args-state--${tuning.source}`} data-cell-backend-args={tuning.source}>
+                      <Icon name="terminal-square" size={12} aria-hidden="true" />
+                      Args · {tuning.source === 'optimized' ? 'Optimized' : 'Manual'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="backend-card__footer">
+                  <div className="backend-card__actions">
+                    {info.state === 'installable' && (
+                      <WorkspaceActionButton
+                        size="small"
+                        appearance="secondary"
+                        icon="download"
+                        className="cell__swap"
+                        aria-label={`Install ${name}`}
+                        disabled={isInstalling}
+                        onClick={() => handleInstall(recipe, backend)}
+                      >
+                        {isInstalling ? 'Installing…' : 'Install'}
+                      </WorkspaceActionButton>
+                    )}
+                    {(info.state === 'update_required' || info.state === 'update_available') && (
+                      <WorkspaceActionButton
+                        size="small"
+                        appearance="primary"
+                        icon="rotate-ccw"
+                        className="cell__swap"
+                        aria-label={`Update ${name}`}
+                        disabled={isInstalling}
+                        onClick={() => handleInstall(recipe, backend, true)}
+                      >
+                        {isInstalling ? 'Updating…' : 'Update'}
+                      </WorkspaceActionButton>
+                    )}
+                    {info.state === 'action_required' && info.action && (
+                      <WorkspaceActionButton
+                        size="small"
+                        appearance="secondary"
+                        icon="book-open"
+                        className="cell__swap"
+                        aria-label={`Open setup guide for ${name}`}
+                        onClick={() => handleAction(info.action)}
+                      >
+                        Setup guide
+                      </WorkspaceActionButton>
+                    )}
+                    {canShowUninstall(info) && (
+                      <WorkspaceActionButton
+                        size="small"
+                        appearance="danger"
+                        icon="trash"
+                        className="cell__swap cell__swap--danger"
+                        aria-label={`Uninstall ${name}`}
+                        disabled={isInstalling}
+                        onClick={() => handleUninstall(recipe, backend)}
+                      >
+                        {isInstalling ? 'Working…' : 'Uninstall'}
+                      </WorkspaceActionButton>
+                    )}
+                    {supportsArgs && info.state !== 'unsupported' && (
+                      <WorkspaceActionButton
+                        type="button"
+                        size="toolbar"
+                        appearance="quiet"
+                        icon="terminal-square"
+                        iconOnly
+                        className={`cell__args-button${tuning ? ' is-active' : ''}`}
+                        data-backend-args-button={cellKey}
+                        onClick={event => {
+                          argsTriggerRef.current = event.currentTarget;
+                          setArgsEditorKey(cellKey);
+                        }}
+                        title={tuning ? 'Edit backend arguments' : 'Add backend arguments'}
+                        aria-label={`${tuning ? 'Edit' : 'Add'} backend arguments for ${engineName} (${backend})`}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {showBackendProgress && backendDownload && (
+                  <div className="cell__download-progress" aria-label={`${backendProgressPercent(backendDownload).toFixed(0)}%`}>
+                    <div className="cell__download-progress-track">
+                      <div className="cell__download-progress-fill" style={{ width: `${backendProgressPercent(backendDownload)}%` }} />
+                    </div>
+                    <span className="cell__download-progress-text">{backendProgressPercent(backendDownload).toFixed(0)}%</span>
+                  </div>
+                )}
+                {backendDownload?.status === 'error' && backendDownload.error ? (
+                  <p className="backend-card__note backend-card__note--error">{backendDownload.error}</p>
+                ) : ((showTech || info.state === 'update_available' || info.state === 'update_required') && info.message && (
+                  <p className="backend-card__note">{info.message}</p>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </article>
     );
-  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, showTech]);
+  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, showLogos, showTech]);
 
 
   /* ── Render ───────────────────────────────────────────── */
@@ -877,9 +1238,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   if (loading && !sysInfo) {
     return (
       <section className="backends" data-view="backends">
-        <div className="backends__head">
-          <div className="backends__title"><h1>Backends</h1></div>
-        </div>
+        <WorkspacePaneHeader className="backends__pane-header" headingLevel={1} title="Inference Backends" />
         <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
           <div className="hf-zone__spinner" />
         </div>
@@ -888,34 +1247,25 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   }
 
   return (
-    <section className={`backends backends--workspace${railCollapsed ? ' workspace--rail-collapsed' : ''}${showTech ? ' show-tech' : ''}`} data-view="backends">
-      {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
-      <aside
-        ref={mobileRail.panelRef}
-        id="backend-filters-panel"
-        className={`workspace-rail mobile-context-panel backends__rail${railCollapsed && !mobileRail.isOpen ? ' is-collapsed' : ''}${mobileRail.isOpen ? ' is-mobile-open' : ''}`}
-        aria-label="Backend filters"
-        role={mobileRail.isOpen ? 'dialog' : undefined}
-        aria-modal={mobileRail.isOpen ? true : undefined}
-      >
-        <WorkspaceRailHeader
-          title="Filters"
-          sidebarLabel="backend filters"
-          purpose="filter"
-          collapsed={railCollapsed && !mobileRail.isOpen}
-          onToggle={() => setRailCollapsed(value => !value)}
-          onMobileClose={mobileRail.isOpen ? mobileRail.close : undefined}
-        />
-        <nav className="workspace-filter-list" aria-label="Backend filters">
-          {BACKEND_VIEW_FILTERS.map(([id, label, description, icon]) => (
-            <button key={id} type="button" className={`workspace-filter-list__item${viewFilter === id ? ' is-active' : ''}`} aria-current={viewFilter === id ? 'true' : undefined} aria-label={label} title={`${label} — ${description}`} onClick={() => { setViewFilter(id); mobileRail.close(); }}>
-              <Icon className="workspace-filter-list__icon" name={icon} size={14} />
-              <span className="workspace-filter-list__label">{label}</span>
-              <span className="workspace-filter-list__count">{backendStateCounts[id]}</span>
-            </button>
-          ))}
-        </nav>
-        <div className="workspace-rail__footer backends__rail-footer">
+    <WorkspaceCatalogLayout
+      view="backends"
+      className={`backends backends--workspace${showTech ? ' show-tech' : ''}`}
+      panelId="backend-filters-panel"
+      railTitle="Filters"
+      railLabel="Backend filters"
+      sidebarLabel="backend filters"
+      mobileMenuLabel="Open backend filters"
+      filters={BACKEND_VIEW_FILTERS.map(([id, label, description, icon]) => ({
+        id,
+        label,
+        description,
+        icon,
+        count: backendStateCounts[id],
+      }))}
+      activeFilter={viewFilter}
+      onFilterChange={setViewFilter}
+      railFooter={
+        <div className="backends__rail-footer">
           <label className="backends__toggle">
             <input
               type="checkbox"
@@ -924,6 +1274,24 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             />
             <span>Show technical details</span>
           </label>
+          <label className="backends__toggle">
+            <input
+              type="checkbox"
+              checked={showUnsupported}
+              onChange={e => setShowUnsupported(e.target.checked)}
+              data-backends-unsupported-toggle
+            />
+            <span>Show unsupported backends</span>
+          </label>
+          <label className="backends__toggle">
+            <input
+              type="checkbox"
+              checked={showLogos}
+              onChange={e => setShowLogos(e.target.checked)}
+              data-backends-logo-toggle
+            />
+            <span>Show logos</span>
+          </label>
           {sysInfo && (
             <div className="backends__runtime-meta">
               <strong>Lemonade {lemonadeVersion(sysInfo)}</strong>
@@ -931,173 +1299,84 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             </div>
           )}
         </div>
-      </aside>
-
-      <WorkspaceMobileMenuButton
-        menuLabel="Open backend filters"
-        panelId="backend-filters-panel"
-        expanded={mobileRail.isOpen}
-        onClick={mobileRail.toggle}
-        triggerRef={mobileRail.triggerRef}
-      />
-
-      <div className="backends__main workspace-pane">
-      <WorkspacePaneHeader
-        className="backends__pane-header"
-        title="Compatibility matrix"
-        subtitle="Runtime availability by device and model capability."
-        actions={updatesAvailable > 0 ? (
-          <div className="backends__header-update" data-backends-banner>
-            <span className="sr-only" data-backends-banner-text>{updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available</span>
-            <WorkspaceActionButton appearance="primary" icon="rotate-ccw" data-backends-banner-action onClick={handleUpdateAll} disabled={installing !== null}>
-              {installing ? 'Updating…' : `Update all (${updatesAvailable})`}
-            </WorkspaceActionButton>
-          </div>
-        ) : undefined}
-      />
-
-      <div className="backends__head">
-
-        {error && (
-          <div className="banner banner--error" data-backends-error>
-            <span className="banner__icon" aria-hidden="true"><Icon name="alert" size={16} /></span>
-            <span className="banner__text">Could not load backend system info: {error}</span>
-            <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => void fetchInfo()} disabled={loading}>Retry</WorkspaceActionButton>
+      }
+      header={
+        <WorkspacePaneHeader
+          className="backends__pane-header"
+          headingLevel={1}
+          title="Inference Backends"
+          subtitle="Install and update the inference engines available on this machine."
+          actions={updatesAvailable > 0 ? (
+            <div className="backends__header-update" data-backends-banner>
+              <span className="sr-only" data-backends-banner-text>{updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available</span>
+              <WorkspaceActionButton appearance="primary" icon="rotate-ccw" data-backends-banner-action onClick={handleUpdateAll} disabled={installing !== null}>
+                {installing ? 'Updating…' : `Update all (${updatesAvailable})`}
+              </WorkspaceActionButton>
+            </div>
+          ) : undefined}
+        />
+      }
+      preContent={<>
+        <div className="backends__head">
+          {error && (
+            <div className="banner banner--error" data-backends-error>
+              <span className="banner__icon" aria-hidden="true"><Icon name="alert" size={16} /></span>
+              <span className="banner__text">Could not load backend system info: {error}</span>
+              <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => void fetchInfo()} disabled={loading}>Retry</WorkspaceActionButton>
+            </div>
+          )}
+        </div>
+        {backendCatalog.length === 0 && (
+          <p className="sr-only" data-backends-matrix-empty>No backend data is available for this Lemonade server yet.</p>
+        )}
+        {backendStateCounts[viewFilter] === 0 && (
+          <div className="backends__filter-empty">
+            <Icon name={viewFilter === 'updates' ? 'check' : 'box'} size={24} />
+            <strong>No {viewFilter} backends</strong>
+            <span>{viewFilter === 'updates' ? 'Every installed backend is current.' : 'No runtimes match this filter on the connected machine.'}</span>
           </div>
         )}
-
-      </div>
-
-      {matrixRows.length === 0 && (
-        <p className="sr-only" data-backends-matrix-empty>No backend/device data is available for this Lemonade server yet.</p>
-      )}
-
-      {backendStateCounts[viewFilter] === 0 && (
-        <div className="backends__filter-empty">
-          <Icon name={viewFilter === 'updates' ? 'check' : 'box'} size={24} />
-          <strong>No {viewFilter} backends</strong>
-          <span>{viewFilter === 'updates' ? 'Every installed backend is current.' : 'No runtimes match this filter on the connected machine.'}</span>
+      </>}
+      overlay={<>
+        <BackendArgsDialog
+          backendKeyValue={argsEditorKey}
+          tuning={argsEditorKey ? backendTunings[argsEditorKey] || null : null}
+          onSave={handleSaveBackendArgs}
+          onClear={handleClearBackendArgs}
+          onClose={closeArgsEditor}
+        />
+        {/* #2351: always-present polite live region so NVDA announces toast messages */}
+        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-backends-toast-live>
+          {toastMsg || ''}
         </div>
-      )}
-
-      <div className="matrix" data-backends-matrix>
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Device</th>
-                {CAPABILITY_COLS.map(c => (
-                  <th scope="col" key={c}>{c}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {matrixRowsForRender.map(deviceKey => (
-                <tr key={deviceKey}>
-                  <th scope="row">
-                    {DEVICE_LABELS[deviceKey]}
-                    {showTech && (
-                      <div className="cell__device-detail">{deviceDetail(deviceKey) || 'reported by backend metadata'}</div>
-                    )}
-                  </th>
-                  {CAPABILITY_COLS.map(cap => {
-                    const key = `${deviceKey}:${cap}`;
-                    const entries = matrixCells.get(key);
-                    if (!entries || entries.length === 0) {
-                      return (
-                        <td className="matrix__empty" key={cap}>
-                          <span aria-hidden="true">—</span>
-                        </td>
-                      );
-                    }
-                    return (
-                      <td key={cap}>
-                        {entries.filter(backendMatchesView).map(renderBackendCell)}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {unsupportedBackendCount > 0 && (
-          <section className="backends__unsupported" data-backends-unsupported>
-            <button
-              type="button"
-              className="backends__unsupported-toggle"
-              aria-expanded={showUnsupported}
-              aria-controls="backends-unsupported-matrix"
-              onClick={() => setShowUnsupported(open => !open)}>
-              <span className="backends__unsupported-title">
-                <Icon name={showUnsupported ? 'chevron-down' : 'chevron-right'} size={14} aria-hidden="true" />
-                Unsupported backends
-              </span>
-              <span className="backends__unsupported-meta">
-                {unsupportedBackendCount} hidden from the main table
-              </span>
-            </button>
-
-            {showUnsupported && (
-              <div className="matrix matrix--unsupported" id="backends-unsupported-matrix" data-backends-unsupported-matrix>
-                <table>
-                  <thead>
-                    <tr>
-                      <th scope="col">Device</th>
-                      {CAPABILITY_COLS.map(c => (
-                        <th scope="col" key={c}>{c}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {unsupportedMatrixRows.map(deviceKey => (
-                      <tr key={deviceKey}>
-                        <th scope="row">
-                          {DEVICE_LABELS[deviceKey]}
-                          {showTech && (
-                            <div className="cell__device-detail">{deviceDetail(deviceKey) || 'reported by backend metadata'}</div>
-                          )}
-                        </th>
-                        {CAPABILITY_COLS.map(cap => {
-                          const key = `${deviceKey}:${cap}`;
-                          const entries = unsupportedMatrixCells.get(key);
-                          if (!entries || entries.length === 0) {
-                            return (
-                              <td className="matrix__empty" key={cap}>
-                                <span aria-hidden="true">—</span>
-                              </td>
-                            );
-                          }
-                          return (
-                            <td key={cap}>
-                              {entries.map(renderBackendCell)}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        )}
-
-      <BackendArgsDialog
-        backendKeyValue={argsEditorKey}
-        tuning={argsEditorKey ? backendTunings[argsEditorKey] || null : null}
-        onSave={handleSaveBackendArgs}
-        onClear={handleClearBackendArgs}
-        onClose={closeArgsEditor}
-      />
-
-      {/* #2351: always-present polite live region so NVDA announces toast messages */}
-      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-backends-toast-live>
-        {toastMsg || ''}
+        {toastMsg && <div className="backends__toast" data-backends-toast>{toastMsg}</div>}
+      </>}
+    >
+      <div className="workspace-catalog" data-backends-matrix>
+        {backendCatalog.map(({ capability, entries }) => {
+          const visibleEntries = entries
+            .map(entry => {
+              const variants = entry.variants.filter(backendMatchesView);
+              return {
+                ...entry,
+                variants,
+                devices: uniq(variants.flatMap(variant => variant.devices)),
+              };
+            })
+            .filter(entry => entry.variants.length > 0);
+          if (visibleEntries.length === 0) return null;
+          return (
+            <WorkspaceCatalogSection
+              key={capability}
+              title={CAPABILITY_LABELS[capability]}
+              description={CAPABILITY_DESCRIPTIONS[capability]}
+            >
+              {visibleEntries.map(renderBackendCard)}
+            </WorkspaceCatalogSection>
+          );
+        })}
       </div>
-      {toastMsg && <div className="backends__toast" data-backends-toast>{toastMsg}</div>}
-      </div>
-    </section>
+    </WorkspaceCatalogLayout>
   );
 };
 

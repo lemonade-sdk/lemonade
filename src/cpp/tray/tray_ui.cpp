@@ -37,6 +37,12 @@ int TrayUI::signal_pipe_[2] = {-1, -1};
 // ---------------------------------------------------------------------------
 
 std::string TrayUI::get_connect_host() const {
+    if (is_ssl_) {
+        if (host_.empty() || host_ == "0.0.0.0") {
+            return "127.0.0.1";
+        }
+        return host_;
+    }
     if (host_.empty() || host_ == "0.0.0.0" || host_ == "localhost") {
         return "127.0.0.1";
     }
@@ -47,12 +53,21 @@ std::string TrayUI::get_connect_host() const {
 // Construction / destruction
 // ---------------------------------------------------------------------------
 
-TrayUI::TrayUI(int port, const std::string& host, bool silent)
-    : port_(port)
-    , host_(host)
-    , silent_(silent)
+TrayUI::TrayUI(const TrayUIOptions& options)
+    : port_(options.port)
+    , host_(options.host)
+    , is_ssl_(options.is_ssl)
+    , silent_(options.silent)
     , recipe_options_(nlohmann::json::object())
 {
+    std::string clean_host;
+    int clean_port = port_;
+    bool clean_is_ssl = is_ssl_;
+    lemon::utils::parse_target_url(host_, clean_host, clean_port, clean_is_ssl, false);
+    host_ = clean_host;
+    port_ = clean_port;
+    is_ssl_ = clean_is_ssl;
+
 #ifndef _WIN32
     if (pipe(signal_pipe_) == -1) {
         std::cerr << "Failed to create signal pipe" << std::endl;
@@ -161,43 +176,70 @@ void TrayUI::stop() {
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
+httplib::Client TrayUI::make_client(const std::string& host, int port, bool is_ssl) const {
+#ifndef LEMONADE_HTTPLIB_HAS_TLS
+    if (is_ssl) {
+        throw std::runtime_error("HTTPS support is not compiled in this client.");
+    }
+#endif
+    std::string format_host = lemon::utils::bracket_host_if_ipv6(host);
+    std::string scheme = is_ssl ? "https" : "http";
+    std::string url = scheme + "://" + format_host + ":" + std::to_string(port);
+    auto client = httplib::Client(url);
+#ifdef LEMONADE_HTTPLIB_HAS_TLS
+    const char* skip_verify = std::getenv("LEMONADE_SKIP_VERIFY");
+    if (skip_verify && std::string(skip_verify) == "1") {
+        client.enable_server_certificate_verification(false);
+    }
+#endif
+    return client;
+}
+
+httplib::Client TrayUI::make_client() const {
+    return make_client(get_connect_host(), port_, is_ssl_);
+}
+
 std::string TrayUI::http_get(const std::string& endpoint) {
-    httplib::Client cli(get_connect_host(), port_);
-    cli.set_connection_timeout(2);
-    cli.set_read_timeout(5);
+    try {
+        auto cli = make_client();
+        cli.set_connection_timeout(2);
+        cli.set_read_timeout(5);
 
-    // Pass API key if set - prefer admin key over regular API key
-    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
-    const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
-    httplib::Headers headers;
-    if (api_key && api_key[0]) {
-        headers.emplace("Authorization", std::string("Bearer ") + api_key);
-    }
+        // Pass API key if set - prefer admin key over regular API key
+        const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+        const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
+        httplib::Headers headers;
+        if (api_key && api_key[0]) {
+            headers.emplace("Authorization", std::string("Bearer ") + api_key);
+        }
 
-    auto res = cli.Get(endpoint, headers);
-    if (res && res->status == 200) {
-        return res->body;
-    }
+        auto res = cli.Get(endpoint, headers);
+        if (res && res->status == 200) {
+            return res->body;
+        }
+    } catch (...) {}
     return "";
 }
 
 std::string TrayUI::http_post(const std::string& endpoint, const std::string& body) {
-    httplib::Client cli(get_connect_host(), port_);
-    cli.set_connection_timeout(2);
-    cli.set_read_timeout(30);
+    try {
+        auto cli = make_client();
+        cli.set_connection_timeout(2);
+        cli.set_read_timeout(30);
 
-    // Pass API key if set - prefer admin key over regular API key
-    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
-    const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
-    httplib::Headers headers;
-    if (api_key && api_key[0]) {
-        headers.emplace("Authorization", std::string("Bearer ") + api_key);
-    }
+        // Pass API key if set - prefer admin key over regular API key
+        const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+        const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
+        httplib::Headers headers;
+        if (api_key && api_key[0]) {
+            headers.emplace("Authorization", std::string("Bearer ") + api_key);
+        }
 
-    auto res = cli.Post(endpoint, headers, body, "application/json");
-    if (res && (res->status == 200 || res->status == 204)) {
-        return res->body;
-    }
+        auto res = cli.Post(endpoint, headers, body, "application/json");
+        if (res && (res->status == 200 || res->status == 204)) {
+            return res->body;
+        }
+    } catch (...) {}
     return "";
 }
 
@@ -626,7 +668,9 @@ void TrayUI::open_desktop_app(const std::string& route) {
 }
 
 void TrayUI::open_web_app(const std::string& route) {
-    std::string url = "http://" + get_connect_host() + ":" + std::to_string(port_) + "/";
+    std::string scheme = is_ssl_ ? "https" : "http";
+    std::string formatted_host = lemon::utils::bracket_host_if_ipv6(get_connect_host());
+    std::string url = scheme + "://" + formatted_host + ":" + std::to_string(port_) + "/";
     if (!route.empty()) {
         url += "?" + route;
     }
