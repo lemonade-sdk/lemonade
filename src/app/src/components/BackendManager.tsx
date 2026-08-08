@@ -1012,7 +1012,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       for (const backendInfo of Object.values(recipeInfo.backends)) {
         if (backendInfo.state === 'unsupported' && !showUnsupported) continue;
         counts.all++;
-        if (backendInfo.state === 'installed') counts.installed++;
+        if (
+          backendInfo.state === 'installed'
+          || backendInfo.state === 'update_required'
+          || backendInfo.state === 'update_available'
+        ) counts.installed++;
         if (backendInfo.state === 'installable') counts.available++;
         if (backendInfo.state === 'update_required' || backendInfo.state === 'update_available') counts.updates++;
         if (isExperimentalBackend(recipe, recipeInfo, backendInfo)) counts.experimental++;
@@ -1023,7 +1027,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   const backendMatchesView = useCallback((entry: CellEntry) => {
     if (viewFilter === 'all') return true;
-    if (viewFilter === 'installed') return entry.info.state === 'installed';
+    if (viewFilter === 'installed') {
+      return entry.info.state === 'installed'
+        || entry.info.state === 'update_required'
+        || entry.info.state === 'update_available';
+    }
     if (viewFilter === 'available') return entry.info.state === 'installable';
     if (viewFilter === 'updates') return entry.info.state === 'update_required' || entry.info.state === 'update_available';
     const recipeInfo = sysInfo?.recipes?.[entry.recipe];
