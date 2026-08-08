@@ -140,10 +140,10 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `thenoise_backend` | `--thenoise` | BACKEND | "" | TheNoise backend to use |
-| `steps` | — | SIZE | 8 | Number of denoising steps |
-| `cfg_scale` | — | SIZE | 1.0 | CFG scale (<= 1.0 disables CFG) |
-| `width` | — | SIZE | 1024 | Output image width |
-| `height` | — | SIZE | 1024 | Output image height |
+| `steps` | — | SIZE | 20 | Number of denoising steps |
+| `cfg_scale` | — | SIZE | 7.0 | CFG scale (<= 1.0 disables CFG) |
+| `width` | — | SIZE | 512 | Output image width |
+| `height` | — | SIZE | 512 | Output image height |
 | `sampler` | — | ARGS | "" | Denoising solver (euler \| er_sde) |
 | `negative_prompt` | — | ARGS | "" | Negative prompt |
 | `upscale` | — | BOOL | false | 2x latent upscale with refine denoise |
