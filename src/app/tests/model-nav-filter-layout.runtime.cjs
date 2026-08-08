@@ -9,14 +9,16 @@ const listPath = path.join(root, 'src/components/ModelListPanel.tsx');
 const managerPath = path.join(root, 'src/components/ModelManager.tsx');
 const backendVisibilityPath = path.join(root, 'src/features/models/backendRailVisibility.ts');
 const stylesPath = path.join(root, 'src/styles/styles.css');
+const a11yPath = path.join(root, 'tests/a11y.spec.ts');
 
 const nav = fs.readFileSync(navPath, 'utf8');
 const list = fs.readFileSync(listPath, 'utf8');
 const manager = fs.readFileSync(managerPath, 'utf8');
 const backendVisibility = fs.readFileSync(backendVisibilityPath, 'utf8');
 const styles = fs.readFileSync(stylesPath, 'utf8');
+const a11y = fs.readFileSync(a11yPath, 'utf8');
 
-for (const [fileName, source] of [[navPath, nav], [listPath, list], [managerPath, manager], [backendVisibilityPath, backendVisibility]]) {
+for (const [fileName, source] of [[navPath, nav], [listPath, list], [managerPath, manager], [backendVisibilityPath, backendVisibility], [a11yPath, a11y]]) {
   const compiled = ts.transpileModule(source, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX },
     fileName,
@@ -55,6 +57,13 @@ assert.match(list, /if \(filter === 'router'\) return modelIsRouter\(m\);/);
 assert.match(list, /if \(filter === 'omni'\) return modelIsOmni\(m\);/);
 assert.match(list, /if \(filter === 'llm'\) return cap === 'chat' && !modelIsRouter\(m\);/);
 assert.match(list, /raw\.recommended === true \|\| raw\.is_recommended === true \|\| raw\.featured === true \|\| raw\.suggested === true/);
+assert.match(list, /const FILTER_TABS:[\s\S]*?key: 'llm', label: 'Chat'[\s\S]*?key: 'embedding', label: 'Embed'/,
+  'task filter labels must remain defined because the selected-task live region depends on FILTER_TABS');
+assert.match(list, /Array\.from\(taskFilters\)\.map\(task => FILTER_TABS\.find/,
+  'selected task labels must remain wired to FILTER_TABS');
+assert.doesNotMatch(list, /model-list-panel__filter-btn/, 'middle panel must not expose a duplicate filter control (#2936)');
+assert.doesNotMatch(list, /TextFilterRule/, 'removed middle-panel text-filter implementation must not linger as dead code');
+assert.doesNotMatch(list, /capabilityFilter/, 'middle-panel capability filter state must not linger after #2936');
 
 assert.match(manager, /const \[taskFilters, setTaskFilters\] = useState<Set<FilterTab>>/);
 assert.match(manager, /const \[backendFilters, setBackendFilters\] = useState<Set<string>>/);
@@ -62,6 +71,7 @@ assert.match(manager, /const \[tagFilters, setTagFilters\] = useState<Set<string
 assert.match(manager, /modelMatchesTasks\(info, taskFilters\)/);
 assert.match(manager, /modelMatchesBackends\(info, backendFilters\)/);
 assert.match(manager, /modelMatchesTags\(info, tagFilters\)/);
+assert.doesNotMatch(manager, /capabilityFilter/, 'ModelManager must not retain hidden funnel state after #2936');
 
 assert.match(styles, /\.model-nav-rail__chip-list\s*\{[^}]*flex-wrap:\s*wrap;/s);
 assert.match(styles, /\.model-nav-rail__task-icon\s*\{[^}]*color:\s*var\(--filter-chip-color\);/s);
@@ -70,6 +80,18 @@ assert.doesNotMatch(styles, /\.model-nav-rail__backend-chip::before\s*\{/,
   'reverting the backend color concept must restore the colored label instead of a separate dot');
 assert.match(styles, /\.model-nav-rail__backend-wrap\.is-removable \.model-nav-rail__backend-chip\s*\{[^}]*padding-inline-end:\s*19px;/s);
 assert.match(styles, /\.model-nav-rail__backend-remove,/);
+assert.doesNotMatch(styles, /\.model-list-panel__filter-(?:btn|popover|option|clear)/, 'removed middle filter styles must not remain');
+
+assert.doesNotMatch(a11y, /A95 — funnel filter button has aria-expanded and aria-haspopup/,
+  'Playwright must not require the #2936-removed middle-panel funnel button');
+assert.doesNotMatch(a11y, /A96 — funnel filter popover opens on button click and has role=dialog/,
+  'Playwright must not require the #2936-removed funnel dialog');
+assert.match(a11y, /A95 — models middle panel has no duplicate funnel dialog trigger/,
+  'Playwright should lock in the absence of the duplicate middle-panel filter');
+assert.match(a11y, /A96 — left-rail task filtering remains usable after funnel removal/,
+  'Playwright should exercise the surviving left-rail task filter path');
+assert.match(a11y, /model-list-panel__count[\s\S]*?toContainText\('\(Chat\)'\)/,
+  'the regression test must render the selected task label, catching missing FILTER_TABS at runtime');
 
 const visibilityCompiled = ts.transpileModule(backendVisibility, {
   compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
@@ -140,7 +162,15 @@ function loadListHelpers() {
 
   const module = { exports: {} };
   const customRequire = request => {
-    if (request === 'react') return { __esModule: true, default: {}, useCallback() {}, useEffect() {}, useRef() {}, useMemo() {}, useState() {} };
+    if (request === 'react') return {
+      __esModule: true,
+      default: { createElement: (...args) => ({ type: args[0], props: args[1], children: args.slice(2) }) },
+      useCallback(fn) { return fn; },
+      useEffect() {},
+      useRef(value = null) { return { current: value }; },
+      useMemo(factory) { return factory(); },
+      useState(initial) { return [typeof initial === 'function' ? initial() : initial, () => {}]; },
+    };
     if (request === '../modelCapabilities') return capModule.exports;
     if (request === './Icon') return { Icon() {}, CapabilityIcon() {} };
     if (request.includes('downloadStore')) return { activeDownloadForModel() { return undefined; } };
@@ -167,6 +197,21 @@ const chatModel = { id: 'Qwen-Chat', name: 'Qwen-Chat', labels: ['chat'], recipe
 const audioModel = { id: 'Whisper', name: 'Whisper', labels: ['audio'], recipe: 'whispercpp' };
 const routerModel = { id: 'user.router', name: 'user.router', labels: ['custom'], recipe: 'collection.router' };
 const omniModel = { id: 'user.omni', name: 'user.omni', labels: ['custom'], recipe: 'collection.omni' };
+
+assert.doesNotThrow(() => helpers.ModelListPanel({
+  allModels: [chatModel, audioModel, routerModel, omniModel],
+  loadedNames: new Set(),
+  pulling: {},
+  downloadItems: [],
+  selectedModelId: null,
+  onSelectModel() {},
+  searchQuery: '',
+  onSearchChange() {},
+  taskFilters: new Set(['llm']),
+  primaryFilter: 'all',
+  backendFilters: new Set(),
+  tagFilters: new Set(),
+}), 'selecting a left-rail task must render the model list without throwing');
 
 assert.equal(helpers.modelMatchesTasks(routerModel, new Set(['router'])), true);
 assert.equal(helpers.modelMatchesTasks(routerModel, new Set(['llm'])), false, 'Router must not double-count as Chat');

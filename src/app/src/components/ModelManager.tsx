@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
-import { capabilityFromModelInfo, modelMatchesCapabilityTags } from '../modelCapabilities';
+import { capabilityFromModelInfo } from '../modelCapabilities';
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
@@ -1113,8 +1113,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModelNames());
   const [favoriteModels, setFavoriteModels] = useState<string[]>(() => loadFavoriteModels());
-  // Multi-select functional capability filter driven by the funnel popover.
-  const [capabilityFilter, setCapabilityFilter] = useState<Set<string>>(() => new Set());
   // Real disk usage for the storage meter (null until/unless lemond exposes it).
   const [storageInfo, setStorageInfo] = useState<import('../api').StorageInfo | null>(null);
   const [globalModelSettings, setGlobalModelSettings] = useState<GlobalModelSettings>(() => loadGlobalModelSettings());
@@ -2380,12 +2378,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       if (localRegistryRefs.has(result.id.toLowerCase())) return false;
       const info = remoteResultAsModelInfo(result, remoteVariants[providerKey(provider, result.id)]);
       if (!modelMatchesTasks(info, taskFilters)) return false;
-      if (!modelMatchesCapabilityTags(info, capabilityFilter)) return false;
       if (!modelMatchesBackends(info, backendFilters)) return false;
       if (!modelMatchesTags(info, tagFilters)) return false;
       return true;
     });
-  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, taskFilters, capabilityFilter, backendFilters, tagFilters]);
+  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, taskFilters, backendFilters, tagFilters]);
 
   const filteredHfResults = useMemo(
     () => filterRemoteResults('huggingface', hfResults),
@@ -2429,7 +2426,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setPrimaryFilter('all');
     setBackendFilters(new Set());
     setTagFilters(new Set());
-    setCapabilityFilter(new Set());
     if (showCustomForm) closeCustomForm();
     if (showRouterEditor) closeRouterEditor();
     if (showGlobalSettings) closeGlobalSettings();
@@ -2769,7 +2765,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         railRef={mobileRail.panelRef}
       />
 
-      {/* Middle panel: searchable/filterable model list */}
+      {/* Middle panel: searchable model list; filtering lives in the left rail. */}
       <ModelListPanel
         allModels={allModels}
         loadedNames={loadedNames}
@@ -2787,8 +2783,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         taskFilters={taskFilters}
-        capabilityFilter={capabilityFilter}
-        onCapabilityFilterChange={setCapabilityFilter}
         primaryFilter={primaryFilter}
         backendFilters={backendFilters}
         tagFilters={tagFilters}
