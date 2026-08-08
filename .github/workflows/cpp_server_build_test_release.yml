@@ -386,19 +386,39 @@ jobs:
           package-type: binary
           deb-version: ${{ steps.get_version.outputs.version }}
 
-      - name: Run C++ unit tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          cmake --preset default
-          cmake --build --preset default --target cpp-ci-tests
-          ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-deb
           path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
           retention-days: 7
+
+  cpp-unit-tests:
+    name: C++ unit tests
+    # Own job rather than a step of build-lemonade-deb: it shares nothing with
+    # the packaging build (different configure, different flags), so as a step
+    # it just added its full build time to the critical path that gates every
+    # .deb test job. Same build-environment image, so the configure resolves
+    # the same system dependencies.
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Build and run C++ unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --preset default
+          cmake --build --preset default --target cpp-ci-tests
+          ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"
 
   build-lemonade-debian13:
     name: Build Lemonade .deb Package (Debian 13)${{ matrix.job-suffix }}
