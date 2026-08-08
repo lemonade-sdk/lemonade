@@ -362,6 +362,10 @@ private:
     // Extract load-level options from an inference request body. Currently only ctx_size
     // is forwarded; request-scoped fields are excluded so they cannot leak into recipe options.
     static json extract_auto_load_options(const json& request);
+
+    // Merge sd-cpp diffusion flags into sdcpp_args, combining recipe-level args
+    // with per-request boolean flags. Returns modified request_options.
+    json build_sdcpp_args_merge(const json& request_options, const ModelInfo& info);
 };
 
 } // namespace lemon
