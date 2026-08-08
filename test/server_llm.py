@@ -566,6 +566,34 @@ class LLMTests(ServerTestBase):
         self.assertGreater(len(response.data[0].embedding), 0)
         print(f"Embedding dimension: {len(response.data[0].embedding)}")
 
+    @skip_if_unsupported("embeddings")
+    def test_015b_embeddings_missing_model_returns_400(self):
+        """Test embeddings request without model returns a helpful 400 error."""
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        response = requests.post(
+            f"{self.base_url}/embeddings",
+            json={
+                "input": "Hello, how are you today?",
+                "encoding_format": "float",
+            },
+            headers=headers,
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        self.assertEqual(response.status_code, 400, response.text)
+
+        error = response.json().get("error")
+        self.assertIsInstance(error, dict, response.text)
+        self.assertEqual(error.get("type"), "invalid_request")
+        self.assertIn(
+            "no model specified",
+            error.get("message", "").lower(),
+        )
+
     @skip_if_unsupported("embeddings_batch")
     def test_016_embeddings_array_of_strings(self):
         """Test embeddings with array of strings."""
@@ -651,6 +679,43 @@ class LLMTests(ServerTestBase):
         }
 
         response = requests.post(
+            f"{self.base_url}/rerank", json=payload, timeout=TIMEOUT_MODEL_OPERATION
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        results = result.get("results", [])
+        results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+
+        top_3_indices = [r["index"] for r in results[:3]]
+        expected_top_3 = {0, 4, 5}  # Food-related documents
+        actual_top_3 = set(top_3_indices)
+
+        print(f"/rerank top 3 indices: {top_3_indices}")
+        self.assertEqual(
+            actual_top_3,
+            expected_top_3,
+            f"Expected food-related documents {expected_top_3} in top 3, got {actual_top_3}",
+        )
+
+    @skip_if_unsupported("reranking")
+    def test_018b_reranking_alias(self):
+        """Test that the legacy /reranking alias behaves like /rerank."""
+        model = self.get_test_model("reranking")
+
+        query = "A man is eating pasta."
+        documents = [
+            "A man is eating food.",
+            "The girl is carrying a baby.",
+            "A man is riding a horse.",
+            "A young girl is playing violin.",
+            "A man is eating a piece of bread.",
+            "A man is eating noodles.",
+        ]
+        payload = {"query": query, "documents": documents, "model": model}
+        expected_top_3 = {0, 4, 5}  # Food-related documents
+
+        response = requests.post(
             f"{self.base_url}/reranking", json=payload, timeout=TIMEOUT_MODEL_OPERATION
         )
         response.raise_for_status()
@@ -663,7 +728,44 @@ class LLMTests(ServerTestBase):
         expected_top_3 = {0, 4, 5}  # Food-related documents
         actual_top_3 = set(top_3_indices)
 
-        print(f"Top 3 indices: {top_3_indices}")
+        print(f"/reranking top 3 indices: {top_3_indices}")
+        self.assertEqual(
+            actual_top_3,
+            expected_top_3,
+            f"Expected food-related documents {expected_top_3} in top 3, got {actual_top_3}",
+        )
+
+    @skip_if_unsupported("reranking")
+    def test_018c_reranker_alias(self):
+        """Test that the /reranker alias behaves like /rerank."""
+        model = self.get_test_model("reranking")
+
+        query = "A man is eating pasta."
+        documents = [
+            "A man is eating food.",
+            "The girl is carrying a baby.",
+            "A man is riding a horse.",
+            "A young girl is playing violin.",
+            "A man is eating a piece of bread.",
+            "A man is eating noodles.",
+        ]
+        payload = {"query": query, "documents": documents, "model": model}
+        expected_top_3 = {0, 4, 5}  # Food-related documents
+
+        response = requests.post(
+            f"{self.base_url}/reranker", json=payload, timeout=TIMEOUT_MODEL_OPERATION
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        results = result.get("results", [])
+        results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+
+        top_3_indices = [r["index"] for r in results[:3]]
+        expected_top_3 = {0, 4, 5}  # Food-related documents
+        actual_top_3 = set(top_3_indices)
+
+        print(f"/reranker top 3 indices: {top_3_indices}")
         self.assertEqual(
             actual_top_3,
             expected_top_3,
