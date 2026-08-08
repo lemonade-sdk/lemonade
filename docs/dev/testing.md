@@ -136,12 +136,34 @@ python test/test_schema_lock.py
 
 ## CI Expectations
 
-Every PR runs the C++ `cpp-ci` tests, the endpoint/CLI suites on Windows, Linux, and macOS, routing schema checks, app typecheck and regression tests, and the docs drift and link checks. Inference suites run on self-hosted AMD hardware runners ([details](./self-hosted-runners.md)).
+Every PR runs the C++ `cpp-ci` tests, the endpoint/CLI suites on Windows and Linux, routing schema checks, app typecheck and regression tests, and the docs drift and link checks. Inference suites run on self-hosted AMD hardware runners ([details](./self-hosted-runners.md)); [What defers to the merge queue](#what-defers-to-the-merge-queue) covers when they run.
 
 - Relevant local tests should pass before requesting review. All required CI must be green before final approval and merge.
 - Claiming a failure is a pre-existing flake requires evidence: link a `main` run with the identical failure signature. Fix flaky tests at the root cause; don't widen thresholds or add retries.
 - The PR description states how the change was tested and which platforms you could not cover. Ask in the [Discord](https://discord.gg/5xXzkMu8Zk) for help testing on hardware you don't have.
 - A silently-skipped test is a bug: if your change should be exercised by an existing CI job, confirm the job actually ran it rather than skipping.
+
+### What defers to the merge queue
+
+Packaging, distro, PPA, backend-validation, self-hosted inference and most macOS jobs do **not** run on PR pushes. They run in the merge queue, so a break there blocks the merge rather than every push. Each group reports through one aggregate check whose name is stable enough to be required:
+
+| Group | Gate check | Opt in on a PR with |
+|---|---|---|
+| Fedora RPM, Debian 13, Arch, openSUSE, Launchpad PPA | `Packaging builds`, `Linux distro builds`, `Launchpad PPA builds` | `ci:distros` |
+| macOS `.dmg`, `Test CLI/Endpoints (macos-latest)`, `Test Embeddable (macOS)`, `Test .dmg - macOS inference` | `macOS builds` | `ci:macos` |
+| llama.cpp, vLLM, stable-diffusion.cpp validation | `llama.cpp validation`, `vLLM validation`, `stable-diffusion.cpp validation` | `ci:upgrades` |
+| `Test .exe - *` and `Test .deb - *` inference suites on the self-hosted rigs | `Inference backend tests` | `ci:backends` |
+
+Every gated job is reachable from a PR by label — nothing is merge-queue-only. Apply the label when your change plausibly affects that surface (a backend version pin wants `ci:upgrades`, packaging or install-path changes want `ci:distros`, `#ifdef __APPLE__` or CMake changes want `ci:macos`, a wrapped-server or inference-path change wants `ci:backends`); the label takes effect immediately, without a push. Fork contributors can't apply labels themselves — ask a maintainer (or the [Discord](https://discord.gg/5xXzkMu8Zk)) to add one. Note that `Test .dmg - macOS inference` exercises several of the same wrapped servers (llama.cpp, whisper.cpp, moonshine, kokoro) on Metal but lives in the macOS group — a change to one of those that could break on Metal wants `ci:macos` too. `Build Embeddable Lemonade (macOS)` still runs on every PR as the AppleClang compile check.
+
+Two consequences worth knowing:
+
+- **A green PR does not mean macOS, packaging or hardware inference are green.** If your change touches those surfaces, label it rather than discovering the break in the queue.
+- **Adding a new suite to a gated job means it only runs in the queue by default.** Say so in the PR description.
+
+### macOS specifics
+
+The macOS `.pkg` suites run against an installed package, whether or not Apple signing secrets are present (`Test Embeddable (macOS)` is separate — it tests the embeddable tarball) — without them the installer is simply unsigned and notarization is skipped. There is no separate fork-PR test path, so a macOS test runs the same way everywhere. Use the `disable_macos_signing` input on a `workflow_dispatch` run to reproduce the unsigned path on demand.
 
 ---
 
@@ -156,6 +178,7 @@ Every PR runs the C++ `cpp-ci` tests, the endpoint/CLI suites on Windows, Linux,
 | New API surface added only for testability | Configure the model or server through existing options in the test |
 | A new test file for a device variant | A flag on the existing suite |
 | Committing a test no CI workflow runs | Wire it into a workflow or `register_cpp_ci_test()` in the same PR |
+| Touching a merge-queue-gated surface and shipping on a green unlabeled PR | Apply the matching label from the [deferred-groups table](#what-defers-to-the-merge-queue) so the gated jobs actually run |
 | Large models in CI jobs that download fresh every run | Use a sub-1 GB model and note the substitution in a comment |
 | Negative tests that don't reset state (env vars, loaded models) | `self.addCleanup(...)`; verify the test still tests what it claims |
 | Structural-only assertions on numeric outputs | Golden-reference comparison |

@@ -8,6 +8,8 @@ on:
         type: boolean
         default: false
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  merge_group:
   schedule:
     # Sunday at 6:00 PM UTC
     - cron: "0 18 * * 0"
@@ -24,7 +26,7 @@ env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
   HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
-  LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
+  LITE_MODE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
 
 jobs:
   # ========================================================================
@@ -32,7 +34,10 @@ jobs:
   # ========================================================================
   get-latest-releases:
     name: Get latest releases
-    if: github.event_name != 'pull_request'
+    # Only the auto-update runs resolve upstream releases. Everywhere else the
+    # build validates the pins committed in backend_versions.json, so a bad
+    # upstream release can't fail a merge or hide a broken pin.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       vllm_rocm_release: ${{ steps.vllm_rocm.outputs.release }}
@@ -52,7 +57,8 @@ jobs:
   build:
     name: Build (Linux)
     needs: get-latest-releases
-    if: always() && !failure() && !cancelled()
+    # Label a PR `ci:upgrades` to opt it back in.
+    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -355,3 +361,32 @@ jobs:
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"
+
+  # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
+  # successfully (otherwise the merge is blocked), and 2. these jobs do not need
+  # to run on ordinary pull request pushes.
+  validation-gate:
+    name: vLLM validation
+    needs: [build, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+          # Fail if any job broke. In the merge queue, also fail if any never ran.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
+          fi
