@@ -23,15 +23,17 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     pull_model_with_retry,
-    unload_all_models,
 )
 from utils.capabilities import get_test_model
 from utils.test_models import (
+    PORT,
     TIMEOUT_DEFAULT,
-    TIMEOUT_MODEL_OPERATION,
 )
 
 TIMEOUT_3D_GENERATION = 1800
+
+# Loading can install the backend, which downloads and extracts an archive.
+TIMEOUT_3D_LOAD = 1800
 
 # Guidance strengths of 1 disable classifier-free guidance, so each flow step
 # costs one forward pass instead of two. These tests cover that the pipeline
@@ -75,10 +77,14 @@ class Model3DTests(ServerTestBase):
 
     @classmethod
     def tearDownClass(cls):
-        # The fast-generation args live only in this process, so drop it rather
-        # than leave a guidance-free backend serving whatever comes next.
+        # The guidance-free args belong to the backend subprocess this suite
+        # started, so retire it rather than let it serve later requests.
         try:
-            unload_all_models()
+            requests.post(
+                f"http://localhost:{PORT}/api/v1/unload",
+                json={"model_name": get_test_model("model3d")},
+                timeout=TIMEOUT_DEFAULT,
+            )
         except Exception as e:
             print(f"Warning: Failed to unload the 3D backend: {e}")
         super().tearDownClass()
@@ -191,7 +197,7 @@ class Model3DTests(ServerTestBase):
                 "model_name": payload["model"],
                 "trellis_args": FAST_GENERATION_ARGS,
             },
-            timeout=TIMEOUT_MODEL_OPERATION,
+            timeout=TIMEOUT_3D_LOAD,
         )
         self.assertEqual(
             load.status_code,
