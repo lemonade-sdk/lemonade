@@ -436,49 +436,47 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         return fallback;
     };
 
+    // Helper: 3-tier resolution (user-set > image_defaults > baked-in default)
+    auto resolved_int = [&](const std::string& key, int ifd) -> int {
+        if (recipe_options_.has_option(key))
+            return static_cast<int>(recipe_options_.get_option(key));
+        if (image_defaults_.has_defaults)
+            return ifd;
+        return static_cast<int>(recipe_options_.get_option(key));
+    };
+    auto resolved_float = [&](const std::string& key, float ifd) -> float {
+        if (recipe_options_.has_option(key))
+            return recipe_options_.get_option(key);
+        if (image_defaults_.has_defaults)
+            return ifd;
+        return recipe_options_.get_option(key);
+    };
+    auto resolved_string = [&](const std::string& key, const std::string& ifd) -> std::string {
+        if (recipe_options_.has_option(key))
+            return recipe_options_.get_option(key);
+        if (image_defaults_.has_defaults && !ifd.empty())
+            return ifd;
+        return recipe_options_.get_option(key);
+    };
+
     // steps -> sample_params.sample_steps
-    int steps = image_defaults_.has_defaults
-                  ? image_defaults_.steps
-                  : static_cast<int>(recipe_options_.get_option("steps"));
-    steps = resolve_int("steps", steps);
-    if (steps > 0) {
-        sample_params["sample_steps"] = steps;
-    }
+    int steps = resolve_int("steps", resolved_int("steps", image_defaults_.has_defaults ? image_defaults_.steps : 0));
+    if (steps > 0) sample_params["sample_steps"] = steps;
 
     // cfg_scale -> sample_params.guidance.txt_cfg
-    float cfg_scale = image_defaults_.has_defaults
-                        ? image_defaults_.cfg_scale
-                        : static_cast<float>(recipe_options_.get_option("cfg_scale"));
-    cfg_scale = resolve_float("cfg_scale", cfg_scale);
-    if (cfg_scale > 0.0f) {
-        guidance["txt_cfg"] = cfg_scale;
-    }
+    float cfg_scale = resolve_float("cfg_scale", resolved_float("cfg_scale", image_defaults_.has_defaults ? image_defaults_.cfg_scale : 0.0f));
+    if (cfg_scale > 0.0f) guidance["txt_cfg"] = cfg_scale;
 
     // sample_method -> sample_params.sample_method
-    std::string sample_method;
-    if (image_defaults_.has_defaults && !image_defaults_.sampling_method.empty()) {
-        sample_method = image_defaults_.sampling_method;
-    } else {
-        sample_method = recipe_options_.get_option("sampling_method");
-    }
-    sample_method = resolve_string("sample_method", sample_method);
-    if (!sample_method.empty()) {
-        sample_params["sample_method"] = sample_method;
-    }
+    std::string sample_method = resolve_string("sample_method",
+        resolved_string("sampling_method", image_defaults_.has_defaults ? image_defaults_.sampling_method : ""));
+    if (!sample_method.empty()) sample_params["sample_method"] = sample_method;
 
     // flow_shift -> sample_params.flow_shift
     if (include_flow_shift) {
-        float flow_shift = 0.0f;
-        if (image_defaults_.has_defaults && image_defaults_.flow_shift > 0.0f) {
-            flow_shift = image_defaults_.flow_shift;
-        } else {
-            float fs = recipe_options_.get_option("flow_shift");
-            if (fs > 0.0f) flow_shift = fs;
-        }
-        flow_shift = resolve_float("flow_shift", flow_shift);
-        if (flow_shift > 0.0f) {
-            sample_params["flow_shift"] = flow_shift;
-        }
+        float flow_shift = resolve_float("flow_shift",
+            resolved_float("flow_shift", image_defaults_.has_defaults ? image_defaults_.flow_shift : 0.0f));
+        if (flow_shift > 0.0f) sample_params["flow_shift"] = flow_shift;
     }
 
     if (!guidance.empty()) {
@@ -508,11 +506,23 @@ std::string SDServer::resolve_size(const json& request) const {
         return std::to_string(request["width"].get<int>()) + "x"
              + std::to_string(request["height"].get<int>());
     }
-    if (image_defaults_.has_defaults) {
-        return std::to_string(image_defaults_.width) + "x"
-             + std::to_string(image_defaults_.height);
-    }
-    return "";
+    // Priority: recipe_options (user-saved) > image_defaults
+    int w, h;
+    if (recipe_options_.has_option("width"))
+        w = static_cast<int>(recipe_options_.get_option("width"));
+    else if (image_defaults_.has_defaults)
+        w = image_defaults_.width;
+    else
+        return "";
+
+    if (recipe_options_.has_option("height"))
+        h = static_cast<int>(recipe_options_.get_option("height"));
+    else if (image_defaults_.has_defaults)
+        h = image_defaults_.height;
+    else
+        return "";
+
+    return std::to_string(w) + "x" + std::to_string(h);
 }
 
 // ICompletionServer implementation - not supported for image generation
