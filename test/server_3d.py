@@ -192,11 +192,14 @@ class Model3DTests(ServerTestBase):
 
         # Load up front so the args apply to this run only; /load without
         # save_options persists nothing, and the generation below reuses this
-        # process instead of auto-loading.
+        # process instead of auto-loading. merge_args=False keeps trellis args
+        # already configured on the machine out of this load, so the timing the
+        # suite is tuned for does not depend on the host.
         load = load_model(
             payload["model"],
             timeout=TIMEOUT_3D_LOAD,
             trellis_args=FAST_GENERATION_ARGS,
+            merge_args=False,
         )
         self.assertEqual(
             load.status_code,
@@ -216,11 +219,9 @@ class Model3DTests(ServerTestBase):
             ),
             {},
         )
-        # Compare tokens, not the string: merging with a server that already
-        # carries trellis args rewrites the value in alphabetical order.
         self.assertEqual(
-            sorted(str(applied.get("trellis_args", "")).split()),
-            sorted(FAST_GENERATION_ARGS.split()),
+            applied.get("trellis_args", ""),
+            FAST_GENERATION_ARGS,
             f"trellis_args never reached the backend; applied options: {applied}",
         )
         print(f"[INFO] Sending 3D generation request with model {payload['model']}")
