@@ -10,6 +10,7 @@ const api = fs.readFileSync(path.join(root, 'src/api.ts'), 'utf8');
 const capabilitiesSource = fs.readFileSync(path.join(root, 'src/modelCapabilities.ts'), 'utf8');
 const remoteCapabilitiesSource = fs.readFileSync(path.join(root, 'src/remoteModelCapabilities.ts'), 'utf8');
 const listPanelSource = fs.readFileSync(path.join(root, 'src/components/ModelListPanel.tsx'), 'utf8');
+const styles = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
 
 function loadTypeScriptModule(filename) {
   const source = fs.readFileSync(filename, 'utf8');
@@ -95,11 +96,28 @@ assert.match(listPanelSource, /if \(filter === 'llm'\) return cap === 'chat' && 
 assert.match(listPanelSource, /if \(filter === 'omni'\) return modelIsOmni\(m\);/,
   'Omni models must match the dedicated Omni task filter');
 
-assert.match(nav, />Model-Provider</);
-assert.match(nav, /name=\{enabled \? 'cloud' : 'cloud-off'\}/);
-assert.match(nav, /providerCounts\.huggingface \+ providerCounts\.modelscope/,
-  'collapsed provider section must show the combined result count');
-assert.match(nav, /aria-pressed=\{enabled\}/);
+assert.match(nav, />Online Catalogs</,
+  'remote provider controls must use the Online Catalogs label');
+assert.match(nav, /<Icon name="cloud" size=\{14\}/,
+  'Online Catalogs must be prefixed by the cloud icon');
+assert.match(nav, /providerEnabled\.huggingface \? providerCounts\.huggingface : 0/,
+  'the aggregate count must include enabled Hugging Face results');
+assert.match(nav, /providerEnabled\.modelscope \? providerCounts\.modelscope : 0/,
+  'the aggregate count must include enabled ModelScope results');
+assert.match(nav, /\{hasEnabledProvider && \([\s\S]*\{providerResultCount\}/,
+  'the aggregate result count must remain visible, including zero, while at least one catalog is enabled');
+assert.match(nav, /type="checkbox"[\s\S]*checked=\{enabled\}[\s\S]*onChange=\{\(\) => onToggleProvider\(provider\.key\)\}/,
+  'remote catalogs must use native checkboxes for enabled state');
+assert.ok(nav.indexOf('Online Catalogs') < nav.indexOf('model-nav-rail__section--tasks'),
+  'Online Catalogs must sit directly below the primary model navigation');
+assert.doesNotMatch(nav, /model-nav-rail__section--providers/,
+  'Online Catalogs must not be separated from Favorites by its own filter section');
+assert.doesNotMatch(nav, /model-nav-rail__provider-item/,
+  'remote catalogs must not use the old button/highlight treatment');
+assert.match(styles, /\.model-nav-rail__provider-option input \{[\s\S]*appearance: none;[\s\S]*width: 16px;[\s\S]*height: 16px;[\s\S]*border-radius: 3px;/,
+  'catalog checkboxes must match the custom checkbox geometry used in the Backends tab');
+assert.match(styles, /\.model-nav-rail__provider-option input:checked \{[\s\S]*background: var\(--accent\);[\s\S]*border-color: var\(--accent\);/,
+  'catalog checkboxes must match the Backends checked state');
 
 const { remoteCapabilityEvidence } = loadTypeScriptModule(path.join(root, 'src/remoteModelCapabilities.ts'));
 const { capabilityFromModelInfo, modelCapabilityTags } = loadTypeScriptModule(path.join(root, 'src/modelCapabilities.ts'));
