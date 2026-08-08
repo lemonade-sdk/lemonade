@@ -24,7 +24,7 @@ import os
 import time
 import requests
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 import threading
 
 from utils.server_base import (
