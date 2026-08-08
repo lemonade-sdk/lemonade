@@ -232,10 +232,9 @@ public:
     ModelClassifier(std::string id, std::string type, std::string model, OnError on_error,
                     std::vector<std::string> labels,
                     std::optional<std::string> default_label)
-        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
-                     std::move(default_label)),
-          model_(std::move(model)) {
-        if (model_.empty()) {
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)) {
+        if (model_name_.empty()) {
             throw std::invalid_argument("classifier requires model");
         }
     }
@@ -247,16 +246,13 @@ public:
         }
 
         try {
-            score.labels = ctx.services.run_classifier(model_, ctx.request.input);
+            score.labels = ctx.services.run_classifier(model_name_, ctx.request.input);
             score.ok = true;
         } catch (...) {
             score = failed_score();
         }
         return score;
     }
-
-private:
-    std::string model_;
 };
 
 // The `llm` router / L0(a) on-ramp. Runs a small chat model with the author's
@@ -274,10 +270,10 @@ public:
     LlmClassifier(std::string id, std::string type, std::string model, std::string prompt,
                   OnError on_error, std::vector<std::string> labels,
                   std::optional<std::string> default_label)
-        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
-                     std::move(default_label)),
-          model_(std::move(model)), prompt_(std::move(prompt)) {
-        if (model_.empty()) {
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
+          prompt_(std::move(prompt)) {
+        if (model_name_.empty()) {
             throw std::invalid_argument("llm classifier requires model");
         }
         if (prompt_.empty()) {
@@ -294,7 +290,7 @@ public:
         }
         std::string reply;
         try {
-            reply = ctx.services.chat(model_, effective_prompt(),
+            reply = ctx.services.chat(model_name_, effective_prompt(),
                                       build_context_payload(ctx.request));
         } catch (const RouterResidencyConflictException&) {
             // A hardware coexistence conflict is not a classifier-quality
@@ -414,7 +410,7 @@ private:
         return nullptr;
     }
 
-    std::string model_;
+private:
     std::string prompt_;
 };
 
@@ -435,11 +431,10 @@ public:
                                  std::vector<Concept> concepts, OnError on_error,
                                  std::vector<std::string> labels,
                                  std::optional<std::string> default_label)
-        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
-                     std::move(default_label)),
-          model_(std::move(model)),
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
           concepts_(std::move(concepts)) {
-        if (model_.empty()) {
+        if (model_name_.empty()) {
             throw std::invalid_argument("semantic_similarity classifier requires model");
         }
         if (concepts_.empty()) {
@@ -466,7 +461,7 @@ public:
 
         Embedding input_embedding;
         try {
-            input_embedding = ctx.services.embed(model_, ctx.request.input);
+            input_embedding = ctx.services.embed(model_name_, ctx.request.input);
         } catch (...) {
             return failed_score();
         }
@@ -510,7 +505,7 @@ private:
                 ConceptEmbeddings phrase_embeddings;
                 phrase_embeddings.reserve(concept.second.size());
                 for (const auto& phrase : concept.second) {
-                    phrase_embeddings.push_back(services.embed(model_, phrase));
+                    phrase_embeddings.push_back(services.embed(model_name_, phrase));
                 }
                 embeddings.push_back(std::move(phrase_embeddings));
             }
@@ -520,7 +515,6 @@ private:
         return reference_embeddings_;
     }
 
-    std::string model_;
     std::vector<Concept> concepts_;
 
     mutable std::mutex cache_mutex_;
@@ -1149,6 +1143,21 @@ std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_js
         }
     }
     return classifiers;
+}
+
+std::vector<std::string> collect_policy_helper_models(const RoutePolicy& policy) {
+    std::set<std::string> unique;
+    for (const auto& [id, classifier] : policy.classifiers) {
+        if (!classifier) {
+            continue;
+        }
+        for (auto& model : classifier->referenced_models()) {
+            if (!model.empty()) {
+                unique.insert(std::move(model));
+            }
+        }
+    }
+    return {unique.begin(), unique.end()};
 }
 
 LeafFactory make_leaf_factory(const std::map<std::string, ClassifierPtr>& classifiers,

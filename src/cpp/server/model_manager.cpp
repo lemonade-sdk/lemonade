@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <sstream>
 #include <thread>
 #include <chrono>
@@ -1051,6 +1052,52 @@ void ModelManager::invalidate_models_cache() {
     cache_valid_ = false;
 }
 
+void ModelManager::set_models_changed_callback(std::function<void(uint64_t)> cb) {
+    std::lock_guard<std::mutex> lock(models_changed_callback_mutex_);
+    models_changed_callback_ = std::move(cb);
+}
+
+uint64_t ModelManager::next_notify_generation() {
+    return ++notify_generation_;
+}
+
+void ModelManager::notify_models_changed() {
+    // A callback that reads the registry can trigger a cache rebuild; block any
+    // same-thread re-entry so that can never recursively re-fire this.
+    static thread_local bool in_notify = false;
+    if (in_notify) {
+        return;
+    }
+    std::function<void(uint64_t)> cb;
+    {
+        std::lock_guard<std::mutex> lock(models_changed_callback_mutex_);
+        cb = models_changed_callback_;
+    }
+    if (!cb) {
+        return;
+    }
+    in_notify = true;
+    struct ResetGuard {
+        ~ResetGuard() { in_notify = false; }
+    } reset_guard;
+    // Tag this notification with a monotonic generation. Two concurrent registry
+    // updates may run their callbacks in parallel and publish out of order; the
+    // consumer keeps only the highest generation instead of us serializing the
+    // whole (potentially blocking) callback here, which would stall a newer
+    // update behind an older one.
+    const uint64_t generation = ++notify_generation_;
+    // Best-effort: a notification must never abort the registry mutation that
+    // triggered it. delete_model fires this from a scope-guard destructor, where
+    // a propagating exception would call std::terminate.
+    try {
+        cb(generation);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "ModelManager") << "models-changed callback threw: " << e.what() << std::endl;
+    } catch (...) {
+        LOG(WARNING, "ModelManager") << "models-changed callback threw a non-standard exception" << std::endl;
+    }
+}
+
 bool ModelManager::refresh_user_models_from_disk_for_lookup(const std::string& model_name) {
     std::vector<std::string> candidate_keys;
 
@@ -1103,8 +1150,12 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
         start_directory_watcher();
     }
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    cache_valid_ = false;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        cache_valid_ = false;
+    }
+
+    notify_models_changed();
 }
 
 void ModelManager::start_directory_watcher() {
@@ -1115,6 +1166,7 @@ void ModelManager::start_directory_watcher() {
             std::lock_guard<std::mutex> lock(models_cache_mutex_);
             cache_valid_ = false;
         }
+        notify_models_changed();
     });
     directory_watcher_->start();
 }
@@ -2772,6 +2824,19 @@ static std::set<std::string> normalized_definition_labels(const json& model_data
     return labels;
 }
 
+// Whether the persisted user-model entry under `key` is a router collection.
+// Both register (checking the entry being overwritten) and unregister (checking
+// the entry being removed) must decide whether a routing policy is disappearing,
+// so the recipe lookup lives in one place.
+static bool user_entry_is_router_collection(const json& user_models,
+                                            const std::string& key) {
+    if (!user_models.is_object() || !user_models.contains(key)) {
+        return false;
+    }
+    return is_router_collection_recipe(
+        user_models.at(key).value("recipe", std::string()));
+}
+
 void ModelManager::register_user_model(const std::string& model_name,
                                       const json& model_data,
                                       const std::string& source) {
@@ -2822,16 +2887,29 @@ void ModelManager::register_user_model(const std::string& model_name,
     // save can drop the first model, producing a hard "Model not found" on the
     // next auto-load. Read the latest disk copy under the same process mutex so
     // stale in-memory state cannot overwrite another registration.
+    bool overwrote_router_collection = false;
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
         json updated_user_models = load_optional_json(get_user_models_file());
         if (!updated_user_models.is_object()) {
             updated_user_models = json::object();
         }
+        overwrote_router_collection =
+            user_entry_is_router_collection(updated_user_models, clean_name);
         updated_user_models[clean_name] = model_entry;
         save_user_models(updated_user_models);
         user_models_ = std::move(updated_user_models);
         cache_valid_ = false;
+    }
+
+    // A router collection carries a routing policy, so its lifecycle affects the
+    // routing-helper working set. Notify when the new entry is a router
+    // collection, but also when a router collection is being *replaced* by a
+    // non-router recipe — otherwise the old policy silently disappears without a
+    // reconcile. Registering ordinary models (e.g. a collection's helper
+    // components) still must not trigger one.
+    if (is_router_collection_recipe(recipe) || overwrote_router_collection) {
+        notify_models_changed();
     }
 }
 
@@ -2841,15 +2919,24 @@ void ModelManager::unregister_user_model(const std::string& model_name) {
         clean_name = strip_user_model_prefix(clean_name);
     }
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    json updated_user_models = load_optional_json(get_user_models_file());
-    if (!updated_user_models.is_object() || !updated_user_models.contains(clean_name)) {
-        return;
+    bool was_router_collection = false;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        json updated_user_models = load_optional_json(get_user_models_file());
+        if (!updated_user_models.is_object() || !updated_user_models.contains(clean_name)) {
+            return;
+        }
+        was_router_collection =
+            user_entry_is_router_collection(updated_user_models, clean_name);
+        updated_user_models.erase(clean_name);
+        save_user_models(updated_user_models);
+        user_models_ = std::move(updated_user_models);
+        cache_valid_ = false;
     }
-    updated_user_models.erase(clean_name);
-    save_user_models(updated_user_models);
-    user_models_ = std::move(updated_user_models);
-    cache_valid_ = false;
+
+    if (was_router_collection) {
+        notify_models_changed();
+    }
 }
 
 
@@ -4371,6 +4458,23 @@ void ModelManager::delete_model(const std::string& model_name) {
     LOG(INFO, "ModelManager") << "Deleting model: " << canonical_model_name << std::endl;
     LOG(INFO, "ModelManager") << "Checkpoint: " << info.checkpoint() << std::endl;
     LOG(INFO, "ModelManager") << "Recipe: " << info.recipe << std::endl;
+
+    // Removing a router collection drops its policy: reconcile helpers once the
+    // delete actually completes (fires on normal return, not on an exception, so
+    // a retryable file-lock failure doesn't reconcile against a still-present
+    // policy). Ordinary models carry no policy and are skipped.
+    const bool notify_on_delete = is_router_collection_recipe(info.recipe);
+    const int uncaught_on_entry = std::uncaught_exceptions();
+    struct DeleteNotifier {
+        ModelManager* manager;
+        bool enabled;
+        int uncaught_on_entry;
+        ~DeleteNotifier() {
+            if (enabled && std::uncaught_exceptions() == uncaught_on_entry) {
+                manager->notify_models_changed();
+            }
+        }
+    } delete_notifier{this, notify_on_delete, uncaught_on_entry};
 
     // Handle extra models (from --extra-models-dir) - these are user-managed external files
     if (canonical_model_name.substr(0, 6) == "extra.") {

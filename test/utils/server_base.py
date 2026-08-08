@@ -294,6 +294,8 @@ def _build_runtime_config(additional_server_args=None):
         config["llamacpp"] = {"backend": backend}
     elif wrapped_server == "sd-cpp" and backend:
         config["sdcpp"] = {"backend": backend}
+    elif wrapped_server == "thenoise" and backend:
+        config["thenoise"] = {"backend": backend}
     elif wrapped_server == "whispercpp" and backend:
         config["whispercpp"] = {"backend": backend}
     elif wrapped_server == "thinksound" and backend:
@@ -321,6 +323,9 @@ def _build_runtime_config(additional_server_args=None):
             i += 2
         elif arg == "--sdcpp" and i + 1 < len(additional):
             config["sdcpp"] = {"backend": additional[i + 1]}
+            i += 2
+        elif arg == "--thenoise" and i + 1 < len(additional):
+            config["thenoise"] = {"backend": additional[i + 1]}
             i += 2
         elif arg == "--whispercpp" and i + 1 < len(additional):
             config["whispercpp"] = {"backend": additional[i + 1]}

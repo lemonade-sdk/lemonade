@@ -387,6 +387,24 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                                        backend_manager_.get());
     router_->set_cloud_registry(cloud_registry_.get());
 
+    // When a router collection is added, edited, or removed (via the API or an
+    // on-disk edit), reclaim any routing helper no remaining policy references.
+    model_manager_->set_models_changed_callback([this](uint64_t generation) {
+        router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
+    });
+
+    // Seed the router's needed-helper set from policies already present at
+    // startup so a helper loaded before the first policy change still validates
+    // against an authoritative set (see Router::load_model). Reserve the
+    // generation BEFORE snapshotting the policies: the directory watcher may
+    // already be publishing newer snapshots, and evaluating next_notify_generation()
+    // after computing the snapshot (argument evaluation order is unspecified in
+    // C++) could stamp this stale snapshot with a newer generation and clobber
+    // the watcher's authoritative state.
+    const uint64_t seed_generation = model_manager_->next_notify_generation();
+    const std::set<std::string> seed_needed = active_policy_helper_models();
+    router_->reconcile_routing_helpers(seed_needed, seed_generation);
+
     {
         lemon::jobs::OpProviders providers;
         struct JobModelState {
@@ -2925,6 +2943,20 @@ std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
                                << requested_model << "': " << e.what() << std::endl;
     }
     return std::nullopt;
+}
+
+std::set<std::string> Server::active_policy_helper_models() {
+    std::set<std::string> needed;
+    for (const auto& [name, info] : model_manager_->get_supported_models()) {
+        (void)name;
+        if (!info.route_policy) {
+            continue;
+        }
+        for (const auto& helper : info.route_policy->helper_models) {
+            needed.insert(helper);
+        }
+    }
+    return needed;
 }
 
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {

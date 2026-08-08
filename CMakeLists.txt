@@ -143,6 +143,7 @@ set(LEMON_BACKENDS
     "flm|fastflowlm"
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
+    "thenoise|thenoise"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
@@ -2795,4 +2796,13 @@ if(BUILD_TESTING)
     add_cpp_ci_test(HttplibDetection_polluted_target_fatal CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_polluted_target_fatal -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=polluted_target_fatal -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
     set_tests_properties(HttplibDetection_polluted_target_fatal PROPERTIES WILL_FAIL TRUE)
     add_cpp_ci_test(HttplibDetection_wolfssl_target CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_wolfssl_target -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=wolfssl_target -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
+endif()
+
+# Routing-helper reconciliation: durable needed-set + non-blocking prune that
+# skips busy/pinned helpers, plus a policy-update-vs-busy concurrency race.
+set(_ROUTING_HELPER_RECONCILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_helper_reconcile.cpp")
+if(EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
+    add_executable(test_routing_helper_reconcile test/cpp/test_routing_helper_reconcile.cpp)
+    target_link_libraries(test_routing_helper_reconcile PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RoutingHelperReconcileTest CI ON COMMAND test_routing_helper_reconcile)
 endif()
