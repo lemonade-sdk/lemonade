@@ -1015,7 +1015,9 @@ class LLMTests(ServerTestBase):
                     error_data = erase_response.json()
                     print(f"Slots erase backend error response: {error_data}")
                     self.assertIn("error", error_data)
-                    self.assertEqual(error_data["error"].get("type"), "not_supported_error")
+                    self.assertEqual(
+                        error_data["error"].get("type"), "not_supported_error"
+                    )
                     self.assertIn(
                         "--slot-save-path",
                         error_data["error"].get("message", ""),
