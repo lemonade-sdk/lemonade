@@ -194,7 +194,11 @@ void StreamingProxy::forward_sse_stream(
                 : error_body;
             payload = json{{"error", {{"message", message},
                                       {"type", "backend_error"},
-                                      {"status", status}}}};
+                                      {"status_code", status}}}};
+        } else if (payload["error"].is_object() && !payload["error"].contains("status_code")) {
+            // A backend's own error object carries no transport status, so
+            // adapters downstream would have to guess one.
+            payload["error"]["status_code"] = status;
         }
         const std::string event = "data: " + payload.dump() + "\n\n";
         sink.write(event.data(), event.size());
@@ -325,7 +329,9 @@ void StreamingProxy::forward_byte_stream(
                 : error_body;
             payload = json{{"error", {{"message", message},
                                       {"type", "backend_error"},
-                                      {"status", status}}}};
+                                      {"status_code", status}}}};
+        } else if (payload["error"].is_object() && !payload["error"].contains("status_code")) {
+            payload["error"]["status_code"] = status;
         }
         const std::string out = payload.dump();
         sink.write(out.data(), out.size());

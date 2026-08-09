@@ -1,5 +1,6 @@
-#include "lemon/ollama_api.h"
+#include "lemon/anthropic_error.h"
 #include "lemon/error_types.h"
+#include "lemon/ollama_api.h"
 #include <iostream>
 #include <sstream>
 #include <chrono>
@@ -148,55 +149,6 @@ static json parse_openai_tool_arguments(const json& tool_call, std::vector<std::
     return json::object();
 }
 
-static int backend_error_http_status(const json& error) {
-    if (!error.is_object()) {
-        return 500;
-    }
-
-    for (const char* key : {"status_code", "code"}) {
-        if (error.contains(key) && error[key].is_number_integer()) {
-            const int status = error[key].get<int>();
-            if (status >= 400 && status <= 599) {
-                return status;
-            }
-        }
-    }
-
-    const std::string type = error.value("type", "");
-    if (type == ErrorType::INVALID_REQUEST || type == "invalid_request_error" ||
-        type == ErrorType::UNSUPPORTED_OPERATION) {
-        return 400;
-    }
-    if (type == ErrorType::MODEL_NOT_LOADED) {
-        return 404;
-    }
-
-    return 500;
-}
-
-static json build_anthropic_error(const json& error, int status) {
-    const char* type = "api_error";
-    if (status == 400) {
-        type = "invalid_request_error";
-    } else if (status == 404) {
-        type = "not_found_error";
-    } else if (status == 429) {
-        type = "rate_limit_error";
-    }
-
-    const std::string message = error.is_object()
-        ? error.value("message", "backend error")
-        : error.dump();
-
-    return json{
-        {"type", "error"},
-        {"error", {
-            {"type", type},
-            {"message", message},
-        }},
-    };
-}
-
 static bool set_anthropic_backend_error_response(const json& response, httplib::Response& res) {
     if (!response.contains("error")) {
         return false;
@@ -205,9 +157,9 @@ static bool set_anthropic_backend_error_response(const json& response, httplib::
     const auto& error = response["error"];
     std::cerr << "[OllamaApi] Backend returned error: " << error.dump() << std::endl;
 
-    const int status = backend_error_http_status(error);
+    const int status = anthropic::backend_error_http_status(error);
     res.status = status;
-    res.set_content(build_anthropic_error(error, status).dump(), "application/json");
+    res.set_content(anthropic::build_anthropic_error(error, status).dump(), "application/json");
     return true;
 }
 
@@ -698,7 +650,8 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                               << error.dump() << std::endl;
                     sent_error = true;
                     write_sse_event(client_sink, "error",
-                                    build_anthropic_error(error, backend_error_http_status(error)));
+                                    anthropic::build_anthropic_error(
+                                        error, anthropic::backend_error_http_status(error)));
                     return false;
                 }
 
