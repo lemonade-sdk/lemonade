@@ -73,36 +73,19 @@
   --cap-router:     #3289D1;
   --cap-vision:     #B58CFF;
   --cap-code:       #6AD0A3;
-  --cap-embedding:  #65758A;
+  --cap-embedding: #665F59;
   --cap-reranking:  #FF9D6A;
   --cap-image:      #D8752B;
-  --cap-image-edit: #D99358;
+  --cap-image-edit: #D8752B;
   --cap-audio:      #1693A5;
   --cap-audio-generation: #1693A5;
   --cap-tts:        #B35A9F;
-  --cap-model3d:    #92744C;
+  --cap-model3d:   #65758A;
 
   --provider-hugging-face:    #FF9D00;
   --provider-hugging-face-fg: #FFB84D;
   --provider-modelscope:      #4C8DFF;
   --provider-modelscope-fg:   #7BA9FF;
-
-  --backend-llamacpp:          #FACC15;
-  --backend-vllm:              #60A5FA;
-  --backend-flm:               #34D399;
-  --backend-ryzenai:           #F97316;
-  --backend-sd-cpp:            #C084FC;
-  --backend-whispercpp:        #38BDF8;
-  --backend-moonshine:         #22D3EE;
-  --backend-kokoro:            #F472B6;
-  --backend-acestep:           #FB7185;
-  --backend-thinksound:        #F59E0B;
-  --backend-openmoss:          #EC4899;
-  --backend-trellis:           #818CF8;
-  --backend-collection-omni:   #A78BFA;
-  --backend-collection-router: #22D3EE;
-  --backend-collection:        #94A3B8;
-  --backend-other:             var(--text-tertiary);
 
   --chart-series-1: #E8C66B;
   --chart-series-2: #7BAED4;

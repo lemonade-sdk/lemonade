@@ -75,9 +75,11 @@ assert.doesNotMatch(manager, /capabilityFilter/, 'ModelManager must not retain h
 
 assert.match(styles, /\.model-nav-rail__chip-list\s*\{[^}]*flex-wrap:\s*wrap;/s);
 assert.match(styles, /\.model-nav-rail__task-icon\s*\{[^}]*color:\s*var\(--filter-chip-color\);/s);
-assert.match(styles, /\.model-nav-rail__backend-chip\s*\{[^}]*color:\s*var\(--filter-chip-color\);/s);
+assert.doesNotMatch(nav, /backendColor/, 'backend filters must not receive per-backend identity colors');
+assert.match(styles, /\.model-nav-rail__backend-chip\s*\{[^}]*--filter-chip-color:\s*var\(--text-tertiary\);[^}]*color:\s*var\(--text-secondary\);/s);
+assert.match(styles, /\.model-nav-rail__backend-chip\.is-active\s*\{[^}]*color:\s*var\(--text-primary\);/s);
 assert.doesNotMatch(styles, /\.model-nav-rail__backend-chip::before\s*\{/,
-  'reverting the backend color concept must restore the colored label instead of a separate dot');
+  'backend filters must stay neutral without introducing a colored identity marker');
 assert.match(styles, /\.model-nav-rail__backend-wrap\.is-removable \.model-nav-rail__backend-chip\s*\{[^}]*padding-inline-end:\s*19px;/s);
 assert.match(styles, /\.model-nav-rail__backend-remove,/);
 assert.doesNotMatch(styles, /\.model-list-panel__filter-(?:btn|popover|option|clear)/, 'removed middle filter styles must not remain');

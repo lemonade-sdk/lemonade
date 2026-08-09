@@ -22,7 +22,6 @@ import React, { useMemo, useState } from 'react';
 import { storageKey } from '../storage';
 import type { ModelInfo, ModelRegistryProvider, StorageInfo } from '../api';
 import { Icon } from './Icon';
-import { backendColor } from '../modelPresentation';
 import type { IconName } from './Icon';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import {
@@ -439,7 +438,6 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
                   <button
                     type="button"
                     className={`model-nav-rail__filter-chip model-nav-rail__backend-chip${active ? ' is-active' : ''}`}
-                    style={{ '--filter-chip-color': backendColor(backend.value) } as React.CSSProperties}
                     aria-pressed={active}
                     onClick={() => toggleBackend(backend.value)}
                   >
