@@ -1,0 +1,157 @@
+name: Alpine musl APK 🏔️
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  # No paths filter here: the required "Alpine APK builds" check has to report
+  # on every PR, and a workflow that never triggers leaves it pending forever.
+  # `labeled` is here so the ci:distros escape hatch takes effect without a
+  # push. Adding `types` replaces the defaults, so the three default activity
+  # types have to be listed explicitly.
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-apk:
+    name: Build .apk (${{ matrix.arch }})
+    # Label a PR `ci:distros` to opt it back in.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
+    runs-on: ${{ matrix.runs-on }}
+    permissions:
+      # Needed by the release-upload step on tag pushes.
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-latest
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          clean: true
+
+      # The job runs on the glibc host so the JS actions (checkout, upload,
+      # release) work; only the musl build itself runs inside Alpine via docker.
+      # The arm64 runner is native, so the arm64 alpine image needs no QEMU.
+      - name: Build APK
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src alpine:latest \
+            sh packaging/alpine/build-apk.sh
+
+      - name: Smoke test the package
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src alpine:latest sh -eux -c '
+            apk add --allow-untrusted ./dist/lemonade-server-*.apk
+            lemond --version
+            lemonade --version
+
+            export XDG_RUNTIME_DIR=/tmp/xdg-runtime
+            mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+
+            lemond --port 13305 > /tmp/lemond.log 2>&1 &
+            for i in $(seq 1 30); do
+              if wget -q -O - http://localhost:13305/live >/dev/null 2>&1; then
+                echo "Server is up"; exit 0
+              fi
+              sleep 2
+            done
+            echo "ERROR: server did not become healthy"
+            cat /tmp/lemond.log || true
+            exit 1
+          '
+
+      - name: Smoke test the OpenRC service
+        run: |
+          # Exercises the documented `rc-service lemonade-server start` path (not
+          # just a hand-exported `lemond`): the initd must export XDG_RUNTIME_DIR
+          # itself, or lemond refuses to start. --nodeps because a bare container
+          # has no running `net` service to depend on.
+          docker run --rm -v "$PWD:/src" -w /src alpine:latest sh -eux -c '
+            apk add --allow-untrusted ./dist/lemonade-server-*.apk
+
+            # Minimal OpenRC bootstrap for a non-init container.
+            mkdir -p /run/openrc
+            touch /run/openrc/softlevel
+
+            rc-service --nodeps lemonade-server start
+            for i in $(seq 1 30); do
+              if wget -q -O - http://localhost:13305/live >/dev/null 2>&1; then
+                echo "Service is up"
+                rc-service --nodeps lemonade-server stop || true
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "ERROR: service did not become healthy"
+            cat /var/log/lemonade/lemonade.log || true
+            rc-service --nodeps lemonade-server stop || true
+            exit 1
+          '
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-server-apk-${{ matrix.arch }}
+          path: dist/*.apk
+          if-no-files-found: error
+
+      # abuild names both arches lemonade-server-<ver>-r<rel>.apk, so give the
+      # release asset an arch suffix to avoid overwriting the other leg's upload.
+      - name: Stage release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -eux
+          mkdir -p release-assets
+          orig=$(ls dist/lemonade-server-*.apk | head -1)
+          cp "$orig" "release-assets/$(basename "${orig%.apk}")-${{ matrix.arch }}.apk"
+
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.apk
+          fail_on_unmatched_files: true
+
+  # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
+  # successfully (otherwise the merge is blocked), and 2. these jobs do not need
+  # to run on ordinary pull request pushes.
+  alpine-gate:
+    name: Alpine APK builds
+    needs: [build-apk]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+          # Fail if any job broke. In the merge queue, also fail if any never ran.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
+          fi
