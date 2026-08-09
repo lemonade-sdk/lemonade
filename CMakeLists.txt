@@ -814,15 +814,30 @@ if(WIN32)
         file(TO_NATIVE_PATH "${WIX_TAURI_FRAGMENT}" WIX_TAURI_FRAGMENT_NATIVE)
 
 
-        # Pinned so `wix build` cannot resolve a newer extension from NuGet
-        # that the pinned CLI then refuses to load. Keep in step with the
-        # version installed by .github/actions/install-wix.
-        set(LEMONADE_WIX_EXT_VERSION "5.0.2")
+        # Request the extension matching the CLI that was actually found, so
+        # `wix build` cannot resolve a newer major from NuGet that this CLI then
+        # refuses to load. Derived rather than hardcoded: the project supports
+        # WiX 5.0+, so pinning a literal would break a newer supported CLI.
+        # Falls back to unversioned if the banner is not parseable.
+        string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" WIX_EXT_VERSION "${WIX_VERSION_OUTPUT}")
+        if(WIX_EXT_VERSION)
+            set(WIX_UI_EXTENSION "WixToolset.UI.wixext/${WIX_EXT_VERSION}")
+        else()
+            set(WIX_UI_EXTENSION "WixToolset.UI.wixext")
+        endif()
+        message(STATUS "WiX UI extension: ${WIX_UI_EXTENSION}")
 
         # Web app fragment paths. The minimal and full installers each get
         # their own file: both regenerate it and then feed it to wix build, so
         # a shared path makes the two targets race whenever a build runs them
         # in parallel (`cmake --build --target wix_installers -- /m`).
+        # Their wix intermediate folders are separated below for the same
+        # reason — both compile Product.wxs, so a shared obj/ would collide on
+        # Product.wixobj with different -d IncludeTauriApp values.
+        set(WIX_INTERMEDIATE_MINIMAL "${CMAKE_CURRENT_BINARY_DIR}/installer/obj-minimal")
+        file(TO_NATIVE_PATH "${WIX_INTERMEDIATE_MINIMAL}" WIX_INTERMEDIATE_MINIMAL_NATIVE)
+        set(WIX_INTERMEDIATE_FULL "${CMAKE_CURRENT_BINARY_DIR}/installer/obj-full")
+        file(TO_NATIVE_PATH "${WIX_INTERMEDIATE_FULL}" WIX_INTERMEDIATE_FULL_NATIVE)
         file(TO_NATIVE_PATH "${WEB_APP_BUILD_DIR}" WIX_WEBAPP_SOURCE_NATIVE)
         set(WIX_WEBAPP_FRAGMENT_MINIMAL "${CMAKE_CURRENT_BINARY_DIR}/installer/WebAppFragment.minimal.wxs")
         file(TO_NATIVE_PATH "${WIX_WEBAPP_FRAGMENT_MINIMAL}" WIX_WEBAPP_FRAGMENT_MINIMAL_NATIVE)
@@ -846,7 +861,8 @@ if(WIN32)
                 --path-variable "WebAppSourceDir"
             COMMAND ${WIX_EXECUTABLE} build
                 -arch x64
-                -ext WixToolset.UI.wixext/${LEMONADE_WIX_EXT_VERSION}
+                -intermediateFolder "${WIX_INTERMEDIATE_MINIMAL_NATIVE}"
+                -ext ${WIX_UI_EXTENSION}
                 -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
                 -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
                 -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
@@ -883,7 +899,8 @@ if(WIN32)
                 --path-variable "TauriSourceDir"
             COMMAND ${WIX_EXECUTABLE} build
                 -arch x64
-                -ext WixToolset.UI.wixext/${LEMONADE_WIX_EXT_VERSION}
+                -intermediateFolder "${WIX_INTERMEDIATE_FULL_NATIVE}"
+                -ext ${WIX_UI_EXTENSION}
                 -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
                 -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
                 -d BuildDir="${WIX_BUILD_DIR_NATIVE}"

@@ -135,12 +135,12 @@ jobs:
           size_mb="$(docker run --rm "$IMAGE" sh -c 'du -sm "$CCACHE_DIR" 2>/dev/null || echo 0' | cut -f1)"
           echo "Primed ccache size: ${size_mb} MB"
           if [ "$size_mb" -lt 50 ]; then
-            echo "ERROR: the primed ccache is essentially empty — see the prime warning in the build log above"
+            echo "::error title=Build image published without a compiler cache::The image itself is fine and consumers will fall back to a cold compile, but the prime produced nothing — see the prime warning earlier in this log. Most often a source change referencing a path .dockerignore strips. This job stays red until that is fixed."
             exit 1
           fi
 
           if ! debugpath="$(docker run --rm "$IMAGE" cat /opt/ccache-debugpath 2>/dev/null)"; then
-            echo "ERROR: the cache exists but the prime never completed, so consumers will not use it"
+            echo "::error title=Build image published without a compiler cache::Objects were produced but the prime did not run to completion, so consumers will not use them."
             exit 1
           fi
           echo "Recorded DEB_BUILD_DEBUGPATH: ${debugpath}"
