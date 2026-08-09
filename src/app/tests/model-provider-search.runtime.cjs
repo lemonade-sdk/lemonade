@@ -132,6 +132,8 @@ const { capabilityFromModelInfo, modelCapabilityTags } = loadTypeScriptModule(pa
 const {
   filterHuggingFaceSearchResults,
   HUGGING_FACE_SEARCH_LIMIT,
+  detectHuggingFaceBackendFromMetadata,
+  isCompatibleHuggingFaceRecipe,
   isCompatibleHuggingFaceVariantResult,
 } = loadTypeScriptModule(huggingFaceSearchPath);
 
@@ -147,17 +149,32 @@ assert.ok(
   filteredHuggingFaceResults.every(result => result.pipeline_tag !== 'image-text-to-image'),
   'non-LLM image pipelines must be excluded from model search',
 );
-assert.equal(isCompatibleHuggingFaceVariantResult(null), false, 'failed variant discovery must remove the result');
+assert.equal(isCompatibleHuggingFaceVariantResult(null), false, 'failed variant discovery must use repository fallback detection');
 assert.equal(isCompatibleHuggingFaceVariantResult({ recipe: 'llamacpp', variants: [] }), false,
-  'repositories without downloadable variants must be removed');
+  'repositories without downloadable variants must use repository fallback detection');
 assert.equal(isCompatibleHuggingFaceVariantResult({ recipe: 'llamacpp', variants: [{}] }), true,
   'downloadable llama.cpp repositories must remain visible');
 for (const recipe of ['sd-cpp', 'whispercpp', 'moonshine']) {
   assert.equal(isCompatibleHuggingFaceVariantResult({ recipe, variants: [{}] }), false,
     `${recipe} repositories must match GUI2's backend compatibility exclusions`);
 }
-assert.match(manager, /incompatibleHfVariantKeys\.has\(key\)/,
-  'Hugging Face results must be removed when server-side variant discovery fails');
+assert.equal(detectHuggingFaceBackendFromMetadata('FastFlowLM/model', { siblings: [] }), 'flm',
+  'empty variant discovery must recover supported FastFlowLM repositories');
+assert.equal(detectHuggingFaceBackendFromMetadata('org/model', { siblings: [{ rfilename: 'model.onnx' }] }), 'ryzenai-llm',
+  'empty variant discovery must recover supported ONNX repositories');
+assert.equal(detectHuggingFaceBackendFromMetadata('org/moonshine-base', { siblings: [{ rfilename: 'model.onnx' }] }), 'moonshine',
+  'Moonshine detection must precede generic ONNX detection');
+assert.equal(detectHuggingFaceBackendFromMetadata('org/whisper', { tags: ['whisper'], siblings: [{ rfilename: 'model.bin' }] }), 'whispercpp',
+  'Whisper repositories must be identified from repository files');
+assert.equal(detectHuggingFaceBackendFromMetadata('org/flux-model', { siblings: [] }), 'sd-cpp',
+  'image repositories must be identified even without a pipeline tag');
+assert.equal(detectHuggingFaceBackendFromMetadata('org/unknown', { siblings: [{ rfilename: 'weights.bin' }] }), null,
+  'unknown repositories must resolve as incompatible');
+assert.equal(isCompatibleHuggingFaceRecipe('flm'), true, 'supported fallback recipes must remain visible');
+assert.equal(isCompatibleHuggingFaceRecipe('ryzenai-llm'), true, 'supported ONNX fallback recipes must remain visible');
+assert.equal(isCompatibleHuggingFaceRecipe(null), false, 'unknown fallback results must be removed');
+assert.match(manager, /detectHuggingFaceBackend\(candidate\.id, ac\.signal\)/,
+  'failed or empty variants must fall through to repository backend detection');
 assert.match(manager, /isCompatibleHuggingFaceVariantResult\(variants\)/,
   'Hugging Face results must apply backend compatibility after enrichment');
 

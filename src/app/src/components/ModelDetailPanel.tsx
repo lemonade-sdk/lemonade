@@ -788,6 +788,21 @@ const HfOverviewTab: React.FC<{
                 ))}
               </div>
             </div>
+          ) : hfVariants.recipe !== 'llamacpp' ? (
+            <div className="hf-detail__overview-section">
+              <span className="hf-detail__overview-label">Repository download</span>
+              <div className="hf-detail__gguf-list">
+                <button
+                  className="hf-detail__gguf-btn"
+                  aria-label={`Download ${hfModel.id}`}
+                  disabled={isPulling}
+                  onClick={() => onHfPull?.(hfModel.id, '', hfVariants.recipe)}
+                >
+                  <span className="hf-detail__gguf-name">{hfModel.id}</span>
+                  <span className="hf-detail__gguf-action">Download</span>
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="hf-detail__overview-section">
               <span className="hf-detail__overview-value hf-detail__overview-value--muted">No downloadable variants found for this repository.</span>
