@@ -1,11 +1,15 @@
 import os
 import threading
-import unittest
 import requests
 import time
-from utils.server_base import ServerTestBase, pull_model_with_retry
+from utils.server_base import (
+    ServerTestBase,
+    pull_model_with_retry,
+    run_server_tests,
+)
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
+    PORT,
     SECOND_TEST_MODEL_EVICTION,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
@@ -19,12 +23,34 @@ class EvictionTests(ServerTestBase):
     """Tests for dynamic VRAM eviction engine."""
 
     _model_pulled = False
+    _runtime_config_before_suite = None
     _model2_pulled = False
     MODEL2 = SECOND_TEST_MODEL_EVICTION
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+
+        admin_key = os.getenv("LEMONADE_ADMIN_API_KEY", "")
+        headers = {"Authorization": f"Bearer {admin_key}"} if admin_key else {}
+        response = requests.get(
+            f"http://localhost:{PORT}/internal/config",
+            headers=headers,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        response.raise_for_status()
+        config = response.json()
+        cls._runtime_config_before_suite = {
+            key: config[key]
+            for key in (
+                "auto_evict",
+                "auto_evict_threshold_pct",
+                "max_loaded_models",
+            )
+            if key in config
+        }
+        cls.addClassCleanup(cls._restore_runtime_state)
+
         if not cls._model_pulled:
             print(f"\n[SETUP] Ensuring {ENDPOINT_TEST_MODEL} is pulled...")
             pull_model_with_retry(ENDPOINT_TEST_MODEL)
@@ -34,6 +60,27 @@ class EvictionTests(ServerTestBase):
             print(f"\n[SETUP] Ensuring {cls.MODEL2} is pulled...")
             pull_model_with_retry(cls.MODEL2)
             cls._model2_pulled = True
+
+    @classmethod
+    def _restore_runtime_state(cls):
+        admin_key = os.getenv("LEMONADE_ADMIN_API_KEY", "")
+        headers = {"Authorization": f"Bearer {admin_key}"} if admin_key else {}
+
+        requests.post(
+            f"http://localhost:{PORT}/api/v1/unload",
+            json={},
+            headers=headers,
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        if cls._runtime_config_before_suite:
+            response = requests.post(
+                f"http://localhost:{PORT}/internal/set",
+                json=cls._runtime_config_before_suite,
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            response.raise_for_status()
 
     def setUp(self):
         super().setUp()
@@ -289,4 +336,9 @@ class EvictionTests(ServerTestBase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    run_server_tests(
+        EvictionTests,
+        description="VRAM EVICTION TESTS",
+        modality="llm",
+        default_wrapped_server="llamacpp",
+    )
