@@ -804,10 +804,15 @@ if(WIN32)
         file(TO_NATIVE_PATH "${WIX_TAURI_FRAGMENT}" WIX_TAURI_FRAGMENT_NATIVE)
 
 
-        # Web app fragment paths
+        # Web app fragment paths. The minimal and full installers each get
+        # their own file: both regenerate it and then feed it to wix build, so
+        # a shared path makes the two targets race whenever a build runs them
+        # in parallel (`cmake --build --target wix_installers -- /m`).
         file(TO_NATIVE_PATH "${WEB_APP_BUILD_DIR}" WIX_WEBAPP_SOURCE_NATIVE)
-        set(WIX_WEBAPP_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/WebAppFragment.wxs")
-        file(TO_NATIVE_PATH "${WIX_WEBAPP_FRAGMENT}" WIX_WEBAPP_FRAGMENT_NATIVE)
+        set(WIX_WEBAPP_FRAGMENT_MINIMAL "${CMAKE_CURRENT_BINARY_DIR}/installer/WebAppFragment.minimal.wxs")
+        file(TO_NATIVE_PATH "${WIX_WEBAPP_FRAGMENT_MINIMAL}" WIX_WEBAPP_FRAGMENT_MINIMAL_NATIVE)
+        set(WIX_WEBAPP_FRAGMENT_FULL "${CMAKE_CURRENT_BINARY_DIR}/installer/WebAppFragment.full.wxs")
+        file(TO_NATIVE_PATH "${WIX_WEBAPP_FRAGMENT_FULL}" WIX_WEBAPP_FRAGMENT_FULL_NATIVE)
 
         # Both installers require Python3 for fragment generation and always include the web app
         if(NOT Python3_FOUND)
@@ -820,7 +825,7 @@ if(WIN32)
             # Generate web-app fragment
             COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
                 --source "${WEB_APP_BUILD_DIR}"
-                --output "${WIX_WEBAPP_FRAGMENT}"
+                --output "${WIX_WEBAPP_FRAGMENT_MINIMAL}"
                 --component-group "WebAppComponents"
                 --root-id "WebAppDir"
                 --path-variable "WebAppSourceDir"
@@ -835,7 +840,7 @@ if(WIN32)
                 -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
                 -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
                 "${WIX_PRODUCT_WXS_NATIVE}"
-                "${WIX_WEBAPP_FRAGMENT_NATIVE}"
+                "${WIX_WEBAPP_FRAGMENT_MINIMAL_NATIVE}"
             COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
             DEPENDS ${EXECUTABLE_NAME}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -850,7 +855,7 @@ if(WIN32)
             # Generate web-app fragment
             COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
                 --source "${WEB_APP_BUILD_DIR}"
-                --output "${WIX_WEBAPP_FRAGMENT}"
+                --output "${WIX_WEBAPP_FRAGMENT_FULL}"
                 --component-group "WebAppComponents"
                 --root-id "WebAppDir"
                 --path-variable "WebAppSourceDir"
@@ -874,7 +879,7 @@ if(WIN32)
                 -out "${WIX_FULL_OUTPUT_NATIVE}"
                 "${WIX_PRODUCT_WXS_NATIVE}"
                 "${WIX_TAURI_FRAGMENT_NATIVE}"
-                "${WIX_WEBAPP_FRAGMENT_NATIVE}"
+                "${WIX_WEBAPP_FRAGMENT_FULL_NATIVE}"
             COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
             DEPENDS ${EXECUTABLE_NAME}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

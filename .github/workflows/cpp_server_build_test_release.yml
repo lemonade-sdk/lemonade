@@ -359,6 +359,16 @@ jobs:
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
 
+      - name: Install build dependencies
+        # As a step of build-lemonade-deb this inherited the build-dep install
+        # that job performs. Standalone it would rely on whatever the nightly
+        # image baked in, so a newly added Build-Depends would fail here — and
+        # not in the .deb job, which installs them — until the image caught up.
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update && apt-get build-dep ./contrib -y
+
       - name: Build and run C++ unit tests
         shell: bash
         run: |

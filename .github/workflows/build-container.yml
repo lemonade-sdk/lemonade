@@ -90,12 +90,23 @@ jobs:
           load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ github.event_name == 'pull_request' && 'lemonade-build-environment:test' || steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=build-env-${{ matrix.ubuntu_version }}
-          cache-to: type=gha,mode=max,scope=build-env-${{ matrix.ubuntu_version }}
+          # No buildx layer cache on purpose. This workflow is not latency
+          # sensitive — nightly publishes and the occasional PR that changes how
+          # the image is built — while the Actions cache is a 10 GB LRU pool
+          # shared with the FetchContent caches the Windows installer jobs
+          # restore from. Retaining a ~300 MB primed-ccache layer per Ubuntu
+          # release would evict the caches that are on the critical path.
 
       - name: Verify the compiler cache was primed
-        if: matrix.prime_ccache == 'true' && github.event_name == 'pull_request'
+        # Runs on the publish path too, against the tag that was just pushed:
+        # a prime that silently produces nothing would otherwise reach every
+        # Linux CI job and every PPA job, with a slow .deb build as the only
+        # symptom. The runner is amd64, so this pulls the amd64 manifest — the
+        # same one the prime targets.
+        if: matrix.prime_ccache == 'true'
         shell: bash
+        env:
+          IMAGE: ${{ github.event_name == 'pull_request' && 'lemonade-build-environment:test' || format('ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu{0}', matrix.ubuntu_version) }}
         run: |
           set -euo pipefail
 
@@ -104,18 +115,12 @@ jobs:
           # on the directory rather than `ccache -s` output, which is not a
           # stable parsing target across ccache versions. The upper bound is
           # ccache's own -M setting, so only the floor needs asserting here.
-          docker run --rm lemonade-build-environment:test ccache -s
+          docker run --rm "$IMAGE" ccache -s
 
-          debugpath="$(
-            docker run --rm lemonade-build-environment:test \
-              cat /opt/ccache-debugpath
-          )"
+          debugpath="$(docker run --rm "$IMAGE" cat /opt/ccache-debugpath)"
           echo "Recorded DEB_BUILD_DEBUGPATH: ${debugpath}"
 
-          size_mb="$(
-            docker run --rm lemonade-build-environment:test \
-              sh -c 'du -sm "$CCACHE_DIR"' | cut -f1
-          )"
+          size_mb="$(docker run --rm "$IMAGE" sh -c 'du -sm "$CCACHE_DIR"' | cut -f1)"
           echo "Primed ccache size: ${size_mb} MB"
           if [ "$size_mb" -lt 50 ]; then
             echo "ERROR: the primed ccache is essentially empty"
