@@ -86,6 +86,10 @@ void StreamingProxy::forward_sse_stream(
     double time_to_first_token = 0.0;
     const auto start_time = std::chrono::steady_clock::now();
 
+    int backend_status = 200;
+    std::string error_body;
+    static constexpr size_t max_error_body = 64 * 1024;
+
     auto process_line = [&telemetry](const std::string& line) {
         std::string json_str;
         if (line.find("data: ") == 0) {
@@ -104,10 +108,17 @@ void StreamingProxy::forward_sse_stream(
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
-        [&sink, &line_buffer, &has_done_marker, &has_first_token,
-         &time_to_first_token, &start_time, &on_chunk, &process_line](const char* data, size_t length) {
+        [&sink, &line_buffer, &has_done_marker, &has_first_token, &time_to_first_token,
+         &start_time, &on_chunk, &process_line, &backend_status, &error_body](const char* data, size_t length) {
             if (on_chunk) {
                 on_chunk();
+            }
+
+            if (backend_status != 200) {
+                if (error_body.size() < max_error_body) {
+                    error_body.append(data, std::min(length, max_error_body - error_body.size()));
+                }
+                return true;
             }
 
             line_buffer.append(data, length);
@@ -132,7 +143,7 @@ void StreamingProxy::forward_sse_stream(
         },
         {},
         timeout_seconds,
-        nullptr,
+        [&backend_status](int status) { backend_status = status; },
         utils::HttpSecurityPolicy::TrustedLoopback
     );
 
@@ -161,10 +172,32 @@ void StreamingProxy::forward_sse_stream(
         }
     }
 
-    if (result.status_code != 200) {
+    if (result.status_code != 200 || backend_status != 200) {
         stream_error = true;
-        LOG(ERROR, "StreamingProxy") << "Backend returned error: " << result.status_code << std::endl;
-        telemetry.error_message = "Backend returned error status code: " + std::to_string(result.status_code);
+        const int status = backend_status != 200 ? backend_status : result.status_code;
+        LOG(ERROR, "StreamingProxy") << "Backend returned error: " << status
+                                     << (error_body.empty() ? "" : ": " + error_body) << std::endl;
+        telemetry.error_message = "Backend returned error status code: " + std::to_string(status);
+
+        // The response is already committed as 200 text/event-stream, so an
+        // unframed error body is dropped by every spec-compliant client parser.
+        // No [DONE] follows, matching OpenAI's behavior for in-stream errors.
+        json payload;
+        try {
+            payload = json::parse(error_body);
+        } catch (...) {
+            payload = nullptr;
+        }
+        if (!payload.is_object() || !payload.contains("error")) {
+            std::string message = error_body.empty()
+                ? "backend returned HTTP " + std::to_string(status)
+                : error_body;
+            payload = json{{"error", {{"message", message},
+                                      {"type", "backend_error"},
+                                      {"status", status}}}};
+        }
+        const std::string event = "data: " + payload.dump() + "\n\n";
+        sink.write(event.data(), event.size());
     }
 
     if (!stream_error) {

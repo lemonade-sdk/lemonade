@@ -43,7 +43,7 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
-    SECOND_TEST_MODEL_EVICTION,
+    MULTI_MODEL_QUATERNARY,
     MULTI_MODEL_TERTIARY,
     get_default_lemond_binary,
     SHARED_REPO_MODEL_A_NAME,
@@ -178,7 +178,9 @@ class EndpointTests(ServerTestBase):
             "health",
             "stats",
             "system-info",
+            "rerank",
             "reranking",
+            "reranker",
             "audio/transcriptions",
             "images/generations",
             "install",
@@ -3741,7 +3743,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 400, response.text)
         self.assertIn("undeclared-classifier-model", response.json()["error"])
-        print("[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400")
+        print(
+            "[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400"
+        )
 
     def test_021zm_routing_validate_llm_router_fails_open_returns_200(self):
         """The 'llm' router type is fully implemented: the parser desugars
@@ -3792,7 +3796,9 @@ class EndpointTests(ServerTestBase):
             [rule["id"] for rule in normalized_routing["rules"]],
             ["__route_0", "__route_1"],
         )
-        print("[OK] /routing/validate ran an llm router live and failed open to the default model")
+        print(
+            "[OK] /routing/validate ran an llm router live and failed open to the default model"
+        )
 
     def test_021zn_routing_validate_has_images_flag(self):
         """The has_images request flag flows through to a has_images match
@@ -3981,7 +3987,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response_bad_has_tools.status_code, 400)
         self.assertIn("has_tools", response_bad_has_tools.json()["error"])
-        print("[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400")
+        print(
+            "[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400"
+        )
 
     def test_021zj_router_llm_l0a_live(self):
         """L0a live path (#2405), deterministic: the router component is a mock
@@ -4191,7 +4199,7 @@ class EndpointTests(ServerTestBase):
         """
         router_model = MULTI_MODEL_TERTIARY
         candidate_model = ENDPOINT_TEST_MODEL
-        third_model = SECOND_TEST_MODEL_EVICTION
+        third_model = MULTI_MODEL_QUATERNARY
         for model in (router_model, candidate_model, third_model):
             pull_model_with_retry(model)
 
@@ -5322,6 +5330,17 @@ class EndpointTests(ServerTestBase):
             f.write(struct.pack("<Q", 0))  # tensor_count
             f.write(struct.pack("<Q", 0))  # kv_count
 
+    def _write_stub_gguf_file(self, path):
+        """Write a tiny valid-enough GGUF file at an exact path."""
+        import struct
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(b"GGUF")
+            f.write(struct.pack("<I", 3))  # version
+            f.write(struct.pack("<Q", 0))  # tensor_count
+            f.write(struct.pack("<Q", 0))  # kv_count
+
     def test_021g_naming_spec_three_way_collision(self):
         """Naming spec: built-in + user.* + extra.* all sharing a bare name.
 
@@ -5466,6 +5485,320 @@ class EndpointTests(ServerTestBase):
             )
 
             print(f"[OK] root GGUF emits stem: {bare}")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021t_extra_subdir_multiple_quantization_variants_emit_separate_models(
+        self,
+    ):
+        """A split extra folder lists variants and still accepts the folder name."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_variants_")
+        folder_name = "Qwen3.6-35B-A3B-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        # Q4 comes alphabetically before Q8
+        q4_file = os.path.join(model_dir, "Qwen3.6-35B-A3B-Q4_K_M.gguf")
+        q8_file = os.path.join(model_dir, "Qwen3.6-35B-A3B-Q8_0.gguf")
+        mmproj_file = os.path.join(model_dir, "mmproj-Qwen3.6-35B-A3B-BF16.gguf")
+        self._write_stub_gguf_file(q4_file)
+        self._write_stub_gguf_file(q8_file)
+        self._write_stub_gguf_file(mmproj_file)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            # The model list shows the real choices in the folder.
+            self.assertIn("Qwen3.6-35B-A3B-Q4_K_M", models_by_id)
+            self.assertIn("Qwen3.6-35B-A3B-Q8_0", models_by_id)
+
+            # The old folder name still works in requests, but is not listed as
+            # another model.
+            self.assertNotIn(folder_name, models_by_id)
+            legacy_response = requests.get(
+                f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy_response.status_code, 200)
+            self.assertEqual(legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M")
+            self.assertEqual(legacy_response.json()["checkpoint"], q4_file)
+
+            canonical_legacy_response = requests.get(
+                f"{self.base_url}/models/extra.{folder_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(canonical_legacy_response.status_code, 200)
+            self.assertEqual(
+                canonical_legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M"
+            )
+            self.assertEqual(canonical_legacy_response.json()["checkpoint"], q4_file)
+
+            self.assertNotIn("mmproj-Qwen3.6-35B-A3B-BF16", models_by_id)
+
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoint"], q4_file
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoint"], q8_file
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoints"]["mmproj"],
+                os.path.basename(mmproj_file),
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoints"]["mmproj"],
+                os.path.basename(mmproj_file),
+            )
+
+            print("[OK] split extra folder lists variants and accepts folder name")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021x_extra_split_folder_alias_shadows_builtin_without_visible_duplicate(
+        self,
+    ):
+        """A split extra folder name is chosen over a built-in with the same name."""
+        bare = ENDPOINT_TEST_MODEL
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_alias_shadow_")
+        model_dir = os.path.join(extra_dir, bare)
+        q4_file = os.path.join(model_dir, "Local-Compat-Q4_K_M.gguf")
+        q8_file = os.path.join(model_dir, "Local-Compat-Q8_0.gguf")
+        self._write_stub_gguf_file(q4_file)
+        self._write_stub_gguf_file(q8_file)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {model["id"] for model in models_response.json()["data"]}
+
+            self.assertIn("Local-Compat-Q4_K_M", ids)
+            self.assertIn("Local-Compat-Q8_0", ids)
+            self.assertIn(f"builtin.{bare}", ids)
+            self.assertNotIn(
+                bare,
+                ids,
+                "bare folder alias should not be emitted as a duplicate model",
+            )
+
+            alias_response = requests.get(
+                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(alias_response.status_code, 200)
+            self.assertEqual(alias_response.json()["id"], "Local-Compat-Q4_K_M")
+            self.assertEqual(alias_response.json()["checkpoint"], q4_file)
+
+            builtin_response = requests.get(
+                f"{self.base_url}/models/builtin.{bare}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(builtin_response.status_code, 200)
+            self.assertEqual(builtin_response.json()["id"], f"builtin.{bare}")
+            self.assertNotEqual(builtin_response.json()["checkpoint"], q4_file)
+            self.assertNotEqual(builtin_response.json()["checkpoint"], q8_file)
+
+            print(
+                "[OK] split extra folder name is chosen over builtin without duplicate model"
+            )
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021u_extra_subdir_sharded_models_remain_grouped(self):
+        """extra_models_dir folders with sharded GGUFs remain grouped as one model."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shards_")
+        folder_name = "Llama-3-70B-Instruct-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        shard1 = os.path.join(model_dir, "Llama-3-70B-Instruct-00001-of-00002.gguf")
+        shard2 = os.path.join(model_dir, "Llama-3-70B-Instruct-00002-of-00002.gguf")
+        self._write_stub_gguf_file(shard1)
+        self._write_stub_gguf_file(shard2)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            # Shards should not be listed as standalone models.
+            self.assertNotIn("Llama-3-70B-Instruct-00001-of-00002", models_by_id)
+            self.assertNotIn("Llama-3-70B-Instruct-00002-of-00002", models_by_id)
+
+            self.assertIn(folder_name, models_by_id)
+            # One sharded model stays grouped under the folder name.
+            self.assertEqual(models_by_id[folder_name]["checkpoint"], model_dir)
+
+            print("[OK] extra subdir sharded models remain grouped")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021v_extra_subdir_multiple_sharded_quantizations_split_by_variant(self):
+        """A folder with multiple sharded variants lists one model per variant."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_sharded_variants_")
+        folder_name = "Mixtral-8x7B-Instruct-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        q4_shard1 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002.gguf"
+        )
+        q4_shard2 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q4_K_M-00002-of-00002.gguf"
+        )
+        q8_shard1 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q8_0-00001-of-00002.gguf"
+        )
+        q8_shard2 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q8_0-00002-of-00002.gguf"
+        )
+        for shard in [q4_shard1, q4_shard2, q8_shard1, q8_shard2]:
+            self._write_stub_gguf_file(shard)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            self.assertIn("Mixtral-8x7B-Instruct-Q4_K_M", models_by_id)
+            self.assertIn("Mixtral-8x7B-Instruct-Q8_0", models_by_id)
+            self.assertNotIn(folder_name, models_by_id)
+            self.assertNotIn(
+                "Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002", models_by_id
+            )
+
+            self.assertEqual(
+                models_by_id["Mixtral-8x7B-Instruct-Q4_K_M"]["checkpoint"],
+                q4_shard1,
+            )
+            self.assertEqual(
+                models_by_id["Mixtral-8x7B-Instruct-Q8_0"]["checkpoint"],
+                q8_shard1,
+            )
+
+            legacy_response = requests.get(
+                f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy_response.status_code, 200)
+            self.assertEqual(
+                legacy_response.json()["id"], "Mixtral-8x7B-Instruct-Q4_K_M"
+            )
+            self.assertEqual(legacy_response.json()["checkpoint"], q4_shard1)
+
+            print("[OK] extra folder with multiple sharded variants lists variants")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021w_extra_subdir_multiple_mmproj_files_choose_first_alphabetically(self):
+        """A folder with multiple mmproj files chooses the first name alphabetically."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_mmproj_")
+        folder_name = "Vision-Model-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        model_file = os.path.join(model_dir, "Vision-Model-Q4_K_M.gguf")
+        first_mmproj = os.path.join(model_dir, "mmproj-a-Vision-Model.gguf")
+        second_mmproj = os.path.join(model_dir, "mmproj-z-Vision-Model.gguf")
+        self._write_stub_gguf_file(model_file)
+        self._write_stub_gguf_file(second_mmproj)
+        self._write_stub_gguf_file(first_mmproj)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            self.assertIn(folder_name, models_by_id)
+            self.assertEqual(
+                models_by_id[folder_name]["checkpoints"]["mmproj"],
+                os.path.basename(first_mmproj),
+            )
+
+            print("[OK] extra folder with multiple mmproj files chooses first name")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021y_extra_identical_filenames_in_two_folders_stay_distinct(self):
+        """Two folders holding the same variant filenames keep every model."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_collision_")
+        expected = []
+        for folder in ("Llama-Local-GGUF", "Mistral-Local-GGUF"):
+            for name in ("model-Q4_K_M.gguf", "model-Q8_0.gguf"):
+                path = os.path.join(extra_dir, folder, name)
+                self._write_stub_gguf_file(path)
+                expected.append(path)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            found = {
+                model["id"]: model["checkpoint"]
+                for model in models_response.json()["data"]
+                if model.get("checkpoint") in expected
+            }
+
+            # Four files, four models: no folder may overwrite another's entry.
+            self.assertEqual(
+                len(found), len(expected), f"expected 4 models, got {found}"
+            )
+            self.assertEqual(sorted(found.values()), sorted(expected))
+
+            print("[OK] identical filenames in two extra folders stay distinct")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021ya_extra_same_quant_non_shard_files_remain_separate(self):
+        """An -imatrix file beside the plain one is a second model, not a shard."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_imatrix_")
+        model_dir = os.path.join(extra_dir, "Local-Imatrix-GGUF")
+        plain = os.path.join(model_dir, "Model-Q4_K_M.gguf")
+        imatrix = os.path.join(model_dir, "Model-Q4_K_M-imatrix.gguf")
+        self._write_stub_gguf_file(plain)
+        self._write_stub_gguf_file(imatrix)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            # Sharing a quant token is not enough to make them one sharded model.
+            self.assertIn("Model-Q4_K_M", models_by_id)
+            self.assertIn("Model-Q4_K_M-imatrix", models_by_id)
+            self.assertEqual(models_by_id["Model-Q4_K_M"]["checkpoint"], plain)
+            self.assertEqual(
+                models_by_id["Model-Q4_K_M-imatrix"]["checkpoint"], imatrix
+            )
+
+            print("[OK] same-quant non-shard files remain separate models")
         finally:
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
@@ -6264,7 +6597,6 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
-
     def test_037_model_update_check_lifecycle(self):
         """A successful re-pull clears a staged per-model update marker.
 
@@ -6317,9 +6649,7 @@ class EndpointTests(ServerTestBase):
             processed_models,
             "Pulled model must have a processed snapshot entry",
         )
-        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get(
-            "snapshot_id", ""
-        )
+        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get("snapshot_id", "")
         self.assertTrue(original_snapshot, "Processed snapshot must not be empty")
 
         stale_snapshot = "0" * 40

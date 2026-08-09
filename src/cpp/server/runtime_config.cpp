@@ -150,6 +150,21 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
     }
 }
 
+static void validate_path(const std::string& config_section,
+                            const std::string& key,
+                            const std::string& value,
+                            bool is_bin=false) {
+    if (utils::looks_like_path(value)) {
+        if (!fs::exists(value)) {
+            throw std::invalid_argument(
+                "'" + config_section + "." + key + "' path does not exist: " + value
+                + (is_bin ? (". Use \"builtin\", \"latest\", a version tag (e.g. \"b8664\"),"
+                  " or a path to a pre-downloaded binary.") : ""));
+        }
+        return;
+    }
+}
+
 void RuntimeConfig::validate_bin_path(const std::string& config_section,
                                        const std::string& key,
                                        const std::string& value) {
@@ -163,16 +178,7 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
     // must exist. Relative-looking values intentionally fall through to the
     // version-tag branch so backend pins are not interpreted relative to
     // lemond's launch directory.
-    if (utils::looks_like_path(value)) {
-        if (!fs::exists(value)) {
-            throw std::invalid_argument(
-                "'" + config_section + "." + key + "' path does not exist: " + value
-                + ". Use \"builtin\", \"latest\", a version tag (e.g. \"b8664\"),"
-                  " or a path to a pre-downloaded binary.");
-        }
-        return;
-    }
-
+    validate_path(config_section, key, value, true);
     // Anything else is treated as an upstream release tag (e.g. "b8664",
     // "v1.8.2") and accepted verbatim. The download step surfaces a clear
     // error if the tag does not exist on GitHub.
@@ -780,6 +786,12 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         if (value.get<double>() <= 0.0) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be positive");
         }
+    }
+    else if (key == "lora_dir") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
+        }
+        validate_path(backend, key, value.get<std::string>());
     }
     else {
         throw std::invalid_argument("Unknown key: '" + backend + "." + key + "'");
