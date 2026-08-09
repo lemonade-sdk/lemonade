@@ -2,7 +2,9 @@
 #include "lemon/backends/moonshine/moonshine.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/musl_assets.h"
 #include "lemon/backend_manager.h"
+#include "lemon/platform.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
@@ -32,6 +34,15 @@ namespace backends {
 InstallParams MoonshineServer::get_install_params(const std::string& backend, const std::string& version) {
     (void)backend;  // moonshine is CPU-only
     InstallParams params;
+
+#ifdef LEMON_LINUX_MUSL
+    // Upstream PyInstaller bundles are glibc-only; musl builds come from the fork.
+    const auto musl_asset = musl::moonshine(version, musl::host_arch());
+    params.repo = musl_asset.repo;
+    params.filename = musl_asset.filename;
+    return params;
+#endif
+
     params.repo = "lemonade-sdk/moonshine-server-rocm";
 
     // Self-contained PyInstaller bundles built by the lemonade-sdk/moonshine-server-rocm

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Create the unprivileged 'lemonade' system user the service runs as,
+# matching the systemd sysusers.d definition (home /var/lib/lemonade).
+
+addgroup -S lemonade 2>/dev/null || true
+adduser -S -D -H -h /var/lib/lemonade -s /sbin/nologin -G lemonade \
+	-g "Lemonade Server" lemonade 2>/dev/null || true
+
+exit 0

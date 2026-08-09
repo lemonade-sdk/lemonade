@@ -2,7 +2,9 @@
 #include "lemon/backends/sdcpp/sdcpp.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/musl_assets.h"
 #include "lemon/backend_manager.h"
+#include "lemon/platform.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
@@ -12,6 +14,7 @@
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
 #include <httplib.h>
+#include <algorithm>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -114,6 +117,15 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
         }
     }
 
+#ifdef LEMON_LINUX_MUSL
+    // musl ships only CPU and Vulkan; load() maps any GPU backend to one of those,
+    // and cuda/rocm map to the CPU asset here — never a glibc/ubuntu asset.
+    const auto musl_asset = musl::sdcpp(resolved_backend, short_version, musl::host_arch());
+    params.repo = musl_asset.repo;
+    params.filename = musl_asset.filename;
+    return params;
+#endif
+
     if (resolved_backend == "metal") {
 #if defined(__APPLE__)
         params.filename = "sd-" + short_version + "-bin-Darwin-macOS-*-arm64.zip";
@@ -163,7 +175,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 #endif
     } else {
         // CPU build (default)
-    #ifdef _WIN32
+#if defined(_WIN32)
         params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
 #elif defined(__linux__)
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
@@ -198,6 +210,18 @@ void SDServer::load(const std::string& model_name,
         auto supported = SystemInfo::get_supported_backends("sd-cpp");
         backend = supported.backends.empty() ? "cpu" : supported.backends[0];
     }
+#ifdef LEMON_LINUX_MUSL
+    // musl builds ship only CPU and Vulkan; there is no musl rocm/cuda asset, so
+    // route any GPU backend through Vulkan when the platform reports it, else
+    // fall back to CPU (keeps device/args/binary dir and validation aligned).
+    if (backend != "vulkan" && backend != "cpu") {
+        auto musl_supported = SystemInfo::get_supported_backends("sd-cpp");
+        bool vulkan_ok = std::find(musl_supported.backends.begin(),
+                                   musl_supported.backends.end(),
+                                   "vulkan") != musl_supported.backends.end();
+        backend = vulkan_ok ? "vulkan" : "cpu";
+    }
+#endif
     std::string resolved_backend = resolve_sdcpp_backend(backend);
     std::string sdcpp_args = options.get_option("sdcpp_args");
 

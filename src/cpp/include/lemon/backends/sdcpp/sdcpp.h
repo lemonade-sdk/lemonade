@@ -37,12 +37,19 @@ inline const BackendDescriptor descriptor = {
     },
     /*support*/ {
         {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
+        // No musl rocm/cuda builds exist (glibc-only assets); omit on musl.
+#ifndef LEMON_LINUX_MUSL
         {"cuda", {"windows", "linux"},
          {{"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}}}, "NVIDIA GPUs (Turing or newer)**"},
         {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
         {"rocm", {"windows", "linux"},
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
+#else
+        // musl publishes both x86_64 and aarch64 CPU/Vulkan assets.
+        {"vulkan", {"linux"}, {{"cpu", {"x86_64", "arm64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
+        {"cpu", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/ARM64 CPU"},
+#endif
     },
     /*default_labels*/  {"image"},
     /*required_checkpoints*/ {"main"},  // flux text_encoder+vae validated together in load()

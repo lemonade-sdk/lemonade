@@ -1,0 +1,59 @@
+# Maintainer: Lemonade <lemonade@amd.com>
+pkgname=lemonade-server
+pkgver=10.9.0
+pkgrel=0
+pkgdesc="Local LLM server with GPU/NPU acceleration (musl build)"
+url="https://lemonade-server.ai"
+arch="x86_64 aarch64"
+license="Apache-2.0"
+# build-base/git/samurai come from alpine-sdk when building via build-apk.sh,
+# but list them so `abuild -r` can resolve a minimal environment too.
+makedepends="
+	build-base
+	cmake
+	samurai
+	git
+	nodejs
+	npm
+	pkgconf
+	linux-headers
+	openssl-dev
+	curl-dev
+	zlib-dev
+	libdrm-dev
+	libcap-dev
+	libwebsockets-dev
+	"
+# Shared-library deps of lemond/lemonade are auto-detected by abuild's tracedeps.
+# These are the runtime helpers it can't infer: TLS roots and the unzip binary
+# lemond shells out to when extracting .zip backend archives (stable-diffusion).
+depends="ca-certificates unzip onnxruntime openrc"
+install="$pkgname.pre-install $pkgname.post-install"
+source="$pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver"
+options="!check"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+	# Stages the browser UI into build/resources so it's picked up by install.
+	cmake --build build --target web-app
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	# Alpine has no systemd; drop the units and sysusers.d snippet the Linux
+	# install rules emit and ship an OpenRC service instead.
+	rm -rf "$pkgdir"/usr/lib/systemd "$pkgdir"/usr/lib/sysusers.d
+
+	# abuild rejects uncompressed man pages; the Linux install rules ship them
+	# plain. Keep everything in one package (so the OpenRC service ships with the
+	# binaries) rather than splitting a -doc subpackage, and just gzip them.
+	gzip -9 "$pkgdir"/usr/share/man/man1/*.1
+
+	install -Dm755 "$builddir"/packaging/alpine/lemonade-server.initd \
+		"$pkgdir"/etc/init.d/lemonade-server
+}

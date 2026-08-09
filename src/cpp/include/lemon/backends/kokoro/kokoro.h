@@ -25,7 +25,12 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {},
     /*support*/ {
         {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
+#ifndef LEMON_LINUX_MUSL
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
+#else
+        // musl publishes both x86_64 and aarch64 CPU assets.
+        {"cpu", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/ARM64 CPU"},
+#endif
     },
     /*default_labels*/  {"tts"},  // kokoro only does TTS; declare it so a label-less
                                    // user model is typed TTS, not LLM (catalog models
