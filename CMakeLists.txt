@@ -736,6 +736,8 @@ if(WIN32)
         # MSBuild parallelizes across projects, but within one project cl.exe
         # compiles a single file at a time, which leaves most cores idle.
         # Ninja already schedules per file, so /MP would oversubscribe there.
+        # Applies to this project's targets only — the FetchContent
+        # dependencies above were already configured by this point.
         # Do not pass --parallel to `cmake --build` with a Visual Studio
         # generator: CMake then sets CL_MPCount=1, which disables this.
         if(CMAKE_GENERATOR MATCHES "Visual Studio")

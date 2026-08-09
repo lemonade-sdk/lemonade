@@ -4,19 +4,42 @@ on:
   schedule:
     - cron: '0 2 * * *'  # Nightly at 2 AM UTC
   workflow_dispatch:
+  # Build (but do not publish) on PRs that change how the image is built. The
+  # nightly schedule is otherwise the first thing to exercise a change, against
+  # the tag every Linux CI job and every PPA job pulls. Deliberately narrow: a
+  # C++ change cannot break the image in a way `Build Lemonade .deb Package`
+  # does not already catch on the same PR.
+  pull_request:
+    paths:
+      - .ubuntu/Dockerfile
+      - .dockerignore
+      - contrib/debian/**
+      - .github/workflows/build-container.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-container:
+    name: Build build-environment (ubuntu${{ matrix.ubuntu_version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
+          # prime_ccache belongs to the tag whose compile CI actually gates:
+          # build-lemonade-deb runs in this image on every PR and merge, so a
+          # break in the primed build is caught before it can strand the
+          # nightly publish. See .ubuntu/Dockerfile.
           - ubuntu_version: "24.04"
             ubuntu_ppa: "ppa:lemonade-team/bleeding-edge"
+            prime_ccache: "true"
           - ubuntu_version: "25.10"
             ubuntu_ppa: "ppa:lemonade-team/bleeding-edge"
+            prime_ccache: ""
           - ubuntu_version: "26.04"
             ubuntu_ppa: ""
+            prime_ccache: ""
 
     permissions:
       contents: read
@@ -26,13 +49,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # Only the publish path needs arm64, and emulating it on a PR would cost
+      # far more than the Dockerfile change being verified.
       - name: Set up QEMU
+        if: github.event_name != 'pull_request'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -57,9 +84,40 @@ jobs:
           build-args: |
             BASE_IMAGE=ubuntu:${{ matrix.ubuntu_version }}
             UBUNTU_PPA=${{ matrix.ubuntu_ppa }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+            PRIME_CCACHE=${{ matrix.prime_ccache }}
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ github.event_name == 'pull_request' && 'lemonade-build-environment:test' || steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=build-env-${{ matrix.ubuntu_version }}
+          cache-to: type=gha,mode=max,scope=build-env-${{ matrix.ubuntu_version }}
+
+      - name: Verify the compiler cache was primed
+        if: matrix.prime_ccache == 'true' && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # An empty cache means the prime silently produced nothing, which
+          # would leave every .deb build compiling from scratch again. Measured
+          # on the directory rather than `ccache -s` output, which is not a
+          # stable parsing target across ccache versions. The upper bound is
+          # ccache's own -M setting, so only the floor needs asserting here.
+          docker run --rm lemonade-build-environment:test ccache -s
+
+          debugpath="$(
+            docker run --rm lemonade-build-environment:test \
+              cat /opt/ccache-debugpath
+          )"
+          echo "Recorded DEB_BUILD_DEBUGPATH: ${debugpath}"
+
+          size_mb="$(
+            docker run --rm lemonade-build-environment:test \
+              sh -c 'du -sm "$CCACHE_DIR"' | cut -f1
+          )"
+          echo "Primed ccache size: ${size_mb} MB"
+          if [ "$size_mb" -lt 50 ]; then
+            echo "ERROR: the primed ccache is essentially empty"
+            exit 1
+          fi

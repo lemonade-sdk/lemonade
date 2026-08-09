@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
@@ -61,19 +62,28 @@ RUN UBUNTU_VERSION="$(. /etc/os-release && echo "$VERSION_ID")" && \
 # checks the repository out. The absolute -I paths reach the compiler command
 # line, and ccache hashes them, so the prime has to happen at the same path.
 #
-# amd64 only: every workflow using this image runs on ubuntu-latest, and
-# priming the arm64 variant would run the whole build under QEMU emulation.
-#
 # Stops at the build target rather than producing a package: only the compile
 # populates the cache, and the install step wants paths .dockerignore strips.
 #
+# PRIME_CCACHE is set only for the image tag whose compile CI actually gates
+# (see build-container.yml). Priming a release nothing compiles on PRs would
+# turn a newer-toolchain break into a failed nightly publish, quietly stranding
+# every consumer on a stale image.
+#
 # DEB_BUILD_DEBUGPATH pins -fdebug-prefix-map, which dpkg otherwise derives from
 # the changelog version — that changes every commit and would miss every lookup.
-# Consumers must set the same value; see LEMONADE_CCACHE_DEBUGPATH below.
-ENV CCACHE_DIR=/opt/ccache \
-    LEMONADE_CCACHE_DEBUGPATH=/usr/src/lemonade-server
-COPY . /__w/lemonade/lemonade
-RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+# The prime records it in /opt/ccache-debugpath so consumers set the identical
+# value; writing it here rather than as an ENV means an image built without the
+# prime cannot advertise a cache it does not have.
+#
+# The source is bind-mounted rather than COPYed so the tree does not survive as
+# a layer in an image every Linux CI job and every PPA job pulls.
+ARG PRIME_CCACHE=""
+ENV CCACHE_DIR=/opt/ccache
+RUN --mount=type=bind,target=/mnt/src \
+    if [ -n "$PRIME_CCACHE" ] && [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        mkdir -p /__w/lemonade && \
+        cp -a /mnt/src /__w/lemonade/lemonade && \
         cd /__w/lemonade/lemonade && \
         mv contrib/debian . && \
         sed -e "s|@@DEB_VERSION@@|0~ccache-prime|g" \
@@ -81,13 +91,14 @@ RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
             -e "s|@@DEB_DATE@@|$(date -R)|g" \
             debian/changelog.in > debian/changelog && \
         ccache -M 1G && \
-        DEB_BUILD_DEBUGPATH="$LEMONADE_CCACHE_DEBUGPATH" \
+        DEB_BUILD_DEBUGPATH=/usr/src/lemonade-server \
         CMAKE_C_COMPILER_LAUNCHER=ccache \
         CMAKE_CXX_COMPILER_LAUNCHER=ccache \
             dpkg-buildpackage -us -uc --rules-target=build && \
-        ccache -s; \
-    fi && \
-    rm -rf /__w
+        ccache -s && \
+        echo /usr/src/lemonade-server > /opt/ccache-debugpath && \
+        rm -rf /__w; \
+    fi
 
 WORKDIR /workspace
 

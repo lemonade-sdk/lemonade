@@ -53,43 +53,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install CMake if not available
-        shell: PowerShell
-        run: |
-          # Check if CMake is already installed
-          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
-
-          if (-not $cmakeInstalled) {
-              Write-Host "CMake not found, installing..." -ForegroundColor Yellow
-
-              # Download CMake installer
-              $cmakeVersion = "3.28.1"
-              $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
-              $cmakeInstaller = "cmake-installer.msi"
-
-              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller -UseBasicParsing
-
-              # Install CMake silently
-              Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
-
-              # Add CMake to PATH for this session AND future steps
-              $cmakePath = "C:\Program Files\CMake\bin"
-              $env:PATH = "$cmakePath;$env:PATH"
-
-              # Persist to GITHUB_PATH for future steps
-              echo $cmakePath >> $env:GITHUB_PATH
-
-              # Verify installation
-              cmake --version
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
-                  exit 1
-              }
-
-              Write-Host "CMake installed successfully and added to PATH!" -ForegroundColor Green
-          } else {
-              Write-Host "CMake is already installed:" -ForegroundColor Green
-              cmake --version
-          }
+        uses: ./.github/actions/install-cmake-windows
 
       - name: Install WiX Toolset
         uses: ./.github/actions/install-wix
@@ -138,9 +102,12 @@ jobs:
           # setup.ps1 auto-detected for the installed Visual Studio version.
           # /m lets MSBuild overlap independent projects — the lemonade CLI and
           # LemonadeServer otherwise wait for lemonade-server-core to finish.
+          # Capped at 2 because /MP already spawns one cl.exe per core inside
+          # each project, and the two multiply: unbounded, a 4-core runner can
+          # reach 16 concurrent compilers and run itself out of heap.
           # Passed straight through rather than via --parallel, which makes
           # CMake set CL_MPCount=1 and cancel the /MP in CMakeLists.txt.
-          cmake --build build --config Release --target $target -- /m
+          cmake --build build --config Release --target $target -- /m:2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify outputs
@@ -199,6 +166,9 @@ jobs:
           clean: true
           fetch-depth: 0
 
+      - name: Install CMake if not available
+        uses: ./.github/actions/install-cmake-windows
+
       - name: Install WiX Toolset
         uses: ./.github/actions/install-wix
 
@@ -223,7 +193,7 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          cmake --build build --config Release --target wix_installer_full -- /m
+          cmake --build build --config Release --target wix_installer_full -- /m:2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $failures = @()
@@ -239,6 +209,16 @@ jobs:
           }
           if ($failures.Count -gt 0) { exit 1 }
           Write-Host "Desktop installer built successfully!" -ForegroundColor Green
+
+      - name: Upload Lemonade Desktop Installer
+        # Without this the MSI is built and discarded, so nothing installs it
+        # until a tag. It also restores the artifact that release-v* pushes
+        # used to get from the combined build.
+        uses: actions/upload-artifact@v7
+        with:
+          name: Lemonade_Desktop_MSI
+          path: lemonade.msi
+          retention-days: 7
 
   sign-msi-installers:
     name: Sign MSI Installers with SignPath
@@ -311,22 +291,24 @@ jobs:
       - name: Use the compiler cache primed into the build image
         # Release builds opt out so their -fdebug-prefix-map keeps the package
         # version dpkg derives from the changelog. Everywhere else it is pinned
-        # to the image's LEMONADE_CCACHE_DEBUGPATH, which is what makes the
-        # primed objects reusable across commits at all.
+        # to the value the prime recorded, which is what makes the primed
+        # objects reusable across commits at all.
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         shell: bash
         run: |
           set -euo pipefail
-          # Tolerate an image published before the prime was added, so this does
-          # not break until the nightly build-container run catches up.
-          if [ -z "${LEMONADE_CCACHE_DEBUGPATH:-}" ]; then
-            echo "No primed compiler cache in this build image yet; compiling without it."
+          # The prime writes this file itself, so an image built without it —
+          # including one published before the prime existed — is detected
+          # rather than assumed. Compiling without a cache is the safe fallback.
+          debugpath_file=/opt/ccache-debugpath
+          if [ ! -f "$debugpath_file" ]; then
+            echo "No primed compiler cache in this build image; compiling without it."
             exit 0
           fi
           {
             echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
             echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
-            echo "DEB_BUILD_DEBUGPATH=$LEMONADE_CCACHE_DEBUGPATH"
+            echo "DEB_BUILD_DEBUGPATH=$(cat "$debugpath_file")"
           } >> "$GITHUB_ENV"
           ccache -z
 
@@ -825,36 +807,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install CMake if not available
-        shell: PowerShell
-        run: |
-          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
-
-          if (-not $cmakeInstalled) {
-              Write-Host "CMake not found, installing..." -ForegroundColor Yellow
-
-              $cmakeVersion = "3.28.1"
-              $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
-              $cmakeInstaller = "cmake-installer.msi"
-
-              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller -UseBasicParsing
-
-              Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
-
-              $cmakePath = "C:\Program Files\CMake\bin"
-              $env:PATH = "$cmakePath;$env:PATH"
-              echo $cmakePath >> $env:GITHUB_PATH
-
-              cmake --version
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
-                  exit 1
-              }
-
-              Write-Host "CMake installed successfully!" -ForegroundColor Green
-          } else {
-              Write-Host "CMake is already installed:" -ForegroundColor Green
-              cmake --version
-          }
+        uses: ./.github/actions/install-cmake-windows
 
       - name: Get version from CMakeLists.txt
         id: get_version
@@ -877,7 +830,7 @@ jobs:
           cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          cmake --build build --config Release --target embeddable -- /m
+          cmake --build build --config Release --target embeddable -- /m:2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $archive = "build\lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64.zip"
