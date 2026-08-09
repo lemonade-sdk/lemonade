@@ -202,21 +202,16 @@ jobs:
           # An empty cache means the prime silently produced nothing, which
           # would leave every .deb build compiling from scratch again. Measured
           # on the directory rather than `ccache -s` output, which is not a
-          # stable parsing target across ccache versions.
+          # stable parsing target across ccache versions. The upper bound is
+          # ccache's own -M setting, so only the floor needs asserting here.
           docker run --rm lemonade-build-environment:test ccache -s
 
           size_mb="$(
             docker run --rm lemonade-build-environment:test \
-              du -sm /opt/ccache | cut -f1
+              sh -c 'du -sm "$CCACHE_DIR"' | cut -f1
           )"
-          # Every container job pulls this image, so the cache earning its place
-          # depends on it staying small relative to the build time it saves.
           echo "Primed ccache size: ${size_mb} MB"
           if [ "$size_mb" -lt 50 ]; then
             echo "ERROR: the primed ccache is essentially empty"
-            exit 1
-          fi
-          if [ "$size_mb" -gt 1200 ]; then
-            echo "ERROR: the primed ccache exceeds the 1G cap set in the Dockerfile"
             exit 1
           fi

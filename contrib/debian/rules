@@ -7,7 +7,7 @@ DEB_BUILD_DIR := obj-$(DEB_HOST_GNU_TYPE)
 
 override_dh_auto_configure:
 	# BUILD_TESTING=OFF: override_dh_auto_test is a no-op and no test binary is
-	# packaged, so the ~115 unit-test targets would be built and discarded.
+	# packaged, so the unit-test targets would be built and discarded.
 	dh_auto_configure -- -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_WEB_APP=ON -DUSE_SYSTEM_NODEJS_MODULES=ON -DBUILD_TESTING=OFF
 
 override_dh_auto_test:

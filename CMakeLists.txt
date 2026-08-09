@@ -73,6 +73,14 @@ function(add_cpp_ci_test test_name)
         message(FATAL_ERROR
             "add_cpp_ci_test(${test_name}): required 'COMMAND <command>' argument is missing")
     endif()
+    # Distro packaging configures with BUILD_TESTING=OFF and never runs or ships
+    # a test, so reaching here means the enclosing if() forgot to check it —
+    # which silently puts the whole test suite back into every package build.
+    if(NOT BUILD_TESTING)
+        message(FATAL_ERROR
+            "add_cpp_ci_test(${test_name}): declared with BUILD_TESTING=OFF. Add "
+            "BUILD_TESTING to the enclosing if() guard, as the other test blocks do.")
+    endif()
 
     # _add_test is the built-in add_test preserved by the override below, so this
     # helper stays exempt from the direct-add_test() ban it enforces.

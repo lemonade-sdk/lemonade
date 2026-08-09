@@ -149,7 +149,7 @@ Packaging, distro, PPA, backend-validation, self-hosted inference and most macOS
 
 | Group | Gate check | Opt in on a PR with |
 |---|---|---|
-| Fedora RPM, Debian 13, Arch, openSUSE, Launchpad PPA | `Packaging builds`, `Linux distro builds`, `Launchpad PPA builds` | `ci:distros` |
+| Fedora RPM, Debian 13, Arch, openSUSE, Launchpad PPA, `Build Lemonade Desktop Installer` | `Packaging builds`, `Linux distro builds`, `Launchpad PPA builds` | `ci:distros` |
 | macOS `.dmg`, `Test CLI/Endpoints (macos-latest)`, `Test Embeddable (macOS)`, `Test .dmg - macOS inference` | `macOS builds` | `ci:macos` |
 | llama.cpp, vLLM, stable-diffusion.cpp validation | `llama.cpp validation`, `vLLM validation`, `stable-diffusion.cpp validation` | `ci:upgrades` |
 | `Test .exe - *` and `Test .deb - *` inference suites on the self-hosted rigs | `Inference backend tests` | `ci:backends` |

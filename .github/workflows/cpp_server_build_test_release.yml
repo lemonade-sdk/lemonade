@@ -91,57 +91,8 @@ jobs:
               cmake --version
           }
 
-      - name: Install WiX Toolset 5.0.2 (CLI)
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Write-Host "Downloading WiX Toolset 5.0.2 CLI..." -ForegroundColor Cyan
-          $wixUri = "https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi"
-          $msiPath = "$env:RUNNER_TEMP\wix-cli-x64.msi"
-
-          Invoke-WebRequest -UseBasicParsing -Uri $wixUri -OutFile $msiPath
-
-          Write-Host "Installing WiX Toolset 5.0.2 CLI..." -ForegroundColor Cyan
-          $p = Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$msiPath`"", "/qn", "/norestart") -PassThru -Wait
-          if ($p.ExitCode -ne 0) {
-            Write-Host "WiX installer exited with code $($p.ExitCode)" -ForegroundColor Red
-            exit $p.ExitCode
-          }
-
-      - name: Verify WiX installation
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          # WiX CLI MSI does not always add itself to PATH in non-interactive installs,
-          # so we locate it explicitly and then update PATH for subsequent steps.
-          $wixDirs = @(
-            "C:\Program Files\WiX Toolset v5.0\bin",
-            "C:\Program Files (x86)\WiX Toolset v5.0\bin"
-          )
-
-          $wixExe = $null
-          foreach ($dir in $wixDirs) {
-            if (Test-Path (Join-Path $dir "wix.exe")) {
-              $wixExe = Join-Path $dir "wix.exe"
-              break
-            }
-          }
-
-          if (-not $wixExe) {
-            Write-Host "ERROR: wix.exe not found after installation." -ForegroundColor Red
-            Get-ChildItem -Recurse "C:\Program Files" -Filter wix.exe -ErrorAction SilentlyContinue | Select-Object -First 20 | Format-List FullName
-            exit 1
-          }
-
-          $wixDir = Split-Path $wixExe -Parent
-
-          # Persist wix.exe directory to PATH for all subsequent steps
-          "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-          Write-Host "Using WiX from: $wixExe" -ForegroundColor Green
-          & $wixExe --version
+      - name: Install WiX Toolset
+        uses: ./.github/actions/install-wix
 
       - name: Cache FetchContent dependencies
         uses: actions/cache@v5
@@ -167,34 +118,24 @@ jobs:
           # job installs lemonade-server-minimal.msi, so on the PR and
           # merge-queue paths the full installer is pure critical-path latency;
           # build-lemonade-desktop-installer covers it off the critical path.
-          BUILD_FULL_INSTALLER: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true) && 'true' || 'false' }}
+          BUILD_FULL_INSTALLER: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true }}
         run: |
           $ErrorActionPreference = "Stop"
 
+          $full = $env:BUILD_FULL_INSTALLER -eq 'true'
+          $target = if ($full) { "wix_installers" } else { "wix_installer_minimal" }
+          $expected = @(
+              "build\Release\lemond.exe",
+              "build\Release\LemonadeServer.exe",
+              "build\resources\web-app\index.html",
+              "lemonade-server-minimal.msi"
+          )
+          if ($full) { $expected += "build\app\lemonade-app.exe", "lemonade.msi" }
+
+          Write-Host "Building target $target..." -ForegroundColor Cyan
+
           # Build by directory (not --preset) so we follow whichever generator
           # setup.ps1 auto-detected for the installed Visual Studio version.
-          if ($env:BUILD_FULL_INSTALLER -eq 'true') {
-              Write-Host "Building C++ server, Tauri app, web app, and MSI installers..." -ForegroundColor Cyan
-              $target = "wix_installers"
-              $expected = @(
-                  "build\Release\lemond.exe",
-                  "build\Release\LemonadeServer.exe",
-                  "build\app\lemonade-app.exe",
-                  "build\resources\web-app\index.html",
-                  "lemonade-server-minimal.msi",
-                  "lemonade.msi"
-              )
-          } else {
-              Write-Host "Building C++ server, web app, and the minimal MSI installer..." -ForegroundColor Cyan
-              $target = "wix_installer_minimal"
-              $expected = @(
-                  "build\Release\lemond.exe",
-                  "build\Release\LemonadeServer.exe",
-                  "build\resources\web-app\index.html",
-                  "lemonade-server-minimal.msi"
-              )
-          }
-
           # /m lets MSBuild overlap independent projects — the lemonade CLI and
           # LemonadeServer otherwise wait for lemonade-server-core to finish.
           # Passed straight through rather than via --parallel, which makes
@@ -242,12 +183,15 @@ jobs:
     # Packaging-only variant: it builds the Tauri desktop app and lemonade.msi,
     # which no test job installs. The merge queue gates every merge, so PR
     # pushes skip it and any desktop/full-MSI break still blocks at merge-queue
-    # time. Label a PR `ci:desktop` to opt it back in. The release paths are
-    # excluded because the build above already produces lemonade.msi there.
+    # time. It reports through the `Packaging builds` gate, so it takes that
+    # gate's `ci:distros` label rather than introducing a second label for one
+    # check. The release paths are excluded because the build above already
+    # produces lemonade.msi there; that first clause is the negation of
+    # BUILD_FULL_INSTALLER above, spelled the same way so the two stay
+    # provably complementary.
     if: >-
-      !startsWith(github.ref, 'refs/tags/') &&
-      inputs.enable_signing != true &&
-      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:desktop'))
+      !(startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true) &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros'))
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -255,31 +199,19 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Install WiX Toolset 5.0.2 (CLI)
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $wixUri = "https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi"
-          $msiPath = "$env:RUNNER_TEMP\wix-cli-x64.msi"
-          Invoke-WebRequest -UseBasicParsing -Uri $wixUri -OutFile $msiPath
-          $p = Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$msiPath`"", "/qn", "/norestart") -PassThru -Wait
-          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
-
-          # The CLI MSI does not reliably add itself to PATH in a silent install.
-          $wixDir = "C:\Program Files\WiX Toolset v5.0\bin"
-          if (-not (Test-Path (Join-Path $wixDir "wix.exe"))) {
-            Write-Host "ERROR: wix.exe not found after installation." -ForegroundColor Red
-            exit 1
-          }
-          "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install WiX Toolset
+        uses: ./.github/actions/install-wix
 
       - name: Cache FetchContent dependencies
         uses: actions/cache@v5
         with:
           path: build/_deps
-          key: fetchcontent-windows-desktop-vs2026-${{ hashFiles('CMakeLists.txt') }}
+          # Same namespace as build-lemonade-server-installer: both run bare
+          # setup.ps1, so they configure the same preset and populate an
+          # identical build/_deps. A separate namespace would guarantee a miss.
+          key: fetchcontent-windows-vs2026-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: |
-            fetchcontent-windows-desktop-vs2026-
+            fetchcontent-windows-vs2026-
 
       - name: Run setup.ps1 to configure environment
         shell: PowerShell
@@ -377,25 +309,24 @@ jobs:
         run: git config --global --add safe.directory $(pwd)
 
       - name: Use the compiler cache primed into the build image
-        # Release builds deliberately opt out. dpkg puts the package version in
-        # -fdebug-prefix-map, which changes on every commit, so that flag has to
-        # be excluded from the ccache hash for anything to hit at all — and a
-        # reused object then records the version it was first compiled for in
-        # its debug paths. Fine for a test artifact, not for a shipped -dbgsym.
+        # Release builds opt out so their -fdebug-prefix-map keeps the package
+        # version dpkg derives from the changelog. Everywhere else it is pinned
+        # to the image's LEMONADE_CCACHE_DEBUGPATH, which is what makes the
+        # primed objects reusable across commits at all.
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         shell: bash
         run: |
           set -euo pipefail
           # Tolerate an image published before the prime was added, so this does
           # not break until the nightly build-container run catches up.
-          if ! command -v ccache > /dev/null 2>&1; then
-            echo "No ccache in this build image yet; compiling without it."
+          if [ -z "${LEMONADE_CCACHE_DEBUGPATH:-}" ]; then
+            echo "No primed compiler cache in this build image yet; compiling without it."
             exit 0
           fi
           {
             echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
             echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
-            echo "CCACHE_IGNOREOPTIONS=-fdebug-prefix-map=*"
+            echo "DEB_BUILD_DEBUGPATH=$LEMONADE_CCACHE_DEBUGPATH"
           } >> "$GITHUB_ENV"
           ccache -z
 
@@ -414,9 +345,11 @@ jobs:
           deb-version: ${{ steps.get_version.outputs.version }}
 
       - name: Report compiler cache hit rate
-        if: ${{ always() && !startsWith(github.ref, 'refs/tags/') }}
+        # Set only by the opt-in step above, so this covers both the release
+        # path and an image published before the prime existed.
+        if: ${{ always() && env.CMAKE_CXX_COMPILER_LAUNCHER == 'ccache' }}
         shell: bash
-        run: command -v ccache > /dev/null 2>&1 && ccache -s || true
+        run: ccache -s
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
@@ -1536,7 +1469,7 @@ jobs:
   # so renaming the job requires a matching branch-protection update.
   backends-gate:
     name: Inference backend tests
-    needs: [build-lemonade-server-installer, build-lemonade-deb, test-exe-inference, test-deb-inference]
+    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference]
     if: always()
     runs-on: ubuntu-latest
     steps:
