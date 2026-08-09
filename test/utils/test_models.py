@@ -202,6 +202,10 @@ SECOND_TEST_MODEL_EVICTION = "Phi-4-mini-instruct-GGUF"
 # Tertiary model for LRU eviction testing
 MULTI_MODEL_TERTIARY = "Qwen3-0.6B-GGUF"
 
+# A further small LLM, distinct from every model above, for tests that need one
+# more resident model. Kept small: runners without a model cache re-download it.
+MULTI_MODEL_QUATERNARY = "Llama-3.2-1B-Instruct-GGUF"
+
 # Whisper test configuration
 WHISPER_MODEL = "Whisper-Tiny"
 TEST_AUDIO_URL = (
@@ -212,8 +216,8 @@ TEST_AUDIO_URL = (
 VISION_MODEL = "Qwen3.5-0.8B-GGUF"
 
 # Stable Diffusion test configuration
-# Allow CI to override with a smaller model (e.g. SD-Turbo-GGUF) on memory-
-# constrained runners like GitHub-hosted macos-latest.
+# Runners without a persistent Hugging Face cache override this with the
+# SD-Turbo-GGUF build, which is a 2 GB download instead of 5.2 GB.
 SD_MODEL = os.environ.get("LEMONADE_TEST_SD_MODEL", "SD-Turbo")
 
 # ESRGAN upscale model test configuration
