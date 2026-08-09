@@ -1311,13 +1311,48 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
+    if (NUMERIC_TUNING_KEYS.has(key)) {
+      const stepNumericInput = (direction: -1 | 1) => {
+        const input = document.getElementById(fieldId);
+        if (!(input instanceof HTMLInputElement)) return;
+        if (direction > 0) input.stepUp();
+        else input.stepDown();
+        setRecipeDraft(prev => ({ ...prev, [String(key)]: input.value }));
+      };
+
+      return (
+        <div key={String(key)} className="detail-tuning__field">
+          <span id={`${fieldId}-label`}>{label}</span>
+          <div className="detail-configuration__number-control">
+            <input
+              id={fieldId}
+              className="input detail-configuration__number-input"
+              type="number"
+              value={draftValue}
+              placeholder={optionalDisplayValue(baseValue) || ''}
+              aria-labelledby={`${fieldId}-label`}
+              onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
+            />
+            <span className="detail-configuration__context-stepper">
+              <button type="button" onClick={() => stepNumericInput(1)} aria-label={`Increase ${label}`}>
+                <Icon name="chevron-up" size={11} aria-hidden="true" />
+              </button>
+              <button type="button" onClick={() => stepNumericInput(-1)} aria-label={`Decrease ${label}`}>
+                <Icon name="chevron-down" size={11} aria-hidden="true" />
+              </button>
+            </span>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <label key={String(key)} className="detail-tuning__field" htmlFor={fieldId}>
         <span>{label}</span>
         <input
           id={fieldId}
           className="input"
-          type={NUMERIC_TUNING_KEYS.has(key) ? 'number' : 'text'}
+          type="text"
           value={draftValue}
           placeholder={optionalDisplayValue(baseValue) || ''}
           onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}

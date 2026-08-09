@@ -7921,10 +7921,11 @@ optgroup {
 .model-detail-panel__fav-btn:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 1px; }
 
 .model-detail-panel__fav-btn--on {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent-fg);
 }
-.model-detail-panel__fav-btn--on:hover { color: var(--accent); }
+.model-detail-panel__fav-btn--on .app-icon[data-icon='star'] path { fill: currentColor; }
+.model-detail-panel__fav-btn--on:hover { color: var(--accent-fg); }
 
 /* Custom Omni collection LLM tool editor */
 .custom-model-form__tools {
@@ -8501,6 +8502,30 @@ optgroup {
 
 .input.detail-configuration__context-input[type='number']::-webkit-outer-spin-button,
 .input.detail-configuration__context-input[type='number']::-webkit-inner-spin-button {
+  display: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  margin: 0 !important;
+}
+
+.detail-configuration__number-control {
+  position: relative;
+  width: 100%;
+}
+
+.detail-configuration__number-input {
+  width: 100%;
+  padding-inline-end: 2.75rem;
+}
+
+.input.detail-configuration__number-input[type='number'] {
+  -moz-appearance: textfield !important;
+  -webkit-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
+.input.detail-configuration__number-input[type='number']::-webkit-outer-spin-button,
+.input.detail-configuration__number-input[type='number']::-webkit-inner-spin-button {
   display: none !important;
   -webkit-appearance: none !important;
   appearance: none !important;
@@ -13886,12 +13911,13 @@ a.backend-card__version:focus-visible {
   box-sizing: border-box;
 }
 
-button.workspace-metadata-chip { font-family: inherit; cursor: pointer; }
-.workspace-metadata-chip strong { color: var(--text-primary); font-weight: var(--weight-semibold); }
-
 .workspace-metadata-chip--low {
   background: color-mix(in srgb, var(--surface-1) 52%, transparent);
   color: var(--text-tertiary);
+}
+
+[data-theme="light"] .workspace-metadata-chip--low {
+  background: var(--surface-alpha-05);
 }
 
 .workspace-metadata-chip--medium {
@@ -13920,6 +13946,11 @@ button.workspace-metadata-chip:hover {
   border-color: transparent;
   background: var(--surface-3);
   color: var(--text-primary);
+}
+
+[data-theme="light"] a.workspace-metadata-chip--low:hover,
+[data-theme="light"] button.workspace-metadata-chip--low:hover {
+  background: var(--surface-alpha-1);
 }
 
 .workspace-metadata-chip:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 2px; }
