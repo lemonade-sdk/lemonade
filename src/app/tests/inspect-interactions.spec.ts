@@ -59,7 +59,29 @@ test.beforeEach(async ({ page }) => {
             id: 'mock-reasoning-model',
             name: 'mock-reasoning-model',
             model_name: 'mock-reasoning-model',
-            labels: ['reasoning']
+            labels: ['reasoning'],
+            downloaded: true
+          },
+          {
+            id: 'mock-tool-hot',
+            name: 'mock-tool-hot',
+            model_name: 'mock-tool-hot',
+            labels: ['tool-calling', 'hot'],
+            downloaded: true
+          },
+          {
+            id: 'mock-tool-downloaded',
+            name: 'mock-tool-downloaded',
+            model_name: 'mock-tool-downloaded',
+            labels: ['tool-calling'],
+            downloaded: true
+          },
+          {
+            id: 'mock-tool-remote',
+            name: 'mock-tool-remote',
+            model_name: 'mock-tool-remote',
+            labels: ['tool-calling'],
+            downloaded: false
           },
           {
             id: 'ACE-Step-music',
@@ -92,7 +114,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('Session Inspector - Recent Improvements', () => {
-  test('Improve optimizer model selector only lists reasoning models', async ({ page }) => {
+  test('Improve optimizer model selector lists downloaded tool-calling models', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('lemonade:chat_last_ready_model', 'mock-tool-downloaded');
+    });
     await page.goto('/#/dashboard/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
@@ -130,20 +155,82 @@ test.describe('Session Inspector - Recent Improvements', () => {
 
     await page.getByRole('tab', { name: 'Improve' }).click();
     const optimizerSelector = page.getByRole('combobox', { name: 'Select LLM Optimizer' });
+    await expect(optimizerSelector).toHaveValue('mock-tool-downloaded');
     await optimizerSelector.click();
-    await optimizerSelector.press('Control+A');
-    await optimizerSelector.press('Backspace');
 
-    await expect(page.getByRole('option', { name: 'mock-reasoning-model', exact: true })).toBeVisible();
+    // Opening the optimizer picker must immediately expose every downloaded
+    // tool-calling model, without requiring the user to clear the current value.
+    await expect(page.getByRole('option', { name: 'mock-tool-hot', exact: true })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'mock-tool-downloaded', exact: true })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'mock-tool-remote', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('option', { name: 'mock-reasoning-model', exact: true })).toHaveCount(0);
     await expect(page.getByRole('option', { name: 'ACE-Step-music', exact: true })).toHaveCount(0);
 
-    await optimizerSelector.press('Escape');
+    await page.getByRole('option', { name: 'mock-tool-hot', exact: true }).click();
+    await expect(optimizerSelector).toHaveValue('mock-tool-hot');
+
     await page.getByRole('button', { name: 'Test', exact: true }).click();
     const testModelSelector = page.getByRole('combobox', { name: 'Select Test Model' });
     await testModelSelector.click();
     await testModelSelector.press('Control+A');
     await testModelSelector.press('Backspace');
     await expect(page.getByRole('option', { name: 'ACE-Step-music', exact: true })).toBeVisible();
+  });
+
+  test('Closing optimization progress aborts the request and releases the GUI', async ({ page }) => {
+    await page.goto('/#/dashboard/telemetry');
+    await expect(page.locator('.inspect-rail')).toBeVisible();
+
+    await page.evaluate(() => {
+      const originalFetch = window.fetch.bind(window);
+      (window as any).__optimizerAborted = false;
+      window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+        if (url.includes('/api/v1/chat/completions')) {
+          return new Promise<Response>((_resolve, reject) => {
+            const abort = () => {
+              (window as any).__optimizerAborted = true;
+              reject(new DOMException('Aborted', 'AbortError'));
+            };
+            if (init?.signal?.aborted) {
+              abort();
+              return;
+            }
+            init?.signal?.addEventListener('abort', abort, { once: true });
+          });
+        }
+        return originalFetch(input, init);
+      }) as typeof window.fetch;
+
+      (window as any).inspectStore.setState({
+        traces: [{
+          id: 'mock-cancel-trace',
+          traceId: 'trace-cancel',
+          spanId: 'span-cancel',
+          kind: 'LLM',
+          operation: 'chat.completions',
+          status: 'ok',
+          model: 'mock-tool-hot',
+          timestamp: '12:00:00 PM',
+          startTimeMs: Date.now(),
+          dur: 1500,
+          messages: [{ role: 'user', content: 'Summarize this report.' }],
+          output: 'A response that needs improvement.'
+        }],
+        selectedTraceId: 'mock-cancel-trace'
+      });
+    });
+
+    await page.getByRole('tab', { name: 'Improve' }).click();
+    await page.getByRole('button', { name: 'Analyze and Optimize Prompt' }).click();
+
+    const progressDialog = page.getByRole('dialog', { name: 'Analyzing & Optimizing Prompt' });
+    await expect(progressDialog).toBeVisible();
+    await progressDialog.getByRole('button', { name: 'Close modal' }).click();
+
+    await expect(progressDialog).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => (window as any).__optimizerAborted)).toBe(true);
+    await expect(page.getByRole('dialog', { name: 'Prompt Optimization Failed' })).toHaveCount(0);
   });
 
   test('Improve optimizer rejects an echoed worked-example response', async ({ page }) => {

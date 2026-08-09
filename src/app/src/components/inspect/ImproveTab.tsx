@@ -7,6 +7,13 @@ import MarkdownMessage from '../MarkdownMessage';
 import Modal from './Modal';
 import { useAutoScroll } from '../../hooks/useAutoScroll';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
+import { modelCapabilityTags } from '../../modelCapabilities';
+import {
+  LEMONADE_DEFAULT_CHAT_MODELS,
+  loadLastReadyModelName,
+  modelInfoName,
+  modelIsDownloaded,
+} from '../../features/chatDefaultModels';
 
 interface ImproveTabProps {
   selectedTrace: Trace;
@@ -35,6 +42,10 @@ interface OptimizedPromptData {
   key_improvements: string[];
 }
 
+const QUALITY_DEFAULT_MODEL = LEMONADE_DEFAULT_CHAT_MODELS.find(
+  (model) => model.tier === 'quality'
+)?.name || '';
+
 
 function truncateText(text: string, maxChars: number): string {
   if (!text || text.length <= maxChars) return text || '';
@@ -45,11 +56,28 @@ function truncateText(text: string, maxChars: number): string {
 export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
   const availableModels = api.allModels;
   const optimizerModels = useMemo(
-    () => availableModels.filter((model) =>
-      (model.labels || []).some((label) => label.trim().toLowerCase() === 'reasoning')
+    () => availableModels.filter(
+      (model) => modelIsDownloaded(model) && modelCapabilityTags(model).includes('tool')
     ),
     [availableModels]
   );
+  const preferredImproveModel = useMemo(() => {
+    const recentModelName = loadLastReadyModelName()?.toLowerCase();
+
+    if (recentModelName) {
+      const recentModel = optimizerModels.find(
+        (model) => modelInfoName(model).toLowerCase() === recentModelName
+      );
+      if (recentModel) return modelInfoName(recentModel);
+    }
+
+    const hotModel = optimizerModels.find((model) =>
+      (model.labels || []).some((label) => label.trim().toLowerCase() === 'hot')
+    );
+    if (hotModel) return modelInfoName(hotModel);
+
+    return QUALITY_DEFAULT_MODEL;
+  }, [optimizerModels]);
   const [improveModel, setImproveModel] = useState('');
   const [improveCritique, setImproveCritique] = useState('The response was too verbose and failed to strictly answer in the requested format.');
   const [improveOutput, setImproveOutput] = useState('');
@@ -77,6 +105,7 @@ export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
   const improveBodyRef = useRef<HTMLDivElement>(null);
   const improveOutputBoxRef = useRef<HTMLDivElement>(null);
   const testOutputBoxRef = useRef<HTMLDivElement>(null);
+  const improveAbortRef = useRef<AbortController | null>(null);
 
   const handleLeftScroll = () => {
     const left = leftBoxRef.current;
@@ -125,6 +154,11 @@ export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
   // Auto-scroll improve stream modal body and output box when streaming updates
   useAutoScroll([improveBodyRef, improveOutputBoxRef], [improveStreamingText, improveStreamingReasoning], improveRunning);
   useAutoScroll([testOutputBoxRef], [testStreamingText, testStreamingReasoning], testRunning);
+
+  useEffect(() => () => {
+    improveAbortRef.current?.abort();
+    improveAbortRef.current = null;
+  }, [selectedTrace.id]);
 
   // Clear test validation error when a model is selected
   useEffect(() => {
@@ -203,14 +237,13 @@ export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
   // Set default model when models load
   useEffect(() => {
     const selectedModelAvailable = optimizerModels.some(
-      (model) => (model.name || model.id || '') === improveModel
-    );
-    if (optimizerModels.length > 0 && !selectedModelAvailable) {
-      setImproveModel(optimizerModels[0].name || optimizerModels[0].id || '');
-    } else if (optimizerModels.length === 0 && improveModel) {
-      setImproveModel('');
+      (model) => modelInfoName(model) === improveModel
+    ) || improveModel === QUALITY_DEFAULT_MODEL;
+
+    if (!improveModel || !selectedModelAvailable) {
+      setImproveModel(preferredImproveModel);
     }
-  }, [optimizerModels, improveModel]);
+  }, [optimizerModels, improveModel, preferredImproveModel]);
 
   // Sync edits when prompt parsed data changes
   useEffect(() => {
@@ -618,9 +651,17 @@ ${truncatedOutput}
     };
   };
 
+  const handleCancelImprovement = () => {
+    improveAbortRef.current?.abort();
+    improveAbortRef.current = null;
+    setImproveRunning(false);
+  };
+
   // Runs optimization loop with retry logic
   const handleRunImprovement = async () => {
     if (!improveModel || improveRunning) return;
+    const controller = new AbortController();
+    improveAbortRef.current = controller;
     setImproveRunning(true);
     setImproveOutput('');
     setImproveParsedData(null);
@@ -630,6 +671,13 @@ ${truncatedOutput}
 
     const callApi = (tempOverride?: number, errorReason?: string): Promise<string> => {
       return new Promise<string>((resolve, reject) => {
+        const rejectAbort = () => reject(new DOMException('Prompt optimization cancelled.', 'AbortError'));
+        if (controller.signal.aborted) {
+          rejectAbort();
+          return;
+        }
+        controller.signal.addEventListener('abort', rejectAbort, { once: true });
+
         let systemMsg = generatedMetaSystem;
         let userMsg = generatedMetaUser;
         if (errorReason) {
@@ -656,38 +704,48 @@ ${truncatedOutput}
           { role: 'user', content: userMsg },
         ], {
           params,
+          signal: controller.signal,
           onToken: (tok) => {
+            if (controller.signal.aborted) return;
             accumulated += tok;
             setImproveStreamingText(accumulated);
           },
           onReasoning: (reas) => {
+            if (controller.signal.aborted) return;
             accumulatedReasoning += reas;
             setImproveStreamingReasoning(accumulatedReasoning);
           },
           onDone: () => {
+            controller.signal.removeEventListener('abort', rejectAbort);
+            if (controller.signal.aborted) {
+              rejectAbort();
+              return;
+            }
             resolve(accumulated);
           },
           onError: (err) => {
+            controller.signal.removeEventListener('abort', rejectAbort);
             reject(err);
           }
-        }).catch(reject);
+        }).catch((err) => {
+          controller.signal.removeEventListener('abort', rejectAbort);
+          reject(err);
+        });
       });
     };
 
     let response = '';
     let parsedJson: any = null;
     let sanitized: OptimizedPromptData | null = null;
-    let firstErrorMsg = '';
 
     try {
-
       try {
         response = await callApi();
         setImproveOutput(response);
         parsedJson = parseAndSanitizeResponse(response);
         sanitized = validateAndCoerceSchema(parsedJson, selectedTrace);
       } catch (err: any) {
-        firstErrorMsg = err.message;
+        if (controller.signal.aborted || err?.name === 'AbortError') throw err;
 
         // Skip retry if it failed due to context length / bad request, since it will just fail again
         if (err.message?.toLowerCase().includes('exceeds') || err.message?.toLowerCase().includes('context size') || err.message?.toLowerCase().includes('400')) {
@@ -730,6 +788,7 @@ ${truncatedOutput}
 
       inspectStore.showToast('Prompt analysis complete');
     } catch (e: any) {
+      if (controller.signal.aborted || e?.name === 'AbortError') return;
       console.error('Prompt optimizer execution failed:', e);
       if (response) {
         setImproveOutput(response);
@@ -742,6 +801,9 @@ ${truncatedOutput}
       setImproveParsedData(null);
       setWhatChangedModalOpen(true);
     } finally {
+      if (improveAbortRef.current === controller) {
+        improveAbortRef.current = null;
+      }
       setImproveRunning(false);
     }
   };
@@ -876,9 +938,10 @@ ${truncatedOutput}
           value={improveModel}
           onChange={setImproveModel}
           availableModels={optimizerModels}
+          showAllOnFocus
         />
 
-        <div className="flex-col gap-6">
+        <div className="flex-col gap-4">
           <label className="input-label" htmlFor="improve-critique-input">Critique / Desired Behavior</label>
           <input
             id="improve-critique-input"
@@ -942,7 +1005,7 @@ ${truncatedOutput}
       {/* Progress Modal */}
       <Modal
         isOpen={improveRunning}
-        onClose={() => {}}
+        onClose={handleCancelImprovement}
         title="Analyzing & Optimizing Prompt"
         ariaLabelledBy="unified-modal-title"
         maxWidth="640px"

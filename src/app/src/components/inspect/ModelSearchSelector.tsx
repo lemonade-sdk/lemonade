@@ -8,6 +8,7 @@ interface ModelSearchSelectorProps {
   onChange: (val: string) => void;
   availableModels: ModelInfo[];
   className?: string;
+  showAllOnFocus?: boolean;
 }
 
 export default function ModelSearchSelector({
@@ -16,7 +17,8 @@ export default function ModelSearchSelector({
   value,
   onChange,
   availableModels,
-  className = 'critique-input-control'
+  className = 'critique-input-control',
+  showAllOnFocus = false
 }: ModelSearchSelectorProps) {
   const [search, setSearch] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -125,11 +127,13 @@ export default function ModelSearchSelector({
           if (!isOpen) setIsOpen(true);
         }}
         onFocus={() => {
-          setSearch(value || '');
+          setSearch(showAllOnFocus ? '' : (value || ''));
           setIsOpen(true);
-          setTimeout(() => {
-            inputRef.current?.select();
-          }, 0);
+          if (!showAllOnFocus) {
+            setTimeout(() => {
+              inputRef.current?.select();
+            }, 0);
+          }
         }}
         onKeyDown={handleKeyDown}
         className={className}
