@@ -129,10 +129,34 @@ int main() {
               "ROCm stable resolves LEMONADE_LLAMACPP_ROCM_BIN");
         check(BackendUtils::find_external_backend_binary("llamacpp", "rocm-nightly") == override_path,
               "ROCm nightly resolves LEMONADE_LLAMACPP_ROCM_BIN");
+        check(BackendUtils::get_bin_config_value("llamacpp", "rocm-stable") == override_path,
+              "raw bin resolution gives the environment override precedence over config");
 
         clear_env_var("LEMONADE_LLAMACPP_ROCM_BIN");
         check(BackendUtils::find_external_backend_binary("llamacpp", "rocm-stable") == config_path,
               "ROCm stable falls back to configured llamacpp.rocm_bin");
+        lemon::RuntimeConfig::set_global(nullptr);
+    }
+
+    // Test 4: an environment path also overrides the reserved "builtin" config
+    // value used by status and version resolution. Clearing the environment
+    // restores the configured value and disables the external-binary path.
+    {
+        const std::string override_path = std::filesystem::current_path().string();
+        lemon::RuntimeConfig config({{"llamacpp", {{"rocm_bin", "builtin"}}}});
+        lemon::RuntimeConfig::set_global(&config);
+        set_env_var("LEMONADE_LLAMACPP_ROCM_BIN", override_path);
+
+        check(BackendUtils::get_bin_config_value("llamacpp", "rocm-stable") == override_path,
+              "environment path overrides builtin for status and version resolution");
+        check(BackendUtils::find_external_backend_binary("llamacpp", "rocm-stable") == override_path,
+              "environment path overrides builtin for runtime binary resolution");
+
+        clear_env_var("LEMONADE_LLAMACPP_ROCM_BIN");
+        check(BackendUtils::get_bin_config_value("llamacpp", "rocm-stable") == "builtin",
+              "raw bin resolution falls back to builtin after clearing the environment");
+        check(BackendUtils::find_external_backend_binary("llamacpp", "rocm-stable").empty(),
+              "builtin remains reserved after clearing the environment");
         lemon::RuntimeConfig::set_global(nullptr);
     }
 
