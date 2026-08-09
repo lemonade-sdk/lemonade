@@ -599,6 +599,12 @@ jobs:
           echo "Running setup.sh to configure build environment..."
           bash setup.sh
 
+          # setup.sh configures with testing on, and the build below has no
+          # --target, so every unit-test binary would be built and then left out
+          # of the .rpm. Same reasoning as BUILD_TESTING=OFF in contrib/debian/rules.
+          echo "Reconfiguring without the unit-test targets..."
+          cmake --preset default -DBUILD_TESTING=OFF
+
           echo "Building lemond and lemonade for Fedora ${{ matrix.fedora-version }} (${{ matrix.arch-name }})..."
           cmake --build --preset default
 
