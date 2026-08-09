@@ -53,10 +53,13 @@ inline nlohmann::json build_anthropic_error(const nlohmann::json& error, int sta
     switch (status) {
         case 400: type = "invalid_request_error"; break;
         case 401: type = "authentication_error"; break;
+        case 402: type = "billing_error"; break;
         case 403: type = "permission_error"; break;
         case 404: type = "not_found_error"; break;
+        case 409: type = "conflict_error"; break;
         case 413: type = "request_too_large"; break;
         case 429: type = "rate_limit_error"; break;
+        case 504: type = "timeout_error"; break;
         case 529: type = "overloaded_error"; break;
         default:
             // Anthropic names no type for the remaining 4xx, and every one of

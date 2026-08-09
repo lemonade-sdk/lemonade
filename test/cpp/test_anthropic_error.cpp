@@ -58,15 +58,17 @@ static void test_error_type_mapping(TestResult& r) {
     const Case cases[] = {
         {400, "invalid_request_error"},
         {401, "authentication_error"},
+        {402, "billing_error"},
         {403, "permission_error"},
         {404, "not_found_error"},
+        {409, "conflict_error"},
         {413, "request_too_large"},
         {422, "invalid_request_error"},
         {429, "rate_limit_error"},
         {499, "invalid_request_error"},
         {500, "api_error"},
         {502, "api_error"},
-        {504, "api_error"},
+        {504, "timeout_error"},
         {529, "overloaded_error"},
     };
 
