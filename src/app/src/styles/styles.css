@@ -73,6 +73,10 @@ input[type="checkbox"]:checked {
   background: var(--checkbox-fill);
 }
 
+[data-theme="light"] input[type="checkbox"]:checked {
+  border-color: #A98700;
+}
+
 input[type="checkbox"]:checked::after {
   transform: translateY(-1px) rotate(45deg) scale(1);
 }

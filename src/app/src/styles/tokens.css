@@ -266,7 +266,8 @@
   --border-subtle:  rgba(92, 75, 0, 0.18);
   --border-strong:  rgba(92, 75, 0, 0.18);
 
-  --checkbox-fill: var(--surface-2);
+  --checkbox-fill: color-mix(in srgb, #FCD846 12%, transparent);
+  --checkbox-check: #A98700;
   /* The dark --accent is opaque; the light one is already 58% alpha, so
      mixing it again would leave the border barely visible. */
   --accent-border:  rgba(92, 75, 0, 0.32);
