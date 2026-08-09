@@ -130,6 +130,7 @@ export interface ModelNavRailProps {
   onTagFiltersChange: (next: Set<string>) => void;
   providerEnabled: Record<ModelRegistryProvider, boolean>;
   providerCounts: Record<ModelRegistryProvider, number>;
+  searchActive: boolean;
   onToggleProvider: (provider: ModelRegistryProvider) => void;
   /** Real disk usage of the model-storage drive, when available (else null →
       derived fallback). Sourced from api.getStorageInfo(). */
@@ -160,6 +161,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   onTagFiltersChange,
   providerEnabled,
   providerCounts,
+  searchActive,
   onToggleProvider,
   storageInfo,
   id = 'model-nav-rail',
@@ -169,9 +171,9 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   onMobileClose,
   railRef,
 }) => {
-  const [providersOpen, setProvidersOpen] = useState(true);
   const [tasksOpen, setTasksOpen] = useState(true);
   const [backendsOpen, setBackendsOpen] = useState(true);
+  const [catalogsOpen, setCatalogsOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(true);
   const [backendVisibility, setBackendVisibility] = useState<BackendRailVisibilityState | null>(null);
   const [customTags, setCustomTags] = useState<string[]>(loadCustomFilterTags);
@@ -374,55 +376,6 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
 
       </ul>
 
-      <section className="model-nav-rail__section model-nav-rail__section--providers">
-        <h2 className="model-nav-rail__section-head">
-          <button
-            type="button"
-            className="model-nav-rail__section-toggle"
-            aria-expanded={providersOpen}
-            aria-controls="nav-model-providers"
-            onClick={() => setProvidersOpen(v => !v)}
-          >
-            <Icon name={providersOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
-            <span>Model-Provider</span>
-            {!providersOpen && (
-              <span className="model-nav-rail__section-count" aria-label={`${providerCounts.huggingface + providerCounts.modelscope} provider search results`}>
-                {providerCounts.huggingface + providerCounts.modelscope}
-              </span>
-            )}
-          </button>
-        </h2>
-        {providersOpen && (
-          <ul className="model-nav-rail__provider-list" id="nav-model-providers" role="list">
-            {MODEL_PROVIDERS.map(provider => {
-              const enabled = providerEnabled[provider.key];
-              const count = enabled ? providerCounts[provider.key] : 0;
-              const title = `${provider.label} search ${enabled ? 'enabled — click to disable' : 'disabled — click to enable'}`;
-              return (
-                <li key={provider.key}>
-                  <button
-                    type="button"
-                    className={`model-nav-rail__provider-item${enabled ? ' model-nav-rail__provider-item--enabled' : ' model-nav-rail__provider-item--disabled'}`}
-                    aria-pressed={enabled}
-                    title={title}
-                    onClick={() => onToggleProvider(provider.key)}
-                  >
-                    <span className="model-nav-rail__provider-label">{provider.label}</span>
-                    <span className="model-nav-rail__nav-count" aria-hidden="true">{count}</span>
-                    <Icon
-                      name={enabled ? 'cloud' : 'cloud-off'}
-                      size={14}
-                      aria-hidden="true"
-                      className="model-nav-rail__provider-status"
-                    />
-                    <span className="sr-only">{`, ${count} results, search ${enabled ? 'enabled' : 'disabled'}`}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
 
       <section className="model-nav-rail__section model-nav-rail__section--tasks">
         <h2 className="model-nav-rail__section-head">
@@ -519,6 +472,49 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
               </button>
             )}
           </div>
+        )}
+      </section>
+
+      <section className="model-nav-rail__section model-nav-rail__section--providers">
+        <h2 className="model-nav-rail__section-head">
+          <button
+            type="button"
+            className="model-nav-rail__section-toggle"
+            aria-expanded={catalogsOpen}
+            aria-controls="nav-online-catalogs"
+            onClick={() => setCatalogsOpen(value => !value)}
+          >
+            <Icon name={catalogsOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
+            <span>Online Catalogs</span>
+          </button>
+        </h2>
+        {catalogsOpen && (
+          <ul className="model-nav-rail__provider-list" id="nav-online-catalogs" role="list">
+            {MODEL_PROVIDERS.map(provider => {
+              const enabled = providerEnabled[provider.key];
+              const count = providerCounts[provider.key];
+              const showCount = searchActive && primaryFilter === 'all' && enabled;
+              const title = `${provider.label} ${enabled ? 'will be searched' : 'will not be searched'} during online model search`;
+              return (
+                <li key={provider.key}>
+                  <label className="backends__toggle model-nav-rail__provider-option" title={title}>
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={() => onToggleProvider(provider.key)}
+                    />
+                    <span className="model-nav-rail__provider-label">{provider.label}</span>
+                    {showCount && (
+                      <>
+                        <span className="model-nav-rail__nav-count" aria-hidden="true">{count}</span>
+                        <span className="sr-only">{`, ${count} search results`}</span>
+                      </>
+                    )}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
 

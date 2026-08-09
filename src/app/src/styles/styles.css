@@ -12896,59 +12896,39 @@ a.backend-card__version:focus-visible {
 }
 
 /* ── Remote model providers (GUI3) ─────────────────────────── */
-.model-nav-rail__section--providers {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--space-2);
-}
-
-.model-nav-rail__section-count {
-  margin-left: auto;
-  font-size: var(--type-overline-size);
-  font-variant-numeric: tabular-nums;
+.model-nav-rail__section-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-2);
   color: var(--text-tertiary);
+  font-size: var(--type-overline-size);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .model-nav-rail__provider-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 2px var(--space-2) 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-0-5);
 }
 
-.model-nav-rail__provider-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+.model-nav-rail__provider-option {
   width: 100%;
+  min-height: 25px;
   box-sizing: border-box;
-  padding: var(--space-2);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
   color: var(--text-secondary);
   font-size: var(--text-xs);
-  cursor: pointer;
-  text-align: left;
 }
 
-.model-nav-rail__provider-item:hover {
-  background: var(--surface-2);
+.model-nav-rail__provider-option:hover {
   color: var(--text-primary);
-}
-
-.model-nav-rail__provider-item:focus-visible {
-  outline: 2px solid var(--accent-focus);
-  outline-offset: 0;
-}
-
-.model-nav-rail__provider-item--enabled {
-  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
-}
-
-.model-nav-rail__provider-item--disabled {
-  color: var(--text-disabled);
 }
 
 .model-nav-rail__provider-label {
@@ -12957,15 +12937,6 @@ a.backend-card__version:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.model-nav-rail__provider-status {
-  flex-shrink: 0;
-  color: var(--accent-fg);
-}
-
-.model-nav-rail__provider-item--disabled .model-nav-rail__provider-status {
-  color: var(--text-disabled);
 }
 
 .registry-zones {
