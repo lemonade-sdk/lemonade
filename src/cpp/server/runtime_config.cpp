@@ -137,6 +137,26 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
     }
 
     std::string recipe = config_section_to_recipe(config_section);
+
+    if (value == "system") {
+        const auto* desc = lemon::backends::descriptor_for(recipe);
+#ifdef _WIN32
+        const std::string current_os = "windows";
+#elif defined(__APPLE__)
+        const std::string current_os = "macos";
+#else
+        const std::string current_os = "linux";
+#endif
+        if (desc) {
+            auto supported = std::find_if(
+                desc->support.begin(), desc->support.end(),
+                [&](const BackendSupport& row) {
+                    return row.backend == value && row.supported_os.count(current_os) > 0;
+                });
+            if (supported != desc->support.end()) return;
+        }
+    }
+
     auto result = SystemInfo::get_supported_backends(recipe);
 
     if (std::find(result.backends.begin(), result.backends.end(), value)
