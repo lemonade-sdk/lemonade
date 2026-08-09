@@ -654,6 +654,12 @@
         "suggested": false,
         "size": 0.18
     },
+    "Tiny-Test-Model-2-GGUF": {
+        "checkpoint": "LiquidAI/LFM2.5-230M-GGUF:LFM2.5-230M-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": false,
+        "size": 0.153
+    },
     "Qwen3-1.7B-GGUF": {
         "checkpoint": "unsloth/Qwen3-1.7B-GGUF:Q4_0",
         "recipe": "llamacpp",

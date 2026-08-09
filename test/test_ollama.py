@@ -39,7 +39,7 @@ from utils.test_models import (
 )
 
 OLLAMA_BASE_URL = f"http://localhost:{PORT}"
-TOOL_CALLING_LLAMA_ARGS = "--reasoning-format none"
+TOOL_CALLING_LLAMA_ARGS = "--reasoning-format none --reasoning off"
 
 
 class OllamaTests(ServerTestBase):
