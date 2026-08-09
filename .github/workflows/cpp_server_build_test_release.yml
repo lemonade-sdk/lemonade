@@ -203,7 +203,12 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          cmake --build build --config Release --target wix_installer_full -- /m:2
+          # /m:1, not /m:2: wix_installer_full depends on both web-app and
+          # tauri-app, and they both touch src/app — web-app robocopies the whole
+          # tree while tauri-app runs npm ci inside it. Run concurrently, robocopy
+          # hits files npm is rewriting and retries under its default
+          # /R:1000000 /W:30, hanging the job rather than failing.
+          cmake --build build --config Release --target wix_installer_full -- /m:1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $failures = @()
@@ -242,7 +247,10 @@ jobs:
     # cfg(target_os = "windows"), and webview2-com/windows are Windows-only
     # dependencies, so a Linux-only check would miss exactly the code whose
     # packaging job was deferred. cargo check rather than a full build — this
-    # is a compile canary, not a packaging step.
+    # is a compile canary, not a packaging step, so it catches type and borrow
+    # errors but not link failures or asset embedding: `custom-protocol` stays
+    # off, which is also why it needs no built renderer. Those still surface in
+    # the desktop installer and .dmg jobs at merge-queue time.
     #
     # Deliberately uncached: a cold check measures ~1.5 min, and the Actions
     # cache is a 10 GB LRU pool shared with the FetchContent caches the Windows
