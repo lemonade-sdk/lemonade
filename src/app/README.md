@@ -54,13 +54,16 @@ npm test
 
 Playwright starts an isolated, non-HMR test server on **127.0.0.1:4173** by default. This intentionally avoids reusing a manual development server on port 8080. Set `PLAYWRIGHT_BASE_URL` only when you explicitly want to test an already running server.
 
+> [!NOTE]
+> Direct execution via `npx playwright test` runs the accessibility (`a11y`) and `functional` test suites concurrently, which can cause state collisions in local storage/server state. For isolated, sequential execution of the suites, always use `npm test` or `npm run test:headed`.
+
 Runs all UI-safe Playwright tests headless via Chromium. Real-server smoke tests are opt-in so they fail fast instead of silently passing without a running server or loaded model:
 
 ```bash
 LEMONADE_REAL_SERVER=1 npm test
 ```
 
-Artifacts are saved under Playwright's per-test output folders, so screenshots from repeated runs are not overwritten.
+Artifacts are saved under distinct output folders per project (`test-results/a11y` and `test-results/functional`), preventing results from being overwritten when running the sequential test suites.
 
 ### Headed tests (visible browser)
 
