@@ -11,6 +11,7 @@ const capabilitiesSource = fs.readFileSync(path.join(root, 'src/modelCapabilitie
 const remoteCapabilitiesSource = fs.readFileSync(path.join(root, 'src/remoteModelCapabilities.ts'), 'utf8');
 const listPanelSource = fs.readFileSync(path.join(root, 'src/components/ModelListPanel.tsx'), 'utf8');
 const styles = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
+const huggingFaceSearchPath = path.join(root, 'src/features/models/huggingFaceSearch.ts');
 
 function loadTypeScriptModule(filename) {
   const source = fs.readFileSync(filename, 'utf8');
@@ -40,6 +41,8 @@ assert.match(api, /registrySearch\(\s*source: ModelRegistryProvider/);
 assert.match(api, /format: 'gguf'/);
 assert.match(api, /searchModelScope/);
 assert.match(api, /source: 'modelscope'/);
+assert.match(api, /limit: String\(HUGGING_FACE_SEARCH_LIMIT\)/);
+assert.match(api, /filterHuggingFaceSearchResults\(data\)/);
 
 // User models and Omni collections must be server-backed, not only browser
 // localStorage entries. This keeps them visible through /models after restart.
@@ -126,6 +129,54 @@ assert.match(manager, /providerCounts=\{providerCounts\}[\s\S]*searchActive=\{se
 
 const { remoteCapabilityEvidence } = loadTypeScriptModule(path.join(root, 'src/remoteModelCapabilities.ts'));
 const { capabilityFromModelInfo, modelCapabilityTags } = loadTypeScriptModule(path.join(root, 'src/modelCapabilities.ts'));
+const {
+  filterHuggingFaceSearchResults,
+  HUGGING_FACE_SEARCH_LIMIT,
+  detectHuggingFaceBackendFromMetadata,
+  isCompatibleHuggingFaceRecipe,
+  isCompatibleHuggingFaceVariantResult,
+} = loadTypeScriptModule(huggingFaceSearchPath);
+
+const rankedHuggingFaceResults = Array.from({ length: 14 }, (_, index) => ({
+  id: `org/model-${index + 1}`,
+  pipeline_tag: index === 3 ? 'image-text-to-image' : 'text-generation',
+}));
+const filteredHuggingFaceResults = filterHuggingFaceSearchResults(rankedHuggingFaceResults);
+assert.equal(HUGGING_FACE_SEARCH_LIMIT, 12, 'GUI2 caps Hugging Face search at its top 12 download-ranked results');
+assert.equal(filteredHuggingFaceResults.length, 11, 'incompatible pipelines within the top 12 must be removed');
+assert.equal(filteredHuggingFaceResults.at(-1).id, 'org/model-12', 'filtering must not refill from lower-ranked results');
+assert.ok(
+  filteredHuggingFaceResults.every(result => result.pipeline_tag !== 'image-text-to-image'),
+  'non-LLM image pipelines must be excluded from model search',
+);
+assert.equal(isCompatibleHuggingFaceVariantResult(null), false, 'failed variant discovery must use repository fallback detection');
+assert.equal(isCompatibleHuggingFaceVariantResult({ recipe: 'llamacpp', variants: [] }), false,
+  'repositories without downloadable variants must use repository fallback detection');
+assert.equal(isCompatibleHuggingFaceVariantResult({ recipe: 'llamacpp', variants: [{}] }), true,
+  'downloadable llama.cpp repositories must remain visible');
+for (const recipe of ['sd-cpp', 'whispercpp', 'moonshine']) {
+  assert.equal(isCompatibleHuggingFaceVariantResult({ recipe, variants: [{}] }), false,
+    `${recipe} repositories must match GUI2's backend compatibility exclusions`);
+}
+assert.equal(detectHuggingFaceBackendFromMetadata('FastFlowLM/model', { siblings: [] }), 'flm',
+  'empty variant discovery must recover supported FastFlowLM repositories');
+assert.equal(detectHuggingFaceBackendFromMetadata('org/model', { siblings: [{ rfilename: 'model.onnx' }] }), 'ryzenai-llm',
+  'empty variant discovery must recover supported ONNX repositories');
+assert.equal(detectHuggingFaceBackendFromMetadata('org/moonshine-base', { siblings: [{ rfilename: 'model.onnx' }] }), 'moonshine',
+  'Moonshine detection must precede generic ONNX detection');
+assert.equal(detectHuggingFaceBackendFromMetadata('org/whisper', { tags: ['whisper'], siblings: [{ rfilename: 'model.bin' }] }), 'whispercpp',
+  'Whisper repositories must be identified from repository files');
+assert.equal(detectHuggingFaceBackendFromMetadata('org/flux-model', { siblings: [] }), 'sd-cpp',
+  'image repositories must be identified even without a pipeline tag');
+assert.equal(detectHuggingFaceBackendFromMetadata('org/unknown', { siblings: [{ rfilename: 'weights.bin' }] }), null,
+  'unknown repositories must resolve as incompatible');
+assert.equal(isCompatibleHuggingFaceRecipe('flm'), true, 'supported fallback recipes must remain visible');
+assert.equal(isCompatibleHuggingFaceRecipe('ryzenai-llm'), true, 'supported ONNX fallback recipes must remain visible');
+assert.equal(isCompatibleHuggingFaceRecipe(null), false, 'unknown fallback results must be removed');
+assert.match(manager, /detectHuggingFaceBackend\(candidate\.id, ac\.signal\)/,
+  'failed or empty variants must fall through to repository backend detection');
+assert.match(manager, /isCompatibleHuggingFaceVariantResult\(variants\)/,
+  'Hugging Face results must apply backend compatibility after enrichment');
 
 const unknownByNameOnly = remoteCapabilityEvidence({
   id: 'org/embedding-chat-reranker-name-only',

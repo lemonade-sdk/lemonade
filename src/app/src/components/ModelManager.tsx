@@ -6,6 +6,11 @@ import { Icon } from './Icon';
 import { storageKey } from '../storage';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
+import {
+  detectHuggingFaceBackend,
+  isCompatibleHuggingFaceRecipe,
+  isCompatibleHuggingFaceVariantResult,
+} from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
 import { ModelListPanel, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
@@ -1097,6 +1102,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const pullRemoteAbortRef = useRef<Record<string, AbortController>>({});
   const [remoteVariants, setRemoteVariants] = useState<Record<string, PullVariantsResult>>({});
   const [remoteVariantsLoading, setRemoteVariantsLoading] = useState<Record<string, boolean>>({});
+  const [hfDetectedRecipes, setHfDetectedRecipes] = useState<Record<string, string | null>>({});
 
   const [customModels, setCustomModels] = useState<ModelInfo[]>(() => loadCustomModels().map(customModelToModelInfo));
   const [routerModels, setRouterModels] = useState<ModelInfo[]>(() => loadRouterRecords().map(routerRecordToModelInfo));
@@ -1365,30 +1371,67 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   // probes only follow a new search result set — never a local filter change.
   useEffect(() => {
     if (!providerEnabled.huggingface || hfResults.length === 0) return;
-    let cancelled = false;
+    const ac = new AbortController();
     let next = 0;
     const candidates = hfResults.slice(0, 12);
     const worker = async () => {
-      while (!cancelled && next < candidates.length) {
+      while (!ac.signal.aborted && next < candidates.length) {
         const candidate = candidates[next++];
         const key = providerKey('huggingface', candidate.id);
-        if (remoteVariants[key]) continue;
+        if (remoteVariants[key] || Object.prototype.hasOwnProperty.call(hfDetectedRecipes, key)) continue;
         try {
-          const variants = await loadRemoteVariants('huggingface', candidate.id);
-          if (variants && !cancelled) setRemoteVariants(prev => ({ ...prev, [key]: variants }));
+          const variants = await loadRemoteVariants('huggingface', candidate.id, ac.signal);
+          if (ac.signal.aborted) continue;
+          if (variants && isCompatibleHuggingFaceVariantResult(variants)) {
+            setRemoteVariants(prev => ({ ...prev, [key]: variants }));
+            setHfDetectedRecipes(prev => ({ ...prev, [key]: variants.recipe }));
+            continue;
+          }
+        } catch (error) {
+          if (ac.signal.aborted) continue;
+        }
+        try {
+          const recipe = await detectHuggingFaceBackend(candidate.id, ac.signal);
+          if (ac.signal.aborted) continue;
+          setHfDetectedRecipes(prev => ({ ...prev, [key]: recipe }));
+          if (recipe && isCompatibleHuggingFaceRecipe(recipe)) {
+            setRemoteVariants(prev => ({
+              ...prev,
+              [key]: {
+                checkpoint: candidate.id,
+                source: 'huggingface',
+                recipe,
+                repo_kind: recipe === 'flm' ? 'flm' : 'onnx',
+                suggested_name: candidate.id.split('/').pop() || candidate.id,
+                suggested_labels: [],
+                mmproj_files: [],
+                variants: [],
+              },
+            }));
+          }
         } catch {
-          // Capability enrichment is best effort; the search result remains usable.
+          if (!ac.signal.aborted) setHfDetectedRecipes(prev => ({ ...prev, [key]: null }));
         }
       }
     };
     void Promise.all(Array.from({ length: Math.min(3, candidates.length) }, worker));
-    return () => { cancelled = true; };
+    return () => { ac.abort(); };
   }, [hfResults, providerEnabled.huggingface]);
 
   useEffect(() => {
     setExpandedRemoteModel(null);
     setSelectedRemoteModel(null);
   }, [searchQuery]);
+
+  useEffect(() => {
+    if (!selectedRemoteModel || selectedRemoteProvider !== 'huggingface') return;
+    const key = providerKey('huggingface', selectedRemoteModel.id);
+    if (!Object.prototype.hasOwnProperty.call(hfDetectedRecipes, key)
+      || isCompatibleHuggingFaceRecipe(hfDetectedRecipes[key])) return;
+    setExpandedRemoteModel(null);
+    setSelectedRemoteModel(null);
+    setMobileDetailOpen(false);
+  }, [hfDetectedRecipes, selectedRemoteModel, selectedRemoteProvider]);
 
   /* ── Actions ─────────────────────────────────────────────── */
 
@@ -2376,13 +2419,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (!providerEnabled[provider] || searchQuery.trim().length < 2 || primaryFilter !== 'all') return [];
     return results.filter(result => {
       if (localRegistryRefs.has(result.id.toLowerCase())) return false;
-      const info = remoteResultAsModelInfo(result, remoteVariants[providerKey(provider, result.id)]);
+      const key = providerKey(provider, result.id);
+      const variants = remoteVariants[key];
+      if (provider === 'huggingface'
+        && Object.prototype.hasOwnProperty.call(hfDetectedRecipes, key)
+        && !isCompatibleHuggingFaceRecipe(hfDetectedRecipes[key])) return false;
+      const info = remoteResultAsModelInfo(result, variants);
       if (!modelMatchesTasks(info, taskFilters)) return false;
       if (!modelMatchesBackends(info, backendFilters)) return false;
       if (!modelMatchesTags(info, tagFilters)) return false;
       return true;
     });
-  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, taskFilters, backendFilters, tagFilters]);
+  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, hfDetectedRecipes, taskFilters, backendFilters, tagFilters]);
 
   const filteredHfResults = useMemo(
     () => filterRemoteResults('huggingface', hfResults),
@@ -2514,7 +2562,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                 className="row__action row__action--download"
                 aria-label={`Download ${result.id}`}
                 onClick={(event) => { event.stopPropagation(); handleExpand(); }}
-                title="Expand to pick a variant to download"
+                title={variants?.variants.length === 0 && variants.recipe !== 'llamacpp'
+                  ? 'Expand to download repository'
+                  : 'Expand to pick a variant to download'}
               >
                 <Icon name="download" size={13} /> Download
               </button>
@@ -2587,6 +2637,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                           <span className="hf-detail__gguf-action">Download</span>
                         </button>
                       ))}
+                    </div>
+                  </div>
+                )}
+                {variants && variants.variants.length === 0 && variants.recipe !== 'llamacpp' && (
+                  <div className="detail__field">
+                    <span className="detail__label">Repository download</span>
+                    <div className="hf-detail__gguf-list">
+                      <button
+                        className="hf-detail__gguf-btn"
+                        aria-label={`Download ${result.id}`}
+                        disabled={isPulling}
+                        onClick={() => void handleRemotePull(provider, result.id, '', variants.recipe)}
+                      >
+                        <span className="hf-detail__gguf-name">{result.id}</span>
+                        <span className="hf-detail__gguf-action">Download</span>
+                      </button>
                     </div>
                   </div>
                 )}

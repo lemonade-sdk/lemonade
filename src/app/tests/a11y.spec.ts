@@ -2704,15 +2704,52 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
   // ── 8. HuggingFace inline zone in the model list panel (#2564) ──────────────
 
   async function goToModelsRefinedWithHf(page: Page): Promise<void> {
-    await page.route('**huggingface.co/api/models**', async route =>
-      route.fulfill({
+    await page.route('**huggingface.co/api/models**', async route => {
+      const url = new URL(route.request().url());
+      const modelPath = url.pathname.replace('/api/models', '').replace(/^\//, '');
+      if (modelPath) {
+        const isFlm = modelPath.includes('FastFlowLM');
+        const isImage = modelPath.includes('No-Pipeline-Image');
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: modelPath,
+            tags: isFlm ? ['flm'] : [],
+            siblings: isFlm
+              ? [{ rfilename: 'model.flm' }]
+              : isImage ? [{ rfilename: 'diffusion-model.safetensors' }] : [],
+          }),
+        });
+        return;
+      }
+      await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify([
           { id: 'org/Mistral-7B-GGUF', modelId: 'org/Mistral-7B-GGUF', likes: 10, downloads: 999, tags: ['gguf', 'text-generation'], pipeline_tag: 'text-generation' },
+          { id: 'org/Mistral-Image-GGUF', modelId: 'org/Mistral-Image-GGUF', likes: 7, downloads: 700, tags: ['gguf', 'text-to-image'], pipeline_tag: 'text-to-image' },
+          { id: 'org/Mistral-No-Pipeline-Image-GGUF', modelId: 'org/Mistral-No-Pipeline-Image-GGUF', likes: 6, downloads: 600, tags: ['gguf'] },
           { id: 'org/Phi-3-GGUF', modelId: 'org/Phi-3-GGUF', likes: 5, downloads: 500, tags: ['gguf'], pipeline_tag: 'text-generation' },
+          { id: 'FastFlowLM/Mistral-FLM', modelId: 'FastFlowLM/Mistral-FLM', likes: 4, downloads: 400, tags: ['flm'], pipeline_tag: 'text-generation' },
         ]),
-      }),
-    );
+      });
+    });
+    await page.route('**/api/v1/pull/variants?**', async route => {
+      const checkpoint = new URL(route.request().url()).searchParams.get('checkpoint') || '';
+      const needsFallback = checkpoint.includes('No-Pipeline-Image') || checkpoint.includes('FastFlowLM');
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          checkpoint,
+          source: 'huggingface',
+          recipe: 'llamacpp',
+          repo_kind: 'gguf',
+          suggested_name: checkpoint.split('/').pop() || checkpoint,
+          suggested_labels: [],
+          mmproj_files: [],
+          variants: needsFallback ? [] : [{ name: 'Q4_K_M', primary_file: 'model.gguf', files: ['model.gguf'], sharded: false, size_bytes: 1024 }],
+        }),
+      });
+    });
     await goToModelsRefined(page);
   }
 
@@ -2731,9 +2768,16 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await expect(hfZone).toBeVisible();
     await expect(hfZone).toContainText('HuggingFace');
 
-    // HF result cards are present in the zone.
+    // GUI2's compatibility filters remove both excluded pipeline categories and
+    // incompatible backends discovered from repository metadata.
     const hfRows = page.locator('.zone--hf .row--hf');
-    await expect(hfRows).toHaveCount(2);
+    await expect(hfRows).toHaveCount(3);
+    await expect(hfZone).not.toContainText('Mistral-Image');
+    await expect(hfZone).not.toContainText('Mistral-No-Pipeline-Image');
+    await expect(hfZone).toContainText('Mistral-FLM');
+    const flmRow = hfZone.locator('.row--hf').filter({ hasText: 'Mistral-FLM' });
+    await flmRow.locator('.row__content').click();
+    await expect(flmRow.locator('.row__detail').getByRole('button', { name: 'Download FastFlowLM/Mistral-FLM' })).toBeVisible();
 
     // Clearing the search removes the HF zone entirely.
     await search.fill('');
