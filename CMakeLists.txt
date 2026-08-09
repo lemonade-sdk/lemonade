@@ -2793,7 +2793,7 @@ if(EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
 endif()
 
 set(_ANTHROPIC_ERROR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_error.cpp")
-if(EXISTS "${_ANTHROPIC_ERROR_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_ERROR_TEST_SRC}")
     add_executable(test_anthropic_error test/cpp/test_anthropic_error.cpp)
     target_link_libraries(test_anthropic_error PRIVATE lemonade-server-core)
     add_cpp_ci_test(AnthropicErrorTest CI ON COMMAND test_anthropic_error)
