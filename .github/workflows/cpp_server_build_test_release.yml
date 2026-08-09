@@ -231,6 +231,47 @@ jobs:
           path: lemonade.msi
           retention-days: 7
 
+  tauri-compile-check:
+    name: Compile-check the Tauri host (${{ matrix.os }})
+    # The Tauri host is Rust, which `npm run typecheck` does not touch. Both
+    # jobs that build it — the Windows desktop installer and the macOS .dmg —
+    # defer to the merge queue, so without this a broken src-tauri compiles
+    # nowhere until a PR is already queued.
+    #
+    # Windows is not optional here: webview_shim.rs and lib.rs gate code behind
+    # cfg(target_os = "windows"), and webview2-com/windows are Windows-only
+    # dependencies, so a Linux-only check would miss exactly the code whose
+    # packaging job was deferred. cargo check rather than a full build — this
+    # is a compile canary, not a packaging step.
+    #
+    # Deliberately uncached: a cold check measures ~1.5 min, and the Actions
+    # cache is a 10 GB LRU pool shared with the FetchContent caches the Windows
+    # installer jobs restore from.
+    #
+    # Lives here rather than in Docs And Style so it can report through the
+    # `Packaging builds` gate, alongside the desktop installer it stands in for.
+    # A new job name would otherwise block nothing until someone registered it
+    # in branch protection.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Tauri build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Compile-check the Tauri host
+        working-directory: src/app/src-tauri
+        run: cargo check --locked --all-targets
+
   sign-msi-installers:
     name: Sign MSI Installers with SignPath
     runs-on: windows-latest
@@ -338,6 +379,13 @@ jobs:
           package-type: binary
           deb-version: ${{ steps.get_version.outputs.version }}
 
+      - name: Upload .deb package
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-deb
+          path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
+          retention-days: 7
+
       - name: Report compiler cache hit rate
         # Set only by the opt-in step above, so this covers both the release
         # path and an image published before the prime existed.
@@ -346,7 +394,6 @@ jobs:
         run: |
           set -euo pipefail
           ccache -s
-
           # Zero hits against a primed image means the prime and this job
           # disagree on the compile command line — most likely the workspace
           # path, which GitHub derives from the repository name and the prime
@@ -362,13 +409,6 @@ jobs:
           if [ "$hits" -eq 0 ]; then
             echo "::warning title=Primed ccache produced no hits::The build image ships a primed cache but nothing matched. Check that the prime path in .ubuntu/Dockerfile still matches this job's workspace."
           fi
-
-      - name: Upload .deb package
-        uses: actions/upload-artifact@v7
-        with:
-          name: lemonade-deb
-          path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
-          retention-days: 7
 
   cpp-unit-tests:
     name: C++ unit tests
@@ -1438,7 +1478,7 @@ jobs:
   # to run on ordinary pull request pushes.
   packaging-gate:
     name: Packaging builds
-    needs: [build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package, build-lemonade-desktop-installer]
+    needs: [build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package, build-lemonade-desktop-installer, tauri-compile-check]
     if: always()
     runs-on: ubuntu-latest
     steps:

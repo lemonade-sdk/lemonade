@@ -121,6 +121,13 @@ jobs:
 
           echo "Building lemond and lemonade on ${{ matrix.distro }}..."
 
+          # setup.sh configures with testing on and the build below has no
+          # --target, so every unit-test binary would be built and then left out
+          # of the package. Same reasoning as BUILD_TESTING=OFF in
+          # contrib/debian/rules and the RPM job.
+          echo "Reconfiguring without the unit-test targets..."
+          cmake --preset default -DBUILD_TESTING=OFF
+
           # Build
           echo "Building binaries..."
           cmake --build --preset default

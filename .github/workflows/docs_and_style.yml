@@ -32,45 +32,6 @@ jobs:
       - name: Run app regression tests
         run: node test/app/run-app-regression-tests.cjs
 
-  tauri-compile-check:
-    name: Compile-check the Tauri host (${{ matrix.os }})
-    # The Tauri host is Rust, which `npm run typecheck` does not touch. Both
-    # jobs that build it — the Windows desktop installer and the macOS .dmg —
-    # defer to the merge queue, so without this a broken src-tauri compiles
-    # nowhere until a PR is already queued.
-    #
-    # Windows is not optional here: webview_shim.rs and lib.rs gate code behind
-    # cfg(target_os = "windows"), and webview2-com/windows are Windows-only
-    # dependencies, so a Linux-only check would miss exactly the code whose
-    # packaging job was deferred. cargo check rather than a full build — this
-    # is a compile canary, not a packaging step.
-    #
-    # Deliberately uncached: a cold check measures ~1.5 min, and the Actions
-    # cache is a 10 GB LRU pool shared with the FetchContent caches the Windows
-    # installer jobs restore from.
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    concurrency:
-      group: ${{ github.workflow }}-tauri-check-${{ matrix.os }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Install Tauri build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
-            libayatana-appindicator3-dev librsvg2-dev patchelf
-
-      - name: Compile-check the Tauri host
-        working-directory: src/app/src-tauri
-        run: cargo check --locked --all-targets
-
   backend-docs-drift:
     # The backend reference doc (docs/dev/backends-reference.md) is generated from
     # the self-describing backend descriptors. Build lemond, regenerate, and fail
