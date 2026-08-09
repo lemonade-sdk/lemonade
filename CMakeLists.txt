@@ -2738,7 +2738,7 @@ set(_HF_VARIANTS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hf_variants
 if(EXISTS "${_HF_VARIANTS_TEST_SRC}")
     add_executable(test_hf_variants test/cpp/test_hf_variants.cpp)
     target_link_libraries(test_hf_variants PRIVATE lemonade-server-core)
-    add_cpp_ci_test(HfVariantsTest CI OFF COMMAND test_hf_variants)
+    add_cpp_ci_test(HfVariantsTest CI ON COMMAND test_hf_variants)
 endif()
 
 # vLLM CDNA gating: the vllm descriptor support row + asset-family resolution for
