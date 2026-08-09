@@ -814,6 +814,11 @@ if(WIN32)
         file(TO_NATIVE_PATH "${WIX_TAURI_FRAGMENT}" WIX_TAURI_FRAGMENT_NATIVE)
 
 
+        # Pinned so `wix build` cannot resolve a newer extension from NuGet
+        # that the pinned CLI then refuses to load. Keep in step with the
+        # version installed by .github/actions/install-wix.
+        set(LEMONADE_WIX_EXT_VERSION "5.0.2")
+
         # Web app fragment paths. The minimal and full installers each get
         # their own file: both regenerate it and then feed it to wix build, so
         # a shared path makes the two targets race whenever a build runs them
@@ -841,7 +846,7 @@ if(WIN32)
                 --path-variable "WebAppSourceDir"
             COMMAND ${WIX_EXECUTABLE} build
                 -arch x64
-                -ext WixToolset.UI.wixext
+                -ext WixToolset.UI.wixext/${LEMONADE_WIX_EXT_VERSION}
                 -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
                 -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
                 -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
@@ -878,7 +883,7 @@ if(WIN32)
                 --path-variable "TauriSourceDir"
             COMMAND ${WIX_EXECUTABLE} build
                 -arch x64
-                -ext WixToolset.UI.wixext
+                -ext WixToolset.UI.wixext/${LEMONADE_WIX_EXT_VERSION}
                 -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
                 -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
                 -d BuildDir="${WIX_BUILD_DIR_NATIVE}"

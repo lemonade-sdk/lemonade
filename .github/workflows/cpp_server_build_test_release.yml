@@ -88,6 +88,11 @@ jobs:
 
           $full = $env:BUILD_FULL_INSTALLER -eq 'true'
           $target = if ($full) { "wix_installers" } else { "wix_installer_minimal" }
+          # wix_installers is the only target that owns two wix build runs, and
+          # it is only ever built here on the release and signing paths — so a
+          # parallel configuration used there would first run for real during a
+          # release. Build it serially; the two MSIs take seconds either way.
+          $nodes = if ($full) { "/m:1" } else { "/m:2" }
           $expected = @(
               "build\Release\lemond.exe",
               "build\Release\LemonadeServer.exe",
@@ -107,7 +112,7 @@ jobs:
           # reach 16 concurrent compilers and run itself out of heap.
           # Passed straight through rather than via --parallel, which makes
           # CMake set CL_MPCount=1 and cancel the /MP in CMakeLists.txt.
-          cmake --build build --config Release --target $target -- /m:2
+          cmake --build build --config Release --target $target -- $nodes
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify outputs
@@ -298,8 +303,9 @@ jobs:
         # Release builds opt out so their -fdebug-prefix-map keeps the package
         # version dpkg derives from the changelog. Everywhere else it is pinned
         # to the value the prime recorded, which is what makes the primed
-        # objects reusable across commits at all.
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        # objects reusable across commits at all. release-v* is included
+        # because those pushes also produce .deb and -dbgsym artifacts.
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && !startsWith(github.ref, 'refs/heads/release-v') }}
         shell: bash
         run: |
           set -euo pipefail
