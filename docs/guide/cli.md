@@ -408,6 +408,14 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
+
+#### MLX Engine (`mlx-engine` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--mlx-backend BACKEND` | MLX backend to use (metal, rocm, cpu) | Auto-detected |
+| `--mlx-args ARGS` | Extra arguments passed to lemon-mlx-engine | `""` |
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values

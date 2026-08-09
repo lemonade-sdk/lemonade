@@ -1,4 +1,5 @@
 #include "lemon/backends/mlx/mlx_server.h"
+#include "lemon/backends/mlx/mlx.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
@@ -112,7 +113,7 @@ void MlxServer::load(const std::string& model_name,
     device_type_ = (mlx_backend == "cpu") ? DEVICE_CPU : DEVICE_GPU;
 
     // Install mlx-engine binary if needed.
-    backend_manager_->install_backend(SPEC.recipe, mlx_backend);
+    backend_manager_->install_backend(mlx::spec()->recipe, mlx_backend);
 
     // MLX identifies models by HuggingFace repo-id or a local directory path.
     // The ModelManager resolves local paths when available; fall back to the
@@ -130,7 +131,7 @@ void MlxServer::load(const std::string& model_name,
 
     port_ = choose_port();
 
-    std::string executable = BackendUtils::get_backend_binary_path(SPEC, mlx_backend);
+    std::string executable = BackendUtils::get_backend_binary_path(*mlx::spec(), mlx_backend);
 
     std::vector<std::string> args;
     // Positional model argument — pre-load mode.
@@ -221,8 +222,6 @@ json MlxServer::responses(const json& request) {
         UnsupportedOperationException("Responses API", "mlx-engine")
     );
 }
-
-} // namespace backends
 
 namespace {
 class MlxOps : public BackendOps {

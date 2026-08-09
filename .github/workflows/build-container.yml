@@ -43,7 +43,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/lemonade-sdk/lemonade/build-environment
+          images: ghcr.io/${{ github.repository }}/build-environment
           tags: |
             type=raw,value=ubuntu${{ matrix.ubuntu_version }}
             type=raw,value=latest,enable=${{ matrix.ubuntu_version == '26.04' }}
