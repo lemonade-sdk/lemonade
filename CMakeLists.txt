@@ -2290,6 +2290,24 @@ if(EXISTS "${_LATEST_FALLBACK_TEST_SRC}")
     add_cpp_ci_test(LatestVersionFallbackTest CI ON COMMAND test_latest_version_fallback)
 endif()
 
+# Label-to-deployment-mode mapping (lemon::get_model_type_from_labels). Header-only,
+# so the test links nothing beyond the standard library.
+set(_MODEL_TYPE_CLASSIFIER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_type_classifier.cpp"
+)
+if(EXISTS "${_MODEL_TYPE_CLASSIFIER_TEST_SRC}")
+    add_executable(test_model_type_classifier
+        test/cpp/test_model_type_classifier.cpp
+    )
+    target_include_directories(test_model_type_classifier PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    include(CTest)
+    add_cpp_ci_test(ModelTypeClassifierTest CI ON COMMAND test_model_type_classifier)
+endif()
+
 # Job engine pure core: the `when`/`branch` expression evaluator + reference
 # resolution, and step-graph validation (forward-only ⇒ no loops). Header-only,
 # so these link only nlohmann/json.
