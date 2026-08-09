@@ -212,8 +212,9 @@ jobs:
 
       - name: Upload Lemonade Desktop Installer
         # Without this the MSI is built and discarded, so nothing installs it
-        # until a tag. It also restores the artifact that release-v* pushes
-        # used to get from the combined build.
+        # until a tag. Note this is a new artifact name, not a restoration of
+        # Lemonade_Server_MSI: that one now carries only the minimal MSI off the
+        # release path. No in-repo consumer reads lemonade.msi from it.
         uses: actions/upload-artifact@v7
         with:
           name: Lemonade_Desktop_MSI
@@ -331,7 +332,25 @@ jobs:
         # path and an image published before the prime existed.
         if: ${{ always() && env.CMAKE_CXX_COMPILER_LAUNCHER == 'ccache' }}
         shell: bash
-        run: ccache -s
+        run: |
+          set -euo pipefail
+          ccache -s
+
+          # Zero hits against a primed image means the prime and this job
+          # disagree on the compile command line — most likely the workspace
+          # path, which GitHub derives from the repository name and the prime
+          # hardcodes. Warn rather than fail: a change to a widely included
+          # header legitimately invalidates every entry.
+          stats="$(ccache --print-stats 2>/dev/null || true)"
+          if ! grep -q '^direct_cache_hit' <<< "$stats"; then
+            echo "Could not read ccache counters; skipping the hit-rate check."
+            exit 0
+          fi
+          hits="$(awk -F'\t' '/^(direct|preprocessed)_cache_hit\t/ { n += $2 } END { print n+0 }' <<< "$stats")"
+          echo "Cache hits this build: ${hits}"
+          if [ "$hits" -eq 0 ]; then
+            echo "::warning title=Primed ccache produced no hits::The build image ships a primed cache but nothing matched. Check that the prime path in .ubuntu/Dockerfile still matches this job's workspace."
+          fi
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v7

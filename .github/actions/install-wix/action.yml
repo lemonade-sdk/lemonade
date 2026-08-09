@@ -63,3 +63,15 @@ runs:
 
         Write-Host "Using WiX from: $wixExe" -ForegroundColor Green
         & $wixExe --version
+
+    - name: Pre-install WiX extensions
+      shell: PowerShell
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        # `wix build -ext` extracts the package into a shared per-user cache on
+        # first use. Two installer targets built in parallel would otherwise
+        # race to populate it, so seed it once here while nothing else runs.
+        wix extension add -g WixToolset.UI.wixext
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        wix extension list -g

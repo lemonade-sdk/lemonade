@@ -103,6 +103,11 @@ jobs:
         # Linux CI job and every PPA job, with a slow .deb build as the only
         # symptom. The runner is amd64, so this pulls the amd64 manifest — the
         # same one the prime targets.
+        #
+        # Deliberately detects rather than prevents. The prime never fails the
+        # image build (see .ubuntu/Dockerfile), so an unprimed image still
+        # publishes and consumers fall back to a cold compile; this step is what
+        # makes that visible instead of silent.
         if: matrix.prime_ccache == 'true'
         shell: bash
         env:
