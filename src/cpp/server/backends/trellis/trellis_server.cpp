@@ -184,7 +184,7 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
         const std::string payload = json{{"error", {
             {"message", "unsupported image format: expected PNG, JPEG, BMP, or GIF"},
             {"type", "invalid_request_error"},
-            {"status", 400}}}}.dump();
+            {"status_code", 400}}}}.dump();
         sink.write(payload.data(), payload.size());
         return;
     }
