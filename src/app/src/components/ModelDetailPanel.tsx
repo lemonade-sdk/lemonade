@@ -2086,6 +2086,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const isPulling = pulling[name] !== undefined;
   const pullPct = pulling[name] ?? 0;
   const isDownloaded = Boolean((model as any).downloaded) && !isPulling;
+  const isCustom = modelIsCustom(model);
   const cap = capabilityFromModelInfo(model);
 
   const detailMetadata = (
@@ -2194,14 +2195,14 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           {isFavorite ? 'Favorited' : 'Favorite'}
         </WorkspaceActionButton>
       )}
-      {(isDownloaded || isLoaded) && (
+      {!isPulling && (isCustom || isDownloaded || isLoaded) && (
         <WorkspaceActionButton
           appearance="danger"
           icon="trash"
           onClick={() => onDelete(model)}
           disabled={isLoadingThis}
-          aria-label={(model as any).custom ? `Delete custom model definition for ${name}` : `Delete downloaded files for ${name}`}
-          title={(model as any).custom ? 'Delete model definition' : 'Delete downloaded files'}
+          aria-label={isCustom ? `Delete custom model definition for ${name}` : `Delete downloaded files for ${name}`}
+          title={isCustom ? 'Delete model definition' : 'Delete downloaded files'}
         >
           Delete
         </WorkspaceActionButton>

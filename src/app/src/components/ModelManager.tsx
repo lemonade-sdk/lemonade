@@ -1735,6 +1735,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         if (api.isConnected) await api.deleteModel(name);
         deleteCustomModel(String((model as any).id || name));
         reloadCustomModels();
+        if (selectedDetailModelId === name) setSelectedDetailModelId(null);
         await refresh();
       } catch (err) {
         console.error('Custom model delete failed:', err);
@@ -2489,7 +2490,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     ? (allModels.find(m => modelName(m) === selectedDetailModelId) ?? null)
     : null;
   const selectedDetailIsCustom = Boolean(selectedDetailModel && modelIsCustom(selectedDetailModel));
-  const showCustomEditor = showCustomForm || (primaryFilter === 'my-models' && !selectedDetailIsCustom);
+  const showCustomEditor = showCustomForm;
 
   useEffect(() => {
     const requested = openModelRequest?.modelName?.trim();
@@ -2932,7 +2933,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                 >
                   Save
                 </WorkspaceActionButton>
-                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Cancel</WorkspaceActionButton>
                 <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>Export</WorkspaceActionButton>
                 <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>Import</WorkspaceActionButton>
               </WorkspaceActionGroup>
