@@ -2777,7 +2777,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await expect(hfZone).toContainText('Mistral-FLM');
     const flmRow = hfZone.locator('.row--hf').filter({ hasText: 'Mistral-FLM' });
     await flmRow.locator('.row__content').click();
-    await expect(flmRow.locator('.row__detail').getByRole('button', { name: 'Download FastFlowLM/Mistral-FLM' })).toBeVisible();
+    await expect(page.locator('.model-detail-panel--hf').getByRole('button', { name: 'Download FastFlowLM/Mistral-FLM' })).toBeVisible();
 
     // Clearing the search removes the HF zone entirely.
     await search.fill('');
