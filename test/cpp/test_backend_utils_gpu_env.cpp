@@ -5,12 +5,14 @@
 // selection validation deterministically without requiring physical GPU hardware.
 
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <lemon/backends/backend_utils.h>
+#include <lemon/runtime_config.h>
 
 #ifdef _WIN32
 #include <process.h>
@@ -111,6 +113,27 @@ int main() {
         }
         check(no_throw_matching,
               "validate_device_backend_match accepts matching pairs and system/auto backends gracefully");
+    }
+
+    // Test 3: a custom backend binary environment variable takes precedence
+    // over config.json. ROCm channel names collapse to the public ROCm override
+    // documented for users, while config remains the fallback.
+    {
+        const std::string override_path = std::filesystem::current_path().string();
+        const std::string config_path = std::filesystem::temp_directory_path().string();
+        lemon::RuntimeConfig config({{"llamacpp", {{"rocm_bin", config_path}}}});
+        lemon::RuntimeConfig::set_global(&config);
+        set_env_var("LEMONADE_LLAMACPP_ROCM_BIN", override_path);
+
+        check(BackendUtils::find_external_backend_binary("llamacpp", "rocm-stable") == override_path,
+              "ROCm stable resolves LEMONADE_LLAMACPP_ROCM_BIN");
+        check(BackendUtils::find_external_backend_binary("llamacpp", "rocm-nightly") == override_path,
+              "ROCm nightly resolves LEMONADE_LLAMACPP_ROCM_BIN");
+
+        clear_env_var("LEMONADE_LLAMACPP_ROCM_BIN");
+        check(BackendUtils::find_external_backend_binary("llamacpp", "rocm-stable") == config_path,
+              "ROCm stable falls back to configured llamacpp.rocm_bin");
+        lemon::RuntimeConfig::set_global(nullptr);
     }
 
     if (g_failures > 0) {

@@ -323,12 +323,19 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {
-        auto* cfg = lemon::RuntimeConfig::global();
-        if (!cfg) return "";
-
         std::string section, bin_key;
         build_bin_config_key(recipe, backend, section, bin_key);
-        std::string bin_value = cfg->backend_string(section, bin_key);
+
+        std::string env_name = "LEMONADE_" + section + "_" + bin_key;
+        std::transform(env_name.begin(), env_name.end(), env_name.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+
+        std::string bin_value = utils::get_environment_variable_utf8(env_name);
+        if (bin_value.empty()) {
+            auto* cfg = lemon::RuntimeConfig::global();
+            if (!cfg) return "";
+            bin_value = cfg->backend_string(section, bin_key);
+        }
 
         // Reserved keywords and bare version tags are handled by the install flow.
         if (bin_value.empty() || bin_value == "builtin" || bin_value == "latest") {
