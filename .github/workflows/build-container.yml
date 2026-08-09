@@ -4,19 +4,47 @@ on:
   schedule:
     - cron: '0 2 * * *'  # Nightly at 2 AM UTC
   workflow_dispatch:
+  # Build (but do not publish) on PRs that change how the image is built. The
+  # nightly schedule is otherwise the first thing to exercise a change, against
+  # the tag every Linux CI job and every PPA job pulls.
+  #
+  # Deliberately narrow, and not free of gaps: the prime compiles a
+  # .dockerignore-filtered tree, so a source change referencing a stripped path
+  # (test/, examples/, LICENSE) can pass `Build Lemonade .deb Package` and still
+  # fail the prime. Covering that would mean rebuilding the image on every C++
+  # PR. Instead the prime is non-fatal, so such a break costs a cache rather
+  # than a publish, and this workflow's verify step reports it.
+  pull_request:
+    paths:
+      - .ubuntu/Dockerfile
+      - .dockerignore
+      - contrib/debian/**
+      - .github/workflows/build-container.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-container:
+    name: Build build-environment (ubuntu${{ matrix.ubuntu_version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
+          # prime_ccache belongs to the tag whose compile CI actually gates:
+          # build-lemonade-deb runs in this image on every PR and merge, so a
+          # break in the primed build is caught before it can strand the
+          # nightly publish. See .ubuntu/Dockerfile.
           - ubuntu_version: "24.04"
             ubuntu_ppa: "ppa:lemonade-team/bleeding-edge"
+            prime_ccache: "true"
           - ubuntu_version: "25.10"
             ubuntu_ppa: "ppa:lemonade-team/bleeding-edge"
+            prime_ccache: ""
           - ubuntu_version: "26.04"
             ubuntu_ppa: ""
+            prime_ccache: ""
 
     permissions:
       contents: read
@@ -26,13 +54,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # Only the publish path needs arm64, and emulating it on a PR would cost
+      # far more than the Dockerfile change being verified.
       - name: Set up QEMU
+        if: github.event_name != 'pull_request'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -57,9 +89,58 @@ jobs:
           build-args: |
             BASE_IMAGE=ubuntu:${{ matrix.ubuntu_version }}
             UBUNTU_PPA=${{ matrix.ubuntu_ppa }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+            PRIME_CCACHE=${{ matrix.prime_ccache }}
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ github.event_name == 'pull_request' && 'lemonade-build-environment:test' || steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Layer cache lives in the registry, not the Actions cache. The arm64
+          # legs run under QEMU and re-running `apt build-dep` nightly with no
+          # reuse is expensive, but the Actions cache is a 10 GB LRU pool shared
+          # with the FetchContent caches the Windows installer jobs restore
+          # from — a ~300 MB primed-ccache layer per release would evict entries
+          # that sit on the critical path. ghcr has neither limit.
+          cache-from: type=registry,ref=ghcr.io/lemonade-sdk/lemonade/build-environment:buildcache-${{ matrix.ubuntu_version }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,mode=max,ref=ghcr.io/lemonade-sdk/lemonade/build-environment:buildcache-{0}', matrix.ubuntu_version) || '' }}
+
+      - name: Verify the compiler cache was primed
+        # Runs on the publish path too, against the tag that was just pushed:
+        # a prime that silently produces nothing would otherwise reach every
+        # Linux CI job and every PPA job, with a slow .deb build as the only
+        # symptom. The runner is amd64, so this pulls the amd64 manifest — the
+        # same one the prime targets.
+        #
+        # Deliberately detects rather than prevents. The prime never fails the
+        # image build (see .ubuntu/Dockerfile), so an unprimed image still
+        # publishes and consumers fall back to a cold compile; this step is what
+        # makes that visible instead of silent.
+        if: matrix.prime_ccache == 'true'
+        shell: bash
+        env:
+          IMAGE: ${{ github.event_name == 'pull_request' && 'lemonade-build-environment:test' || format('ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu{0}', matrix.ubuntu_version) }}
+        run: |
+          set -euo pipefail
+
+          # An empty cache means the prime silently produced nothing, which
+          # would leave every .deb build compiling from scratch again. Measured
+          # on the directory rather than `ccache -s` output, which is not a
+          # stable parsing target across ccache versions. The upper bound is
+          # ccache's own -M setting, so only the floor needs asserting here.
+          docker run --rm "$IMAGE" ccache -s
+
+          # Size first: a prime that dies partway leaves objects behind but no
+          # marker, and checking the marker first would surface that as a bare
+          # `cat: No such file` instead of the explanatory message below.
+          size_mb="$(docker run --rm "$IMAGE" sh -c 'du -sm "$CCACHE_DIR" 2>/dev/null || echo 0' | cut -f1)"
+          echo "Primed ccache size: ${size_mb} MB"
+          if [ "$size_mb" -lt 50 ]; then
+            echo "::error title=Build image published without a compiler cache::The image itself is fine and consumers will fall back to a cold compile, but the prime produced nothing — see the prime warning earlier in this log. Most often a source change referencing a path .dockerignore strips. This job stays red until that is fixed."
+            exit 1
+          fi
+
+          if ! debugpath="$(docker run --rm "$IMAGE" cat /opt/ccache-debugpath 2>/dev/null)"; then
+            echo "::error title=Build image published without a compiler cache::Objects were produced but the prime did not run to completion, so consumers will not use them."
+            exit 1
+          fi
+          echo "Recorded DEB_BUILD_DEBUGPATH: ${debugpath}"
