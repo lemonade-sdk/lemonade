@@ -818,6 +818,61 @@ You can override these with `--scenario-file` or `--scenario-dir`.
 
 **Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them. Embedding tests are also excluded by default but can be enabled with `--scenarios embed`. To enable all scenarios, regardless of type, runtime, or resource requirement use `--scenarios all`.
 
+#### Vision Scenarios
+
+Vision scenarios benchmark a multimodal model on image understanding tasks (e.g., transcription, captioning, visual Q&A). They are **not** part of the default scenario set, so you must opt in explicitly with `--scenarios vision` (or filter by a specific scenario name).
+
+A vision scenario differs from a textgen scenario in a few ways:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `category` | string | Must be `"vision"` (required, case-sensitive) |
+| `image_path` | string | Path to the image file, relative to the scenario file (required, non-empty) |
+| `messages` | array | Chat messages in OpenAI format (required) |
+| `max_tokens` | int | Maximum output tokens (default: `1024`) |
+
+Notes on behavior:
+
+- `image_path` is **required** for vision scenarios. A missing or empty value is rejected at parse time.
+- The image path is resolved **relative to the scenario file's directory** and must reside in that same directory. Absolute paths, `../` traversal, and paths into subdirectories beneath the scenario file are rejected.
+- The image is base64-encoded and embedded into the **first `user` message** as an `image_url` data URI. Only a single image is supported; multiple user messages do not receive additional copies.
+- Supported formats are `jpeg`/`jpg`, `png`, `webp`, and `gif`.
+- The model must support vision (i.e., carry the `vision` label).
+- Some models perform better with more tokens. Gemma4, for example, may perform better on text transcription tasks when run with `--image-max-tokens 1120 --image-min-tokens 1120 --ubatch-size 2048`. Consult the model card for additional parameter suggestions.
+
+Here is an example scenario file that mirrors the bundled `bench_scenarios_vision.json`:
+
+```json
+{
+  "scenarios": [
+    {
+      "name": "hello-world",
+      "category": "vision",
+      "image_path": "hello_world.jpg",
+      "messages": [ {"role": "user", "content": "transcribe this image"} ],
+      "max_tokens": 4096
+    },
+    {
+      "name": "declaration-of-independence",
+      "category": "vision",
+      "image_path": "declaration.jpg",
+      "messages": [ {"role": "user", "content": "transcribe this image"} ],
+      "max_tokens": 4096
+    }
+  ]
+}
+```
+
+Each entry pairs a descriptive scenario `name` with an `image_path` that points to an image file stored alongside the scenario file. To build your own data set, drop the image files next to the scenario JSON (so `image_path` is a bare filename) and reference them from `image_path`.
+
+Run a vision benchmark against a vision-capable model with:
+
+```
+lemonade bench --scenario-file bench_scenarios_vision.json --scenarios vision Qwen2.5-VL-7B-GGUF
+```
+
+Vision scenarios are excluded by default both because they require a vision-capable model and because embedding and transferring image payloads adds overhead; opt in deliberately when benchmarking a multimodal model.
+
 
 ### Output
 
