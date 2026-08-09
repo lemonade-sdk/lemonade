@@ -8,6 +8,7 @@ const RECIPE_PRIORITY = [
   'flm',
   'kokoro',
   'llamacpp',
+  'mlx-engine',
   'moonshine',
   'onnxruntime',
   'openmoss',
@@ -30,7 +31,8 @@ const RECIPE_DISPLAY_NAMES = {
   acestep: 'ACE-Step',
   onnxruntime: 'ONNX Runtime',
   trellis: 'TRELLIS.2',
-  openmoss: 'OpenMOSS TTS'
+  openmoss: 'OpenMOSS TTS',
+  'mlx-engine': 'MLX Engine (Apple Silicon)'
 };
 /* END GENERATED: models-js-recipes */
 

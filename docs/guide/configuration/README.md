@@ -72,6 +72,9 @@ Values set in the user's `config.json` always take precedence over these seeded 
   },
   "log_level": "info",
   "max_loaded_models": 1,
+  "mlx-engine": {
+    "backend": "auto"
+  },
   "models_dir": "auto",
   "moonshine": {
     "args": "",

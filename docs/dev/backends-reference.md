@@ -13,6 +13,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
+| `mlx-engine` | MLX Engine | yes | yes | cpu, metal, rocm |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
@@ -41,6 +42,9 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
 | `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx942, gfx950) |
 | `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
+| `mlx-engine` | metal | macos | metal |
+| `mlx-engine` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `mlx-engine` | cpu | linux, macos | cpu (arm64, x86_64) |
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | macos | cpu (arm64) |
@@ -101,6 +105,14 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp_backend` | `--llamacpp` | BACKEND | "" | LlamaCpp backend to use |
 | `llamacpp_device` | `--llamacpp-device` | DEVICES | "" | Comma-separated list of accelerator devices to use (e.g. Vulkan0) |
 | `llamacpp_args` | `--llamacpp-args` | ARGS | "" | Custom arguments to pass to llama-server |
+
+#### `mlx-engine` — MLX Engine
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `mlx_backend` | `--mlx-backend` | BACKEND | "" | MLX backend to use (metal, rocm, cpu) |
+| `mlx_args` | `--mlx-args` | ARGS | "" | Extra arguments passed to lemon-mlx-engine |
 
 #### `moonshine` — Moonshine
 
@@ -267,6 +279,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `jina-reranker-v1-tiny-en-GGUF` | 0.0367 | reranking |
 | `nomic-embed-text-v1-GGUF` | 0.0781 | embeddings |
 | `nomic-embed-text-v2-moe-GGUF` | 0.51 | embeddings |
+
+#### `mlx-engine` — MLX Engine (2 models)
+
+| Model | Size (GB) | Labels |
+|-------|-----------|--------|
+| `Qwen3-0.6B-MLX` | 0.42 | reasoning |
+| `Qwen3-4B-MLX` | 2.3 | reasoning |
 
 #### `moonshine` — Moonshine (3 models)
 
