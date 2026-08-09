@@ -57,8 +57,8 @@ const PRIMARY_ITEMS: Array<{ key: PrimaryFilter; label: string; iconName: IconNa
 const TASK_ITEMS: Array<{ key: FilterTab; label: string; iconName: IconName; color: string }> = [
   { key: 'all', label: 'All', iconName: 'globe', color: 'var(--text-tertiary)' },
   { key: 'llm', label: 'Chat', iconName: 'chat', color: 'var(--cap-chat)' },
-  { key: 'omni', label: 'Omni', iconName: 'omni', color: 'var(--accent-fg)' },
-  { key: 'router', label: 'Router', iconName: 'router', color: 'var(--cap-tool, var(--accent-fg))' },
+  { key: 'omni', label: 'Omni', iconName: 'omni', color: 'var(--cap-omni)' },
+  { key: 'router', label: 'Router', iconName: 'router', color: 'var(--cap-router)' },
   { key: 'image', label: 'Image', iconName: 'image', color: 'var(--cap-image)' },
   { key: 'audio', label: 'Audio', iconName: 'audio', color: 'var(--cap-audio)' },
   { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio', color: 'var(--cap-audio-generation)' },

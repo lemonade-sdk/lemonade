@@ -1024,6 +1024,7 @@ input[type="checkbox"]:disabled {
 }
 
 .cap-badge--chat   { background: color-mix(in srgb, var(--cap-chat) 18%, transparent); color: var(--cap-chat); }
+.cap-badge--router { background: color-mix(in srgb, var(--cap-router) 18%, transparent); color: var(--cap-router); }
 .cap-badge--vision { background: color-mix(in srgb, var(--cap-vision) 18%, transparent); color: var(--cap-vision); }
 .cap-badge--code   { background: color-mix(in srgb, var(--cap-code) 18%, transparent); color: var(--cap-code); }
 .cap-badge--embed  { background: color-mix(in srgb, var(--cap-embedding) 18%, transparent); color: var(--cap-embedding); }
@@ -5159,7 +5160,8 @@ optgroup {
   border-top: 1px solid color-mix(in srgb, var(--danger) 24%, transparent);
 }
 
-.composer__mode-badge--omni, .cap-badge--omni, .cap-chip--omni, .rail__model-badge--omni { color: var(--accent-fg); background: var(--accent-soft); }
+.composer__mode-badge--omni, .cap-badge--omni, .cap-chip--omni, .rail__model-badge--omni { color: var(--cap-omni); background: color-mix(in srgb, var(--cap-omni) 18%, transparent); }
+.rail__model-badge--router { color: var(--cap-router); background: color-mix(in srgb, var(--cap-router) 18%, transparent); }
 
 .manager__detail-form-panel {
   height: 100%;
@@ -5755,7 +5757,8 @@ optgroup {
 .composer__model-mode--image { color: var(--cap-image); }
 .composer__model-mode--audio { color: var(--cap-audio); }
 .composer__model-mode--tts { color: var(--cap-tts); }
-.composer__model-mode--omni { color: var(--accent-fg); }
+.composer__model-mode--omni { color: var(--cap-omni); }
+.composer__model-mode--router { color: var(--cap-router); }
 .composer__model-mode--audio-gen { color: var(--cap-audio-generation); }
 .composer__model-mode--model3d { color: var(--cap-model3d); }
 .composer__model-mode--embed { color: var(--cap-embedding); }
