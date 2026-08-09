@@ -178,6 +178,9 @@ jobs:
         # preset and produce an identical build/_deps. That job runs
         # concurrently and owns the save; saving from here too would just race
         # it for the same key and log a reservation failure every cold run.
+        # Best-effort by construction: on a run that changes CMakeLists.txt
+        # neither job can hit the exact key, so this one falls back through
+        # restore-keys or builds the dependencies cold.
         uses: actions/cache/restore@v5
         with:
           path: build/_deps

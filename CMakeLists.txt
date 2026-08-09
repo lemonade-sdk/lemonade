@@ -45,6 +45,16 @@ endfunction()
 #               dependency of the cpp-ci-tests aggregate target.
 #   * CI OFF -> the test is created for local/other runs but excluded from CI.
 #
+# The enclosing if() MUST test BUILD_TESTING. Distro packaging configures with
+# BUILD_TESTING=OFF so it does not build ~40 test binaries it then discards, and
+# calling this helper in that configuration is a fatal error rather than a
+# silent return to the slow build:
+#
+#   if(BUILD_TESTING AND EXISTS "${_FOO_TEST_SRC}")
+#       add_executable(test_foo ...)
+#       add_cpp_ci_test(FooTest CI ON COMMAND test_foo)
+#   endif()
+#
 # Usage:
 #   add_cpp_ci_test(<TestName>
 #                   CI <ON|OFF>                 # required, explicit CI decision

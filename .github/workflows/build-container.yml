@@ -95,12 +95,14 @@ jobs:
           load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ github.event_name == 'pull_request' && 'lemonade-build-environment:test' || steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # No buildx layer cache on purpose. This workflow is not latency
-          # sensitive — nightly publishes and the occasional PR that changes how
-          # the image is built — while the Actions cache is a 10 GB LRU pool
-          # shared with the FetchContent caches the Windows installer jobs
-          # restore from. Retaining a ~300 MB primed-ccache layer per Ubuntu
-          # release would evict the caches that are on the critical path.
+          # Layer cache lives in the registry, not the Actions cache. The arm64
+          # legs run under QEMU and re-running `apt build-dep` nightly with no
+          # reuse is expensive, but the Actions cache is a 10 GB LRU pool shared
+          # with the FetchContent caches the Windows installer jobs restore
+          # from — a ~300 MB primed-ccache layer per release would evict entries
+          # that sit on the critical path. ghcr has neither limit.
+          cache-from: type=registry,ref=ghcr.io/lemonade-sdk/lemonade/build-environment:buildcache-${{ matrix.ubuntu_version }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,mode=max,ref=ghcr.io/lemonade-sdk/lemonade/build-environment:buildcache-{0}', matrix.ubuntu_version) || '' }}
 
       - name: Verify the compiler cache was primed
         # Runs on the publish path too, against the tag that was just pushed:
@@ -127,12 +129,18 @@ jobs:
           # ccache's own -M setting, so only the floor needs asserting here.
           docker run --rm "$IMAGE" ccache -s
 
-          debugpath="$(docker run --rm "$IMAGE" cat /opt/ccache-debugpath)"
-          echo "Recorded DEB_BUILD_DEBUGPATH: ${debugpath}"
-
-          size_mb="$(docker run --rm "$IMAGE" sh -c 'du -sm "$CCACHE_DIR"' | cut -f1)"
+          # Size first: a prime that dies partway leaves objects behind but no
+          # marker, and checking the marker first would surface that as a bare
+          # `cat: No such file` instead of the explanatory message below.
+          size_mb="$(docker run --rm "$IMAGE" sh -c 'du -sm "$CCACHE_DIR" 2>/dev/null || echo 0' | cut -f1)"
           echo "Primed ccache size: ${size_mb} MB"
           if [ "$size_mb" -lt 50 ]; then
-            echo "ERROR: the primed ccache is essentially empty"
+            echo "ERROR: the primed ccache is essentially empty — see the prime warning in the build log above"
             exit 1
           fi
+
+          if ! debugpath="$(docker run --rm "$IMAGE" cat /opt/ccache-debugpath 2>/dev/null)"; then
+            echo "ERROR: the cache exists but the prime never completed, so consumers will not use it"
+            exit 1
+          fi
+          echo "Recorded DEB_BUILD_DEBUGPATH: ${debugpath}"
