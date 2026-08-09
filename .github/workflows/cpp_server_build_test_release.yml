@@ -172,13 +172,15 @@ jobs:
       - name: Install WiX Toolset
         uses: ./.github/actions/install-wix
 
-      - name: Cache FetchContent dependencies
-        uses: actions/cache@v5
+      - name: Restore FetchContent dependencies
+        # Restore-only, and deliberately sharing build-lemonade-server-installer's
+        # namespace: both jobs run bare setup.ps1, so they configure the same
+        # preset and produce an identical build/_deps. That job runs
+        # concurrently and owns the save; saving from here too would just race
+        # it for the same key and log a reservation failure every cold run.
+        uses: actions/cache/restore@v5
         with:
           path: build/_deps
-          # Same namespace as build-lemonade-server-installer: both run bare
-          # setup.ps1, so they configure the same preset and populate an
-          # identical build/_deps. A separate namespace would guarantee a miss.
           key: fetchcontent-windows-vs2026-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: |
             fetchcontent-windows-vs2026-

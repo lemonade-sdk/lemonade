@@ -6,9 +6,14 @@ on:
   workflow_dispatch:
   # Build (but do not publish) on PRs that change how the image is built. The
   # nightly schedule is otherwise the first thing to exercise a change, against
-  # the tag every Linux CI job and every PPA job pulls. Deliberately narrow: a
-  # C++ change cannot break the image in a way `Build Lemonade .deb Package`
-  # does not already catch on the same PR.
+  # the tag every Linux CI job and every PPA job pulls.
+  #
+  # Deliberately narrow, and not free of gaps: the prime compiles a
+  # .dockerignore-filtered tree, so a source change referencing a stripped path
+  # (test/, examples/, LICENSE) can pass `Build Lemonade .deb Package` and still
+  # fail the prime. Covering that would mean rebuilding the image on every C++
+  # PR. Instead the prime is non-fatal, so such a break costs a cache rather
+  # than a publish, and this workflow's verify step reports it.
   pull_request:
     paths:
       - .ubuntu/Dockerfile

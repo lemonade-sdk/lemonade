@@ -72,6 +72,10 @@ runs:
         # `wix build -ext` extracts the package into a shared per-user cache on
         # first use. Two installer targets built in parallel would otherwise
         # race to populate it, so seed it once here while nothing else runs.
-        wix extension add -g WixToolset.UI.wixext
+        #
+        # Pinned to the CLI version: unversioned, `wix extension add` resolves
+        # the newest package on NuGet, which a pinned older CLI then refuses to
+        # load — a break with no change on our side.
+        wix extension add -g "WixToolset.UI.wixext/${{ inputs.version }}"
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         wix extension list -g
