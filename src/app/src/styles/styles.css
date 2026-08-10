@@ -638,26 +638,23 @@ input[type="checkbox"]:disabled {
   flex-direction: column;
   gap: var(--space-0-5);
   padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out);
+  transition: background var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
 }
 
 .rail__item:hover { background: var(--surface-2); }
 
-.rail__item.is-active {
-  background: var(--accent-soft);
+.rail__item:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 0;
 }
 
-.rail__item.is-active::before {
-  content: "";
-  position: absolute;
-  left: -2px;
-  top: 6px;
-  bottom: 6px;
-  width: 3px;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
+.rail__item.is-active {
+  background: color-mix(in srgb, var(--accent-fg) 12%, var(--surface-base));
+  border-color: color-mix(in srgb, var(--accent-fg) 30%, transparent);
 }
 
 .rail__item-title {
@@ -7308,7 +7305,7 @@ optgroup {
 }
 
 .model-list-item--selected:hover {
-  --model-list-row-bg: color-mix(in srgb, var(--accent-fg) 18%, var(--surface-base));
+  --model-list-row-bg: color-mix(in srgb, var(--accent-fg) 12%, var(--surface-base));
 }
 
 .model-list-item__body {
@@ -8941,22 +8938,28 @@ optgroup {
   all: unset;
   cursor: pointer;
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   text-align: left;
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
 }
 
 .trace-row:hover {
   background: var(--surface-1);
 }
 
+.trace-row:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 0;
+}
+
 .trace-row.selected {
-  background: var(--surface-3);
-  border-left: 3px solid var(--accent);
-  padding-left: calc(var(--space-4) - 3px);
+  background: color-mix(in srgb, var(--accent-fg) 12%, var(--surface-base));
+  border-color: color-mix(in srgb, var(--accent-fg) 30%, transparent);
 }
 
 .trace-row__meta {
