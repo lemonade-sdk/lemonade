@@ -2549,11 +2549,18 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     if (alias_manager_) {
         auto all_aliases = alias_manager_->get_all_aliases();
         for (const auto& [alias_id, target_name] : all_aliases) {
-            std::string canonical_target = model_manager_->resolve_model_name(target_name);
+            if (models.count(alias_id) > 0) {
+                continue;
+            }
+            std::string ultimate_target = target_name;
+            if (auto resolved = alias_manager_->resolve_alias(alias_id)) {
+                ultimate_target = *resolved;
+            }
+            std::string canonical_target = model_manager_->resolve_model_name(ultimate_target);
             if (models.count(canonical_target) > 0) {
                 response["data"].push_back(model_info_to_json(alias_id, models.at(canonical_target)));
-            } else if (models.count(target_name) > 0) {
-                response["data"].push_back(model_info_to_json(alias_id, models.at(target_name)));
+            } else if (models.count(ultimate_target) > 0) {
+                response["data"].push_back(model_info_to_json(alias_id, models.at(ultimate_target)));
             }
         }
     }
@@ -2686,10 +2693,17 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
         res.set_content(model_info_to_json(wire_id, info).dump(), "application/json");
     } else if (alias_manager_ && alias_manager_->has_alias(model_id)) {
         auto resolved_target = alias_manager_->resolve_alias(model_id);
-        if (resolved_target && model_manager_->model_exists(*resolved_target)) {
-            auto info = model_manager_->get_model_info(*resolved_target);
-            res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
-            return;
+        if (resolved_target) {
+            std::string canonical_target = model_manager_->resolve_model_name(*resolved_target);
+            if (model_manager_->model_exists(canonical_target)) {
+                auto info = model_manager_->get_model_info(canonical_target);
+                res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
+                return;
+            } else if (model_manager_->model_exists(*resolved_target)) {
+                auto info = model_manager_->get_model_info(*resolved_target);
+                res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
+                return;
+            }
         }
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
@@ -3497,6 +3511,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 void Server::handle_embeddings(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -3627,6 +3643,9 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
             res.set_content(error.dump(), "application/json");
             return;
         }
+
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Reject malformed requests before any model gets loaded.
         std::string validation_error;
@@ -3933,6 +3952,8 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         if (req.form.has_field("model")) {
             request_json["model"] = req.form.get_field("model");
         }
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
         if (req.form.has_field("language")) {
             request_json["language"] = req.form.get_field("language");
         }
@@ -4019,6 +4040,8 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
 void Server::handle_audio_speech(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Handle model loading
         if (request_json.contains("model")) {
@@ -4384,6 +4407,8 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         LOG(INFO, "Server") << "POST /api/v1/images/generations" << std::endl;
 
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Validate required fields
         if (!request_json.contains("prompt")) {
@@ -4901,6 +4926,8 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
@@ -5478,6 +5505,8 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
         if (!req.body.empty()) {
             try {
                 auto request_json = nlohmann::json::parse(req.body);
+                normalize_client_model_name(request_json);
+                normalize_and_resolve_request_model(request_json);
                 if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
                     model_name = request_json["model_name"].get<std::string>();
                 } else if (request_json.contains("model") && request_json["model"].is_string()) {

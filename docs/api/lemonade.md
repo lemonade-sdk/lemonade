@@ -1873,7 +1873,6 @@ Returns a JSON object containing an array of active alias objects:
     {
       "alias": "my-alias-1",
       "target": "user.custom-llama",
-      "canonical_target": "user.custom-llama",
       "downloaded": true,
       "recipe": "llamacpp"
     }

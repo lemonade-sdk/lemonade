@@ -123,6 +123,24 @@ static void test_alias_manager_standalone_resolution() {
     fs::remove_all(temp_dir, ec);
 }
 
+static void test_alias_disk_cycle_pruning() {
+    fs::path temp_dir = make_temp_dir();
+    std::string cache_dir = temp_dir.string();
+
+    fs::path alias_path = temp_dir / "aliases.json";
+    {
+        std::ofstream file(alias_path);
+        file << "{\n  \"cycleA\": \"cycleB\",\n  \"cycleB\": \"cycleA\"\n}\n";
+    }
+
+    AliasManager mgr(cache_dir);
+    check("disk loaded cycle pruned from map", mgr.get_all_aliases().empty());
+    check("disk loaded cyclic alias resolves to nullopt", !mgr.resolve_alias("cycleA").has_value());
+
+    std::error_code ec;
+    fs::remove_all(temp_dir, ec);
+}
+
 int main() {
     std::printf("Running Standalone AliasManager Unit Tests...\n");
 
@@ -130,6 +148,7 @@ int main() {
     test_alias_manager_validation_and_cycles();
     test_alias_corrupted_json_recovery();
     test_alias_manager_standalone_resolution();
+    test_alias_disk_cycle_pruning();
 
     if (g_failures > 0) {
         std::printf("\n!!! %d TEST(S) FAILED !!!\n", g_failures);

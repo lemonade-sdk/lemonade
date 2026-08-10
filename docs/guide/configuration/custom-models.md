@@ -336,20 +336,12 @@ response = client.chat.completions.create(
 
 If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or `POST /internal/aliases`. Client application code requires no updates.
 
-#### Alias Resolution
+#### Alias Resolution & Target Model Independence
 
-When an alias is specified in any API request (e.g., `/v1/chat/completions`, `/v1/load`) or CLI command, Lemonade resolves the alias to its underlying target model ID (e.g., `user.MyCustomModel` or `Qwen3-0.6B-GGUF`).
+When an alias is specified in any API request (e.g., `/v1/chat/completions`, `/v1/embeddings`, `/v1/load`) or CLI command, Lemonade resolves the alias to its underlying target model ID (e.g., `user.MyCustomModel` or `Qwen3-0.6B-GGUF`).
 
-#### Precedence & Conflict Handling
-
-Model resolution and alias processing follow strict source precedence rules:
-
-`User Models / User Aliases` > `Imported Extra Models` > `Built-in Server Models`
-
-Specifically:
-1. **Primary Model Precedence**: Primary model names (`user.*`, `extra.*`, `builtin.*`) always take precedence over aliases. If an alias name conflicts with a primary model name, the primary model wins.
-2. **Source Precedence & First-Matched Wins**: Evaluated order follows source precedence (Registered User > Imported Extra > Built-in). Models with higher precedence claim aliases first. If multiple models at the same rank attempt to declare the same alias, the first registered model claims it.
-3. **Conflict Logging**: When an alias conflict occurs (e.g., an alias matches an existing primary model name or an alias claimed by a higher-precedence model), Lemonade logs a `Model alias conflict` warning at startup and ignores the conflicting duplicate.
+* **Primary Model Precedence**: Concrete model names (`user.*`, `extra.*`, `builtin.*`) always take precedence over aliases. Creation of an alias that collides with an existing primary model ID is rejected.
+* **Target Independence**: Aliases function as symbolic links and can target any model ID or Hugging Face repository, even before the target model is pulled or registered locally.
 
 #### Independent Listing in `/v1/models`
 

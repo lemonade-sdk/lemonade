@@ -2483,6 +2483,30 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(model_res.status_code, 200)
             self.assertEqual(model_res.json()["id"], alias_name)
 
+            # Test multi-hop chained alias resolution (alias_hop -> test-endpoint-alias -> ENDPOINT_TEST_MODEL)
+            hop_alias = "test-hop-alias"
+            add_hop_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": hop_alias, "target": alias_name},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_hop_res.status_code, 200)
+
+            hop_model_res = requests.get(
+                f"{self.base_url}/models/{hop_alias}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(hop_model_res.status_code, 200)
+            self.assertEqual(hop_model_res.json()["id"], hop_alias)
+
+            del_hop_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(hop_alias)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(del_hop_res.status_code, 200)
+
             get_res2 = requests.get(
                 f"{self.internal_url}/aliases",
                 headers=_auth_headers(),
@@ -2495,7 +2519,7 @@ class EndpointTests(ServerTestBase):
 
         finally:
             del_res = requests.delete(
-                f"{self.internal_url}/aliases/{alias_name}",
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
                 headers=_auth_headers(),
                 timeout=TIMEOUT_DEFAULT,
             )
