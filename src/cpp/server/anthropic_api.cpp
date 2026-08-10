@@ -1,5 +1,6 @@
-#include "lemon/ollama_api.h"
+#include "lemon/anthropic_error.h"
 #include "lemon/error_types.h"
+#include "lemon/ollama_api.h"
 #include <iostream>
 #include <sstream>
 #include <chrono>
@@ -146,6 +147,20 @@ static json parse_openai_tool_arguments(const json& tool_call, std::vector<std::
 
     add_warning(warnings, "Tool arguments had unsupported type; using empty object");
     return json::object();
+}
+
+static bool set_anthropic_backend_error_response(const json& response, httplib::Response& res) {
+    if (!response.contains("error")) {
+        return false;
+    }
+
+    const auto& error = response["error"];
+    std::cerr << "[OllamaApi] Backend returned error: " << error.dump() << std::endl;
+
+    const int status = anthropic::backend_error_http_status(error);
+    res.status = status;
+    res.set_content(anthropic::build_anthropic_error(error, status).dump(), "application/json");
+    return true;
 }
 
 static void set_anthropic_residency_conflict_response(
@@ -579,6 +594,7 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
     bool sent_message_start = false;
     bool sent_text_content_start = false;
     bool sent_text_content_stop = false;
+    bool sent_error = false;
     std::vector<bool> started_tool_blocks;
     std::vector<bool> stopped_tool_blocks;
     std::vector<std::string> tool_ids;
@@ -595,6 +611,7 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                           &sent_message_start,
                           &sent_text_content_start,
                           &sent_text_content_stop,
+                          &sent_error,
                           &started_tool_blocks,
                           &stopped_tool_blocks,
                           &tool_ids,
@@ -626,6 +643,17 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
 
             try {
                 auto openai_chunk = json::parse(json_str);
+
+                if (openai_chunk.contains("error")) {
+                    const auto& error = openai_chunk["error"];
+                    std::cerr << "[OllamaApi] Backend error in Anthropic stream: "
+                              << error.dump() << std::endl;
+                    sent_error = true;
+                    write_sse_event(client_sink, "error",
+                                    anthropic::build_anthropic_error(
+                                        error, anthropic::backend_error_http_status(error)));
+                    return false;
+                }
 
                 if (!sent_message_start) {
                     if (openai_chunk.contains("id") && openai_chunk["id"].is_string()) {
@@ -781,12 +809,21 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                          &sent_message_start,
                          &sent_text_content_start,
                          &sent_text_content_stop,
+                         &sent_error,
                          &started_tool_blocks,
                          &stopped_tool_blocks,
                          &stop_reason,
                          &input_tokens,
                          &output_tokens,
                          &warnings]() {
+        // The error event terminates the stream. Emitting the closing frames
+        // here would let a client read the failure as a turn that produced no
+        // content, which is the state this path exists to avoid.
+        if (sent_error) {
+            client_sink.done();
+            return;
+        }
+
         if (!sent_message_start) {
             json message_start = {
                 {"type", "message_start"},
@@ -959,6 +996,10 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
 
         openai_req["stream"] = false;
         auto openai_response = router_->chat_completion(openai_req);
+        if (set_anthropic_backend_error_response(openai_response, res)) {
+            return;
+        }
+
         auto anthropic_response = convert_openai_chat_to_anthropic(openai_response, model, warnings);
         res.set_content(anthropic_response.dump(), "application/json");
 
