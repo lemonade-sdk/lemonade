@@ -128,13 +128,6 @@ function formatDownloads(n: number): string {
   return String(n);
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
-  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(0)} KB`;
-  return `${bytes} B`;
-}
-
 
 
 function safeFileName(value: string): string {
@@ -1128,7 +1121,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [modelScopeResults, setModelScopeResults] = useState<HFModelResult[]>([]);
   const [modelScopeLoading, setModelScopeLoading] = useState(false);
   const [modelScopeError, setModelScopeError] = useState<string | null>(null);
-  const [expandedRemoteModel, setExpandedRemoteModel] = useState<string | null>(null);
   const [selectedRemoteModel, setSelectedRemoteModel] = useState<HFModelResult | null>(null);
   const [selectedRemoteProvider, setSelectedRemoteProvider] = useState<ModelRegistryProvider>('huggingface');
   const [pullingRemote, setPullingRemote] = useState<Record<string, { percent: number; modelName: string; checkpoint: string }>>({});
@@ -1472,7 +1464,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   }, [hfResults, providerEnabled.huggingface]);
 
   useEffect(() => {
-    setExpandedRemoteModel(null);
     setSelectedRemoteModel(null);
   }, [searchQuery]);
 
@@ -1481,7 +1472,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const key = providerKey('huggingface', selectedRemoteModel.id);
     if (!Object.prototype.hasOwnProperty.call(hfDetectedRecipes, key)
       || isCompatibleHuggingFaceRecipe(hfDetectedRecipes[key])) return;
-    setExpandedRemoteModel(null);
     setSelectedRemoteModel(null);
     setMobileDetailOpen(false);
   }, [hfDetectedRecipes, selectedRemoteModel, selectedRemoteProvider]);
@@ -2522,8 +2512,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const renderRemoteRow = (provider: ModelRegistryProvider, result: HFModelResult) => {
     const key = providerKey(provider, result.id);
-    const providerMeta = PROVIDER_META[provider];
-    const isExpanded = expandedRemoteModel === key;
     const pipelineTag = result.pipeline_tag || '';
     const variants = remoteVariants[key];
     const displayTags = Array.from(new Set([
@@ -2535,13 +2523,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const remotePull = activeRemotePull(provider, result.id, variants);
     const pullPercent = remotePull?.percent;
     const isPulling = pullPercent !== undefined;
-    const isLoadingVariants = remoteVariantsLoading[key] || false;
     const recipeBadge = variants ? (RECIPE_BADGES[variants.recipe] || variants.recipe) : '';
+    const isSelected = selectedRemoteModel?.id === result.id && selectedRemoteProvider === provider;
 
-    const handleExpand = () => {
-      const next = isExpanded ? null : key;
-      setExpandedRemoteModel(next);
-      if (next) void fetchRemoteVariants(provider, result.id);
+    const handleSelect = () => {
       setSelectedRemoteModel(result);
       setSelectedRemoteProvider(provider);
       setSelectedDetailModelId(null);
@@ -2549,9 +2534,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     };
 
     return (
-      <div className={`row row--remote row--${provider} row--${provider === 'huggingface' ? 'hf' : 'modelscope'}${isExpanded ? ' row--expanded' : ''}`} key={key}>
+      <div className={`row row--remote row--${provider} row--${provider === 'huggingface' ? 'hf' : 'modelscope'}${isSelected ? ' row--active' : ''}`} key={key}>
         <div className="row__summary">
-          <button type="button" className="row__content" onClick={handleExpand} aria-expanded={isExpanded}>
+          <button type="button" className="row__content" onClick={handleSelect}>
             <div className="row__main">
               <div className={`row__icon row__icon--${provider}`}><Icon name="cloud" size={18} /></div>
               <div className="row__text">
@@ -2569,11 +2554,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                 )}
               </div>
             </div>
-            <span className="row__expand">{isExpanded ? '▾' : '▸'}</span>
           </button>
           <div className="row__right">
             <CopyInlineButton text={result.id} title={`Copy repository name: ${result.id}`} />
-            {isPulling ? (
+            {isPulling && (
               <div className="row__progress">
                 <div className="row__progress-bar">
                   <div className="row__progress-fill" style={{ width: `${pullPercent}%` }} />
@@ -2586,116 +2570,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                   aria-label={`Cancel download of ${result.id}`}
                 ><Icon name="x" size={13} /></button>
               </div>
-            ) : (
-              <button
-                className="row__action row__action--download"
-                aria-label={`Download ${result.id}`}
-                onClick={(event) => { event.stopPropagation(); handleExpand(); }}
-                title={variants?.variants.length === 0 && variants.recipe !== 'llamacpp'
-                  ? 'Expand to download repository'
-                  : 'Expand to pick a variant to download'}
-              >
-                <Icon name="download" size={13} /> Download
-              </button>
             )}
-            <a
-              className="row__action row__action--hf-link"
-              href={providerMeta.url(result.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={event => event.stopPropagation()}
-            >
-              View
-            </a>
           </div>
         </div>
-
-        {isExpanded && (
-          <div className={`row__detail row__detail--remote row__detail--${provider}`}>
-            <div className="detail__grid">
-              <div className="detail__meta">
-                <div className="detail__field">
-                  <span className="detail__label">Provider</span>
-                  <span className="detail__value">{providerMeta.label}</span>
-                </div>
-                <div className="detail__field">
-                  <span className="detail__label">Repository</span>
-                  <span className="detail__value detail__value--mono">{result.id}</span>
-                </div>
-                {pipelineTag && (
-                  <div className="detail__field">
-                    <span className="detail__label">Pipeline</span>
-                    <span className="detail__value">{pipelineTag}</span>
-                  </div>
-                )}
-                {variants && (
-                  <>
-                    <div className="detail__field">
-                      <span className="detail__label">Backend</span>
-                      <span className="detail__value">{RECIPE_BADGES[variants.recipe] || variants.recipe}</span>
-                    </div>
-                    {variants.suggested_labels.length > 0 && (
-                      <div className="detail__field">
-                        <span className="detail__label">Capabilities</span>
-                        <span className="detail__value">{variants.suggested_labels.join(', ')}</span>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-              <div className="detail__source">
-                {isLoadingVariants && (
-                  <div className="detail__field"><span className="detail__label">Loading variants…</span></div>
-                )}
-                {variants && variants.variants.length > 0 && (
-                  <div className="detail__field">
-                    <span className="detail__label">Variants — pick one to download</span>
-                    <div className="hf-detail__gguf-list">
-                      {variants.variants.map(variant => (
-                        <button
-                          key={variant.name}
-                          className="hf-detail__gguf-btn"
-                          aria-label={`Download ${variant.name} from ${result.id}`}
-                          disabled={isPulling}
-                          onClick={() => void handleRemotePull(provider, result.id, variant.name, variants.recipe)}
-                        >
-                          <span className="hf-detail__gguf-name">
-                            {variant.name}{variant.sharded ? ' (sharded)' : ''}
-                          </span>
-                          <span className="hf-detail__gguf-size">{formatBytes(variant.size_bytes)}</span>
-                          <span className="hf-detail__gguf-action">Download</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {variants && variants.variants.length === 0 && variants.recipe !== 'llamacpp' && (
-                  <div className="detail__field">
-                    <span className="detail__label">Repository download</span>
-                    <div className="hf-detail__gguf-list">
-                      <button
-                        className="hf-detail__gguf-btn"
-                        aria-label={`Download ${result.id}`}
-                        disabled={isPulling}
-                        onClick={() => void handleRemotePull(provider, result.id, '', variants.recipe)}
-                      >
-                        <span className="hf-detail__gguf-name">{result.id}</span>
-                        <span className="hf-detail__gguf-action">Download</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <a className="detail__hf-link" href={providerMeta.url(result.id)} target="_blank" rel="noopener noreferrer">
-                  View on {providerMeta.label}
-                </a>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   };
-
 
   /* ── Stats ───────────────────────────────────────────────── */
   const searchActive = searchQuery.trim().length >= 2;
@@ -2756,7 +2636,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setProviderEnabled(prev => ({ ...prev, [provider]: !prev[provider] }));
     if (selectedRemoteModel && selectedRemoteProvider === provider) {
       setSelectedRemoteModel(null);
-      setExpandedRemoteModel(null);
       setMobileDetailOpen(false);
     }
   };
