@@ -2,6 +2,8 @@
 
 #include <lemon/system_info.h>
 
+#include <algorithm>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -11,8 +13,25 @@ enum class GpuMemoryVendor { Any, Amd, Nvidia, Metal };
 
 struct GpuMemoryPool {
     double total_gb = 0.0;
+    double used_gb = -1.0;
     std::string label;
 };
+
+inline std::vector<int> gpu_indices_for_target(const std::string& device,
+                                                const std::string& prefix) {
+    std::vector<int> indices;
+    std::istringstream stream(device);
+    std::string token;
+    while (std::getline(stream, token, ',')) {
+        if (token.rfind(prefix, 0) != 0 || token.size() == prefix.size()) continue;
+        try {
+            size_t consumed = 0;
+            int index = std::stoi(token.substr(prefix.size()), &consumed);
+            if (consumed == token.size() - prefix.size() && index >= 0) indices.push_back(index);
+        } catch (...) {}
+    }
+    return indices;
+}
 
 inline GpuMemoryVendor gpu_memory_vendor_for_target(const std::string& backend,
                                                      const std::string& device) {
@@ -26,24 +45,74 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
                                              const GPUInfo& amd_igpu,
                                              const std::vector<GPUInfo>& amd_dgpus,
                                              const std::vector<GPUInfo>& nvidia_gpus,
-                                             const GPUInfo& apple) {
+                                             const GPUInfo& apple,
+                                             const std::string& device = "") {
+    auto pool_for = [](const GPUInfo& gpu, const std::string& label, bool unified = false) {
+        double used_gb = gpu.vram_used_gb;
+        if (unified && gpu.virtual_used_gb >= 0.0) {
+            used_gb = (std::max)(0.0, used_gb) + gpu.virtual_used_gb;
+        }
+        return GpuMemoryPool{gpu.vram_gb + (unified ? gpu.virtual_gb : 0.0),
+                             used_gb,
+                             label};
+    };
+    auto most_constrained = [](const std::vector<GpuMemoryPool>& pools) {
+        GpuMemoryPool result;
+        for (const auto& pool : pools) {
+            if (pool.total_gb <= 0) continue;
+            const double available = pool.total_gb - (std::max)(0.0, pool.used_gb);
+            const double result_available =
+                result.total_gb - (std::max)(0.0, result.used_gb);
+            if (result.total_gb <= 0 || available < result_available)
+                result = pool;
+        }
+        return result;
+    };
     auto select_amd = [&]() -> GpuMemoryPool {
+        std::vector<const GPUInfo*> devices;
+        if (amd_igpu.available && amd_igpu.vram_gb > 0) devices.push_back(&amd_igpu);
+        for (const auto& gpu : amd_dgpus)
+            if (gpu.available && gpu.vram_gb > 0) devices.push_back(&gpu);
+        auto indices = gpu_indices_for_target(device, "ROCm");
+        if (!indices.empty()) {
+            std::vector<GpuMemoryPool> pools;
+            for (int index : indices) {
+                if (index >= static_cast<int>(devices.size())) continue;
+                const auto& gpu = *devices[index];
+                pools.push_back(pool_for(gpu, "AMD ROCm" + std::to_string(index),
+                                         &gpu == &amd_igpu));
+            }
+            return most_constrained(pools);
+        }
         if (amd_igpu.available && amd_igpu.vram_gb > 0) {
-            return {amd_igpu.vram_gb + amd_igpu.virtual_gb, "AMD iGPU"};
+            return pool_for(amd_igpu, "AMD iGPU", true);
         }
         for (const auto& gpu : amd_dgpus) {
-            if (gpu.available && gpu.vram_gb > 0) return {gpu.vram_gb, "AMD dGPU"};
+            if (gpu.available && gpu.vram_gb > 0) return pool_for(gpu, "AMD dGPU");
         }
         return {};
     };
     auto select_nvidia = [&]() -> GpuMemoryPool {
+        auto indices = gpu_indices_for_target(device, "CUDA");
+        if (!indices.empty()) {
+            std::vector<GpuMemoryPool> pools;
+            for (int index : indices) {
+                for (size_t position = 0; position < nvidia_gpus.size(); ++position) {
+                    const auto& gpu = nvidia_gpus[position];
+                    if (!gpu.available || gpu.vram_gb <= 0) continue;
+                    if ((gpu.index >= 0 ? gpu.index : static_cast<int>(position)) == index)
+                        pools.push_back(pool_for(gpu, "NVIDIA CUDA" + std::to_string(index)));
+                }
+            }
+            return most_constrained(pools);
+        }
         for (const auto& gpu : nvidia_gpus) {
-            if (gpu.available && gpu.vram_gb > 0) return {gpu.vram_gb, "NVIDIA"};
+            if (gpu.available && gpu.vram_gb > 0) return pool_for(gpu, "NVIDIA");
         }
         return {};
     };
     auto select_metal = [&]() -> GpuMemoryPool {
-        if (apple.available && apple.vram_gb > 0) return {apple.vram_gb, "Metal"};
+        if (apple.available && apple.vram_gb > 0) return pool_for(apple, "Metal");
         return {};
     };
 
