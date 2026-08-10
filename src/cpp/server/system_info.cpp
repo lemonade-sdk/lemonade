@@ -2376,11 +2376,12 @@ struct NvidiaSmiGpuInfo {
     std::string compute_cap;   // e.g. "8.6"
     std::string driver_version;
     double vram_gb = 0.0;
+    double vram_used_gb = 0.0;
 };
 
 // Query nvidia-smi for all GPUs. Returns one entry per GPU or an empty vector
 // if nvidia-smi is not available (e.g. drivers not installed).
-// Uses: nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total
+// Uses: nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total,memory.used
 //                  --format=csv,noheader,nounits
 static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
     std::vector<NvidiaSmiGpuInfo> result;
@@ -2388,13 +2389,13 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
 
 #ifdef _WIN32
     int rc = lemon::utils::ProcessManager::run_command(
-        "nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total "
+        "nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total,memory.used "
         "--format=csv,noheader,nounits 2>NUL",
         output, 10);
     if (rc != 0 || output.empty()) return result;
 #else
     static const char* smi_query =
-        " --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total"
+        " --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total,memory.used"
         " --format=csv,noheader,nounits 2>/dev/null";
     for (const char* smi : {"nvidia-smi", "/usr/bin/nvidia-smi"}) {
         std::string cmd = std::string(smi) + smi_query;
@@ -2424,17 +2425,17 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
         line = trim(line);
         if (line.empty()) continue;
 
-        // Fields: index, uuid, name, compute_cap, driver_version, memory_mb.
+        // Fields: index, uuid, name, compute_cap, driver_version, total_mb, used_mb.
         // Split the right side first so names with commas are handled.
         std::string remaining = line;
         std::vector<std::string> tail;
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             size_t pos = remaining.rfind(", ");
             if (pos == std::string::npos) break;
             tail.insert(tail.begin(), trim(remaining.substr(pos + 2)));
             remaining = remaining.substr(0, pos);
         }
-        if (tail.size() != 3) continue;
+        if (tail.size() != 4) continue;
 
         NvidiaSmiGpuInfo info;
         size_t first_comma = remaining.find(", ");
@@ -2466,6 +2467,10 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
         try {
             double mem_mb = std::stod(tail[2]);
             info.vram_gb = mem_mb / 1024.0;
+        } catch (...) {}
+        try {
+            double used_mb = std::stod(tail[3]);
+            info.vram_used_gb = used_mb / 1024.0;
         } catch (...) {}
         result.push_back(info);
     }
@@ -2564,8 +2569,10 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
 
             if (nvmlGetMem) {
                 NvmlMemory mem{};
-                if (nvmlGetMem(dev, &mem) == NVML_SUCCESS)
+                if (nvmlGetMem(dev, &mem) == NVML_SUCCESS) {
                     info.vram_gb = static_cast<double>(mem.total) / (1024.0 * 1024.0 * 1024.0);
+                    info.vram_used_gb = static_cast<double>(mem.used) / (1024.0 * 1024.0 * 1024.0);
+                }
             }
 
             result.push_back(info);
@@ -2673,6 +2680,7 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_gpu_devices() {
             gpu.compute_capability = smi.compute_cap;
             gpu.driver_version     = smi.driver_version;
             gpu.vram_gb            = smi.vram_gb;
+            gpu.vram_used_gb       = smi.vram_used_gb;
             gpus.push_back(gpu);
         }
         return gpus;
@@ -3153,6 +3161,7 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
             gpu.compute_capability = smi.compute_cap;
             gpu.driver_version     = smi.driver_version;
             gpu.vram_gb            = smi.vram_gb;
+            gpu.vram_used_gb       = smi.vram_used_gb;
             gpus.push_back(gpu);
         }
         return gpus;
@@ -3177,6 +3186,7 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
                     ? get_nvidia_driver_version() : nvml.driver_version;
                 if (gpu.driver_version.empty()) gpu.driver_version = "Unknown";
                 gpu.vram_gb            = nvml.vram_gb;
+                gpu.vram_used_gb       = nvml.vram_used_gb;
                 gpus.push_back(gpu);
             }
             return gpus;
@@ -3493,7 +3503,9 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
 
         // Get VRAM and GTT for GPUs
         gpu.vram_gb = get_amd_vram(drm_render_minor);
+        gpu.vram_used_gb = parse_memory_sysfs(drm_render_minor, "mem_info_vram_used");
         gpu.virtual_gb = get_amd_gtt(drm_render_minor);
+        gpu.virtual_used_gb = parse_memory_sysfs(drm_render_minor, "mem_info_gtt_used");
 
         gpus.push_back(gpu);
     }

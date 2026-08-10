@@ -87,7 +87,8 @@ static double get_used_memory_gb(DeviceType device_type) {
 /// CPU  → system RAM minus currently-used RAM
 /// NPU  → system RAM minus currently-used RAM
 inline double get_available_memory_gb(DeviceType device_type,
-                                      GpuMemoryVendor gpu_vendor = GpuMemoryVendor::Any) {
+                                      GpuMemoryVendor gpu_vendor = GpuMemoryVendor::Any,
+                                      const std::string& gpu_device = "") {
     auto si = create_system_info();
 
     // Subtract currently-used memory
@@ -100,8 +101,10 @@ inline double get_available_memory_gb(DeviceType device_type,
         auto nvidia_gpus = si->get_nvidia_gpu_devices();
         auto apple_gpu = si->get_apple_silicon_device();
         auto pool = select_gpu_memory_pool(gpu_vendor,
-                                           amd_igpu, amd_dgpus, nvidia_gpus, apple_gpu);
+                                           amd_igpu, amd_dgpus, nvidia_gpus, apple_gpu,
+                                           gpu_device);
         if (pool.total_gb > 0) {
+            if (pool.used_gb >= 0.0) used_gb = pool.used_gb;
             double available = pool.label == "Metal"
                 ? (std::min)(pool.total_gb, (std::max)(0.0, apple_gpu.virtual_gb - used_gb))
                 : (std::max)(0.0, pool.total_gb - used_gb);
@@ -289,7 +292,7 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         device = effective_options.get_option("llamacpp_device").get<std::string>();
     }
     double available_gb = get_available_memory_gb(
-        model_info.device, gpu_memory_vendor_for_target(backend, device));
+        model_info.device, gpu_memory_vendor_for_target(backend, device), device);
 
     if (available_gb <= 0) {
         int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
