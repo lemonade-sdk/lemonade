@@ -2806,6 +2806,13 @@ if(BUILD_TESTING AND EXISTS "${_URL_UTILS_TEST_SRC}")
     add_cpp_ci_test(UrlUtilsTest CI OFF COMMAND test_url_utils)
 endif()
 
+set(_GITHUB_API_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_github_api.cpp")
+if(BUILD_TESTING AND EXISTS "${_GITHUB_API_TEST_SRC}")
+    add_executable(test_github_api test/cpp/test_github_api.cpp)
+    target_link_libraries(test_github_api PRIVATE lemonade-server-core)
+    add_cpp_ci_test(GithubApiTest CI ON COMMAND test_github_api)
+endif()
+
 # GGUF variant enumeration: grouping, name disambiguation, and quant ordering.
 set(_HF_VARIANTS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hf_variants.cpp")
 if(BUILD_TESTING AND EXISTS "${_HF_VARIANTS_TEST_SRC}")
