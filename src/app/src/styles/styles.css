@@ -6231,6 +6231,10 @@ optgroup {
   vertical-align: middle;
 }
 
+.app-icon[data-icon='eject'] {
+  stroke-width: 2;
+}
+
 /* Fix model action icon vertical alignment and bind capability icons to labels. */
 
 .row__action svg {
