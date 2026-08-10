@@ -16,7 +16,7 @@
         <link rel="prev" href="../contribute/">
       
       
-        <link rel="next" href="../getting-started/">
+        <link rel="next" href="../testing/">
       
       
         
@@ -1561,6 +1561,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -3046,6 +3074,7 @@
 <h1 id="documentation-guide">Documentation Guide</h1>
 <p>Lemonade's documentation is a first-class part of the product. Per our <a href=".././philosophy/">philosophy</a>: if the document is long and full of conditionals, the feature isn't done yet. Good documentation is short, accurate, and self-evident.</p>
 <p>This guide covers style, structure, and the contribution process for both community authors and AI-assisted contributions.</p>
+<p>Documentation under <code>docs/</code> is built with <a href="https://zensical.org/">Zensical</a> (configured via <a href="https://github.com/lemonade-sdk/lemonade/blob/main/mkdocs.yml"><code>mkdocs.yml</code></a>, whose schema it inherits from MkDocs Material) into the site hosted at <a href="https://lemonade-server.ai/docs">lemonade-server.ai/docs</a>. Add new documents to the <code>nav</code> section of <code>mkdocs.yml</code>: pages left out of <code>nav</code> are still built and reachable by URL, but don't appear in the site's navigation sidebar. To preview locally, <code>pip install -r docs/assets/docs_requirements.txt</code> and run <code>zensical serve</code>.</p>
 <ul>
 <li><a href="#principles">Principles</a></li>
 <li><a href="#voice-and-tone">Voice and Tone</a></li>
@@ -3456,13 +3485,13 @@ lemonade<span class="w"> </span>&lt;command&gt;<span class="w"> </span>--flag<sp
         
         
           
-          <a href="../getting-started/" class="md-footer__link md-footer__link--next" aria-label="Next: C++">
+          <a href="../testing/" class="md-footer__link md-footer__link--next" aria-label="Next: Testing">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                C++
+                Testing
               </div>
             </div>
             <div class="md-footer__button md-icon">

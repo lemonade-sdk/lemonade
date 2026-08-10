@@ -879,6 +879,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#thenoise-rocm-experimental-thenoise-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        TheNoise ROCm (experimental) (<code>thenoise</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#thinksound-thinksound-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1154,6 +1165,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Default Scenarios
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vision-scenarios" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Vision Scenarios
       </span>
     </span>
   </a>
@@ -1778,6 +1800,34 @@
     
   
     Documentation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
   
 
     
@@ -3125,6 +3175,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#thenoise-rocm-experimental-thenoise-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        TheNoise ROCm (experimental) (<code>thenoise</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#thinksound-thinksound-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3400,6 +3461,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Default Scenarios
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vision-scenarios" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Vision Scenarios
       </span>
     </span>
   </a>
@@ -4197,6 +4269,23 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 </tr>
 </tbody>
 </table>
+<h4 id="thenoise-rocm-experimental-thenoise-recipe">TheNoise ROCm (experimental) (<code>thenoise</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--thenoise BACKEND</code></td>
+<td>TheNoise backend to use</td>
+<td>Auto-detected</td>
+</tr>
+</tbody>
+</table>
 <h4 id="thinksound-thinksound-recipe">ThinkSound (<code>thinksound</code> recipe)</h4>
 <table>
 <thead>
@@ -4262,6 +4351,11 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 <td><code>--trellis BACKEND</code></td>
 <td>Trellis backend to use</td>
 <td>Auto-detected</td>
+</tr>
+<tr>
+<td><code>--trellis-args ARGS</code></td>
+<td>Custom arguments to pass to trellis-server</td>
+<td><code>""</code></td>
 </tr>
 </tbody>
 </table>
@@ -4861,6 +4955,74 @@ lemonade<span class="w"> </span>telemetry<span class="w"> </span>off
 - <strong>Embed</strong> - Embeddings, converting text input into a vector</p>
 <p>You can override these with <code>--scenario-file</code> or <code>--scenario-dir</code>.</p>
 <p><strong>Note:</strong> Long-context scenarios (<code>context-32k</code>, <code>context-64k</code>, <code>context-128k</code>, <code>context-multi-turn</code>) are excluded by default because they run very long. Use <code>--scenarios long-context</code> to include them. Embedding tests are also excluded by default but can be enabled with <code>--scenarios embed</code>. To enable all scenarios, regardless of type, runtime, or resource requirement use <code>--scenarios all</code>.</p>
+<h4 id="vision-scenarios">Vision Scenarios</h4>
+<p>Vision scenarios benchmark a multimodal model on image understanding tasks (e.g., transcription, captioning, visual Q&amp;A). They are <strong>not</strong> part of the default scenario set, so you must opt in explicitly with <code>--scenarios vision</code> (or filter by a specific scenario name).</p>
+<p>A vision scenario differs from a textgen scenario in a few ways:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>category</code></td>
+<td>string</td>
+<td>Must be <code>"vision"</code> (required, case-sensitive)</td>
+</tr>
+<tr>
+<td><code>image_path</code></td>
+<td>string</td>
+<td>Path to the image file, relative to the scenario file (required, non-empty)</td>
+</tr>
+<tr>
+<td><code>messages</code></td>
+<td>array</td>
+<td>Chat messages in OpenAI format (required)</td>
+</tr>
+<tr>
+<td><code>max_tokens</code></td>
+<td>int</td>
+<td>Maximum output tokens (default: <code>1024</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Notes on behavior:</p>
+<ul>
+<li><code>image_path</code> is <strong>required</strong> for vision scenarios. A missing or empty value is rejected at parse time.</li>
+<li>The image path is resolved <strong>relative to the scenario file's directory</strong> and must reside in that same directory. Absolute paths, <code>../</code> traversal, and paths into subdirectories beneath the scenario file are rejected.</li>
+<li>The image is base64-encoded and embedded into the <strong>first <code>user</code> message</strong> as an <code>image_url</code> data URI. Only a single image is supported; multiple user messages do not receive additional copies.</li>
+<li>Supported formats are <code>jpeg</code>/<code>jpg</code>, <code>png</code>, <code>webp</code>, and <code>gif</code>.</li>
+<li>The model must support vision (i.e., carry the <code>vision</code> label).</li>
+<li>Some models perform better with more tokens. Gemma4, for example, may perform better on text transcription tasks when run with <code>--image-max-tokens 1120 --image-min-tokens 1120 --ubatch-size 2048</code>. Consult the model card for additional parameter suggestions.</li>
+</ul>
+<p>Here is an example scenario file that mirrors the bundled <code>bench_scenarios_vision.json</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;scenarios&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;hello-world&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;category&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;vision&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;image_path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;hello_world.jpg&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;transcribe this image&quot;</span><span class="p">}</span><span class="w"> </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;max_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;declaration-of-independence&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;category&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;vision&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;image_path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;declaration.jpg&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;transcribe this image&quot;</span><span class="p">}</span><span class="w"> </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;max_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Each entry pairs a descriptive scenario <code>name</code> with an <code>image_path</code> that points to an image file stored alongside the scenario file. To build your own data set, drop the image files next to the scenario JSON (so <code>image_path</code> is a bare filename) and reference them from <code>image_path</code>.</p>
+<p>Run a vision benchmark against a vision-capable model with:</p>
+<div class="highlight"><pre><span></span><code>lemonade bench --scenario-file bench_scenarios_vision.json --scenarios vision Qwen2.5-VL-7B-GGUF
+</code></pre></div>
+<p>Vision scenarios are excluded by default both because they require a vision-capable model and because embedding and transferring image payloads adds overhead; opt in deliberately when benchmarking a multimodal model.</p>
 <h3 id="output">Output</h3>
 <h4 id="table-output-default">Table Output (default)</h4>
 <p>Results are printed as a table grouped by backend. Columns show TTFT (Time To First Token) and TPS (Tokens Per Second) with mean, min/max (or p50/p95 when <code>--runs &gt;= 10</code>), and peak VRAM usage:</p>

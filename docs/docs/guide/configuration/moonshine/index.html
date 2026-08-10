@@ -1308,6 +1308,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../dev/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../dev/getting-started/" class="md-nav__link">
         
   
@@ -2536,7 +2564,7 @@
 
 
 <h1 id="moonshine-backend-options">Moonshine Backend Options</h1>
-<p>Lemonade integrates <a href="https://github.com/usefulsensors/moonshine">Moonshine</a> as a CPU-only <strong>streaming speech-to-text</strong> backend, using the <a href="https://pypi.org/project/moonshine-voice/"><code>moonshine-voice</code></a> streaming API. It complements the existing Whisper backend:</p>
+<p>Lemonade integrates <a href="https://github.com/moonshine-ai/moonshine">Moonshine</a> as a CPU-only <strong>streaming speech-to-text</strong> backend, using the <a href="https://pypi.org/project/moonshine-voice/"><code>moonshine-voice</code></a> streaming API. It complements the existing Whisper backend:</p>
 <ol>
 <li><strong>True streaming.</strong> Moonshine transcribes audio incrementally while you speak — interim results stream over the WebSocket Realtime API (<code>conversation.item.input_audio_transcription.delta</code>), with finals on segment completion. Whisper, by contrast, transcribes buffered VAD segments.</li>
 <li><strong>Small and fast on CPU.</strong> The streaming models range from ~30 MB (tiny) to ~250 MB (medium) and run in real-time on a laptop CPU — no GPU or NPU required.</li>

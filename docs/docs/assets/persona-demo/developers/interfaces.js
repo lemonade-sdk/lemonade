@@ -69,7 +69,7 @@
     { verb: 'POST', path: '/v1/completions', icon: 'edit_note' },
     { verb: 'POST', path: '/v1/responses', icon: 'forum' },
     { verb: 'POST', path: '/v1/embeddings', icon: 'hub' },
-    { verb: 'POST', path: '/v1/reranking', icon: 'sort' },
+    { verb: 'POST', path: '/v1/rerank', icon: 'sort' },
     { verb: 'POST', path: '/v1/images/generations', icon: 'image' },
     { verb: 'POST', path: '/v1/images/edits', icon: 'auto_fix_high' },
     { verb: 'POST', path: '/v1/images/variations', icon: 'collections' },

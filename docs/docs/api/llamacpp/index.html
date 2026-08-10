@@ -1145,6 +1145,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../dev/getting-started/" class="md-nav__link">
         
   
@@ -2027,15 +2055,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#post-v1reranking" class="md-nav__link">
+  <a href="#post-v1rerank" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>POST /v1/reranking</code>
+        <code>POST /v1/rerank</code>
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="POST &#x2f;v1&#x2f;reranking">
+    <nav class="md-nav" aria-label="POST &#x2f;v1&#x2f;rerank">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2616,15 +2644,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#post-v1reranking" class="md-nav__link">
+  <a href="#post-v1rerank" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>POST /v1/reranking</code>
+        <code>POST /v1/rerank</code>
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="POST &#x2f;v1&#x2f;reranking">
+    <nav class="md-nav" aria-label="POST &#x2f;v1&#x2f;rerank">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2948,7 +2976,7 @@
 <tbody>
 <tr>
 <td><code>POST</code></td>
-<td><a href="#post-v1reranking"><code>/v1/reranking</code></a></td>
+<td><a href="#post-v1rerank"><code>/v1/rerank</code></a></td>
 <td>Reranking</td>
 <td>query + documents -&gt; relevance-scored documents</td>
 </tr>
@@ -2984,11 +3012,13 @@
 </tr>
 </tbody>
 </table>
-<h2 id="post-v1reranking"><code>POST /v1/reranking</code></h2>
+<h2 id="post-v1rerank"><code>POST /v1/rerank</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
 <p>Reranking API for llama.cpp-compatible reranker models. You provide a query and a list of documents, and receive relevance scores for each document. Lemonade will load the requested model automatically if it is not already loaded.</p>
 <blockquote>
 <p><strong>Note:</strong> This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's <code>/v1/rerank</code> endpoint.</p>
+<p><strong>Note:</strong> Lemonade also accepts <code>/reranking</code> and <code>/reranker</code> as aliases — all three route to the same handler and behave identically.</p>
+<p><strong>Note:</strong> The endpoint is available under all four path prefixes: <code>/api/v0/</code>, <code>/api/v1/</code>, <code>/v0/</code>, and <code>/v1/</code>.</p>
 <p><strong>Note:</strong> This endpoint is only available for reranker-specific models using the <code>llamacpp</code> recipe, such as <code>bge-reranker-v2-m3-GGUF</code>.</p>
 </blockquote>
 <h3 id="parameters">Parameters</h3>
@@ -3027,7 +3057,7 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/reranking&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/rerank&quot;</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
   <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
   <span class="n">-Body</span> <span class="s1">&#39;{</span>
@@ -3042,7 +3072,7 @@
 </code></pre></div>
 </div>
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/reranking<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/rerank<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
 <span class="s1">        &quot;model&quot;: &quot;bge-reranker-v2-m3-GGUF&quot;,</span>

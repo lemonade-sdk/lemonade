@@ -1147,6 +1147,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -1375,6 +1403,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#thenoise-thenoise-rocm-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>thenoise</code> — TheNoise ROCm (experimental)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#thinksound-thinksound" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1528,6 +1567,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code>sd-cpp</code> — StableDiffusion.cpp (12 models)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#thenoise-thenoise-rocm-experimental-4-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>thenoise</code> — TheNoise ROCm (experimental) (4 models)
       </span>
     </span>
   </a>
@@ -2764,6 +2814,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#thenoise-thenoise-rocm-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>thenoise</code> — TheNoise ROCm (experimental)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#thinksound-thinksound" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2917,6 +2978,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code>sd-cpp</code> — StableDiffusion.cpp (12 models)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#thenoise-thenoise-rocm-experimental-4-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>thenoise</code> — TheNoise ROCm (experimental) (4 models)
       </span>
     </span>
   </a>
@@ -3109,6 +3181,13 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>yes</td>
 <td>no</td>
 <td>cpu, cuda, metal, rocm, vulkan</td>
+</tr>
+<tr>
+<td><code>thenoise</code></td>
+<td>TheNoise ROCm (experimental)</td>
+<td>yes</td>
+<td>no</td>
+<td>rocm</td>
 </tr>
 <tr>
 <td><code>thinksound</code></td>
@@ -3315,6 +3394,12 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>cpu</td>
 <td>linux, windows</td>
 <td>cpu (x86_64)</td>
+</tr>
+<tr>
+<td><code>thenoise</code></td>
+<td>rocm</td>
+<td>linux</td>
+<td>amd_gpu (gfx1150, gfx1151, gfx1152)</td>
 </tr>
 <tr>
 <td><code>thinksound</code></td>
@@ -3626,6 +3711,111 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 </tr>
 </tbody>
 </table>
+<h4 id="thenoise-thenoise-rocm-experimental"><code>thenoise</code> — TheNoise ROCm (experimental)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>CLI flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>thenoise_backend</code></td>
+<td><code>--thenoise</code></td>
+<td>BACKEND</td>
+<td>""</td>
+<td>TheNoise backend to use</td>
+</tr>
+<tr>
+<td><code>steps</code></td>
+<td>—</td>
+<td>SIZE</td>
+<td>20</td>
+<td>Number of denoising steps</td>
+</tr>
+<tr>
+<td><code>cfg_scale</code></td>
+<td>—</td>
+<td>SIZE</td>
+<td>7.0</td>
+<td>CFG scale (&lt;= 1.0 disables CFG)</td>
+</tr>
+<tr>
+<td><code>width</code></td>
+<td>—</td>
+<td>SIZE</td>
+<td>512</td>
+<td>Output image width</td>
+</tr>
+<tr>
+<td><code>height</code></td>
+<td>—</td>
+<td>SIZE</td>
+<td>512</td>
+<td>Output image height</td>
+</tr>
+<tr>
+<td><code>sampler</code></td>
+<td>—</td>
+<td>ARGS</td>
+<td>""</td>
+<td>Denoising solver (euler | er_sde)</td>
+</tr>
+<tr>
+<td><code>negative_prompt</code></td>
+<td>—</td>
+<td>ARGS</td>
+<td>""</td>
+<td>Negative prompt</td>
+</tr>
+<tr>
+<td><code>upscale</code></td>
+<td>—</td>
+<td>BOOL</td>
+<td>false</td>
+<td>2x latent upscale with refine denoise</td>
+</tr>
+<tr>
+<td><code>qwen_vae_enhance</code></td>
+<td>—</td>
+<td>BOOL</td>
+<td>false</td>
+<td>Nyquist notch post-filter (removes 2px grid artifacts)</td>
+</tr>
+<tr>
+<td><code>film_grain</code></td>
+<td>—</td>
+<td>SIZE</td>
+<td>0.0</td>
+<td>Film grain strength (0.0-10.0)</td>
+</tr>
+<tr>
+<td><code>sharpening</code></td>
+<td>—</td>
+<td>SIZE</td>
+<td>0.0</td>
+<td>RCAS sharpening strength (0.0-1.0)</td>
+</tr>
+<tr>
+<td><code>lora_specs</code></td>
+<td>—</td>
+<td>ARGS</td>
+<td>""</td>
+<td>Comma-separated LoRA specs, e.g. "style:0.8,sub/detail:0.5"</td>
+</tr>
+<tr>
+<td><code>lora_dir</code></td>
+<td>—</td>
+<td>ARGS</td>
+<td>""</td>
+<td>Directory containing LoRA .safetensors files (subdirectories allowed)</td>
+</tr>
+</tbody>
+</table>
 <h4 id="thinksound-thinksound"><code>thinksound</code> — ThinkSound</h4>
 <table>
 <thead>
@@ -3665,6 +3855,13 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 <td>BACKEND</td>
 <td>""</td>
 <td>Trellis backend to use</td>
+</tr>
+<tr>
+<td><code>trellis_args</code></td>
+<td><code>--trellis-args</code></td>
+<td>ARGS</td>
+<td>""</td>
+<td>Custom arguments to pass to trellis-server</td>
 </tr>
 </tbody>
 </table>
@@ -4799,6 +4996,38 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 <tr>
 <td><code>Z-Image-Turbo</code></td>
 <td>20.7</td>
+<td>image</td>
+</tr>
+</tbody>
+</table>
+<h4 id="thenoise-thenoise-rocm-experimental-4-models"><code>thenoise</code> — TheNoise ROCm (experimental) (4 models)</h4>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Size (GB)</th>
+<th>Labels</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Anima-Aesthetic</code></td>
+<td>5.4</td>
+<td>image</td>
+</tr>
+<tr>
+<td><code>Anima-Base</code></td>
+<td>5.4</td>
+<td>image</td>
+</tr>
+<tr>
+<td><code>Anima-Turbo</code></td>
+<td>5.4</td>
+<td>image</td>
+</tr>
+<tr>
+<td><code>Krea-2-Turbo</code></td>
+<td>35</td>
 <td>image</td>
 </tr>
 </tbody>

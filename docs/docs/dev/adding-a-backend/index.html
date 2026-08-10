@@ -1147,6 +1147,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -2607,7 +2635,7 @@
 <li>Existing modality: the endpoint already has a test (another image, transcription, or LLM backend). Add your recipe as a <code>--wrapped-server</code> case to that script instead of writing a new one.</li>
 <li>New modality: add <code>test/server_&lt;modality&gt;.py</code> modeled on <code>server_sd.py</code>, and a <code>test_models</code> entry under the modality in <code>test/utils/capabilities.py</code>.</li>
 </ul>
-<p>Add the test to CI in both matrices of <code>.github/workflows/cpp_server_build_test_release.yml</code>, the Windows block and the Linux block, with one row per backend variant:</p>
+<p>Add the test to CI in both matrices of <code>.github/workflows/cpp_server_build_test_release.yml</code>, the Windows block and the Linux block, with one row per backend variant. These matrices run in the merge queue, not on PR pushes — label your PR <code>ci:backends</code> so the new rows execute before merge instead of failing for the first time in the queue (see <a href=".././testing/#what-defers-to-the-merge-queue">the testing guide</a>):</p>
 <div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;modality&gt;-&lt;recipe&gt;</span>
 <span class="w">  </span><span class="nt">script</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">server_&lt;modality&gt;.py</span>
 <span class="w">  </span><span class="nt">extra_args</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;--wrapped-server</span><span class="nv"> </span><span class="s">&lt;recipe&gt;&quot;</span>
