@@ -67,6 +67,25 @@ int main() {
         unavailable, "CUDA2");
     check(missing_cuda.total_gb == 0.0, "unknown explicit CUDA device does not use another GPU");
 
+    auto malformed_cuda = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("system", "CUDA0+1"), unavailable, amd, two_nvidia,
+        unavailable, "CUDA0+1");
+    check(malformed_cuda.total_gb == 0.0,
+          "malformed CUDA device does not silently select another GPU");
+
+    auto partly_malformed_cuda = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("system", "CUDA0,CUDA1+2"), unavailable, amd,
+        two_nvidia, unavailable, "CUDA0,CUDA1+2");
+    check(partly_malformed_cuda.total_gb == 0.0,
+          "malformed CUDA device list is not partially accepted");
+
+    GPUInfo amd_igpu_unknown_usage = gpu(2.0, 0.5);
+    amd_igpu_unknown_usage.virtual_gb = 6.0;
+    auto unknown_usage = select_gpu_memory_pool(
+        GpuMemoryVendor::Amd, amd_igpu_unknown_usage, two_amd, nvidia, unavailable);
+    check(unknown_usage.used_gb < 0.0,
+          "incomplete unified-memory usage remains unknown");
+
     auto automatic = select_gpu_memory_pool(
         GpuMemoryVendor::Any, unavailable, amd, nvidia, unavailable);
     check(automatic.total_gb == 4.0, "ambiguous target preserves fallback order");

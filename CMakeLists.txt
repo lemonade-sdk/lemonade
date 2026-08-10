@@ -2899,7 +2899,7 @@ endif()
 set(_GPU_MEMORY_SELECTION_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gpu_memory_selection.cpp"
 )
-if(EXISTS "${_GPU_MEMORY_SELECTION_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_GPU_MEMORY_SELECTION_TEST_SRC}")
     add_executable(test_gpu_memory_selection test/cpp/test_gpu_memory_selection.cpp)
     target_include_directories(test_gpu_memory_selection PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include

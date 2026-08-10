@@ -23,12 +23,15 @@ inline std::vector<int> gpu_indices_for_target(const std::string& device,
     std::istringstream stream(device);
     std::string token;
     while (std::getline(stream, token, ',')) {
-        if (token.rfind(prefix, 0) != 0 || token.size() == prefix.size()) continue;
+        if (token.rfind(prefix, 0) != 0 || token.size() == prefix.size()) return {};
         try {
             size_t consumed = 0;
             int index = std::stoi(token.substr(prefix.size()), &consumed);
-            if (consumed == token.size() - prefix.size() && index >= 0) indices.push_back(index);
-        } catch (...) {}
+            if (consumed != token.size() - prefix.size() || index < 0) return {};
+            indices.push_back(index);
+        } catch (...) {
+            return {};
+        }
     }
     return indices;
 }
@@ -49,8 +52,10 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
                                              const std::string& device = "") {
     auto pool_for = [](const GPUInfo& gpu, const std::string& label, bool unified = false) {
         double used_gb = gpu.vram_used_gb;
-        if (unified && gpu.virtual_used_gb >= 0.0) {
-            used_gb = (std::max)(0.0, used_gb) + gpu.virtual_used_gb;
+        if (unified) {
+            used_gb = gpu.vram_used_gb >= 0.0 && gpu.virtual_used_gb >= 0.0
+                ? gpu.vram_used_gb + gpu.virtual_used_gb
+                : -1.0;
         }
         return GpuMemoryPool{gpu.vram_gb + (unified ? gpu.virtual_gb : 0.0),
                              used_gb,
@@ -74,6 +79,7 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
         for (const auto& gpu : amd_dgpus)
             if (gpu.available && gpu.vram_gb > 0) devices.push_back(&gpu);
         auto indices = gpu_indices_for_target(device, "ROCm");
+        if (device.rfind("ROCm", 0) == 0 && indices.empty()) return {};
         if (!indices.empty()) {
             std::vector<GpuMemoryPool> pools;
             for (int index : indices) {
@@ -94,6 +100,7 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
     };
     auto select_nvidia = [&]() -> GpuMemoryPool {
         auto indices = gpu_indices_for_target(device, "CUDA");
+        if (device.rfind("CUDA", 0) == 0 && indices.empty()) return {};
         if (!indices.empty()) {
             std::vector<GpuMemoryPool> pools;
             for (int index : indices) {

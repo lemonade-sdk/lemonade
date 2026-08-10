@@ -288,8 +288,10 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     std::string backend;
     std::string device;
     if (effective_options.get_recipe() == "llamacpp") {
-        backend = effective_options.get_option("llamacpp_backend").get<std::string>();
-        device = effective_options.get_option("llamacpp_device").get<std::string>();
+        const json backend_json = effective_options.get_option("llamacpp_backend");
+        const json device_json = effective_options.get_option("llamacpp_device");
+        if (backend_json.is_string()) backend = backend_json.get<std::string>();
+        if (device_json.is_string()) device = device_json.get<std::string>();
     }
     double available_gb = get_available_memory_gb(
         model_info.device, gpu_memory_vendor_for_target(backend, device), device);
