@@ -39,7 +39,10 @@ struct Telemetry {
     double time_to_first_token = 0.0;
     double tokens_per_second = 0.0;
     int prompt_tokens = 0;  // From usage.prompt_tokens (includes cached tokens)
-    int cache_tokens = 0;  // Prompt tokens served from the backend's prefix cache
+    // Prompt tokens served from the backend's prefix cache on the latest
+    // request. -1 = the latest request did not report cache usage; rendered as
+    // JSON null so a stale numeric value is never attributed to it.
+    int cache_tokens = -1;
     uint64_t request_count_total = 0;
     uint64_t input_tokens_total = 0;
     uint64_t output_tokens_total = 0;
@@ -52,7 +55,7 @@ struct Telemetry {
         time_to_first_token = 0.0;
         tokens_per_second = 0.0;
         prompt_tokens = 0;
-        cache_tokens = 0;
+        cache_tokens = -1;
         request_count_total = 0;
         input_tokens_total = 0;
         output_tokens_total = 0;
@@ -67,7 +70,7 @@ struct Telemetry {
             {"time_to_first_token", time_to_first_token},
             {"tokens_per_second", tokens_per_second},
             {"prompt_tokens", prompt_tokens},
-            {"cache_tokens", cache_tokens},
+            {"cache_tokens", cache_tokens >= 0 ? json(cache_tokens) : json(nullptr)},
             {"request_count_total", request_count_total},
             {"input_tokens_total", input_tokens_total},
             {"output_tokens_total", output_tokens_total},

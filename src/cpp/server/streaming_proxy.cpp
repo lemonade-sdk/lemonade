@@ -40,6 +40,11 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
             usage["prompt_tokens_details"].contains("cached_tokens") &&
             usage["prompt_tokens_details"]["cached_tokens"].is_number()) {
             telemetry.cache_tokens = usage["prompt_tokens_details"]["cached_tokens"].get<int>();
+        } else if (usage.contains("input_tokens_details") && usage["input_tokens_details"].is_object() &&
+                   usage["input_tokens_details"].contains("cached_tokens") &&
+                   usage["input_tokens_details"]["cached_tokens"].is_number()) {
+            // Responses API usage shape.
+            telemetry.cache_tokens = usage["input_tokens_details"]["cached_tokens"].get<int>();
         }
     }
 

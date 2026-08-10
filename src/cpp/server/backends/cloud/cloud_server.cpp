@@ -494,8 +494,11 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                                             long timeout_seconds,
                                             TelemetryCallback telemetry_callback) {
     // Telemetry from cloud streaming responses: OpenAI-shape SSE puts the
-    // usage block in the final pre-[DONE] chunk (only when the client opted
-    // into stream_options.include_usage), parsed below in process_cloud_line.
+    // usage block in the final pre-[DONE] chunk, but only when the request
+    // sets stream_options.include_usage. When the client did not ask for it,
+    // it is injected into the forwarded request and the resulting usage-only
+    // frame is swallowed before the relay, so the client-visible stream is
+    // unchanged while telemetry still gets provider-reported usage.
     auto error_telemetry = [](const std::string& message) {
         StreamingProxy::TelemetryData telemetry;
         telemetry.error_message = message;
@@ -533,10 +536,21 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     // a body the client can interpret, which is more informative than
     // refusing locally.
     std::string forwarded_body = request_body;
+    bool injected_usage = false;
     try {
         json req = json::parse(request_body);
         req["model"] = upstream_model_;
         utils::JsonUtils::add_legacy_max_tokens_alias(req);
+        if (sse && (suffix == "/chat/completions" || suffix == "/completions")) {
+            json& stream_options = req["stream_options"];
+            if (!stream_options.is_object()) {
+                stream_options = json::object();
+            }
+            if (!stream_options.value("include_usage", false)) {
+                stream_options["include_usage"] = true;
+                injected_usage = true;
+            }
+        }
         forwarded_body = req.dump();
     } catch (const json::exception&) {
         // Best-effort: forward whatever we got.
@@ -617,6 +631,32 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 }
             };
 
+            // A frame that carries usage but no choices content exists only
+            // because include_usage was requested. Swallowing is limited to
+            // that shape: a provider that attaches usage to a content-bearing
+            // final chunk keeps its content (and its usage field) intact.
+            auto is_usage_only_frame = [](const std::string& line) {
+                if (line.rfind("data: ", 0) != 0) {
+                    return false;
+                }
+                std::string json_str = line.substr(6);
+                if (json_str == "[DONE]") {
+                    return false;
+                }
+                try {
+                    auto chunk = json::parse(json_str);
+                    if (!chunk.is_object() || !chunk.contains("usage") || chunk["usage"].is_null()) {
+                        return false;
+                    }
+                    if (!chunk.contains("choices")) {
+                        return true;
+                    }
+                    return chunk["choices"].is_array() && chunk["choices"].empty();
+                } catch (...) {
+                    return false;
+                }
+            };
+
             auto result = utils::HttpClient::post_stream(
                 url,
                 forwarded_body,
@@ -635,17 +675,36 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                             has_done_marker = true;
                         }
 
-                        // Parse SSE lines
-                        sse_line_buffer.append(data, length);
-                        StreamingProxy::process_sse_lines(sse_line_buffer, process_cloud_line);
-
                         if (!has_first_token && std::string_view(data, length).find("data: ") != std::string_view::npos) {
                             has_first_token = true;
                             time_to_first_token = std::chrono::duration<double>(
                                 std::chrono::steady_clock::now() - start_time).count();
                         }
 
-                        return sink.write(data, length);
+                        if (!injected_usage) {
+                            // Parse SSE lines for telemetry; the client asked for
+                            // whatever usage frames arrive, so relay bytes verbatim.
+                            sse_line_buffer.append(data, length);
+                            StreamingProxy::process_sse_lines(sse_line_buffer, process_cloud_line);
+                            return sink.write(data, length);
+                        }
+
+                        // include_usage was injected: relay complete lines and
+                        // drop the usage-only frame the injection added.
+                        bool client_ok = true;
+                        sse_line_buffer.append(data, length);
+                        StreamingProxy::process_sse_lines(
+                            sse_line_buffer, [&](const std::string& line) {
+                                process_cloud_line(line);
+                                if (is_usage_only_frame(line)) {
+                                    return;
+                                }
+                                std::string out = line + "\n";
+                                if (!sink.write(out.data(), out.size())) {
+                                    client_ok = false;
+                                }
+                            });
+                        return client_ok;
                     }
                     body_buffer.append(data, length);
                     return true;
@@ -690,6 +749,15 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             // 200 OK: if streaming_mode is true we've already flushed everything.
             // If we somehow buffered on a 200 (provider sent non-SSE success),
             // flush the buffer now so the client at least sees the payload.
+            if (injected_usage && !sse_line_buffer.empty()) {
+                // Line-mode relay held back a trailing fragment with no final
+                // newline; deliver it unless it is the injected usage frame.
+                process_cloud_line(sse_line_buffer);
+                if (!is_usage_only_frame(sse_line_buffer)) {
+                    sink.write(sse_line_buffer.data(), sse_line_buffer.size());
+                }
+                sse_line_buffer.clear();
+            }
             if (!body_buffer.empty()) {
                 sink.write(body_buffer.data(), body_buffer.size());
             }

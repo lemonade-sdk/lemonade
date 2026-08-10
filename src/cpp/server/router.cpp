@@ -2269,12 +2269,17 @@ void Router::record_telemetry_for_model(const ModelTelemetryIdentity& identity,
     model_telemetry.output_tokens = output_tokens;
     model_telemetry.time_to_first_token = time_to_first_token;
     model_telemetry.tokens_per_second = tokens_per_second;
+    // A request that reports cache usage records it right after this call, so
+    // clear the latest-value gauge here rather than let a stale value survive
+    // a request that reported nothing.
+    model_telemetry.cache_tokens = -1;
     model_telemetry.request_count_total++;
 
     aggregate_telemetry_.input_tokens = input_tokens;
     aggregate_telemetry_.output_tokens = output_tokens;
     aggregate_telemetry_.time_to_first_token = time_to_first_token;
     aggregate_telemetry_.tokens_per_second = tokens_per_second;
+    aggregate_telemetry_.cache_tokens = -1;
     aggregate_telemetry_.request_count_total++;
 
     if (input_tokens > 0) {

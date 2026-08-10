@@ -201,6 +201,19 @@ int main() {
             check_int("parse_telemetry: usage cached_tokens zero is reported, not -1", tel.cache_tokens, 0);
         }
 
+        // 1c. Responses API usage shape: input_tokens_details.cached_tokens
+        {
+            std::string buffer = "data: {\"response\": {\"usage\": {\"input_tokens\": 30, \"output_tokens\": 40, \"input_tokens_details\": {\"cached_tokens\": 12}}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: responses input_tokens_details cached_tokens", tel.cache_tokens, 12);
+            check_int("parse_telemetry: responses input_tokens alongside details", tel.input_tokens, 30);
+        }
+        {
+            std::string buffer = "data: {\"usage\": {\"input_tokens\": 30, \"input_tokens_details\": {\"cached_tokens\": 7}, \"prompt_tokens_details\": {\"cached_tokens\": 9}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: prompt_tokens_details wins over input_tokens_details", tel.cache_tokens, 9);
+        }
+
         // 2. Nested usage under response (OpenAI keys)
         {
             std::string buffer = "data: {\"response\": {\"usage\": {\"prompt_tokens\": 30, \"completion_tokens\": 40, \"prefill_duration_ttft\": 0.15, \"decoding_speed_tps\": 45.2}}}\n";
