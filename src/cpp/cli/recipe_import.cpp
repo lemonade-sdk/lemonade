@@ -2,6 +2,7 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/model_registry.h"
+#include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 
@@ -64,14 +65,12 @@ bool fetch_github_recipe_contents(const std::string& subpath,
     }
 
     std::map<std::string, std::string> headers = {
-        {"Accept", "application/vnd.github+json"},
-        {"X-GitHub-Api-Version", "2022-11-28"},
-        {"User-Agent", "lemonade-cli"}
+        {"X-GitHub-Api-Version", "2022-11-28"}
     };
 
     lemon::utils::HttpResponse res;
     try {
-        res = lemon::utils::HttpClient::get("https://api.github.com" + api_path, headers);
+        res = lemon::utils::github_api::get("https://api.github.com" + api_path, headers);
     } catch (const std::exception& e) {
         error_out = "GitHub API request failed: " + std::string(e.what());
         return false;
