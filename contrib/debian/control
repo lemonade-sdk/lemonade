@@ -1,5 +1,5 @@
 Source: lemonade
-Standards-Version: 4.7.3
+Standards-Version: 4.7.4
 Maintainer: Mario Limonciello <superm1@debian.org>
 Section: utils
 Testsuite: autopkgtest-pkg-python
