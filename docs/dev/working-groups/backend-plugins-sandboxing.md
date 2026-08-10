@@ -18,6 +18,7 @@ Running third-party or community backend binaries introduces security risks (una
 
 - **In Scope:** Descriptor schema definition, out-of-process HTTP/socket backend adapter, process sandboxing (`nono` on Linux, platform primitives on Windows/macOS), recipe marketplace, client UI integration.
 - **Out of Scope:** Engine binary compilation/build infrastructure. Lemonade orchestrates and sandboxes pre-built backend binaries; it does not build them.
+- **Non-Goals:** 1:1 behavioral idempotency with internal C++ `WrappedServer` hardware-conditional or model-introspection logic (e.g. C++ checks like `SystemInfo::get_has_igpu()`, dynamic `--embeddings`/`--reranking` flag injection). JSON descriptors define a fixed, manageable parameter-substitution model for out-of-tree and containerized backends; complex C++ execution logic remains in built-in backends.
 - **Related Work:** Deep container engine integration and containerized backend orchestration are recommended as a follow-on **Containerized Backends & Isolation Working Group**.
 
 ---
