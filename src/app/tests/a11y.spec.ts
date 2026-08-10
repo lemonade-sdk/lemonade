@@ -2548,7 +2548,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await goToModelsRefined(page);
     await page.locator('.model-list-item').first().click();
     await page.waitForTimeout(200);
-    const star = page.locator('.model-detail-panel__fav-btn');
+    const star = page.locator('.model-detail-panel').getByRole('button', { name: /favorites/i });
     await expect(star).toBeVisible();
     await expect(star).toHaveRole('button');
     // Off state: not pressed, label invites adding to favorites and names the model.
@@ -2567,7 +2567,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await goToModelsRefined(page);
     await page.locator('.model-list-item').first().click();
     await page.waitForTimeout(150);
-    await page.locator('.model-detail-panel__fav-btn').click();
+    await page.locator('.model-detail-panel').getByRole('button', { name: /favorites/i }).click();
     await page.waitForTimeout(150);
 
     // Favorites primary-nav entry now reports one model (via its sr-only phrase).

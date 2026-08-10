@@ -628,6 +628,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
   });
 
   test('13c — Configuration tab shows runtime controls for a downloaded model', async ({ page }) => {
+    let loadRequestBody: Record<string, unknown> | null = null;
     await page.addInitScript(() => {
       for (const key of Object.keys(localStorage)) {
         if (key.includes('model_tunings')) localStorage.removeItem(key);
@@ -646,6 +647,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
         },
       },
     }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
     await page.route('**/api/v1/models**', route => route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
@@ -658,6 +663,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
           downloaded: true,
           max_context_window: 65536,
           recipe_options: { ctx_size: 8192 },
+        }, {
+          id: 'speech-beta-model',
+          name: 'speech-beta-model',
+          display_name: 'Speech Beta Model',
+          labels: ['transcription'],
+          recipe: 'whispercpp',
+          downloaded: true,
         }],
       }),
     }));
@@ -671,10 +683,45 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const panel = page.locator('#detail-panel-config');
     await expect(panel).toBeVisible();
     await expect(panel.getByRole('heading', { name: 'Load settings' })).toBeVisible();
+    const autoTune = panel.getByRole('checkbox', { name: 'Auto tune context size' });
+    await expect(autoTune).toBeChecked();
+    await expect(panel.getByLabel('Context size tokens')).toHaveCount(0);
+    await expect(panel.locator('.detail-configuration__slider-row')).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Load model' })).toHaveCount(0);
+    const loadButton = page.getByRole('button', { name: 'Load config-beta-model' });
+    await expect(loadButton).toBeVisible();
+    await expect(page.getByText('Configure…', { exact: true })).toHaveCount(0);
+
+    const saveDefaults = panel.getByRole('button', { name: 'Save defaults' });
+    await expect(saveDefaults).toHaveClass(/btn--ghost/);
+    await autoTune.uncheck();
     await expect(panel.getByLabel('Context size tokens')).toBeVisible();
+    await expect(panel.locator('.detail-configuration__slider-row')).toBeVisible();
+    await expect(saveDefaults).toHaveClass(/btn--primary/);
+    await autoTune.check();
+    await expect(panel.getByLabel('Context size tokens')).toHaveCount(0);
+    await expect(panel.locator('.detail-configuration__slider-row')).toHaveCount(0);
+    await expect(saveDefaults).toHaveClass(/btn--ghost/);
     await expect(panel.locator('[id$="llamacpp_backend"]')).toBeVisible();
-    await expect(panel.getByRole('button', { name: 'Save defaults' })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Reset' })).toBeVisible();
+
+    const pin = page.getByRole('button', { name: 'Pin config-beta-model' });
+    await expect(pin).toBeVisible();
+    await pin.click();
+    await expect(page.getByRole('button', { name: 'Unpin config-beta-model' }))
+      .toHaveClass(/model-detail-panel__fav-btn--on/);
+    await expect(page.getByRole('button', { name: 'Delete downloaded files for config-beta-model' }))
+      .toHaveClass(/workspace-action-button--secondary/);
+
+    await page.locator('.model-list-item').filter({ hasText: 'Speech Beta Model' }).click();
+    await page.getByRole('tab', { name: 'Configuration' }).click();
+    const speechPanel = page.locator('#detail-panel-config');
+    await expect(speechPanel.getByRole('checkbox', { name: 'Auto tune context size' })).toHaveCount(0);
+    await expect(speechPanel.getByLabel('Context size tokens')).toHaveCount(0);
+
+    await page.locator('.model-list-item').filter({ hasText: 'Config Beta Model' }).click();
+    await page.getByRole('button', { name: 'Load config-beta-model' }).click();
+    await expect.poll(() => loadRequestBody?.ctx_size).toBe(-1);
   });
 
 
@@ -1317,6 +1364,11 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.model-list-item').first().click();
     await page.locator('#detail-tab-config').click();
 
+    const autoTune = page.getByRole('checkbox', { name: 'Auto tune context size' });
+    await expect(autoTune).toBeChecked();
+    await expect(page.getByLabel('Context size tokens')).toHaveCount(0);
+    await expect(page.locator('.detail-configuration__slider-row')).toHaveCount(0);
+    await autoTune.uncheck();
     await expect(page.getByLabel('Context size tokens')).toBeVisible();
     await expect(page.locator('[id$="llamacpp_backend"]')).toBeVisible();
 

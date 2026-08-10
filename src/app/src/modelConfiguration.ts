@@ -927,6 +927,9 @@ export function recipeOptionsForModel(
   const modelOptions = model
     ? recipeOptionsForCapability(directTuning?.recipe_options || {}, capability!)
     : (directTuning?.recipe_options || {});
+  if (model && capability === 'chat' && modelOptions.ctx_size === undefined) {
+    modelOptions.ctx_size = -1;
+  }
 
   const backendTuning = activeBackendTuningForModel(model, {
     explicitOptions,
