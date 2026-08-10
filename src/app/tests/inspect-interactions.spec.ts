@@ -146,6 +146,263 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await expect(page.getByRole('option', { name: 'ACE-Step-music', exact: true })).toBeVisible();
   });
 
+  test('Improve optimizer rejects an echoed worked-example response', async ({ page }) => {
+    // Stream a response that reproduces the meta-prompt worked example verbatim instead
+    // of generating real content. The optimizer must reject it as placeholder output.
+    const exampleEcho = JSON.stringify({
+      critique: [
+        {
+          category: 'constraints',
+          severity: 'high',
+          finding: 'The user prompt never specified an output format, so the model returned prose instead of a list.',
+          rationale: 'The task implies enumeration but no format was requested; an explicit constraint closes that gap.'
+        }
+      ],
+      parameter_diff: { temperature: { suggested: 0.2, rationale: 'A deterministic formatting task benefits from low temperature.' }, system_vs_user_split: false },
+      optimized_prompt: {
+        system_instructions: 'When asked to list steps, answer as a numbered list.',
+        user_prompt: 'List the steps to bake a loaf of sourdough bread.\n\nAnswer as a numbered list, one step per line.'
+      },
+      key_improvements: ['Added an explicit output format constraint.', 'Lowered temperature for determinism.']
+    });
+    await page.route(/\/api\/v1\/chat\/completions/, async route => {
+      if (route.request().method() === 'OPTIONS') {
+        await route.fulfill({ status: 204, headers: corsHeaders });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+        body: [
+          `data: ${JSON.stringify({ choices: [{ delta: { content: exampleEcho } }], id: 'x' })}`,
+          'data: [DONE]'
+        ].join('\n\n')
+      });
+    });
+
+    await page.goto('/#/dashboard/telemetry');
+    await expect(page.locator('.inspect-rail')).toBeVisible();
+    await page.evaluate(() => {
+      (window as any).inspectStore.setState({
+        traces: [{
+          id: 'mock-echo-trace',
+          traceId: 'trace-echo',
+          spanId: 'span-echo',
+          kind: 'LLM',
+          operation: 'chat.completions',
+          status: 'ok',
+          model: 'mock-reasoning-model',
+          timestamp: '12:00:00 PM',
+          startTimeMs: Date.now(),
+          dur: 1500,
+          messages: [{ role: 'user', content: 'Summarize this report.' }],
+          output: 'A response that needs improvement.'
+        }],
+        selectedTraceId: 'mock-echo-trace'
+      });
+    });
+
+    await page.getByRole('tab', { name: 'Improve' }).click();
+    await page.getByRole('button', { name: 'Analyze and Optimize Prompt' }).click();
+
+    // The example-echo must be rejected: show the failure modal, not accept the example as output.
+    await expect(page.getByRole('heading', { name: 'Prompt Optimization Failed' })).toBeVisible();
+  });
+
+  test('Improve optimizer rejects a partial worked-example echo in user_prompt', async ({ page }) => {
+    // The model echoes only the example's optimized user_prompt while the rest of the
+    // response is genuine. Partial echoes must still be detected, not accepted.
+    const partialEcho = JSON.stringify({
+      critique: [
+        {
+          category: 'clarity',
+          severity: 'high',
+          finding: 'The request was ambiguous and the response drifted from the intent.',
+          rationale: 'Missing a clear directive caused the divergence.'
+        }
+      ],
+      parameter_diff: { temperature: { suggested: 0.4, rationale: 'Reduce variance in the rewrite.' }, system_vs_user_split: false },
+      optimized_prompt: {
+        system_instructions: null,
+        user_prompt: 'List the steps to bake a loaf of sourdough bread.\n\nAnswer as a numbered list, one step per line.'
+      },
+      key_improvements: ['Clarified the directive.']
+    });
+    await page.route(/\/api\/v1\/chat\/completions/, async route => {
+      if (route.request().method() === 'OPTIONS') {
+        await route.fulfill({ status: 204, headers: corsHeaders });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+        body: [
+          `data: ${JSON.stringify({ choices: [{ delta: { content: partialEcho } }], id: 'x' })}`,
+          'data: [DONE]'
+        ].join('\n\n')
+      });
+    });
+
+    await page.goto('/#/dashboard/telemetry');
+    await expect(page.locator('.inspect-rail')).toBeVisible();
+    await page.evaluate(() => {
+      (window as any).inspectStore.setState({
+        traces: [{
+          id: 'mock-echo-trace',
+          traceId: 'trace-echo',
+          spanId: 'span-echo',
+          kind: 'LLM',
+          operation: 'chat.completions',
+          status: 'ok',
+          model: 'mock-reasoning-model',
+          timestamp: '12:00:00 PM',
+          startTimeMs: Date.now(),
+          dur: 1500,
+          messages: [{ role: 'user', content: 'Summarize this report.' }],
+          output: 'A response that needs improvement.'
+        }],
+        selectedTraceId: 'mock-echo-trace'
+      });
+    });
+
+    await page.getByRole('tab', { name: 'Improve' }).click();
+    await page.getByRole('button', { name: 'Analyze and Optimize Prompt' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Prompt Optimization Failed' })).toBeVisible();
+  });
+
+  test('Improve optimizer accepts a legitimate prompt that mentions sourdough', async ({ page }) => {
+    // The optimized prompt legitimately mentions "sourdough" but is NOT a verbatim echo
+    // of the worked example. It must be accepted as real output, not rejected as a
+    // placeholder.
+    const legit = JSON.stringify({
+      critique: [
+        {
+          category: 'clarity',
+          severity: 'medium',
+          finding: 'The response rambled without a clear structure.',
+          rationale: 'An explicit structure would constrain the generation.'
+        }
+      ],
+      parameter_diff: { temperature: { suggested: 0.3, rationale: 'Improve determinism.' }, system_vs_user_split: false },
+      optimized_prompt: {
+        system_instructions: 'Answer concisely and in a structured format when the task allows.',
+        user_prompt: 'Please bake a sourdough bread for me and give me the full recipe.'
+      },
+      key_improvements: ['Added a structure directive.']
+    });
+    await page.route(/\/api\/v1\/chat\/completions/, async route => {
+      if (route.request().method() === 'OPTIONS') {
+        await route.fulfill({ status: 204, headers: corsHeaders });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+        body: [
+          `data: ${JSON.stringify({ choices: [{ delta: { content: legit } }], id: 'x' })}`,
+          'data: [DONE]'
+        ].join('\n\n')
+      });
+    });
+
+    await page.goto('/#/dashboard/telemetry');
+    await expect(page.locator('.inspect-rail')).toBeVisible();
+    await page.evaluate(() => {
+      (window as any).inspectStore.setState({
+        traces: [{
+          id: 'mock-echo-trace',
+          traceId: 'trace-echo',
+          spanId: 'span-echo',
+          kind: 'LLM',
+          operation: 'chat.completions',
+          status: 'ok',
+          model: 'mock-reasoning-model',
+          timestamp: '12:00:00 PM',
+          startTimeMs: Date.now(),
+          dur: 1500,
+          messages: [{ role: 'user', content: 'Summarize this report.' }],
+          output: 'A response that needs improvement.'
+        }],
+        selectedTraceId: 'mock-echo-trace'
+      });
+    });
+
+    await page.getByRole('tab', { name: 'Improve' }).click();
+    await page.getByRole('button', { name: 'Analyze and Optimize Prompt' }).click();
+
+    // Accepted: the optimization delta modal opens, not the failure modal.
+    await expect(page.getByRole('heading', { name: 'Prompt Optimization Delta' })).toBeVisible();
+  });
+
+  test('Improve optimizer accepts a workable response that preserves example wording from the original prompt', async ({ page }) => {
+    // The ORIGINAL prompt itself contains worked-example wording ("bake a loaf of
+    // sourdough bread"). Since the guardrail requires preserving task content verbatim,
+    // re-using that wording in the optimized prompt is preservation, not an echo — it must
+    // be accepted even though it matches the worked-example literal.
+    const preserved = JSON.stringify({
+      critique: [
+        {
+          category: 'clarity',
+          severity: 'medium',
+          finding: 'The request lacked explicit steps.',
+          rationale: 'Adding a numbered structure would guide the outcome.'
+        }
+      ],
+      parameter_diff: { temperature: { suggested: 0.3, rationale: 'Improve determinism.' }, system_vs_user_split: false },
+      optimized_prompt: {
+        system_instructions: 'Answer as a numbered list, one step per line.',
+        user_prompt: 'Bake a loaf of sourdough bread.\n\nList all the steps in order.'
+      },
+      key_improvements: ['Added a numbered structure directive.']
+    });
+    await page.route(/\/api\/v1\/chat\/completions/, async route => {
+      if (route.request().method() === 'OPTIONS') {
+        await route.fulfill({ status: 204, headers: corsHeaders });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+        body: [
+          `data: ${JSON.stringify({ choices: [{ delta: { content: preserved } }], id: 'x' })}`,
+          'data: [DONE]'
+        ].join('\n\n')
+      });
+    });
+
+    await page.goto('/#/dashboard/telemetry');
+    await expect(page.locator('.inspect-rail')).toBeVisible();
+    await page.evaluate(() => {
+      (window as any).inspectStore.setState({
+        traces: [{
+          id: 'mock-preserve-trace',
+          traceId: 'trace-preserve',
+          spanId: 'span-preserve',
+          kind: 'LLM',
+          operation: 'chat.completions',
+          status: 'ok',
+          model: 'mock-reasoning-model',
+          timestamp: '12:00:00 PM',
+          startTimeMs: Date.now(),
+          dur: 1500,
+          // The original prompt contains the worked-example wording ("bake a loaf of
+          // sourdough bread", "answer as a numbered list, one step per line") verbatim;
+          // preserving it must not be flagged as an echo.
+          messages: [{ role: 'user', content: 'Bake a loaf of sourdough bread.\n\nAnswer as a numbered list, one step per line.' }],
+          output: 'A response that needs improvement.'
+        }],
+        selectedTraceId: 'mock-preserve-trace'
+      });
+    });
+
+    await page.getByRole('tab', { name: 'Improve' }).click();
+    await page.getByRole('button', { name: 'Analyze and Optimize Prompt' }).click();
+
+    // Accepted: preserving original wording is not an echo, so the delta modal opens.
+    await expect(page.getByRole('heading', { name: 'Prompt Optimization Delta' })).toBeVisible();
+  });
+
   test('Decoupled Keyboard Selection in Trace List', async ({ page }) => {
     // 1. Navigate to the inspect view directly
     await page.goto('/#/dashboard/telemetry');
