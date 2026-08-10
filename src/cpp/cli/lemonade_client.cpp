@@ -1310,7 +1310,7 @@ int LemonadeClient::alias_add(const std::string& alias, const std::string& targe
 
 int LemonadeClient::alias_remove(const std::string& alias) const {
     try {
-        std::string path = "/internal/aliases/" + httplib::detail::url_encode(alias);
+        std::string path = "/internal/aliases/" + lemon::utils::url_encode(alias);
         make_request(path, "DELETE");
         std::cout << "✓ Removed alias '" << alias << "'" << std::endl;
         return 0;
