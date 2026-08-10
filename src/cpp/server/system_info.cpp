@@ -591,7 +591,7 @@ struct DetectedDevice {
 };
 
 // Get current OS identifier
-static std::string get_current_os() {
+std::string get_current_os() {
     #ifdef _WIN32
     return "windows";
     #elif defined(__APPLE__)

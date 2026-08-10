@@ -25,18 +25,6 @@ namespace lemon {
 
 namespace {
 
-std::string get_current_os() {
-#ifdef _WIN32
-    return "windows";
-#elif defined(__APPLE__)
-    return "macos";
-#elif defined(__linux__)
-    return "linux";
-#else
-    return "unknown";
-#endif
-}
-
 std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {
     if (backends::recipe_has_rocm_channels(recipe) && backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
