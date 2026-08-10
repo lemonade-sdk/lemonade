@@ -38,7 +38,6 @@ Build-Depends:
  node-webpack-cli,
  nodejs,
  pkgconf,
- quilt,
 Testsuite: autopkgtest-pkg-python
 Standards-Version: 4.7.3
 Homepage: https://lemonade-server.ai/
