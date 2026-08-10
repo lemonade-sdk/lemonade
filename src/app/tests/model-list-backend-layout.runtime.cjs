@@ -38,7 +38,9 @@ for (const [fileName, source] of [
   );
 }
 
-assert.match(component, /import \{ backendColor, backendCompactLabel, backendLabel \}/);
+assert.match(component, /import \{ backendCompactLabel, backendLabel \}/);
+assert.doesNotMatch(component, /backendColor|--list-backend-color/,
+  'model rows must not carry backend identity colors');
 assert.match(component, /function modelListBackendLabel\(recipe: string\): string \{[\s\S]*return backendCompactLabel\(recipe\);/);
 assert.doesNotMatch(component, /backendCompactLabel\(recipe\)\.toUpperCase\(\)/,
   'backend labels must preserve product casing such as llama.cpp and vLLM');
@@ -71,12 +73,13 @@ for (const expected of ['llama.cpp', 'vLLM', 'FLM', 'SD.cpp', 'Moonshine', 'Open
   assert.ok(presentation.includes(`compact: '${expected}'`), `missing complete compact backend label: ${expected}`);
 }
 
-assert.match(styles, /\.model-list-item\s*\{[^}]*position:\s*relative;[^}]*display:\s*block;[^}]*padding:[^;]*19px/s);
+assert.match(styles, /\.model-list-item\s*\{[^}]*position:\s*relative;[^}]*min-height:\s*54px;[^}]*display:\s*block;[^}]*padding:[^;]*15px/s);
 assert.match(styles, /\.model-list-item__footer\s*\{[^}]*position:\s*absolute;[^}]*inset-block-end:\s*5px;/s);
-assert.match(styles, /\.model-list-item__footer::before\s*\{[^}]*inset-inline:\s*0 5px;[^}]*height:\s*1px;[^}]*linear-gradient\([^}]*var\(--list-backend-color[^}]*var\(--model-list-line\) 100%/s);
-assert.match(styles, /\.model-list-item--neutral-guide \.model-list-item__footer::before\s*\{[^}]*background:\s*var\(--model-list-line\);/s);
+assert.match(styles, /\.model-list-item__footer::before\s*\{[^}]*inset-inline:\s*0 5px;[^}]*height:\s*1px;[^}]*linear-gradient\([^}]*transparent 0%[^}]*var\(--model-list-line\) 100%/s);
+assert.doesNotMatch(styles, /--list-backend-color|\.model-list-item--neutral-guide \.model-list-item__footer::before/,
+  'the lower guide must be one neutral right-to-left fade for every model row');
 assert.doesNotMatch(styles, /\.model-list-item__footer::after/,
-  'backend and neutral guide colors must share one one-pixel paint layer');
+  'the neutral guide must remain a single one-pixel paint layer');
 assert.match(styles, /\.model-list-item__footer-info\s*\{[^}]*inset-inline-end:\s*16px;[^}]*display:\s*inline-flex;[^}]*font-weight:\s*var\(--weight-regular\);/s);
 assert.match(styles, /\.model-list-item__backend\s*\{[^}]*text-transform:\s*none;/s);
 assert.match(styles, /\.model-list-item__status\s*\{[^}]*inset-inline-end:\s*0;[^}]*width:\s*11px;[^}]*display:\s*grid;[^}]*place-items:\s*center;/s);

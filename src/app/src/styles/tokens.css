@@ -67,39 +67,25 @@
   --warning-soft: var(--warn-soft);
 
   /* ---------- Capability, provider, backend, and monitoring identity ---------- */
-  --cap-chat:       var(--accent-fg);
+  /* Task colors are intentionally theme-invariant across dark and light. */
+  --cap-chat:       #A77C00;
+  --cap-omni:       #8064D8;
+  --cap-router:     #3289D1;
   --cap-vision:     #B58CFF;
   --cap-code:       #6AD0A3;
-  --cap-embedding:  #6ABFFF;
+  --cap-embedding: #665F59;
   --cap-reranking:  #FF9D6A;
-  --cap-image:      #F0B04C;
-  --cap-image-edit: #D99358;
-  --cap-audio:      #6ACCCF;
-  --cap-audio-generation: #2DD4BF;
-  --cap-tts:        #FF7AB6;
-  --cap-model3d:    #818CF8;
+  --cap-image:      #D8752B;
+  --cap-image-edit: #D8752B;
+  --cap-audio:      #1693A5;
+  --cap-audio-generation: #1693A5;
+  --cap-tts:        #B35A9F;
+  --cap-model3d:   #65758A;
 
   --provider-hugging-face:    #FF9D00;
   --provider-hugging-face-fg: #FFB84D;
   --provider-modelscope:      #4C8DFF;
   --provider-modelscope-fg:   #7BA9FF;
-
-  --backend-llamacpp:          #FACC15;
-  --backend-vllm:              #60A5FA;
-  --backend-flm:               #34D399;
-  --backend-ryzenai:           #F97316;
-  --backend-sd-cpp:            #C084FC;
-  --backend-whispercpp:        #38BDF8;
-  --backend-moonshine:         #22D3EE;
-  --backend-kokoro:            #F472B6;
-  --backend-acestep:           #FB7185;
-  --backend-thinksound:        #F59E0B;
-  --backend-openmoss:          #EC4899;
-  --backend-trellis:           #818CF8;
-  --backend-collection-omni:   #A78BFA;
-  --backend-collection-router: #22D3EE;
-  --backend-collection:        #94A3B8;
-  --backend-other:             var(--text-tertiary);
 
   --chart-series-1: #E8C66B;
   --chart-series-2: #7BAED4;
@@ -272,20 +258,14 @@
      mixing it again would leave the border barely visible. */
   --accent-border:  rgba(92, 75, 0, 0.32);
 
-  /* ---------- Identity and monitoring colors, darkened for the light canvas ----------
+  /* ---------- Non-task identity and monitoring colors, darkened for the light canvas ----------
    * The dark-theme values are tuned against #16140F and land between 1.5:1 and
    * 2.9:1 on #fdfbf6. These preserve each hue while clearing the 3:1 floor WCAG
    * 1.4.11 sets for non-text UI components (glyphs, marks, chart series). */
   --cap-vision:     #A16DFF;
   --cap-code:       #2C9E6C;
-  --cap-embedding:  #008EF9;
   --cap-reranking:  #F95500;
-  --cap-image:      #C47A08;
   --cap-image-edit: #CE752B;
-  --cap-audio:      #2C999C;
-  --cap-audio-generation: #1C9D8D;
-  --cap-tts:        #FF3D94;
-  --cap-model3d:    #727EF8;
 
   --provider-hugging-face-fg: #C77800;
   --provider-modelscope-fg:   #4888FF;

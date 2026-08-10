@@ -17,7 +17,7 @@ import type { IconName } from './Icon';
 import type { CapabilityIconTarget } from './Icon';
 import { activeDownloadForModel, type DownloadListItem } from '../features/downloadManager/downloadStore';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceListPanel } from './WorkspacePanels';
-import { backendColor, backendCompactLabel, backendLabel } from '../modelPresentation';
+import { backendCompactLabel, backendLabel } from '../modelPresentation';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -702,9 +702,6 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           const displayedBackend = recipe && !neutralCollectionGuide ? modelListBackendLabel(recipe) : '';
           const isSelected = mId === selectedModelId;
           const capTags = modelCapabilityTags(model);
-          const backendStyle = recipe && !neutralCollectionGuide
-            ? ({ '--list-backend-color': backendColor(recipe) } as React.CSSProperties)
-            : undefined;
           const backendReadiness = status === 'downloaded'
             ? modelBackendReadiness(model, systemInfo)
             : null;
@@ -730,7 +727,6 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               tabIndex={isSelected ? 0 : -1}
               aria-selected={isSelected}
               data-model-id={mId}
-              style={backendStyle}
               aria-keyshortcuts={onTogglePin ? 'P' : undefined}
               className={`model-list-item${isSelected ? ' model-list-item--selected' : ''}${pinned ? ' model-list-item--pinned' : ''}${neutralCollectionGuide ? ' model-list-item--neutral-guide' : ''} model-list-item--${status}`}
               onClick={() => onSelectModel(mId)}

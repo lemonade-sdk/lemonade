@@ -1024,6 +1024,7 @@ input[type="checkbox"]:disabled {
 }
 
 .cap-badge--chat   { background: color-mix(in srgb, var(--cap-chat) 18%, transparent); color: var(--cap-chat); }
+.cap-badge--router { background: color-mix(in srgb, var(--cap-router) 18%, transparent); color: var(--cap-router); }
 .cap-badge--vision { background: color-mix(in srgb, var(--cap-vision) 18%, transparent); color: var(--cap-vision); }
 .cap-badge--code   { background: color-mix(in srgb, var(--cap-code) 18%, transparent); color: var(--cap-code); }
 .cap-badge--embed  { background: color-mix(in srgb, var(--cap-embedding) 18%, transparent); color: var(--cap-embedding); }
@@ -5159,7 +5160,8 @@ optgroup {
   border-top: 1px solid color-mix(in srgb, var(--danger) 24%, transparent);
 }
 
-.composer__mode-badge--omni, .cap-badge--omni, .cap-chip--omni, .rail__model-badge--omni { color: var(--accent-fg); background: var(--accent-soft); }
+.composer__mode-badge--omni, .cap-badge--omni, .cap-chip--omni, .rail__model-badge--omni { color: var(--cap-omni); background: color-mix(in srgb, var(--cap-omni) 18%, transparent); }
+.rail__model-badge--router { color: var(--cap-router); background: color-mix(in srgb, var(--cap-router) 18%, transparent); }
 
 .manager__detail-form-panel {
   height: 100%;
@@ -5755,15 +5757,28 @@ optgroup {
 .composer__model-mode--image { color: var(--cap-image); }
 .composer__model-mode--audio { color: var(--cap-audio); }
 .composer__model-mode--tts { color: var(--cap-tts); }
-.composer__model-mode--omni { color: var(--accent-fg); }
+.composer__model-mode--omni { color: var(--cap-omni); }
+.composer__model-mode--router { color: var(--cap-router); }
 .composer__model-mode--audio-gen { color: var(--cap-audio-generation); }
-.composer__model-mode--model3d { color: var(--cap-model3d); }
+.composer__model-mode--model3d { color: color-mix(in srgb, var(--cap-model3d) 75%, var(--text-primary)); }
 .composer__model-mode--embed { color: var(--cap-embedding); }
 .composer__model-mode--rank { color: var(--cap-reranking); }
 .composer__model-mode--model { color: var(--text-tertiary); }
 
 .composer__model-mode svg {
   color: currentColor;
+}
+
+/* Small task icons need more visual weight than the default 1px glyph stroke.
+   Keep task identity on the icon even when small task text is contrast-adjusted. */
+.cap-badge .app-icon,
+.composer__model-mode .app-icon {
+  stroke-width: 2;
+}
+
+.cap-badge--model3d .app-icon,
+.composer__model-mode--model3d .app-icon {
+  color: var(--cap-model3d);
 }
 
 .composer__model-button-caret {
@@ -6887,6 +6902,10 @@ optgroup {
   white-space: nowrap;
 }
 
+.model-nav-rail__filter-chip .app-icon {
+  stroke-width: 2;
+}
+
 .model-nav-rail__filter-chip:hover {
   border-color: color-mix(in srgb, var(--filter-chip-color) 48%, var(--border-strong));
   color: var(--text-primary);
@@ -6905,11 +6924,12 @@ optgroup {
 }
 
 .model-nav-rail__backend-chip {
-  color: var(--filter-chip-color);
+  --filter-chip-color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 .model-nav-rail__backend-chip.is-active {
-  color: var(--filter-chip-color);
+  color: var(--text-primary);
 }
 
 .model-nav-rail__backend-wrap {
@@ -7258,9 +7278,9 @@ optgroup {
   --model-list-row-bg: var(--surface-base);
   --model-list-line: color-mix(in srgb, var(--border-strong) 72%, transparent);
   position: relative;
-  min-height: 58px;
+  min-height: 54px;
   display: block;
-  padding: var(--space-2) calc(var(--space-2) + 22px) 19px var(--space-2);
+  padding: var(--space-2) calc(var(--space-2) + 22px) 15px var(--space-2);
   border-radius: var(--radius-md);
   cursor: pointer;
   border: 1px solid transparent;
@@ -7312,8 +7332,8 @@ optgroup {
   color: var(--text-tertiary);
 }
 
-/* Lower guide: a restrained backend-color lead-in merges into the standard
-   one-pixel rule. The label sits on that rule and the status ring terminates it. */
+/* Lower guide: one neutral rule fades in toward the status terminus.
+   The backend label sits on the rule without carrying backend identity color. */
 .model-list-item__footer {
   position: absolute;
   z-index: 1;
@@ -7333,17 +7353,11 @@ optgroup {
 
   background: linear-gradient(
     90deg,
-    var(--list-backend-color, var(--model-list-line)) 0%,
-    var(--list-backend-color, var(--model-list-line)) 26%,
-    color-mix(in srgb, var(--list-backend-color, var(--model-list-line)) 48%, var(--model-list-line)) 44%,
-    var(--model-list-line) 58%,
+    transparent 0%,
+    color-mix(in srgb, var(--model-list-line) 42%, transparent) 42%,
     var(--model-list-line) 100%
   );
   opacity: 0.78;
-}
-
-.model-list-item--neutral-guide .model-list-item__footer::before {
-  background: var(--model-list-line);
 }
 
 .model-list-item__footer-info {
@@ -7387,7 +7401,7 @@ optgroup {
   display: grid;
   place-items: center;
   border: 0;
-  background: transparent;
+  background: var(--model-list-row-bg);
   pointer-events: none;
 }
 
@@ -10735,7 +10749,7 @@ optgroup {
 
 /* ---------- Generated audio + 3D modalities ---------- */
 .cap-badge--audio-gen { background: color-mix(in srgb, var(--cap-audio-generation) 16%, transparent); color: var(--cap-audio-generation); }
-.cap-badge--model3d { background: color-mix(in srgb, var(--cap-model3d) 17%, transparent); color: var(--cap-model3d); }
+.cap-badge--model3d { background: color-mix(in srgb, var(--cap-model3d) 17%, transparent); color: color-mix(in srgb, var(--cap-model3d) 75%, var(--text-primary)); }
 .composer__mode-badge--audio-gen { color: var(--cap-audio-generation); background: color-mix(in srgb, var(--cap-audio-generation) 12%, transparent); }
 .composer__mode-badge--model3d { color: var(--cap-model3d); background: color-mix(in srgb, var(--cap-model3d) 12%, transparent); }
 

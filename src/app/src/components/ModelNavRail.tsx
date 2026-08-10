@@ -22,7 +22,6 @@ import React, { useMemo, useState } from 'react';
 import { storageKey } from '../storage';
 import type { ModelInfo, ModelRegistryProvider, StorageInfo } from '../api';
 import { Icon } from './Icon';
-import { backendColor } from '../modelPresentation';
 import type { IconName } from './Icon';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import {
@@ -57,8 +56,8 @@ const PRIMARY_ITEMS: Array<{ key: PrimaryFilter; label: string; iconName: IconNa
 const TASK_ITEMS: Array<{ key: FilterTab; label: string; iconName: IconName; color: string }> = [
   { key: 'all', label: 'All', iconName: 'globe', color: 'var(--text-tertiary)' },
   { key: 'llm', label: 'Chat', iconName: 'chat', color: 'var(--cap-chat)' },
-  { key: 'omni', label: 'Omni', iconName: 'omni', color: 'var(--accent-fg)' },
-  { key: 'router', label: 'Router', iconName: 'router', color: 'var(--cap-tool, var(--accent-fg))' },
+  { key: 'omni', label: 'Omni', iconName: 'omni', color: 'var(--cap-omni)' },
+  { key: 'router', label: 'Router', iconName: 'router', color: 'var(--cap-router)' },
   { key: 'image', label: 'Image', iconName: 'image', color: 'var(--cap-image)' },
   { key: 'audio', label: 'Audio', iconName: 'audio', color: 'var(--cap-audio)' },
   { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio', color: 'var(--cap-audio-generation)' },
@@ -439,7 +438,6 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
                   <button
                     type="button"
                     className={`model-nav-rail__filter-chip model-nav-rail__backend-chip${active ? ' is-active' : ''}`}
-                    style={{ '--filter-chip-color': backendColor(backend.value) } as React.CSSProperties}
                     aria-pressed={active}
                     onClick={() => toggleBackend(backend.value)}
                   >
