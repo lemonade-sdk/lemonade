@@ -427,6 +427,13 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
 
+#### DS4 DwarfStar (experimental) (`ds4` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--ds4-args ARGS` | Custom arguments to pass to ds4-server | `""` |
+
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |

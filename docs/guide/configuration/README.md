@@ -46,6 +46,9 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "config_version": 2,
   "ctx_size": -1,
   "disable_model_filtering": false,
+  "ds4": {
+    "args": ""
+  },
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
   "flm": {
