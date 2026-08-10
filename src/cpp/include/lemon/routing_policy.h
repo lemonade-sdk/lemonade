@@ -185,6 +185,10 @@ public:
     const std::string& type() const { return type_; }
     OnError on_error() const { return on_error_; }
 
+    // Backend model this classifier keeps resident to evaluate. The union across
+    // a policy's classifiers is the policy's routing-helper residency set.
+    std::vector<std::string> referenced_models() const { return {model_name_}; }
+
     // Declared output labels and the optional default. Intrinsic to the
     // declaration, so the registry resolves condition `label` refs against
     // labels() and falls back to default_label() when a condition omits `label`
@@ -197,14 +201,18 @@ public:
 
 protected:
     Classifier(std::string id, std::string type, OnError on_error,
+               std::string model_name,
                std::vector<std::string> labels = {},
                std::optional<std::string> default_label = std::nullopt)
         : id_(std::move(id)), type_(std::move(type)), on_error_(on_error),
-          labels_(std::move(labels)), default_label_(std::move(default_label)) {}
+          model_name_(std::move(model_name)), labels_(std::move(labels)),
+          default_label_(std::move(default_label)) {}
 
     std::string id_;
     std::string type_;
     OnError on_error_ = OnError::MatchFalse;
+    // Backend model this classifier invokes to evaluate. Read by referenced_models().
+    std::string model_name_;
     std::vector<std::string> labels_;
     std::optional<std::string> default_label_;
 };
@@ -384,7 +392,20 @@ struct RoutePolicy {
     std::string default_model;                           // fail-open target ∈ candidates
     std::vector<Rule> rules;                             // ordered, first-match-wins
     std::map<std::string, ClassifierPtr> classifiers;    // id -> classifier
+
+    // Routing-helper models this policy needs resident: the sorted, de-duplicated
+    // union of every classifier's referenced_models(). Computed once by the
+    // parser (see collect_policy_helper_models) so reconciliation can read it
+    // without re-walking classifiers. Candidates are excluded — they load as
+    // Standard residency when selected, not as helpers.
+    std::vector<std::string> helper_models;
 };
+
+// Sorted, de-duplicated union of every classifier's referenced_models() — the
+// set of routing-helper models this policy needs resident. Candidates (the
+// user-facing routing targets) are deliberately excluded: they load as Standard
+// residency when selected, not as helpers.
+std::vector<std::string> collect_policy_helper_models(const RoutePolicy& policy);
 
 // The routing engine. The CONSTRUCTOR SIGNATURE is frozen here. The constructor
 // compiles every rule's MatchExpr into an immutable Condition tree (via

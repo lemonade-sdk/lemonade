@@ -196,6 +196,23 @@ public:
         return false;
     }
 
+    // Single-step eviction commit for the synchronous routing-helper reclaim,
+    // which already holds the router lock and unloads inline. Under one state
+    // lock: if the model is idle (no requests, no maintenance downsize), transition
+    // straight to UNLOADED and return true; otherwise leave the state untouched
+    // and return false so the caller re-arms. Unlike the tentative EVICTING mark
+    // used by the async engine, this never clobbers an IN_USE / DOWNSIZING state.
+    bool try_evict_if_idle() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (active_request_count_ == 0 && !maintenance_in_progress_ &&
+            state_ != ModelState::LOADING && state_ != ModelState::UNLOADED) {
+            state_ = ModelState::UNLOADED;
+            state_cv_.notify_all();
+            return true;
+        }
+        return false;
+    }
+
     void rescue_from_eviction() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         if (state_ == ModelState::EVICTING) {
@@ -205,13 +222,69 @@ public:
     }
 
     void release_inference() {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        // Note: is_streaming_ is managed by end_backend_request() which correctly
-        // clears the flag only when the last streaming request completes.
-        if (--active_request_count_ == 0) {
-            state_ = ModelState::READY;
-            state_cv_.notify_all();
+        std::function<void()> on_idle;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            // Note: is_streaming_ is managed by end_backend_request() which correctly
+            // clears the flag only when the last streaming request completes.
+            if (--active_request_count_ == 0) {
+                state_ = ModelState::READY;
+                state_cv_.notify_all();
+                on_idle = take_pending_reclaim_if_idle_locked();
+            }
         }
+        // Dispatch outside state_mutex_. The callback hands the reclaim to the
+        // router's executor thread; it must not run the actual unload on this
+        // release call stack (that would destroy this very object mid-method).
+        if (on_idle) {
+            on_idle();
+        }
+    }
+
+    // Install, once, the callback that hands this server's reclaim to the router's
+    // executor thread on the next busy->idle edge. Set when the server enters the
+    // router; firing is gated on pending_stale_, so a plain Standard model never
+    // triggers a reclaim.
+    void set_reclaim_notifier(std::function<void()> notifier) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        reclaim_notifier_ = std::move(notifier);
+    }
+
+    // Atomically decide, under one state lock, whether this routing helper is
+    // still busy. If so, arm the release-triggered reclaim (the pre-installed
+    // notifier fires on the next busy->idle edge) and return true. If it already
+    // went idle, return false so the caller reclaims it now — closing the
+    // check-then-arm lost-wakeup race where the last request could release between
+    // a separate is_busy() call and the arm.
+    bool mark_pending_stale_if_busy() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (active_request_count_ == 0 && !maintenance_in_progress_) {
+            return false;
+        }
+        pending_stale_ = true;
+        return true;
+    }
+
+    // Cancel a pending release-triggered reclaim, e.g. because a policy change
+    // referenced the helper again.
+    void clear_pending_stale() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        pending_stale_ = false;
+    }
+
+    // Caller holds state_mutex_. If the server is now idle and a policy-drop
+    // reclaim is pending, clear the flag and return the notifier so the caller can
+    // dispatch it after releasing the lock. Shared by every busy->idle transition
+    // (release_inference and finish_downsize) so a helper that was busy only
+    // because of a maintenance downsize is reclaimed too. Clearing here is safe:
+    // if the dispatched reclaim's eviction commit is later refused (a request
+    // rescued the helper), the reclaim re-arms pending_stale_.
+    std::function<void()> take_pending_reclaim_if_idle_locked() {
+        if (pending_stale_ && active_request_count_ == 0 && !maintenance_in_progress_) {
+            pending_stale_ = false;
+            return reclaim_notifier_;
+        }
+        return nullptr;
     }
 
     // Called by the eviction engine (under the router lock) to atomically claim an
@@ -238,12 +311,19 @@ public:
     // DOWNSIZED on success or back to READY on failure so a failed backend
     // operation never leaves a model falsely marked as downsized.
     void finish_downsize(bool success) {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        maintenance_in_progress_ = false;
-        if (state_ == ModelState::DOWNSIZING) {
-            state_ = success ? ModelState::DOWNSIZED : ModelState::READY;
+        std::function<void()> on_idle;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            maintenance_in_progress_ = false;
+            if (state_ == ModelState::DOWNSIZING) {
+                state_ = success ? ModelState::DOWNSIZED : ModelState::READY;
+            }
+            state_cv_.notify_all();
+            on_idle = take_pending_reclaim_if_idle_locked();
         }
-        state_cv_.notify_all();
+        if (on_idle) {
+            on_idle();
+        }
     }
 
     bool is_busy() const {
@@ -540,6 +620,11 @@ protected:
     // from being unloaded/destroyed while the engine holds a raw pointer to it.
     bool maintenance_in_progress_;
     bool is_streaming_ = false;
+    // Set when this routing helper was dropped by a policy change while busy;
+    // reclaim_notifier_ (installed once when the server enters the router) is
+    // invoked once the last request releases it. Both are guarded by state_mutex_.
+    bool pending_stale_ = false;
+    std::function<void()> reclaim_notifier_;
     long load_duration_ms_;
     bool pinned_ = false;
     std::atomic<bool>* load_cancel_ = nullptr;

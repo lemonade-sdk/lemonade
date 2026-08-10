@@ -132,6 +132,20 @@ int get_error_status_code(const json& response, int default_status_code = 500) {
         }
     }
 
+    if (error.contains("type") && error["type"].is_string()) {
+        const std::string type = error["type"].get<std::string>();
+
+        if (type == ErrorType::INVALID_REQUEST ||
+            type == "invalid_request_error" ||
+            type == ErrorType::UNSUPPORTED_OPERATION) {
+            return 400;
+        }
+
+        if (type == ErrorType::MODEL_NOT_LOADED) {
+            return 404;
+        }
+    }
+
     return default_status_code;
 }
 
@@ -372,6 +386,24 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                                        model_manager_.get(),
                                        backend_manager_.get());
     router_->set_cloud_registry(cloud_registry_.get());
+
+    // When a router collection is added, edited, or removed (via the API or an
+    // on-disk edit), reclaim any routing helper no remaining policy references.
+    model_manager_->set_models_changed_callback([this](uint64_t generation) {
+        router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
+    });
+
+    // Seed the router's needed-helper set from policies already present at
+    // startup so a helper loaded before the first policy change still validates
+    // against an authoritative set (see Router::load_model). Reserve the
+    // generation BEFORE snapshotting the policies: the directory watcher may
+    // already be publishing newer snapshots, and evaluating next_notify_generation()
+    // after computing the snapshot (argument evaluation order is unspecified in
+    // C++) could stamp this stale snapshot with a newer generation and clobber
+    // the watcher's authoritative state.
+    const uint64_t seed_generation = model_manager_->next_notify_generation();
+    const std::set<std::string> seed_needed = active_policy_helper_models();
+    router_->reconcile_routing_helpers(seed_needed, seed_generation);
 
     {
         lemon::jobs::OpProviders providers;
@@ -1072,10 +1104,15 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_embeddings(req, res);
     });
 
-    // Reranking
-    register_post("reranking", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_reranking(req, res);
-    });
+    // Reranking.
+    // `/rerank` is the de-facto convention that most clients expect.
+    // `/reranking` (Lemonade's original path) is kept as an alias for backward compatibility.
+    // `/reranker` is added as an additional alias.
+    for (const char* rerank_path : {"rerank", "reranking", "reranker"}) {
+        register_post(rerank_path, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_reranking(req, res);
+        });
+    }
 
     register_post("classify", [this](const httplib::Request& req, httplib::Response& res) {
         handle_classify(req, res);
@@ -2908,6 +2945,20 @@ std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
     return std::nullopt;
 }
 
+std::set<std::string> Server::active_policy_helper_models() {
+    std::set<std::string> needed;
+    for (const auto& [name, info] : model_manager_->get_supported_models()) {
+        (void)name;
+        if (!info.route_policy) {
+            continue;
+        }
+        for (const auto& helper : info.route_policy->helper_models) {
+            needed.insert(helper);
+        }
+    }
+    return needed;
+}
+
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
@@ -3451,6 +3502,11 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
 
         // Call router's embeddings method
         auto response = router_->embeddings(request_json);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3506,6 +3562,11 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
 
         // Call router's reranking method
         auto response = router_->reranking(request_json);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3674,6 +3735,11 @@ void Server::handle_slots(const httplib::Request& req, httplib::Response& res) {
 
         // Call router's get_slots method
         auto response = router_->get_slots();
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3741,6 +3807,11 @@ void Server::handle_slots_by_id(const httplib::Request& req, httplib::Response& 
 
         // Call router's slots_action method with slot ID, action, and request body
         auto response = router_->slots_action(slot_id, action_param, request_body);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3788,6 +3859,11 @@ void Server::handle_tokenize(const httplib::Request& req, httplib::Response& res
 
         // Forward request to router
         auto response = router_->tokenize(request_body);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -4078,14 +4154,7 @@ void Server::serve_media_or_error(httplib::Response& res, const std::string& mim
         return;
     }
     if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
-        res.status = 500;
-        const auto& err = error_payload["error"];
-        if (err.is_object() && err.contains("status") && err["status"].is_number_integer()) {
-            const int status = err["status"].get<int>();
-            if (status >= 400 && status <= 599) {
-                res.status = status;
-            }
-        }
+        res.status = get_error_status_code(error_payload, 500);
         res.set_content(error_payload.dump(), "application/json");
         return;
     }

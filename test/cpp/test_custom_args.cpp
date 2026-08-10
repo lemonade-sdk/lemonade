@@ -10,6 +10,7 @@
 #include <vector>
 
 using lemon::utils::build_custom_args_map;
+using lemon::utils::custom_args_has_flag;
 using lemon::utils::map_to_args_string;
 using lemon::utils::merge_args_maps;
 using lemon::utils::parse_custom_args;
@@ -55,6 +56,17 @@ static bool expect_merge(const char* name, const std::string& target,
     if (!ok) {
         std::printf("  got:  %s\n  want: %s\n",
                     actual.c_str(), expected.c_str());
+    }
+    return ok;
+}
+
+static bool expect_has_flag(const char* name, const std::string& input,
+                            const std::string& flag, bool expected) {
+    bool actual = custom_args_has_flag(parse_custom_args(input), flag);
+    bool ok = (actual == expected);
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("  got:  %d\n  want: %d\n", actual, expected);
     }
     return ok;
 }
@@ -121,6 +133,32 @@ int main() {
         "--no-mmap",
         "--mmap --override-kv a=bool:false --override-kv b=bool:false",
         "--no-mmap --override-kv a=bool:false --override-kv b=bool:false");
+
+    // Overridable-arg detection must compare complete flag tokens, not
+    // substrings, so a flag name appearing only inside a value or file path
+    // does not suppress a Lemonade default (regression for llama.cpp arg
+    // handling, e.g. "--load-mode none" and the -lm / --mmap aliases).
+    failures += !expect_has_flag(
+        "real long alias token matches",
+        "--no-mmap", "--no-mmap", true);
+    failures += !expect_has_flag(
+        "real short alias token matches",
+        "-lm", "-lm", true);
+    failures += !expect_has_flag(
+        "key with equals-value form matches",
+        "--load-mode=auto", "--load-mode", true);
+    failures += !expect_has_flag(
+        "equals-value alias matches",
+        "--mmap=auto", "--mmap", true);
+    failures += !expect_has_flag(
+        "alias inside path does not match",
+        "--lora /models/alma-lm-adapter.gguf", "-lm", false);
+    failures += !expect_has_flag(
+        "long alias inside value does not match",
+        "--override-kv tokenizer.mmap=auto", "--mmap", false);
+    failures += !expect_has_flag(
+        "missing alias does not match",
+        "--threads 8", "--mmap", false);
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
