@@ -10,7 +10,7 @@ Remote provenance is stored separately from local origin:
 - `ModelInfo::registry_source` identifies the remote registry: `huggingface` or `modelscope`.
 - The public registration field is `source`. For a remote model it is canonicalized and persisted as the registry name. `registry_source` is also accepted in exported/internal records.
 
-Hugging Face is the default for backward compatibility. A model and all of its checkpoints have one registry source. Collection components inherit the collection source unless an inline component definition explicitly declares another source.
+Hugging Face is the shipped default for backward compatibility, but the effective default for source-less pulls is the `default_model_source` config key (see [Default source policy](#default-source-policy) below). A model and all of its checkpoints have one registry source. Collection components inherit the collection source unless an inline component definition explicitly declares another source.
 
 ## Default source policy
 

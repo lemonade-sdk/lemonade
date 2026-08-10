@@ -5071,22 +5071,15 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         bool subscribe = request_json.value("subscribe", true);
         bool local_import = request_json.value("local_import", false);
 
-        // A remote checkpoint pull that names no registry inherits the server's
-        // configured default so the resolved provenance is persisted once, up
-        // front, keeping download, cache layout, and later refresh consistent.
-        // Bare `pull <registered-name>` refreshes carry no checkpoint and keep
-        // their recorded provenance instead.
-        const bool has_remote_checkpoint =
-            (request_json.contains("checkpoint") &&
-             !request_json["checkpoint"].get<std::string>().empty()) ||
-            (request_json.contains("checkpoints") &&
-             request_json["checkpoints"].is_object() &&
-             !request_json["checkpoints"].empty());
-        if (has_remote_checkpoint && !local_import &&
-            !request_json.contains("source") &&
-            !request_json.contains("registry_source")) {
-            request_json["source"] = config_->default_model_source();
-        }
+        // Resolve the pull's registry provenance once, up front, so download,
+        // cache layout, and later refresh stay consistent. A registry-backed
+        // checkpoint that names no source inherits the configured default; a
+        // provider URL is normalized to owner/repo and its registry adopted.
+        // Self-managed backends (flm/cloud), non-registry checkpoints, explicit
+        // sources, and bare `pull <registered-name>` refreshes are left as-is.
+        lemon::apply_default_pull_source(request_json, config_->default_model_source());
+        // The helper may have rewritten a provider URL into an owner/repo id.
+        checkpoint = request_json.value("checkpoint", "");
 
         // Validate and canonicalize remote-registry provenance before anything is
         // persisted. `source` remains backward-compatible with local origins, while
@@ -5376,6 +5369,19 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
+        // A provider URL is authoritative: normalize it to owner/repo and adopt
+        // its registry. Otherwise honor an explicit source param, falling back
+        // to the server's configured default when none is given.
+        lemon::RemoteRegistrySource url_source;
+        std::string url_repo_id;
+        std::string source;
+        if (lemon::detect_registry_url(checkpoint, url_source, url_repo_id)) {
+            checkpoint = url_repo_id;
+            source = remote_registry_source_name(url_source);
+        } else {
+            source = req.has_param("source")
+                ? req.get_param_value("source") : config_->default_model_source();
+        }
         if (checkpoint.find('/') == std::string::npos) {
             res.status = 400;
             nlohmann::json error = {{"error",
@@ -5383,8 +5389,6 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
-        const std::string source = req.has_param("source")
-            ? req.get_param_value("source") : config_->default_model_source();
         const auto parsed_source = parse_remote_registry_source(source);
         if (config_->offline()) {
             res.status = 400;

@@ -10,6 +10,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <lemon/model_registry.h>
+
 namespace lemon_cli {
 
 namespace {
@@ -153,30 +155,13 @@ std::string strip_query_fragment(std::string value) {
     return value;
 }
 
-std::string first_repo_segments(const std::string& path) {
-    const size_t slash = path.find('/');
-    if (slash == std::string::npos) return path;
-    const size_t second = path.find('/', slash + 1);
-    return second == std::string::npos ? path : path.substr(0, second);
-}
-
 std::string normalize_registry_url(const std::string& arg,
                                    std::string& source) {
-    static const std::vector<std::pair<std::string, std::string>> prefixes = {
-        {"https://huggingface.co/", "huggingface"},
-        {"http://huggingface.co/", "huggingface"},
-        {"https://modelscope.cn/models/", "modelscope"},
-        {"https://www.modelscope.cn/models/", "modelscope"},
-        {"http://modelscope.cn/models/", "modelscope"},
-        {"http://www.modelscope.cn/models/", "modelscope"},
-        {"https://modelscope.ai/models/", "modelscope"},
-        {"https://www.modelscope.ai/models/", "modelscope"},
-    };
-    for (const auto& [prefix, detected] : prefixes) {
-        if (arg.rfind(prefix, 0) != 0) continue;
-        source = detected;
-        std::string path = strip_query_fragment(arg.substr(prefix.size()));
-        return first_repo_segments(path);
+    lemon::RemoteRegistrySource detected;
+    std::string repo_id;
+    if (lemon::detect_registry_url(arg, detected, repo_id)) {
+        source = lemon::remote_registry_source_name(detected);
+        return repo_id;
     }
     return strip_query_fragment(arg);
 }

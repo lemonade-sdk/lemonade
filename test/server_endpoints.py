@@ -6796,7 +6796,97 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(override.status_code, 404, override.text)
             self.assertIn("Hugging Face", override.text)
+
+            # A provider URL is detected server-side and beats the configured
+            # policy: even with the default set to ModelScope, a Hugging Face URL
+            # is normalized and contacts Hugging Face.
+            url_lookup = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={
+                    "checkpoint": (
+                        "https://huggingface.co/lemonade/definitely-not-a-real-repo"
+                    )
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(url_lookup.status_code, 404, url_lookup.text)
+            self.assertIn("Hugging Face", url_lookup.text)
         finally:
+            requests.post(
+                set_url,
+                json={"default_model_source": prior},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def test_052_default_source_pull_persistence(self):
+        """A source-less /pull persists the configured default as the model's
+        registry provenance; an explicit source is recorded verbatim."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        prior = (
+            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+            .json()
+            .get("default_model_source", "huggingface")
+        )
+        default_name = f"user.DefaultSource-{uuid.uuid4().hex[:8]}"
+        explicit_name = f"user.ExplicitSource-{uuid.uuid4().hex[:8]}"
+
+        def persisted_source(model_name):
+            info = requests.get(
+                f"{self.base_url}/models/{model_name}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            return info.get("registry_source") or info.get("source")
+
+        try:
+            # Force the shipped default so the source-less pull resolves to a
+            # registry that actually hosts the tiny test checkpoint.
+            requests.post(
+                set_url,
+                json={"default_model_source": "huggingface"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+            # Source-less pull: persisted provenance is the configured default.
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": default_name,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertEqual(persisted_source(default_name), "huggingface")
+
+            # Explicit source is recorded even when it matches the default.
+            resp2 = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": explicit_name,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "source": "huggingface",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp2.status_code, 200, resp2.text)
+            self.assertEqual(persisted_source(explicit_name), "huggingface")
+
+            print("[OK] source-less /pull persists default_model_source provenance")
+        finally:
+            for name in (default_name, explicit_name):
+                try:
+                    requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
             requests.post(
                 set_url,
                 json={"default_model_source": prior},

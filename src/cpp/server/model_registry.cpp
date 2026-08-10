@@ -24,6 +24,20 @@ std::string lower_copy(std::string value) {
     return value;
 }
 
+std::string strip_query_fragment(std::string value) {
+    const size_t pos = value.find_first_of("?#");
+    if (pos != std::string::npos) value.resize(pos);
+    while (!value.empty() && value.back() == '/') value.pop_back();
+    return value;
+}
+
+std::string first_two_path_segments(const std::string& path) {
+    const size_t slash = path.find('/');
+    if (slash == std::string::npos) return path;
+    const size_t second = path.find('/', slash + 1);
+    return second == std::string::npos ? path : path.substr(0, second);
+}
+
 bool is_unreserved(unsigned char c) {
     return std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~';
 }
@@ -752,6 +766,82 @@ bool is_remote_registry_source(const std::string& source) {
     const std::string normalized = lower_copy(source);
     return normalized == "huggingface" || normalized == "hf" ||
            normalized == "modelscope" || normalized == "ms";
+}
+
+bool detect_registry_url(const std::string& value,
+                         RemoteRegistrySource& out_source,
+                         std::string& out_repo_id) {
+    static const std::initializer_list<std::pair<const char*, RemoteRegistrySource>> prefixes = {
+        {"https://huggingface.co/", RemoteRegistrySource::HuggingFace},
+        {"http://huggingface.co/", RemoteRegistrySource::HuggingFace},
+        {"https://modelscope.cn/models/", RemoteRegistrySource::ModelScope},
+        {"https://www.modelscope.cn/models/", RemoteRegistrySource::ModelScope},
+        {"http://modelscope.cn/models/", RemoteRegistrySource::ModelScope},
+        {"http://www.modelscope.cn/models/", RemoteRegistrySource::ModelScope},
+        {"https://modelscope.ai/models/", RemoteRegistrySource::ModelScope},
+        {"https://www.modelscope.ai/models/", RemoteRegistrySource::ModelScope},
+    };
+    for (const auto& [prefix, source] : prefixes) {
+        const std::string prefix_str(prefix);
+        if (value.rfind(prefix_str, 0) != 0) continue;
+        out_source = source;
+        out_repo_id = first_two_path_segments(
+            strip_query_fragment(value.substr(prefix_str.size())));
+        return true;
+    }
+    return false;
+}
+
+bool checkpoint_looks_like_repo_id(const std::string& checkpoint) {
+    // Registry repo ids never contain ':', so the portion before the first ':'
+    // is the repo. An owner/repo id carries a '/'; FLM tags (`gemma3:4b`) do not.
+    const size_t colon = checkpoint.find(':');
+    const std::string repo =
+        colon == std::string::npos ? checkpoint : checkpoint.substr(0, colon);
+    return repo.find('/') != std::string::npos;
+}
+
+void apply_default_pull_source(json& request_json, const std::string& default_source) {
+    if (request_json.value("local_import", false)) return;
+
+    // Locate the primary checkpoint. Multi-component bodies (e.g. sd-cpp) carry
+    // it under checkpoints.main; single-checkpoint bodies under checkpoint.
+    std::string* checkpoint_slot = nullptr;
+    if (request_json.contains("checkpoint") && request_json["checkpoint"].is_string()) {
+        checkpoint_slot = request_json["checkpoint"].get_ptr<std::string*>();
+    } else if (request_json.contains("checkpoints") &&
+               request_json["checkpoints"].is_object() &&
+               request_json["checkpoints"].contains("main") &&
+               request_json["checkpoints"]["main"].is_string()) {
+        checkpoint_slot = request_json["checkpoints"]["main"].get_ptr<std::string*>();
+    }
+    if (checkpoint_slot == nullptr || checkpoint_slot->empty()) return;
+
+    const bool has_explicit_source =
+        request_json.contains("source") || request_json.contains("registry_source");
+
+    // A provider URL is authoritative: normalize it to owner/repo and adopt the
+    // URL's registry unless the caller already named one.
+    RemoteRegistrySource url_source;
+    std::string repo_id;
+    if (detect_registry_url(*checkpoint_slot, url_source, repo_id)) {
+        *checkpoint_slot = repo_id;
+        if (!has_explicit_source) {
+            request_json["source"] = remote_registry_source_name(url_source);
+        }
+        return;
+    }
+
+    if (has_explicit_source) return;
+
+    // Self-managed backends own their checkpoints; those are not registry ids
+    // even when they happen to contain a '/' (e.g. cloud model identifiers).
+    const std::string recipe = request_json.value("recipe", "");
+    if (recipe == "flm" || recipe == "cloud") return;
+
+    if (!checkpoint_looks_like_repo_id(*checkpoint_slot)) return;
+
+    request_json["source"] = default_source;
 }
 
 std::string registry_tree_snapshot_id(RemoteRegistrySource source,
