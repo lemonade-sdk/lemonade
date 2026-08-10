@@ -12,6 +12,10 @@ Remote provenance is stored separately from local origin:
 
 Hugging Face is the default for backward compatibility. A model and all of its checkpoints have one registry source. Collection components inherit the collection source unless an inline component definition explicitly declares another source.
 
+## Default source policy
+
+When a pull request names no registry — no `--source`, no `source`/`registry_source` field, and no provider URL — lemond falls back to the `default_model_source` config key (`huggingface` or `modelscope`, default `huggingface`). Resolution is server-side and authoritative so every client (CLI, desktop, web, Ollama-compatible endpoints) inherits the same policy, per the many-clients-one-server contract. The resolution happens once, up front in the `/pull` handler, so the chosen registry is persisted with the model and stays consistent across download, cache layout, and later refresh. A bare `pull <registered-name>` refresh carries no checkpoint and keeps its recorded provenance rather than re-applying the default. `GET /pull/variants` echoes the resolved `source` so the CLI's interactive flow records the same registry the weights came from.
+
 ## Registry interface
 
 `ModelRegistry` normalizes provider behavior into:

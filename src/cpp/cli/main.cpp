@@ -150,7 +150,7 @@ struct CliConfig {
     std::string list_filter;
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
-    std::string model_source = "huggingface";
+    std::string model_source;  // empty means defer to lemond's default_model_source
     bool model_source_explicit = false;
     std::vector<std::string> labels;
     std::vector<std::string> components;
@@ -388,7 +388,14 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
         model_data["checkpoints"] = std::move(checkpoints);
     }
 
-    model_data["source"] = explicit_source.value_or(config.model_source);
+    // Only pin a registry when one was actually chosen (a checkpoint URL or
+    // --source). Otherwise leave it unset so lemond applies its configured
+    // default_model_source and persists that provenance.
+    if (explicit_source) {
+        model_data["source"] = *explicit_source;
+    } else if (config.model_source_explicit) {
+        model_data["source"] = config.model_source;
+    }
 
     if (!config.components.empty()) {
         model_data["components"] = config.components;
@@ -1330,7 +1337,8 @@ int main(int argc, char* argv[]) {
         ->type_name("MODEL_OR_CHECKPOINT");
     CLI::Option* pull_source_opt =
         pull_cmd->add_option("--source", config.model_source,
-            "Remote registry for checkpoint pulls: huggingface or modelscope")
+            "Remote registry for checkpoint pulls: huggingface or modelscope "
+            "(default: the server's configured default_model_source)")
             ->type_name("SOURCE")
             ->check(CLI::IsMember({"huggingface", "modelscope"}));
     pull_cmd->add_option("--checkpoint", config.checkpoints,

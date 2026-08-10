@@ -5071,6 +5071,23 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         bool subscribe = request_json.value("subscribe", true);
         bool local_import = request_json.value("local_import", false);
 
+        // A remote checkpoint pull that names no registry inherits the server's
+        // configured default so the resolved provenance is persisted once, up
+        // front, keeping download, cache layout, and later refresh consistent.
+        // Bare `pull <registered-name>` refreshes carry no checkpoint and keep
+        // their recorded provenance instead.
+        const bool has_remote_checkpoint =
+            (request_json.contains("checkpoint") &&
+             !request_json["checkpoint"].get<std::string>().empty()) ||
+            (request_json.contains("checkpoints") &&
+             request_json["checkpoints"].is_object() &&
+             !request_json["checkpoints"].empty());
+        if (has_remote_checkpoint && !local_import &&
+            !request_json.contains("source") &&
+            !request_json.contains("registry_source")) {
+            request_json["source"] = config_->default_model_source();
+        }
+
         // Validate and canonicalize remote-registry provenance before anything is
         // persisted. `source` remains backward-compatible with local origins, while
         // remote registrations store a canonical huggingface/modelscope value.
@@ -5367,7 +5384,7 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             return;
         }
         const std::string source = req.has_param("source")
-            ? req.get_param_value("source") : "huggingface";
+            ? req.get_param_value("source") : config_->default_model_source();
         const auto parsed_source = parse_remote_registry_source(source);
         if (config_->offline()) {
             res.status = 400;
@@ -5376,14 +5393,18 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             return;
         }
         bool not_found = false;
+        const std::string resolved_source = remote_registry_source_name(parsed_source);
         nlohmann::json body = lemon::fetch_pull_variants(
-            checkpoint, remote_registry_source_name(parsed_source), not_found);
+            checkpoint, resolved_source, not_found);
         if (not_found) {
             res.status = 404;
             nlohmann::json error = {{"error", "Checkpoint '" + checkpoint + "' not found on " +
                 remote_registry_display_name(parsed_source)}};
             res.set_content(error.dump(), "application/json");
             return;
+        }
+        if (body.is_object()) {
+            body["source"] = resolved_source;
         }
         res.set_content(body.dump(), "application/json");
     } catch (const std::invalid_argument& e) {

@@ -316,6 +316,11 @@ bool RuntimeConfig::enable_dgpu_gtt() const {
     return config_["enable_dgpu_gtt"].get<bool>();
 }
 
+std::string RuntimeConfig::default_model_source() const {
+    std::shared_lock lock(mutex_);
+    return config_.value("default_model_source", std::string("huggingface"));
+}
+
 std::string RuntimeConfig::rocm_channel() const {
     std::shared_lock lock(mutex_);
     return config_["rocm_channel"].get<std::string>();
@@ -560,6 +565,15 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
     } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + key + "' must be a string");
+        }
+    } else if (key == "default_model_source") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'default_model_source' must be a string");
+        }
+        const std::string source = value.get<std::string>();
+        if (source != "huggingface" && source != "modelscope") {
+            throw std::invalid_argument(
+                "'default_model_source' must be either 'huggingface', or 'modelscope'");
         }
     } else if (key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||

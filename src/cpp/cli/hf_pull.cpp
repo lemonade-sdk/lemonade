@@ -209,7 +209,10 @@ std::string format_variant_label(const json& v) {
 std::string normalize_registry_checkpoint_arg(const std::string& arg,
                                               const std::string& source_hint,
                                               std::string* detected_source) {
-    std::string source = normalize_source(source_hint);
+    // An empty hint stays empty unless the argument is a provider URL: it means
+    // "no explicit registry", letting the server apply its configured default.
+    std::string source = source_hint.empty() ? std::string()
+                                             : normalize_source(source_hint);
     std::string checkpoint = normalize_registry_url(arg, source);
     if (detected_source) *detected_source = source;
     return checkpoint;
@@ -237,9 +240,13 @@ int registry_pull_flow(lemonade::LemonadeClient& client,
         return 1;
     }
 
-    // Fetch variants from the local server.
-    std::string path = "/api/v1/pull/variants?checkpoint=" + url_encode(checkpoint) +
-                       "&source=" + url_encode(source);
+    // Fetch variants from the local server. When no registry was specified the
+    // source param is omitted so lemond resolves its configured default, which
+    // it echoes back in the response for the follow-up pull.
+    std::string path = "/api/v1/pull/variants?checkpoint=" + url_encode(checkpoint);
+    if (!source.empty()) {
+        path += "&source=" + url_encode(source);
+    }
     json variants_response;
     try {
         std::string body = client.make_request(path, "GET");
@@ -247,7 +254,9 @@ int registry_pull_flow(lemonade::LemonadeClient& client,
     } catch (const lemonade::HttpError& e) {
         if (e.status_code() == 404) {
             std::cerr << "Checkpoint '" << checkpoint << "' not found on "
-                      << (source == "modelscope" ? "ModelScope" : "Hugging Face")
+                      << (source == "modelscope" ? "ModelScope"
+                          : source.empty()        ? "the configured registry"
+                                                  : "Hugging Face")
                       << "." << std::endl;
             return 1;
         }
@@ -256,6 +265,12 @@ int registry_pull_flow(lemonade::LemonadeClient& client,
     } catch (const std::exception& e) {
         std::cerr << "Error fetching variants: " << e.what() << std::endl;
         return 1;
+    }
+
+    // Adopt the registry lemond resolved so every pull body below records the
+    // same provenance the weights were fetched from.
+    if (source.empty()) {
+        source = variants_response.value("source", std::string("huggingface"));
     }
 
     // Omni collection repos: /pull/variants only inspected the repo and told us

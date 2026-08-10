@@ -6736,6 +6736,73 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
+    def test_051_default_model_source_policy(self):
+        """default_model_source validates and drives source-less variant lookups."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        prior = (
+            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+            .json()
+            .get("default_model_source", "huggingface")
+        )
+        try:
+            # Ships defaulting to Hugging Face.
+            self.assertIn(prior, ("huggingface", "modelscope"))
+
+            # An unsupported registry name is rejected by config validation.
+            bad = requests.post(
+                set_url,
+                json={"default_model_source": "nexus"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(bad.status_code, 400, bad.text)
+
+            # Switching the policy round-trips.
+            resp = requests.post(
+                set_url,
+                json={"default_model_source": "modelscope"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            read_back = (
+                requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+                .json()
+                .get("default_model_source")
+            )
+            self.assertEqual(read_back, "modelscope")
+
+            # A source-less variant lookup now resolves to ModelScope: the 404
+            # message names the registry the server actually contacted, proving
+            # the policy drove the choice without a per-request source.
+            variants = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={"checkpoint": "lemonade/definitely-not-a-real-repo"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(variants.status_code, 404, variants.text)
+            self.assertIn("ModelScope", variants.text)
+
+            # An explicit source always overrides the configured default.
+            override = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={
+                    "checkpoint": "lemonade/definitely-not-a-real-repo",
+                    "source": "huggingface",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(override.status_code, 404, override.text)
+            self.assertIn("Hugging Face", override.text)
+        finally:
+            requests.post(
+                set_url,
+                json={"default_model_source": prior},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
     def test_037_model_update_check_lifecycle(self):
         """A successful re-pull clears a staged per-model update marker.
 
