@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
+#include "lemon/utils/github_api.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
@@ -179,17 +180,13 @@ namespace lemon::backends {
 
         const std::string url = "https://api.github.com/repos/" + repo +
                                 "/releases/tags/" + tag;
-        const std::map<std::string, std::string> headers = {
-            {"User-Agent", "lemonade"},
-            {"Accept", "application/vnd.github+json"},
-        };
 
         LOG(DEBUG, spec.log_name()) << "Resolving asset wildcard '" << pattern
             << "' for " << repo << "@" << tag << " via " << url << std::endl;
 
         utils::HttpResponse resp;
         try {
-            resp = utils::HttpClient::get(url, headers);
+            resp = utils::github_api::get(url);
         } catch (const std::exception& e) {
             throw std::runtime_error(
                 "Failed to query GitHub for release '" + tag + "' of " + repo +
