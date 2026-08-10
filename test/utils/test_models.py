@@ -191,20 +191,19 @@ SAMPLE_TOOL = {
 ENDPOINT_TEST_MODEL = "Tiny-Test-Model-GGUF"
 
 # Model for tool-calling tests (must have native tool-calling support in its chat template)
-# Kept equal to VISION_MODEL so the bundled CI job downloads the checkpoint once.
 TOOL_CALLING_MODEL = "Qwen3.5-0.8B-GGUF"
 
 # Secondary model for multi-model testing (small, fast to load)
 MULTI_MODEL_SECONDARY = "Tiny-Test-Model-GGUF"
 
-# Secondary model for eviction testing (that suite fakes VRAM pressure, so size is moot)
+# Secondary model for eviction testing (must differ from ENDPOINT_TEST_MODEL)
 SECOND_TEST_MODEL_EVICTION = "Tiny-Test-Model-2-GGUF"
 
 # Tertiary model for LRU eviction testing
 MULTI_MODEL_TERTIARY = "Qwen3-0.6B-GGUF"
 
-# A further small LLM, distinct from every model above, for tests that need one
-# more resident model. Kept equal to VISION_MODEL so it is downloaded once, not twice.
+# A further small LLM for tests that need one more resident model; must differ
+# from ENDPOINT_TEST_MODEL and MULTI_MODEL_TERTIARY.
 MULTI_MODEL_QUATERNARY = "Qwen3.5-0.8B-GGUF"
 
 # Whisper test configuration
