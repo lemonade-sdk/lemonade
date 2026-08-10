@@ -107,7 +107,7 @@ const RingGauge = React.memo<{
           </filter>
         </defs>
         <circle cx="50" cy="50" r={r} fill="none"
-          stroke="var(--surface-3)" strokeWidth="5" opacity="0.4" />
+          stroke="var(--border)" strokeWidth="5" />
         {!unavailable && pctVal > 0 && (
           <circle cx="50" cy="50" r={r} fill="none"
             stroke={ringColor} strokeWidth="5"
