@@ -2376,7 +2376,7 @@ struct NvidiaSmiGpuInfo {
     std::string compute_cap;   // e.g. "8.6"
     std::string driver_version;
     double vram_gb = 0.0;
-    double vram_used_gb = 0.0;
+    double vram_used_gb = -1.0;
 };
 
 // Query nvidia-smi for all GPUs. Returns one entry per GPU or an empty vector
@@ -2425,8 +2425,8 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
         line = trim(line);
         if (line.empty()) continue;
 
-        // Fields: index, uuid, name, compute_cap, driver_version, total_mb, used_mb.
-        // Split the right side first so names with commas are handled.
+        // The four fields after name cannot contain commas, while GPU names can.
+        // Splitting those fields from the right preserves names containing commas.
         std::string remaining = line;
         std::vector<std::string> tail;
         for (int i = 0; i < 4; i++) {
@@ -3503,9 +3503,15 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
 
         // Get VRAM and GTT for GPUs
         gpu.vram_gb = get_amd_vram(drm_render_minor);
-        gpu.vram_used_gb = parse_memory_sysfs(drm_render_minor, "mem_info_vram_used");
         gpu.virtual_gb = get_amd_gtt(drm_render_minor);
-        gpu.virtual_used_gb = parse_memory_sysfs(drm_render_minor, "mem_info_gtt_used");
+        const fs::path memory_path =
+            fs::path("/sys/class/drm/renderD" + drm_render_minor) / "device";
+        if (fs::exists(memory_path / "mem_info_vram_used")) {
+            gpu.vram_used_gb = parse_memory_sysfs(drm_render_minor, "mem_info_vram_used");
+        }
+        if (fs::exists(memory_path / "mem_info_gtt_used")) {
+            gpu.virtual_used_gb = parse_memory_sysfs(drm_render_minor, "mem_info_gtt_used");
+        }
 
         gpus.push_back(gpu);
     }
