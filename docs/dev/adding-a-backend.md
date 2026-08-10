@@ -117,7 +117,7 @@ The descriptor wires your backend in, but nothing exercises it. Write an integra
 - Existing modality: the endpoint already has a test (another image, transcription, or LLM backend). Add your recipe as a `--wrapped-server` case to that script instead of writing a new one.
 - New modality: add `test/server_<modality>.py` modeled on `server_sd.py`, and a `test_models` entry under the modality in `test/utils/capabilities.py`.
 
-Add the test to CI in both matrices of `.github/workflows/cpp_server_build_test_release.yml`, the Windows block and the Linux block, with one row per backend variant:
+Add the test to CI in both matrices of `.github/workflows/cpp_server_build_test_release.yml`, the Windows block and the Linux block, with one row per backend variant. These matrices run in the merge queue, not on PR pushes — label your PR `ci:backends` so the new rows execute before merge instead of failing for the first time in the queue (see [the testing guide](./testing.md#what-defers-to-the-merge-queue)):
 
 ```yaml
 - name: <modality>-<recipe>

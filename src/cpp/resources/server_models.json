@@ -1778,6 +1778,82 @@
         ],
         "size": 7.3
     },
+    "Anima-Base": {
+        "checkpoints": {
+            "main": "circlestone-labs/Anima:split_files/diffusion_models/anima-base-v1.0.safetensors",
+            "text_encoder": "circlestone-labs/Anima:split_files/text_encoders/qwen_3_06b_base.safetensors",
+            "vae": "circlestone-labs/Anima:split_files/vae/qwen_image_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 5.4,
+        "image_defaults": {
+            "steps": 30,
+            "cfg_scale": 4,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "Anima-Aesthetic": {
+        "checkpoints": {
+            "main": "circlestone-labs/Anima:split_files/diffusion_models/anima-aesthetic-v1.1.safetensors",
+            "text_encoder": "circlestone-labs/Anima:split_files/text_encoders/qwen_3_06b_base.safetensors",
+            "vae": "circlestone-labs/Anima:split_files/vae/qwen_image_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 5.4,
+        "image_defaults": {
+            "steps": 30,
+            "cfg_scale": 4,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "Anima-Turbo": {
+        "checkpoints": {
+            "main": "circlestone-labs/Anima:split_files/diffusion_models/anima-turbo-v1.0.safetensors",
+            "text_encoder": "circlestone-labs/Anima:split_files/text_encoders/qwen_3_06b_base.safetensors",
+            "vae": "circlestone-labs/Anima:split_files/vae/qwen_image_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 5.4,
+        "image_defaults": {
+            "steps": 8,
+            "cfg_scale": 1.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "Krea-2-Turbo": {
+        "checkpoints": {
+            "main": "Comfy-Org/Krea-2:diffusion_models/krea2_turbo_bf16.safetensors",
+            "text_encoder": "Comfy-Org/Krea-2:text_encoders/qwen3vl_4b_bf16.safetensors",
+            "vae": "Comfy-Org/Krea-2:vae/qwen_image_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 35,
+        "image_defaults": {
+            "steps": 8,
+            "cfg_scale": 1.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
         "recipe": "sd-cpp",

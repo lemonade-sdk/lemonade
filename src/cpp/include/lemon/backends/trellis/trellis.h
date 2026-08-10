@@ -19,6 +19,8 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {
         {"trellis_backend", "--trellis", "", "BACKEND",
          "Trellis backend to use", "3D Generation Options"},
+        {"trellis_args", "--trellis-args", "", "ARGS",
+         "Custom arguments to pass to trellis-server", "3D Generation Options"},
     },
     /*support*/ {
         {"cuda", {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
@@ -35,7 +37,7 @@ inline const BackendDescriptor descriptor = {
     /*rocm_requires_cwsr_fix*/ false,
     /*version_policy*/  VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
-    /*takes_args*/      false,
+    /*takes_args*/      true,
     /*arg_variants*/    {},
     /*bin_variants*/    {"vulkan", "rocm", "cuda"},
     /*config_extra*/    nlohmann::json::object(),
