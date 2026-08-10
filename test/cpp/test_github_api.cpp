@@ -9,12 +9,8 @@
     #define set_env(k, v) _putenv_s(k, v)
     #define unset_env(k)  _putenv_s(k, "")
 #else
-    #include <cstring>
     static void set_env(const char* k, const char* v) {
-        if (v && v[0])
-            setenv(k, v, 1);
-        else
-            unsetenv(k);
+        setenv(k, v ? v : "", 1);
     }
     #define unset_env(k) unsetenv(k)
 #endif
@@ -89,7 +85,7 @@ int main() {
 
     // 4. GITHUB_TOKEN empty, GH_TOKEN set — falls back to GH_TOKEN.
     {
-        unset_env("GITHUB_TOKEN");        // empty string
+        set_env("GITHUB_TOKEN", "");  // present but empty
         set_env("GH_TOKEN", "tok-gh");
         auto h = lemon::utils::github_api::headers();
         if (h.count(kAuth) == 1 &&

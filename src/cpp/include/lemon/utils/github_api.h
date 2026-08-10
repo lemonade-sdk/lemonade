@@ -24,8 +24,9 @@ inline std::map<std::string, std::string> headers() {
 }
 
 // GET for api.github.com with headers(). When an auth token was included and
-// the response is 403 (e.g. a scoped GitHub Actions token rejected by an
-// unrelated repo), retries once without the Authorization header.
+// the response is 401/403/404 (e.g. a scoped GitHub Actions token rejected by
+// an unrelated repo, which GitHub surfaces as any of these statuses), retries
+// once without the Authorization header.
 inline HttpResponse get(
     const std::string& url,
     const std::map<std::string, std::string>& extra_headers = {}) {
@@ -34,7 +35,10 @@ inline HttpResponse get(
         h[k] = v;
     }
     auto resp = HttpClient::get(url, h);
-    if (h.count("Authorization") && resp.status_code == 403) {
+    if (h.count("Authorization") &&
+        (resp.status_code == 401 ||
+         resp.status_code == 403 ||
+         resp.status_code == 404)) {
         h.erase("Authorization");
         resp = HttpClient::get(url, h);
     }
