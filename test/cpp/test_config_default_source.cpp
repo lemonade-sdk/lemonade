@@ -185,6 +185,91 @@ int main() {
               "checkpoint-less refresh gets no injected source");
     }
 
+    // When both fields are present, `checkpoints` is authoritative and its
+    // `main` entry drives resolution — matching the ModelManager precedence.
+    {
+        json req = {{"model_name", "user.M"}, {"recipe", "flm"},
+                    {"checkpoint", "owner/repo"},
+                    {"checkpoints", {{"main", "gemma3:4b"}}}};
+        apply_default_pull_source(req, "modelscope");
+        check(!req.contains("source"),
+              "checkpoints.main takes precedence over a stray top-level checkpoint");
+        check(req["checkpoint"] == "owner/repo",
+              "the ignored top-level checkpoint is left untouched");
+    }
+
+    // A provider URL that contradicts an explicit source is a 400 (throws).
+    {
+        json req = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                    {"checkpoint", "https://huggingface.co/owner/repo"},
+                    {"source", "modelscope"}};
+        bool threw = false;
+        try {
+            apply_default_pull_source(req, "huggingface");
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        check(threw, "provider URL conflicting with explicit source throws");
+    }
+
+    // registry_source is honored the same way for conflict detection.
+    {
+        json req = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                    {"checkpoint", "https://modelscope.cn/models/owner/repo"},
+                    {"registry_source", "huggingface"}};
+        bool threw = false;
+        try {
+            apply_default_pull_source(req, "huggingface");
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        check(threw, "provider URL conflicting with registry_source throws");
+    }
+
+    // A provider URL that agrees with the explicit source is accepted and
+    // normalized without re-injecting the source.
+    {
+        json req = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                    {"checkpoint", "https://modelscope.cn/models/owner/repo"},
+                    {"source", "modelscope"}};
+        apply_default_pull_source(req, "huggingface");
+        check(req["checkpoint"] == "owner/repo",
+              "agreeing provider URL is still normalized to owner/repo");
+        check(req["source"] == "modelscope",
+              "agreeing explicit source is preserved");
+    }
+
+    // Secondary checkpoints carrying provider URLs are normalized too, not just
+    // main, and the whole model adopts the shared registry.
+    {
+        json req = {{"model_name", "user.M"}, {"recipe", "sd-cpp"},
+                    {"checkpoints",
+                     {{"main", "https://modelscope.cn/models/owner/repo"},
+                      {"vae", "https://modelscope.cn/models/owner/vae"}}}};
+        apply_default_pull_source(req, "huggingface");
+        check(req["checkpoints"]["main"] == "owner/repo",
+              "main checkpoint URL is normalized");
+        check(req["checkpoints"]["vae"] == "owner/vae",
+              "secondary checkpoint URL is normalized");
+        check(req.value("source", "") == "modelscope",
+              "multi-checkpoint model adopts the URL registry");
+    }
+
+    // Checkpoints disagreeing on the registry are rejected.
+    {
+        json req = {{"model_name", "user.M"}, {"recipe", "sd-cpp"},
+                    {"checkpoints",
+                     {{"main", "https://huggingface.co/owner/repo"},
+                      {"vae", "https://modelscope.cn/models/owner/vae"}}}};
+        bool threw = false;
+        try {
+            apply_default_pull_source(req, "huggingface");
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        check(threw, "checkpoints from different registries are rejected");
+    }
+
     std::printf("================================================\n");
     if (failures > 0) {
         std::printf("Tests finished: %d FAILURE(S)\n", failures);

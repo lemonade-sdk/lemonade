@@ -6893,6 +6893,47 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
+    def test_053_pull_source_url_conflict_returns_400(self):
+        """A provider URL that contradicts an explicit source/registry_source is
+        rejected up front with 400, matching the CLI, before any download."""
+        name = f"user.Conflict-{uuid.uuid4().hex[:8]}"
+        try:
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://huggingface.co/owner/repo",
+                    "recipe": "llamacpp",
+                    "source": "modelscope",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, resp.text)
+
+            resp2 = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://modelscope.cn/models/owner/repo",
+                    "recipe": "llamacpp",
+                    "registry_source": "huggingface",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp2.status_code, 400, resp2.text)
+            print("[OK] conflicting /pull source vs provider URL returns 400")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
     def test_037_model_update_check_lifecycle(self):
         """A successful re-pull clears a staged per-model update marker.
 

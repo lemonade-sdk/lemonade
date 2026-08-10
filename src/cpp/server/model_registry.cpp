@@ -5,7 +5,9 @@
 #include <cstdlib>
 #include <iomanip>
 #include <initializer_list>
+#include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 #include "lemon/utils/http_client.h"
@@ -801,45 +803,95 @@ bool checkpoint_looks_like_repo_id(const std::string& checkpoint) {
     return repo.find('/') != std::string::npos;
 }
 
+namespace {
+
+// Returns the caller's explicitly named remote registry, if any. Non-registry
+// `source` values (local_upload/local_path/…) are ignored so only genuine
+// registry provenance participates in provider-URL conflict checks.
+std::optional<RemoteRegistrySource> explicit_registry_source(const json& request_json) {
+    if (request_json.contains("registry_source") &&
+        request_json["registry_source"].is_string()) {
+        return parse_remote_registry_source(
+            request_json["registry_source"].get<std::string>());
+    }
+    if (request_json.contains("source") && request_json["source"].is_string()) {
+        const std::string source = request_json["source"].get<std::string>();
+        if (is_remote_registry_source(source)) {
+            return parse_remote_registry_source(source);
+        }
+    }
+    return std::nullopt;
+}
+
+}  // namespace
+
 void apply_default_pull_source(json& request_json, const std::string& default_source) {
     if (request_json.value("local_import", false)) return;
 
-    // Locate the primary checkpoint. Multi-component bodies (e.g. sd-cpp) carry
-    // it under checkpoints.main; single-checkpoint bodies under checkpoint.
-    std::string* checkpoint_slot = nullptr;
-    if (request_json.contains("checkpoint") && request_json["checkpoint"].is_string()) {
-        checkpoint_slot = request_json["checkpoint"].get_ptr<std::string*>();
-    } else if (request_json.contains("checkpoints") &&
-               request_json["checkpoints"].is_object() &&
-               request_json["checkpoints"].contains("main") &&
-               request_json["checkpoints"]["main"].is_string()) {
-        checkpoint_slot = request_json["checkpoints"]["main"].get_ptr<std::string*>();
+    // Follow the ModelManager precedence: multi-component bodies carry every
+    // checkpoint under `checkpoints` (primary in `main`); single-checkpoint
+    // bodies use `checkpoint`. When `checkpoints` is present it is authoritative,
+    // even if a stray top-level `checkpoint` also exists.
+    std::vector<std::string*> checkpoint_slots;
+    std::string* primary_slot = nullptr;
+    if (request_json.contains("checkpoints") &&
+        request_json["checkpoints"].is_object()) {
+        for (auto& [role, value] : request_json["checkpoints"].items()) {
+            if (!value.is_string()) continue;
+            std::string* slot = value.get_ptr<std::string*>();
+            checkpoint_slots.push_back(slot);
+            if (role == "main") primary_slot = slot;
+        }
+    } else if (request_json.contains("checkpoint") &&
+               request_json["checkpoint"].is_string()) {
+        primary_slot = request_json["checkpoint"].get_ptr<std::string*>();
+        checkpoint_slots.push_back(primary_slot);
     }
-    if (checkpoint_slot == nullptr || checkpoint_slot->empty()) return;
+    if (primary_slot == nullptr || primary_slot->empty()) return;
 
-    const bool has_explicit_source =
-        request_json.contains("source") || request_json.contains("registry_source");
+    std::optional<RemoteRegistrySource> explicit_source =
+        explicit_registry_source(request_json);
 
-    // A provider URL is authoritative: normalize it to owner/repo and adopt the
-    // URL's registry unless the caller already named one.
-    RemoteRegistrySource url_source;
-    std::string repo_id;
-    if (detect_registry_url(*checkpoint_slot, url_source, repo_id)) {
-        *checkpoint_slot = repo_id;
-        if (!has_explicit_source) {
-            request_json["source"] = remote_registry_source_name(url_source);
+    // A provider URL is authoritative for its registry. Normalize every
+    // registry-backed checkpoint to owner/repo, enforce a single registry across
+    // the whole model, and reject a URL that contradicts an explicit source.
+    std::optional<RemoteRegistrySource> url_source;
+    for (std::string* slot : checkpoint_slots) {
+        RemoteRegistrySource detected;
+        std::string repo_id;
+        if (!detect_registry_url(*slot, detected, repo_id)) continue;
+        *slot = repo_id;
+        if (url_source && *url_source != detected) {
+            throw std::invalid_argument(
+                "All checkpoints in one model must use the same remote registry");
+        }
+        url_source = detected;
+        if (explicit_source && *explicit_source != detected) {
+            throw std::invalid_argument(
+                "checkpoint URL uses " + remote_registry_source_name(detected) +
+                " but source was set to " +
+                remote_registry_source_name(*explicit_source));
+        }
+    }
+
+    if (url_source) {
+        if (!explicit_source) {
+            request_json["source"] = remote_registry_source_name(*url_source);
         }
         return;
     }
 
-    if (has_explicit_source) return;
+    if (explicit_source ||
+        request_json.contains("source") || request_json.contains("registry_source")) {
+        return;
+    }
 
     // Self-managed backends own their checkpoints; those are not registry ids
     // even when they happen to contain a '/' (e.g. cloud model identifiers).
     const std::string recipe = request_json.value("recipe", "");
     if (recipe == "flm" || recipe == "cloud") return;
 
-    if (!checkpoint_looks_like_repo_id(*checkpoint_slot)) return;
+    if (!checkpoint_looks_like_repo_id(*primary_slot)) return;
 
     request_json["source"] = default_source;
 }

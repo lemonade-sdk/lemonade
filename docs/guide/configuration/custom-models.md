@@ -6,7 +6,7 @@ This guide explains every supported way to add a custom model to Lemonade Server
 
 ### Pull from Hugging Face or ModelScope
 
-Hugging Face remains the default registry, so existing commands keep working unchanged:
+A source-less pull uses the server's configured `default_model_source` (shipped default: Hugging Face), so existing commands keep working unchanged:
 
 ```bash
 lemonade pull org/repo
@@ -32,7 +32,7 @@ For supported repository layouts, Lemonade lists GGUF quantizations and sharded 
 Examples:
 
 ```bash
-# Hugging Face (default)
+# Hugging Face (shipped default source)
 lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
 # ModelScope
@@ -195,7 +195,7 @@ Example collection file:
 
 ### Register via API
 
-The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` (the default) or `modelscope`; the server canonicalizes and persists it for later update checks. Use this when integrating Lemonade into another app or script:
+The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
 
 ```bash
 curl -X POST http://localhost:13305/v1/pull \
@@ -378,7 +378,7 @@ This file contains a JSON object where each key is a model name and each value d
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `source` | No | String | Remote registry: `huggingface` (default) or `modelscope`. Persisted and used for variants, downloads, cache paths, links, and update checks. |
+| `source` | No | String | Remote registry: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A `source`/`registry_source` that conflicts with a provider URL in the checkpoint is rejected with 400. |
 | `checkpoint` | Yes* | String | Registry checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
 | `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |

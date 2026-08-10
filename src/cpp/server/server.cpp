@@ -5077,7 +5077,12 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         // provider URL is normalized to owner/repo and its registry adopted.
         // Self-managed backends (flm/cloud), non-registry checkpoints, explicit
         // sources, and bare `pull <registered-name>` refreshes are left as-is.
-        lemon::apply_default_pull_source(request_json, config_->default_model_source());
+        try {
+            lemon::apply_default_pull_source(request_json, config_->default_model_source());
+        } catch (const std::invalid_argument& e) {
+            bad_request(e.what());
+            return;
+        }
         // The helper may have rewritten a provider URL into an owner/repo id.
         checkpoint = request_json.value("checkpoint", "");
 
