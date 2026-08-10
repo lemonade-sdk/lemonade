@@ -499,15 +499,17 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"x86_64", "x86-64 processors"},
     {"arm64", "ARM64 processors"},
 
-    // AMD GPU architectures (ROCm)
+    // AMD GPU architectures (ROCm) — gfx9* grouped first (gfx09 < gfx10)
+    {"gfx908", "AMD Instinct MI100 (CDNA1)"},
+    {"gfx90a", "AMD Instinct MI200/MI210/MI250 (CDNA2)"},
+    {"gfx942", "AMD Instinct MI300X / MI300A (CDNA3)"},
+    {"gfx950", "AMD Instinct MI350X / MI355X (CDNA4)"},
+    {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
+    {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
     {"gfx1152", "Radeon 840M/860M (Krackan Point)"},
-    {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
-    {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
-    {"gfx942", "AMD Instinct MI300X / MI300A (CDNA3)"},
-    {"gfx950", "AMD Instinct MI350X / MI355X (CDNA4)"},
 
     // NVIDIA GPU compute capabilities (CUDA)
     {"sm_75",  "GeForce RTX 20 / GTX 16 series (Turing)"},
