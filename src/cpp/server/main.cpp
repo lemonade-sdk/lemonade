@@ -12,6 +12,7 @@
 #include <lemon/version.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
+#include "telemetry.h"
 
 #if defined(__GLIBC__)
 #include <cstdlib>
@@ -116,14 +117,16 @@ void signal_handler(int signal) {
 
 int main(int argc, char** argv) {
 #if defined(__GLIBC__)
-    // mallopt() is process-wide and MT-Unsafe. Apply it before constructing
-    // Server, whose JobManager starts a worker thread in its constructor.
+    // mallopt() is process-wide and MT-Unsafe. Apply it before initializing
+    // telemetry or constructing Server, both of which start worker threads.
     if (!configure_glibc_mmap_threshold()) {
         std::cerr << "Warning: failed to set glibc M_MMAP_THRESHOLD; "
                   << "memory from large requests may not be released promptly"
                   << std::endl;
     }
 #endif
+
+    telemetry::initialize();
 
     try {
         CLIParser parser;

@@ -15,11 +15,11 @@ allocations. The threshold does not guarantee that every allocation above
 1 MiB uses mmap; glibc can reuse suitable free blocks and is also subject to its
 mmap limits.
 
-The call must happen before `Server` construction because `JobManager` starts a
-worker thread in its constructor and glibc documents `mallopt()` as MT-Unsafe.
-The setting is a tuning, not a correctness requirement: if `mallopt()` reports
-failure, `lemond` logs a warning and continues. Operators can replace the
-built-in 1 MiB threshold without rebuilding by setting either
+The call happens before telemetry initialization and `Server` construction,
+both of which start worker threads, because glibc documents `mallopt()` as
+MT-Unsafe. The setting is a tuning, not a correctness requirement: if
+`mallopt()` reports failure, `lemond` logs a warning and continues. Operators
+can replace the built-in 1 MiB threshold without rebuilding by setting either
 `MALLOC_MMAP_THRESHOLD_` or `glibc.malloc.mmap_threshold` in `GLIBC_TUNABLES`;
 `lemond` does not overwrite either value. Non-glibc builds do not compile or
 call this code.
