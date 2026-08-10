@@ -21,11 +21,11 @@ interface TraceListProps {
 }
 
 const TRACE_FILTERS = [
-  ['All', 'All', 'layers'],
-  ['LLM', 'LLM', 'chat'],
-  ['EMBEDDING', 'Embed', 'embedding'],
-  ['RERANKER', 'Rerank', 'reranking'],
-  ['Errors', 'Errors', 'alert'],
+  ['All', 'All', 'globe', 'var(--text-tertiary)'],
+  ['LLM', 'LLM', 'chat', 'var(--cap-chat)'],
+  ['EMBEDDING', 'Embed', 'embedding', 'var(--cap-embedding)'],
+  ['RERANKER', 'Rerank', 'reranking', 'var(--cap-reranking)'],
+  ['Errors', 'Errors', 'alert', 'var(--danger)'],
 ] as const;
 
 export function getRelativeTimeAgo(startTimeMs: number): string {
@@ -180,19 +180,31 @@ export default function TraceList({
           />
         </div>
 
-        <nav className="workspace-filter-list" aria-label="Request filters">
-          {TRACE_FILTERS.map(([kind, label, icon]) => (
-            <button
-              key={kind}
-              type="button"
-              aria-pressed={filterKind === kind}
-              className={`workspace-filter-list__item${filterKind === kind ? ' is-active' : ''}`}
-              onClick={() => inspectStore.setFilterKind(kind)}
-            >
-              <Icon className="workspace-filter-list__icon" name={icon} size={14} />
-              <span className="workspace-filter-list__label">{label}</span>
-            </button>
-          ))}
+        <nav
+          className="model-nav-rail__chip-list"
+          aria-label="Request filters"
+        >
+          {TRACE_FILTERS.map(([kind, label, icon, color]) => {
+            const active = filterKind === kind;
+
+            return (
+              <button
+                key={kind}
+                type="button"
+                aria-pressed={active}
+                className={`model-nav-rail__filter-chip model-nav-rail__task-chip${active ? ' is-active' : ''}`}
+                style={{ '--filter-chip-color': color } as React.CSSProperties}
+                onClick={() => inspectStore.setFilterKind(kind)}
+              >
+                <Icon
+                  name={icon}
+                  size={13}
+                  className="model-nav-rail__task-icon"
+                />
+                <span>{label}</span>
+              </button>
+            );
+          })}
         </nav>
       </div>
 
