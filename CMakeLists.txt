@@ -2779,7 +2779,7 @@ endif()
 set(_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_runtime_config_backend_validation.cpp"
 )
-if(EXISTS "${_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC}")
     add_executable(test_runtime_config_backend_validation
         test/cpp/test_runtime_config_backend_validation.cpp
     )
