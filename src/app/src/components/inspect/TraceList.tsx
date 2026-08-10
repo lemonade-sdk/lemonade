@@ -20,6 +20,14 @@ interface TraceListProps {
   embedded?: boolean;
 }
 
+const TRACE_FILTERS = [
+  ['All', 'All', 'layers'],
+  ['LLM', 'LLM', 'chat'],
+  ['EMBEDDING', 'Embed', 'embedding'],
+  ['RERANKER', 'Rerank', 'reranking'],
+  ['Errors', 'Errors', 'alert'],
+] as const;
+
 export function getRelativeTimeAgo(startTimeMs: number): string {
   const diffSeconds = Math.max(0, Math.floor((Date.now() - startTimeMs) / 1000));
   if (diffSeconds < 5) return 'Just now';
@@ -172,19 +180,20 @@ export default function TraceList({
           />
         </div>
 
-        <div className="inspect-rail__filters">
-          {(['All', 'LLM', 'EMBEDDING', 'RERANKER', 'Errors'] as const).map((k) => (
+        <nav className="workspace-filter-list" aria-label="Request filters">
+          {TRACE_FILTERS.map(([kind, label, icon]) => (
             <button
-              key={k}
+              key={kind}
               type="button"
-              aria-pressed={filterKind === k}
-              className={`filter-chip ${filterKind === k ? 'active' : ''}`}
-              onClick={() => inspectStore.setFilterKind(k)}
+              aria-pressed={filterKind === kind}
+              className={`workspace-filter-list__item${filterKind === kind ? ' is-active' : ''}`}
+              onClick={() => inspectStore.setFilterKind(kind)}
             >
-              {k === 'EMBEDDING' ? 'Embed' : k === 'RERANKER' ? 'Rerank' : k}
+              <Icon className="workspace-filter-list__icon" name={icon} size={14} />
+              <span className="workspace-filter-list__label">{label}</span>
             </button>
           ))}
-        </div>
+        </nav>
       </div>
 
       <div
