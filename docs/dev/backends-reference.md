@@ -18,7 +18,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
-| `thenoise` | TheNoise ROCm (experimental) | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
@@ -57,7 +56,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
-| `thenoise` | rocm | linux | amd_gpu (gfx1150, gfx1151, gfx1152) |
 | `thinksound` | cuda | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `thinksound` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
@@ -135,24 +133,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
 
-#### `thenoise` — TheNoise ROCm (experimental)
-
-| Option | CLI flag | Type | Default | Description |
-|--------|----------|------|---------|-------------|
-| `thenoise_backend` | `--thenoise` | BACKEND | "" | TheNoise backend to use |
-| `steps` | — | SIZE | 20 | Number of denoising steps |
-| `cfg_scale` | — | SIZE | 7.0 | CFG scale (<= 1.0 disables CFG) |
-| `width` | — | SIZE | 512 | Output image width |
-| `height` | — | SIZE | 512 | Output image height |
-| `sampler` | — | ARGS | "" | Denoising solver (euler \| er_sde) |
-| `negative_prompt` | — | ARGS | "" | Negative prompt |
-| `upscale` | — | BOOL | false | 2x latent upscale with refine denoise |
-| `qwen_vae_enhance` | — | BOOL | false | Nyquist notch post-filter (removes 2px grid artifacts) |
-| `film_grain` | — | SIZE | 0.0 | Film grain strength (0.0-10.0) |
-| `sharpening` | — | SIZE | 0.0 | RCAS sharpening strength (0.0-1.0) |
-| `lora_specs` | — | ARGS | "" | Comma-separated LoRA specs, e.g. "style:0.8,sub/detail:0.5" |
-| `lora_dir` | — | ARGS | "" | Directory containing LoRA .safetensors files (subdirectories allowed) |
-
 #### `thinksound` — ThinkSound
 
 | Option | CLI flag | Type | Default | Description |
@@ -164,7 +144,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
-| `trellis_args` | `--trellis-args` | ARGS | "" | Custom arguments to pass to trellis-server |
 
 #### `vllm` — vLLM ROCm (experimental)
 
@@ -422,7 +401,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `SDXL-Turbo` | 6.94 | image |
 | `Z-Image-Turbo` | 20.7 | image |
 
-#### `thenoise` — TheNoise ROCm (experimental) (4 models)
+#### `thenoise` — thenoise (4 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|

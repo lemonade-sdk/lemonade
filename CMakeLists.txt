@@ -2717,7 +2717,7 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_ALIAS_TEST_SRC}")
     add_dependencies(test_model_alias copy_resources)
 
     include(CTest)
-    add_test(NAME ModelAliasTest COMMAND test_model_alias)
+    add_cpp_ci_test(ModelAliasTest CI ON COMMAND test_model_alias)
 endif()
 
 # Router-backed ClassifierServices wiring (issue #2384): binds the pure engine's

@@ -134,10 +134,6 @@ Values set in the user's `config.json` always take precedence over these seeded 
     },
     "trust_incoming_trace_context": false
   },
-  "thenoise": {
-    "backend": "auto",
-    "lora_dir": ""
-  },
   "thinksound": {
     "backend": "auto",
     "cuda_bin": "builtin",
@@ -145,7 +141,6 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_bin": "builtin"
   },
   "trellis": {
-    "args": "",
     "backend": "auto",
     "cuda_bin": "builtin",
     "rocm_bin": "builtin",
