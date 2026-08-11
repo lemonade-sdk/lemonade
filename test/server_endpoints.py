@@ -39,6 +39,7 @@ from utils.server_base import (
     run_server_tests,
     OpenAI,
     pull_model_with_retry,
+    _auth_headers,
 )
 from utils.test_models import (
     PORT,
@@ -2450,6 +2451,86 @@ class EndpointTests(ServerTestBase):
             bare_response.json()["checkpoint"],
         )
         print(f"[OK] builtin.{ENDPOINT_TEST_MODEL} alias resolves to bare id")
+
+    def test_021aa_internal_aliases_endpoints(self):
+        """Test administrative REST endpoints: POST/GET/DELETE /internal/aliases."""
+        alias_name = "test-endpoint-alias"
+        target_model = ENDPOINT_TEST_MODEL
+
+        get_res = requests.get(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(get_res.status_code, 200)
+        self.assertIn("aliases", get_res.json())
+
+        try:
+            add_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": alias_name, "target": target_model},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_res.status_code, 200)
+            self.assertEqual(add_res.json()["alias"], alias_name)
+            self.assertEqual(add_res.json()["target"], target_model)
+
+            model_res = requests.get(
+                f"{self.base_url}/models/{alias_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(model_res.status_code, 200)
+            self.assertEqual(model_res.json()["id"], alias_name)
+
+            # Test multi-hop chained alias resolution (alias_hop -> test-endpoint-alias -> ENDPOINT_TEST_MODEL)
+            hop_alias = "test-hop-alias"
+            add_hop_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": hop_alias, "target": alias_name},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_hop_res.status_code, 200)
+
+            hop_model_res = requests.get(
+                f"{self.base_url}/models/{hop_alias}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(hop_model_res.status_code, 200)
+            self.assertEqual(hop_model_res.json()["id"], hop_alias)
+
+            del_hop_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(hop_alias)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(del_hop_res.status_code, 200)
+
+            get_res2 = requests.get(
+                f"{self.internal_url}/aliases",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(get_res2.status_code, 200)
+            aliases = get_res2.json()["aliases"]
+            found = any(a["alias"] == alias_name for a in aliases)
+            self.assertTrue(found)
+
+        finally:
+            del_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(del_res.status_code, (200, 404))
+
+        model_res_del = requests.get(
+            f"{self.base_url}/models/{alias_name}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(model_res_del.status_code, 404)
+        print(f"[OK] /internal/aliases POST/GET/DELETE verified")
 
     def test_021e_naming_spec_user_shadows_builtin(self):
         """Naming spec: a user.X registration shadows a built-in X.
@@ -5641,6 +5722,64 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(models_by_id[folder_name]["checkpoint"], model_dir)
 
             print("[OK] extra subdir sharded models remain grouped")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021ub_extra_subdir_sharded_size_sums_shards_but_files_stay_per_file(self):
+        """Issue #2972: a sharded model reports the whole family's size, while
+        /models/{id}/files keeps reporting each file's own size."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shard_size_")
+        folder_name = "Sharded-Size-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        shard1 = os.path.join(model_dir, "Sharded-Size-00001-of-00002.gguf")
+        shard2 = os.path.join(model_dir, "Sharded-Size-00002-of-00002.gguf")
+        self._write_stub_gguf_file(shard1)
+        self._write_stub_gguf_file(shard2)
+
+        # The resolved path is the first shard, which in unsloth-style layouts
+        # is a small stub; the bulk of the weights live in the later shards.
+        shard2_bytes = 200 * 1024 * 1024
+        with open(shard2, "r+b") as f:
+            f.truncate(shard2_bytes)
+        shard1_bytes = os.path.getsize(shard1)
+        expected_gb = (shard1_bytes + shard2_bytes) / (1024**3)
+        shard1_only_gb = shard1_bytes / (1024**3)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+            self.assertIn(folder_name, models_by_id)
+            self.assertAlmostEqual(
+                models_by_id[folder_name]["size"],
+                expected_gb,
+                places=2,
+                msg="model size must cover every shard, not just the resolved one",
+            )
+            self.assertGreater(models_by_id[folder_name]["size"], shard1_only_gb)
+
+            files_response = requests.get(
+                f"{self.base_url}/models/{folder_name}/files",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(files_response.status_code, 200)
+            files = files_response.json()["files"]
+            main_files = [f for f in files if f["role"] == "main"]
+            self.assertEqual(len(main_files), 1)
+            self.assertEqual(main_files[0]["name"], os.path.basename(shard1))
+            self.assertEqual(
+                main_files[0]["size_bytes"],
+                shard1_bytes,
+                "/files must report the individual file size, not the shard total",
+            )
+
+            print("[OK] sharded size sums shards while /files stays per-file")
         finally:
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)

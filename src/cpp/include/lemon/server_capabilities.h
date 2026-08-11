@@ -55,6 +55,10 @@ public:
     virtual ~ITextToSpeechServer() = default;
     virtual void audio_speech(const json& request, httplib::DataSink& sink) = 0;
     virtual std::vector<std::string> supported_audio_formats() const { return {}; }
+    // What the backend can emit while streaming, which is often narrower than the
+    // buffered set — Kokoros hands back raw PCM on its streaming path whatever the
+    // request asked for. Empty means the buffered list applies to both transports.
+    virtual std::vector<std::string> supported_streaming_audio_formats() const { return {}; }
 };
 
 // Text-classification capability (encoder classifiers: PII, prompt-safety,

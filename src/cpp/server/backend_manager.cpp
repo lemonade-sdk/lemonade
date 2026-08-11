@@ -26,18 +26,6 @@ namespace lemon {
 
 namespace {
 
-std::string get_current_os() {
-#ifdef _WIN32
-    return "windows";
-#elif defined(__APPLE__)
-    return "macos";
-#elif defined(__linux__)
-    return "linux";
-#else
-    return "unknown";
-#endif
-}
-
 std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {
     if (backends::recipe_has_rocm_channels(recipe) && backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
@@ -431,9 +419,7 @@ std::string BackendManager::resolve_user_version(const std::string& recipe,
     auto* cfg = RuntimeConfig::global();
     if (!cfg) return pinned_version;
 
-    std::string section, bin_key;
-    backends::BackendUtils::build_bin_config_key(recipe, resolved_backend, section, bin_key);
-    std::string raw = cfg->backend_string(section, bin_key);
+    std::string raw = backends::BackendUtils::get_bin_config_value(recipe, resolved_backend);
 
     // "" / "builtin" → use lemonade's pinned version.
     if (raw.empty() || raw == "builtin") return pinned_version;
