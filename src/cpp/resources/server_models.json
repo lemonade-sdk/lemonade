@@ -2013,7 +2013,7 @@
     "DeepSeek-V4-Flash-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
         "recipe": "ds4",
-        "suggested": false,
+        "suggested": true,
         "labels": [
             "reasoning",
             "tool-calling"
