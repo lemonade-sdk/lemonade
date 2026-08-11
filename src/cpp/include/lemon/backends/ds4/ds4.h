@@ -27,7 +27,6 @@ inline const BackendDescriptor descriptor = {
     },
     /*support*/ {
         {"rocm", {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "Prebuilt ds4 for AMD Strix Halo"},
-        {"system", {"linux", "macos"}, {}, "Locally built ds4-server found on PATH"},
     },
     /*default_labels*/  {},
     /*required_checkpoints*/ {"main"},

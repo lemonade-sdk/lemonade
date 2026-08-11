@@ -62,7 +62,7 @@ int main() {
            "arch is used verbatim, not collapsed to a family target");
 
     expect(throws_for_backend("system"),
-           "system variant has no managed install and throws");
+           "the removed system variant is rejected");
     expect(throws_for_backend("vulkan"),
            "unsupported backend throws rather than resolving a bogus asset");
 

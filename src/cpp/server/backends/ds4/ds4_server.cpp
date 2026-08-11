@@ -8,7 +8,6 @@
 #include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
-#include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <filesystem>
@@ -21,16 +20,11 @@ namespace backends {
 
 // Upstream ds4 publishes no binaries, no releases and no tags, so ROCm builds
 // come from lemonade-sdk/ds4-rocm, which builds a pinned upstream commit and
-// bundles the ROCm runtime. The "system" variant remains for a locally built
-// ds4-server on PATH.
+// bundles the ROCm runtime.
 InstallParams Ds4Server::get_install_params(const std::string& backend, const std::string& version) {
-    if (backend == "system") {
-        throw std::runtime_error(
-            "ds4 backend 'system' has no managed install; build ds4-server locally and put it on PATH");
-    }
     if (backend != "rocm") {
         throw std::runtime_error("ds4 backend '" + backend +
-                                 "' is not supported. Supported: rocm, system");
+                                 "' is not supported. Supported: rocm");
     }
 
     // One archive per GPU target under a single release tag, named so it is
@@ -81,19 +75,8 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     RuntimeConfig::validate_backend_choice("ds4", backend);
     device_type_ = DEVICE_GPU;
 
-    std::string executable;
-    if (backend == "system") {
-        executable = find_executable_in_path(ds4::descriptor.binary);
-        if (executable.empty()) {
-            throw std::runtime_error(
-                "ds4-server binary not found on PATH. Build it from https://github.com/antirez/ds4 "
-                "(make strix-halo | make cuda | make metal) and place ds4-server on PATH, "
-                "or use the managed 'rocm' backend.");
-        }
-    } else {
-        backend_manager_->install_backend(ds4::spec()->recipe, backend);
-        executable = BackendUtils::get_backend_binary_path(*ds4::spec(), backend);
-    }
+    backend_manager_->install_backend(ds4::spec()->recipe, backend);
+    const std::string executable = BackendUtils::get_backend_binary_path(*ds4::spec(), backend);
 
     port_ = choose_port();
 
