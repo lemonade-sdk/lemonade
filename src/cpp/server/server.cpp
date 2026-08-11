@@ -5366,6 +5366,11 @@ void Server::handle_registry_search(const httplib::Request& req, httplib::Respon
 }
 
 void Server::handle_pull_variants(const httplib::Request& req, httplib::Response& res) {
+    auto bad_request = [&res](const std::string& message) {
+        res.status = 400;
+        nlohmann::json error = {{"error", message}};
+        res.set_content(error.dump(), "application/json");
+    };
     try {
         std::string checkpoint = req.get_param_value("checkpoint");
         if (checkpoint.empty()) {
@@ -5374,14 +5379,37 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
+        // Detect the URL provider upfront so we can reject mismatches with
+        // an explicit `--source` param (just like /pull and the CLI do).
+        lemon::RemoteRegistrySource url_source;
+        std::string url_repo_id;
+        bool has_url = lemon::detect_registry_url(checkpoint, url_source, url_repo_id);
+
+        // Explicit `--source` was provided (or not).  Capture the raw param
+        // now while checkpoint still holds the URL for error messages.
+        std::string raw_source;
+        if (req.has_param("source")) {
+            raw_source = req.get_param_value("source");
+        }
+
+        // Reject mismatches between explicit source and detected URL source.
+        if (has_url && !raw_source.empty()) {
+            if (remote_registry_source_name(url_source) != raw_source) {
+                bad_request(
+                    "checkpoint URL uses " + remote_registry_source_name(url_source) +
+                    " but source was set to '" + raw_source + "'");
+                return;
+            }
+        }
+
         // A provider URL is authoritative: normalize it to owner/repo and adopt
         // its registry. Otherwise honor an explicit source param, falling back
         // to the server's configured default when none is given.
-        lemon::RemoteRegistrySource url_source;
-        std::string url_repo_id;
-        std::string source;
-        if (lemon::detect_registry_url(checkpoint, url_source, url_repo_id)) {
+        if (has_url) {
             checkpoint = url_repo_id;
+        }
+        std::string source;
+        if (has_url) {
             source = remote_registry_source_name(url_source);
         } else {
             source = req.has_param("source")

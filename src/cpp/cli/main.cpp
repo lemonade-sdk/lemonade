@@ -7,6 +7,7 @@
 #include <lemon_cli/agent_config_file.h>
 #include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
+#include <lemon/model_registry.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
 #include <lemon_cli/opencode_profile.h>
@@ -335,23 +336,6 @@ static int handle_import_command(lemonade::LemonadeClient& client, const CliConf
                                            config.skip_prompt, config.yes, nullptr, true);
 }
 
-static std::optional<std::string> explicit_registry_source_from_url(const std::string& value) {
-    if (value.rfind("https://huggingface.co/", 0) == 0 ||
-        value.rfind("http://huggingface.co/", 0) == 0) {
-        return "huggingface";
-    }
-    for (const char* prefix : {
-             "https://modelscope.cn/models/",
-             "https://www.modelscope.cn/models/",
-             "http://modelscope.cn/models/",
-             "http://www.modelscope.cn/models/",
-             "https://modelscope.ai/models/",
-             "https://www.modelscope.ai/models/"}) {
-        if (value.rfind(prefix, 0) == 0) return "modelscope";
-    }
-    return std::nullopt;
-}
-
 static int handle_manual_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     nlohmann::json model_data;
 
@@ -366,23 +350,24 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
             std::string detected_source;
             checkpoints[type] = lemon_cli::normalize_registry_checkpoint_arg(
                 checkpoint, config.model_source, &detected_source);
-
-            if (auto source_from_url = explicit_registry_source_from_url(checkpoint)) {
+            lemon::RemoteRegistrySource detected;
+            std::string repo_id;
+            if (lemon::detect_registry_url(checkpoint, detected, repo_id)) {
+                std::string url_source = lemon::remote_registry_source_name(detected);
                 if (config.model_source_explicit &&
-                    config.model_source != *source_from_url) {
+                    config.model_source != url_source) {
                     std::cerr
-                        << "Error: checkpoint URL uses " << *source_from_url
+                        << "Error: checkpoint URL uses " << url_source
                         << " but --source was set to " << config.model_source
                         << "." << std::endl;
                     return 1;
                 }
-
-                if (explicit_source && *explicit_source != *source_from_url) {
+                if (explicit_source && *explicit_source != url_source) {
                     std::cerr << "Error: all checkpoints in one model must use the same "
                                  "remote registry." << std::endl;
                     return 1;
                 }
-                explicit_source = *source_from_url;
+                explicit_source = url_source;
             }
         }
         model_data["checkpoints"] = std::move(checkpoints);
@@ -439,7 +424,22 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
         return handle_manual_pull_command(client, config);
     }
 
+    // Detect the URL source before normalization so we can reject mismatches
+    // with --source before normalize_registry_checkpoint_arg silently converts
+    // the user's value or lets the URL win.
+    lemon::RemoteRegistrySource detected;
+    std::string url_repo_id;
     std::string detected_source;
+    if (lemon::detect_registry_url(config.model, detected, url_repo_id)) {
+        std::string url_source = lemon::remote_registry_source_name(detected);
+        if (config.model_source_explicit && config.model_source != url_source) {
+            std::cerr << "Error: model URL uses " << url_source
+                      << " but --source was set to " << config.model_source << "."
+                      << std::endl;
+            return 1;
+        }
+        detected_source = url_source;
+    }
     std::string normalized_model = lemon_cli::normalize_registry_checkpoint_arg(
         config.model, config.model_source, &detected_source);
 

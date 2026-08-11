@@ -6934,6 +6934,74 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_054_pull_variants_url_source_conflict_returns_400(self):
+        """GET /pull/variants with a --source param that contradicts the
+        detected URL registry is rejected with 400 (matching /pull and CLI)."""
+        # HF URL with --source modelscope should be rejected
+        resp = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://huggingface.co/fredmagg/Phi-4-mini-instruct-GGUF",
+                "source": "modelscope",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+        self.assertIn("checkpoint URL uses", resp.json()["error"])
+        self.assertIn("but source was set to", resp.json()["error"])
+
+        # MS URL with --source huggingface should also be rejected
+        resp2 = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://modelscope.cn/models/owner/repo",
+                "source": "huggingface",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp2.status_code, 400, resp2.text)
+
+        # An invalid source with a URL should also be rejected
+        resp3 = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://huggingface.co/owner/repo",
+                "source": "nexus",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp3.status_code, 400, resp3.text)
+        print("[OK] /pull/variants rejects URL vs --source mismatches")
+
+    def test_055_pull_invalid_source_rejected(self):
+        """Invalid source values (not huggingface/modelscope/local_*) are
+        rejected before URL normalization, not silently overwritten."""
+        name = f"user.InvalidSrc-{uuid.uuid4().hex[:8]}"
+        try:
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://huggingface.co/owner/repo",
+                    "recipe": "llamacpp",
+                    "source": "nexus",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, resp.text)
+            self.assertIn("Unsupported model source", resp.json()["error"])
+            print("[OK] invalid source rejected before URL normalization")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
     def test_037_model_update_check_lifecycle(self):
         """A successful re-pull clears a staged per-model update marker.
 

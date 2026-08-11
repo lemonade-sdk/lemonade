@@ -828,6 +828,25 @@ std::optional<RemoteRegistrySource> explicit_registry_source(const json& request
 void apply_default_pull_source(json& request_json, const std::string& default_source) {
     if (request_json.value("local_import", false)) return;
 
+    // Validate explicit registry source values before any URL normalization
+    // so that invalid values (like "nexus" with an HF URL) are rejected up
+    // front rather than silently overwritten by a provider URL.
+    if (request_json.contains("registry_source") &&
+        request_json["registry_source"].is_string()) {
+        (void)parse_remote_registry_source(
+            request_json["registry_source"].get<std::string>());
+    }
+    if (request_json.contains("source") && request_json["source"].is_string()) {
+        const auto& src = request_json["source"].get<std::string>();
+        if (!is_remote_registry_source(src) &&
+            src != "local_upload" && src != "local_path" &&
+            src != "extra_models_dir") {
+            throw std::invalid_argument(
+                "Unsupported model source '" + src +
+                "' (expected remote registry or local import type)");
+        }
+    }
+
     // Follow the ModelManager precedence: multi-component bodies carry every
     // checkpoint under `checkpoints` (primary in `main`); single-checkpoint
     // bodies use `checkpoint`. When `checkpoints` is present it is authoritative,
@@ -871,6 +890,29 @@ void apply_default_pull_source(json& request_json, const std::string& default_so
                 "checkpoint URL uses " + remote_registry_source_name(detected) +
                 " but source was set to " +
                 remote_registry_source_name(*explicit_source));
+        }
+    }
+
+    if (url_source && explicit_source && *explicit_source != *url_source) {
+        throw std::invalid_argument(
+            "checkpoint URL uses " + remote_registry_source_name(*url_source) +
+            " but source was set to " +
+            remote_registry_source_name(*explicit_source));
+    }
+
+    // If registry_source is set (and source is empty), validate against the
+    // URL as well.
+    if (url_source && !explicit_source &&
+        request_json.contains("registry_source") &&
+        request_json["registry_source"].is_string()) {
+        RemoteRegistrySource registry_parsed =
+            parse_remote_registry_source(
+                request_json["registry_source"].get<std::string>());
+        if (*url_source != registry_parsed) {
+            throw std::invalid_argument(
+                "checkpoint URL uses " + remote_registry_source_name(*url_source) +
+                " but registry_source was set to " +
+                remote_registry_source_name(registry_parsed));
         }
     }
 
