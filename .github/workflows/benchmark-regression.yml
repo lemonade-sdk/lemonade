@@ -4,16 +4,6 @@ on:
   schedule:
     - cron: '0 2 * * *'
 
-  # TEMPORARY: branch push trigger for validating this PR before merge.
-  # REMOVE before merging to main (nightly runs from the default branch's cron).
-  push:
-    branches:
-      - iswarya/issue-2858-backend-perf-tracker
-    paths:
-      - 'src/cpp/resources/benchmark_forks.json'
-      - '.github/scripts/validate_backend_bench.py'
-      - '.github/workflows/benchmark-regression.yml'
-
   release:
     types: [published]
 
@@ -370,7 +360,8 @@ jobs:
           if ! "$LEMONADE" --port "$PORT" config set "${SET_ARGS[@]}"; then
             echo "config set dropped the connection (live reload); waiting for lemond to settle and retrying..."
             wait_lemond || { echo "ERROR: lemond did not become healthy after config reload"; exit 1; }
-            "$LEMONADE" --port "$PORT" config set "${SET_ARGS[@]}"
+            "$LEMONADE" --port "$PORT" config set "${SET_ARGS[@]}" \
+              || { echo "ERROR: config set retry failed"; exit 1; }
           fi
           wait_lemond || { echo "ERROR: lemond not healthy after routing config"; exit 1; }
 

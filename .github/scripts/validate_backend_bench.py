@@ -9,9 +9,9 @@ before lemond starts). lemond then serves --backend <backend> from that
 binary instead of downloading its own. There is no LEMONADE_*_BIN env var.
 
 Usage:
-  python test/server_backend_bench.py --forks src/cpp/resources/benchmark_forks.json --output ci/results
-  python test/server_backend_bench.py --fork-filter llamacpp-rocm-nightly --model-filter Qwen3.5-4B-GGUF
-  python test/server_backend_bench.py --fork-filter llamacpp-rocm-nightly --dry-run
+  python .github/scripts/validate_backend_bench.py --forks src/cpp/resources/benchmark_forks.json --output ci/results
+  python .github/scripts/validate_backend_bench.py --fork-filter llamacpp-rocm-nightly --model-filter Qwen3.5-4B-GGUF
+  python .github/scripts/validate_backend_bench.py --fork-filter llamacpp-rocm-nightly --dry-run
 """
 
 import argparse
