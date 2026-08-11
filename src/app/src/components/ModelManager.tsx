@@ -965,13 +965,22 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const count = visibleOptions.length;
+
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (!open) { setOpen(true); setActiveIndex(count > 0 ? 0 : -1); return; }
-      setActiveIndex(prev => count > 0 ? (prev + 1) % count : -1);
+      if (!open) {
+        setOpen(true);
+        setActiveIndex(0);
+        return;
+      }
+      setActiveIndex(prev => count > 0 ? (prev + 1) % count : 0);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (!open) { setOpen(true); setActiveIndex(count > 0 ? count - 1 : -1); return; }
+      if (!open) {
+        setOpen(true);
+        setActiveIndex(count > 0 ? count - 1 : -1);
+        return;
+      }
       setActiveIndex(prev => count > 0 ? (prev <= 0 ? count - 1 : prev - 1) : -1);
     } else if (e.key === 'Enter') {
       e.preventDefault();

@@ -1900,7 +1900,7 @@ input[type="checkbox"]:disabled {
 
 .zone__count {
   font-size: var(--text-xs);
-  color: var(--text-disabled);
+  color: var(--text-tertiary);
   font-family: var(--font-mono);
 }
 
