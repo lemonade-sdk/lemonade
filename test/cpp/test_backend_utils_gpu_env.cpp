@@ -121,7 +121,7 @@ int main() {
     {
         const std::string override_path = std::filesystem::current_path().string();
         const std::string config_path = std::filesystem::temp_directory_path().string();
-        lemon::RuntimeConfig config({{"llamacpp", {{"rocm_bin", config_path}}}});
+        lemon::RuntimeConfig config(lemon::json{{"llamacpp", {{"rocm_bin", config_path}}}});
         lemon::RuntimeConfig::set_global(&config);
         set_env_var("LEMONADE_LLAMACPP_ROCM_BIN", override_path);
 
@@ -143,7 +143,7 @@ int main() {
     // restores the configured value and disables the external-binary path.
     {
         const std::string override_path = std::filesystem::current_path().string();
-        lemon::RuntimeConfig config({{"llamacpp", {{"rocm_bin", "builtin"}}}});
+        lemon::RuntimeConfig config(lemon::json{{"llamacpp", {{"rocm_bin", "builtin"}}}});
         lemon::RuntimeConfig::set_global(&config);
         set_env_var("LEMONADE_LLAMACPP_ROCM_BIN", override_path);
 
