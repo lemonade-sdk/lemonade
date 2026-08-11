@@ -2776,6 +2776,19 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_cpp_ci_test(ConfigTelemetryTest CI OFF COMMAND test_config_telemetry)
 endif()
 
+set(_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_runtime_config_backend_validation.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC}")
+    add_executable(test_runtime_config_backend_validation
+        test/cpp/test_runtime_config_backend_validation.cpp
+    )
+    target_link_libraries(test_runtime_config_backend_validation PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RuntimeConfigBackendValidationTest CI ON
+        COMMAND test_runtime_config_backend_validation
+    )
+endif()
+
 # ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
 # external-ROCm detection that lets Lemonade skip the bundled TheRock download.
 set(_ROCM_ROOT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_root_resolution.cpp")
