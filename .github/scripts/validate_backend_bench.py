@@ -25,6 +25,7 @@ import sys
 import tarfile
 import urllib.request
 import urllib.error
+import urllib.parse
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -81,7 +82,9 @@ def resolve_latest_version(repo: str, token: str | None,
 def download_file(url: str, dest: Path, token: str | None = None) -> None:
     print(f"  Downloading {url}")
     headers = {}
-    if token and "github.com" in url:
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if token and (host == "github.com" or host.endswith(".github.com")):
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, headers=headers)
     try:
