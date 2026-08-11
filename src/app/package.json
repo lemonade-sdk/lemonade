@@ -38,7 +38,8 @@
     "test:ui-regressions": "node tests/ui-regression-contracts.runtime.cjs && node tests/backend-manager-lifecycle.runtime.cjs",
     "test:model-nav-filters": "node tests/model-nav-filter-layout.runtime.cjs",
     "test:model-state": "node tests/model-state-deduplication.runtime.cjs",
-    "test:download-polling": "node tests/download-polling-lifecycle.runtime.cjs"
+    "test:download-polling": "node tests/download-polling-lifecycle.runtime.cjs",
+    "test:router-load": "node tests/router-load-regression.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",

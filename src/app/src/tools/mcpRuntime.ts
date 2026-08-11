@@ -532,7 +532,8 @@ function buildLemonadeRuntime(
     tools,
     systemPrompt: [
       'The Lemon-Tools MCP server controls local models and multimodal backends.',
-      'Use management tools for models, recipes, hardware, downloads, and health.',
+      'Use management tools for models, recipes, hardware, downloads, health, and Router models.',
+      'Router models use recipe=collection.router and are virtual Chat orchestration policies. Inspect them with get_model_info, list them with capability=router when useful, and never assign a backend/device to or expect a loaded runtime process for the Router itself. load_model validates/registers Router readiness; actual dispatch happens when chat/completions uses the Router model name.',
       'Use generate_image/edit_image for images, generate_audio for music or sound, text_to_speech for speech, and transcribe_audio for attached audio.',
       'For text-to-3D call generate_3d with prompt: it MUST generate the reference image first and then reconstruct that image as a GLB. For image-to-3D pass or reuse the attached image.',
       'Do not invent local model names; use list_models/get_model_info when model selection is unclear.',
