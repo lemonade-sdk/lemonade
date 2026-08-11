@@ -1035,7 +1035,7 @@ jobs:
           body_lines.append("Missing asset counts:")
           body_lines.append(f"- ggml-org/llama.cpp: `{os.environ.get('GGML_MISSING_COUNT', 'unknown')}`")
           body_lines.append(f"- lemonade-sdk/llamacpp-rocm rocm-nightly: `{os.environ.get('ROCM_NIGHTLY_MISSING_COUNT', 'unknown')}`")
-          body_lines.append(f"- lemonade-sdk/llama.cpp rocm-stable: `{os.environ.get('ROCM_STABLE_MISSING_COUNT', 'unknown')}`")
+          body_lines.append(f"- ggml-org/llama.cpp rocm-stable: `{os.environ.get('ROCM_STABLE_MISSING_COUNT', 'unknown')}`")
           body_lines.append(f"- lemonade-sdk/llama.cpp cuda: `{os.environ.get('CUDA_MISSING_COUNT', 'unknown')}`")
           body_lines.append("")
           body_lines.append("CUDA remains asset-gated only until a CUDA self-hosted runner is enabled.")
