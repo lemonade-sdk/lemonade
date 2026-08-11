@@ -4955,12 +4955,15 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
 }
 
 // Parse a boolean value from a multipart form field.
-// Accepts "true", "1", "True" as truthy; everything else is false.
+// Accepts "true", "1", "yes", "on" (case-insensitive) as truthy; everything else is false.
 static bool parse_bool_form_field(const httplib::MultipartFormData& form,
                                   const std::string& name) {
     if (!form.has_field(name)) return false;
     const std::string& val = form.get_field(name);
-    return val == "true" || val == "1" || val == "True";
+    if (val == "1") return true;
+    std::string lower = val;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    return lower == "true" || lower == "yes" || lower == "on";
 }
 
 void Server::handle_image_edits(const httplib::Request& req, httplib::Response& res) {
