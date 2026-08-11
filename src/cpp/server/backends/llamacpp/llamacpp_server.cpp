@@ -137,14 +137,16 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
-static bool is_dflash_draft_checkpoint(std::string checkpoint) {
+static std::string draft_checkpoint_label(std::string checkpoint) {
     std::transform(checkpoint.begin(), checkpoint.end(), checkpoint.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     size_t separator = checkpoint.find_last_of("/:\\");
     std::string filename = separator == std::string::npos
                                ? checkpoint
                                : checkpoint.substr(separator + 1);
-    return filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf";
+    if (filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf") return "dflash";
+    if (filename.rfind("mtp-", 0) == 0) return "mtp";
+    return {};
 }
 
 static std::string trim_version_prefix(const std::string& version) {
@@ -382,7 +384,19 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto"});
 
-    if (!draft_path.empty()) {
+    const bool uses_dflash =
+        std::find(model_info.labels.begin(), model_info.labels.end(), "dflash") != model_info.labels.end();
+    const bool uses_mtp =
+        std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") != model_info.labels.end();
+    const std::string draft_label =
+        draft_path.empty() ? std::string() : draft_checkpoint_label(model_info.checkpoint("draft"));
+    const bool use_draft_checkpoint =
+        !draft_path.empty() &&
+        (draft_label.empty() ||
+         (draft_label == "dflash" && uses_dflash) ||
+         (draft_label == "mtp" && uses_mtp));
+
+    if (use_draft_checkpoint) {
         push_arg(args, reserved_flags, "--model-draft", draft_path);
     }
     push_reserved(reserved_flags, "--model-draft", std::vector<std::string>{"-md", "--spec-draft-model"});
@@ -390,12 +404,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // Use legacy reasoning formatting
     push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
 
-    const bool uses_dflash = !draft_path.empty() &&
-        is_dflash_draft_checkpoint(model_info.checkpoint("draft"));
-    const bool uses_mtp =
-        std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") != model_info.labels.end();
-
-    if (uses_dflash) {
+    if (uses_dflash && use_draft_checkpoint) {
         LOG(INFO, "LlamaCpp") << "Model uses DFlash, adding draft decoding defaults" << std::endl;
         push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-dflash");
     } else if (uses_mtp) {

@@ -140,7 +140,8 @@ int main() {
                       "got " + join_names(set));
         result.expect("DFlash companion is reported separately",
                       set.draft_files.size() == 1 &&
-                          set.draft_files[0] == "dflash-kquant.gguf",
+                          set.draft_files[0] == "dflash-kquant.gguf" &&
+                          set.draft_label == "dflash",
                       "draft count = " + std::to_string(set.draft_files.size()));
         result.expect("mmproj remains reported separately",
                       set.mmproj_files.size() == 1 &&
@@ -166,8 +167,20 @@ int main() {
         });
         result.expect("MTP companion is reported as a draft",
                       set.variants.size() == 1 && set.variants[0].name == "Q4_K_M" &&
-                          set.draft_files.size() == 1 && set.draft_files[0] == "mtp-Gemma.gguf",
+                          set.draft_files.size() == 1 && set.draft_files[0] == "mtp-Gemma.gguf" &&
+                          set.draft_label == "mtp",
                       "got " + join_names(set));
+    }
+
+    {
+        auto set = lemon::enumerate_gguf_variants({
+            "Model-Q8_0.gguf",
+            "dflash-kquant.gguf",
+            "mtp-Model.gguf",
+        });
+        result.expect("Multiple draft companions do not choose an activation label",
+                      set.draft_files.size() == 2 && set.draft_label.empty(),
+                      "draft count = " + std::to_string(set.draft_files.size()));
     }
 
     {

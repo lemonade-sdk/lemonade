@@ -50,6 +50,7 @@
 
 static const std::vector<std::string> VALID_LABELS = {
     "coding",
+    "dflash",
     "embeddings",
     "hot",
     "mtp",
