@@ -11,6 +11,7 @@
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <filesystem>
+#include <set>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -91,16 +92,41 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
         args.push_back("-c");
         args.push_back(std::to_string(ctx_size));
     }
+
+    // ds4 parses left-to-right, so a later flag wins. Custom args must not be
+    // able to move the port (breaks readiness and proxying), rebind the host
+    // (exposes the backend), or swap the model out from under the router.
     if (!ds4_args.empty()) {
+        static const std::set<std::string> reserved_flags = {
+            "-m", "--model", "--host", "--port", "-c", "--ctx",
+        };
+        const std::string validation_error = validate_custom_args(ds4_args, reserved_flags);
+        if (!validation_error.empty()) {
+            throw std::invalid_argument("Invalid custom ds4-server arguments:\n" + validation_error);
+        }
+        LOG(DEBUG, "DS4") << "Adding custom arguments: " << ds4_args << std::endl;
         std::vector<std::string> custom_args = parse_custom_args(ds4_args);
         args.insert(args.end(), custom_args.begin(), custom_args.end());
     }
+
+    // The managed bundle ships its own ROCm runtime next to the binary, which
+    // has no RPATH. Without this the loader falls back to a system ROCm install
+    // — working by accident on a developer box and failing on the clean hosts
+    // the bundle exists to support.
+    std::vector<std::pair<std::string, std::string>> env_vars;
+    const std::string exe_dir = fs::path(executable).parent_path().string();
+    std::string ld_path = exe_dir;
+    if (const char* existing = std::getenv("LD_LIBRARY_PATH")) {
+        ld_path += std::string(":") + existing;
+    }
+    env_vars.push_back({"LD_LIBRARY_PATH", ld_path});
 
     LOG(INFO, "DS4") << "Starting ds4-server (" << executable << ") for " << gguf_path
                      << " on port " << port_ << std::endl;
 
     bool inherit_output = (log_level_ == "info") || (log_level_ == "debug");
-    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true));
+    set_process_handle(
+        ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
 
     // ds4-server binds its port only after the model is fully loaded, so first
     // reachability means ready. There is no /health endpoint; /v1/models is the

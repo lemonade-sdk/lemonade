@@ -8,9 +8,9 @@ namespace ds4 {
 
 // The ds4 backend descriptor (plain data). DS4 (DwarfStar) is antirez's
 // self-contained DeepSeek V4 inference engine with an OpenAI-compatible HTTP
-// server (ds4-server). The binary is locally built (`make strix-halo` /
-// `make cuda` / `make metal` in the ds4 repo) and discovered on PATH, so this
-// backend has no install/version pin.
+// server (ds4-server). Upstream publishes no binaries, releases or tags, so
+// builds come from lemonade-sdk/ds4-rocm, which compiles a pinned upstream
+// commit and bundles the ROCm runtime alongside it.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "ds4",
     /*display_name*/    "DS4 DwarfStar (experimental)",
