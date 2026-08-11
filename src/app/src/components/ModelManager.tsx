@@ -2448,7 +2448,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const filterRemoteResults = useCallback((provider: ModelRegistryProvider, results: HFModelResult[]) => {
     if (!providerEnabled[provider] || searchQuery.trim().length < 2 || primaryFilter !== 'all') return [];
     return results.filter(result => {
-      if (localRegistryRefs.has(result.id.toLowerCase())) return false;
+      if (provider !== 'huggingface' && localRegistryRefs.has(result.id.toLowerCase())) return false;
       const key = providerKey(provider, result.id);
       const variants = remoteVariants[key];
       if (provider === 'huggingface'
