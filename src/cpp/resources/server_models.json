@@ -1962,7 +1962,8 @@
             "flow_shift": 3.0
         },
         "recipe_options": {
-            "sdcpp_args": "--diffusion-fa --offload-to-cpu"
+            "diffusion_fa": true,
+            "sdcpp_args": "--offload-to-cpu"
         }
     },
     "Qwen-Image-2512-GGUF": {
@@ -1986,7 +1987,8 @@
             "flow_shift": 3.0
         },
         "recipe_options": {
-            "sdcpp_args": "--diffusion-fa --offload-to-cpu"
+            "diffusion_fa": true,
+            "sdcpp_args": "--offload-to-cpu"
         }
     },
     "Z-Image-Turbo": {
