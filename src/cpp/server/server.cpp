@@ -4086,6 +4086,10 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             return;
         }
         std::string mime_type = MIME_TYPES[response_format];
+        // The backend has to encode what the Content-Type above promises. Without
+        // this it would receive whatever the client sent -- nothing, when the
+        // format came from a default -- and fall back to its own choice.
+        request_json["response_format"] = response_format;
 
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
