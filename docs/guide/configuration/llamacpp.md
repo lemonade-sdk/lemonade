@@ -76,7 +76,7 @@ The ROCm backend supports three channels to balance stability, performance, and 
   "rocm_channel": "stable"
 }
 ```
-- **Source**: Custom builds from [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp)
+- **Source**: Custom builds from [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)
 - **Binaries**: Common builds for supported architectures
 - **Updates**: Frequent updates with latest optimizations and fixes
 - **Platform**: Windows and Linux
@@ -149,7 +149,7 @@ You can pin `llamacpp.rocm_bin` to a specific release tag instead of using `"bui
 
 | Channel | Repository | Tag format |
 |---|---|---|
-| `stable` *(default)* | [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp) | Lemonade-specific build tags |
+| `stable` *(default)* | [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) | Upstream build tags |
 | `nightly` | [lemonade-sdk/llamacpp-rocm](https://github.com/lemonade-sdk/llamacpp-rocm) | Nightly tags, e.g. `b1260` |
 
 > **Always set `rocm_channel` to the correct channel before setting `rocm_bin` to a specific tag.** If the tag does not exist in the current channel's repository, the download will fail with HTTP 404.

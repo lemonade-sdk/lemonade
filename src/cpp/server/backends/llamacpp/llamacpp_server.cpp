@@ -183,7 +183,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
     }
 
     if (resolved_backend == "rocm-stable") {
-        params.repo = "lemonade-sdk/llama.cpp";
+        params.repo = "ggml-org/llama.cpp";
         std::string therock_ver = get_therock_version();
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-rocm-" + therock_ver + "-x64.zip";
@@ -209,7 +209,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         throw std::runtime_error("ROCm nightly llamacpp only supported on Windows and Linux");
 #endif
     } else if (resolved_backend == "rocm-stable") {
-        params.repo = "lemonade-sdk/llama.cpp";
+        params.repo = "ggml-org/llama.cpp";
         std::string therock_ver = get_therock_version();
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-rocm-" + therock_ver + "-x64.zip";
