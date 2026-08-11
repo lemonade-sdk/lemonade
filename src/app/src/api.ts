@@ -4,9 +4,8 @@
  * and model downloads, and health polling.
  */
 
-import { recipeOptionsForModel, samplingForModel, type RecipeOptions } from './modelConfiguration';
+import type { RecipeOptions } from './modelConfiguration';
 import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
-import { filterHuggingFaceSearchResults, HUGGING_FACE_SEARCH_LIMIT } from './features/models/huggingFaceSearch';
 
 function detectDefaultBaseUrl(): string {
   if (typeof window !== 'undefined' && window.location) {
@@ -758,6 +757,7 @@ class LemonadeAPI {
   private _modelsDataSignature = '';
   private _modelsFetchRevision = 0;
   private _systemInfoData: Record<string, unknown> | null = null;
+  private _systemInfoInFlight: Promise<Record<string, unknown>> | null = null;
   private _modelStateSnapshot: ModelStateSnapshot = {
     status: 'disconnected',
     health: null,
@@ -1389,6 +1389,9 @@ class LemonadeAPI {
     await this._assertModelNotDownloading(modelName);
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
+    const { recipeOptionsForModel } = await import(
+      /* webpackChunkName: "model-configuration" */ './modelConfiguration'
+    );
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
     const body: Record<string, unknown> = {
       model_name: modelName,
@@ -1404,6 +1407,9 @@ class LemonadeAPI {
   async effectiveLoadCommand(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<EffectiveLoadCommand> {
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
+    const { recipeOptionsForModel } = await import(
+      /* webpackChunkName: "model-configuration" */ './modelConfiguration'
+    );
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
     const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
     return this._json<EffectiveLoadCommand>('/api/v1/load/command', { method: 'POST', body });
@@ -1449,12 +1455,23 @@ class LemonadeAPI {
   }
 
   async systemInfo(): Promise<Record<string, unknown>> {
-    const data = await this._json<Record<string, unknown>>(
+    // Several views use the same expensive system-info endpoint. A workspace
+    // preload and the view's first effect can overlap, so share the in-flight
+    // request instead of making the server do the same discovery twice.
+    if (this._systemInfoInFlight) return this._systemInfoInFlight;
+
+    const request = this._json<Record<string, unknown>>(
       '/api/v1/system-info',
       { cache: 'no-store' } as LemonadeRequestInit,
-    );
-    this._systemInfoData = data;
-    return data;
+    ).then(data => {
+      this._systemInfoData = data;
+      return data;
+    }).finally(() => {
+      if (this._systemInfoInFlight === request) this._systemInfoInFlight = null;
+    });
+
+    this._systemInfoInFlight = request;
+    return request;
   }
 
   /**
@@ -2384,6 +2401,9 @@ class LemonadeAPI {
     const statsInterval = onStats ? setInterval(emitStats, 200) : undefined;
 
     try {
+      const { samplingForModel } = await import(
+        /* webpackChunkName: "model-configuration" */ './modelConfiguration'
+      );
       const requestModelInfo = this.allModels.find(candidate => modelInfoKey(candidate).toLowerCase() === model.trim().toLowerCase()) || null;
       const body: Record<string, unknown> = { model, messages, stream: true, ...samplingForModel(model, requestModelInfo), ...(params || {}) };
       if (tools && tools.length > 0) body.tools = tools;
@@ -2495,6 +2515,9 @@ class LemonadeAPI {
     messages: ChatMessage[],
     params: Record<string, unknown> = {},
   ): Promise<string> {
+    const { samplingForModel } = await import(
+      /* webpackChunkName: "model-configuration" */ './modelConfiguration'
+    );
     const data = await this._json<Record<string, any>>('/api/v1/chat/completions', {
       method: 'POST',
       body: { model, messages, stream: false, ...samplingForModel(model, this.allModels.find(candidate => modelInfoKey(candidate).toLowerCase() === model.trim().toLowerCase()) || null), ...params },
@@ -2689,6 +2712,9 @@ export async function searchHuggingFace(
   query: string,
   signal?: AbortSignal,
 ): Promise<HFModelResult[]> {
+  const { filterHuggingFaceSearchResults, HUGGING_FACE_SEARCH_LIMIT } = await import(
+    /* webpackChunkName: "huggingface-search-utils" */ './features/models/huggingFaceSearch'
+  );
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     throw new Error('Browser is offline; HuggingFace search is unavailable.');
   }
