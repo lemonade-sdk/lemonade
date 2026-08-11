@@ -1,0 +1,108 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/vulkan": "b10241"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "110501",
+        "type": "amd",
+        "vram_gb": 32.0
+      }
+    ],
+    "os": "linux",
+    "ram_gb": 30.99
+  },
+  "models": [
+    {
+      "config": {
+        "measurement_runs": 5,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Gemma-4-31B-it-GGUF",
+      "results": [
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "chat",
+              "duration_ms": {
+                "max": 2458.0487,
+                "mean": 2441.5387173999998,
+                "min": 2423.818815,
+                "p50": 2445.932121,
+                "p95": 2455.9238584
+              },
+              "failed_runs": 0,
+              "input_tokens": 30,
+              "memory_peak_gb": 3.4,
+              "name": "chat-short",
+              "output_tokens": 20,
+              "tps": {
+                "max": 12.16795920813355,
+                "mean": 12.138566201300922,
+                "min": 12.086702753532188,
+                "p50": 12.139126529150595,
+                "p95": 12.166668816219312
+              },
+              "ttft_ms": {
+                "max": 799.034,
+                "mean": 789.2498,
+                "min": 774.579,
+                "p50": 793.224,
+                "p95": 798.1868
+              },
+              "vram_peak_gb": 22.91796112060547
+            },
+            {
+              "category": "coding",
+              "duration_ms": {
+                "max": 5992.397297,
+                "mean": 5965.921951400001,
+                "min": 5936.709289,
+                "p50": 5965.778271,
+                "p95": 5989.11709
+              },
+              "failed_runs": 0,
+              "input_tokens": 37,
+              "memory_peak_gb": 3.4,
+              "name": "code-short",
+              "output_tokens": 60,
+              "tps": {
+                "max": 11.758725071992794,
+                "mean": 11.73504444276119,
+                "min": 11.722394932174222,
+                "p50": 11.731583711008858,
+                "p95": 11.75399892312746
+              },
+              "ttft_ms": {
+                "max": 875.159,
+                "mean": 848.2968000000001,
+                "min": 829.491,
+                "p50": 846.884,
+                "p95": 870.5172
+              },
+              "vram_peak_gb": 22.917831420898438
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-08-11T00:01:42Z"
+    }
+  ],
+  "timestamp": "2026-08-10T23:52:09Z",
+  "fork_id": "llamacpp-upstream-vulkan",
+  "fork_label": "llama.cpp Vulkan (upstream reference)",
+  "fork_repo": "ggml-org/llama.cpp",
+  "fork_version": "b10357",
+  "fork_backend": "vulkan",
+  "run_id": "31448414661",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/31448414661",
+  "commit": "6e48f24b071e8258c5f52a51fe2c71098d7c955b"
+}
