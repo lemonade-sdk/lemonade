@@ -1900,7 +1900,7 @@ input[type="checkbox"]:disabled {
 
 .zone__count {
   font-size: var(--text-xs);
-  color: var(--text-disabled);
+  color: var(--text-tertiary);
   font-family: var(--font-mono);
 }
 
@@ -13422,7 +13422,6 @@ a.backend-card__version:focus-visible {
 .router-node__wrap-actions button:hover { border-color: color-mix(in srgb, var(--accent-fg) 40%, var(--border-subtle)); color: var(--accent-fg); }
 
 /* ── Global model settings ─────────────────────────────────── */
-.manager__detail-form-panel--global-settings { overflow: hidden; }
 .global-model-settings {
   width: 100%;
   color: var(--text-primary);
@@ -13435,6 +13434,14 @@ a.backend-card__version:focus-visible {
   gap: var(--space-4);
   padding: var(--space-5);
   scrollbar-gutter: stable;
+}
+.connect__section > .global-model-settings__body {
+  width: min(var(--content-form-width), 100%);
+  padding: 0;
+  overflow: visible;
+}
+.connect__section--directories > .global-model-settings__body {
+  margin-top: var(--space-5);
 }
 .global-settings-card {
   display: grid;

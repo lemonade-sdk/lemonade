@@ -52,6 +52,8 @@ export const WORKSPACE_NAVIGATION = {
   ] as const, 'Monitor'),
   connect: defineWorkspace('connect', [
     defineSection('server', 'Endpoint and authentication', 'plug'),
+    defineSection('chat', 'History, reasoning, and speech', 'chat'),
+    defineSection('memory', 'Budget, Loading and eviction', 'gauge'),
     defineSection('model-storage', 'Cache and custom directories', 'hard-drive'),
     defineSection('cloud-providers', 'OpenAI-compatible services', 'cloud'),
     defineSection('mcp-gateway', 'Tools and external servers', 'tools'),

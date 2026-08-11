@@ -1,19 +1,22 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
-import api, { friendlyErrorMessage, LoadedModel, ModelInfo } from './api';
-import { canSelectInComposer, capabilityFromModelInfo, selectPreferredLoadedModel } from './modelCapabilities';
-import { customModelToModelInfo, loadCustomModels } from './features/customModels/customModelStore';
-import { findModelInfoByName, isCollectionFullyLoaded, isCollectionModel, withVirtualLoadedCollections } from './features/collections/collectionModels';
-import ChatView from './components/ChatView';
-import ModelManager from './components/ModelManager';
-import ConnectView from './components/ConnectView';
-import AppsView, { MARKETPLACE_URL, type MarketplaceApp, type MarketplaceCategory } from './components/AppsView';
-import BackendManager from './components/BackendManager';
-import DownloadManager from './components/DownloadManager';
-import MonitorView from './components/MonitorView';
+import React, { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
+import type { LoadedModel, ModelInfo } from './api';
 import { Icon } from './components/Icon';
-import { WorkspaceActionButton } from './components/WorkspacePanels';
-import { downloadStore, isDownloadActive } from './features/downloadManager/downloadStore';
-import { useServerModelState } from './features/models/modelState';
+import ChatView from './components/ChatView';
+import { scheduleIdleWork } from './startupScheduler';
+import { attachServerModelState, useServerModelState } from './features/models/modelState';
+import { preloadInteractionSurfaces } from './interactionPreload';
+const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
+type MarketplaceApp = {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string[];
+  logo?: string;
+  pinned?: boolean;
+  links?: { app?: string; guide?: string; video?: string };
+};
+type MarketplaceCategory = { id: string; label: string };
+
 import {
   WORKSPACE_NAVIGATION,
   type ConnectSection,
@@ -23,8 +26,107 @@ import {
   workspaceRouteFromPath,
 } from './features/navigation/workspaceNavigation';
 
+// Chat is the default route and stays in the initial renderer chunk to avoid an
+// immediate request waterfall. Non-default workspaces stay out of the cold path,
+// then their code is warmed immediately after the first usable frame so the
+// first tab switch does not pay the lazy-chunk latency.
+type ViewModule<P extends object> = { default: React.ComponentType<P> };
+
+let backendDataWarmStarted = false;
+
+function warmBackendData(): void {
+  if (backendDataWarmStarted) return;
+  backendDataWarmStarted = true;
+
+  void import(/* webpackChunkName: "api-client" */ './api')
+    .then(({ default: api }) => {
+      const warm = () => {
+        if (api.systemInfoData) return;
+        void api.systemInfo().catch(error => {
+          // This is speculative warming only. BackendManager still owns the
+          // user-visible error/retry path when the workspace is actually open.
+          console.debug('Backend system-info prewarm skipped:', error);
+        });
+      };
+
+      if (api.status === 'connected' || api.healthData) {
+        warm();
+        return;
+      }
+
+      const unsubscribe = api.onStatusChange(status => {
+        if (status !== 'connected') return;
+        unsubscribe();
+        warm();
+      });
+    })
+    .catch(error => console.debug('Backend data prewarm unavailable:', error));
+}
+
+function createPreloadableView<P extends object>(loader: () => Promise<ViewModule<P>>) {
+  let resolved: React.ComponentType<P> | null = null;
+  let modulePromise: Promise<ViewModule<P>> | null = null;
+
+  const load = () => {
+    if (!modulePromise) {
+      modulePromise = loader().then(module => {
+        resolved = module.default;
+        return module;
+      });
+    }
+    return modulePromise;
+  };
+
+  const LazyView = lazy(load);
+  const View = (props: P) => resolved
+    ? React.createElement(resolved, props)
+    : React.createElement(LazyView, props);
+
+  return { View, preload: () => load().then(() => undefined) };
+}
+
+const loadModelManagerView = () => import(/* webpackChunkName: "view-models" */ './components/ModelManager');
+const loadMonitorView = () => import(/* webpackChunkName: "view-monitor" */ './components/MonitorView');
+
+
+const modelManagerView = createPreloadableView(loadModelManagerView);
+const backendManagerView = createPreloadableView(() => {
+  // Start expensive backend discovery as soon as navigation intent/code preload
+  // is known, but never wait for it before resolving the workspace module.
+  warmBackendData();
+  return import(/* webpackChunkName: "view-backends" */ './components/BackendManager');
+});
+const appsWorkspaceView = createPreloadableView(() => import(/* webpackChunkName: "view-apps" */ './components/AppsView'));
+const monitorWorkspaceView = createPreloadableView(loadMonitorView);
+const connectWorkspaceView = createPreloadableView(() => import(/* webpackChunkName: "view-settings" */ './components/ConnectView'));
+const downloadManagerView = createPreloadableView(() => import(/* webpackChunkName: "download-manager" */ './components/DownloadManager'));
+
+const ModelManager = modelManagerView.View;
+const BackendManager = backendManagerView.View;
+const AppsView = appsWorkspaceView.View;
+const MonitorView = monitorWorkspaceView.View;
+const ConnectView = connectWorkspaceView.View;
+const DownloadManager = downloadManagerView.View;
+
 type View = 'chat' | 'models' | 'backends' | 'apps' | 'dashboard' | 'connect';
 type SimpleView = Exclude<View, 'dashboard' | 'connect'>;
+type LazyWorkspace = Exclude<View, 'chat'>;
+
+const WORKSPACE_PRELOADERS: Record<LazyWorkspace, () => Promise<void>> = {
+  models: async () => {
+    await modelManagerView.preload();
+    const module = await loadModelManagerView();
+    await module.preloadModelManagerSecondary();
+  },
+  backends: backendManagerView.preload,
+  apps: appsWorkspaceView.preload,
+  dashboard: async () => {
+    await monitorWorkspaceView.preload();
+    const module = await loadMonitorView();
+    await module.preloadMonitorSections();
+  },
+  connect: connectWorkspaceView.preload,
+};
 type AppRoute =
   | { view: SimpleView }
   | { view: 'dashboard'; section: DashboardSection }
@@ -101,12 +203,13 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
           <pre>
             {this.state.error.message}
           </pre>
-          <WorkspaceActionButton
-            appearance="primary"
+          <button
+            type="button"
+            className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium"
             onClick={() => this.setState({ error: null })}
           >
-            Try again
-          </WorkspaceActionButton>
+            <span className="workspace-action-button__label">Try again</span>
+          </button>
         </div>
       );
     }
@@ -115,6 +218,12 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
 }
 
 const SIMPLE_VIEWS: SimpleView[] = ['chat', 'models', 'backends', 'apps'];
+
+const ViewLoadingFallback: React.FC<{ label?: string }> = ({ label = 'Loading view' }) => (
+  <div className="view-loading" role="status" aria-label={label} aria-live="polite">
+    <span className="spinner" aria-hidden="true" />
+  </div>
+);
 
 
 type HostNavigationPayload = string | URL | {
@@ -232,10 +341,23 @@ function loadSavedRoute(): AppRoute {
   return { view: 'chat' };
 }
 
+type ModelHelpers = Pick<typeof import('./modelCapabilities'), 'canSelectInComposer' | 'capabilityFromModelInfo' | 'selectPreferredLoadedModel'>
+  & Pick<typeof import('./features/collections/collectionModels'), 'findModelInfoByName' | 'isCollectionFullyLoaded' | 'isCollectionModel' | 'withVirtualLoadedCollections'>;
+type AppApiClient = (typeof import('./api'))['default'];
+
 type Theme = 'dark' | 'light';
 const THEME_KEY = 'lemonade_theme';
 const EMPTY_MODELS: ModelInfo[] = [];
 const EMPTY_LOADED_MODELS: LoadedModel[] = [];
+
+function friendlyErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const value = error as { userMessage?: unknown; message?: unknown };
+    if (typeof value.userMessage === 'string' && value.userMessage) return value.userMessage;
+    if (typeof value.message === 'string' && value.message) return value.message;
+  }
+  return String(error || 'Unknown error');
+}
 
 function loadTheme(): Theme {
   try {
@@ -248,8 +370,14 @@ function loadTheme(): Theme {
 const App: React.FC = () => {
   const [route, setRouteState] = useState<AppRoute>(loadSavedRoute);
   const view = route.view;
+  // Mount only the active workspace on cold start. Once a workspace has been
+  // visited it stays mounted (hidden when inactive) so navigation still
+  // preserves its local UI state without paying for every view up front.
+  const mountedViewsRef = useRef<Set<View>>(new Set());
+  mountedViewsRef.current.add(view);
   const routeRef = useRef(route);
   routeRef.current = route;
+  const apiClientRef = useRef<AppApiClient | null>(null);
   const serverModelState = useServerModelState();
   const status = serverModelState.status;
   const serverModels = serverModelState.models?.data ?? EMPTY_MODELS;
@@ -257,12 +385,17 @@ const App: React.FC = () => {
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [clientDataResetNonce, setClientDataResetNonce] = useState(0);
+  const [customModelInfos, setCustomModelInfos] = useState<ModelInfo[]>(EMPTY_MODELS);
+  const [modelHelpers, setModelHelpers] = useState<ModelHelpers | null>(null);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
+  const downloadManagerMountedRef = useRef(false);
+  if (downloadManagerOpen) downloadManagerMountedRef.current = true;
   const [modelDetailsRequest, setModelDetailsRequest] = useState<{ modelName: string; nonce: number } | null>(null);
   const [marketplaceApps, setMarketplaceApps] = useState<MarketplaceApp[]>([]);
   const [marketplaceCategories, setMarketplaceCategories] = useState<MarketplaceCategory[]>([]);
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(true);
+  const marketplaceRequestedRef = useRef(false);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
   const [navigationSearch, setNavigationSearch] = useState('');
   const [navigationSearchOpen, setNavigationSearchOpen] = useState(false);
@@ -273,8 +406,9 @@ const App: React.FC = () => {
   const [isDesktop, setIsDesktop] = useState(false);
   const navigationSearchShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl+K';
 
-  useEffect(() => {
-    let cancelled = false;
+  const requestMarketplace = useCallback(() => {
+    if (marketplaceRequestedRef.current) return;
+    marketplaceRequestedRef.current = true;
     setMarketplaceLoading(true);
     fetch(MARKETPLACE_URL)
       .then(response => {
@@ -282,48 +416,195 @@ const App: React.FC = () => {
         return response.json();
       })
       .then(data => {
-        if (cancelled) return;
         setMarketplaceApps(Array.isArray(data?.apps) ? data.apps as MarketplaceApp[] : []);
         setMarketplaceCategories(Array.isArray(data?.categories) ? data.categories as MarketplaceCategory[] : []);
         setMarketplaceError(null);
       })
       .catch(error => {
-        if (!cancelled) setMarketplaceError(friendlyErrorMessage(error));
+        setMarketplaceError(friendlyErrorMessage(error));
       })
       .finally(() => {
-        if (!cancelled) setMarketplaceLoading(false);
+        setMarketplaceLoading(false);
       });
-    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    import('./tauriShim').then(({ tauriReady }) => {
-      tauriReady.then(() => {
-        if (window.api && window.api.isWebApp !== true) {
-          setIsDesktop(true);
-        }
+    // Still load on demand if the user reaches Apps before background warming
+    // has run (for example via a deep link or an immediate keyboard action).
+    if (view === 'apps' || navigationSearchOpen) requestMarketplace();
+  }, [navigationSearchOpen, requestMarketplace, view]);
+
+  useEffect(() => {
+    // Keep the cold path minimal, but do not move that latency to navigation.
+    // Once the first usable frame is visible, evaluate every workspace module
+    // plus the heavy secondary surfaces that used to load on click (Monitor
+    // Telemetry/Logs and Models details/editors). They are cached but not mounted,
+    // so effects and polling still do not run until the user opens the surface.
+    let cancelled = false;
+
+    const warmRemainingWorkspaces = () => {
+      // Inspector state is a public runtime contract (window.inspectStore) and
+      // also owns capture/session-header wiring. Initialize it immediately after
+      // the first usable frame instead of waiting for the Telemetry tab to mount.
+      void import(/* webpackChunkName: "inspect-store" */ './inspectStore').catch(error => {
+        console.debug('Inspector state prewarm unavailable:', error);
       });
+
+      if (cancelled) return;
+
+      // First warm only the two interactions users can notice immediately:
+      // Models -> Details and Monitor -> Telemetry. This starts after reveal,
+      // so it cannot regress first paint. The remaining interaction surfaces
+      // are scheduled by preloadInteractionSurfaces() in the background.
+      void preloadInteractionSurfaces().finally(() => {
+        if (cancelled) return;
+        const preloaders = (Object.keys(WORKSPACE_PRELOADERS) as LazyWorkspace[])
+          .map(target => WORKSPACE_PRELOADERS[target]);
+
+        void Promise.allSettled(preloaders.map(preload => preload()))
+          .then(results => {
+            if (cancelled) return;
+            const failed = results.filter(result => result.status === 'rejected');
+            if (failed.length) {
+              console.warn(`Failed to preload ${failed.length} workspace chunk(s)`);
+              return;
+            }
+            if (window.__LEMONADE_STARTUP_METRICS__) {
+              window.__LEMONADE_STARTUP_METRICS__.workspacePreloadReadyMs = performance.now();
+            }
+          });
+
+        requestMarketplace();
+      });
+    };
+
+    if (window.__LEMONADE_STARTUP_METRICS__?.firstUsableFrameMs !== undefined) {
+      warmRemainingWorkspaces();
+    } else {
+      window.addEventListener('lemonade:first-usable', warmRemainingWorkspaces, { once: true });
+    }
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('lemonade:first-usable', warmRemainingWorkspaces);
+    };
+  }, [requestMarketplace]);
+
+  useEffect(() => {
+    // Paint the application shell before loading the native bridge and before
+    // starting server I/O. Native settings are loaded explicitly here so we no
+    // longer depend on the hidden Settings screen mounting at startup.
+    let cancelled = false;
+    let frame = 0;
+    let timer = 0;
+
+    const bootstrapHost = async () => {
+      if (window.__LEMONADE_STARTUP_METRICS__) {
+        window.__LEMONADE_STARTUP_METRICS__.hostBootstrapStartMs = performance.now();
+      }
+      try {
+        // Pure-web launches already have their host bridge injected by the
+        // server. Do not request/evaluate the Tauri shim there. Desktop still
+        // loads it in parallel with the API client.
+        const tauriReadyPromise = '__TAURI_INTERNALS__' in window
+          ? import(/* webpackChunkName: "tauri-shim" */ './tauriShim').then(module => module.tauriReady)
+          : Promise.resolve();
+        const { default: api } = await import(/* webpackChunkName: "api-client" */ './api');
+        apiClientRef.current = api;
+        attachServerModelState(api);
+        await tauriReadyPromise;
+        if (window.__LEMONADE_STARTUP_METRICS__) {
+          window.__LEMONADE_STARTUP_METRICS__.hostBridgeReadyMs = performance.now();
+        }
+        if (cancelled) return;
+        if (window.api && window.api.isWebApp !== true) setIsDesktop(true);
+        try {
+          await api.loadConnectionSettings();
+          if (window.__LEMONADE_STARTUP_METRICS__) {
+            window.__LEMONADE_STARTUP_METRICS__.connectionSettingsReadyMs = performance.now();
+          }
+        } catch (error) {
+          console.warn('Failed to load host connection settings:', error);
+        }
+        if (!cancelled) {
+          void api.connect();
+          if (routeRef.current.view === 'dashboard') api.stopPolling();
+          else api.startPolling(15000);
+        }
+      } catch (error) {
+        console.warn('Host bootstrap failed:', error);
+        if (!cancelled) {
+          void import(/* webpackChunkName: "api-client" */ './api')
+            .then(async ({ default: api }) => {
+              apiClientRef.current = api;
+              attachServerModelState(api);
+              void api.connect();
+              if (routeRef.current.view === 'dashboard') api.stopPolling();
+              else api.startPolling(15000);
+            })
+            .catch(apiError => console.warn('API bootstrap failed:', apiError));
+        }
+      }
+    };
+
+    frame = window.requestAnimationFrame(() => {
+      timer = window.setTimeout(() => { void bootstrapHost(); }, 0);
     });
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      apiClientRef.current?.stopPolling();
+    };
   }, []);
-  const [activeDownloadCount, setActiveDownloadCount] = useState(
-    () => downloadStore.snapshot().filter(isDownloadActive).length,
-  );
-  const activeDownloadCountRef = useRef(activeDownloadCount);
+  // Download persistence/polling is sizeable and not needed for the first
+  // paint. Hydrate the badge after the shell is visible instead of importing
+  // the whole download manager into the entry bundle.
+  const [activeDownloadCount, setActiveDownloadCount] = useState(0);
+  const activeDownloadCountRef = useRef(0);
   const lastWorkspaceSectionsRef = useRef({
     dashboard: route.view === 'dashboard' ? route.section : WORKSPACE_NAVIGATION.dashboard.defaultSection,
     connect: route.view === 'connect' ? route.section : WORKSPACE_NAVIGATION.connect.defaultSection,
   });
-  useEffect(() => downloadStore.subscribe(items => {
-    const nextCount = items.filter(isDownloadActive).length;
-    if (nextCount === activeDownloadCountRef.current) return;
-    activeDownloadCountRef.current = nextCount;
-    setActiveDownloadCount(nextCount);
-  }), []);
+  useEffect(() => {
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    const cancelSchedule = scheduleIdleWork(() => {
+      void import(/* webpackChunkName: "download-store" */ './features/downloadManager/downloadStore')
+        .then(({ downloadStore, isDownloadActive }) => {
+          if (cancelled) return;
+          const update = (items: ReturnType<typeof downloadStore.snapshot>) => {
+            const nextCount = items.filter(isDownloadActive).length;
+            if (nextCount === activeDownloadCountRef.current) return;
+            activeDownloadCountRef.current = nextCount;
+            setActiveDownloadCount(nextCount);
+          };
+          update(downloadStore.snapshot());
+          unsubscribe = downloadStore.subscribe(update);
+        })
+        .catch(error => console.warn('Failed to hydrate download activity:', error));
+    }, 900);
+    return () => {
+      cancelled = true;
+      cancelSchedule();
+      unsubscribe?.();
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     try { localStorage.setItem(THEME_KEY, theme); } catch { /* ignore */ }
   }, [theme]);
+
+  useEffect(() => {
+    if (status !== 'connected') return;
+    const metrics = window.__LEMONADE_STARTUP_METRICS__;
+    if (metrics && metrics.serverConnectedMs === undefined) {
+      metrics.serverConnectedMs = performance.now();
+      console.info('[startup] Lemonade server connected', { ...metrics });
+    }
+  }, [status]);
 
   const toggleTheme = useCallback(() => {
     setTheme(t => t === 'dark' ? 'light' : 'dark');
@@ -355,13 +636,49 @@ const App: React.FC = () => {
     setUtilityMenuOpen(false);
   }, [view]);
 
+  useEffect(() => {
+    if (modelHelpers || (serverModels.length === 0 && rawLoadedModels.length === 0 && customModelInfos.length === 0)) return;
+    let cancelled = false;
+    void Promise.all([
+      import(/* webpackChunkName: "model-capabilities" */ './modelCapabilities'),
+      import(/* webpackChunkName: "collection-models" */ './features/collections/collectionModels'),
+    ]).then(([capabilities, collections]) => {
+      if (!cancelled) setModelHelpers({
+        canSelectInComposer: capabilities.canSelectInComposer,
+        capabilityFromModelInfo: capabilities.capabilityFromModelInfo,
+        selectPreferredLoadedModel: capabilities.selectPreferredLoadedModel,
+        findModelInfoByName: collections.findModelInfoByName,
+        isCollectionFullyLoaded: collections.isCollectionFullyLoaded,
+        isCollectionModel: collections.isCollectionModel,
+        withVirtualLoadedCollections: collections.withVirtualLoadedCollections,
+      });
+    }).catch(error => console.warn('Failed to hydrate model helpers:', error));
+    return () => { cancelled = true; };
+  }, [customModelInfos.length, modelHelpers, rawLoadedModels.length, serverModels.length]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cancelSchedule = scheduleIdleWork(() => {
+      void import(/* webpackChunkName: "custom-model-store" */ './features/customModels/customModelStore')
+        .then(({ loadCustomModels, customModelToModelInfo }) => {
+          if (!cancelled) setCustomModelInfos(loadCustomModels().map(customModelToModelInfo));
+        })
+        .catch(error => console.warn('Failed to hydrate custom models:', error));
+    }, 700);
+    return () => {
+      cancelled = true;
+      cancelSchedule();
+    };
+  }, [clientDataResetNonce]);
+
   const loadedModelViewState = useMemo(() => {
-    const customInfos = loadCustomModels().map(customModelToModelInfo);
+    const customInfos = customModelInfos;
     const knownInfos = [...customInfos, ...serverModels];
-    const models = withVirtualLoadedCollections(rawLoadedModels, knownInfos).map(model => {
-      const info = findModelInfoByName(knownInfos, model.model_name);
+    if (!modelHelpers) return { models: rawLoadedModels, customInfos, knownInfos };
+    const models = modelHelpers.withVirtualLoadedCollections(rawLoadedModels, knownInfos).map(model => {
+      const info = modelHelpers.findModelInfoByName(knownInfos, model.model_name);
       if (!info) return model;
-      const cap = capabilityFromModelInfo(info);
+      const cap = modelHelpers.capabilityFromModelInfo(info);
       return {
         ...model,
         type: cap === 'unknown' ? model.type : cap,
@@ -370,40 +687,41 @@ const App: React.FC = () => {
       };
     });
     return { models, customInfos, knownInfos };
-  }, [clientDataResetNonce, rawLoadedModels, serverModels]);
+  }, [customModelInfos, modelHelpers, rawLoadedModels, serverModels]);
 
   const loadedModels = loadedModelViewState.models;
 
   useEffect(() => {
+    if (!modelHelpers) return;
     const { customInfos, knownInfos } = loadedModelViewState;
     const customSelectable = (name: string) => {
-      const info = findModelInfoByName(customInfos, name);
+      const info = modelHelpers.findModelInfoByName(customInfos, name);
       if (!info) return false;
-      const cap = capabilityFromModelInfo(info);
+      const cap = modelHelpers.capabilityFromModelInfo(info);
       return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
     };
     const infoSelectable = (name: string) => {
-      const info = findModelInfoByName(knownInfos, name);
+      const info = modelHelpers.findModelInfoByName(knownInfos, name);
       if (!info) return false;
-      const cap = capabilityFromModelInfo(info);
+      const cap = modelHelpers.capabilityFromModelInfo(info);
       return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
     };
     setCurrentModel(current => {
-      if (current && loadedModels.some(m => m.model_name === current && (canSelectInComposer(m) || customSelectable(m.model_name) || infoSelectable(m.model_name)))) return current;
+      if (current && loadedModels.some(m => m.model_name === current && (modelHelpers.canSelectInComposer(m) || customSelectable(m.model_name) || infoSelectable(m.model_name)))) return current;
       if (current) {
-        const info = findModelInfoByName(knownInfos, current);
-        if (info && isCollectionModel(info) && isCollectionFullyLoaded(info, rawLoadedModels)) return current;
+        const info = modelHelpers.findModelInfoByName(knownInfos, current);
+        if (info && modelHelpers.isCollectionModel(info) && modelHelpers.isCollectionFullyLoaded(info, rawLoadedModels)) return current;
       }
       const virtualOmni = loadedModels.find(model => {
-        const info = findModelInfoByName(knownInfos, model.model_name);
-        return info && isCollectionModel(info);
+        const info = modelHelpers.findModelInfoByName(knownInfos, model.model_name);
+        return info && modelHelpers.isCollectionModel(info);
       });
       return virtualOmni?.model_name
-        || selectPreferredLoadedModel(loadedModels)?.model_name
+        || modelHelpers.selectPreferredLoadedModel(loadedModels)?.model_name
         || loadedModels.find(m => customSelectable(m.model_name) || infoSelectable(m.model_name))?.model_name
         || null;
     });
-  }, [loadedModelViewState, loadedModels, rawLoadedModels]);
+  }, [loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
     if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
@@ -635,21 +953,18 @@ const App: React.FC = () => {
     return () => window.removeEventListener('lemonade:navigate', onAppNavigate as EventListener);
   }, [navigateToRoute]);
 
+  // The host bootstrap owns the API import and starts polling after its
+  // first connection attempt. Route changes only toggle that already-loaded
+  // client, avoiding a second API import request during the first React commit.
   useEffect(() => {
-    void api.connect();
-  }, []);
-
-  // App-level health polling: skip when Monitor is active (it polls every 2s)
-  useEffect(() => {
-    if (view === 'dashboard') {
-      api.stopPolling();
-    } else {
-      api.startPolling(15000);
-    }
-    return () => { api.stopPolling(); };
+    const api = apiClientRef.current;
+    if (!api) return;
+    if (view === 'dashboard') api.stopPolling();
+    else api.startPolling(15000);
   }, [view]);
 
   const handleRefreshModels = useCallback(async () => {
+    const { default: api } = await import(/* webpackChunkName: "api-client" */ './api');
     await api.refresh();
   }, []);
 
@@ -683,6 +998,15 @@ const App: React.FC = () => {
             <button
               key={id}
               className={view === id ? 'is-active' : ''}
+              onPointerEnter={() => {
+                if (id !== 'chat') void WORKSPACE_PRELOADERS[id as LazyWorkspace]().catch(() => undefined);
+              }}
+              onFocus={() => {
+                if (id !== 'chat') void WORKSPACE_PRELOADERS[id as LazyWorkspace]().catch(() => undefined);
+              }}
+              onPointerDown={() => {
+                if (id !== 'chat') void WORKSPACE_PRELOADERS[id as LazyWorkspace]().catch(() => undefined);
+              }}
               onClick={() => setView(id)}
               title={label}
               aria-label={label}
@@ -877,66 +1201,102 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <DownloadManager isVisible={downloadManagerOpen} onClose={() => setDownloadManagerOpen(false)} />
+      {downloadManagerMountedRef.current && (
+        <Suspense fallback={downloadManagerOpen ? <ViewLoadingFallback label="Loading downloads" /> : null}>
+          <DownloadManager isVisible={downloadManagerOpen} onClose={() => setDownloadManagerOpen(false)} />
+        </Suspense>
+      )}
 
       <main id="main-content" tabIndex={-1} className="view-container">
-        <div className="view-slot" hidden={view !== 'chat'}>
-          <ViewErrorBoundary view="chat">
-            <ChatView
-              key={clientDataResetNonce}
-              currentModel={currentModel}
-              loadedModels={loadedModels}
-              onModelSelect={handleModelSelect}
-              onOpenModelDetails={openModelDetails}
-              onRefresh={handleRefreshModels}
-            />
-          </ViewErrorBoundary>
-        </div>
-        <div className="view-slot" hidden={view !== 'models'}>
-          <ViewErrorBoundary view="models">
-            <ModelManager
-              key={clientDataResetNonce}
-              onModelSelect={handleModelSelect}
-              openModelRequest={modelDetailsRequest}
-            />
-          </ViewErrorBoundary>
-        </div>
-        <div className="view-slot" hidden={view !== 'backends'}>
-          <ViewErrorBoundary view="backends">
-            <BackendManager isActive={view === 'backends'} />
-          </ViewErrorBoundary>
-        </div>
-        <div className="view-slot" hidden={view !== 'apps'}>
-          <ViewErrorBoundary view="apps">
-            <AppsView
-              apps={marketplaceApps}
-              categories={marketplaceCategories}
-              loading={marketplaceLoading}
-              error={marketplaceError}
-            />
-          </ViewErrorBoundary>
-        </div>
-        <div className="view-slot" hidden={view !== 'dashboard'}>
-          <ViewErrorBoundary view="dashboard">
-            <MonitorView
-              activeSection={route.view === 'dashboard' ? route.section : lastWorkspaceSectionsRef.current.dashboard}
-              isActive={view === 'dashboard'}
-              onSectionChange={section => navigateToRoute({ view: 'dashboard', section })}
-            />
-          </ViewErrorBoundary>
-        </div>
-        <div className="view-slot" hidden={view !== 'connect'}>
-          <ViewErrorBoundary view="connect">
-            <ConnectView
-              status={status}
-              isActive={view === 'connect'}
-              activeSection={route.view === 'connect' ? route.section : lastWorkspaceSectionsRef.current.connect}
-              onSectionChange={section => navigateToRoute({ view: 'connect', section })}
-              onLocalDataReset={handleLocalDataReset}
-            />
-          </ViewErrorBoundary>
-        </div>
-        </main>
+        {mountedViewsRef.current.has('chat') && (
+          <div className="view-slot" hidden={view !== 'chat'}>
+            <ViewErrorBoundary view="chat">
+              <ChatView
+                key={clientDataResetNonce}
+                currentModel={currentModel}
+                loadedModels={loadedModels}
+                serverModels={serverModels}
+                connectionStatus={status}
+                onModelSelect={handleModelSelect}
+                onOpenModelDetails={openModelDetails}
+                onRefresh={handleRefreshModels}
+              />
+            </ViewErrorBoundary>
+          </div>
+        )}
+        {mountedViewsRef.current.has('models') && (
+          <div className="view-slot" hidden={view !== 'models'}>
+            <ViewErrorBoundary view="models">
+              <Suspense fallback={<ViewLoadingFallback label="Loading models" />}>
+                <ModelManager
+                  key={clientDataResetNonce}
+                  onModelSelect={handleModelSelect}
+                  openModelRequest={modelDetailsRequest}
+                />
+              </Suspense>
+            </ViewErrorBoundary>
+          </div>
+        )}
+        {mountedViewsRef.current.has('backends') && (
+          <div className="view-slot" hidden={view !== 'backends'}>
+            <ViewErrorBoundary view="backends">
+              <Suspense fallback={<ViewLoadingFallback label="Loading backends" />}>
+                <BackendManager isActive={view === 'backends'} />
+              </Suspense>
+            </ViewErrorBoundary>
+          </div>
+        )}
+        {mountedViewsRef.current.has('apps') && (
+          <div className="view-slot" hidden={view !== 'apps'}>
+            <ViewErrorBoundary view="apps">
+              <Suspense fallback={<ViewLoadingFallback label="Loading apps" />}>
+                <AppsView
+                  apps={marketplaceApps}
+                  categories={marketplaceCategories}
+                  loading={marketplaceLoading}
+                  error={marketplaceError}
+                />
+              </Suspense>
+            </ViewErrorBoundary>
+          </div>
+        )}
+        {mountedViewsRef.current.has('dashboard') && (
+          <div className="view-slot" hidden={view !== 'dashboard'}>
+            <ViewErrorBoundary view="dashboard">
+              <Suspense fallback={<ViewLoadingFallback label="Loading monitor" />}>
+                <MonitorView
+                  activeSection={route.view === 'dashboard' ? route.section : lastWorkspaceSectionsRef.current.dashboard}
+                  isActive={view === 'dashboard'}
+                  onSectionChange={section => navigateToRoute({ view: 'dashboard', section })}
+                />
+              </Suspense>
+            </ViewErrorBoundary>
+          </div>
+        )}
+        {mountedViewsRef.current.has('connect') && (
+          <div className="view-slot" hidden={view !== 'connect'}>
+            <ViewErrorBoundary view="connect">
+              <Suspense fallback={<ViewLoadingFallback label="Loading settings" />}>
+                <ConnectView
+                  status={status}
+                  isActive={view === 'connect'}
+                  activeSection={
+                    route.view === 'connect'
+                      ? route.section
+                      : lastWorkspaceSectionsRef.current.connect
+                  }
+                  onSectionChange={section =>
+                    navigateToRoute({ view: 'connect', section })
+                  }
+                  onLocalDataReset={handleLocalDataReset}
+                  models={loadedModelViewState.knownInfos}
+                  loadedModels={loadedModels}
+                />
+              </Suspense>
+            </ViewErrorBoundary>
+          </div>
+        )}
+      </main>
       </div>
     </>
   );

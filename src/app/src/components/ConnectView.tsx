@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import api, { CloudProviderRow, ConnectionStatus, DirectorySettings, friendlyErrorMessage, normalizeBaseUrl } from '../api';
+import api, { CloudProviderRow, ConnectionStatus, DirectorySettings, friendlyErrorMessage, normalizeBaseUrl, type LoadedModel, type ModelInfo } from '../api';
 import { clearClientStorage } from '../storage';
-import { loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
 import { Icon, IconName } from './Icon';
+import GlobalModelSettingsPanel from './GlobalModelSettingsPanel';
 import McpPanel from './McpPanel';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
 import { WORKSPACE_NAVIGATION, type ConnectSection } from '../features/navigation/workspaceNavigation';
@@ -20,6 +20,8 @@ interface ConnectViewProps {
   activeSection: ConnectSection;
   onSectionChange: (section: ConnectSection) => void;
   onLocalDataReset: () => void;
+  models: ModelInfo[];
+  loadedModels: LoadedModel[];
 }
 
 const HELP_LINKS: { label: string; href: string; icon: IconName; description: string }[] = [
@@ -38,7 +40,7 @@ const CLOUD_QUICK_FILL = [
 
 const emptyDirectorySettings: DirectorySettings = { modelsDir: '', extraModelsDir: '', canPersist: false };
 
-const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSection, onSectionChange, onLocalDataReset }) => {
+const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSection, onSectionChange, onLocalDataReset, models, loadedModels }) => {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [host, setHost] = useState(api.baseUrl);
   const [apiKey, setApiKey] = useState(api.apiKey);
@@ -47,8 +49,6 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(api.lastConnectionError);
   const [notice, setNotice] = useState<string | null>(null);
-  const [persistHistory, setPersistHistory] = useState(() => loadChatHistoryPreference());
-
   const [providers, setProviders] = useState<CloudProviderRow[]>([]);
   const [providerName, setProviderName] = useState('');
   const [providerBaseUrl, setProviderBaseUrl] = useState('');
@@ -383,21 +383,18 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
               </WorkspaceActionButton>
             </WorkspaceActionGroup>
           </form>
-          <div className="connect__section">
-            <label className="connect__checkbox">
-              <input
-                type="checkbox"
-                checked={persistHistory}
-                onChange={event => {
-                  const persist = event.target.checked;
-                  setPersistHistory(persist);
-                  saveChatHistoryPreference(persist);
-                }}
-              />
-              <span>Save chat history in this browser</span>
-            </label>
-            <p className="connect__hint">Chat media is never persisted.</p>
-          </div>
+        </section>
+        )}
+
+        {activeSection === 'chat' && (
+        <section className="connect__section global-model-settings">
+          <GlobalModelSettingsPanel section="chat" models={models} loadedModels={loadedModels} />
+        </section>
+        )}
+
+        {activeSection === 'memory' && (
+        <section className="connect__section global-model-settings">
+          <GlobalModelSettingsPanel section="memory" models={models} loadedModels={loadedModels} />
         </section>
         )}
 
@@ -436,6 +433,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
           </WorkspaceActionGroup>
           {directoryNotice && <div className="connect__notice">{directoryNotice}</div>}
           {directoryError && <div className="connect__error">{directoryError}</div>}
+          <GlobalModelSettingsPanel section="updates" models={models} loadedModels={loadedModels} />
         </section>
         )}
 
