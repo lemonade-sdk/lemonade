@@ -4,6 +4,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 #include "lemon/routing_policy.h"
 
@@ -60,9 +61,15 @@ public:
         chat_replies_[model] = std::move(reply);
     }
 
-    // Make run_classifier / chat throw for `model`, which the owning classifier
-    // turns into Score{ok=false} so its on_error applies. embed needs no
-    // equivalent: an empty vector already forces a cosine failure.
+    // Make a service throw for a target, which the owning classifier turns into
+    // Score{ok=false} so its on_error applies. embed fails per (model, text)
+    // because its answers are keyed that way; run_classifier / chat fail per
+    // model. The failure is explicit, so an on_error case never depends on how
+    // the engine treats a degenerate (empty) embedding vector.
+    void set_embed_failure(const std::string& model, const std::string& text) {
+        failing_embeds_.insert({model, text});
+    }
+
     void set_classifier_failure(const std::string& model) { failing_classifiers_.insert(model); }
 
     void set_chat_failure(const std::string& model) { failing_chats_.insert(model); }
@@ -76,6 +83,9 @@ public:
         svc.embed = [self](const std::string& model, const std::string& text) {
             ++self->total_embed_calls_;
             ++self->embed_calls_[text];
+            if (self->failing_embeds_.count({model, text}) != 0) {
+                throw std::runtime_error("fake embed failure: " + model + " / " + text);
+            }
             auto model_it = self->text_embeddings_.find(model);
             if (model_it != self->text_embeddings_.end()) {
                 auto text_it = model_it->second.find(text);
@@ -112,6 +122,7 @@ private:
     int total_embed_calls_ = 0;
     std::map<std::string, std::map<std::string, double>> classifier_scores_;
     std::map<std::string, std::string> chat_replies_;
+    std::set<std::pair<std::string, std::string>> failing_embeds_;
     std::set<std::string> failing_classifiers_;
     std::set<std::string> failing_chats_;
 };

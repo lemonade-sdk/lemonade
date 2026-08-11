@@ -200,7 +200,7 @@ static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, con
                 for (auto text = answer.begin(); text != answer.end(); ++text) {
                     std::vector<float> vec;
                     if (text.value().is_null()) {
-                        fake.set_embedding(model.key(), text.key(), std::vector<float>{});
+                        fake.set_embed_failure(model.key(), text.key());
                     } else if (parse_vector(text.value(), vec)) {
                         fake.set_embedding(model.key(), text.key(), std::move(vec));
                     } else {
