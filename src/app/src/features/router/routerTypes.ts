@@ -199,6 +199,42 @@ function splitList(value: unknown): string[] {
   return String(value ?? '').split(',').map(item => item.trim()).filter(Boolean);
 }
 
+function routerNodeHasMeaningfulProgress(node: RouterNode): boolean {
+  if (node.kind === 'group') return true;
+  if (node.type !== 'keywords_any') return true;
+  return splitList(node.textValue).length > 0;
+}
+
+export function routerDraftHasRulesProgress(draft: RouterDraft): boolean {
+  if (draft.classifiers.length > 0) return true;
+  if (draft.rules.length === 0) return false;
+  if (draft.rules.length > 1) return true;
+
+  const rule = draft.rules[0];
+  return rule.id !== 'rule-1'
+    || rule.routeTo !== draft.defaultModel
+    || Boolean(rule.outputsText?.trim())
+    || routerNodeHasMeaningfulProgress(rule.condition);
+}
+
+export function routerDraftHasLlmProgress(draft: RouterDraft): boolean {
+  return Boolean(draft.llmRouter.model.trim() || draft.llmRouter.prompt.trim());
+}
+
+export function switchRouterDraftMode(draft: RouterDraft, mode: RouterRoutingMode): RouterDraft {
+  if (mode === draft.mode) return draft;
+  if (mode === 'llm') {
+    return { ...draft, mode: 'llm', rules: [], classifiers: [] };
+  }
+  return {
+    ...draft,
+    mode: 'rules',
+    llmRouter: { model: '', prompt: '' },
+    classifiers: [],
+    rules: [createRouterRule(0, draft.defaultModel)],
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -496,47 +532,147 @@ export function buildRouterPullRequest(draft: RouterDraft): RouterPullRequest {
 
 function parseMatchExpression(expr: unknown): RouterNode {
   if (!isRecord(expr)) throw new Error('Rule match must be an object.');
-  if (Array.isArray(expr.all)) {
-    return { id: createRouterNodeId('group'), kind: 'group', operator: 'all', children: expr.all.map(parseMatchExpression) };
+
+  const logicalKeys = (['all', 'any', 'not'] as const).filter(key => key in expr);
+  if (logicalKeys.length > 1) {
+    throw new Error('Rule match must contain only one logical operator.');
   }
-  if (Array.isArray(expr.any)) {
-    return { id: createRouterNodeId('group'), kind: 'group', operator: 'any', children: expr.any.map(parseMatchExpression) };
-  }
-  if (isRecord(expr.not)) {
-    return { id: createRouterNodeId('group'), kind: 'group', operator: 'not', children: [parseMatchExpression(expr.not)] };
-  }
-  if (Array.isArray(expr.keywords_any)) return { ...createRouterLeaf('keywords_any'), textValue: expr.keywords_any.join(', ') };
-  if (Array.isArray(expr.keywords_all)) return { ...createRouterLeaf('keywords_all'), textValue: expr.keywords_all.join(', ') };
-  if (typeof expr.regex === 'string') return { ...createRouterLeaf('regex'), textValue: expr.regex };
-  if (typeof expr.min_chars === 'number') return { ...createRouterLeaf('min_chars'), numberValue: expr.min_chars };
-  if (typeof expr.max_chars === 'number') return { ...createRouterLeaf('max_chars'), numberValue: expr.max_chars };
-  if (typeof expr.has_tools === 'boolean') return { ...createRouterLeaf('has_tools'), booleanValue: expr.has_tools };
-  if (typeof expr.has_images === 'boolean') return { ...createRouterLeaf('has_images'), booleanValue: expr.has_images };
-  if (typeof expr.classifier === 'string') {
+  if (logicalKeys.length === 1) {
+    if (Object.keys(expr).length !== 1) {
+      throw new Error('Rule match cannot mix logical operators with leaf conditions.');
+    }
+    const logicalKey = logicalKeys[0];
+    if (logicalKey === 'not') {
+      if (!isRecord(expr.not)) throw new Error('Rule match "not" must be an object.');
+      return { id: createRouterNodeId('group'), kind: 'group', operator: 'not', children: [parseMatchExpression(expr.not)] };
+    }
+    const rawChildren = expr[logicalKey];
+    if (!Array.isArray(rawChildren) || rawChildren.length === 0) {
+      throw new Error(`Rule match "${logicalKey}" must be a non-empty array.`);
+    }
     return {
+      id: createRouterNodeId('group'),
+      kind: 'group',
+      operator: logicalKey,
+      children: rawChildren.map(parseMatchExpression),
+    };
+  }
+
+  const children: RouterNode[] = [];
+  const consumed = new Set<string>();
+
+  const parseStringArray = (key: 'keywords_any' | 'keywords_all'): string[] => {
+    const value = expr[key];
+    if (!Array.isArray(value) || value.length === 0) {
+      throw new Error(`Rule match "${key}" must be a non-empty array.`);
+    }
+    if (value.some(item => typeof item !== 'string' || item.length === 0)) {
+      throw new Error(`Rule match "${key}" items must be non-empty strings.`);
+    }
+    return value as string[];
+  };
+
+  if ('keywords_any' in expr) {
+    children.push({ ...createRouterLeaf('keywords_any'), textValue: parseStringArray('keywords_any').join(', ') });
+    consumed.add('keywords_any');
+  }
+  if ('keywords_all' in expr) {
+    children.push({ ...createRouterLeaf('keywords_all'), textValue: parseStringArray('keywords_all').join(', ') });
+    consumed.add('keywords_all');
+  }
+  if ('regex' in expr) {
+    if (typeof expr.regex !== 'string' || !expr.regex.length) throw new Error('Rule match "regex" must be a non-empty string.');
+    children.push({ ...createRouterLeaf('regex'), textValue: expr.regex });
+    consumed.add('regex');
+  }
+  if ('min_chars' in expr) {
+    if (typeof expr.min_chars !== 'number' || !Number.isInteger(expr.min_chars) || expr.min_chars < 0) throw new Error('Rule match "min_chars" must be a non-negative integer.');
+    children.push({ ...createRouterLeaf('min_chars'), numberValue: expr.min_chars });
+    consumed.add('min_chars');
+  }
+  if ('max_chars' in expr) {
+    if (typeof expr.max_chars !== 'number' || !Number.isInteger(expr.max_chars) || expr.max_chars < 0) throw new Error('Rule match "max_chars" must be a non-negative integer.');
+    children.push({ ...createRouterLeaf('max_chars'), numberValue: expr.max_chars });
+    consumed.add('max_chars');
+  }
+  if ('has_tools' in expr) {
+    if (typeof expr.has_tools !== 'boolean') throw new Error('Rule match "has_tools" must be a boolean.');
+    children.push({ ...createRouterLeaf('has_tools'), booleanValue: expr.has_tools });
+    consumed.add('has_tools');
+  }
+  if ('has_images' in expr) {
+    if (typeof expr.has_images !== 'boolean') throw new Error('Rule match "has_images" must be a boolean.');
+    children.push({ ...createRouterLeaf('has_images'), booleanValue: expr.has_images });
+    consumed.add('has_images');
+  }
+  if ('classifier' in expr) {
+    if (typeof expr.classifier !== 'string' || !expr.classifier.length) throw new Error('Rule match "classifier" must be a non-empty string.');
+    if ('label' in expr && (typeof expr.label !== 'string' || !expr.label.length)) throw new Error('Rule match "label" must be a non-empty string.');
+    if ('min_score' in expr && typeof expr.min_score !== 'number') throw new Error('Rule match "min_score" must be a number.');
+    if ('max_score' in expr && typeof expr.max_score !== 'number') throw new Error('Rule match "max_score" must be a number.');
+    children.push({
       ...createRouterLeaf('classifier'),
       classifierId: expr.classifier,
       label: typeof expr.label === 'string' ? expr.label : undefined,
       minScore: typeof expr.min_score === 'number' ? expr.min_score : undefined,
       maxScore: typeof expr.max_score === 'number' ? expr.max_score : undefined,
-    };
+    });
+    consumed.add('classifier');
+    if ('label' in expr) consumed.add('label');
+    if ('min_score' in expr) consumed.add('min_score');
+    if ('max_score' in expr) consumed.add('max_score');
+  } else if ('label' in expr || 'min_score' in expr || 'max_score' in expr) {
+    throw new Error('Rule match classifier label/score fields require a "classifier" condition.');
   }
-  if (isRecord(expr.metadata)) {
+  if ('metadata' in expr) {
+    if (!isRecord(expr.metadata)) throw new Error('Rule match "metadata" must be an object.');
     const metadata = expr.metadata;
-    let comparator: RouterMetadataComparator = 'equals';
-    if ('any' in metadata) comparator = 'any';
-    if ('exists' in metadata) comparator = 'exists';
-    return {
+    const allowedMetadataKeys = new Set(['key', 'equals', 'any', 'exists']);
+    const unsupportedMetadata = Object.keys(metadata).filter(key => !allowedMetadataKeys.has(key));
+    if (unsupportedMetadata.length > 0) {
+      throw new Error(`Unsupported metadata field${unsupportedMetadata.length > 1 ? 's' : ''}: ${unsupportedMetadata.join(', ')}.`);
+    }
+    if (typeof metadata.key !== 'string' || !metadata.key.length) {
+      throw new Error('Rule match metadata requires a non-empty string "key".');
+    }
+    const comparators = (['equals', 'any', 'exists'] as const).filter(key => key in metadata);
+    if (comparators.length !== 1) {
+      throw new Error('Rule match metadata requires exactly one comparator: equals, any, or exists.');
+    }
+    const comparator = comparators[0];
+    if (comparator === 'equals' && typeof metadata.equals !== 'string') {
+      throw new Error('Rule match metadata "equals" must be a string.');
+    }
+    if (comparator === 'any') {
+      if (!Array.isArray(metadata.any) || metadata.any.length === 0) {
+        throw new Error('Rule match metadata "any" must be a non-empty array.');
+      }
+      if (metadata.any.some(item => typeof item !== 'string' || item.length === 0)) {
+        throw new Error('Rule match metadata "any" items must be non-empty strings.');
+      }
+    }
+    if (comparator === 'exists' && typeof metadata.exists !== 'boolean') {
+      throw new Error('Rule match metadata "exists" must be a boolean.');
+    }
+    children.push({
       ...createRouterLeaf('metadata'),
-      metadataKey: typeof metadata.key === 'string' ? metadata.key : '',
+      metadataKey: metadata.key,
       metadataComparator: comparator,
-      metadataValues: comparator === 'any' && Array.isArray(metadata.any)
-        ? metadata.any.join(', ')
-        : comparator === 'equals' ? String(metadata.equals ?? '') : '',
-      booleanValue: comparator === 'exists' ? metadata.exists !== false : undefined,
-    };
+      metadataValues: comparator === 'any'
+        ? (metadata.any as string[]).join(', ')
+        : comparator === 'equals' ? metadata.equals as string : '',
+      booleanValue: comparator === 'exists' ? metadata.exists as boolean : undefined,
+    });
+    consumed.add('metadata');
   }
-  throw new Error('Unsupported or empty rule condition.');
+
+  const unsupported = Object.keys(expr).filter(key => !consumed.has(key));
+  if (unsupported.length > 0) {
+    throw new Error(`Unsupported rule condition field${unsupported.length > 1 ? 's' : ''}: ${unsupported.join(', ')}.`);
+  }
+  if (children.length === 0) throw new Error('Unsupported or empty rule condition.');
+  if (children.length === 1) return children[0];
+  return { id: createRouterNodeId('group'), kind: 'group', operator: 'all', children };
 }
 
 function parseClassifier(value: unknown, index: number): RouterClassifier {
