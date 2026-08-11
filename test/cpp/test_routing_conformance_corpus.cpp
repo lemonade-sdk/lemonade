@@ -39,12 +39,9 @@ using lemon::RoutePolicy;
 using lemon::RoutingPolicyEngine;
 using lemon::json;
 
-// Every Decision field is compared exactly except a semantic_similarity trace
-// score, which is computed (dot product, square roots, a division) and so can
-// differ in its last bits between CI's x86 and ARM runners. The margin is far
-// above that noise and far below any score difference a case could care about.
-// Other classifier scores (classifier, llm) come straight from stub answers and
-// are bit-exact, so they stay under exact comparison.
+// A semantic_similarity trace score is computed (dot product, sqrt, division), so
+// its last bits can differ across CI's x86/ARM runners; it is compared within this
+// margin. Other scores come straight from stubs and are compared exactly.
 static constexpr double kScoreTolerance = 1e-12;
 
 static int g_failures = 0;
@@ -52,6 +49,12 @@ static int g_failures = 0;
 static void check(const std::string& name, bool ok) {
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name.c_str());
     if (!ok) ++g_failures;
+}
+
+// A failed check with an indented detail line (an error message, usually).
+static void fail(const std::string& name, const std::string& detail) {
+    check(name, false);
+    std::printf("  %s\n", detail.c_str());
 }
 
 static json load_json_file(const fs::path& path) {
@@ -69,8 +72,7 @@ static json load_json_file(const fs::path& path) {
 static std::string rel_label(const fs::path& path, const fs::path& root) {
     std::error_code ec;
     const fs::path rel = fs::relative(path, root, ec);
-    return (ec || rel.empty()) ? path.lexically_relative(root).generic_string()
-                               : rel.generic_string();
+    return (ec || rel.empty()) ? path.lexically_relative(root).generic_string() : rel.generic_string();
 }
 
 struct DirEntries {
@@ -90,26 +92,23 @@ static DirEntries list_entries(const fs::path& dir, std::error_code& ec) {
     return entries;
 }
 
-// Corpus layout is exactly routing/<version>/<case>/{policy.json,cases.jsonl}. A version
-// dir holding anything but case dirs, a case dir missing either file or holding a nested
-// subdirectory, and a dir that cannot be read are all hard failures: silent coverage loss
-// / drifted layout otherwise.
+// Corpus layout is exactly routing/<version>/<case>/{policy.json,cases.jsonl}.
+// Anything off that shape — stray files, a missing file, a nested subdir, an
+// unreadable dir — is a hard failure, not silently skipped.
 static std::vector<fs::path> find_case_dirs(const fs::path& root) {
     std::vector<fs::path> dirs;
     std::error_code ec;
     // Files directly under the root are docs (README.md), not corpus content.
     const DirEntries root_entries = list_entries(root, ec);
     if (ec) {
-        check(root.generic_string() + ": is readable", false);
-        std::printf("  %s\n", ec.message().c_str());
+        fail(root.generic_string() + ": is readable", ec.message());
         return dirs;
     }
     for (const auto& version : root_entries.dirs) {
         std::error_code vec;
         const DirEntries version_entries = list_entries(version, vec);
         if (vec) {
-            check(rel_label(version, root) + ": is readable", false);
-            std::printf("  %s\n", vec.message().c_str());
+            fail(rel_label(version, root) + ": is readable", vec.message());
             continue;
         }
         for (const auto& stray : version_entries.non_dirs) {
@@ -127,20 +126,17 @@ static std::vector<fs::path> find_case_dirs(const fs::path& root) {
 
             bool ok = true;
             if (policy_ec || cases_ec) {
-                check(rel + ": entries are readable", false);
-                std::printf("  %s\n", (policy_ec ? policy_ec : cases_ec).message().c_str());
+                fail(rel + ": entries are readable", (policy_ec ? policy_ec : cases_ec).message());
                 ok = false;
             } else if (!has_policy || !has_cases) {
                 const std::string missing = (!has_policy && !has_cases)
                                                 ? "policy.json and cases.jsonl"
                                                 : (!has_policy ? "policy.json" : "cases.jsonl");
-                check(rel + ": has policy.json + cases.jsonl", false);
-                std::printf("  missing %s\n", missing.c_str());
+                fail(rel + ": has policy.json + cases.jsonl", "missing " + missing);
                 ok = false;
             }
             if (sec) {
-                check(rel + ": is readable", false);
-                std::printf("  %s\n", sec.message().c_str());
+                fail(rel + ": is readable", sec.message());
                 ok = false;
             } else if (!nested.dirs.empty()) {
                 check(rel + ": is a leaf (no subdirectories)", false);
@@ -251,8 +247,17 @@ static bool score_matches(const json& expected_score, const json& produced_score
     if (!tolerant || !expected_score.is_number() || !produced_score.is_number()) {
         return expected_score == produced_score;
     }
-    return std::fabs(expected_score.get<double>() - produced_score.get<double>()) <=
-           kScoreTolerance;
+    return std::fabs(expected_score.get<double>() - produced_score.get<double>()) <= kScoreTolerance;
+}
+
+// True once `key` is set aside from both: the rest is identical and `key` is
+// present in both or neither. The two match functions handle `key` themselves.
+static bool equal_ignoring(const json& expected, const json& produced, const char* key) {
+    json expected_rest = expected;
+    json produced_rest = produced;
+    expected_rest.erase(key);
+    produced_rest.erase(key);
+    return expected_rest == produced_rest && expected.contains(key) == produced.contains(key);
 }
 
 // `semantic_conditions` holds the trace condition strings ("classifier:<id>")
@@ -261,12 +266,7 @@ static bool score_matches(const json& expected_score, const json& produced_score
 static bool trace_entries_match(const json& expected, const json& produced,
                                 const std::set<std::string>& semantic_conditions) {
     if (!expected.is_object() || !produced.is_object()) return expected == produced;
-    json expected_rest = expected;
-    json produced_rest = produced;
-    expected_rest.erase("score");
-    produced_rest.erase("score");
-    if (expected_rest != produced_rest) return false;
-    if (expected.contains("score") != produced.contains("score")) return false;
+    if (!equal_ignoring(expected, produced, "score")) return false;
     if (!expected.contains("score")) return true;
     const bool tolerant = semantic_conditions.count(expected.value("condition", "")) != 0;
     return score_matches(expected["score"], produced["score"], tolerant);
@@ -274,12 +274,7 @@ static bool trace_entries_match(const json& expected, const json& produced,
 
 static bool decisions_match(const json& expected, const json& produced,
                             const std::set<std::string>& semantic_conditions) {
-    json expected_rest = expected;
-    json produced_rest = produced;
-    expected_rest.erase("trace");
-    produced_rest.erase("trace");
-    if (expected_rest != produced_rest) return false;
-    if (expected.contains("trace") != produced.contains("trace")) return false;
+    if (!equal_ignoring(expected, produced, "trace")) return false;
     if (!expected.contains("trace")) return true;
     const json& expected_trace = expected["trace"];
     const json& produced_trace = produced["trace"];
@@ -288,17 +283,14 @@ static bool decisions_match(const json& expected, const json& produced,
         return false;
     }
     for (std::size_t i = 0; i < expected_trace.size(); ++i) {
-        if (!trace_entries_match(expected_trace[i], produced_trace[i], semantic_conditions)) {
-            return false;
-        }
+        if (!trace_entries_match(expected_trace[i], produced_trace[i], semantic_conditions)) return false;
     }
     return true;
 }
 
-// A semantic_similarity trace score delta that decisions_match() already
-// accepted within kScoreTolerance. json::diff is exact, so it flags these;
-// dropping them keeps the report pointed at the difference that actually failed
-// the case. Non-semantic scores are compared exactly, so they are never dropped.
+// True for a trace score delta decisions_match() already accepted within
+// kScoreTolerance. json::diff is exact, so report_mismatch drops these to keep the
+// report on the real difference; non-semantic scores are exact and never dropped.
 static bool is_within_tolerance_score(const std::string& path, const json& expected,
                                       const json& produced,
                                       const std::set<std::string>& semantic_conditions) {
@@ -307,8 +299,7 @@ static bool is_within_tolerance_score(const std::string& path, const json& expec
         path.compare(path.size() - kSuffix.size(), kSuffix.size(), kSuffix) != 0) {
         return false;
     }
-    const auto cond_ptr =
-        json::json_pointer(path.substr(0, path.size() - kSuffix.size()) + "/condition");
+    const auto cond_ptr = json::json_pointer(path.substr(0, path.size() - kSuffix.size()) + "/condition");
     const auto score_ptr = json::json_pointer(path);
     if (!expected.contains(cond_ptr) || !expected.at(cond_ptr).is_string() ||
         !expected.contains(score_ptr) || !produced.contains(score_ptr)) {
@@ -325,8 +316,7 @@ static void report_mismatch(const json& expected, const json& produced,
 
     std::vector<json> diffs;
     for (const auto& op : json::diff(expected, produced)) {
-        if (!is_within_tolerance_score(op.value("path", ""), expected, produced,
-                                       semantic_conditions)) {
+        if (!is_within_tolerance_score(op.value("path", ""), expected, produced, semantic_conditions)) {
             diffs.push_back(op);
         }
     }
@@ -337,15 +327,13 @@ static void report_mismatch(const json& expected, const json& produced,
         const auto ptr = json::json_pointer(path);
         const std::string exp = expected.contains(ptr) ? expected.at(ptr).dump() : "<absent>";
         const std::string prod = produced.contains(ptr) ? produced.at(ptr).dump() : "<absent>";
-        std::printf("    %s: expected: %s, produced: %s\n", path.c_str(), exp.c_str(),
-                    prod.c_str());
+        std::printf("    %s: expected: %s, produced: %s\n", path.c_str(), exp.c_str(), prod.c_str());
     }
 }
 
 // The case dir name is the schema major the policy must declare, so a policy
 // filed under the wrong version cannot pass unnoticed.
-static std::optional<RoutePolicy> load_case_policy(const fs::path& case_dir,
-                                                   const std::string& rel) {
+static std::optional<RoutePolicy> load_case_policy(const fs::path& case_dir, const std::string& rel) {
     try {
         const json policy_json = load_json_file(case_dir / "policy.json");
         const std::string directory_version = case_dir.parent_path().filename().string();
@@ -356,8 +344,7 @@ static std::optional<RoutePolicy> load_case_policy(const fs::path& case_dir,
         }
         return lemon::parse_route_policy_collection(policy_json);
     } catch (const std::exception& e) {
-        check(rel + ": policy.json parses", false);
-        std::printf("  %s\n", e.what());
+        fail(rel + ": policy.json parses", e.what());
         return std::nullopt;
     }
 }
@@ -370,8 +357,7 @@ static std::optional<RoutingPolicyEngine> compile_engine(RoutePolicy policy,
     try {
         return RoutingPolicyEngine(std::move(policy), std::move(services));
     } catch (const std::exception& e) {
-        check(rel + ": policy engine compiles", false);
-        std::printf("  %s\n", e.what());
+        fail(rel + ": policy engine compiles", e.what());
         return std::nullopt;
     }
 }
@@ -381,16 +367,14 @@ static std::optional<RoutingPolicyEngine> compile_engine(RoutePolicy policy,
 // file: the coverage matrix maps one behavior to one named case.
 static std::optional<json> read_case_row(const std::string& line, const std::string& rel,
                                          int line_no, std::set<std::string>& seen_names) {
-    static const std::set<std::string> kAllowedRowKeys = {"name", "note", "request", "decision",
-                                                          "services"};
+    static const std::set<std::string> kAllowedRowKeys = {"name", "note", "request", "decision", "services"};
     const std::string where = rel + ": cases.jsonl line " + std::to_string(line_no);
 
     json row;
     try {
         row = json::parse(line);
     } catch (const std::exception& e) {
-        check(where + " parses", false);
-        std::printf("  %s\n", e.what());
+        fail(where + " parses", e.what());
         return std::nullopt;
     }
     if (!row.is_object() || !row.contains("request") || !row.contains("decision") ||
@@ -422,16 +406,13 @@ static std::optional<json> read_case_row(const std::string& line, const std::str
 
 static void run_case(const RoutingPolicyEngine& engine, const lemon::RouteContext& request_context,
                      const json& row, const std::string& name) {
-    const Decision decision =
-        engine.route(request_context, row.at("request").value("route_trace", false));
+    const Decision decision = engine.route(request_context, row.at("request").value("route_trace", false));
 
     const json produced = lemon::route_decision_to_json(decision);
     const json& expected = row.at("decision");
 
-    // A classifier band traces its condition as "classifier:<id>". Collect the
-    // conditions of the semantic_similarity classifiers, whose scores are
-    // computed and so are compared within kScoreTolerance; every other score
-    // stays exact.
+    // Collect the semantic_similarity classifiers' trace conditions
+    // ("classifier:<id>"); only their scores get the kScoreTolerance margin.
     std::set<std::string> semantic_conditions;
     for (const auto& entry : engine.policy().classifiers) {
         if (entry.second && entry.second->type() == "semantic_similarity") {
@@ -470,16 +451,11 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
 
         const std::string name = rel + "/" + row->at("name").get<std::string>();
         const json& request = row->at("request");
-        const lemon::RouteContext request_context =
-            lemon::build_route_context(request, request.value("model", ""));
+        const lemon::RouteContext request_context = lemon::build_route_context(request, request.value("model", ""));
 
-        // Everything per case is fresh: a fake holding only this case's stub
-        // answers, and a new engine. A semantic_similarity classifier caches its
-        // reference-phrase embeddings on the instance (classifiers are
-        // shared_ptr), so sharing one engine across the file would pin every case
-        // to the first case's phrase vectors; a fresh engine embeds each case's
-        // own phrases. The fake is declared before the engine so it outlives the
-        // services make() binds to it.
+        // Fresh fake, policy and engine per case: a semantic_similarity classifier
+        // caches reference-phrase embeddings on its instance, so reusing one would
+        // pin later cases to the first's vectors. The fake outlives the engine.
         lemon::testing::FakeClassifierServices fake;
         if (row->contains("services") &&
             !apply_row_services(fake, row->at("services"), name + ".services")) {
@@ -488,8 +464,7 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
 
         std::optional<RoutePolicy> policy = load_case_policy(case_dir, rel);
         if (!policy) return executed;
-        std::optional<RoutingPolicyEngine> engine =
-            compile_engine(std::move(*policy), fake.make(), rel);
+        std::optional<RoutingPolicyEngine> engine = compile_engine(std::move(*policy), fake.make(), rel);
         if (!engine) return executed;
 
         run_case(*engine, request_context, *row, name);
@@ -519,10 +494,8 @@ int main() {
         total_cases += run_case_dir(case_dir, root);
     }
     check("corpus has at least one case", total_cases > 0);
-    std::printf("\n%d case(s) executed across %zu case dir(s)\n", total_cases,
-                case_dirs.size());
+    std::printf("\n%d case(s) executed across %zu case dir(s)\n", total_cases, case_dirs.size());
 
-    std::printf("\n%s\n", g_failures == 0 ? "ALL CONFORMANCE CASES PASSED"
-                                          : "CONFORMANCE CASES FAILED");
+    std::printf("\n%s\n", g_failures == 0 ? "ALL CONFORMANCE CASES PASSED" : "CONFORMANCE CASES FAILED");
     return g_failures == 0 ? 0 : 1;
 }
