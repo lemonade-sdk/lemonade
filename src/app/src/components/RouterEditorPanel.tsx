@@ -20,7 +20,10 @@ import {
   renameClassifierLabelReference,
   routerNodeReferencesClassifier,
   routerDraftFromModelInfo,
+  routerDraftHasLlmProgress,
+  routerDraftHasRulesProgress,
   routerDisplayName,
+  switchRouterDraftMode,
   validateRouterDraft,
   type RouterClassifier,
   type RouterDraft,
@@ -144,18 +147,49 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
 
   useEffect(() => {
     if (!initialModel || String((initialModel as any).recipe || '').toLowerCase() !== 'collection.router') return;
-    try {
-      setDraft(routerDraftFromModelInfo(initialModel));
-      setError(null);
-      setNotice(null);
-    } catch (initialError) {
-      setError(initialError instanceof Error ? initialError.message : 'Could not open this router.');
+
+    const applyModel = (sourceModel: ModelInfo) => {
+      try {
+        setDraft(routerDraftFromModelInfo(sourceModel));
+        setError(null);
+        setNotice(null);
+      } catch (initialError) {
+        setError(initialError instanceof Error ? initialError.message : 'Could not open this router.');
+      }
+    };
+
+    const modelNameValue = modelName(initialModel);
+    if (!modelNameValue) {
+      applyModel(initialModel);
+      return;
     }
+
+    // The /models list can contain only summary fields. Always prefer the
+    // authoritative detail record when editing an existing server router, just
+    // like the current main RouterCollectionPanel. A locally persisted request
+    // is used only as a fallback if the detail request itself fails.
+    let cancelled = false;
+    void api.modelDetail(modelNameValue)
+      .then(detailedModel => {
+        if (cancelled) return;
+        applyModel(detailedModel);
+      })
+      .catch(detailError => {
+        if (cancelled) return;
+        if ((initialModel as any).routing) {
+          applyModel(initialModel);
+          return;
+        }
+        setError(detailError instanceof Error ? detailError.message : 'Could not load this router policy.');
+      });
+    return () => { cancelled = true; };
   }, [initialModel]);
 
   const candidateModels = useMemo(() => models
     .filter(model => String((model as any).recipe || '').toLowerCase() !== 'collection.router')
     .filter(model => {
+      const labels = (model.labels || []).map(label => label.toLowerCase());
+      if (labels.includes('classification') || labels.includes('classifier')) return false;
       const capability = capabilityFromModelInfo(model);
       return capability === 'chat' || capability === 'omni' || capability === 'unknown';
     })
@@ -167,15 +201,18 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     return candidateModels.filter(model => `${modelLabel(model)} ${modelName(model)} ${(model.labels || []).join(' ')}`.toLowerCase().includes(query));
   }, [candidateModels, candidateSearch]);
 
-  const embeddingModels = useMemo(() => {
-    const explicit = models.filter(model => {
-      const labels = (model.labels || []).map(label => label.toLowerCase());
-      return capabilityFromModelInfo(model) === 'embedding' || labels.includes('embedding') || labels.includes('embeddings');
-    });
-    return (explicit.length ? explicit : models)
-      .filter(model => String((model as any).recipe || '').toLowerCase() !== 'collection.router')
-      .sort((a, b) => modelLabel(a).localeCompare(modelLabel(b)));
-  }, [models]);
+  const embeddingModels = useMemo(() => models
+    .filter(model => String((model as any).recipe || '').toLowerCase() !== 'collection.router')
+    .filter(model => (model.labels || []).some(label => {
+      const normalized = label.toLowerCase();
+      return normalized === 'embedding' || normalized === 'embeddings';
+    }))
+    .sort((a, b) => modelLabel(a).localeCompare(modelLabel(b))), [models]);
+
+  const classifierModels = useMemo(() => models
+    .filter(model => String((model as any).recipe || '').toLowerCase() !== 'collection.router')
+    .filter(model => (model.labels || []).some(label => label.toLowerCase() === 'classification'))
+    .sort((a, b) => modelLabel(a).localeCompare(modelLabel(b))), [models]);
 
   const connectedModelRoles = useMemo(() => {
     const roles = new Map<string, string[]>();
@@ -209,12 +246,19 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   };
 
   const setRoutingMode = (mode: RouterDraft['mode']) => {
-    setDraft(current => ({
-      ...current,
-      mode,
-      llmRouter: current.llmRouter || { model: '', prompt: '' },
-      rules: current.rules.length > 0 ? current.rules : [createRouterRule(0, current.defaultModel)],
-    }));
+    if (mode === draft.mode) return;
+
+    if (draft.mode === 'rules') {
+      if (routerDraftHasRulesProgress(draft) && !window.confirm(
+        'Switch to Natural-language router?\n\nSwitching modes will clear your existing rules and classifiers. This cannot be undone.',
+      )) return;
+      setDraft(current => switchRouterDraftMode(current, 'llm'));
+    } else {
+      if (routerDraftHasLlmProgress(draft) && !window.confirm(
+        'Switch to ordered rules?\n\nSwitching modes will clear your Natural-language routing model and instruction. This cannot be undone.',
+      )) return;
+      setDraft(current => switchRouterDraftMode(current, 'rules'));
+    }
     setError(null);
     setNotice(null);
   };
@@ -577,7 +621,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
 
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Routing strategy</h3><p>Choose how the router selects a candidate. Switching modes keeps the other configuration intact.</p></div>
+                <div><h3>Routing strategy</h3><p>Choose how the router selects a candidate. Switching modes clears incompatible configuration after confirmation.</p></div>
               </div>
               <div className="router-editor__strategy" role="radiogroup" aria-label="Routing strategy">
                 <button
@@ -657,7 +701,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                         <div className="router-editor__form-grid router-editor__form-grid--classifier">
                           <label><span>ID</span><input className="input" value={classifier.id} onChange={event => updateClassifier(index, { id: event.target.value })} /></label>
                           <label><span>Type</span><select className="select" value={classifier.type} onChange={event => updateClassifier(index, { ...createRouterClassifier(index, event.target.value as RouterClassifier['type']), id: classifier.id })}><option value="classifier">classifier</option><option value="semantic_similarity">semantic_similarity</option><option value="llm">llm</option></select></label>
-                          <label className="router-editor__wide"><span>Model</span><select className="select" value={classifier.model} onChange={event => updateClassifier(index, { model: event.target.value })}><option value="">Select model</option>{(classifier.type === 'semantic_similarity' ? embeddingModels : classifier.type === 'llm' ? candidateModels : models).filter(model => String((model as any).recipe || '').toLowerCase() !== 'collection.router').map(model => <option key={modelName(model)} value={modelName(model)}>{modelLabel(model)} · {modelName(model)}</option>)}</select></label>
+                          <label className="router-editor__wide"><span>Model</span><select className="select" value={classifier.model} onChange={event => updateClassifier(index, { model: event.target.value })}><option value="">Select model</option>{(classifier.type === 'semantic_similarity' ? embeddingModels : classifier.type === 'llm' ? candidateModels : classifierModels).map(model => <option key={modelName(model)} value={modelName(model)}>{modelLabel(model)} · {modelName(model)}</option>)}</select></label>
                           {classifier.type === 'semantic_similarity' ? (
                             <div className="router-editor__wide router-editor__concepts">
                               <div className="router-editor__mini-head"><span>Concepts and reference phrases</span><WorkspaceActionButton size="small" icon="plus" onClick={() => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [nextConceptName(classifier.referencePhrases)]: ['example phrase'] } })}>Concept</WorkspaceActionButton></div>

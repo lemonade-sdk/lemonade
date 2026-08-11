@@ -185,6 +185,94 @@ const renamedLabelTree = router.renameClassifierLabelReference(
 assert.equal(renamedLabelTree.label, 'coding', 'semantic concept renames must update rule references');
 assert.equal(router.routerNodeReferencesClassifier(renamedLabelTree, 'topic'), true);
 
+const untouchedEmptyDraft = router.createEmptyRouterDraft();
+untouchedEmptyDraft.name = 'Empty';
+untouchedEmptyDraft.candidates = ['user.fast'];
+untouchedEmptyDraft.defaultModel = 'user.fast';
+untouchedEmptyDraft.rules[0].routeTo = 'user.fast';
+assert.equal(router.routerDraftHasRulesProgress(untouchedEmptyDraft), false, 'the seeded empty rule is not meaningful progress');
+untouchedEmptyDraft.rules[0].condition.textValue = 'code';
+assert.equal(router.routerDraftHasRulesProgress(untouchedEmptyDraft), true, 'edited rule content must trigger a switch warning');
+const classifierOnlyProgress = router.createEmptyRouterDraft();
+classifierOnlyProgress.classifiers.push(router.createRouterClassifier(0, 'classifier'));
+assert.equal(router.routerDraftHasRulesProgress(classifierOnlyProgress), true, 'classifier-only work must trigger a switch warning');
+assert.equal(router.routerDraftHasLlmProgress({ ...untouchedEmptyDraft, llmRouter: { model: '', prompt: '' } }), false);
+assert.equal(router.routerDraftHasLlmProgress({ ...untouchedEmptyDraft, llmRouter: { model: 'user.fast', prompt: '' } }), true);
+assert.equal(router.routerDraftHasLlmProgress({ ...untouchedEmptyDraft, llmRouter: { model: '', prompt: 'route carefully' } }), true);
+
+const rulesWithProgress = {
+  ...untouchedEmptyDraft,
+  rules: [{ ...untouchedEmptyDraft.rules[0], condition: { ...untouchedEmptyDraft.rules[0].condition, textValue: 'code' } }],
+  classifiers: [router.createRouterClassifier(0, 'classifier')],
+};
+const switchedToLlm = router.switchRouterDraftMode(rulesWithProgress, 'llm');
+assert.equal(switchedToLlm.mode, 'llm');
+assert.deepEqual(switchedToLlm.rules, []);
+assert.deepEqual(switchedToLlm.classifiers, []);
+const switchedBackToRules = router.switchRouterDraftMode({
+  ...switchedToLlm,
+  llmRouter: { model: 'user.router', prompt: 'pick a model' },
+}, 'rules');
+assert.equal(switchedBackToRules.mode, 'rules');
+assert.deepEqual(switchedBackToRules.llmRouter, { model: '', prompt: '' });
+assert.equal(switchedBackToRules.rules.length, 1);
+assert.equal(switchedBackToRules.rules[0].routeTo, switchedBackToRules.defaultModel);
+
+const implicitAllPayload = {
+  version: '1',
+  model_name: 'user.implicit-all',
+  recipe: 'collection.router',
+  components: ['user.fast'],
+  routing: {
+    candidates: ['user.fast'],
+    default_model: 'user.fast',
+    rules: [{
+      id: 'compound-leaf',
+      match: { keywords_any: ['code'], has_tools: true },
+      route_to: 'user.fast',
+    }],
+  },
+};
+const implicitAllDraft = router.parseRouterPayload(implicitAllPayload);
+assert.equal(implicitAllDraft.rules[0].condition.kind, 'group');
+assert.equal(implicitAllDraft.rules[0].condition.operator, 'all');
+assert.equal(implicitAllDraft.rules[0].condition.children.length, 2, 'implicit-all parsing must preserve every leaf condition');
+assert.deepEqual(router.buildRouterPullRequest(implicitAllDraft).routing.rules[0].match, {
+  all: [{ keywords_any: ['code'] }, { has_tools: true }],
+});
+assert.throws(
+  () => router.parseRouterPayload({
+    ...implicitAllPayload,
+    routing: { ...implicitAllPayload.routing, rules: [{ ...implicitAllPayload.routing.rules[0], match: { keywords_any: ['code'], future_condition: true } }] },
+  }),
+  /Unsupported rule condition field/,
+  'unknown conditions must fail closed instead of being silently dropped',
+);
+assert.throws(
+  () => router.parseRouterPayload({
+    ...implicitAllPayload,
+    routing: { ...implicitAllPayload.routing, rules: [{ ...implicitAllPayload.routing.rules[0], match: { all: [{ has_tools: true }], has_images: true } }] },
+  }),
+  /cannot mix logical operators with leaf conditions/,
+  'logical operators must not be normalized together with leaf conditions because the server rejects that shape',
+);
+assert.throws(
+  () => router.parseRouterPayload({
+    ...implicitAllPayload,
+    routing: { ...implicitAllPayload.routing, rules: [{ ...implicitAllPayload.routing.rules[0], match: { metadata: { key: 'tier', equals: 'pro', exists: true } } }] },
+  }),
+  /requires exactly one comparator/,
+  'metadata must preserve the server requirement of exactly one comparator',
+);
+assert.throws(
+  () => router.parseRouterPayload({
+    ...implicitAllPayload,
+    routing: { ...implicitAllPayload.routing, rules: [{ ...implicitAllPayload.routing.rules[0], match: { metadata: { key: 'tier', equals: 'pro', future_operator: true } } }] },
+  }),
+  /Unsupported metadata field/,
+  'unknown metadata operators must fail closed instead of being silently dropped',
+);
+
 assert.match(listSource, /onOpenRouter/);
 assert.match(listSource, /onOpenRouter && \([\s\S]*?icon="router"/);
 assert.match(managerSource, /<RouterEditorPanel/);
@@ -199,7 +287,19 @@ assert.match(nodeEditorSource, /metadataComparator/);
 assert.match(nodeEditorSource, /normalizeRouterNode/);
 assert.match(nodeEditorSource, />AND<|>AND<\/button>/, 'a leaf must be wrappable into a compound rule');
 assert.match(capabilitySource, /collection\.router[^\n]+return 'chat'/);
-assert.match(editorSource, /Switching modes keeps the other configuration intact/);
+assert.match(editorSource, /Switching modes clears incompatible configuration after confirmation/);
+assert.match(editorSource, /routerDraftHasRulesProgress\(draft\)[\s\S]*window\.confirm/, 'rules-to-LLM mode changes must warn before clearing meaningful work');
+assert.match(editorSource, /routerDraftHasLlmProgress\(draft\)[\s\S]*window\.confirm/, 'LLM-to-rules mode changes must warn before clearing meaningful work');
+assert.match(editorSource, /switchRouterDraftMode\(current, 'llm'\)/, 'switching to LLM must use the tested destructive transition helper');
+assert.match(editorSource, /switchRouterDraftMode\(current, 'rules'\)/, 'switching to rules must use the tested destructive transition helper');
+assert.match(editorSource, /api\.modelDetail\(modelNameValue\)/, 'editing a server router must fetch its full model detail before parsing the policy');
+const detailCallIndex = editorSource.indexOf('api.modelDetail(modelNameValue)');
+const localFallbackIndex = editorSource.indexOf('if ((initialModel as any).routing)', detailCallIndex);
+assert.ok(detailCallIndex >= 0 && localFallbackIndex > detailCallIndex, 'cached local routing may only be used after the authoritative detail request fails');
+assert.match(editorSource, /const embeddingModels = useMemo[\s\S]*normalized === 'embedding' \|\| normalized === 'embeddings'/, 'semantic similarity picker must use explicitly labelled embedding models');
+assert.match(editorSource, /const classifierModels = useMemo[\s\S]*classification/, 'text classifier picker must only expose classification models');
+assert.doesNotMatch(editorSource, /explicit\.length \? explicit : models/, 'embedding picker must not fall back to every model');
+assert.match(editorSource, /classifier\.type === 'llm' \? candidateModels : classifierModels/, 'classifier pickers must use type-specific model lists');
 
 
 const providerRows = [{
