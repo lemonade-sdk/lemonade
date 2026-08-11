@@ -89,6 +89,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     const expectedConnectRoutes = [
       ['Server', 'server'],
+      ['Chat', 'chat'],
+      ['Memory', 'memory'],
       ['Model storage', 'model-storage'],
       ['Cloud providers', 'cloud-providers'],
       ['MCP gateway', 'mcp-gateway'],

@@ -114,17 +114,29 @@ assert.equal(settings.estimatedModelFootprintGb(collectionModels[3], collectionM
 const listSource = fs.readFileSync(path.join(root, 'src/components/ModelListPanel.tsx'), 'utf8');
 const managerSource = fs.readFileSync(path.join(root, 'src/components/ModelManager.tsx'), 'utf8');
 const panelSource = fs.readFileSync(path.join(root, 'src/components/GlobalModelSettingsPanel.tsx'), 'utf8');
+const connectSource = fs.readFileSync(path.join(root, 'src/components/ConnectView.tsx'), 'utf8');
+const navigationSource = fs.readFileSync(path.join(root, 'src/features/navigation/workspaceNavigation.ts'), 'utf8');
+const stylesSource = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
 const chatSource = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
 
-assert.match(listSource, /onOpenRouter && \([\s\S]*?icon="router"[\s\S]*?onOpenGlobalSettings && \([\s\S]*?icon="settings"/, 'settings must sit beside the router action');
-assert.match(managerSource, /showGlobalSettings \?[\s\S]*<GlobalModelSettingsPanel/);
+assert.doesNotMatch(listSource, /onOpenGlobalSettings|Open global model settings|Global model settings/);
+assert.match(listSource, /onUpdateAllModels && \([\s\S]*?icon="rotate-ccw"[\s\S]*?Update all downloaded models/);
+assert.doesNotMatch(managerSource, /showGlobalSettings|<GlobalModelSettingsPanel/);
 assert.match(managerSource, /loadWithGlobalModelPolicy/);
 assert.match(managerSource, /handleUpdateAllModels/);
-for (const label of ['Memory budget', 'Loading and eviction', 'Pinned models', 'Collapse thinking by default', 'Default TTS model', 'Automatic model updates', 'Update all models now']) {
-  assert.ok(panelSource.includes(label), `global settings panel is missing ${label}`);
+for (const label of ['Chat history', 'Memory budget', 'Loading and eviction', 'Collapse thinking by default', 'Default TTS model', 'Automatic model updates']) {
+  assert.ok(panelSource.includes(label), `settings panel is missing ${label}`);
 }
 assert.match(panelSource, /Kokoro · English/);
 assert.match(panelSource, /OpenMOSS · Multilingual/);
+assert.match(panelSource, /section === 'chat'/);
+assert.match(panelSource, /section === 'memory'/);
+assert.match(panelSource, /section === 'updates'/);
+assert.match(connectSource, /activeSection === 'chat'[\s\S]*?<GlobalModelSettingsPanel section="chat"/);
+assert.match(connectSource, /activeSection === 'memory'[\s\S]*?<GlobalModelSettingsPanel section="memory"/);
+assert.match(connectSource, /activeSection === 'model-storage'[\s\S]*?<GlobalModelSettingsPanel section="updates"/);
+assert.match(navigationSource, /defineSection\('chat',[\s\S]*?defineSection\('memory'/);
+assert.match(stylesSource, /\.connect__section > \.global-model-settings__body\s*\{[\s\S]*?width:\s*min\(var\(--content-form-width\), 100%\);/);
 assert.match(chatSource, /defaultThinkingOpen=\{!globalModelSettings\.collapseThinkingByDefault\}/);
 assert.match(chatSource, /GLOBAL_MODEL_SETTINGS_EVENT/);
 assert.match(chatSource, /loadModelWithPolicy/);

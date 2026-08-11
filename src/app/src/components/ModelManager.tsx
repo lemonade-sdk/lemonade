@@ -21,7 +21,6 @@ import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { useWorkspacePanelResize } from '../hooks/useWorkspacePanelResize';
 import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
 import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
-import type { UpdateAllModelsResult } from './GlobalModelSettingsPanel';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, WorkspaceMetadataChip, WorkspacePanelResizer } from './WorkspacePanels';
 import { ROUTER_RECIPE, type RouterPullRequest } from '../features/router/routerTypes';
 import { deleteRouterRecord, loadRouterRecords, routerRecordToModelInfo } from '../features/router/routerStore';
@@ -40,7 +39,6 @@ import { useServerModelState } from '../features/models/modelState';
 import {
   ModelDetailPanelPreloaded as ModelDetailPanel,
   RouterEditorPanelPreloaded as RouterEditorPanel,
-  GlobalModelSettingsPanelPreloaded as GlobalModelSettingsPanel,
   preloadModelManagerSecondarySurfaces,
 } from '../interactionPreload';
 
@@ -1143,7 +1141,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [routerModels, setRouterModels] = useState<ModelInfo[]>(() => loadRouterRecords().map(routerRecordToModelInfo));
   const [showRouterEditor, setShowRouterEditor] = useState(false);
   const [routerEditorModel, setRouterEditorModel] = useState<ModelInfo | null>(null);
-  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [editingCustomModelName, setEditingCustomModelName] = useState<string | null>(null);
   const [customError, setCustomError] = useState<string | null>(null);
@@ -1955,7 +1952,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const openCustomForm = (mode: CustomFormMode = 'model') => {
     setShowRouterEditor(false);
-    setShowGlobalSettings(false);
     setRouterEditorModel(null);
     setEditingCustomModelName(null);
     setCustomDraft(createEmptyCustomDraft(mode));
@@ -1967,7 +1963,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const openCustomCollectionEditor = (model: ModelInfo) => {
     setShowRouterEditor(false);
-    setShowGlobalSettings(false);
     setRouterEditorModel(null);
     const name = modelName(model);
     setSelectedDetailModelId(name);
@@ -1987,7 +1982,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const openRouterEditor = (model?: ModelInfo | null) => {
     closeCustomForm();
-    setShowGlobalSettings(false);
     const routerModel = model && String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE ? model : null;
     setRouterEditorModel(routerModel);
     setShowRouterEditor(true);
@@ -1997,17 +1991,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const closeRouterEditor = () => {
     setShowRouterEditor(false);
     setRouterEditorModel(null);
-  };
-
-  const openGlobalSettings = () => {
-    closeCustomForm();
-    closeRouterEditor();
-    setShowGlobalSettings(true);
-    setMobileDetailOpen(true);
-  };
-
-  const closeGlobalSettings = () => {
-    setShowGlobalSettings(false);
   };
 
   const pullRegistrationOrThrow = async (
@@ -2418,7 +2401,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const pinnedNameSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
   const favoriteNameSet = useMemo(() => new Set(favoriteModels.map(name => name.toLowerCase())), [favoriteModels]);
 
-  const handleUpdateAllModels = useCallback(async (): Promise<UpdateAllModelsResult> => {
+  const handleUpdateAllModels = useCallback(async (): Promise<void> => {
     const candidates = allModels.filter(model => {
       const name = modelName(model);
       if (!name || String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) return false;
@@ -2426,24 +2409,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         || (isCollectionModel(model) ? isCollectionFullyDownloaded(model, allModels) : Boolean((model as any).downloaded));
     });
 
-    let started = 0;
-    let skipped = 0;
-    const errors: string[] = [];
     for (const model of candidates) {
       const name = modelName(model);
       if (pulling[name] !== undefined || activeDownloadForModel(downloadItems, name)) {
-        skipped += 1;
         continue;
       }
-      started += 1;
-      // Queue all pulls without holding the settings panel open for potentially
-      // multi-gigabyte downloads. Progress and terminal failures stay visible in
-      // the normal download manager and model rows.
       void handlePull(model).catch(error => {
         console.error(`Could not start update for ${name}:`, error);
       });
     }
-    return { started, skipped, errors };
   }, [allModels, downloadItems, loadedNames, pulling]);
 
   useEffect(() => {
@@ -2532,7 +2506,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setTagFilters(new Set());
     if (showCustomForm) closeCustomForm();
     if (showRouterEditor) closeRouterEditor();
-    if (showGlobalSettings) closeGlobalSettings();
   }, [allModels, openModelRequest?.modelName, openModelRequest?.nonce]);
 
   const handlePrimaryFilterChange = (next: PrimaryFilter) => {
@@ -2889,7 +2862,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           setMobileDetailOpen(true);
           if (showCustomForm) closeCustomForm();
           if (showRouterEditor) closeRouterEditor();
-          if (showGlobalSettings) closeGlobalSettings();
         }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -2900,7 +2872,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         tagFilters={tagFilters}
         searchInputRef={searchRef}
         onOpenRouter={() => openRouterEditor(selectedDetailModel)}
-        onOpenGlobalSettings={openGlobalSettings}
+        onUpdateAllModels={() => { void handleUpdateAllModels(); }}
         onOpenCustomModels={() => openCustomForm('model')}
         pinnedNames={pinnedNameSet}
         onTogglePin={togglePinnedModel}
@@ -2913,31 +2885,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
       <WorkspacePanelResizer label="Resize model list panel" {...panelResize.resizerProps} />
 
-      {/* Right panel: global settings, router editor, custom form, or model detail */}
-      {showGlobalSettings ? (
-        <div className="manager__detail-form-panel manager__detail-form-panel--global-settings">
-          <Suspense fallback={<div className="view-loading" role="status"><span className="spinner" aria-hidden="true" /></div>}>
-          <GlobalModelSettingsPanel
-            models={allModels}
-            loadedModels={loadedModels}
-            pinnedModels={pinnedModels}
-            onTogglePin={togglePinnedModel}
-            onUpdateAllModels={handleUpdateAllModels}
-            onClose={closeGlobalSettings}
-          />
-          </Suspense>
-        </div>
-      ) : showRouterEditor ? (
+      {/* Right panel: router editor, custom form, or model detail */}
+      {showRouterEditor ? (
         <div className="manager__detail-form-panel manager__detail-form-panel--router">
-          <Suspense fallback={<div className="view-loading" role="status"><span className="spinner" aria-hidden="true" /></div>}>
-          <RouterEditorPanel
-            models={allModels}
-            initialModel={routerEditorModel}
-            onRegister={handleRegisterRouter}
-            onSaved={handleRouterSaved}
-            onDeleted={handleDeleteRouterDefinition}
-            onClose={closeRouterEditor}
-          />
+          <Suspense
+            fallback={
+              <div className="view-loading" role="status">
+                <span className="spinner" aria-hidden="true" />
+              </div>
+            }
+          >
+            <RouterEditorPanel
+              models={allModels}
+              initialModel={routerEditorModel}
+              onRegister={handleRegisterRouter}
+              onSaved={handleRouterSaved}
+              onDeleted={handleDeleteRouterDefinition}
+              onClose={closeRouterEditor}
+            />
           </Suspense>
         </div>
       ) : showCustomEditor ? (
