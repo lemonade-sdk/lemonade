@@ -427,6 +427,19 @@ int registry_pull_flow(lemonade::LemonadeClient& client,
         pull_body["mmproj"] = variants_response["mmproj_files"][0];
     }
 
+    if (variants_response.contains("draft_files") &&
+        variants_response["draft_files"].is_array()) {
+        if (variants_response["draft_files"].size() == 1) {
+            pull_body["checkpoints"] = json::object();
+            pull_body["checkpoints"]["main"] = pull_body["checkpoint"];
+            pull_body["checkpoints"]["draft"] =
+                checkpoint + ":" + variants_response["draft_files"][0].get<std::string>();
+        } else if (variants_response["draft_files"].size() > 1) {
+            std::cerr << "warning: multiple draft GGUF companions found; "
+                      << "not selecting one automatically" << std::endl;
+        }
+    }
+
     std::cout << "Pulling " << pull_body["checkpoint"].get<std::string>()
               << " as " << model_name << std::endl;
 

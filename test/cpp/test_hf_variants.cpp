@@ -129,6 +129,55 @@ int main() {
                       "got " + join_names(set));
     }
 
+    {
+        auto set = lemon::enumerate_gguf_variants({
+            "Muse-Glimmer-30B-Q8_0.gguf",
+            "mmproj-Muse-Glimmer-30B-BF16.gguf",
+            "dflash-kquant.gguf",
+        });
+        result.expect("DFlash companion is not exposed as a main variant",
+                      set.variants.size() == 1 && set.variants[0].name == "Q8_0",
+                      "got " + join_names(set));
+        result.expect("DFlash companion is reported separately",
+                      set.draft_files.size() == 1 &&
+                          set.draft_files[0] == "dflash-kquant.gguf",
+                      "draft count = " + std::to_string(set.draft_files.size()));
+        result.expect("mmproj remains reported separately",
+                      set.mmproj_files.size() == 1 &&
+                          set.mmproj_files[0] == "mmproj-Muse-Glimmer-30B-BF16.gguf",
+                      "mmproj count = " + std::to_string(set.mmproj_files.size()));
+    }
+
+    {
+        auto set = lemon::enumerate_gguf_variants({
+            "model.gguf",
+            "dflash-kquant.gguf",
+        });
+        result.expect("DFlash does not break unquantized model fallback",
+                      set.variants.size() == 1 && set.variants[0].name == "model.gguf" &&
+                          set.draft_files.size() == 1,
+                      "got " + join_names(set));
+    }
+
+    {
+        auto set = lemon::enumerate_gguf_variants({
+            "Gemma-Q4_K_M.gguf",
+            "mtp-Gemma.gguf",
+        });
+        result.expect("MTP companion is reported as a draft",
+                      set.variants.size() == 1 && set.variants[0].name == "Q4_K_M" &&
+                          set.draft_files.size() == 1 && set.draft_files[0] == "mtp-Gemma.gguf",
+                      "got " + join_names(set));
+    }
+
+    {
+        auto set = lemon::enumerate_gguf_variants({"My-MTP-Model-Q8_0.gguf"});
+        result.expect("MTP in a main-model name is not treated as a draft",
+                      set.variants.size() == 1 && set.variants[0].name == "Q8_0" &&
+                          set.draft_files.empty(),
+                      "got " + join_names(set));
+    }
+
     printf("\n%d passed, %d failed\n", result.passed, result.failed);
     return result.failed == 0 ? 0 : 1;
 }
