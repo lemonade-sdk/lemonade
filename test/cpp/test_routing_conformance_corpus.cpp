@@ -245,6 +245,16 @@ static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, con
     return ok;
 }
 
+// The one place the score-tolerance rule lives: a semantic_similarity score may
+// drift within kScoreTolerance; any other score (or a non-numeric one) is exact.
+static bool score_matches(const json& expected_score, const json& produced_score, bool tolerant) {
+    if (!tolerant || !expected_score.is_number() || !produced_score.is_number()) {
+        return expected_score == produced_score;
+    }
+    return std::fabs(expected_score.get<double>() - produced_score.get<double>()) <=
+           kScoreTolerance;
+}
+
 // `semantic_conditions` holds the trace condition strings ("classifier:<id>")
 // whose score is computed by semantic_similarity and so is compared within
 // kScoreTolerance. Every other score is compared exactly.
@@ -258,14 +268,8 @@ static bool trace_entries_match(const json& expected, const json& produced,
     if (expected_rest != produced_rest) return false;
     if (expected.contains("score") != produced.contains("score")) return false;
     if (!expected.contains("score")) return true;
-    if (!expected["score"].is_number() || !produced["score"].is_number()) {
-        return expected["score"] == produced["score"];
-    }
-    if (semantic_conditions.count(expected.value("condition", "")) == 0) {
-        return expected["score"] == produced["score"];
-    }
-    return std::fabs(expected["score"].get<double>() - produced["score"].get<double>()) <=
-           kScoreTolerance;
+    const bool tolerant = semantic_conditions.count(expected.value("condition", "")) != 0;
+    return score_matches(expected["score"], produced["score"], tolerant);
 }
 
 static bool decisions_match(const json& expected, const json& produced,
@@ -305,16 +309,13 @@ static bool is_within_tolerance_score(const std::string& path, const json& expec
     }
     const auto cond_ptr =
         json::json_pointer(path.substr(0, path.size() - kSuffix.size()) + "/condition");
+    const auto score_ptr = json::json_pointer(path);
     if (!expected.contains(cond_ptr) || !expected.at(cond_ptr).is_string() ||
-        semantic_conditions.count(expected.at(cond_ptr).get<std::string>()) == 0) {
+        !expected.contains(score_ptr) || !produced.contains(score_ptr)) {
         return false;
     }
-    const auto ptr = json::json_pointer(path);
-    if (!expected.contains(ptr) || !produced.contains(ptr)) return false;
-    const json& exp = expected.at(ptr);
-    const json& prod = produced.at(ptr);
-    return exp.is_number() && prod.is_number() &&
-           std::fabs(exp.get<double>() - prod.get<double>()) <= kScoreTolerance;
+    const bool tolerant = semantic_conditions.count(expected.at(cond_ptr).get<std::string>()) != 0;
+    return tolerant && score_matches(expected.at(score_ptr), produced.at(score_ptr), tolerant);
 }
 
 static void report_mismatch(const json& expected, const json& produced,

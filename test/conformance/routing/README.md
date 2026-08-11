@@ -297,7 +297,7 @@ digit and not a literal `d`, so the cases would break if the engine's
 | each rule selects its own concept's score | `l2_semantic_concepts/math-label-selects-math-score` |
 | first-match over rules wins, not the highest-scoring concept | `l2_semantic_concepts/best-match-loses-to-rule-order` |
 | input below every concept's threshold ⇒ default | `l2_semantic_concepts/unrelated-input-falls-open` |
-| empty input vector ⇒ cosine undefined ⇒ fails ⇒ `match_false` | `l2_semantic_on_error/empty-input-embedding-fails-open` |
+| embed failure ⇒ classifier fails ⇒ `match_false` | `l2_semantic_on_error/input-embedding-failure-fails-open` |
 | zero-norm input vector ⇒ undefined ⇒ fails | `l2_semantic_on_error/zero-vector-input-fails-open` |
 | input vector length ≠ phrase length ⇒ undefined ⇒ fails | `l2_semantic_on_error/dimension-mismatch-fails-open` |
 | embed failure + `on_error: match_true` ⇒ band counts as matched (trace score absent, result true) | `l2_semantic_on_error_match_true/failure-fires-via-match-true` |
