@@ -2,7 +2,10 @@
 #include "lemon/backends/ds4/ds4.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
@@ -16,12 +19,28 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-// ds4 has no managed install: the only supported variant is "system" (a
-// locally built binary on PATH), and install_backend() early-returns for it.
+// Upstream ds4 publishes no binaries, no releases and no tags, so ROCm builds
+// come from lemonade-sdk/ds4-rocm, which builds a pinned upstream commit and
+// bundles the ROCm runtime. The "system" variant remains for a locally built
+// ds4-server on PATH.
 InstallParams Ds4Server::get_install_params(const std::string& backend, const std::string& version) {
-    (void)version;
-    throw std::runtime_error("ds4 backend '" + backend +
-                             "' has no managed install; build ds4-server locally and put it on PATH");
+    if (backend == "system") {
+        throw std::runtime_error(
+            "ds4 backend 'system' has no managed install; build ds4-server locally and put it on PATH");
+    }
+    if (backend != "rocm") {
+        throw std::runtime_error("ds4 backend '" + backend +
+                                 "' is not supported. Supported: rocm, system");
+    }
+
+    // One archive per GPU target under a single release tag, named so it is
+    // derivable from the tag alone.
+    const std::string target_arch = SystemInfo::get_rocm_arch();
+
+    InstallParams params;
+    params.repo = "lemonade-sdk/ds4-rocm";
+    params.filename = "ds4-" + version + "-linux-rocm-" + target_arch + "-x64.tar.gz";
+    return params;
 }
 
 Ds4Server::Ds4Server(const std::string& log_level, ModelManager* model_manager,
@@ -35,7 +54,7 @@ Ds4Server::~Ds4Server() {
 
 void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
                      const RecipeOptions& options, bool do_not_upgrade) {
-    (void)do_not_upgrade;  // no install/upgrade machinery: locally built binary
+    (void)do_not_upgrade;  // install_backend() is a no-op once the pin is present
 
     std::string ds4_args = options.get_option("ds4_args");
     int ctx_size = options.get_option("ctx_size");
@@ -55,11 +74,25 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
                                  "' (checkpoint: " + model_info.checkpoint() + ")");
     }
 
-    std::string executable = find_executable_in_path(ds4::descriptor.binary);
-    if (executable.empty()) {
-        throw std::runtime_error(
-            "ds4-server binary not found on PATH. Build it from https://github.com/antirez/ds4 "
-            "(make strix-halo | make cuda | make metal) and place ds4-server on PATH.");
+    std::string backend = options.get_option("ds4_backend");
+    if (backend.empty()) {
+        backend = "rocm";
+    }
+    RuntimeConfig::validate_backend_choice("ds4", backend);
+    device_type_ = DEVICE_GPU;
+
+    std::string executable;
+    if (backend == "system") {
+        executable = find_executable_in_path(ds4::descriptor.binary);
+        if (executable.empty()) {
+            throw std::runtime_error(
+                "ds4-server binary not found on PATH. Build it from https://github.com/antirez/ds4 "
+                "(make strix-halo | make cuda | make metal) and place ds4-server on PATH, "
+                "or use the managed 'rocm' backend.");
+        }
+    } else {
+        backend_manager_->install_backend(ds4::spec()->recipe, backend);
+        executable = BackendUtils::get_backend_binary_path(*ds4::spec(), backend);
     }
 
     port_ = choose_port();
