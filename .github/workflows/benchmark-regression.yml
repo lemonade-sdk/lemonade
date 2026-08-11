@@ -4,6 +4,16 @@ on:
   schedule:
     - cron: '0 2 * * *'
 
+  # TEMPORARY: branch push trigger for validating this PR before merge.
+  # REMOVE before merging to main (nightly runs from the default branch's cron).
+  push:
+    branches:
+      - iswarya/issue-2858-backend-perf-tracker
+    paths:
+      - 'src/cpp/resources/benchmark_forks.json'
+      - '.github/scripts/validate_backend_bench.py'
+      - '.github/workflows/benchmark-regression.yml'
+
   release:
     types: [published]
 
@@ -39,7 +49,7 @@ env:
   # day-over-day regression detection possible at all.
   HISTORY_BRANCH: benchmark-data
   # Empty = benchmark the full "hot" llama.cpp model set from the registry
-  # (server_backend_bench.py fetches it live from /api/v1/models). Override per
+  # (validate_backend_bench.py fetches it live from /api/v1/models). Override per
   # run via the workflow_dispatch model_filter input.
   # NOTE: gpt-oss-20b-mxfp4-GGUF is known to segfault llama-server (exit 139 —
   # its checkpoint resolves to the eagle3 draft); it's excluded from the hot set
@@ -169,7 +179,7 @@ jobs:
           build/lemonade --version
           echo "Binaries verified!"
 
-      # server_backend_bench.py is pure stdlib (no pip deps), so plain
+      # validate_backend_bench.py is pure stdlib (no pip deps), so plain
       # setup-python + system python3 is enough — no venv/requirements needed.
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -178,8 +188,8 @@ jobs:
 
       # -------------------------------------------------------------------
       # Restore this fork's benchmark history from the benchmark-data branch
-      # so server_backend_bench.py has previous runs to compare against.
-      # server_backend_bench.py treats existing run-*.json files in --output/<fork>/
+      # so validate_backend_bench.py has previous runs to compare against.
+      # validate_backend_bench.py treats existing run-*.json files in --output/<fork>/
       # <model>/ as prior runs (find_previous_result), so restore into that
       # same layout.
       # -------------------------------------------------------------------
@@ -191,7 +201,7 @@ jobs:
           mkdir -p ci/results
           # Read this fork's prior run-*.json from the benchmark-data branch
           # (git archive extracts the tree without checking it out / disturbing
-          # the workspace). server_backend_bench.py compares against these.
+          # the workspace). validate_backend_bench.py compares against these.
           if git fetch origin "$HISTORY_BRANCH" 2>/dev/null; then
             mkdir -p .bench-history
             git archive FETCH_HEAD | tar -x -C .bench-history
@@ -212,7 +222,7 @@ jobs:
           set -e
           # Download (or reuse cached) the fork's prebuilt binary into
           # ../bench-binaries/<fork_id>/. No lemond needed for this step.
-          python3 test/server_backend_bench.py \
+          python3 .github/scripts/validate_backend_bench.py \
             --forks        src/cpp/resources/benchmark_forks.json \
             --output       ci/results \
             --binaries-dir "${{ github.workspace }}/../bench-binaries" \
@@ -436,7 +446,7 @@ jobs:
 
           EXIT_CODE=0
           BENCH_ARGS=(
-            test/server_backend_bench.py
+            .github/scripts/validate_backend_bench.py
             --forks        src/cpp/resources/benchmark_forks.json
             --output       ci/results
             --binaries-dir "${{ github.workspace }}/../bench-binaries"
