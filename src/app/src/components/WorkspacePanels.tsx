@@ -320,34 +320,53 @@ export const WorkspaceListPanel: React.FC<WorkspaceListPanelProps> = ({
 );
 
 /* ── Shared selection list ────────────────────────────────────────
-   One row template behind every selectable list in the app: the model
-   catalog, remote registry results, chat history, and captured requests.
-   DESIGN.md treats a per-tab row variant as prohibited variation. */
+   One row template behind every list in the app: the model catalog, remote
+   registry results, chat history, the composer's model picker, captured
+   requests, and Monitor's loaded-models readout. DESIGN.md treats a per-tab row
+   variant as prohibited variation. */
 
-/** Operational state. `absent` is the hollow ring; omit entirely when a row
-    genuinely has no state, so the rows that do have one stay findable. */
-export type WorkspaceListRowStatus =
-  | 'ready' | 'live' | 'busy' | 'attention' | 'error' | 'absent' | 'unknown';
+/**
+ * Operational state, and only the states worth interrupting for. A steady state
+ * repeated down every row is noise that competes with the lead glyph for the
+ * same glance, and "everything here is downloaded" is a fact about the section,
+ * not about each row — it belongs on a group heading. A row with nothing in
+ * flight passes no status at all.
+ */
+export type WorkspaceListRowStatus = 'live' | 'busy' | 'attention' | 'error';
 
-/** A non-nominal state is spelled out in the meta line, so the tone follows
-    from the state itself rather than being tracked alongside it. */
-type WorkspaceListRowTone = 'default' | 'attention' | 'error' | 'busy';
-
-function rowTone(status?: WorkspaceListRowStatus): WorkspaceListRowTone {
-  switch (status) {
-    case 'busy': return 'busy';
-    case 'attention': return 'attention';
-    case 'error': return 'error';
-    default: return 'default';
+/** Joins present parts with the row's own separator, so no list has to bake a
+    middot into a string and end up with two separator treatments on one line. */
+function joinMeta(parts: React.ReactNode[]): React.ReactNode[] {
+  const joined: React.ReactNode[] = [];
+  for (const part of parts) {
+    if (!part) continue;
+    if (joined.length) {
+      joined.push(
+        <span key={`sep-${joined.length}`} className="workspace-list-row__sep" aria-hidden="true">·</span>,
+      );
+    }
+    joined.push(part);
   }
+  return joined;
 }
 
+/**
+ * One row-scoped command, filling the row's full height at its right edge and
+ * standing in for the anchor. A grid column reserved for a control on every row
+ * put a button beside every timestamp and engine label in the app; overlaying
+ * instead means the anchor reaches the row's true right edge and the control
+ * appears only when it is relevant — at a size worth aiming at.
+ *
+ * `latched` makes the swap permanent — a pinned model shows its pin instead of
+ * its engine, because the pin is now the more useful fact about that row.
+ * Otherwise the anchor holds the slot and the control takes it on hover.
+ */
 export interface WorkspaceListRowAction {
   icon: IconName;
   label: string;
   onClick: () => void;
-  /** Latched actions (a pinned row) stay visible instead of waiting for hover. */
-  active?: boolean;
+  /** Hold the slot permanently, replacing the anchor. */
+  latched?: boolean;
 }
 
 interface WorkspaceListProps {
@@ -364,6 +383,13 @@ interface WorkspaceListProps {
   wrap?: boolean;
   /** Single-select listbox: moving focus also selects (ARIA APG). */
   activateOnMove?: boolean;
+  /**
+   * Whether rows are chosen from or merely read. A monitoring readout is a
+   * plain list whose rows carry their own controls; a listbox there would both
+   * misdescribe it and make the row's button an illegal nested control.
+   * Visually identical either way — only the semantics differ.
+   */
+  selectable?: boolean;
 }
 
 /**
@@ -373,7 +399,7 @@ interface WorkspaceListProps {
  */
 export const WorkspaceList: React.FC<WorkspaceListProps> = ({
   children, label, className = '', listRef, tabIndex,
-  onRowFocus, onRowActivate, wrap = false, activateOnMove = false,
+  onRowFocus, onRowActivate, wrap = false, activateOnMove = false, selectable = true,
 }) => {
   const handleKeyDown = (event: React.KeyboardEvent<HTMLUListElement>) => {
     // A row may claim a key first — the catalog's pin shortcut does.
@@ -426,16 +452,45 @@ export const WorkspaceList: React.FC<WorkspaceListProps> = ({
     <ul
       ref={listRef as React.RefObject<HTMLUListElement>}
       className={`workspace-list${className ? ` ${className}` : ''}`}
-      role="listbox"
+      role={selectable ? 'listbox' : 'list'}
       aria-label={label}
-      aria-multiselectable="false"
+      aria-multiselectable={selectable ? 'false' : undefined}
       tabIndex={tabIndex}
-      onKeyDown={handleKeyDown}
+      onKeyDown={selectable ? handleKeyDown : undefined}
     >
       {children}
     </ul>
   );
 };
+
+interface WorkspaceListGroupProps {
+  label: string;
+  /** Shown beside the label. Omit when the count says nothing useful. */
+  count?: number;
+  children: React.ReactNode;
+}
+
+/**
+ * A labelled section inside a list. A fact shared by every row in a run —
+ * "these are downloaded", "these came from Hugging Face" — reads once here
+ * instead of repeating down the column.
+ *
+ * `role="group"` inside the listbox keeps the options addressable, and the
+ * inner list drops its own semantics so the rows still attach to the group.
+ * The heading reuses the `zone__*` vocabulary the registry results already
+ * render, so catalog sections and provider results are one treatment rather
+ * than two that have to be kept in sync.
+ */
+export const WorkspaceListGroup: React.FC<WorkspaceListGroupProps> = ({ label, count, children }) => (
+  <li role="group" aria-label={label} className="workspace-list-group">
+    <div className="zone__head" aria-hidden="true">
+      <span className="zone__title">{label}</span>
+      {count != null && <span className="zone__count">{count}</span>}
+      <span className="zone__rule" />
+    </div>
+    <ul role="none" className="workspace-list-group__items">{children}</ul>
+  </li>
+);
 
 interface WorkspaceListRowProps {
   /** Identifies the row to WorkspaceList's keyboard navigation. */
@@ -443,24 +498,30 @@ interface WorkspaceListRowProps {
   /** Primary modality. Tints the lead glyph with the matching --cap-* token. */
   capability?: CapabilityIconTarget;
   title: React.ReactNode;
-  /** Priority-5 metadata; hand it the status message whenever `status` is not
-      nominal, so state is never carried by dot color alone. */
-  meta?: React.ReactNode;
+  /** The facts alone — size, counts, metrics. State belongs in `statusText`.
+      Pass the parts, not a joined string: the row owns the separator. */
+  meta?: React.ReactNode | React.ReactNode[];
   /** Digits that line up down the column get mono + tabular figures. */
   metaMono?: boolean;
   /** Secondary modalities. Dropped first when the list gets narrow. */
   glyphs?: CapabilityIconTarget[];
   /** The fact that decides between two otherwise identical rows: the engine
-      for a thing you might run, the time for a thing that happened. */
+      for a thing you might run, the time for a thing that happened. Rides on
+      the title line, right-aligned to the action column. */
   anchor?: React.ReactNode;
   anchorTitle?: string;
   status?: WorkspaceListRowStatus;
+  /** The state in words, rendered against its own dot. Omit only when a row
+      genuinely has no state to report — never to save space. */
+  statusText?: React.ReactNode;
   statusLabel?: string;
   /** 0–100. Draws the hairline along the row's bottom edge. */
   progress?: number;
   action?: WorkspaceListRowAction;
   selected?: boolean;
-  /** Temporarily not selectable — a row mid-load, say. */
+  /** Match the owning list: `false` renders a plain list item. */
+  selectable?: boolean;
+  /** Temporarily not actionable — a row mid-load, say. */
   disabled?: boolean;
   className?: string;
   id?: string;
@@ -484,10 +545,12 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
   anchor,
   anchorTitle,
   status,
+  statusText,
   statusLabel,
   progress,
   action,
   selected = false,
+  selectable = true,
   disabled = false,
   className = '',
   id,
@@ -500,14 +563,48 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
   onFocus,
 }) => {
   const leadColor = capability ? capabilityColor(capability) : undefined;
-  const showMetaLine = Boolean(meta || anchor || (glyphs && glyphs.length > 0));
-  const tone = rowTone(status);
+  const factParts = (Array.isArray(meta) ? meta : [meta]).filter(Boolean);
+  /* An active status takes the whole meta line rather than sharing it. Its words
+     default to the row's own facts, so a caller never has to pass the same
+     string to two props to keep it visible while the row is busy. */
+  const statusWords = statusText ?? (factParts.length ? joinMeta(factParts) : null);
+  const showStatus = Boolean(status && statusWords);
+  const showAnchor = Boolean(anchor && !action?.latched);
+  const metaParts = showStatus
+    ? [
+      <span
+        key="status"
+        className={`workspace-list-row__status workspace-list-row__status--${status}`}
+        title={statusLabel}
+      >
+        <span className="workspace-list-row__status-text">{statusWords}</span>
+      </span>,
+    ]
+    : joinMeta([
+      glyphs && glyphs.length > 0 && (
+        <span key="glyphs" className="workspace-list-row__glyphs" aria-hidden="true">
+          {glyphs.map(glyph => (
+            <span key={glyph} title={CAPABILITY_TAG_LABELS[glyph as CapabilityTag]}>
+              <CapabilityIcon capability={glyph} size={12} />
+            </span>
+          ))}
+        </span>
+      ),
+      factParts.length > 0 && (
+        <span
+          key="facts"
+          className={`workspace-list-row__primary${metaMono ? ' workspace-list-row__primary--mono' : ''}`}
+        >
+          {joinMeta(factParts)}
+        </span>
+      ),
+    ]);
 
   return (
     <li
       id={id}
-      role="option"
-      aria-selected={selected}
+      role={selectable ? 'option' : 'listitem'}
+      aria-selected={selectable ? selected : undefined}
       aria-disabled={disabled || undefined}
       aria-label={ariaLabel}
       aria-keyshortcuts={ariaKeyShortcuts}
@@ -531,46 +628,28 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
 
       <span className="workspace-list-row__title">{title}</span>
 
-      {showMetaLine && (
+      {(metaParts.length > 0 || showAnchor) && (
         <span className="workspace-list-row__meta">
-          {meta && (
-            <span
-              className={`workspace-list-row__primary workspace-list-row__primary--${tone}${metaMono ? ' workspace-list-row__primary--mono' : ''}`}
-            >
-              {meta}
-            </span>
+          {metaParts}
+          {showAnchor && (
+            <span className="workspace-list-row__anchor" title={anchorTitle}>{anchor}</span>
           )}
-          {glyphs && glyphs.length > 0 && (
-            <span className="workspace-list-row__glyphs" aria-hidden="true">
-              {glyphs.map(glyph => (
-                <span key={glyph} title={CAPABILITY_TAG_LABELS[glyph as CapabilityTag]}>
-                  <CapabilityIcon capability={glyph} size={12} />
-                </span>
-              ))}
-            </span>
-          )}
-          {anchor && <span className="workspace-list-row__anchor" title={anchorTitle}>{anchor}</span>}
         </span>
-      )}
-
-      {status && (
-        <span
-          className={`workspace-list-row__status workspace-list-row__status--${status}`}
-          title={statusLabel}
-          aria-hidden="true"
-        />
       )}
 
       {action && (
         <button
           type="button"
-          className={`workspace-list-row__action${action.active ? ' workspace-list-row__action--active' : ''}`}
+          className={`workspace-list-row__action${action.latched ? ' workspace-list-row__action--latched' : ''}`}
           onClick={event => { event.stopPropagation(); action.onClick(); }}
           aria-label={action.label}
           title={action.label}
-          tabIndex={-1}
+          // -1 is the listbox's roving-tabindex contract. A plain readout has no
+          // roving focus to preserve, so its control has to be tabbable or the
+          // only way to reach it is a mouse.
+          tabIndex={selectable ? -1 : 0}
         >
-          <Icon name={action.icon} size={12} aria-hidden="true" />
+          <Icon name={action.icon} size={16} aria-hidden="true" />
         </button>
       )}
 

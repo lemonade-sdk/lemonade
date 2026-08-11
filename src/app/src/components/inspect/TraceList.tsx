@@ -39,8 +39,10 @@ const TRACE_KIND_CAPABILITY: Record<Trace['kind'], CapabilityIconTarget> = {
   RERANKER: 'reranking',
 };
 
-const TRACE_STATUS: Record<Trace['status'], WorkspaceListRowStatus> = {
-  ok: 'ready',
+/* A successful request has nothing in flight and nothing to warn about, so it
+   shows no status at all — its metrics stand on their own. */
+const TRACE_STATUS: Record<Trace['status'], WorkspaceListRowStatus | undefined> = {
+  ok: undefined,
   slow: 'attention',
   error: 'error',
 };
@@ -219,13 +221,14 @@ export default function TraceList({
               ? `${durationFormatted} · ${tokensFormatted}`
               : `${tokensFormatted} · ${durationFormatted}`;
 
-            // "ok" is the nominal case and says nothing; every other state
-            // names itself here so the dot is not the only carrier.
-            const meta = t.status === 'error'
+            // A captured request that succeeded has nothing to report beyond
+            // its metrics, and DESIGN.md rules out a redundant "OK" here. A slow
+            // one keeps its metrics in the status line — they are the evidence,
+            // and that is exactly when they matter most.
+            const statusText = t.status === 'error'
               ? `Failed${t.diag?.title ? ` · ${t.diag.title}` : ''}`
-              : t.status === 'slow'
-                ? `Slow · ${metrics}`
-                : `${t.synthetic ? 'mock · ' : ''}${metrics}`;
+              : t.status === 'slow' ? `Slow · ${metrics}` : undefined;
+            const meta = [t.synthetic && 'mock', metrics].filter(Boolean);
 
             return (
               <WorkspaceListRow
@@ -237,6 +240,7 @@ export default function TraceList({
                 metaMono
                 anchor={timeStr}
                 status={TRACE_STATUS[t.status]}
+                statusText={statusText}
                 statusLabel={`Status ${statusLabel}`}
                 selected={selectedTraceId === t.id}
                 tabIndex={currentActiveId === t.id ? 0 : -1}

@@ -3813,80 +3813,10 @@ optgroup {
 
 /* ── Model list ────────────────────────────────────────── */
 
-.dash2-models {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.dash2-model {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-  overflow: hidden;
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface-2);
-  border-radius: 10px;
-  border: 1px solid var(--border-subtle);
-  transition: border-color 0.15s;
-}
-
-.dash2-model:hover { border-color: var(--border-strong); }
-
-.dash2-model__icon { font-size: 1.2rem; flex-shrink: 0; }
-
-.dash2-model__info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-0-5);
-}
-
-.dash2-model__name {
-  font-weight: var(--weight-semibold);
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dash2-model__meta {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dash2-model__badge {
-  font-size: var(--type-overline-size);
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-  font-weight: var(--weight-medium);
-  flex-shrink: 0;
-  max-width: 82px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dash2-model__badge[data-type="llm"] { background: color-mix(in srgb, var(--cap-chat) 12%, transparent); color: var(--cap-chat); }
-.dash2-model__badge[data-type="embedding"] { background: color-mix(in srgb, var(--cap-embedding) 12%, transparent); color: var(--cap-embedding); }
-.dash2-model__badge[data-type="reranking"] { background: color-mix(in srgb, var(--cap-reranking) 12%, transparent); color: var(--cap-reranking); }
-.dash2-model__badge[data-type="transcription"] { background: color-mix(in srgb, var(--cap-audio) 12%, transparent); color: var(--cap-audio); }
-.dash2-model__badge[data-type="image"] { background: color-mix(in srgb, var(--cap-image) 12%, transparent); color: var(--cap-image); }
-.dash2-model__badge[data-type="tts"] { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
-
-.dash2-model__time {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+/* The loaded-models card renders the shared selection list, so it inherits the
+   row template rather than restating it. Only the card's own inset differs. */
+.workspace-list.dash2-models {
+  padding-inline: 0;
 }
 
 .dash2-empty {
@@ -5605,7 +5535,11 @@ optgroup {
 .workspace-list.composer__model-results {
   margin-top: var(--space-2);
   max-height: 320px;
-  padding-inline: 0;
+  /* The popover frame supplies the outer inset; this is the gap the scrollbar
+     needs so it never sits against a row's edge. Reserved either way, so the
+     list does not shift as results filter down past the scroll threshold. */
+  padding-inline: 0 var(--space-2);
+  scrollbar-gutter: stable;
 }
 
 .composer__model-empty,
@@ -6842,29 +6776,6 @@ optgroup {
   border-top: 1px solid var(--border-subtle);
   margin: var(--space-2) 0 0;
   padding: var(--space-2) 0;
-}
-.hf-zone-anchor {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1);
-  width: 100%;
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  background: none;
-  border: none;
-  border-top: 1px solid var(--border-subtle);
-  cursor: pointer;
-  text-decoration: none;
-  transition: color 0.15s;
-}
-
-.hf-zone-anchor:hover,
-.hf-zone-anchor:focus-visible {
-  color: var(--accent-fg);
-  outline: 2px solid var(--accent-focus);
-  outline-offset: -2px;
 }
 .model-list-panel__scroll-area .row--hf .row__icon {
   width: 28px;
@@ -12964,13 +12875,13 @@ a.backend-card__version:focus-visible {
   color: var(--accent-fg);
 }
 
-/* ── Shared selection list ─────────────────────────────────────────
-   The model catalog, remote registry results, chat history, and captured
-   requests all render this row. Slots read: lead = primary modality,
-   title = identity, meta-primary = metadata or the status message,
-   glyphs = secondary modalities, anchor = the deciding fact, status,
-   action. Only the middle column flexes, so nothing reflows between
-   states. */
+/* ── Shared list ───────────────────────────────────────────────────
+   The model catalog, remote registry results, chat history, the composer's
+   model picker, captured requests, and Monitor's loaded-models readout all
+   render this row. Two columns: a lead glyph for the primary modality, and a
+   body of two lines — title, then either an in-flight status or the secondary
+   glyphs and facts, ending in the anchor. The action overlays the right edge
+   at full height. Only the body flexes, so nothing reflows between states. */
 
 .workspace-list {
   display: flex;
@@ -12986,11 +12897,39 @@ a.backend-card__version:focus-visible {
   container-name: workspace-list;
 }
 
+/* A section inside a list. Same grammar as the registry zone heads, so the
+   catalog's own sections and the provider results read as one system. */
+.workspace-list-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workspace-list-group + .workspace-list-group { margin-top: var(--space-3); }
+
+/* The heading itself is `.zone__head` — the same one the registry results use. */
+.workspace-list-group .zone__head {
+  padding-inline: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.workspace-list-group__items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .workspace-list-row {
   --workspace-list-row-bg: transparent;
+  /* The action's width, reserved at the end of the title so the two never
+     collide, and used again by the action itself. One value, one place. */
+  --workspace-list-row-action: var(--icon-button-size);
   position: relative;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) 18px;
+  grid-template-columns: 16px minmax(0, 1fr);
   grid-template-rows: auto auto;
   column-gap: var(--space-2);
   row-gap: 2px;
@@ -13061,9 +13000,15 @@ a.backend-card__version:focus-visible {
   color: var(--workspace-list-row-cap, var(--text-tertiary));
 }
 
+/* The title gets its line to itself. It is the row's identity and the thing
+   being scanned, so nothing shares its measure. The end padding keeps the
+   action from ever covering the title's tail — reserving space on a
+   left-aligned, ellipsised run costs nothing visible, where reserving it on a
+   right-aligned label reads as misalignment. */
 .workspace-list-row__title {
   grid-column: 2;
   grid-row: 1;
+  padding-inline-end: var(--workspace-list-row-action);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   line-height: var(--leading-snug);
@@ -13078,11 +13023,23 @@ a.backend-card__version:focus-visible {
   grid-row: 2;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1-5);
   min-width: 0;
   font-size: var(--text-xs);
   line-height: var(--leading-snug);
   color: var(--text-tertiary);
+}
+
+.workspace-list-row__sep {
+  flex: 0 0 auto;
+  color: var(--text-disabled);
+}
+
+/* Between flex children the meta line's own gap spaces the separator. Inside a
+   run of facts there is no gap to borrow, so it carries its own. */
+.workspace-list-row__primary .workspace-list-row__sep,
+.workspace-list-row__status-text .workspace-list-row__sep {
+  margin-inline: 0.32em;
 }
 
 .workspace-list-row__primary {
@@ -13097,13 +13054,6 @@ a.backend-card__version:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.workspace-list-row__primary--attention { color: var(--status-warning); }
-.workspace-list-row__primary--error     { color: var(--status-error); }
-.workspace-list-row__primary--busy {
-  color: var(--accent-fg);
-  font-variant-numeric: tabular-nums;
-}
-
 .workspace-list-row__glyphs {
   display: inline-flex;
   align-items: center;
@@ -13114,30 +13064,52 @@ a.backend-card__version:focus-visible {
 
 .workspace-list-row__glyphs > span { display: inline-flex; }
 
+/* The anchor sits at the end of the meta line, at the row's true right edge.
+   On the title line it competed with the one thing that must never be crowded;
+   here it shares a line with the metadata it ranks alongside. */
 .workspace-list-row__anchor {
   margin-inline-start: auto;
-  flex: 0 0 auto;
-  max-width: 46%;
+  flex: 0 1 auto;
+  max-width: 50%;
+  padding-inline-end: var(--space-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-secondary);
 }
 
-/* The trailing column is two stacked cells — status above, action below — so
-   revealing an action on hover never shifts the title. */
+/* Hovering hands the right edge to the action. Visibility rather than display,
+   so the anchor keeps reserving its own width and the meta line cannot reflow. */
+.workspace-list-row:hover .workspace-list-row__anchor,
+.workspace-list-row:focus-within .workspace-list-row__anchor { visibility: hidden; }
+
+/* Dot and words are one unit. Split across the grid — dot in the trailing
+   column, words in the meta line — the mark sat diagonally away from the thing
+   it marked, so a color was doing work that words were already doing better. */
 .workspace-list-row__status {
-  grid-column: 3;
-  grid-row: 1;
-  justify-self: end;
-  align-self: center;
-  width: 11px;
-  height: 11px;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.workspace-list-row__status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-list-row__status--attention .workspace-list-row__status-text { color: var(--status-warning); }
+.workspace-list-row__status--error .workspace-list-row__status-text     { color: var(--status-error); }
+.workspace-list-row__status--busy .workspace-list-row__status-text {
+  color: var(--accent-fg);
+  font-variant-numeric: tabular-nums;
 }
 
 .workspace-list-row__status::before {
+  flex: 0 0 auto;
   content: '';
   display: block;
   width: 7px;
@@ -13146,58 +13118,48 @@ a.backend-card__version:focus-visible {
   background: var(--text-disabled);
 }
 
-.workspace-list-row__status--ready::before,
 .workspace-list-row__status--live::before { background: var(--status-ok); }
 .workspace-list-row__status--attention::before { background: var(--status-warning); }
 .workspace-list-row__status--error::before { background: var(--status-error); }
 .workspace-list-row__status--busy::before { background: var(--accent-fg); }
 
-.workspace-list-row__status--absent::before {
-  width: 9px;
-  height: 9px;
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--text-tertiary) 70%, transparent);
-}
 
 .workspace-list-row__status--live::before { animation: dotPulse 2s ease-in-out infinite; }
 .workspace-list-row__status--busy::before { animation: dotPulse 1.4s ease-in-out infinite; }
 
+/* Full row height at the right edge, so the target is worth aiming at instead
+   of a glyph tucked into a corner. It overlays rather than holding a column:
+   a column reserved on every row is what stopped the anchor short of the edge. */
 .workspace-list-row__action {
-  grid-column: 3;
-  grid-row: 2;
-  justify-self: end;
-  align-self: center;
-  width: 18px;
-  height: 18px;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: var(--workspace-list-row-action);
   padding: 0;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-start-end-radius: var(--radius-md);
+  border-end-end-radius: var(--radius-md);
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-out),
-              color var(--duration-fast) var(--ease-out),
+  visibility: hidden;
+  transition: color var(--duration-fast) var(--ease-out),
               background var(--duration-fast) var(--ease-out);
 }
+
+.workspace-list-row:hover .workspace-list-row__action,
+.workspace-list-row:focus-within .workspace-list-row__action,
+.workspace-list-row__action--latched { visibility: visible; }
 
 .workspace-list-row__action:hover {
   color: var(--text-primary);
   background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
-.workspace-list-row:hover .workspace-list-row__action,
-.workspace-list-row:focus-visible .workspace-list-row__action,
-.workspace-list-row--selected .workspace-list-row__action,
-.workspace-list-row__action:focus-visible,
-.workspace-list-row__action--active { opacity: 1; }
-
-.workspace-list-row__action--active {
-  color: var(--accent-fg);
-  background: color-mix(in srgb, var(--accent-fg) 10%, transparent);
-}
+/* A latched action is the row's standing fact, not a transient affordance. */
+.workspace-list-row__action--latched { color: var(--accent-fg); }
 
 .workspace-list-row__progress {
   position: absolute;
@@ -13218,15 +13180,17 @@ a.backend-card__version:focus-visible {
   .workspace-list-row__glyphs { display: none; }
 }
 
-/* Coarse pointers cannot hover, and the phone layout gives rows the full
-   width, so the action is always visible and grows to a real target. */
+/* Coarse pointers cannot hover, so the action takes the edge outright rather
+   than waiting for a gesture that never arrives — which is exactly the latched
+   state. Reuse it: returning the button to flow would auto-place it into an
+   implicit third grid row and grow every row in every list. */
 @media (hover: none), (pointer: coarse) {
-  .workspace-list-row__action { opacity: 0.72; }
+  .workspace-list-row__action { visibility: visible; }
+  .workspace-list-row__anchor { visibility: hidden; }
 }
 
 @media (max-width: 480px) {
-  .workspace-list-row { grid-template-columns: 16px minmax(0, 1fr) 36px; }
-  .workspace-list-row__action { width: 36px; height: 36px; }
+  .workspace-list-row { --workspace-list-row-action: var(--control-height-lg); }
 }
 
 .workspace-detail-panel {

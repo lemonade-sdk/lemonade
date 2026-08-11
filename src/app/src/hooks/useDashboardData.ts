@@ -110,6 +110,8 @@ export interface DashboardData {
   slotStatus: string;
   paused: boolean;
   setPaused: React.Dispatch<React.SetStateAction<boolean>>;
+  /** Re-poll now, for a change the view just made itself. */
+  refresh: () => Promise<void>;
   counters: SessionCounters;
   getSlotTarget: (slotId: number) => SlotTarget | undefined;
   loadedModels: LoadedModel[];
@@ -580,6 +582,9 @@ export function useDashboardData(isActive = true): DashboardData {
   return {
     health, stats, sysStats, systemInfo, slots, slotLive,
     lastError, slotsUnsupported, slotStatus, paused, setPaused,
+    // Ejecting a model should be reflected immediately rather than at the next
+    // tick of the poll interval.
+    refresh: poll,
     counters, getSlotTarget, loadedModels,
     latestTps, latestPP, activeSlotCount, overallCacheUtil,
     hasGpu, hasNpu, modelsByType,

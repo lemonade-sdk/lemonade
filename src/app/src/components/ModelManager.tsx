@@ -2528,11 +2528,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         rowId={result.id}
         capability={primaryCapability}
         title={result.id}
-        meta={isPulling ? `Downloading ${pullPercent.toFixed(0)}%` : reach}
-        glyphs={isPulling ? undefined : secondaryTags.map(capabilityTagIconTarget)}
+        meta={reach}
+        glyphs={secondaryTags.map(capabilityTagIconTarget)}
         anchor={recipeBadge || undefined}
-        status={isPulling ? 'busy' : 'absent'}
-        statusLabel={isPulling ? `Downloading ${result.id}` : `${result.id} is not downloaded yet`}
+        status={isPulling ? 'busy' : undefined}
+        statusText={isPulling ? `Downloading ${pullPercent.toFixed(0)}%` : undefined}
+        statusLabel={isPulling ? `Downloading ${result.id}` : undefined}
         progress={isPulling ? pullPercent : undefined}
         selected={isSelected}
         tabIndex={isSelected ? 0 : -1}
@@ -2543,13 +2544,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             icon: 'x',
             label: `Cancel download of ${result.id}`,
             onClick: () => { void handleCancelRemotePull(provider, result.id); },
-            active: true,
+            // Cancelling a download in flight must stay reachable without hover.
+            latched: true,
           }
           : {
             icon: copiedRemoteKey === key ? 'check' : 'copy',
             label: copiedRemoteKey === key ? 'Copied' : `Copy repository name: ${result.id}`,
             onClick: () => { void handleCopy(); },
-            active: copiedRemoteKey === key,
           }}
       />
     );
@@ -2560,7 +2561,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const hasHuggingFaceActivity = searchActive && primaryFilter === 'all' && providerEnabled.huggingface;
   const hasModelScopeActivity = searchActive && primaryFilter === 'all' && providerEnabled.modelscope;
   const hasRemoteActivity = hasHuggingFaceActivity || hasModelScopeActivity;
-  const remoteResultCount = filteredHfResults.length + filteredModelScopeResults.length;
   const providerCounts: Record<ModelRegistryProvider, number> = {
     huggingface: hasHuggingFaceActivity ? filteredHfResults.length : 0,
     modelscope: hasModelScopeActivity ? filteredModelScopeResults.length : 0,
@@ -2748,7 +2748,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         favoriteNames={favoriteNameSet}
         registryZoneTop={hasRemoteActivity && !hasLocalMatches ? renderRegistryZones() : undefined}
         registryZone={hasRemoteActivity && hasLocalMatches ? renderRegistryZones() : undefined}
-        registryResultCount={remoteResultCount}
         systemInfo={systemInfo}
       />
 

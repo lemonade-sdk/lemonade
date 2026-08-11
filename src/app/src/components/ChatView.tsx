@@ -1333,6 +1333,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     capability: ModelCapability;
     recipe?: string;
     loaded: boolean;
+    /** Already on this machine. Decides whether the row offers load or fetch. */
+    downloaded: boolean;
     audioInput: boolean;
     info?: ModelInfo;
     detail: string;
@@ -1364,9 +1366,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       capability: capabilityForLoaded(model),
       recipe: model.recipe,
       loaded: true,
+      downloaded: true,
       audioInput: audioInputForLoaded(model),
-      // The engine rides the row's anchor slot, so the detail carries only the
-      // state and the device it is loaded on.
       detail: `Loaded${model.device ? ` · ${model.device}` : ''}`,
     }));
 
@@ -1380,6 +1381,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         capability,
         recipe: typeof info.recipe === 'string' ? info.recipe : undefined,
         loaded: false,
+        downloaded: true,
         audioInput: modelSupportsChatAudioInput(info, null),
         info,
         detail: configuredDefault ? 'Downloaded · loads when you send' : 'Downloaded · click to load',
@@ -1391,6 +1393,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       name: model.name,
       capability: 'chat',
       loaded: false,
+      downloaded: false,
       audioInput: false,
       info: findModelInfoByName(knownModelInfos, model.name) || lemonadeDefaultModelInfo(model),
       detail: model.description,
@@ -3111,9 +3114,10 @@ ${finalText}`
         rowId={c.id}
         capability={isRouterRecipe(c.model?.recipe) ? 'router' : capability}
         title={convTitle}
-        meta={failed ? 'Last reply failed' : c.model?.name || undefined}
+        meta={c.model?.name || undefined}
         anchor={timeAgo(c.updatedAt)}
         status={isStreaming ? 'live' : failed ? 'error' : undefined}
+        statusText={isStreaming ? 'Generating' : failed ? 'Last reply failed' : undefined}
         statusLabel={isStreaming ? 'Generating a reply' : failed ? 'The last reply failed' : undefined}
         selected={isSelected}
         tabIndex={isTabTarget ? 0 : -1}
@@ -3181,6 +3185,17 @@ ${finalText}`
         </div>
         <div className="bottom-sheet__header">
           <strong>Conversations</strong>
+          <button
+            type="button"
+            className="btn btn--quiet btn--toolbar btn--icon-only workspace-action-button workspace-action-button--quiet workspace-action-button--toolbar workspace-action-button--icon-only"
+            onClick={closeMobileSheet}
+            aria-label="Close conversation history"
+            title="Close panel"
+          >
+            <Icon name="x" size={16} aria-hidden="true" />
+          </button>
+        </div>
+
         <button
           type="button"
           className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium bottom-sheet__new"
@@ -3439,32 +3454,46 @@ ${finalText}`
                       // Collections route to backends rather than being one, so
                       // they name no engine — same rule as the models catalog.
                       const isCollection = capability === 'omni' || capability === 'router';
+                      // The picker gives its trailing slot to eject, so the
+                      // engine joins the facts instead of competing for it.
+                      // A loaded row's status owns the whole meta line, so the
+                      // same composed line has to travel with the status.
+                      const detailParts = [
+                        option.detail,
+                        option.defaultLabel,
+                        option.recipe && !isCollection ? backendCompactLabel(option.recipe) : '',
+                      ].filter(Boolean);
                       return (
                         <WorkspaceListRow
                           key={option.name}
                           rowId={option.name}
                           capability={capability}
                           title={option.name}
-                          meta={isLoading ? 'Loading…' : isUnloading ? 'Ejecting…'
-                            : option.defaultLabel ? `${option.detail} · ${option.defaultLabel}` : option.detail}
-                          glyphs={busy || !(option.audioInput && option.capability === 'chat')
-                            ? undefined
-                            : ['audio']}
-                          anchor={option.recipe && !isCollection ? backendCompactLabel(option.recipe) : undefined}
-                          anchorTitle={option.recipe ? modelModeDisplayLabel(option.capability, option.audioInput, option.recipe) : undefined}
-                          status={busy ? 'busy' : option.loaded ? 'live' : option.deferredUntilSend ? 'absent' : 'ready'}
-                          statusLabel={option.loaded ? 'Loaded' : option.deferredUntilSend ? 'Loads when you send' : 'Ready to load'}
+                          meta={detailParts}
+                          glyphs={option.audioInput && option.capability === 'chat' ? ['audio'] : undefined}
+                          status={busy ? 'busy' : option.loaded ? 'live' : undefined}
+                          statusText={isLoading ? 'Loading…' : isUnloading ? 'Ejecting…' : undefined}
                           selected={option.name === currentModel}
                           disabled={busy}
                           tabIndex={option.name === currentModel ? 0 : -1}
                           ariaLabel={`${option.name}, ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe)}, ${option.detail}${option.defaultLabel ? `, ${option.defaultLabel}` : ''}`}
                           onClick={() => handleModelPickerSelect(option)}
-                          action={option.loaded ? {
+                          // Each row offers the one thing left to do to it. Eject
+                          // latches because a loaded model is holding memory and
+                          // that must not need a hover to find; load and fetch
+                          // are ordinary affordances that wait to be reached for.
+                          action={busy ? undefined : option.loaded ? {
                             icon: 'eject',
                             label: `Eject model ${option.name}`,
                             onClick: () => handleModelPickerUnload(option.name),
-                            active: true,
-                          } : undefined}
+                            latched: true,
+                          } : {
+                            icon: option.downloaded ? 'play' : 'download',
+                            label: option.downloaded
+                              ? `Load model ${option.name}`
+                              : `Download model ${option.name}`,
+                            onClick: () => { void handleModelPickerSelect(option); },
+                          }}
                         />
                       );
                     })}

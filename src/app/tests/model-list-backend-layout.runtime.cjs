@@ -85,13 +85,33 @@ assert.match(component, /anchor=\{recipe && !neutralCollectionGuide \? displayed
 assert.match(component, /secondaryTags = capTags\.filter\(tag => tag !== \(primaryCapability as string\)\)/,
   'the primary modality must not repeat in the secondary glyph run');
 
-// Status is never carried by dot color alone: a non-nominal state takes over
-// the meta line, which is exactly the priority-5 metadata it outranks.
+// Status is transient-only, and never carried by dot colour alone: a row that
+// is doing something says so in words, and a steady row says nothing at all.
 assert.match(component, /Downloading\$\{downloadPct != null \? ` \$\{downloadPct\.toFixed\(0\)\}%` : '…'\}/);
 assert.match(component, /\? backendReadinessMessage\(backendReadiness!\)/);
-assert.match(component, /glyphs=\{rowStatus === 'busy' \|\| rowStatus === 'attention'/,
-  'a status message replaces the glyph run rather than sharing the line with it');
-assert.match(panels, /function rowTone\(status\?: WorkspaceListRowStatus\)/,
+assert.match(panels, /export type WorkspaceListRowStatus = 'live' \| 'busy' \| 'attention' \| 'error';/,
+  'the status vocabulary is only the states that render; steady states are section facts');
+assert.doesNotMatch(component + manager, /status=\{[^}]*'(absent|ready|unknown)'/,
+  'being downloaded is a fact about the section, not a status on every row');
+assert.match(component, /statusText=\{statusText\}/,
+  'the catalog hands its state to statusText, not to the facts slot');
+assert.match(component, /const meta = model\.size/,
+  'the meta slot carries facts only; state lives in statusText');
+
+/* Sections carry what every row in a run shares. Grouping is structural so the
+   headings stay true under every sort, not just the status-ranked default. */
+assert.match(component, /const listSections = useMemo/,
+  'the catalog groups its rows into labelled sections');
+for (const label of ['Pinned', 'Downloaded', 'Not downloaded']) {
+  assert.ok(component.includes(`label: '${label}'`), `missing catalog section: ${label}`);
+}
+assert.match(panels, /<li role="group" aria-label=\{label\}/,
+  'a section is a listbox group so its rows stay addressable');
+assert.match(panels, /<ul role="none" className="workspace-list-group__items">/,
+  'the inner list drops its own semantics so rows attach to the group');
+assert.match(panels, /const metaParts = showStatus/,
+  'a status message replaces the glyph run inside the row, not at each call site');
+assert.match(panels, /workspace-list-row__status--\$\{status\}/,
   'tone follows from status inside the shared row, not a prop each list repeats');
 assert.doesNotMatch(component + manager + panels, /metaTone=/,
   'metaTone is derived, never passed');
@@ -108,8 +128,15 @@ assert.doesNotMatch(component, /model-list-item__(footer|body|status|backend|pin
 
 assert.match(panels, /export const WorkspaceListRow/);
 assert.match(panels, /export const WorkspaceList/);
-assert.match(panels, /role="option"/);
-assert.match(panels, /role="listbox"/);
+/* A list you pick from is a listbox of options; a readout you merely act on is
+   a plain list, where the row's own button is a legal control rather than an
+   illegal nested one. Same row template either way — only the roles differ. */
+assert.match(panels, /role=\{selectable \? 'option' : 'listitem'\}/,
+  'the row takes its role from whether the list is selectable');
+assert.match(panels, /role=\{selectable \? 'listbox' : 'list'\}/,
+  'the list takes its role from whether its rows are chosen from');
+assert.match(panels, /aria-selected=\{selectable \? selected : undefined\}/,
+  'a plain list item must not claim a selection state it cannot have');
 assert.match(panels, /--workspace-list-row-cap/,
   'the lead glyph is tinted through a custom property, not a hard-coded hue');
 assert.match(panels, /event\.stopPropagation\(\); action\.onClick\(\)/,
@@ -161,15 +188,37 @@ for (const expected of ['llama.cpp', 'vLLM', 'FLM', 'SD.cpp', 'Moonshine', 'Open
 
 /* ── Row geometry ────────────────────────────────────────────────── */
 
-assert.match(styles, /\.workspace-list-row\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*16px minmax\(0, 1fr\) 18px;[^}]*min-height:\s*52px;/s,
-  'the row is a fixed three-column grid so nothing reflows between states');
+assert.match(styles, /\.workspace-list-row\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*16px minmax\(0, 1fr\);[^}]*min-height:\s*52px;/s,
+  'the row is a lead glyph and a flexible body; the action shares the anchor slot');
 assert.match(styles, /\.workspace-list-row__lead\s*\{[^}]*grid-row:\s*1 \/ span 2;/s);
-assert.match(styles, /\.workspace-list-row__title\s*\{[^}]*grid-row:\s*1;[^}]*font-size:\s*var\(--text-sm\);/s,
-  'every list in the app sets the row title at one size');
-assert.match(styles, /\.workspace-list-row__status\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s);
-assert.match(styles, /\.workspace-list-row__action\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*2;/s,
-  'status and action stack in the trailing column so revealing one never shifts the title');
-assert.match(styles, /\.workspace-list-row__status--absent::before\s*\{[^}]*width:\s*9px;[^}]*height:\s*9px;[^}]*background:\s*transparent;/s);
+assert.match(styles, /\.workspace-list-row__title\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1;[^}]*padding-inline-end:\s*var\(--workspace-list-row-action\);[^}]*font-size:\s*var\(--text-sm\);/s,
+  'the title owns its line and reserves the action width so the two never collide');
+assert.match(styles, /\.workspace-list-row__anchor\s*\{[^}]*margin-inline-start:\s*auto;/s,
+  'the anchor ends the meta line rather than competing with the title');
+
+/* The dot and its words are one unit inside the meta line. Split apart — dot in
+   the trailing column, words in the meta line — colour carried state on its own
+   and the mark sat diagonally away from what it marked. */
+assert.match(styles, /\.workspace-list-row__status\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;/s,
+  'the status dot and its words render as one inline unit');
+assert.doesNotMatch(styles, /\.workspace-list-row__status\s*\{[^}]*grid-column:/s,
+  'the status dot must not return to its own grid cell away from its words');
+
+/* The action overlays the row's right edge at full height instead of owning a
+   column. A column reserved on every row put a button beside every timestamp in
+   the app, and stopped the anchor short of the edge. */
+assert.match(styles, /\.workspace-list-row__action\s*\{[^}]*position:\s*absolute;[^}]*inset-block:\s*0;[^}]*width:\s*var\(--workspace-list-row-action\);[^}]*visibility:\s*hidden;/s,
+  'the action fills the row height at its right edge and hides until hover');
+assert.match(styles, /\.workspace-list-row:hover \.workspace-list-row__anchor,[\s\S]*?\{\s*visibility:\s*hidden;\s*\}/,
+  'hovering hands the right edge to the action without reflowing the meta line');
+assert.match(styles, /\.workspace-list-row__action--latched\s*\{\s*visibility:\s*visible;\s*\}/,
+  'a latched action holds the edge permanently, replacing the anchor');
+assert.match(panels, /showAnchor = Boolean\(anchor && !action\?\.latched\)/,
+  'a latched action replaces the anchor rather than crowding it');
+assert.match(panels, /latched\?: boolean;/,
+  'the row action declares whether it holds the slot or waits for hover');
+assert.match(component, /latched: pinned,/,
+  'a pinned model shows its pin in place of its engine');
 assert.match(styles, /\.workspace-list-row__status::before\s*\{[^}]*width:\s*7px;[^}]*height:\s*7px;/s);
 assert.match(styles, /\.workspace-list-row--selected[^{]*\{[^}]*--workspace-list-row-bg:[^;]+;\s*border-color:\s*color-mix\(in srgb, var\(--accent-fg\) 30%/s,
   'selection is one treatment shared by every list');
