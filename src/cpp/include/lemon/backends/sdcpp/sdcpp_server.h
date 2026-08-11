@@ -70,6 +70,16 @@ private:
     // OpenAI-style `size: "WxH"` field -- top-level width/height are ignored.
     // Returns "" if no size can be resolved.
     std::string resolve_size(const nlohmann::json& request) const;
+
+    // Merge boolean recipe options into the sdcpp_args string. Reads from the
+    // already-resolved RecipeOptions (effective_options from the Router), so
+    // saved model options, arch defaults, and config defaults are all visible.
+    // Discovers which BOOL options have CLI flags from the backend descriptor,
+    // so new options don't require code changes. Backend-forced flags (e.g.
+    // --diffusion-fa for Vulkan/CUDA, --vae-tiling for Vulkan) are applied
+    // regardless of user setting.
+    std::string build_merged_sdcpp_args(const RecipeOptions& options,
+                                        const std::string& backend) const;
 };
 
 namespace sdcpp {

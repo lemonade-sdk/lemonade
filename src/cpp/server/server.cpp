@@ -2338,69 +2338,6 @@ nlohmann::json Server::extract_auto_load_options(const json& request) {
     return result;
 }
 
-// Merge sd-cpp boolean options (those with CLI flags) into the sdcpp_args string.
-// Reads the backend descriptor to discover which boolean options should become
-// flags in the args string, so new options don't require code changes here.
-// Also respects backend-forced flags (e.g. Vulkan forces --diffusion-fa) so
-// user-unchecked boxes don't remove flags the backend requires.
-nlohmann::json Server::build_sdcpp_args_merge(const nlohmann::json& request_options,
-                                              const ModelInfo& info) {
-    if (info.recipe != "sd-cpp") return request_options;
-
-    std::string recipe_args = info.recipe_options.get_option("sdcpp_args");
-    std::string backend = request_options.value("sd-cpp_backend", "");
-    if (backend.empty()) backend = info.recipe_options.get_option("sdcpp_backend");
-
-    const auto* desc = lemon::backends::descriptor_for(info.recipe);
-    if (!desc) return request_options;
-
-    // Build a set of CLI flag strings to filter out
-    std::set<std::string> known_flags;
-    for (const auto& opt : desc->options) {
-        if (opt.type_name == "BOOL" && !opt.cli_flag.empty()) {
-            known_flags.insert(opt.cli_flag);
-        }
-    }
-
-    // Determine which flags are forced by the backend
-    auto is_backend_forced = [](const std::string& b, const std::string& flag) {
-        if (flag == "--diffusion-fa" && (b == "vulkan" || b == "cuda")) return true;
-        return false;
-    };
-
-    // Parse existing args, keeping only non-boolean-option flags
-    auto all_tokens = lemon::utils::parse_custom_args(recipe_args, true);
-    std::vector<std::string> other_args;
-    for (const auto& token : all_tokens) {
-        if (known_flags.find(token) == known_flags.end()) {
-            other_args.push_back(token);
-        }
-    }
-
-    // Rebuild: other args first, then enabled boolean flags
-    std::vector<std::string> merged_list = other_args;
-    for (const auto& opt : desc->options) {
-        if (opt.type_name == "BOOL" && !opt.cli_flag.empty()) {
-            bool enabled = request_options.value(opt.name, false);
-            // Backend-forced flags stay on regardless of user choice
-            if (is_backend_forced(backend, opt.cli_flag)) enabled = true;
-            if (enabled) merged_list.push_back(opt.cli_flag);
-        }
-    }
-
-    std::string merged;
-    for (const auto& token : merged_list) {
-        if (!merged.empty()) merged += " ";
-        merged += token;
-    }
-
-    json result = request_options;
-    if (!merged.empty()) {
-        result["sdcpp_args"] = merged;
-    }
-    return result;
-}
-
 void Server::auto_load_model_if_needed(
     const std::string& requested_model,
     const json& request_options,
@@ -2467,9 +2404,9 @@ void Server::auto_load_model_if_needed(
     // Load model with do_not_upgrade=true, applying per-request options on first load.
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    json merged_options = build_sdcpp_args_merge(request_options, info);
+    // SD-cpp boolean→args merging is handled in SDServer::load() from effective_options.
     router_->load_model(requested_model, info,
-                        RecipeOptions(info.recipe, merged_options), true,
+                        RecipeOptions(info.recipe, request_options), true,
                         /*allow_reload_on_option_change=*/false,
                         /*pinned=*/std::nullopt,
                         load_purpose);
@@ -5858,11 +5795,11 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
         auto info = model_manager_->get_model_info(model_name);
 
-// Extract optional per-model settings. An omitted or empty option falls
+        // Extract optional per-model settings. An omitted or empty option falls
         // through to the Router defaults; an explicit ctx_size of -1 requests
         // automatic sizing for this load.
+        // SD-cpp boolean→args merging is handled in SDServer::load() from effective_options.
         json loadOptions = request_json;
-        loadOptions = build_sdcpp_args_merge(loadOptions, info);
         RecipeOptions options = RecipeOptions(info.recipe, loadOptions);
         bool save_options = request_json.value("save_options", false);
         std::optional<bool> pinned_opt = std::nullopt;

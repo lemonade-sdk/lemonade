@@ -1,5 +1,6 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/sdcpp/sdcpp.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
@@ -199,7 +200,11 @@ void SDServer::load(const std::string& model_name,
         backend = supported.backends.empty() ? "cpu" : supported.backends[0];
     }
     std::string resolved_backend = resolve_sdcpp_backend(backend);
-    std::string sdcpp_args = options.get_option("sdcpp_args");
+
+    // Merge boolean recipe options (diffusion_fa, diffusion_conv_direct, etc.)
+    // into sdcpp_args from the fully-resolved effective_options. This ensures
+    // saved model options, arch defaults, and config defaults are all reflected.
+    std::string sdcpp_args = build_merged_sdcpp_args(options, backend);
 
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
@@ -260,13 +265,6 @@ void SDServer::load(const std::string& model_name,
         args.push_back("-v");
     }
 
-    if (resolved_backend == "vulkan") {
-        LOG(INFO, "SDServer")
-            << "Applying Vulkan SD workaround: --vae-tiling --diffusion-fa"
-            << std::endl;
-        args.push_back("--vae-tiling");
-        args.push_back("--diffusion-fa");
-    }
     std::set<std::string> reserved_flags = {
         "-m",
         "--model",
@@ -513,6 +511,83 @@ std::string SDServer::resolve_size(const json& request) const {
              + std::to_string(image_defaults_.height);
     }
     return "";
+}
+
+std::string SDServer::build_merged_sdcpp_args(
+    const RecipeOptions& options, const std::string& backend) const {
+    const auto* desc = backends::descriptor_for("sd-cpp");
+    if (!desc) return options.get_option("sdcpp_args");
+
+    // Discover BOOL options with CLI flags from the descriptor
+    struct BoolOption {
+        std::string name;
+        std::string cli_flag;
+    };
+    std::vector<BoolOption> bool_opts;
+    for (const auto& opt : desc->options) {
+        if (opt.type_name == "BOOL" && !opt.cli_flag.empty()) {
+            bool_opts.push_back({opt.name, opt.cli_flag});
+        }
+    }
+    if (bool_opts.empty()) {
+        return options.get_option("sdcpp_args");
+    }
+
+    // Build a set of known boolean CLI flags for filtering
+    std::set<std::string> known_flags;
+    for (const auto& bo : bool_opts) {
+        known_flags.insert(bo.cli_flag);
+    }
+
+    // Determine which flags are forced by the backend
+    auto is_backend_forced = [&](const std::string& flag) {
+        if (flag == "--diffusion-fa" && (backend == "vulkan" || backend == "cuda")) return true;
+        if (flag == "--vae-tiling" && backend == "vulkan") return true;
+        return false;
+    };
+
+    // --vae-tiling is Vulkan-only and not a user-exposed option; inject it here
+    // rather than as a descriptor BOOL so it stays backend-gated.
+    auto effective_bool_opts = bool_opts;
+    if (backend == "vulkan") {
+        effective_bool_opts.push_back({"__vae_tiling", "--vae-tiling"});
+        known_flags.insert("--vae-tiling");
+    }
+
+    // Parse existing args (from recipe_options / config), keeping only
+    // non-boolean-option flags. This preserves user's custom args like
+    // --control-net, --upscale-model, etc.
+    std::string recipe_args = options.get_option("sdcpp_args");
+    auto all_tokens = lemon::utils::parse_custom_args(recipe_args, true);
+    std::vector<std::string> other_args;
+    for (const auto& token : all_tokens) {
+        if (known_flags.find(token) == known_flags.end()) {
+            other_args.push_back(token);
+        }
+    }
+
+    // Rebuild: other args first, then enabled boolean flags
+    std::vector<std::string> merged_list = other_args;
+    for (const auto& bo : effective_bool_opts) {
+        bool enabled = false;
+        if (bo.name == "__vae_tiling") {
+            enabled = true;  // always on for Vulkan (backend-forced)
+        } else {
+            auto opt_val = options.get_option(bo.name);
+            enabled = opt_val.is_boolean() ? opt_val.get<bool>() : false;
+        }
+        if (is_backend_forced(bo.cli_flag)) enabled = true;
+        if (enabled) merged_list.push_back(bo.cli_flag);
+    }
+
+    // Rejoin into a string
+    std::string merged;
+    for (size_t i = 0; i < merged_list.size(); ++i) {
+        if (i > 0) merged += " ";
+        merged += merged_list[i];
+    }
+
+    return merged;
 }
 
 // ICompletionServer implementation - not supported for image generation
