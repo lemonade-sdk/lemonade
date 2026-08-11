@@ -35,7 +35,7 @@ export function resolveBackendRailVisibility(
 export function revealNextBackend(state: BackendRailVisibilityState): BackendRailVisibilityState {
   return {
     ...state,
-    visibleCount: Math.min(state.order.length, state.visibleCount + 1),
+    visibleCount: state.order.length,
   };
 }
 

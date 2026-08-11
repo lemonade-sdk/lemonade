@@ -2197,7 +2197,9 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
   test('A120 — clicking the pin toggles the row pinned state and aria-label', async ({ page }) => {
     await goToModelsWithMock(page);
     const row = page.locator('.model-list-panel__list .workspace-list-row').first();
-    const pin = row.locator('.model-list-panel__list .workspace-list-row__action');
+    const pin = row.locator('.workspace-list-row__action');
+    await row.hover();
+    await expect(pin).toBeVisible();
     await pin.click();
     await page.waitForTimeout(100);
     // The (now-pinned) model floats to the top; assert the first row is pinned.
@@ -2206,7 +2208,10 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
     const label = await firstRow.getAttribute('aria-label');
     expect((label ?? '').toLowerCase()).toContain('pinned');
     // Unpin and verify the pinned class is removed.
-    await firstRow.locator('.model-list-panel__list .workspace-list-row__action').click();
+    await firstRow.hover();
+    const unpin = firstRow.locator('.workspace-list-row__action');
+    await expect(unpin).toBeVisible();
+    await unpin.click();
     await page.waitForTimeout(100);
     expect(await page.locator('.model-list-panel__list .workspace-list-row--pinned').count()).toBe(0);
   });
@@ -2218,7 +2223,7 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
     // keyboard user takes via Shift+Tab — and press the advertised "P" shortcut.
     await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(150);
-    const selected = page.locator('.model-list-item--selected');
+    const selected = page.locator('.model-list-panel__list .workspace-list-row--selected');
     // The shortcut must be advertised to assistive tech.
     expect(await selected.getAttribute('aria-keyshortcuts')).toBe('P');
     await selected.focus();
@@ -2232,7 +2237,11 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
 
   test('A122 — pinned state persists client-locally to localStorage (no lemond)', async ({ page }) => {
     await goToModelsWithMock(page);
-    await page.locator('.model-list-panel__list .workspace-list-row').first().locator('.model-list-panel__list .workspace-list-row__action').click();
+    const pinRow = page.locator('.model-list-panel__list .workspace-list-row').first();
+    await pinRow.hover();
+    const pin = pinRow.locator('.workspace-list-row__action');
+    await expect(pin).toBeVisible();
+    await pin.click();
     await page.waitForTimeout(100);
     const persisted = await page.evaluate(() => {
       for (let i = 0; i < localStorage.length; i++) {
@@ -2247,7 +2256,11 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
 
   test('A123 — model list with a pinned row passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
     await goToModelsWithMock(page);
-    await page.locator('.model-list-panel__list .workspace-list-row').first().locator('.model-list-panel__list .workspace-list-row__action').click();
+    const pinRow = page.locator('.model-list-panel__list .workspace-list-row').first();
+    await pinRow.hover();
+    const pin = pinRow.locator('.workspace-list-row__action');
+    await expect(pin).toBeVisible();
+    await pin.click();
     await page.waitForTimeout(150);
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])
@@ -2647,16 +2660,18 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
 
   test('A149 — middle-list rows show multiple capability icons with an accessible label', async ({ page }) => {
     await goToModelsRefined(page);
-    // The Llama row exposes both Chat and Tool-use capabilities → ≥2 icons.
+    // The shared row renders the primary capability in the lead slot and
+    // secondary capabilities in the labelled glyph group. Llama has Chat + Tool use.
     const llamaRow = page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Llama-3.1-8B' });
-    const caps = llamaRow.locator('.model-list-item__caps');
+    await expect(llamaRow.locator('.workspace-list-row__lead')).toBeVisible();
+    const caps = llamaRow.locator('.workspace-list-row__glyphs');
     await expect(caps).toHaveAttribute('role', 'img');
     const label = (await caps.getAttribute('aria-label')) ?? '';
     expect(label.toLowerCase()).toContain('capabilities');
     expect(label).toMatch(/Tool use/i);
-    // Multiple capability icon slots rendered for this multi-capability model.
-    const iconCount = await caps.locator('.model-list-item__cap').count();
-    expect(iconCount).toBeGreaterThanOrEqual(2);
+    // Primary lead + at least one secondary glyph = multiple capabilities.
+    const secondaryIconCount = await caps.locator(':scope > span').count();
+    expect(1 + secondaryIconCount).toBeGreaterThanOrEqual(2);
   });
 
   test('A150 — the "no model selected" empty state lives in the detail pane, NOT the middle list', async ({ page }) => {
@@ -2770,13 +2785,13 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
 
     // GUI2's compatibility filters remove both excluded pipeline categories and
     // incompatible backends discovered from repository metadata.
-    const hfRows = page.locator('.zone--hf .row--hf');
+    const hfRows = page.locator('.zone--hf .workspace-list-row');
     await expect(hfRows).toHaveCount(3);
     await expect(hfZone).not.toContainText('Mistral-Image');
     await expect(hfZone).not.toContainText('Mistral-No-Pipeline-Image');
     await expect(hfZone).toContainText('Mistral-FLM');
-    const flmRow = hfZone.locator('.row--hf').filter({ hasText: 'Mistral-FLM' });
-    await flmRow.locator('.row__content').click();
+    const flmRow = hfZone.locator('.workspace-list-row').filter({ hasText: 'Mistral-FLM' });
+    await flmRow.click();
     await expect(page.locator('.model-detail-panel--hf').getByRole('button', { name: 'Download FastFlowLM/Mistral-FLM' })).toBeVisible();
 
     // Clearing the search removes the HF zone entirely.

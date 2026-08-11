@@ -659,7 +659,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         dataAttributes={{ 'data-model-id': mId }}
         className={pinned ? 'workspace-list-row--pinned' : undefined}
         ariaKeyShortcuts={onTogglePin ? 'P' : undefined}
-        ariaLabel={`${displayName}${status === 'running' ? ', running' : status === 'downloading' ? ', downloading' : ''}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
+        ariaLabel={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloading' ? ', downloading' : ''}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
         onClick={() => onSelectModel(mId)}
         onKeyDown={e => handleItemKeyDown(e, mId)}
         action={onTogglePin ? {
@@ -667,7 +667,9 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           label: pinned ? `Unpin ${displayName} (P)` : `Pin ${displayName} (P)`,
           onClick: () => onTogglePin(mId),
           // A pinned model's pin outranks its engine as the fact worth showing,
-          // and keeps the row's state visible without hovering.
+          // and keeps the row's state visible without hovering. The row owns the
+          // advertised P keyboard shortcut, so the nested affordance is pointer-only.
+          pointerOnly: true,
           latched: pinned,
         } : undefined}
       />

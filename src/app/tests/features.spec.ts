@@ -948,22 +948,26 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.chat');
 
-    // Verify the streaming badge CSS class exists in the stylesheet
-    const hasBadgeStyle = await page.evaluate(() => {
+    // Streaming moved from a rail-specific badge to the shared list-row live
+    // status. Verify the marker keeps both its state color and pulse animation.
+    const hasStreamingStatusStyle = await page.evaluate(() => {
+      let hasLiveColor = false;
+      let hasLivePulse = false;
       const sheets = document.styleSheets;
       for (let i = 0; i < sheets.length; i++) {
         try {
           const rules = sheets[i].cssRules;
           for (let j = 0; j < rules.length; j++) {
-            if ((rules[j] as CSSStyleRule).selectorText?.includes('rail__streaming-badge')) {
-              return true;
-            }
+            const rule = rules[j] as CSSStyleRule;
+            if (!rule.selectorText?.includes('.workspace-list-row__status--live::before')) continue;
+            if (rule.style.background) hasLiveColor = true;
+            if (rule.style.animation) hasLivePulse = true;
           }
         } catch { /* cross-origin */ }
       }
-      return false;
+      return hasLiveColor && hasLivePulse;
     });
-    expect(hasBadgeStyle).toBeTruthy();
+    expect(hasStreamingStatusStyle).toBeTruthy();
 
     await page.screenshot({ path: 'screenshots/19-streaming-badge-style.png', fullPage: true });
   });

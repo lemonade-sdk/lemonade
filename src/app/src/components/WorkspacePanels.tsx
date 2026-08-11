@@ -367,6 +367,8 @@ export interface WorkspaceListRowAction {
   onClick: () => void;
   /** Hold the slot permanently, replacing the anchor. */
   latched?: boolean;
+  /** Render a pointer-only affordance when the owning option provides keyboard access. */
+  pointerOnly?: boolean;
 }
 
 interface WorkspaceListProps {
@@ -582,9 +584,16 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
     ]
     : joinMeta([
       glyphs && glyphs.length > 0 && (
-        <span key="glyphs" className="workspace-list-row__glyphs" aria-hidden="true">
+        <span
+          key="glyphs"
+          className="workspace-list-row__glyphs"
+          role="img"
+          aria-label={`Additional capabilities: ${glyphs
+            .map(glyph => CAPABILITY_TAG_LABELS[glyph as CapabilityTag])
+            .join(', ')}`}
+        >
           {glyphs.map(glyph => (
-            <span key={glyph} title={CAPABILITY_TAG_LABELS[glyph as CapabilityTag]}>
+            <span key={glyph} title={CAPABILITY_TAG_LABELS[glyph as CapabilityTag]} aria-hidden="true">
               <CapabilityIcon capability={glyph} size={12} />
             </span>
           ))}
@@ -637,21 +646,32 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
         </span>
       )}
 
-      {action && (
+      {action && (action.pointerOnly ? (
+        // A listbox option cannot legally contain another interactive control.
+        // Use this only when the option itself owns the keyboard command (the model
+        // pin advertises and handles P); pointer behaviour and visuals stay intact.
+        <span
+          className={`workspace-list-row__action${action.latched ? ' workspace-list-row__action--latched' : ''}`}
+          onClick={event => { event.stopPropagation(); action.onClick(); }}
+          aria-hidden="true"
+          title={action.label}
+        >
+          <Icon name={action.icon} size={16} aria-hidden="true" />
+        </span>
+      ) : (
         <button
           type="button"
           className={`workspace-list-row__action${action.latched ? ' workspace-list-row__action--latched' : ''}`}
           onClick={event => { event.stopPropagation(); action.onClick(); }}
           aria-label={action.label}
           title={action.label}
-          // -1 is the listbox's roving-tabindex contract. A plain readout has no
-          // roving focus to preserve, so its control has to be tabbable or the
-          // only way to reach it is a mouse.
+          // Keep the existing listbox/readout focus contract for every non-pin
+          // action: selectable rows use roving focus; readouts expose the button.
           tabIndex={selectable ? -1 : 0}
         >
           <Icon name={action.icon} size={16} aria-hidden="true" />
         </button>
-      )}
+      ))}
 
       {progress != null && (
         <span className="workspace-list-row__progress" style={{ width: `${progress}%` }} aria-hidden="true" />
