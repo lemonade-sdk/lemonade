@@ -828,6 +828,20 @@ std::optional<RemoteRegistrySource> explicit_registry_source(const json& request
 void apply_default_pull_source(json& request_json, const std::string& default_source) {
     if (request_json.value("local_import", false)) return;
 
+    // Explicit source fields must be strings when present; reject non-string
+    // values (e.g. `source: 123`) up front so a provider URL cannot later hide
+    // them by overwriting with the URL's registry. A JSON null is treated as
+    // absent so it falls back to the configured default like an omitted field.
+    for (const char* field : {"source", "registry_source"}) {
+        if (!request_json.contains(field)) continue;
+        if (request_json[field].is_null()) {
+            request_json.erase(field);
+        } else if (!request_json[field].is_string()) {
+            throw std::invalid_argument(std::string("'") + field +
+                                        "' must be a string");
+        }
+    }
+
     // Validate explicit registry source values before any URL normalization
     // so that invalid values (like "nexus" with an HF URL) are rejected up
     // front rather than silently overwritten by a provider URL.

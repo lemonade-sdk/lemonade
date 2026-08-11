@@ -270,6 +270,45 @@ int main() {
         check(threw, "checkpoints from different registries are rejected");
     }
 
+    // A non-string `source` must be rejected before URL normalization, so a
+    // provider URL cannot silently overwrite it with the URL's registry.
+    {
+        json req = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                    {"checkpoint", "https://huggingface.co/owner/repo"},
+                    {"source", 123}};
+        bool threw = false;
+        try {
+            apply_default_pull_source(req, "huggingface");
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        check(threw, "non-string source with a provider URL is rejected");
+    }
+
+    // The same guard applies to `registry_source`.
+    {
+        json req = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                    {"checkpoint", "owner/repo"},
+                    {"registry_source", true}};
+        bool threw = false;
+        try {
+            apply_default_pull_source(req, "huggingface");
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        check(threw, "non-string registry_source is rejected");
+    }
+
+    // A JSON null is treated as absent, not as an invalid value.
+    {
+        json req = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                    {"checkpoint", "owner/repo"},
+                    {"source", nullptr}};
+        apply_default_pull_source(req, "modelscope");
+        check(req.value("source", "") == "modelscope",
+              "null source falls back to the configured default");
+    }
+
     std::printf("================================================\n");
     if (failures > 0) {
         std::printf("Tests finished: %d FAILURE(S)\n", failures);

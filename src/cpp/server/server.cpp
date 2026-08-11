@@ -5393,8 +5393,10 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
         }
 
         // Reject mismatches between explicit source and detected URL source.
+        // Canonicalize the raw param first so accepted aliases (e.g. `hf`) are
+        // not rejected against the URL's canonical registry name.
         if (has_url && !raw_source.empty()) {
-            if (remote_registry_source_name(url_source) != raw_source) {
+            if (parse_remote_registry_source(raw_source) != url_source) {
                 bad_request(
                     "checkpoint URL uses " + remote_registry_source_name(url_source) +
                     " but source was set to '" + raw_source + "'");
