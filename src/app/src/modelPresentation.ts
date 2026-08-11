@@ -32,3 +32,14 @@ export function backendLabel(recipe: string): string {
 export function backendColor(recipe: string): string {
   return backendPresentation(recipe)?.color || 'var(--backend-other)';
 }
+
+/** Capability targets that carry a --cap-* identity token in both themes. */
+const CAPABILITY_COLOR_TOKENS = new Set([
+  'chat', 'omni', 'router', 'vision', 'code', 'embedding', 'reranking',
+  'image', 'image-edit', 'audio', 'audio-generation', 'tts', 'model3d',
+]);
+
+/** Undefined for targets with no identity token, so the glyph stays neutral. */
+export function capabilityColor(capability: string): string | undefined {
+  return CAPABILITY_COLOR_TOKENS.has(capability) ? `var(--cap-${capability})` : undefined;
+}

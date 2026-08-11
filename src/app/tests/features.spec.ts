@@ -361,7 +361,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const hfVisible = await hfZone.isVisible().catch(() => false);
     console.log(`HuggingFace zone visible: ${hfVisible}`);
     if (hfVisible) {
-      const hfRows = await page.locator('.row--hf').count();
+      const hfRows = await page.locator('.zone--hf .workspace-list-row').count();
       console.log(`HuggingFace results: ${hfRows}`);
       await page.screenshot({ path: 'screenshots/07b2-models-hf-zone.png', fullPage: true });
     }
@@ -665,7 +665,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(page.locator('.titlebar__status-dot--brand')).toHaveClass(/titlebar__status-dot--connected/);
-    await page.locator('.model-list-item').filter({ hasText: 'Config Beta Model' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Config Beta Model' }).click();
     await page.getByRole('tab', { name: 'Configuration' }).click();
 
     const panel = page.locator('#detail-panel-config');
@@ -1313,8 +1313,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await page.locator('.titlebar__nav').getByText('Models').click();
-    await page.waitForSelector('.model-list-item', { timeout: 5000 });
-    await page.locator('.model-list-item').first().click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.locator('#detail-tab-config').click();
 
     await expect(page.getByLabel('Context size tokens')).toBeVisible();
@@ -1364,10 +1364,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.goto('/');
     await page.locator('.titlebar__nav').getByText('Models').click();
-    await page.waitForSelector('.model-list-item', { timeout: 5000 });
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
 
     // Select model A and open Configuration tab
-    await page.locator('.model-list-item').filter({ hasText: modelA }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelA }).click();
     await page.locator('#detail-tab-config').click();
     const panel = page.locator('#detail-panel-config');
     await expect(panel).toBeVisible();
@@ -1378,7 +1378,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel.locator('.detail-tuning__notice')).toContainText('Defaults saved for future loads.');
 
     // Switch to model B — stale notice must be gone
-    await page.locator('.model-list-item').filter({ hasText: modelB }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelB }).click();
     await expect(panel.locator('.detail-tuning__notice')).toHaveCount(0);
   });
 

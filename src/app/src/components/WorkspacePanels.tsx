@@ -1,5 +1,7 @@
 import React from 'react';
-import { Icon, type IconName } from './Icon';
+import { CapabilityIcon, Icon, type CapabilityIconTarget, type IconName } from './Icon';
+import { CAPABILITY_TAG_LABELS, type CapabilityTag } from '../modelCapabilities';
+import { capabilityColor } from '../modelPresentation';
 
 export type WorkspaceMetadataEmphasis = 'high' | 'medium' | 'low';
 export type WorkspaceMetadataTone = 'neutral' | 'accent' | 'success' | 'warning';
@@ -316,6 +318,268 @@ export const WorkspaceListPanel: React.FC<WorkspaceListPanelProps> = ({
     {children}
   </section>
 );
+
+/* ── Shared selection list ────────────────────────────────────────
+   One row template behind every selectable list in the app: the model
+   catalog, remote registry results, chat history, and captured requests.
+   DESIGN.md treats a per-tab row variant as prohibited variation. */
+
+/** Operational state. `absent` is the hollow ring; omit entirely when a row
+    genuinely has no state, so the rows that do have one stay findable. */
+export type WorkspaceListRowStatus =
+  | 'ready' | 'live' | 'busy' | 'attention' | 'error' | 'absent' | 'unknown';
+
+/** A non-nominal state is spelled out in the meta line, so the tone follows
+    from the state itself rather than being tracked alongside it. */
+type WorkspaceListRowTone = 'default' | 'attention' | 'error' | 'busy';
+
+function rowTone(status?: WorkspaceListRowStatus): WorkspaceListRowTone {
+  switch (status) {
+    case 'busy': return 'busy';
+    case 'attention': return 'attention';
+    case 'error': return 'error';
+    default: return 'default';
+  }
+}
+
+export interface WorkspaceListRowAction {
+  icon: IconName;
+  label: string;
+  onClick: () => void;
+  /** Latched actions (a pinned row) stay visible instead of waiting for hover. */
+  active?: boolean;
+}
+
+interface WorkspaceListProps {
+  children: React.ReactNode;
+  label: string;
+  className?: string;
+  listRef?: React.RefObject<HTMLUListElement | null>;
+  tabIndex?: number;
+  /** Roving focus landed on a row, identified by its `rowId`. */
+  onRowFocus?: (rowId: string) => void;
+  /** Enter/Space on a row — and every arrow move when `activateOnMove`. */
+  onRowActivate?: (rowId: string) => void;
+  /** Arrow keys wrap past the ends instead of stopping there. */
+  wrap?: boolean;
+  /** Single-select listbox: moving focus also selects (ARIA APG). */
+  activateOnMove?: boolean;
+}
+
+/**
+ * Owns the ARIA listbox roving-tabindex behaviour for every selection list.
+ * Rows are found by `role="option"` and identified by `data-row-id`, so a list
+ * only supplies policy (`wrap`, `activateOnMove`) and its two callbacks.
+ */
+export const WorkspaceList: React.FC<WorkspaceListProps> = ({
+  children, label, className = '', listRef, tabIndex,
+  onRowFocus, onRowActivate, wrap = false, activateOnMove = false,
+}) => {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLUListElement>) => {
+    // A row may claim a key first — the catalog's pin shortcut does.
+    if (event.defaultPrevented) return;
+
+    const options = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>('[role="option"]'),
+    );
+    if (!options.length) return;
+
+    // Focus may sit on the row's action button rather than the row itself.
+    const current = options.findIndex(option =>
+      option === document.activeElement || option.contains(document.activeElement),
+    );
+    const last = options.length - 1;
+    const step = (delta: number) => {
+      if (current < 0) return delta > 0 ? 0 : (wrap ? last : 0);
+      const moved = current + delta;
+      if (wrap) return (moved + options.length) % options.length;
+      return Math.min(Math.max(moved, 0), last);
+    };
+
+    let next = -1;
+    switch (event.key) {
+      case 'ArrowDown': next = step(1); break;
+      case 'ArrowUp': next = step(-1); break;
+      case 'Home': next = 0; break;
+      case 'End': next = last; break;
+      case 'Enter':
+      case ' ': {
+        // Let the row's own action button keep its activation.
+        if (current < 0 || (event.target as HTMLElement).tagName === 'BUTTON') return;
+        event.preventDefault();
+        const rowId = options[current].getAttribute('data-row-id');
+        if (rowId) onRowActivate?.(rowId);
+        return;
+      }
+      default: return;
+    }
+
+    event.preventDefault();
+    options[next].focus();
+    const rowId = options[next].getAttribute('data-row-id');
+    if (!rowId) return;
+    onRowFocus?.(rowId);
+    if (activateOnMove) onRowActivate?.(rowId);
+  };
+
+  return (
+    <ul
+      ref={listRef as React.RefObject<HTMLUListElement>}
+      className={`workspace-list${className ? ` ${className}` : ''}`}
+      role="listbox"
+      aria-label={label}
+      aria-multiselectable="false"
+      tabIndex={tabIndex}
+      onKeyDown={handleKeyDown}
+    >
+      {children}
+    </ul>
+  );
+};
+
+interface WorkspaceListRowProps {
+  /** Identifies the row to WorkspaceList's keyboard navigation. */
+  rowId?: string;
+  /** Primary modality. Tints the lead glyph with the matching --cap-* token. */
+  capability?: CapabilityIconTarget;
+  title: React.ReactNode;
+  /** Priority-5 metadata; hand it the status message whenever `status` is not
+      nominal, so state is never carried by dot color alone. */
+  meta?: React.ReactNode;
+  /** Digits that line up down the column get mono + tabular figures. */
+  metaMono?: boolean;
+  /** Secondary modalities. Dropped first when the list gets narrow. */
+  glyphs?: CapabilityIconTarget[];
+  /** The fact that decides between two otherwise identical rows: the engine
+      for a thing you might run, the time for a thing that happened. */
+  anchor?: React.ReactNode;
+  anchorTitle?: string;
+  status?: WorkspaceListRowStatus;
+  statusLabel?: string;
+  /** 0–100. Draws the hairline along the row's bottom edge. */
+  progress?: number;
+  action?: WorkspaceListRowAction;
+  selected?: boolean;
+  /** Temporarily not selectable — a row mid-load, say. */
+  disabled?: boolean;
+  className?: string;
+  id?: string;
+  tabIndex?: number;
+  ariaLabel?: string;
+  ariaKeyShortcuts?: string;
+  /** Domain attributes other code queries for, e.g. `data-model-id`. */
+  dataAttributes?: Record<string, string>;
+  onClick?: React.MouseEventHandler<HTMLLIElement>;
+  onKeyDown?: React.KeyboardEventHandler<HTMLLIElement>;
+  onFocus?: React.FocusEventHandler<HTMLLIElement>;
+}
+
+export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
+  rowId,
+  capability,
+  title,
+  meta,
+  metaMono = false,
+  glyphs,
+  anchor,
+  anchorTitle,
+  status,
+  statusLabel,
+  progress,
+  action,
+  selected = false,
+  disabled = false,
+  className = '',
+  id,
+  tabIndex,
+  ariaLabel,
+  ariaKeyShortcuts,
+  dataAttributes,
+  onClick,
+  onKeyDown,
+  onFocus,
+}) => {
+  const leadColor = capability ? capabilityColor(capability) : undefined;
+  const showMetaLine = Boolean(meta || anchor || (glyphs && glyphs.length > 0));
+  const tone = rowTone(status);
+
+  return (
+    <li
+      id={id}
+      role="option"
+      aria-selected={selected}
+      aria-disabled={disabled || undefined}
+      aria-label={ariaLabel}
+      aria-keyshortcuts={ariaKeyShortcuts}
+      tabIndex={tabIndex}
+      className={`workspace-list-row${selected ? ' workspace-list-row--selected' : ''}${disabled ? ' workspace-list-row--disabled' : ''}${className ? ` ${className}` : ''}`}
+      onClick={disabled ? undefined : onClick}
+      onKeyDown={onKeyDown}
+      onFocus={onFocus}
+      data-row-id={rowId}
+      {...dataAttributes}
+    >
+      {capability && (
+        <span
+          className="workspace-list-row__lead"
+          style={leadColor ? ({ '--workspace-list-row-cap': leadColor } as React.CSSProperties) : undefined}
+          aria-hidden="true"
+        >
+          <CapabilityIcon capability={capability} size={16} />
+        </span>
+      )}
+
+      <span className="workspace-list-row__title">{title}</span>
+
+      {showMetaLine && (
+        <span className="workspace-list-row__meta">
+          {meta && (
+            <span
+              className={`workspace-list-row__primary workspace-list-row__primary--${tone}${metaMono ? ' workspace-list-row__primary--mono' : ''}`}
+            >
+              {meta}
+            </span>
+          )}
+          {glyphs && glyphs.length > 0 && (
+            <span className="workspace-list-row__glyphs" aria-hidden="true">
+              {glyphs.map(glyph => (
+                <span key={glyph} title={CAPABILITY_TAG_LABELS[glyph as CapabilityTag]}>
+                  <CapabilityIcon capability={glyph} size={12} />
+                </span>
+              ))}
+            </span>
+          )}
+          {anchor && <span className="workspace-list-row__anchor" title={anchorTitle}>{anchor}</span>}
+        </span>
+      )}
+
+      {status && (
+        <span
+          className={`workspace-list-row__status workspace-list-row__status--${status}`}
+          title={statusLabel}
+          aria-hidden="true"
+        />
+      )}
+
+      {action && (
+        <button
+          type="button"
+          className={`workspace-list-row__action${action.active ? ' workspace-list-row__action--active' : ''}`}
+          onClick={event => { event.stopPropagation(); action.onClick(); }}
+          aria-label={action.label}
+          title={action.label}
+          tabIndex={-1}
+        >
+          <Icon name={action.icon} size={12} aria-hidden="true" />
+        </button>
+      )}
+
+      {progress != null && (
+        <span className="workspace-list-row__progress" style={{ width: `${progress}%` }} aria-hidden="true" />
+      )}
+    </li>
+  );
+};
 
 interface WorkspaceDetailPanelProps {
   ariaLabel: string;

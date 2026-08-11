@@ -19,6 +19,7 @@ This document is the contract for Lemonade's desktop and web UI. It describes th
 - `src/styles/styles.css` implements components and feature layout with those tokens.
 - Shared component classes use the `workspace-*` prefix. Feature classes may refine a shared component but must not redefine its typography, spacing scale, surface hierarchy, focus treatment, or control shape.
 - React implementations of the shared panels and controls live in `src/components/WorkspacePanels.tsx`, `WorkspaceRailHeader.tsx`, and `WorkspaceMobileMenuButton.tsx`.
+- Every selectable list renders `WorkspaceList` + `WorkspaceListRow` (`.workspace-list` / `.workspace-list-row`). A tab supplies the row's content, never its geometry, typography, status idiom, or selection treatment.
 - Dynamic values such as progress percentage, measured resizer position, chart geometry, and backend identity may be passed through inline custom properties. Repeated fixed values use tokens; feature-local geometry stays in its named class.
 
 ### Color
@@ -108,6 +109,26 @@ The canonical information architecture is:
 
 Use two panels when selection does not require a distinct list, and three when filtering/navigation, selection, and detail are separate tasks. `.workspace-pane__header`, `.workspace-list-panel__header`, and `.workspace-detail-panel__header` establish the same visual hierarchy at different levels.
 
+### Selection lists
+
+Every list the user selects from — the model catalog, remote registry results, chat history, captured requests, and the composer's model picker — is one 52 px row on a three-column grid: a 16 px lead glyph, a flexible body, and an 18 px trailing column. Only the body flexes, so revealing a hover action never shifts the title. A list inside a popover is still this list: the picker adds only the popover frame and a search field that hands ArrowDown to the list.
+
+| Slot | Holds | Priority |
+| --- | --- | --- |
+| Lead | Primary modality, tinted with its `--cap-*` token | Never dropped |
+| Title | The row's identity, `--text-sm` / `--weight-medium` | Never dropped |
+| Meta-primary | Supporting metadata, preempted by the status message | Sacrificial |
+| Glyphs | Secondary modalities | Dropped first |
+| Meta-anchor | The fact that decides between two otherwise identical rows: the engine for a thing you might run, the time for a thing that happened | Never dropped |
+| Status | One dot. Omitted entirely when a row has no operational state | Never dropped |
+| Action | One row-scoped command; a latched state keeps it visible | — |
+
+Hover and selection are **translucent, never an opaque surface value**. The lists do not share a ground — the catalog scrolls over `--surface-base`, the chat and telemetry rails are `--surface-1`, the composer's picker floats on `--surface-raised`, and the light theme collapses the first two onto one color — so a color tuned against one list is invisible or inverted on another. A scrim composites the same lift over all of them and self-corrects per theme.
+
+Two rules keep the grammar honest. **A non-nominal status names itself in words** in meta-primary (`Engine update required`, `Downloading 62%`, `Failed`), so state is never carried by dot color alone; nominal states stay silent and let the metadata stand. **Rows degrade by priority, not position** — `@container` queries on `.workspace-list` drop the secondary glyphs, never the name, modality, anchor, or status.
+
+`WorkspaceList` owns the ARIA listbox keyboard contract — roving tabindex, Arrow/Home/End, Enter/Space — for every list. A list supplies policy (`wrap`, `activateOnMove`) and two callbacks (`onRowFocus`, `onRowActivate`); rows are matched by `data-row-id`. A tab must not re-implement listbox navigation, and the row's tone follows from its `status` rather than being passed alongside it.
+
 ### Shared controls and content
 
 - Actions use `WorkspaceActionButton`, `WorkspaceActionLink`, and `WorkspaceActionGroup`. Appearances are `primary`, `secondary`, `quiet`, and `danger`; sizes are `small`, `medium`, and `toolbar`.
@@ -135,15 +156,15 @@ The labels below are normative boundaries, not backlog states. **Justified speci
 
 **Justified specialization:** conversational message rhythm, Markdown/code rendering, capability-specific composer controls, generated media, and the centered empty-state hero are unique to chat. The mobile history bottom sheet is justified because conversations are frequently switched while retaining draft context.
 
-**Prohibited variation:** independent rail header, button, badge, or mobile-menu geometry. These must inherit the workspace tokens and shared controls. Capability color is semantic, never decorative.
+**Prohibited variation:** independent rail header, button, badge, or mobile-menu geometry. These must inherit the workspace tokens and shared controls. Capability color is semantic, never decorative. Conversation rows and the composer's model picker are both the shared selection list; capability and generating state belong in the lead glyph and the status dot, not in per-row pills, and eject belongs in the row action slot.
 
 ### Models
 
 **Layout:** three panels: `.model-nav-rail` filter rail, `.model-list-panel.workspace-list-panel`, and `.model-detail-panel.workspace-detail-panel`. The list may be resized on desktop.
 
-**Justified specialization:** dense model availability rows, provider search results, download progress, backend identity marks, README/files/tuning tabs, and the resizer reflect model-management data.
+**Justified specialization:** download progress, backend identity marks, README/files/tuning tabs, and the resizer reflect model-management data.
 
-**Prohibited variation:** custom list/detail backgrounds, headings, action buttons, metadata order, editor shells, or filter sizing. Model list/detail panels share the workspace grammar. Custom model, router, and global-settings editors occupy the same detail shell.
+**Prohibited variation:** custom list/detail backgrounds, headings, action buttons, metadata order, editor shells, or filter sizing. Model list/detail panels share the workspace grammar. Custom model, router, and global-settings editors occupy the same detail shell. Built-in catalog rows and remote registry results are the shared selection list — a taller registry row, a provider tile repeating what the zone header already says, or tag chips inside a row are not model-management data, they are a second row design.
 
 ### Backends
 
@@ -159,7 +180,9 @@ The labels below are normative boundaries, not backlog states. **Justified speci
 
 **Performance — justified specialization:** charts, gauges, metric cards, tabular numerals, and stable `--chart-*` series colors. Glow and ornamental gradients are prohibited.
 
-**Telemetry — justified specialization:** trace waterfall, metric strip, prompt diff, and replay/improvement workspaces. These are dense diagnostic artifacts. Their surrounding header, tabs, forms, buttons, cards, and modals still use system tokens.
+**Telemetry — justified specialization:** trace waterfall, metric strip, prompt diff, and replay/improvement workspaces. These are dense diagnostic artifacts. Their surrounding header, tabs, forms, buttons, cards, and modals still use system tokens. The request list is the shared selection list; it keeps `--font-mono` and tabular figures on its metrics because those digits are compared down a column.
+
+**Telemetry — prohibited variation:** a per-row kind pill, a second status dot, or a redundant `OK` label. Request kind belongs in the lead glyph and status in the one shared dot, with any non-nominal state named in words.
 
 **Logs — justified specialization:** monospace virtualized output, severity markers, and compact fixed-height rows. The filter panel, search control, header, and actions are standard workspace UI.
 

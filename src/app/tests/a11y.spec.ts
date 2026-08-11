@@ -905,13 +905,13 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
     await navigateToView(page, 'Models');
     await page.waitForSelector('.manager');
     // Wait for model list items to render from the mocked API response
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
   });
 
   test('A46 — downloaded model row: Load button accessible name includes model name', async ({ page }) => {
     // Click on Llama-3.1-8B in the list to open the detail panel
-    await page.locator('.model-list-item').filter({ hasText: 'Llama-3.1-8B' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Llama-3.1-8B' }).click();
     await page.waitForTimeout(200);
     // aria-label="Load Llama-3.1-8B" makes the button uniquely identifiable in
     // a list of multiple loaded models when navigating by button role.
@@ -922,7 +922,7 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
 
   test('A47 — downloaded model row: Delete button accessible name includes model name', async ({ page }) => {
     // Click on Llama-3.1-8B in the list to open the detail panel
-    await page.locator('.model-list-item').filter({ hasText: 'Llama-3.1-8B' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Llama-3.1-8B' }).click();
     await page.waitForTimeout(200);
     // Icon-only X button must carry aria-label="Delete Llama-3.1-8B" so it is
     // not announced as a nameless button to screen reader users.
@@ -933,7 +933,7 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
 
   test('A48 — registry model row: Download button accessible name includes model name', async ({ page }) => {
     // Click on Qwen2.5-7B in the list to open the detail panel
-    await page.locator('.model-list-item').filter({ hasText: 'Qwen2.5-7B' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Qwen2.5-7B' }).click();
     await page.waitForTimeout(200);
     await expect(
       page.getByRole('button', { name: /Download Qwen2\.5-7B/ }),
@@ -942,7 +942,7 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
 
   test('A49 — registry model row: "Get and load" button accessible name includes model name', async ({ page }) => {
     // Click on Qwen2.5-7B in the list to open the detail panel
-    await page.locator('.model-list-item').filter({ hasText: 'Qwen2.5-7B' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Qwen2.5-7B' }).click();
     await page.waitForTimeout(200);
     await expect(
       page.getByRole('button', { name: /Get and load Qwen2\.5-7B/i }),
@@ -959,7 +959,7 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
       'Pin model', 'Unpin model', 'Copy model name', 'Copy repository name',
     ]);
     // Click each model to check its action buttons
-    const items = page.locator('.model-list-item');
+    const items = page.locator('.model-list-panel__list .workspace-list-row');
     const count = await items.count();
     for (let i = 0; i < count; i++) {
       await items.nth(i).click();
@@ -1125,7 +1125,7 @@ test.describe('Accessibility — conversation rail listbox', () => {
   });
 
   test('A66 — delete button accessible name includes the conversation title', async ({ page }) => {
-    const deleteBtn = page.locator('.rail__list .rail__item-delete').first();
+    const deleteBtn = page.locator('.rail__list .workspace-list-row__action').first();
     const label = await deleteBtn.getAttribute('aria-label');
     expect(label).toBeTruthy();
     expect(label!.toLowerCase()).toContain('delete');
@@ -1687,7 +1687,7 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
       }),
     );
     await goToModels(page);
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(200);
   }
 
@@ -1743,7 +1743,7 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     await chatTask.click();
     await expect(chatTask).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.model-list-panel__count')).toContainText('(Chat)');
-    await expect(page.locator('.model-list-item')).toHaveCount(2);
+    await expect(page.locator('.model-list-panel__list .workspace-list-row')).toHaveCount(2);
   });
 
   // ── List keyboard navigation ─────────────────────────────────────────────────
@@ -1782,7 +1782,7 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
   test('A100 — detail panel tablist has correct ARIA structure (role=tablist, tabs, tabpanels)', async ({ page }) => {
     await goToModelsWithMock(page);
     // Select a model to open the detail panel
-    await page.locator('.model-list-item').first().click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
 
     const tablist = page.locator('[role="tablist"]');
@@ -1808,7 +1808,7 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
 
   test('A101 — tab keyboard navigation (ArrowLeft/ArrowRight) moves focus between tabs', async ({ page }) => {
     await goToModelsWithMock(page);
-    await page.locator('.model-list-item').first().click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
 
     const tabs = page.locator('[role="tab"]');
@@ -1827,7 +1827,7 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
 
   test('A102 — Configuration tab in detail panel is keyboard-reachable and focusable', async ({ page }) => {
     await goToModelsWithMock(page);
-    await page.locator('.model-list-item').first().click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
 
     const configTab = page.locator('[role="tab"]').filter({ hasText: /Configuration/i });
@@ -1839,7 +1839,7 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
 
   test('A103 — Configuration tab panel has accessible heading or label', async ({ page }) => {
     await goToModelsWithMock(page);
-    await page.locator('.model-list-item').first().click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
 
     const configTab = page.locator('[role="tab"]').filter({ hasText: /Configuration/i });
@@ -1877,7 +1877,7 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
   test('A105 — master-detail Models view passes WCAG 2.1 AA axe-core scan with mock data', async ({ page }) => {
     await goToModelsWithMock(page);
     // Select first model to populate the detail panel
-    const items = page.locator('.model-list-item');
+    const items = page.locator('.model-list-panel__list .workspace-list-row');
     if (await items.count() > 0) {
       await items.first().click();
       await page.waitForTimeout(200);
@@ -1928,7 +1928,7 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
       }),
     );
     await goToModels(page);
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(200);
   }
 
@@ -1992,7 +1992,7 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
     await page.setViewportSize({ width: 640, height: 800 });
     await goToModelsWithMock(page);
 
-    await page.locator('.model-list-item').first().click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
 
     // Detail visible, list hidden
@@ -2004,7 +2004,7 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
     await page.setViewportSize({ width: 640, height: 800 });
     await goToModelsWithMock(page);
 
-    await page.locator('.model-list-item').first().click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
 
     const backBtn = page.locator('.model-detail-panel__back-btn');
@@ -2018,7 +2018,7 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
     await page.setViewportSize({ width: 640, height: 800 });
     await goToModelsWithMock(page);
 
-    await page.locator('.model-list-item').first().click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
 
     const backBtn = page.locator('.model-detail-panel__back-btn');
@@ -2068,8 +2068,8 @@ test.describe('Accessibility — model README raw-HTML rendering (#2355)', () =>
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Models');
     await page.waitForSelector('.manager--detail');
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
-    await page.locator('.model-list-item').first().click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     const readmeTab = page.getByRole('tab', { name: 'README', exact: true });
     await expect(readmeTab).toBeVisible();
     await readmeTab.click();
@@ -2169,13 +2169,13 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Models');
     await page.waitForSelector('.manager--detail');
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(200);
   }
 
   test('A118 — each model row exposes a pin affordance with an accessible title', async ({ page }) => {
     await goToModelsWithMock(page);
-    const pins = page.locator('.model-list-item__pin');
+    const pins = page.locator('.model-list-panel__list .workspace-list-row__action');
     const count = await pins.count();
     expect(count).toBeGreaterThan(0);
     // Title communicates the pin action to pointer users.
@@ -2185,7 +2185,7 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
 
   test('A119 — pin affordance is NOT a nested interactive button inside role="option"', async ({ page }) => {
     await goToModelsWithMock(page);
-    const pin = page.locator('.model-list-item__pin').first();
+    const pin = page.locator('.model-list-panel__list .workspace-list-row__action').first();
     // It must be a span (not a button/anchor/input) so role=option does not nest
     // an interactive control (axe nested-interactive).
     const tag = await pin.evaluate(el => el.tagName.toLowerCase());
@@ -2196,19 +2196,19 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
 
   test('A120 — clicking the pin toggles the row pinned state and aria-label', async ({ page }) => {
     await goToModelsWithMock(page);
-    const row = page.locator('.model-list-item').first();
-    const pin = row.locator('.model-list-item__pin');
+    const row = page.locator('.model-list-panel__list .workspace-list-row').first();
+    const pin = row.locator('.model-list-panel__list .workspace-list-row__action');
     await pin.click();
     await page.waitForTimeout(100);
     // The (now-pinned) model floats to the top; assert the first row is pinned.
-    const firstRow = page.locator('.model-list-item').first();
-    await expect(firstRow).toHaveClass(/model-list-item--pinned/);
+    const firstRow = page.locator('.model-list-panel__list .workspace-list-row').first();
+    await expect(firstRow).toHaveClass(/workspace-list-row--pinned/);
     const label = await firstRow.getAttribute('aria-label');
     expect((label ?? '').toLowerCase()).toContain('pinned');
     // Unpin and verify the pinned class is removed.
-    await firstRow.locator('.model-list-item__pin').click();
+    await firstRow.locator('.model-list-panel__list .workspace-list-row__action').click();
     await page.waitForTimeout(100);
-    expect(await page.locator('.model-list-item--pinned').count()).toBe(0);
+    expect(await page.locator('.model-list-panel__list .workspace-list-row--pinned').count()).toBe(0);
   });
 
   test('A121 — selected row is keyboard-operable: "P" toggles pin (aria-keyshortcuts)', async ({ page }) => {
@@ -2216,7 +2216,7 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
     // Select a model (focus moves to the detail panel in master-detail), then
     // return focus to the now-focusable selected row (tabIndex 0) — the path a
     // keyboard user takes via Shift+Tab — and press the advertised "P" shortcut.
-    await page.locator('.model-list-item').first().click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(150);
     const selected = page.locator('.model-list-item--selected');
     // The shortcut must be advertised to assistive tech.
@@ -2224,15 +2224,15 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
     await selected.focus();
     await page.keyboard.press('p');
     await page.waitForTimeout(100);
-    const pinnedCount = await page.locator('.model-list-item--pinned').count();
+    const pinnedCount = await page.locator('.model-list-panel__list .workspace-list-row--pinned').count();
     expect(pinnedCount).toBe(1);
-    const label = await page.locator('.model-list-item--pinned').first().getAttribute('aria-label');
+    const label = await page.locator('.model-list-panel__list .workspace-list-row--pinned').first().getAttribute('aria-label');
     expect((label ?? '').toLowerCase()).toContain('pinned');
   });
 
   test('A122 — pinned state persists client-locally to localStorage (no lemond)', async ({ page }) => {
     await goToModelsWithMock(page);
-    await page.locator('.model-list-item').first().locator('.model-list-item__pin').click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().locator('.model-list-panel__list .workspace-list-row__action').click();
     await page.waitForTimeout(100);
     const persisted = await page.evaluate(() => {
       for (let i = 0; i < localStorage.length; i++) {
@@ -2247,7 +2247,7 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
 
   test('A123 — model list with a pinned row passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
     await goToModelsWithMock(page);
-    await page.locator('.model-list-item').first().locator('.model-list-item__pin').click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().locator('.model-list-panel__list .workspace-list-row__action').click();
     await page.waitForTimeout(150);
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])
@@ -2294,7 +2294,7 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Models');
     await page.waitForSelector('.model-nav-rail', { state: 'attached' });
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(200);
   }
 
@@ -2321,12 +2321,12 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
 
   test('A126 — selecting a primary nav item exposes selected state via aria-current and filters the list', async ({ page }) => {
     await goToModelsWithNavMock(page);
-    const before = await page.locator('.model-list-item').count();
+    const before = await page.locator('.model-list-panel__list .workspace-list-row').count();
     const downloaded = page.locator('.model-nav-rail__nav-item').filter({ hasText: 'Downloaded' });
     await downloaded.click();
     await page.waitForTimeout(150);
     expect(await downloaded.getAttribute('aria-current')).toBe('true');
-    const after = await page.locator('.model-list-item').count();
+    const after = await page.locator('.model-list-panel__list .workspace-list-row').count();
     // Two of four mock models are downloaded.
     expect(after).toBeLessThan(before);
     expect(after).toBe(2);
@@ -2364,7 +2364,7 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await page.waitForTimeout(150);
     expect(await audio.getAttribute('aria-pressed')).toBe('true');
     expect(await image.getAttribute('aria-pressed')).toBe('true');
-    const rows = page.locator('.model-list-item');
+    const rows = page.locator('.model-list-panel__list .workspace-list-row');
     await expect(rows).toHaveCount(2);
     await expect(rows.filter({ hasText: 'Whisper' })).toHaveCount(1);
     await expect(rows.filter({ hasText: 'SDXL' })).toHaveCount(1);
@@ -2381,7 +2381,7 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect(await llama.getAttribute('aria-pressed')).toBe('true');
     expect(await whisper.getAttribute('aria-pressed')).toBe('true');
     await page.waitForTimeout(150);
-    await expect(page.locator('.model-list-item')).toHaveCount(3);
+    await expect(page.locator('.model-list-panel__list .workspace-list-row')).toHaveCount(3);
   });
 
   // ── Tags (collapsible chips) ─────────────────────────────────────────────
@@ -2394,7 +2394,7 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await llamaTag.click();
     await page.waitForTimeout(150);
     expect(await llamaTag.getAttribute('aria-pressed')).toBe('true');
-    const rows = page.locator('.model-list-item');
+    const rows = page.locator('.model-list-panel__list .workspace-list-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('Llama');
   });
@@ -2406,8 +2406,8 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await recommended.click();
     await page.waitForTimeout(150);
     expect(await recommended.getAttribute('aria-pressed')).toBe('true');
-    await expect(page.locator('.model-list-item')).toHaveCount(1);
-    await expect(page.locator('.model-list-item').first()).toContainText('Llama');
+    await expect(page.locator('.model-list-panel__list .workspace-list-row')).toHaveCount(1);
+    await expect(page.locator('.model-list-panel__list .workspace-list-row').first()).toContainText('Llama');
   });
 
   test('A131c — custom tags can be added, selected, and removed', async ({ page }) => {
@@ -2418,8 +2418,8 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     const custom = page.locator('.model-nav-rail__tag-chip').filter({ hasText: /^tools/ });
     await expect(custom).toBeVisible();
     expect(await custom.getAttribute('aria-pressed')).toBe('true');
-    await expect(page.locator('.model-list-item')).toHaveCount(1);
-    await expect(page.locator('.model-list-item').first()).toContainText('Llama');
+    await expect(page.locator('.model-list-panel__list .workspace-list-row')).toHaveCount(1);
+    await expect(page.locator('.model-list-panel__list .workspace-list-row').first()).toContainText('Llama');
     await page.getByRole('button', { name: 'Remove custom tag tools' }).click();
     await expect(custom).toHaveCount(0);
   });
@@ -2538,7 +2538,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Models');
     await page.waitForSelector('.manager--detail');
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(200);
   }
 
@@ -2546,7 +2546,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
 
   test('A142 — detail panel favorite star is an aria-pressed toggle naming the model', async ({ page }) => {
     await goToModelsRefined(page);
-    await page.locator('.model-list-item').first().click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
     const star = page.locator('.model-detail-panel__fav-btn');
     await expect(star).toBeVisible();
@@ -2565,7 +2565,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
 
   test('A143 — favoriting in the detail panel updates the Favorites nav count and persists to a DISTINCT favorites store', async ({ page }) => {
     await goToModelsRefined(page);
-    await page.locator('.model-list-item').first().click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(150);
     await page.locator('.model-detail-panel__fav-btn').click();
     await page.waitForTimeout(150);
@@ -2598,7 +2598,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
   test('A144 — "Back to models" is hidden on desktop widths', async ({ page }) => {
     await page.setViewportSize({ width: 1200, height: 800 });
     await goToModelsRefined(page);
-    await page.locator('.model-list-item').first().click();
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
     // Present in the DOM but visually hidden on desktop.
     await expect(page.locator('.model-detail-panel__back-btn')).toBeHidden();
@@ -2618,7 +2618,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     const search = page.locator('#model-list-search');
     await search.fill('Whisper');
     await page.waitForTimeout(150);
-    const rows = page.locator('.model-list-item');
+    const rows = page.locator('.model-list-panel__list .workspace-list-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('Whisper-Large-v3');
   });
@@ -2648,7 +2648,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
   test('A149 — middle-list rows show multiple capability icons with an accessible label', async ({ page }) => {
     await goToModelsRefined(page);
     // The Llama row exposes both Chat and Tool-use capabilities → ≥2 icons.
-    const llamaRow = page.locator('.model-list-item').filter({ hasText: 'Llama-3.1-8B' });
+    const llamaRow = page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Llama-3.1-8B' });
     const caps = llamaRow.locator('.model-list-item__caps');
     await expect(caps).toHaveAttribute('role', 'img');
     const label = (await caps.getAttribute('aria-label')) ?? '';
@@ -2664,7 +2664,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     // Nothing selected yet: the middle list must NOT render an empty placeholder…
     await expect(page.locator('.model-list-panel__empty')).toHaveCount(0);
     // …and the model rows are still present (the list is populated).
-    expect(await page.locator('.model-list-item').count()).toBeGreaterThan(0);
+    expect(await page.locator('.model-list-panel__list .workspace-list-row').count()).toBeGreaterThan(0);
     // The empty/placeholder message belongs to the RIGHT detail pane.
     const placeholder = page.locator('.model-detail-panel__placeholder');
     await expect(placeholder).toBeVisible();
@@ -2861,8 +2861,8 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Models');
     await page.waitForSelector('.manager--detail');
-    await page.waitForSelector('.model-list-item', { timeout: 5000 }).catch(() => {});
-    await page.locator('.model-list-item').first().click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 }).catch(() => {});
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(150);
     await page.locator('[role="tab"]').filter({ hasText: /Files/i }).click();
     await page.waitForTimeout(200);

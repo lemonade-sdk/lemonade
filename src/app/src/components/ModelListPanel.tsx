@@ -9,14 +9,21 @@ import type { ModelInfo, LoadedModel } from '../api';
 import {
   capabilityFromModelInfo,
   modelCapabilityTags,
-  CAPABILITY_TAG_LABELS,
+  rowCapability,
   type CapabilityTag,
 } from '../modelCapabilities';
-import { Icon, CapabilityIcon } from './Icon';
+import { Icon } from './Icon';
 import type { IconName } from './Icon';
 import type { CapabilityIconTarget } from './Icon';
 import { activeDownloadForModel, type DownloadListItem } from '../features/downloadManager/downloadStore';
-import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceListPanel } from './WorkspacePanels';
+import {
+  WorkspaceActionButton,
+  WorkspaceActionGroup,
+  WorkspaceList,
+  WorkspaceListPanel,
+  WorkspaceListRow,
+  type WorkspaceListRowStatus,
+} from './WorkspacePanels';
 import { backendCompactLabel, backendLabel } from '../modelPresentation';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -230,6 +237,21 @@ export function modelBackendReadiness(
     state: state || undefined,
     label: `${backendLabel(recipe)}${backendSuffix} status could not be verified.`,
   };
+}
+
+/** Short enough to ride the row's meta line; `label` keeps the full sentence
+    for the status marker's tooltip and the row's accessible name. */
+const BACKEND_STATE_MESSAGES: Record<string, string> = {
+  missing: 'Engine not installed',
+  update_required: 'Engine update required',
+  update_available: 'Engine update available',
+  installable: 'Engine download required',
+  action_required: 'Engine needs attention',
+  unsupported: 'Engine unsupported',
+};
+
+function backendReadinessMessage(readiness: ModelBackendReadiness): string {
+  return BACKEND_STATE_MESSAGES[readiness.state || ''] || 'Engine needs attention';
 }
 
 type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
@@ -559,33 +581,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     return result;
   }, [allModels, loadedNames, pulling, downloadItems, searchQuery, taskFilters, sortBy, pinnedNames, favoriteNames, primaryFilter, backendFilters, tagFilters]);
 
-  // Keyboard navigation on the list (ArrowUp/Down/Home/End)
-  const handleListKeyDown = useCallback((e: React.KeyboardEvent) => {
-    const options = listRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
-    if (!options?.length) return;
-
-    const focusedEl = document.activeElement as HTMLElement;
-    const items = Array.from(options);
-    const currentIdx = items.indexOf(focusedEl);
-
-    let next = -1;
-    if (e.key === 'ArrowDown') { e.preventDefault(); next = currentIdx < 0 ? 0 : Math.min(currentIdx + 1, items.length - 1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); next = currentIdx <= 0 ? 0 : currentIdx - 1; }
-    else if (e.key === 'Home') { e.preventDefault(); next = 0; }
-    else if (e.key === 'End') { e.preventDefault(); next = items.length - 1; }
-
-    if (next >= 0) {
-      items[next].focus();
-      // Single-select listbox: arrow key navigation also selects (ARIA APG)
-      const modelId = items[next].getAttribute('data-model-id');
-      if (modelId) onSelectModel(modelId);
-    }
-  }, [onSelectModel]);
-
+  // Arrow/Home/End and Enter/Space live in WorkspaceList; the catalog only adds
+  // its own pin shortcut.
   const handleItemKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>, modelId: string) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectModel(modelId); }
-    else if ((e.key === 'p' || e.key === 'P') && onTogglePin) { e.preventDefault(); onTogglePin(modelId); }
-  }, [onSelectModel, onTogglePin]);
+    if ((e.key === 'p' || e.key === 'P') && onTogglePin) { e.preventDefault(); onTogglePin(modelId); }
+  }, [onTogglePin]);
 
   return (
     <WorkspaceListPanel
@@ -685,20 +685,22 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       {/* Elevated registry zones: shown above the list when no local results match */}
       {registryZoneTop}
       {/* Model list */}
-      <ul
-        ref={listRef}
+      <WorkspaceList
+        listRef={listRef}
         className="model-list-panel__list"
-        role="listbox"
-        aria-label="Model list"
-        aria-multiselectable="false"
+        label="Model list"
         tabIndex={flatList.some(e => e.model && listModelName(e.model) === selectedModelId) ? -1 : 0}
-        onKeyDown={handleListKeyDown}
+        onRowActivate={onSelectModel}
+        activateOnMove
       >
         {flatList.map(({ model, status, downloadPct, pinned }) => {
           const mId = listModelName(model);
           const displayName = listModelDisplayName(model);
           const recipe = String((model as any).recipe || '');
-          const neutralCollectionGuide = modelIsOmni(model) || modelIsRouter(model);
+          const primaryCapability = rowCapability(model);
+          // A collection routes to backends rather than being one, so it has no
+          // engine to name on the meta line.
+          const neutralCollectionGuide = primaryCapability === 'omni' || primaryCapability === 'router';
           const displayedBackend = recipe && !neutralCollectionGuide ? modelListBackendLabel(recipe) : '';
           const isSelected = mId === selectedModelId;
           const capTags = modelCapabilityTags(model);
@@ -712,81 +714,54 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               : status === 'available'
                 ? 'Model is available to download.'
                 : backendReadiness?.label;
-          const statusTone = status === 'running'
-            ? 'running'
+          const rowStatus: WorkspaceListRowStatus = status === 'running'
+            ? 'live'
             : status === 'downloading'
-              ? 'downloading'
+              ? 'busy'
               : status === 'downloaded'
-                ? backendReadiness?.tone || 'unknown'
-                : 'available';
+                ? (backendReadiness?.tone === 'attention' ? 'attention' : backendReadiness?.tone || 'unknown')
+                : 'absent';
+
+          // Priority-5 metadata by default; a non-nominal state preempts it so
+          // the dot is never the only thing carrying the state.
+          const meta = rowStatus === 'busy'
+            ? `Downloading${downloadPct != null ? ` ${downloadPct.toFixed(0)}%` : '…'}`
+            : rowStatus === 'attention'
+              ? backendReadinessMessage(backendReadiness!)
+              : (model.size != null && model.size > 0 ? listFmtSize(model.size) : undefined);
+
+          const secondaryTags = capTags.filter(tag => tag !== (primaryCapability as string));
 
           return (
-            <li
+            <WorkspaceListRow
               key={mId}
-              role="option"
+              rowId={mId}
+              capability={primaryCapability}
+              title={displayName}
+              meta={meta}
+              glyphs={rowStatus === 'busy' || rowStatus === 'attention'
+                ? undefined
+                : secondaryTags.map(capabilityTagIconTarget)}
+              anchor={recipe && !neutralCollectionGuide ? displayedBackend : undefined}
+              anchorTitle={recipe ? backendLabel(recipe) : undefined}
+              status={rowStatus}
+              statusLabel={readinessLabel}
+              progress={status === 'downloading' ? downloadPct : undefined}
+              selected={isSelected}
               tabIndex={isSelected ? 0 : -1}
-              aria-selected={isSelected}
-              data-model-id={mId}
-              aria-keyshortcuts={onTogglePin ? 'P' : undefined}
-              className={`model-list-item${isSelected ? ' model-list-item--selected' : ''}${pinned ? ' model-list-item--pinned' : ''}${neutralCollectionGuide ? ' model-list-item--neutral-guide' : ''} model-list-item--${status}`}
+              dataAttributes={{ 'data-model-id': mId }}
+              className={pinned ? 'workspace-list-row--pinned' : undefined}
+              ariaKeyShortcuts={onTogglePin ? 'P' : undefined}
+              ariaLabel={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
               onClick={() => onSelectModel(mId)}
               onKeyDown={e => handleItemKeyDown(e, mId)}
-              aria-label={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
-            >
-              {/* Name + meta stay left-aligned across every row. */}
-              <span className="model-list-item__body">
-                <span className="model-list-item__name">{displayName}</span>
-                <span className="model-list-item__meta">
-                  {model.size != null && model.size > 0 && (
-                    <span className="model-list-item__size">{listFmtSize(model.size)}</span>
-                  )}
-                  <span className="model-list-item__caps" role="img" aria-label={`Capabilities: ${capTags.map(t => CAPABILITY_TAG_LABELS[t]).join(', ')}`}>
-                    {capTags.map(tag => (
-                      <span key={tag} className="model-list-item__cap" title={CAPABILITY_TAG_LABELS[tag]}>
-                        <CapabilityIcon capability={capabilityTagIconTarget(tag) as any} size={12} aria-hidden="true" />
-                      </span>
-                    ))}
-                  </span>
-                </span>
-              </span>
-
-              {/* The backend identity lives on the lower guide line. A hollow
-                  marker means remote/available; every concrete readiness state
-                  replaces that ring with one solid status point. */}
-              <span className="model-list-item__footer" aria-hidden="true">
-                <span className="model-list-item__footer-info">
-                  {status === 'downloading' && downloadPct != null && (
-                    <span className="model-list-item__pct">{downloadPct.toFixed(0)}%</span>
-                  )}
-                  {recipe && !neutralCollectionGuide && (
-                    <span
-                      className="model-list-item__backend"
-                      title={backendLabel(recipe)}
-                    >
-                      {displayedBackend}
-                    </span>
-                  )}
-                </span>
-                <span
-                  className={`model-list-item__status model-list-item__status--${statusTone}`}
-                  title={readinessLabel}
-                  data-backend-state={backendReadiness?.state || statusTone}
-                />
-              </span>
-
-              {/* Pointer users click the compact pin above the status terminus;
-                  keyboard and assistive-technology users retain the P shortcut. */}
-              {onTogglePin && (
-                <span
-                  className={`model-list-item__pin row__pin${pinned ? ' row__pin--active model-list-item__pin--active' : ''}`}
-                  onClick={e => { e.stopPropagation(); onTogglePin(mId); }}
-                  aria-hidden="true"
-                  title={pinned ? `Unpin ${displayName} (P)` : `Pin ${displayName} (P)`}
-                >
-                  <Icon name="pin" size={12} aria-hidden="true" />
-                </span>
-              )}
-            </li>
+              action={onTogglePin ? {
+                icon: 'pin',
+                label: pinned ? `Unpin ${displayName} (P)` : `Pin ${displayName} (P)`,
+                onClick: () => onTogglePin(mId),
+                active: pinned,
+              } : undefined}
+            />
           );
         })}
 
@@ -800,7 +775,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
             <span>No models match your search.</span>
           </li>
         )}
-      </ul>
+      </WorkspaceList>
       {registryZone && registryResultCount > 0 && flatList.length > 0 && (
         <button
           type="button"
