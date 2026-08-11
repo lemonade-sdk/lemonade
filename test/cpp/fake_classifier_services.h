@@ -61,11 +61,9 @@ public:
         chat_replies_[model] = std::move(reply);
     }
 
-    // Make a service throw for a target, which the owning classifier turns into
-    // Score{ok=false} so its on_error applies. embed fails per (model, text)
-    // because its answers are keyed that way; run_classifier / chat fail per
-    // model. The failure is explicit, so an on_error case never depends on how
-    // the engine treats a degenerate (empty) embedding vector.
+    // Make a service throw, so the owning classifier fails (Score{ok=false})
+    // and its on_error applies. embed fails per (model, text) since its answers
+    // are keyed that way; run_classifier / chat fail per model.
     void set_embed_failure(const std::string& model, const std::string& text) {
         failing_embeds_.insert({model, text});
     }
