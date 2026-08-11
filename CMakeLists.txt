@@ -2309,6 +2309,24 @@ if(BUILD_TESTING AND EXISTS "${_GGUF_CAPS_TEST_SRC}")
     add_cpp_ci_test(GgufCapabilitiesTest CI OFF COMMAND test_gguf_capabilities)
 endif()
 
+set(_GGUF_SHARD_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_shard_utils.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_GGUF_SHARD_TEST_SRC}")
+    add_executable(test_gguf_shard_utils
+        test/cpp/test_gguf_shard_utils.cpp
+    )
+    target_include_directories(test_gguf_shard_utils PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_gguf_shard_utils PRIVATE lemonade-server-core)
+    add_dependencies(test_gguf_shard_utils copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(GgufShardUtilsTest CI ON COMMAND test_gguf_shard_utils)
+endif()
+
 # Model residency role/pool contract for router dependencies
 set(_MODEL_RESIDENCY_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_residency.cpp"

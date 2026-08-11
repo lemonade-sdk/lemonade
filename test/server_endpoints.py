@@ -5726,6 +5726,64 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
+    def test_021ub_extra_subdir_sharded_size_sums_shards_but_files_stay_per_file(self):
+        """Issue #2972: a sharded model reports the whole family's size, while
+        /models/{id}/files keeps reporting each file's own size."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shard_size_")
+        folder_name = "Sharded-Size-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        shard1 = os.path.join(model_dir, "Sharded-Size-00001-of-00002.gguf")
+        shard2 = os.path.join(model_dir, "Sharded-Size-00002-of-00002.gguf")
+        self._write_stub_gguf_file(shard1)
+        self._write_stub_gguf_file(shard2)
+
+        # The resolved path is the first shard, which in unsloth-style layouts
+        # is a small stub; the bulk of the weights live in the later shards.
+        shard2_bytes = 200 * 1024 * 1024
+        with open(shard2, "r+b") as f:
+            f.truncate(shard2_bytes)
+        shard1_bytes = os.path.getsize(shard1)
+        expected_gb = (shard1_bytes + shard2_bytes) / (1024**3)
+        shard1_only_gb = shard1_bytes / (1024**3)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+            self.assertIn(folder_name, models_by_id)
+            self.assertAlmostEqual(
+                models_by_id[folder_name]["size"],
+                expected_gb,
+                places=2,
+                msg="model size must cover every shard, not just the resolved one",
+            )
+            self.assertGreater(models_by_id[folder_name]["size"], shard1_only_gb)
+
+            files_response = requests.get(
+                f"{self.base_url}/models/{folder_name}/files",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(files_response.status_code, 200)
+            files = files_response.json()["files"]
+            main_files = [f for f in files if f["role"] == "main"]
+            self.assertEqual(len(main_files), 1)
+            self.assertEqual(main_files[0]["name"], os.path.basename(shard1))
+            self.assertEqual(
+                main_files[0]["size_bytes"],
+                shard1_bytes,
+                "/files must report the individual file size, not the shard total",
+            )
+
+            print("[OK] sharded size sums shards while /files stays per-file")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
     def test_021v_extra_subdir_multiple_sharded_quantizations_split_by_variant(self):
         """A folder with multiple sharded variants lists one model per variant."""
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_sharded_variants_")
