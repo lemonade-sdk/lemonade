@@ -39,6 +39,7 @@ from utils.server_base import (
     run_server_tests,
     OpenAI,
     pull_model_with_retry,
+    _auth_headers,
 )
 from utils.test_models import (
     PORT,
@@ -2450,6 +2451,86 @@ class EndpointTests(ServerTestBase):
             bare_response.json()["checkpoint"],
         )
         print(f"[OK] builtin.{ENDPOINT_TEST_MODEL} alias resolves to bare id")
+
+    def test_021aa_internal_aliases_endpoints(self):
+        """Test administrative REST endpoints: POST/GET/DELETE /internal/aliases."""
+        alias_name = "test-endpoint-alias"
+        target_model = ENDPOINT_TEST_MODEL
+
+        get_res = requests.get(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(get_res.status_code, 200)
+        self.assertIn("aliases", get_res.json())
+
+        try:
+            add_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": alias_name, "target": target_model},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_res.status_code, 200)
+            self.assertEqual(add_res.json()["alias"], alias_name)
+            self.assertEqual(add_res.json()["target"], target_model)
+
+            model_res = requests.get(
+                f"{self.base_url}/models/{alias_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(model_res.status_code, 200)
+            self.assertEqual(model_res.json()["id"], alias_name)
+
+            # Test multi-hop chained alias resolution (alias_hop -> test-endpoint-alias -> ENDPOINT_TEST_MODEL)
+            hop_alias = "test-hop-alias"
+            add_hop_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": hop_alias, "target": alias_name},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_hop_res.status_code, 200)
+
+            hop_model_res = requests.get(
+                f"{self.base_url}/models/{hop_alias}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(hop_model_res.status_code, 200)
+            self.assertEqual(hop_model_res.json()["id"], hop_alias)
+
+            del_hop_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(hop_alias)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(del_hop_res.status_code, 200)
+
+            get_res2 = requests.get(
+                f"{self.internal_url}/aliases",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(get_res2.status_code, 200)
+            aliases = get_res2.json()["aliases"]
+            found = any(a["alias"] == alias_name for a in aliases)
+            self.assertTrue(found)
+
+        finally:
+            del_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(del_res.status_code, (200, 404))
+
+        model_res_del = requests.get(
+            f"{self.base_url}/models/{alias_name}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(model_res_del.status_code, 404)
+        print(f"[OK] /internal/aliases POST/GET/DELETE verified")
 
     def test_021e_naming_spec_user_shadows_builtin(self):
         """Naming spec: a user.X registration shadows a built-in X.
