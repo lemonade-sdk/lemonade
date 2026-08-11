@@ -437,22 +437,23 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
     };
 
     // Helper: 3-tier resolution (user-set > image_defaults > baked-in default)
+    // Use is_explicit_option() to distinguish user/model-saved options from inherited defaults
     auto resolved_int = [&](const std::string& key, int ifd) -> int {
-        if (recipe_options_.has_option(key))
+        if (recipe_options_.is_explicit_option(key))
             return static_cast<int>(recipe_options_.get_option(key));
         if (image_defaults_.has_defaults)
             return ifd;
         return static_cast<int>(recipe_options_.get_option(key));
     };
     auto resolved_float = [&](const std::string& key, float ifd) -> float {
-        if (recipe_options_.has_option(key))
+        if (recipe_options_.is_explicit_option(key))
             return recipe_options_.get_option(key);
         if (image_defaults_.has_defaults)
             return ifd;
         return recipe_options_.get_option(key);
     };
     auto resolved_string = [&](const std::string& key, const std::string& ifd) -> std::string {
-        if (recipe_options_.has_option(key))
+        if (recipe_options_.is_explicit_option(key))
             return recipe_options_.get_option(key);
         if (image_defaults_.has_defaults && !ifd.empty())
             return ifd;
@@ -508,14 +509,14 @@ std::string SDServer::resolve_size(const json& request) const {
     }
     // Priority: recipe_options (user-saved) > image_defaults
     int w, h;
-    if (recipe_options_.has_option("width"))
+    if (recipe_options_.is_explicit_option("width"))
         w = static_cast<int>(recipe_options_.get_option("width"));
     else if (image_defaults_.has_defaults)
         w = image_defaults_.width;
     else
         return "";
 
-    if (recipe_options_.has_option("height"))
+    if (recipe_options_.is_explicit_option("height"))
         h = static_cast<int>(recipe_options_.get_option("height"));
     else if (image_defaults_.has_defaults)
         h = image_defaults_.height;

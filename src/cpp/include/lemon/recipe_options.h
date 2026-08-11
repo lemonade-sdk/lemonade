@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nlohmann/json.hpp>
+#include <set>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>
 #endif
@@ -18,6 +19,7 @@ public:
     RecipeOptions inherit(const RecipeOptions& options) const;
     json get_option(const std::string& opt) const;
     bool has_option(const std::string& opt) const;
+    bool is_explicit_option(const std::string& opt) const;
     void set_option(const std::string& opt, const json& value);
     void remove_option(const std::string& opt);
     std::string get_recipe() const { return recipe_; };
@@ -44,5 +46,6 @@ public:
 private:
     json options_ = json::object();
     std::string recipe_ = "";
+    std::set<std::string> explicit_keys_;  // Keys explicitly set (not inherited)
 };
 }
