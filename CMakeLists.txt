@@ -2716,7 +2716,7 @@ set(_GPU_ENV_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_g
 if(EXISTS "${_GPU_ENV_TEST_SRC}")
     add_executable(test_backend_utils_gpu_env test/cpp/test_backend_utils_gpu_env.cpp)
     target_link_libraries(test_backend_utils_gpu_env PRIVATE lemonade-server-core)
-    add_cpp_ci_test(BackendUtilsGpuEnvTest CI OFF COMMAND test_backend_utils_gpu_env)
+    add_cpp_ci_test(BackendUtilsGpuEnvTest CI ON COMMAND test_backend_utils_gpu_env)
 endif()
 
 set(_NETWORK_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_network_utils.cpp")
