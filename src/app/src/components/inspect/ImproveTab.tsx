@@ -14,6 +14,7 @@ import {
   modelInfoName,
   modelIsDownloaded,
 } from '../../features/chatDefaultModels';
+import { useServerModelState } from '../../features/models/modelState';
 
 interface ImproveTabProps {
   selectedTrace: Trace;
@@ -54,7 +55,9 @@ function truncateText(text: string, maxChars: number): string {
 }
 
 export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
-  const availableModels = api.allModels;
+  const serverModelState = useServerModelState();
+  const availableModels = serverModelState.models?.data ?? api.allModels;
+  const modelCatalogReady = serverModelState.models !== null || api.allModels.length > 0;
   const optimizerModels = useMemo(
     () => availableModels.filter(
       (model) => modelIsDownloaded(model) && modelCapabilityTags(model).includes('tool')
@@ -236,14 +239,19 @@ export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
 
   // Set default model when models load
   useEffect(() => {
+    // Do not lock in the static quality fallback while the shared model catalog
+    // is still loading. Once the catalog arrives, prefer the user's last-ready
+    // downloaded tool model (or the hot model) immediately.
+    if (!modelCatalogReady) return;
+
     const selectedModelAvailable = optimizerModels.some(
       (model) => modelInfoName(model) === improveModel
-    ) || improveModel === QUALITY_DEFAULT_MODEL;
+    ) || (optimizerModels.length === 0 && improveModel === QUALITY_DEFAULT_MODEL);
 
     if (!improveModel || !selectedModelAvailable) {
       setImproveModel(preferredImproveModel);
     }
-  }, [optimizerModels, improveModel, preferredImproveModel]);
+  }, [optimizerModels, improveModel, preferredImproveModel, modelCatalogReady]);
 
   // Sync edits when prompt parsed data changes
   useEffect(() => {

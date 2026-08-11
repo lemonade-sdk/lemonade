@@ -14,6 +14,7 @@ import CreateModal from './inspect/CreateModal';
 import CurlModal from './inspect/CurlModal';
 import { WorkspaceActionButton, WorkspaceDetailEmpty } from './WorkspacePanels';
 import { isMobileLayout } from '../styles/breakpoints';
+import { useServerModelState } from '../features/models/modelState';
 
 interface InspectViewProps {
   embedded?: boolean;
@@ -38,7 +39,8 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
   const tablistRef = useRef<HTMLDivElement>(null);
   const mobileBackRef = useRef<HTMLButtonElement>(null);
 
-  const availableModels = api.allModels;
+  const serverModelState = useServerModelState();
+  const availableModels = serverModelState.models?.data ?? api.allModels;
 
   const selectedTrace = useMemo(() => {
     return traces.find((t) => t.id === selectedTraceId) || null;

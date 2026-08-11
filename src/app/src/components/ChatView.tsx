@@ -1,15 +1,21 @@
 import React, { Suspense, lazy, useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import api, { ChatMessage, ChatCompletionStats, LoadedModel, ModelInfo, RealtimeTranscriptionHandle, friendlyErrorMessage } from '../api';
+import type { ChatMessage, ChatCompletionStats, ConnectionStatus, LoadedModel, ModelInfo, RealtimeTranscriptionHandle } from '../api';
 import { copyTextToClipboard } from '../clipboard';
-import MarkdownMessage from './MarkdownMessage';
-import LogViewer from './LogViewer';
 import { Icon, CapabilityIcon } from './Icon';
-import EffectiveSettingsModal from './EffectiveSettingsModal';
+
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
-import { WorkspaceActionButton } from './WorkspacePanels';
+import { scheduleIdleWork } from '../startupScheduler';
 
-const Model3DResult = lazy(() => import('./Model3DResult'));
+const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
+const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
+const EffectiveSettingsModal = lazy(() => import(/* webpackChunkName: "chat-effective-settings" */ './EffectiveSettingsModal'));
+const LazyMarkdownMessage = lazy(() => import(/* webpackChunkName: "markdown-renderer" */ './MarkdownMessage'));
+const MarkdownMessage: React.FC<React.ComponentProps<typeof LazyMarkdownMessage>> = props => (
+  <Suspense fallback={<div className="message__content message__content--loading" aria-busy="true" />}>
+    <LazyMarkdownMessage {...props} />
+  </Suspense>
+);
 import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -32,12 +38,10 @@ import {
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
 import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../features/chatHistory/historySettings';
-import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
-import { activeDownloadForModel, downloadsForModel, downloadStore, isDownloadTerminal, type DownloadListItem } from '../features/downloadManager/downloadStore';
+import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
-import { buildOmniToolRuntime } from '../tools/omniTools';
-import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOLS, MAX_MCP_SERVER_SELECTION, buildSelectedMcpRuntime, composeMcpRuntimes, listMcpServerToolOptions, type McpServerToolOption } from '../tools/mcpRuntime';
-import { DEFAULT_CONTEXT_SIZE, loadModelTuning } from '../modelConfiguration';
+import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
+import type { ModelTuning } from '../modelConfiguration';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import {
   LEMONADE_DEFAULT_CHAT_MODELS,
@@ -86,6 +90,27 @@ interface Conversation {
 const STORAGE_KEY = 'conversations';
 const ACTIVE_KEY = 'active_conversation';
 const STORAGE_VERSION = 3;
+
+// Keep aligned with modelConfiguration.ts without pulling that feature module into the cold chat chunk.
+const DEFAULT_CONTEXT_SIZE = 4096;
+
+let apiClientPromise: Promise<(typeof import('../api'))['default']> | null = null;
+function getApiClient(): Promise<(typeof import('../api'))['default']> {
+  if (!apiClientPromise) {
+    apiClientPromise = import(/* webpackChunkName: "api-client" */ '../api').then(module => module.default);
+  }
+  return apiClientPromise;
+}
+
+let downloadStoreModulePromise: Promise<typeof import('../features/downloadManager/downloadStore')> | null = null;
+function getDownloadStoreModule(): Promise<typeof import('../features/downloadManager/downloadStore')> {
+  if (!downloadStoreModulePromise) {
+    downloadStoreModulePromise = import(
+      /* webpackChunkName: "download-store" */ '../features/downloadManager/downloadStore'
+    );
+  }
+  return downloadStoreModulePromise;
+}
 
 const CHAT_LOGS_WIDTH_KEY = 'chat_logs_panel_width';
 const CHAT_LOGS_DEFAULT_WIDTH = 520;
@@ -253,6 +278,28 @@ function saveActiveId(id: string | null, persist: boolean) {
  * download. Progress/speed updates arrive every second and must not rerender
  * completed message markup while a user is selecting text to copy.
  */
+function isDownloadTerminal(download: Pick<DownloadListItem, 'status' | 'running'>): boolean {
+  return download.running !== true && (
+    download.status === 'completed'
+    || download.status === 'error'
+    || download.status === 'cancelled'
+  );
+}
+
+function downloadsForModel(downloads: DownloadListItem[], modelName: string): DownloadListItem[] {
+  const target = modelName.trim().toLowerCase();
+  return downloads.filter(download => {
+    if (download.downloadType !== 'model') return false;
+    const name = download.modelName.trim().toLowerCase();
+    const id = download.id.trim().toLowerCase();
+    return name === target || id === `model:${target}` || id.endsWith(`:${target}`);
+  });
+}
+
+function activeDownloadForModel(downloads: DownloadListItem[], modelName: string): DownloadListItem | undefined {
+  return downloadsForModel(downloads, modelName).find(download => !isDownloadTerminal(download));
+}
+
 function chatBlockingDownloads(downloads: DownloadListItem[]): DownloadListItem[] {
   return downloads.filter(download => !isDownloadTerminal(download));
 }
@@ -358,6 +405,8 @@ function timeAgo(ts: number): string {
 interface ChatViewProps {
   currentModel: string | null;
   loadedModels: LoadedModel[];
+  serverModels: ModelInfo[];
+  connectionStatus: ConnectionStatus;
   onModelSelect: (model: string) => void;
   onOpenModelDetails: (model: string) => void;
   onRefresh: () => void | Promise<void>;
@@ -722,20 +771,33 @@ const CopyInlineButton: React.FC<{ text: string; title?: string; className?: str
   );
 };
 
+function friendlyErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const value = error as { userMessage?: unknown; message?: unknown };
+    if (typeof value.userMessage === 'string' && value.userMessage) return value.userMessage;
+    if (typeof value.message === 'string' && value.message) return value.message;
+  }
+  return String(error || 'Unknown error');
+}
+
 function friendlyChatError(message: string): string {
   const cleaned = message.replace(/^Error:\s*/i, '').trim();
   if (!cleaned) return "I couldn't complete that request. Please check the server logs for details.";
   return `I couldn't complete that request.\n\n${cleaned}`;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, onModelSelect, onOpenModelDetails, onRefresh }) => {
+const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, serverModels, connectionStatus, onModelSelect, onOpenModelDetails, onRefresh }) => {
   const [fallbackModelOverride, setFallbackModelOverride] = useState<string | null>(null);
   const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName());
   const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName());
   const [modelPreparations, setModelPreparations] = useState<Record<string, ModelPreparationState>>({});
   const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference());
-  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(loadPersistencePreference()));
-  const [activeId, setActiveId] = useState<string | null>(() => loadActiveId(loadPersistencePreference()));
+  // Large persisted conversations are not required to draw the first usable
+  // frame.  Hydrate them after paint instead of JSON-parsing the full history
+  // synchronously inside the initial React render.
+  const [historyHydrated, setHistoryHydrated] = useState(() => !loadPersistencePreference());
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
@@ -785,11 +847,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
   const [modelPickerError, setModelPickerError] = useState<string | null>(null);
   const [modelPickerUnloading, setModelPickerUnloading] = useState<string | null>(null);
-  const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => chatBlockingDownloads(downloadStore.snapshot()));
+  const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>([]);
   const downloadAvailabilityKeyRef = useRef(chatBlockingDownloadsKey(downloadItems));
   const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
   const [effectiveSettingsOpen, setEffectiveSettingsOpen] = useState(false);
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState(DEFAULT_CONTEXT_SIZE);
+  const [currentModelTuning, setCurrentModelTuning] = useState<ModelTuning | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -826,26 +889,41 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    const refreshDefaultContextSize = async () => {
-      try {
-        const value = await api.getDefaultContextSize();
-        if (!cancelled) setServerDefaultCtxSize(typeof value === 'number' ? value : DEFAULT_CONTEXT_SIZE);
-      } catch {
-        if (!cancelled) setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
-      }
-    };
+    if (historyHydrated) return;
+    if (!persistHistory) {
+      setHistoryHydrated(true);
+      return;
+    }
+    const cancelSchedule = scheduleIdleWork(() => {
+      const storedConversations = loadConversations(true);
+      const storedActiveId = loadActiveId(true);
+      setConversations(current => {
+        if (current.length === 0) return storedConversations;
+        const existing = new Set(current.map(conversation => conversation.id));
+        return [...current, ...storedConversations.filter(conversation => !existing.has(conversation.id))];
+      });
+      setActiveId(current => current || storedActiveId);
+      setHistoryHydrated(true);
+    }, 500);
+    return cancelSchedule;
+  }, [historyHydrated, persistHistory]);
 
-    void refreshDefaultContextSize();
-    const unsubscribe = api.onStatusChange(status => {
-      if (status === 'connected') void refreshDefaultContextSize();
-      else if (!cancelled) setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
-    });
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    if (connectionStatus !== 'connected') {
+      setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
+      return () => { cancelled = true; };
+    }
+    void getApiClient()
+      .then(api => api.getDefaultContextSize())
+      .then(value => {
+        if (!cancelled) setServerDefaultCtxSize(typeof value === 'number' ? value : DEFAULT_CONTEXT_SIZE);
+      })
+      .catch(() => {
+        if (!cancelled) setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
+      });
+    return () => { cancelled = true; };
+  }, [connectionStatus]);
 
   useEffect(() => {
     try {
@@ -906,16 +984,27 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     }
   }, [railExpanded]);
 
-  const customModelInfos = useMemo(
-    () => loadCustomModels().map(customModelToModelInfo),
-    [],
-  );
+  const [customModelInfos, setCustomModelInfos] = useState<ModelInfo[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const cancelSchedule = scheduleIdleWork(() => {
+      void import(/* webpackChunkName: "custom-model-store" */ '../features/customModels/customModelStore')
+        .then(({ loadCustomModels, customModelToModelInfo }) => {
+          if (!cancelled) setCustomModelInfos(loadCustomModels().map(customModelToModelInfo));
+        })
+        .catch(error => console.warn('Failed to hydrate chat custom models:', error));
+    }, 650);
+    return () => {
+      cancelled = true;
+      cancelSchedule();
+    };
+  }, []);
   const knownModelInfos = useMemo(
     () => {
       const seen = new Set<string>();
       const infos: ModelInfo[] = [];
       const defaultInfos = LEMONADE_DEFAULT_CHAT_MODELS.map(lemonadeDefaultModelInfo);
-      [...customModelInfos, ...api.allModels, ...defaultInfos].forEach(info => {
+      [...customModelInfos, ...serverModels, ...defaultInfos].forEach(info => {
         const rawName = String((info as any).model_name || info.name || info.id || '').trim();
         const name = rawName.toLowerCase();
         if (!name || seen.has(name)) return;
@@ -934,7 +1023,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       });
       return infos;
     },
-    [customModelInfos, loadedModels],
+    [customModelInfos, loadedModels, serverModels],
   );
   const lastReadyModelInfo = useMemo(
     () => resolveLastReadyChatModel(knownModelInfos, lastReadyModelName),
@@ -1050,31 +1139,78 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         : (imageGenerationModels[0] || ''),
     }));
   }, [currentCapability, imageGenerationModels]);
-  useEffect(() => downloadStore.subscribe(items => {
-    const blocking = chatBlockingDownloads(items);
-    const nextKey = chatBlockingDownloadsKey(blocking);
-    if (nextKey === downloadAvailabilityKeyRef.current) return;
-    downloadAvailabilityKeyRef.current = nextKey;
-    setDownloadItems(blocking);
-  }), []);
+  useEffect(() => {
+    const specialCapability = !['chat', 'omni', 'unknown'].includes(currentCapability);
+    if (!modelPickerOpen && !specialCapability) return;
+
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    const hydrate = () => {
+      void getDownloadStoreModule().then(({ downloadStore }) => {
+        if (cancelled) return;
+        const update = (items: DownloadListItem[]) => {
+          const blocking = chatBlockingDownloads(items);
+          const nextKey = chatBlockingDownloadsKey(blocking);
+          if (nextKey === downloadAvailabilityKeyRef.current) return;
+          downloadAvailabilityKeyRef.current = nextKey;
+          setDownloadItems(blocking);
+        };
+        update(downloadStore.snapshot());
+        unsubscribe = downloadStore.subscribe(update);
+      }).catch(error => console.warn('Failed to hydrate chat download state:', error));
+    };
+
+    // Opening the picker is an explicit interaction, so hydrate immediately.
+    // Capability-specific background state can still wait for idle time.
+    const cancelSchedule = modelPickerOpen
+      ? (hydrate(), () => {})
+      : scheduleIdleWork(hydrate, 650);
+    return () => {
+      cancelled = true;
+      cancelSchedule();
+      unsubscribe?.();
+    };
+  }, [currentCapability, modelPickerOpen]);
 
   useEffect(() => {
+    // Initial state already read these settings in useState.  Do not perform the
+    // same synchronous localStorage/JSON work again immediately after mount.
     const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings());
-    reloadTtsSettings();
     window.addEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
     return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
   }, []);
 
   useEffect(() => {
     const reloadGlobalModelSettings = () => setGlobalModelSettings(loadGlobalModelSettings());
-    reloadGlobalModelSettings();
     window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
     return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalModelSettings);
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const needsTuning = !!currentModel && (
+      currentCapability === 'image'
+      || currentCapability === 'audio-generation'
+      || currentCapability === 'tts'
+      || isOpenMossTts
+    );
+    if (!needsTuning) {
+      setCurrentModelTuning(null);
+      return () => { cancelled = true; };
+    }
+    void import(/* webpackChunkName: "model-configuration" */ '../modelConfiguration')
+      .then(({ loadModelTuning }) => {
+        if (!cancelled) setCurrentModelTuning(loadModelTuning(currentModel || ''));
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentModelTuning(null);
+      });
+    return () => { cancelled = true; };
+  }, [currentCapability, currentModel, isOpenMossTts]);
+
+  useEffect(() => {
     if (currentCapability !== 'audio-generation') return;
-    const recipeOptions = loadModelTuning(currentModel || '')?.recipe_options || {};
+    const recipeOptions = currentModelTuning?.recipe_options || {};
     setAudioGenerationSettings(prev => ({
       ...prev,
       duration: isAceStepAudio ? 150 : 10,
@@ -1082,16 +1218,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       cfg: typeof recipeOptions.cfg_scale === 'number' ? recipeOptions.cfg_scale : 4.5,
       lyrics: '',
     }));
-  }, [currentModel, currentCapability, isAceStepAudio]);
+  }, [currentModel, currentCapability, currentModelTuning, isAceStepAudio]);
 
   useEffect(() => {
     if (!isOpenMossTts) return;
     setOpenMossSettings({
       mode: 'plain',
-      voiceDescription: String(loadModelTuning(currentModel || '')?.recipe_options?.voice || ''),
+      voiceDescription: String(currentModelTuning?.recipe_options?.voice || ''),
     });
     setPendingAudioFiles([]);
-  }, [currentModel, isOpenMossTts]);
+  }, [currentModel, currentModelTuning, isOpenMossTts]);
 
   useEffect(() => {
     const keepsAudioAttachments = currentCapability === 'audio'
@@ -1133,10 +1269,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       currentLoadedModel,
       currentKnownModelInfo,
       currentCapability === 'image'
-        ? (loadModelTuning(currentModel || '')?.recipe_options as Record<string, unknown> | undefined)
+        ? (currentModelTuning?.recipe_options as Record<string, unknown> | undefined)
         : undefined,
     ),
-    [currentLoadedModel, currentKnownModelInfo, currentModel, currentCapability],
+    [currentLoadedModel, currentKnownModelInfo, currentModel, currentCapability, currentModelTuning],
   );
   const defaultImageSettingsKey = useMemo(() => JSON.stringify(defaultImageSettings), [defaultImageSettings]);
 
@@ -1241,7 +1377,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       addOption({
         name,
         capability,
-        recipe: info.recipe,
+        recipe: typeof info.recipe === 'string' ? info.recipe : undefined,
         loaded: false,
         audioInput: modelSupportsChatAudioInput(info, null),
         info,
@@ -1298,7 +1434,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     if (selectedMcpToolNames !== null) return selectedMcpToolNames.length;
     const visibleToolCount = mcpToolNamesForServers(mcpOptions, selectedMcpServerIds).length;
     if (visibleToolCount > 0) return visibleToolCount;
-    return selectedMcpServerIds.includes(LEMONADE_MCP_SERVER_ID) ? LEMONADE_MCP_TOOLS.length : 0;
+    return selectedMcpServerIds.includes(LEMONADE_MCP_SERVER_ID) ? LEMONADE_MCP_TOOL_COUNT : 0;
   }, [mcpOptions, selectedMcpServerIds, selectedMcpToolNames]);
   const visibleMcpOptions = useMemo(
     () => mcpOptions.filter(server => mcpPickerTab === 'lemonade' ? server.transport === 'builtin' : server.transport !== 'builtin'),
@@ -1309,6 +1445,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     setMcpPickerLoading(true);
     setMcpPickerError('');
     try {
+      const { listMcpServerToolOptions } = await import(/* webpackChunkName: "mcp-runtime" */ '../tools/mcpRuntime');
       setMcpOptions(await listMcpServerToolOptions());
     } catch (error) {
       setMcpPickerError(friendlyErrorMessage(error));
@@ -1466,6 +1603,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     info: ModelInfo | null,
     recipeOptions?: Record<string, unknown>,
   ) => {
+    const api = await getApiClient();
     let currentLoaded = loadedModels;
     try {
       currentLoaded = (await api.health()).all_models_loaded || loadedModels;
@@ -1486,6 +1624,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, [globalModelSettings, knownModelInfos, loadedModels]);
 
   const waitForExistingModelDownload = useCallback(async (modelName: string, convoId: string): Promise<boolean> => {
+    const [{ downloadStore }, api] = await Promise.all([getDownloadStoreModule(), getApiClient()]);
     let sawDownload = false;
     const startedAt = Date.now();
 
@@ -1539,6 +1678,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     initialInfo: ModelInfo | null,
     convoId: string,
   ): Promise<ModelSnapshot> => {
+    const [{ downloadStore }, api] = await Promise.all([getDownloadStoreModule(), getApiClient()]);
     const loadedFrom = (models: LoadedModel[]) => models.find(
       model => model.model_name.toLowerCase() === modelName.toLowerCase(),
     ) || null;
@@ -1628,6 +1768,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       if (source === 'user' && !ttsPlaybackSettings.speakUserText) return;
     }
     try {
+      const api = await getApiClient();
       const isLoaded = loadedModels.some(model => model.model_name.toLowerCase() === modelName.toLowerCase());
       if (!isLoaded) {
         await loadModelWithPolicy(modelName, findModelInfoByName(knownModelInfos, modelName) || null);
@@ -1637,6 +1778,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         (modelInfo as any)?.recipe
         || ((Array.isArray(modelInfo?.recipes) && modelInfo?.recipes?.[0]) ? (modelInfo.recipes[0] as any).recipe : ''),
       ).toLowerCase();
+      const { loadModelTuning } = await import(
+        /* webpackChunkName: "model-configuration" */ '../modelConfiguration'
+      );
       const directOptions = loadModelTuning(modelName)?.recipe_options || {};
       const voice = modelRecipe.includes('openmoss')
         ? String(directOptions.voice || '')
@@ -1781,14 +1925,17 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   // Persist conversations to localStorage only when the user explicitly opted in.
   useEffect(() => {
+    if (!historyHydrated) return;
     saveConversations(conversations, persistHistory);
     try { localStorage.setItem(storageKey('persist_conversations'), String(persistHistory)); } catch { /* ignore */ }
-  }, [conversations, persistHistory]);
+  }, [conversations, historyHydrated, persistHistory]);
 
-  // Persist active conversation id
+  // Persist active conversation id only after the initial stored value has been
+  // hydrated, otherwise an empty cold-start state could overwrite it.
   useEffect(() => {
+    if (!historyHydrated) return;
     saveActiveId(activeId, persistHistory);
-  }, [activeId, persistHistory]);
+  }, [activeId, historyHydrated, persistHistory]);
 
   // Active ID can point at stale/missing data after manual localStorage edits or migrations.
   useEffect(() => {
@@ -2056,6 +2203,7 @@ ${finalText}`
     setLiveTranscript('');
     liveTranscriptRef.current = '';
     try {
+      const api = await getApiClient();
       const handle = await api.connectRealtimeTranscription(currentModel, {
         onConnected: () => setIsLiveConnected(true),
         onDisconnected: () => setIsLiveConnected(false),
@@ -2122,6 +2270,7 @@ ${finalText}`
   ) => {
     setCapabilityBusyConvoIds(prev => new Set(prev).add(convoId));
     try {
+      const api = await getApiClient();
       if (model.capability === 'image') {
         if (!text) throw new Error('Image mode needs a text prompt.');
         imageSettingsCommittedRef.current = true;
@@ -2214,6 +2363,9 @@ ${finalText}`
       } else if (model.capability === 'tts') {
         if (!text) throw new Error('TTS mode needs text to speak.');
         let targetModel = model.name;
+        const { loadModelTuning } = await import(
+          /* webpackChunkName: "model-configuration" */ '../modelConfiguration'
+        );
         let voice = ttsVoiceFromRecipeOptions(loadModelTuning(model.name)?.recipe_options || {});
         let speechOptions: Record<string, unknown> = {};
         let content = 'Generated speech audio from your text.';
@@ -2317,6 +2469,7 @@ ${finalText}`
     audioFiles: File[],
     appendUserToConversation: boolean,
   ) => {
+    const api = await getApiClient();
     const text = userMessage.content.trim();
     const images = userMessage.images?.length ? [...userMessage.images] : undefined;
     const hasImages = !!images?.length;
@@ -2362,13 +2515,17 @@ ${finalText}`
     let requestImages = images;
     let includeDirectAudioParts = canUseAudioInput && modeSupportsChatCompletions && audioFiles.length > 0;
 
-    const omniRuntime = collectionInfo
-      ? buildOmniToolRuntime(collectionInfo, knownModelInfos, {
-          attachedImages: images || [],
-          attachedAudioFiles: audioFiles,
-          previousImages: collectConversationImages(priorMessages),
-        })
-      : null;
+    let omniRuntime: ChatToolRuntime | null = null;
+    if (collectionInfo) {
+      const { buildOmniToolRuntime } = await import(
+        /* webpackChunkName: "omni-tools" */ '../tools/omniTools'
+      );
+      omniRuntime = buildOmniToolRuntime(collectionInfo, knownModelInfos, {
+        attachedImages: images || [],
+        attachedAudioFiles: audioFiles,
+        previousImages: collectConversationImages(priorMessages),
+      });
+    }
 
     if (collectionInfo) {
       const primaryChatComponent = getPrimaryChatComponent(collectionInfo, knownModelInfos);
@@ -2415,6 +2572,9 @@ ${finalText}`
     let selectedMcpRuntime: ChatToolRuntime | null = null;
     if (useMcp && modeSupportsMcp) {
       try {
+        const { buildSelectedMcpRuntime } = await import(
+          /* webpackChunkName: "mcp-runtime" */ '../tools/mcpRuntime'
+        );
         selectedMcpRuntime = await buildSelectedMcpRuntime(
           selectedMcpServerIds,
           {
@@ -2439,7 +2599,16 @@ ${finalText}`
       }
     }
 
-    const toolRuntime = composeMcpRuntimes([omniRuntime, selectedMcpRuntime]);
+    const activeToolRuntimes = [omniRuntime, selectedMcpRuntime].filter(
+      (runtime): runtime is ChatToolRuntime => !!runtime && runtime.tools.length > 0,
+    );
+    let toolRuntime: ChatToolRuntime | null = activeToolRuntimes[0] || null;
+    if (activeToolRuntimes.length > 1) {
+      const { composeMcpRuntimes } = await import(
+        /* webpackChunkName: "mcp-runtime" */ '../tools/mcpRuntime'
+      );
+      toolRuntime = composeMcpRuntimes(activeToolRuntimes);
+    }
 
     // Build chat history from the conversation's messages before this user prompt.
     // Do not feed prior friendly UI error messages or generated media artifacts back as assistant context.
@@ -2567,7 +2736,7 @@ ${finalText}`
     setPendingAudioFiles([]);
     void speakWithPinnedTts(text, 'user');
 
-    if (!api.isConnected) {
+    if (connectionStatus !== 'connected') {
       appendAssistantMessage(convoId, {
         content: friendlyChatError('Lemonade Server is not connected. Reconnect the server, then retry this message.'),
         model: initialSnapshot,
@@ -2612,7 +2781,7 @@ ${finalText}`
 
   const handleRetryAssistant = useCallback(async (messageIndex: number) => {
     if (!activeId || isBusy) return;
-    if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
+    if (connectionStatus !== 'connected' || !currentModel || !currentModelSnapshot) return;
     const convo = conversations.find(c => c.id === activeId);
     if (!convo || convo.messages[messageIndex]?.role !== 'assistant') return;
 
@@ -2645,7 +2814,7 @@ ${finalText}`
       [],
       false,
     );
-  }, [activeId, appendAssistantMessage, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
+  }, [activeId, appendAssistantMessage, connectionStatus, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
   const handleSpeakAssistantMessage = useCallback((text: string) => {
     void speakWithPinnedTts(text, 'assistant', true);
@@ -2656,7 +2825,7 @@ ${finalText}`
   const handleEditUserMessage = useCallback(async (messageIndex: number, revisedContent: string) => {
     const text = revisedContent.trim();
     if (!text || !activeId || isBusy) return;
-    if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
+    if (connectionStatus !== 'connected' || !currentModel || !currentModelSnapshot) return;
     const convo = conversations.find(c => c.id === activeId);
     if (!convo || convo.messages[messageIndex]?.role !== 'user') return;
 
@@ -2677,7 +2846,7 @@ ${finalText}`
     } : c));
 
     await startAssistantResponse(activeId, currentModelSnapshot, editedUserMessage, priorMessages, [], false);
-  }, [activeId, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
+  }, [activeId, connectionStatus, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
   // Keep option-button callbacks stable across unrelated Chat state updates. This
   // lets memoized completed Markdown messages retain their DOM and selection.
@@ -2807,6 +2976,7 @@ ${finalText}`
     if (modelPickerUnloading) return;
     setModelPickerUnloading(modelName);
     try {
+      const api = await getApiClient();
       await api.unloadModel(modelName);
       await Promise.resolve(onRefresh());
       setUnloadAnnouncement(`${modelName} unloaded`);
@@ -2820,6 +2990,7 @@ ${finalText}`
     setModelPickerUnloading(modelName);
     void (async () => {
       try {
+        const api = await getApiClient();
         await api.unloadModel(modelName);
         await Promise.resolve(onRefresh());
         setUnloadAnnouncement(`${modelName} unloaded`);
@@ -2852,7 +3023,8 @@ ${finalText}`
       return;
     }
 
-    if (!api.isConnected || modelPickerLoading) return;
+    if (connectionStatus !== 'connected' || modelPickerLoading) return;
+    const { downloadStore } = await getDownloadStoreModule();
     if (activeDownloadForModel(downloadStore.snapshot(), option.name)) {
       setModelPickerError(`${option.name} is still downloading. Wait for the download to finish before loading it.`);
       return;
@@ -2876,7 +3048,7 @@ ${finalText}`
     } finally {
       setModelPickerLoading(null);
     }
-  }, [currentModel, loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh]);
+  }, [connectionStatus, currentModel, loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh]);
 
   // ── Option select from assistant messages ───────────────────
 
@@ -2976,6 +3148,7 @@ ${finalText}`
       <div
         className={`chat ${railExpanded ? 'rail-expanded' : ''}${showInlineLogs ? ' chat--with-logs' : ''}`}
         style={showInlineLogs ? chatLayoutStyle : undefined}
+        data-startup-ready="chat"
       >
       {/* Conversation rail */}
       <aside className={`rail workspace-rail${railExpanded ? '' : ' is-collapsed'}`}>
@@ -2988,7 +3161,10 @@ ${finalText}`
         />
 
         <div className="rail__new-wrap">
-          <WorkspaceActionButton className="rail__new" appearance="primary" icon="compose" onClick={handleNewChat} aria-label="New chat">New chat</WorkspaceActionButton>
+          <button type="button" className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium rail__new" onClick={handleNewChat} aria-label="New chat">
+            <Icon name="compose" size={14} aria-hidden="true" />
+            <span className="workspace-action-button__label">New chat</span>
+          </button>
         </div>
 
         <ul className="rail__list" role="listbox" aria-label="Conversations" onKeyDown={handleRailKeyDown}>
@@ -3054,9 +3230,14 @@ ${finalText}`
         </div>
         <div className="bottom-sheet__header">
           <strong>Conversations</strong>
-          <WorkspaceActionButton size="toolbar" appearance="quiet" icon="x" iconOnly onClick={closeMobileSheet} aria-label="Close conversation history" title="Close panel" />
+          <button type="button" className="btn btn--quiet btn--toolbar btn--icon-only workspace-action-button workspace-action-button--quiet workspace-action-button--toolbar workspace-action-button--icon-only" onClick={closeMobileSheet} aria-label="Close conversation history" title="Close panel">
+            <Icon name="x" size={16} aria-hidden="true" />
+          </button>
         </div>
-        <WorkspaceActionButton className="bottom-sheet__new" appearance="primary" icon="compose" onClick={() => { handleNewChat(); closeMobileSheet(); }}>New chat</WorkspaceActionButton>
+        <button type="button" className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium bottom-sheet__new" onClick={() => { handleNewChat(); closeMobileSheet(); }}>
+          <Icon name="compose" size={14} aria-hidden="true" />
+          <span className="workspace-action-button__label">New chat</span>
+        </button>
         <ul className="bottom-sheet__list rail__list" role="listbox" aria-label="Conversations" onKeyDown={handleSheetKeyDown}>
           {conversations.map((c, idx) => {
             const badge = modelModeBadge(c.model?.capability || 'chat', c.model?.recipe);
@@ -3232,7 +3413,9 @@ ${finalText}`
             onPointerDown={handleChatLogsResizeStart}
             onKeyDown={handleChatLogsResizeKeyDown}
           />
-          <LogViewer />
+          <Suspense fallback={<div className="view-loading view-loading--compact"><span className="spinner" aria-hidden="true" /></div>}>
+            <LogViewer />
+          </Suspense>
         </aside>
       )}
 
@@ -3360,8 +3543,9 @@ ${finalText}`
             <Icon name="logs" size={13} /> Logs
           </button>
         </div>
-        {currentModel && (
-          <EffectiveSettingsModal
+        {currentModel && effectiveSettingsOpen && (
+          <Suspense fallback={null}>
+            <EffectiveSettingsModal
             open={effectiveSettingsOpen}
             onClose={() => setEffectiveSettingsOpen(false)}
             modelName={currentModel}
@@ -3373,14 +3557,17 @@ ${finalText}`
             loadedModel={currentLoadedModel}
             isModelLoaded={!!currentLoadedModel}
             onReload={async () => {
+              const api = await getApiClient();
               await api.reloadModel(currentModel, undefined, currentKnownModelInfo || currentCustomModelInfo || null);
               await Promise.resolve(onRefresh());
             }}
             onLoad={async () => {
+              const api = await getApiClient();
               await api.loadModel(currentModel, undefined, currentKnownModelInfo || currentCustomModelInfo || null);
               await Promise.resolve(onRefresh());
             }}
-          />
+            />
+          </Suspense>
         )}
         {streamingToolStatus && (
           <div className="composer__tool-status">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo } from '../modelCapabilities';
@@ -16,14 +16,12 @@ import { DownloadListItem, activeDownloadForModel, downloadStore } from '../feat
 import { ModelListPanel, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
 import type { FilterTab, PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
-import { ModelDetailPanel } from './ModelDetailPanel';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { useWorkspacePanelResize } from '../hooks/useWorkspacePanelResize';
 import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
 import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
-import RouterEditorPanel from './RouterEditorPanel';
-import GlobalModelSettingsPanel, { type UpdateAllModelsResult } from './GlobalModelSettingsPanel';
+import type { UpdateAllModelsResult } from './GlobalModelSettingsPanel';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, WorkspaceMetadataChip, WorkspacePanelResizer } from './WorkspacePanels';
 import { ROUTER_RECIPE, type RouterPullRequest } from '../features/router/routerTypes';
 import { deleteRouterRecord, loadRouterRecords, routerRecordToModelInfo } from '../features/router/routerStore';
@@ -39,6 +37,16 @@ import {
 } from '../features/modelSettings/globalModelSettings';
 import { backendLabel } from '../modelPresentation';
 import { useServerModelState } from '../features/models/modelState';
+import {
+  ModelDetailPanelPreloaded as ModelDetailPanel,
+  RouterEditorPanelPreloaded as RouterEditorPanel,
+  GlobalModelSettingsPanelPreloaded as GlobalModelSettingsPanel,
+  preloadModelManagerSecondarySurfaces,
+} from '../interactionPreload';
+
+export async function preloadModelManagerSecondary(): Promise<void> {
+  await preloadModelManagerSecondarySurfaces();
+}
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -936,8 +944,18 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
     return filtered.slice(0, 40);
   }, [options, queryText]);
 
-  // Reset active index when the option list changes
-  useEffect(() => { setActiveIndex(-1); }, [visibleOptions]);
+  // Keep keyboard focus stable while the progressive model catalog updates.
+  // Resetting to -1 here races ArrowDown: an async model snapshot can arrive
+  // immediately after the key press and erase aria-activedescendant. Query
+  // edits/close paths already reset explicitly; catalog updates only need to
+  // clamp an existing index to the new list bounds.
+  useEffect(() => {
+    setActiveIndex(previous => {
+      if (previous < 0) return -1;
+      if (visibleOptions.length === 0) return -1;
+      return Math.min(previous, visibleOptions.length - 1);
+    });
+  }, [visibleOptions.length]);
 
   const groups: Array<{ source: OmniComponentOptionSource; label: string; options: OmniComponentOption[] }> = [
     { source: 'custom' as OmniComponentOptionSource, label: 'Custom models', options: visibleOptions.filter(option => option.source === 'custom') },
@@ -1056,11 +1074,19 @@ interface ModelManagerProps {
 }
 
 const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelRequest }) => {
+  useEffect(() => {
+    // Direct/deep-linked Models loads must also warm the details/editor modules
+    // automatically. Never make selecting a model the event that starts them.
+    void preloadModelManagerSecondarySurfaces().catch(() => undefined);
+  }, []);
   const serverModelState = useServerModelState();
   const models = serverModelState.models?.data ?? EMPTY_MODELS;
+  const fullModelStateReady = serverModelState.models !== null;
+  const [fastLocalModels, setFastLocalModels] = useState<ModelInfo[]>(EMPTY_MODELS);
+  const visibleServerModels = fullModelStateReady ? models : fastLocalModels;
   const loadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const connectionStatus = serverModelState.status;
-  const modelsLoading = serverModelState.refreshing && models.length === 0;
+  const modelsLoading = serverModelState.refreshing && !fullModelStateReady && fastLocalModels.length === 0;
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
@@ -1129,6 +1155,27 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   useEffect(() => downloadStore.subscribe(setDownloadItems), []);
 
+  // The full catalog uses /models?show_all=true and can take noticeably longer
+  // than the optimized downloaded-only endpoint.  On a cold Models mount, show
+  // the user's local models as soon as the server is connected while the global
+  // model-state refresh continues loading the complete catalog in the background.
+  useEffect(() => {
+    if (fullModelStateReady || connectionStatus !== 'connected') return;
+    let cancelled = false;
+    void api.models(false)
+      .then(data => {
+        if (!cancelled && !fullModelStateReady && Array.isArray(data.data)) {
+          setFastLocalModels(data.data);
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [connectionStatus, fullModelStateReady]);
+
+  useEffect(() => {
+    if (fullModelStateReady && fastLocalModels.length > 0) setFastLocalModels(EMPTY_MODELS);
+  }, [fastLocalModels.length, fullModelStateReady]);
+
   const reloadCustomModels = useCallback(() => {
     setCustomModels(loadCustomModels().map(customModelToModelInfo));
   }, []);
@@ -1156,7 +1203,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       .then(info => { if (!cancelled) setStorageInfo(info); })
       .catch(() => { if (!cancelled) setStorageInfo(null); });
     return () => { cancelled = true; };
-  }, [models.length]);
+  }, [visibleServerModels.length]);
 
   useEffect(() => {
     const reloadGlobalSettings = () => setGlobalModelSettings(loadGlobalModelSettings());
@@ -2223,7 +2270,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       merged.push(m);
     }
     const loadedNames = new Set(loadedModels.map(lm => lm.model_name.toLowerCase()));
-    for (const m of models) {
+    for (const m of visibleServerModels) {
       const name = modelName(m).toLowerCase();
       if (!name || seen.has(name)) continue;
       // Hide models explicitly marked as not suggested, unless they are downloaded or loaded
@@ -2232,7 +2279,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       merged.push(m);
     }
     return merged;
-  }, [routerModels, customModels, models, loadedModels]);
+  }, [routerModels, customModels, visibleServerModels, loadedModels]);
 
   const omniComponentOptions = useMemo(() => {
     const roles: Record<OmniComponentRole, OmniComponentOption[]> = {
@@ -2860,6 +2907,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       {/* Right panel: global settings, router editor, custom form, or model detail */}
       {showGlobalSettings ? (
         <div className="manager__detail-form-panel manager__detail-form-panel--global-settings">
+          <Suspense fallback={<div className="view-loading" role="status"><span className="spinner" aria-hidden="true" /></div>}>
           <GlobalModelSettingsPanel
             models={allModels}
             loadedModels={loadedModels}
@@ -2868,9 +2916,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             onUpdateAllModels={handleUpdateAllModels}
             onClose={closeGlobalSettings}
           />
+          </Suspense>
         </div>
       ) : showRouterEditor ? (
         <div className="manager__detail-form-panel manager__detail-form-panel--router">
+          <Suspense fallback={<div className="view-loading" role="status"><span className="spinner" aria-hidden="true" /></div>}>
           <RouterEditorPanel
             models={allModels}
             initialModel={routerEditorModel}
@@ -2879,6 +2929,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             onDeleted={handleDeleteRouterDefinition}
             onClose={closeRouterEditor}
           />
+          </Suspense>
         </div>
       ) : showCustomEditor ? (
         <div className="manager__detail-form-panel">
@@ -3197,7 +3248,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           {customJsonNotice && <div className="manager__inline-notice">{customJsonNotice}</div>}
           </WorkspaceDetailPanel>
         </div>
+      ) : (!selectedDetailModel && !selectedRemoteModel) ? (
+        <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label="Model detail">
+          <div className="model-detail-panel__placeholder">
+            <Icon name="model" size={40} aria-hidden="true" />
+            <p>{allModels.length === 0 ? 'Loading model catalog…' : 'No model selected'}</p>
+            <p className="model-detail-panel__placeholder-sub">
+              {allModels.length === 0
+                ? 'Downloaded models appear first while the full Lemonade catalog finishes loading.'
+                : 'Select a model from the list to view its details.'}
+            </p>
+          </div>
+        </div>
       ) : (
+        <Suspense fallback={<div className="view-loading" role="status"><span className="spinner" aria-hidden="true" /></div>}>
         <ModelDetailPanel
           model={selectedDetailModel}
           models={allModels}
@@ -3250,6 +3314,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           }}
           onClose={() => { setSelectedDetailModelId(null); setSelectedRemoteModel(null); }}
         />
+        </Suspense>
       )}
     </div>
   );

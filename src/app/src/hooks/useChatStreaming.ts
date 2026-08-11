@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import api, { ChatMessage, LiveStreamStats, ChatCompletionStats } from '../api';
-import { LEMONADE_TOOLS, executeTool, ToolCall, ToolResult } from '../tools/lemonadeTools';
+import type { ChatMessage, LiveStreamStats, ChatCompletionStats } from '../api';
+import type { ToolCall, ToolResult } from '../tools/lemonadeTools';
 
 export type { ToolCall } from '../tools/lemonadeTools';
 
@@ -30,11 +30,6 @@ export interface ChatToolRuntime {
   execute: (call: ToolCall) => Promise<ToolExecutionPayload>;
   systemPrompt?: string;
 }
-
-const DEFAULT_TOOL_RUNTIME: ChatToolRuntime = {
-  tools: LEMONADE_TOOLS as unknown as Record<string, unknown>[],
-  execute: executeTool as unknown as (call: ToolCall) => Promise<ToolExecutionPayload>,
-};
 
 /** Produce a short human-readable summary of a tool result */
 function summarizeResult(toolName: string, data: Record<string, unknown>): string {
@@ -119,25 +114,34 @@ export function useChatStreaming(
 
   const controllersRef = useRef<Map<string, AbortController>>(new Map());
   const tokenBufferRef = useRef<Record<string, StreamState>>({});
+  const flushTimerRef = useRef<number | null>(null);
 
-  // Flush token buffer → state (50ms interval)
-  useEffect(() => {
-    const flush = setInterval(() => {
-      const buf = tokenBufferRef.current;
-      const keys = Object.keys(buf);
-      if (keys.length === 0) return;
-      setActiveStreams(prev => {
-        let next = prev;
-        for (const id of keys) {
-          if (!prev[id]) continue;
-          if (next === prev) next = { ...prev };
-          next[id] = { ...next[id], ...buf[id] };
-        }
-        return next;
-      });
-      tokenBufferRef.current = {};
-    }, 50);
-    return () => clearInterval(flush);
+  // Do not keep a 50ms interval alive for the entire lifetime of the Chat view.
+  // Schedule a flush only when a streaming token actually arrives.
+  const flushTokenBuffer = useCallback(() => {
+    flushTimerRef.current = null;
+    const buf = tokenBufferRef.current;
+    const keys = Object.keys(buf);
+    if (keys.length === 0) return;
+    setActiveStreams(prev => {
+      let next = prev;
+      for (const id of keys) {
+        if (!prev[id]) continue;
+        if (next === prev) next = { ...prev };
+        next[id] = { ...next[id], ...buf[id] };
+      }
+      return next;
+    });
+    tokenBufferRef.current = {};
+  }, []);
+
+  const scheduleTokenFlush = useCallback(() => {
+    if (flushTimerRef.current !== null) return;
+    flushTimerRef.current = window.setTimeout(flushTokenBuffer, 50);
+  }, [flushTokenBuffer]);
+
+  useEffect(() => () => {
+    if (flushTimerRef.current !== null) window.clearTimeout(flushTimerRef.current);
   }, []);
 
   const getStream = useCallback(
@@ -151,9 +155,16 @@ export function useChatStreaming(
   );
 
   const send = useCallback(async (convoId: string, model: string, messages: ChatMessage[], tools: boolean | ChatToolRuntime | null = false) => {
-    const runtime: ChatToolRuntime | null = tools === true
-      ? DEFAULT_TOOL_RUNTIME
-      : (tools && typeof tools === 'object' ? tools : null);
+    let runtime: ChatToolRuntime | null = tools && typeof tools === 'object' ? tools : null;
+    if (tools === true) {
+      const { LEMONADE_TOOLS, executeTool } = await import(
+        /* webpackChunkName: "lemonade-tools" */ '../tools/lemonadeTools'
+      );
+      runtime = {
+        tools: LEMONADE_TOOLS as unknown as Record<string, unknown>[],
+        execute: executeTool as unknown as (call: ToolCall) => Promise<ToolExecutionPayload>,
+      };
+    }
     setActiveStreams(prev => ({ ...prev, [convoId]: { content: '', thinking: '', toolCalls: [] } }));
     setThinkingExpanded(false);
 
@@ -166,6 +177,7 @@ export function useChatStreaming(
     const allToolCalls: ToolCallEntry[] = [];
 
     const runCompletion = async (): Promise<void> => {
+      const { default: api } = await import(/* webpackChunkName: "api-client" */ '../api');
       return new Promise<void>((resolve, reject) => {
         api.chatCompletion(model, fullMessages, {
           tools: runtime?.tools?.length ? runtime.tools : undefined,
@@ -173,12 +185,14 @@ export function useChatStreaming(
             const buf = tokenBufferRef.current;
             if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
             buf[convoId].thinking = fullReasoning;
+            scheduleTokenFlush();
             if (!thinkingExpanded) setThinkingExpanded(true);
           },
           onToken: (_token, full) => {
             const buf = tokenBufferRef.current;
             if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
             buf[convoId].content = full;
+            scheduleTokenFlush();
           },
           onStats: (stats) => {
             setLiveStats(prev => ({ ...prev, [convoId]: stats }));
@@ -315,7 +329,7 @@ export function useChatStreaming(
     };
 
     await runCompletion();
-  }, [onDone, onError]);
+  }, [onDone, onError, scheduleTokenFlush]);
 
   const stop = useCallback((convoId: string): { content: string; thinking?: string } | null => {
     const controller = controllersRef.current.get(convoId);

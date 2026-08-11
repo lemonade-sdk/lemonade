@@ -634,8 +634,10 @@ interface BackendManagerProps {
 }
 
 const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
-  const [sysInfo, setSysInfo] = useState<SystemInfoData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [sysInfo, setSysInfo] = useState<SystemInfoData | null>(() =>
+    api.systemInfoData as unknown as SystemInfoData | null
+  );
+  const [loading, setLoading] = useState(() => !api.systemInfoData);
   const [error, setError] = useState<string | null>(null);
   const [showTech, setShowTech] = useState(false);
   const [showUnsupported, setShowUnsupported] = useState(false);
@@ -651,7 +653,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const pendingBackendActionsRef = useRef<Map<string, PendingBackendAction>>(new Map());
   const backendSyncPromisesRef = useRef<Map<string, Promise<BackendSyncResult>>>(new Map());
   const toastTimerRef = useRef<number | null>(null);
-  const sysInfoRef = useRef<SystemInfoData | null>(null);
+  const sysInfoRef = useRef<SystemInfoData | null>(sysInfo);
   const argsTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
