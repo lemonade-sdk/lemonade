@@ -86,13 +86,20 @@ jobs:
           print(f"vllm.rocm: {old} -> {release}")
           PY
 
-      - name: Build Lemonade server
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v5
+        with:
+          path: build/_deps
+          key: fetchcontent-validate-vllm-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-validate-vllm-
+
+      - name: Build lemond and the CLI
         run: |
           set -e
           ./setup.sh
           # Skip the web app; CI only exercises the backend.
-          cmake -DBUILD_WEB_APP=OFF --preset default
-          cmake --build --preset default
+          cmake --preset default -DBUILD_WEB_APP=OFF
+          cmake --build --preset default --target lemond lemonade
           test -f build/lemond || { echo "lemond not found!"; exit 1; }
           echo "Build successful!"
 

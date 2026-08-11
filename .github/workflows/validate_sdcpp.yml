@@ -231,15 +231,20 @@ jobs:
             --release "${{ needs.discover-release.outputs.cuda_release }}" `
             --backends "${{ needs.discover-release.outputs.cuda_update_backends }}"
 
-      - name: Build C++ Server with CMake
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v5
+        with:
+          path: build/_deps
+          key: fetchcontent-validate-sdcpp-vs2026-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-validate-sdcpp-vs2026-
+
+      - name: Build lemond and the CLI
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          Write-Host "Building Lemonade server binaries..." -ForegroundColor Cyan
-          if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-          cmake --preset vs18
+          cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build build --config Release --target lemond lemonade
+          cmake --build build --config Release --target lemond lemonade -- /m:2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path "build\Release\lemond.exe")) {
               Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red

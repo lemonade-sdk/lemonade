@@ -902,7 +902,7 @@ jobs:
         uses: ./.github/actions/get-version
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build/_deps
           # vs2026 marker: see installer job — VS 2022-built _deps cannot be
