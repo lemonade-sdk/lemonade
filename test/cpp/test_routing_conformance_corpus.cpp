@@ -39,10 +39,12 @@ using lemon::RoutePolicy;
 using lemon::RoutingPolicyEngine;
 using lemon::json;
 
-// Every Decision field is compared exactly except a trace score, which is
-// computed (dot product, square roots, a division) and so can differ in its last
-// bits between CI's x86 and ARM runners. The margin is far above that noise and
-// far below any score difference a case could care about.
+// Every Decision field is compared exactly except a semantic_similarity trace
+// score, which is computed (dot product, square roots, a division) and so can
+// differ in its last bits between CI's x86 and ARM runners. The margin is far
+// above that noise and far below any score difference a case could care about.
+// Other classifier scores (classifier, llm) come straight from stub answers and
+// are bit-exact, so they stay under exact comparison.
 static constexpr double kScoreTolerance = 1e-12;
 
 static int g_failures = 0;
@@ -243,7 +245,11 @@ static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, con
     return ok;
 }
 
-static bool trace_entries_match(const json& expected, const json& produced) {
+// `semantic_conditions` holds the trace condition strings ("classifier:<id>")
+// whose score is computed by semantic_similarity and so is compared within
+// kScoreTolerance. Every other score is compared exactly.
+static bool trace_entries_match(const json& expected, const json& produced,
+                                const std::set<std::string>& semantic_conditions) {
     if (!expected.is_object() || !produced.is_object()) return expected == produced;
     json expected_rest = expected;
     json produced_rest = produced;
@@ -255,11 +261,15 @@ static bool trace_entries_match(const json& expected, const json& produced) {
     if (!expected["score"].is_number() || !produced["score"].is_number()) {
         return expected["score"] == produced["score"];
     }
+    if (semantic_conditions.count(expected.value("condition", "")) == 0) {
+        return expected["score"] == produced["score"];
+    }
     return std::fabs(expected["score"].get<double>() - produced["score"].get<double>()) <=
            kScoreTolerance;
 }
 
-static bool decisions_match(const json& expected, const json& produced) {
+static bool decisions_match(const json& expected, const json& produced,
+                            const std::set<std::string>& semantic_conditions) {
     json expected_rest = expected;
     json produced_rest = produced;
     expected_rest.erase("trace");
@@ -274,19 +284,29 @@ static bool decisions_match(const json& expected, const json& produced) {
         return false;
     }
     for (std::size_t i = 0; i < expected_trace.size(); ++i) {
-        if (!trace_entries_match(expected_trace[i], produced_trace[i])) return false;
+        if (!trace_entries_match(expected_trace[i], produced_trace[i], semantic_conditions)) {
+            return false;
+        }
     }
     return true;
 }
 
-// A trace score delta that decisions_match() already accepted within
-// kScoreTolerance. json::diff is exact, so it flags these; dropping them keeps
-// the report pointed at the difference that actually failed the case.
+// A semantic_similarity trace score delta that decisions_match() already
+// accepted within kScoreTolerance. json::diff is exact, so it flags these;
+// dropping them keeps the report pointed at the difference that actually failed
+// the case. Non-semantic scores are compared exactly, so they are never dropped.
 static bool is_within_tolerance_score(const std::string& path, const json& expected,
-                                      const json& produced) {
+                                      const json& produced,
+                                      const std::set<std::string>& semantic_conditions) {
     static const std::string kSuffix = "/score";
     if (path.size() < kSuffix.size() ||
         path.compare(path.size() - kSuffix.size(), kSuffix.size(), kSuffix) != 0) {
+        return false;
+    }
+    const auto cond_ptr =
+        json::json_pointer(path.substr(0, path.size() - kSuffix.size()) + "/condition");
+    if (!expected.contains(cond_ptr) || !expected.at(cond_ptr).is_string() ||
+        semantic_conditions.count(expected.at(cond_ptr).get<std::string>()) == 0) {
         return false;
     }
     const auto ptr = json::json_pointer(path);
@@ -297,13 +317,15 @@ static bool is_within_tolerance_score(const std::string& path, const json& expec
            std::fabs(exp.get<double>() - prod.get<double>()) <= kScoreTolerance;
 }
 
-static void report_mismatch(const json& expected, const json& produced) {
+static void report_mismatch(const json& expected, const json& produced,
+                            const std::set<std::string>& semantic_conditions) {
     std::printf("  expected: %s\n", expected.dump().c_str());
     std::printf("  produced: %s\n", produced.dump().c_str());
 
     std::vector<json> diffs;
     for (const auto& op : json::diff(expected, produced)) {
-        if (!is_within_tolerance_score(op.value("path", ""), expected, produced)) {
+        if (!is_within_tolerance_score(op.value("path", ""), expected, produced,
+                                       semantic_conditions)) {
             diffs.push_back(op);
         }
     }
@@ -404,9 +426,21 @@ static void run_case(const RoutingPolicyEngine& engine, const lemon::RouteContex
 
     const json produced = lemon::route_decision_to_json(decision);
     const json& expected = row.at("decision");
-    const bool ok = decisions_match(expected, produced);
+
+    // A classifier band traces its condition as "classifier:<id>". Collect the
+    // conditions of the semantic_similarity classifiers, whose scores are
+    // computed and so are compared within kScoreTolerance; every other score
+    // stays exact.
+    std::set<std::string> semantic_conditions;
+    for (const auto& entry : engine.policy().classifiers) {
+        if (entry.second && entry.second->type() == "semantic_similarity") {
+            semantic_conditions.insert("classifier:" + entry.first);
+        }
+    }
+
+    const bool ok = decisions_match(expected, produced, semantic_conditions);
     check(name, ok);
-    if (!ok) report_mismatch(expected, produced);
+    if (!ok) report_mismatch(expected, produced, semantic_conditions);
 }
 
 static bool is_blank(const std::string& line) {
