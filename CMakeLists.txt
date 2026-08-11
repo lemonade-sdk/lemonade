@@ -955,6 +955,7 @@ set(SOURCES_CORE
     src/cpp/server/cloud_provider_registry.cpp
     src/cpp/server/config_file.cpp
     src/cpp/server/directory_watcher.cpp
+    src/cpp/server/alias_manager.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/model_registry.cpp
     src/cpp/server/hf_variants.cpp
@@ -2707,6 +2708,18 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_REGISTRY_TEST_SRC}")
     add_cpp_ci_test(ModelRegistryTest CI OFF COMMAND test_model_registry)
 endif()
 
+set(_MODEL_ALIAS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_alias.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_ALIAS_TEST_SRC}")
+    add_executable(test_model_alias test/cpp/test_model_alias.cpp)
+    target_link_libraries(test_model_alias PRIVATE lemonade-server-core)
+    add_dependencies(test_model_alias copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelAliasTest CI ON COMMAND test_model_alias)
+endif()
+
 # Router-backed ClassifierServices wiring (issue #2384): binds the pure engine's
 # embed/run_classifier/chat lambdas to Router-style JSON calls.
 set(_ROUTING_CLASSIFIER_SERVICES_TEST_SRC
@@ -2774,6 +2787,19 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
     target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfigTelemetryTest CI OFF COMMAND test_config_telemetry)
+endif()
+
+set(_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_runtime_config_backend_validation.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC}")
+    add_executable(test_runtime_config_backend_validation
+        test/cpp/test_runtime_config_backend_validation.cpp
+    )
+    target_link_libraries(test_runtime_config_backend_validation PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RuntimeConfigBackendValidationTest CI ON
+        COMMAND test_runtime_config_backend_validation
+    )
 endif()
 
 # ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the

@@ -34,6 +34,9 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 | `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
 | `POST` | [`/internal/telemetry/flush`](#post-internaltelemetryflush) | Force-flush all queued telemetry trace spans |
+| `GET` | [`/internal/aliases`](#get-internalaliases) | List all active model aliases |
+| `POST` | [`/internal/aliases`](#post-internalaliases) | Create or update a model alias |
+| `DELETE` | [`/internal/aliases/{alias}`](#delete-internalaliasesalias) | Remove a model alias |
 
 ## `POST /v1/classify`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
@@ -1844,3 +1847,102 @@ Returns a JSON object indicating successful completion of the flush operation:
   "status": "flushed"
 }
 ```
+
+## `GET /internal/aliases`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Retrieves a list of all active model alias mappings.
+
+#### Parameters
+
+None.
+
+Example request:
+
+```bash
+curl http://localhost:13305/internal/aliases
+```
+
+#### Response Format
+
+Returns a JSON object containing an array of active alias objects:
+
+```json
+{
+  "aliases": [
+    {
+      "alias": "my-alias-1",
+      "target": "user.custom-llama",
+      "downloaded": true,
+      "recipe": "llamacpp"
+    }
+  ]
+}
+```
+
+## `POST /internal/aliases`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Binds a model alias to a target model name.
+
+#### Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `alias` | string | yes | The alias name to create or update. |
+| `target` | string | yes | The target model name or canonical ID (also accepted as `model`). |
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/internal/aliases \
+  -H "Content-Type: application/json" \
+  -d '{
+    "alias": "my-alias-1",
+    "target": "user.custom-llama"
+  }'
+```
+
+#### Response Format
+
+Returns a JSON object confirming the alias binding:
+
+```json
+{
+  "status": "ok",
+  "alias": "my-alias-1",
+  "target": "user.custom-llama"
+}
+```
+
+Returns HTTP `400 Bad Request` if required fields are missing or invalid.
+
+## `DELETE /internal/aliases/{alias}`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Removes an existing model alias binding by name.
+
+#### Parameters
+
+| Path Parameter | Type | Description |
+|----------------|------|-------------|
+| `alias` | string | The alias name to remove. |
+
+Example request:
+
+```bash
+curl -X DELETE http://localhost:13305/internal/aliases/my-alias-1
+```
+
+#### Response Format
+
+Returns a JSON object confirming deletion:
+
+```json
+{
+  "status": "deleted",
+  "alias": "my-alias-1"
+}
+```
+
+Returns HTTP `404 Not Found` if the alias does not exist.

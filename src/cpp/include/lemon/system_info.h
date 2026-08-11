@@ -8,6 +8,9 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+// Lowercase OS identifier used by backend descriptors.
+std::string get_current_os();
+
 // Device information structures
 struct DeviceInfo {
     std::string name;

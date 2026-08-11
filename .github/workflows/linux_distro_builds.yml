@@ -35,7 +35,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - distro: Arch

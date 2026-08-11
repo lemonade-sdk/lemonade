@@ -467,7 +467,7 @@ jobs:
     container:
       image: debian:trixie
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - arch-name: X86_64
@@ -549,7 +549,7 @@ jobs:
     container:
       image: debian:trixie
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - arch-name: X86_64
@@ -627,7 +627,7 @@ jobs:
       image: fedora:${{ matrix.fedora-version }}
 
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         fedora-version: ["43", "44"]
         runs-on: ["ubuntu-latest", "ubuntu-24.04-arm"]
@@ -793,7 +793,7 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - arch-name: X86_64
@@ -998,7 +998,7 @@ jobs:
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - name: llamacpp
@@ -1266,7 +1266,7 @@ jobs:
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - name: llamacpp
@@ -1406,7 +1406,7 @@ jobs:
       image: fedora:${{ matrix.fedora-version }}
 
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         fedora-version: ["43", "44"]
         runs-on: ["ubuntu-latest", "ubuntu-24.04-arm"]
@@ -1572,7 +1572,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: build-lemonade-embeddable-linux
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - label: Linux
@@ -1995,7 +1995,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     needs: build-lemonade-linux-arm64
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         # llamacpp-system and env-vars omitted: no system llama-server or .deb on
         # GitHub-hosted ARM64 runners; Vulkan tests omitted: no GPU available.
