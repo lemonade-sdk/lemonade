@@ -110,6 +110,10 @@ private:
     void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
+    // Log and atomically record one non-streaming response's telemetry
+    // (usage/timings, cached tokens) against the serving model.
+    void record_response_telemetry(const nlohmann::json& response,
+                                   const nlohmann::json& request_json);
     // Server-side tool-calling orchestration for Omni "collection" models.
     void handle_collection_chat_completions(const nlohmann::json& request_json,
                                             const ModelInfo& collection_info,

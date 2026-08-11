@@ -25,6 +25,9 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
         } else if (usage.contains("input_tokens")) {
             telemetry.input_tokens = usage["input_tokens"].get<int>();
         }
+        if (usage.contains("prompt_tokens") || usage.contains("input_tokens")) {
+            telemetry.prompt_tokens = telemetry.input_tokens;
+        }
         if (usage.contains("completion_tokens")) {
             telemetry.output_tokens = usage["completion_tokens"].get<int>();
         } else if (usage.contains("output_tokens")) {
@@ -354,6 +357,12 @@ void StreamingProxy::forward_byte_stream(
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
     }
     sink.done();
+}
+
+StreamingProxy::TelemetryData StreamingProxy::extract_telemetry(const nlohmann::json& payload) {
+    TelemetryData telemetry;
+    extract_telemetry_from_chunk(payload, telemetry);
+    return telemetry;
 }
 
 StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string& buffer) {

@@ -303,6 +303,16 @@ class LLMTests(ServerTestBase):
         print(f"Response: {response.output[0].content[0].text}")
         self.assertGreater(len(response.output[0].content[0].text), 0)
 
+        # Non-streaming Responses requests record telemetry like chat does.
+        stats = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT).json()
+        self.assertGreater(
+            stats.get("input_tokens", 0),
+            0,
+            f"responses request did not record telemetry: {stats}",
+        )
+        self.assertGreater(stats.get("output_tokens", 0), 0)
+        self.assertIn("cache_tokens", stats)
+
     @skip_if_unsupported("responses_api_streaming")
     def test_008_responses_api_streaming(self):
         """Test the Responses API endpoint with streaming."""

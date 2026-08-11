@@ -19,7 +19,8 @@ Usage:
 import json as _json
 import threading
 import platform
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import requests
 
@@ -144,7 +145,7 @@ def start_mock_cloud_provider(upstream_ids, marker_content, record_state=None):
         def log_message(self, *_args):
             pass
 
-    httpd = HTTPServer(("127.0.0.1", 0), _FakeProvider)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _FakeProvider)
     httpd.record_state = record_state
     port = httpd.server_address[1]
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -717,6 +718,114 @@ class RouterTests(ServerTestBase):
                 f"client-requested usage frame missing: {lines}",
             )
             print("[OK] client-requested include_usage: usage frame forwarded")
+        finally:
+            requests.delete(
+                f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
+            )
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            stop_provider()
+
+    def test_612_concurrent_requests_record_atomic_telemetry(self):
+        """Concurrent requests never interleave one request's telemetry fields
+        with another's.
+
+        Every mock-provider streaming request reports the same usage
+        (MOCK_CLOUD_USAGE), so after N concurrent requests the latest gauges
+        must equal that usage exactly — under the old split-lock recording, one
+        request's cache reset could land after another request's cache value
+        and leave `cache_tokens` null/stale — and the cumulative counters must
+        be exact multiples.
+        """
+        provider = "testconccloud"
+        upstream_id = "vendor/concurrent-cloud-model"
+        marker = "concurrent-cloud-reply"
+        rounds, workers = 2, 8
+
+        base_url, stop_provider = start_mock_cloud_provider([upstream_id], marker)
+        try:
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"install failed: {resp.text}")
+            resp = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"auth failed: {resp.text}")
+            models = requests.get(
+                f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+            ).json()
+            cloud_ids = [
+                m["id"]
+                for m in models.get("data", [])
+                if m["id"].startswith(f"{provider}.")
+            ]
+            self.assertEqual(len(cloud_ids), 1, f"cloud model missing: {cloud_ids}")
+            cloud_model = cloud_ids[0]
+
+            def stream_once(_i):
+                resp = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json={
+                        "model": cloud_model,
+                        "stream": True,
+                        "messages": [{"role": "user", "content": "Go."}],
+                    },
+                    stream=True,
+                    timeout=600,
+                )
+                self.assertEqual(resp.status_code, 200, resp.text)
+                for _ in resp.iter_lines():
+                    pass
+
+            before = requests.get(
+                f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT
+            ).json()
+
+            total = 0
+            for _ in range(rounds):
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    list(pool.map(stream_once, range(workers)))
+                total += workers
+
+            after = requests.get(
+                f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT
+            ).json()
+
+            cached = MOCK_CLOUD_USAGE["prompt_tokens_details"]["cached_tokens"]
+            prompt = MOCK_CLOUD_USAGE["prompt_tokens"]
+            self.assertEqual(
+                after.get("cache_tokens"),
+                cached,
+                f"latest cache gauge corrupted by concurrency: {after}",
+            )
+            self.assertEqual(after.get("input_tokens"), prompt)
+            self.assertEqual(after.get("prompt_tokens"), prompt)
+            self.assertEqual(
+                after["cache_tokens_total"] - before["cache_tokens_total"],
+                cached * total,
+                f"cache totals lost updates: before={before} after={after}",
+            )
+            self.assertEqual(
+                after["request_count_total"] - before["request_count_total"], total
+            )
+            print(f"[OK] {total} concurrent requests: atomic telemetry intact")
         finally:
             requests.delete(
                 f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT

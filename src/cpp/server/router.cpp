@@ -2252,77 +2252,45 @@ ModelTelemetryIdentity Router::get_telemetry_identity(WrappedServer* server) con
     };
 }
 
-void Router::record_telemetry_for_model(const ModelTelemetryIdentity& identity,
-                                        int input_tokens,
-                                        int output_tokens,
-                                        double time_to_first_token,
-                                        double tokens_per_second) {
+void Router::record_request_telemetry_for_model(const ModelTelemetryIdentity& identity,
+                                                const StreamingProxy::TelemetryData& telemetry) {
     if (identity.model_name.empty()) {
         return;
     }
 
-    std::lock_guard<std::mutex> lock(telemetry_mutex_);
-    ModelTelemetryRecord& record = telemetry_by_model_[identity.key()];
-    record.identity = identity;
-    Telemetry& model_telemetry = record.telemetry;
-    model_telemetry.input_tokens = input_tokens;
-    model_telemetry.output_tokens = output_tokens;
-    model_telemetry.time_to_first_token = time_to_first_token;
-    model_telemetry.tokens_per_second = tokens_per_second;
-    // A request that reports cache usage records it right after this call, so
-    // clear the latest-value gauge here rather than let a stale value survive
-    // a request that reported nothing.
-    model_telemetry.cache_tokens = -1;
-    model_telemetry.request_count_total++;
-
-    aggregate_telemetry_.input_tokens = input_tokens;
-    aggregate_telemetry_.output_tokens = output_tokens;
-    aggregate_telemetry_.time_to_first_token = time_to_first_token;
-    aggregate_telemetry_.tokens_per_second = tokens_per_second;
-    aggregate_telemetry_.cache_tokens = -1;
-    aggregate_telemetry_.request_count_total++;
-
-    if (input_tokens > 0) {
-        model_telemetry.input_tokens_total += static_cast<uint64_t>(input_tokens);
-        aggregate_telemetry_.input_tokens_total += static_cast<uint64_t>(input_tokens);
-    }
-    if (output_tokens > 0) {
-        model_telemetry.output_tokens_total += static_cast<uint64_t>(output_tokens);
-        aggregate_telemetry_.output_tokens_total += static_cast<uint64_t>(output_tokens);
-    }
-}
-
-void Router::record_prompt_tokens_for_model(const ModelTelemetryIdentity& identity, int prompt_tokens) {
-    if (identity.model_name.empty()) {
-        return;
-    }
+    // One request = one atomic update under a single lock hold, so concurrent
+    // requests can interleave whole updates but never mix fields of two
+    // requests (e.g. one request's cache reset landing on another's value).
+    const int prompt_tokens = telemetry.prompt_tokens >= 0
+        ? telemetry.prompt_tokens
+        : (telemetry.input_tokens > 0 ? telemetry.input_tokens : -1);
 
     std::lock_guard<std::mutex> lock(telemetry_mutex_);
     ModelTelemetryRecord& record = telemetry_by_model_[identity.key()];
     record.identity = identity;
-    Telemetry& model_telemetry = record.telemetry;
-    model_telemetry.prompt_tokens = prompt_tokens;
-    aggregate_telemetry_.prompt_tokens = prompt_tokens;
-    if (prompt_tokens > 0) {
-        model_telemetry.prompt_tokens_total += static_cast<uint64_t>(prompt_tokens);
-        aggregate_telemetry_.prompt_tokens_total += static_cast<uint64_t>(prompt_tokens);
-    }
-}
 
-void Router::record_cache_tokens_for_model(const ModelTelemetryIdentity& identity, int cache_tokens) {
-    if (identity.model_name.empty() || cache_tokens < 0) {
-        return;
-    }
-
-    std::lock_guard<std::mutex> lock(telemetry_mutex_);
-    ModelTelemetryRecord& record = telemetry_by_model_[identity.key()];
-    record.identity = identity;
-    Telemetry& model_telemetry = record.telemetry;
-    model_telemetry.cache_tokens = cache_tokens;
-    aggregate_telemetry_.cache_tokens = cache_tokens;
-    if (cache_tokens > 0) {
-        model_telemetry.cache_tokens_total += static_cast<uint64_t>(cache_tokens);
-        aggregate_telemetry_.cache_tokens_total += static_cast<uint64_t>(cache_tokens);
+    for (Telemetry* t : {&record.telemetry, &aggregate_telemetry_}) {
+        t->input_tokens = telemetry.input_tokens;
+        t->output_tokens = telemetry.output_tokens;
+        t->time_to_first_token = telemetry.time_to_first_token;
+        t->tokens_per_second = telemetry.tokens_per_second;
+        t->cache_tokens = telemetry.cache_tokens >= 0 ? telemetry.cache_tokens : -1;
+        t->request_count_total++;
+        if (prompt_tokens >= 0) {
+            t->prompt_tokens = prompt_tokens;
+        }
+        if (telemetry.input_tokens > 0) {
+            t->input_tokens_total += static_cast<uint64_t>(telemetry.input_tokens);
+        }
+        if (telemetry.output_tokens > 0) {
+            t->output_tokens_total += static_cast<uint64_t>(telemetry.output_tokens);
+        }
+        if (prompt_tokens > 0) {
+            t->prompt_tokens_total += static_cast<uint64_t>(prompt_tokens);
+        }
+        if (telemetry.cache_tokens > 0) {
+            t->cache_tokens_total += static_cast<uint64_t>(telemetry.cache_tokens);
+        }
     }
 }
 
@@ -2351,9 +2319,8 @@ void Router::note_route_decision(uint64_t conversation_fingerprint, const std::s
     }
 }
 
-void Router::update_telemetry(const std::string& model_name,
-                              int input_tokens, int output_tokens,
-                              double time_to_first_token, double tokens_per_second) {
+void Router::update_request_telemetry(const std::string& model_name,
+                                      const StreamingProxy::TelemetryData& telemetry) {
     ModelTelemetryIdentity identity;
     {
         std::lock_guard<std::mutex> lock(load_mutex_);
@@ -2362,32 +2329,7 @@ void Router::update_telemetry(const std::string& model_name,
             : find_server_by_model_name(resolve_model_name(model_name));
         identity = get_telemetry_identity(server);
     }
-    record_telemetry_for_model(identity, input_tokens, output_tokens,
-                               time_to_first_token, tokens_per_second);
-}
-
-void Router::update_prompt_tokens(const std::string& model_name, int prompt_tokens) {
-    ModelTelemetryIdentity identity;
-    {
-        std::lock_guard<std::mutex> lock(load_mutex_);
-        WrappedServer* server = model_name.empty()
-            ? get_most_recent_server()
-            : find_server_by_model_name(resolve_model_name(model_name));
-        identity = get_telemetry_identity(server);
-    }
-    record_prompt_tokens_for_model(identity, prompt_tokens);
-}
-
-void Router::update_cache_tokens(const std::string& model_name, int cache_tokens) {
-    ModelTelemetryIdentity identity;
-    {
-        std::lock_guard<std::mutex> lock(load_mutex_);
-        WrappedServer* server = model_name.empty()
-            ? get_most_recent_server()
-            : find_server_by_model_name(resolve_model_name(model_name));
-        identity = get_telemetry_identity(server);
-    }
-    record_cache_tokens_for_model(identity, cache_tokens);
+    record_request_telemetry_for_model(identity, telemetry);
 }
 
 void Router::chat_completion_stream(const std::string& request_body, httplib::DataSink& sink) {
@@ -2487,10 +2429,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                         }
                         return;
                     }
-                    record_telemetry_for_model(identity, telemetry.input_tokens, telemetry.output_tokens,
-                                               telemetry.time_to_first_token, telemetry.tokens_per_second);
-                    record_prompt_tokens_for_model(identity, telemetry.input_tokens);
-                    record_cache_tokens_for_model(identity, telemetry.cache_tokens);
+                    record_request_telemetry_for_model(identity, telemetry);
 
                     if (span) {
                         nlohmann::json usage_payload = {
@@ -2609,10 +2548,7 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
                         }
                         return;
                     }
-                    record_telemetry_for_model(identity, telemetry.input_tokens, telemetry.output_tokens,
-                                               telemetry.time_to_first_token, telemetry.tokens_per_second);
-                    record_prompt_tokens_for_model(identity, telemetry.input_tokens);
-                    record_cache_tokens_for_model(identity, telemetry.cache_tokens);
+                    record_request_telemetry_for_model(identity, telemetry);
 
                     if (span) {
                         nlohmann::json usage_payload = {
@@ -2722,10 +2658,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
                         }
                         return;
                     }
-                    record_telemetry_for_model(identity, telemetry.input_tokens, telemetry.output_tokens,
-                                               telemetry.time_to_first_token, telemetry.tokens_per_second);
-                    record_prompt_tokens_for_model(identity, telemetry.input_tokens);
-                    record_cache_tokens_for_model(identity, telemetry.cache_tokens);
+                    record_request_telemetry_for_model(identity, telemetry);
 
                     if (span) {
                         nlohmann::json usage_payload = {

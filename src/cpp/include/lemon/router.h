@@ -242,13 +242,9 @@ public:
     // Get loaded backend metadata and per-model telemetry for metrics rendering.
     json get_metrics_snapshot() const;
 
-    void update_telemetry(const std::string& model_name,
-                         int input_tokens, int output_tokens,
-                         double time_to_first_token, double tokens_per_second);
-
-    void update_prompt_tokens(const std::string& model_name, int prompt_tokens);
-
-    void update_cache_tokens(const std::string& model_name, int cache_tokens);
+    // Record one completed request's telemetry as a single atomic update.
+    void update_request_telemetry(const std::string& model_name,
+                                  const StreamingProxy::TelemetryData& telemetry);
 
     // Route-stability accounting for collection.router dispatch. The
     // fingerprint is a metrics key only (hash of the conversation's stable
@@ -389,13 +385,8 @@ private:
     std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
     std::string resolve_model_name(const std::string& model_name) const;
     ModelTelemetryIdentity get_telemetry_identity(WrappedServer* server) const;
-    void record_telemetry_for_model(const ModelTelemetryIdentity& identity,
-                                    int input_tokens,
-                                    int output_tokens,
-                                    double time_to_first_token,
-                                    double tokens_per_second);
-    void record_prompt_tokens_for_model(const ModelTelemetryIdentity& identity, int prompt_tokens);
-    void record_cache_tokens_for_model(const ModelTelemetryIdentity& identity, int cache_tokens);
+    void record_request_telemetry_for_model(const ModelTelemetryIdentity& identity,
+                                            const StreamingProxy::TelemetryData& telemetry);
 
     template<typename Func>
     auto execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr));

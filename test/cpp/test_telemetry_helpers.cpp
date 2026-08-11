@@ -186,7 +186,32 @@ int main() {
             auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
             check_int("parse_telemetry: root usage prompt_tokens", tel.input_tokens, 10);
             check_int("parse_telemetry: root usage completion_tokens", tel.output_tokens, 20);
+            check_int("parse_telemetry: usage sets prompt_tokens field", tel.prompt_tokens, 10);
             check_int("parse_telemetry: cache_tokens -1 when unreported", tel.cache_tokens, -1);
+        }
+
+        // 1a. extract_telemetry on complete response bodies (non-streaming)
+        {
+            nlohmann::json chat_body = nlohmann::json::parse(
+                "{\"usage\": {\"prompt_tokens\": 59, \"completion_tokens\": 3, "
+                "\"prompt_tokens_details\": {\"cached_tokens\": 33}}, "
+                "\"timings\": {\"prompt_n\": 19, \"predicted_n\": 3, \"prompt_ms\": 100.0, "
+                "\"predicted_per_second\": 50.0, \"cache_n\": 40}}");
+            auto tel = lemon::StreamingProxy::extract_telemetry(chat_body);
+            check_int("extract_telemetry: timings override input", tel.input_tokens, 19);
+            check_int("extract_telemetry: usage prompt preserved", tel.prompt_tokens, 59);
+            check_int("extract_telemetry: timings cache_n wins", tel.cache_tokens, 40);
+            check_int("extract_telemetry: output from timings", tel.output_tokens, 3);
+        }
+        {
+            nlohmann::json responses_body = nlohmann::json::parse(
+                "{\"usage\": {\"input_tokens\": 30, \"output_tokens\": 40, "
+                "\"input_tokens_details\": {\"cached_tokens\": 12}}}");
+            auto tel = lemon::StreamingProxy::extract_telemetry(responses_body);
+            check_int("extract_telemetry: responses input_tokens", tel.input_tokens, 30);
+            check_int("extract_telemetry: responses prompt from input", tel.prompt_tokens, 30);
+            check_int("extract_telemetry: responses cached via input_tokens_details", tel.cache_tokens, 12);
+            check_int("extract_telemetry: responses output_tokens", tel.output_tokens, 40);
         }
 
         // 1b. Cached tokens from usage.prompt_tokens_details (OpenAI-wire)
