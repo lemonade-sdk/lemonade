@@ -2143,7 +2143,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         <>
           <WorkspaceActionButton
             appearance="primary"
-            icon="stop"
+            icon="eject"
             onClick={() => onUnload(loadedModel!)}
             disabled={isLoadingThis}
             aria-label={isLoadingThis ? `Working on ${name}…` : `Unload ${name}`}
