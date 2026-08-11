@@ -50,9 +50,6 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-static const int EMBEDDING_BATCH_SIZE = 8192;
-static const int EMBEDDING_UBATCH_SIZE = 8192;
-
 // Helper to push reserved flags and their aliases
 static void push_reserved(std::set<std::string>& reserved,
                     const std::string& key,
@@ -93,7 +90,8 @@ static void push_overridable_arg(std::vector<std::string>& args,
         anti_key = "--no-" + key.substr(2); //remove -- prefix
     }
 
-    if ((custom_args.find(key) == std::string::npos) && (custom_args.find(anti_key) == std::string::npos)) {
+    const std::vector<std::string> tokens = parse_custom_args(custom_args);
+    if (!custom_args_has_flag(tokens, key) && !custom_args_has_flag(tokens, anti_key)) {
         args.push_back(key);
     }
 }
@@ -102,8 +100,17 @@ static void push_overridable_arg(std::vector<std::string>& args,
 static void push_overridable_arg(std::vector<std::string>& args,
                     const std::string& custom_args,
                     const std::string& key,
-                    const std::string& value) {
-    if (custom_args.find(key) == std::string::npos) {
+                    const std::string& value,
+                    const std::vector<std::string>& aliases = {}) {
+    const std::vector<std::string> tokens = parse_custom_args(custom_args);
+
+    for (const auto& alias : aliases) {
+        if (custom_args_has_flag(tokens, alias)) {
+            return;
+        }
+    }
+
+    if (!custom_args_has_flag(tokens, key)) {
         args.push_back(key);
         args.push_back(value);
     }
@@ -340,7 +347,8 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
 
-    if (llamacpp_device != "") {
+    if (!llamacpp_device.empty()) {
+        BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
         push_arg(args, reserved_flags, "--device", llamacpp_device);
     }
     push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
@@ -361,7 +369,7 @@ void LlamaCppServer::load(const std::string& model_name,
             push_arg(args, reserved_flags, "--no-mmproj-offload");
         }
     }
-    push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
+    push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto"});
 
     if (!draft_path.empty()) {
         push_arg(args, reserved_flags, "--model-draft", draft_path);
@@ -379,11 +387,11 @@ void LlamaCppServer::load(const std::string& model_name,
     }
 
     // Disable llamacpp webui by default
-    push_overridable_arg(args, llamacpp_args, "--no-webui");
+    push_overridable_arg(args, llamacpp_args, "--no-ui");
 
     // Disable mmap on iGPU
     if (SystemInfo::get_has_igpu()) {
-        push_overridable_arg(args, llamacpp_args, "--no-mmap");
+        push_overridable_arg(args, llamacpp_args, "--load-mode", "none", {"--direct-io", "--no-direct-io", "-dio", "-ndio", "--mmap", "--no-mmap", "--mlock", "-lm"});
     }
 
     // Add embeddings support if the model supports it
@@ -503,8 +511,8 @@ void LlamaCppServer::load(const std::string& model_name,
 #endif
 
     if (is_llamacpp_cuda_backend(llamacpp_backend)) {
-        const char* existing_llama_device = std::getenv("LLAMA_ARG_DEVICE");
-        const bool has_llama_device_override = existing_llama_device && existing_llama_device[0] != '\0';
+        std::string existing_llama_device = utils::get_environment_variable_utf8("LLAMA_ARG_DEVICE");
+        const bool has_llama_device_override = !existing_llama_device.empty();
 
         bool skip_visible_devices = false;
         if (!llamacpp_device.empty()) {

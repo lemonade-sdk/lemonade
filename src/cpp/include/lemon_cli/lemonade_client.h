@@ -74,7 +74,7 @@ struct RecipeStatus {
 // Main CLI client class
 class LemonadeClient {
 public:
-    static void parse_target_url(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl);
+    static void parse_target_url(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl, bool override_default_port = true);
 
     LemonadeClient(const std::string& host, int port, const std::string& api_key, bool is_ssl = false);
     ~LemonadeClient();
@@ -93,6 +93,11 @@ public:
     int unload_model(const std::string& model_name) const;
     nlohmann::json get_model_info(const std::string& model_name) const;
     int launch_model(const std::string& model_name, const nlohmann::json& recipe_options, const std::string& agent);
+
+    // Alias management commands
+    int alias_add(const std::string& alias, const std::string& target_model) const;
+    int alias_remove(const std::string& alias) const;
+    int alias_list() const;
 
     // Status commands
     int status(int display_port = 0) const;

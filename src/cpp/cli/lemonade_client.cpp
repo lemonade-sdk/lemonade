@@ -84,8 +84,8 @@ const std::string& HttpError::response_body() const {
     return response_body_;
 }
 
-void LemonadeClient::parse_target_url(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl) {
-    lemon::utils::parse_target_url(input_host, out_clean_host, out_port, out_is_ssl);
+void LemonadeClient::parse_target_url(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl, bool override_default_port) {
+    lemon::utils::parse_target_url(input_host, out_clean_host, out_port, out_is_ssl, override_default_port);
 }
 
 LemonadeClient::LemonadeClient(const std::string& host, int port, const std::string& api_key, bool is_ssl)
@@ -1288,6 +1288,67 @@ int LemonadeClient::cloud_list() const {
         return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error listing cloud providers: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::alias_add(const std::string& alias, const std::string& target_model) const {
+    try {
+        json req_body = {{"alias", alias}, {"target", target_model}};
+        std::string response = make_request("/internal/aliases", "POST", req_body.dump());
+        auto res = json::parse(response);
+        std::cout << "✓ Created alias '" << alias << "' -> '" << res.value("target", target_model) << "'" << std::endl;
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error creating alias: " << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error creating alias: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::alias_remove(const std::string& alias) const {
+    try {
+        std::string path = "/internal/aliases/" + lemon::utils::url_encode(alias);
+        make_request(path, "DELETE");
+        std::cout << "✓ Removed alias '" << alias << "'" << std::endl;
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error removing alias: " << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error removing alias: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::alias_list() const {
+    try {
+        std::string response = make_request("/internal/aliases", "GET");
+        auto res = json::parse(response);
+        if (!res.contains("aliases") || res["aliases"].empty()) {
+            std::cout << "No model aliases registered." << std::endl;
+            return 0;
+        }
+
+        std::cout << "Registered model aliases:" << std::endl;
+        for (const auto& item : res["aliases"]) {
+            std::string alias = item.value("alias", "");
+            std::string target = item.value("target", "");
+            std::string recipe = item.value("recipe", "");
+            bool downloaded = item.value("downloaded", false);
+
+            std::cout << "  " << alias << " -> " << target
+                      << " [" << recipe << ", downloaded=" << (downloaded ? "yes" : "no") << "]"
+                      << std::endl;
+        }
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error listing aliases: " << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error listing aliases: " << e.what() << std::endl;
         return 1;
     }
 }

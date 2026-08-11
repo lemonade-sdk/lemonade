@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
+#include "lemon/utils/github_api.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
@@ -179,17 +180,13 @@ namespace lemon::backends {
 
         const std::string url = "https://api.github.com/repos/" + repo +
                                 "/releases/tags/" + tag;
-        const std::map<std::string, std::string> headers = {
-            {"User-Agent", "lemonade"},
-            {"Accept", "application/vnd.github+json"},
-        };
 
         LOG(DEBUG, spec.log_name()) << "Resolving asset wildcard '" << pattern
             << "' for " << repo << "@" << tag << " via " << url << std::endl;
 
         utils::HttpResponse resp;
         try {
-            resp = utils::HttpClient::get(url, headers);
+            resp = utils::github_api::get(url);
         } catch (const std::exception& e) {
             throw std::runtime_error(
                 "Failed to query GitHub for release '" + tag + "' of " + repo +
@@ -1228,8 +1225,8 @@ namespace lemon::backends {
             const std::string& log_tag,
             bool skip_visible_devices) {
         if (!skip_visible_devices) {
-            const char* existing_visible_devices = std::getenv("CUDA_VISIBLE_DEVICES");
-            const bool has_visible_override = existing_visible_devices && existing_visible_devices[0] != '\0';
+            std::string existing_visible_devices = utils::get_environment_variable_utf8("CUDA_VISIBLE_DEVICES");
+            const bool has_visible_override = !existing_visible_devices.empty();
 
             if (has_visible_override) {
                 LOG(INFO, log_tag) << "Respecting existing CUDA_VISIBLE_DEVICES="
@@ -1256,5 +1253,48 @@ namespace lemon::backends {
                                << std::endl;
         }
 #endif
+    }
+
+    void BackendUtils::validate_device_backend_match(
+            const std::string& backend,
+            const std::string& target_device) {
+        if (backend.empty() || backend == "auto" || backend == "system" || target_device.empty()) {
+            return;
+        }
+
+        std::string lower_device = target_device;
+        for (char& c : lower_device) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+
+        std::string lower_backend = backend;
+        for (char& c : lower_backend) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+
+        const bool is_rocm_device = (lower_device.rfind("rocm", 0) == 0);
+        const bool is_cuda_device = (lower_device.rfind("cuda", 0) == 0);
+        const bool is_vulkan_device = (lower_device.rfind("vulkan", 0) == 0);
+
+        const bool is_rocm_backend = (lower_backend.rfind("rocm", 0) == 0);
+        const bool is_cuda_backend = (lower_backend.rfind("cuda", 0) == 0);
+        const bool is_vulkan_backend = (lower_backend.rfind("vulkan", 0) == 0);
+
+        if (is_rocm_device && !is_rocm_backend) {
+            throw std::invalid_argument(
+                "Device selection '" + target_device + "' contradicts backend choice '" + backend +
+                "'. Expected a " + backend + " device identifier (e.g. " +
+                (is_vulkan_backend ? "Vulkan0" : is_cuda_backend ? "CUDA0" : "a matching device") + ").");
+        }
+        if (is_cuda_device && !is_cuda_backend) {
+            throw std::invalid_argument(
+                "Device selection '" + target_device + "' contradicts backend choice '" + backend +
+                "'. Expected a " + backend + " device identifier.");
+        }
+        if (is_vulkan_device && !is_vulkan_backend) {
+            throw std::invalid_argument(
+                "Device selection '" + target_device + "' contradicts backend choice '" + backend +
+                "'. Expected a " + backend + " device identifier.");
+        }
     }
 } // namespace lemon::backends

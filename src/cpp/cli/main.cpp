@@ -180,6 +180,10 @@ struct CliConfig {
     std::string cloud_api_key;
     bool cloud_allow_insecure_http = false;
 
+    // Alias management options
+    std::string alias_name;
+    std::string alias_target;
+
     // Telemetry toggle options
     std::string telemetry_status;
 
@@ -434,15 +438,20 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
 
     // Registry checkpoints use the interactive discovery flow; registered model
     // names remain source-independent because their persisted provenance wins.
+    int res = 0;
     if (normalized_model.find('/') != std::string::npos) {
-        return lemon_cli::registry_pull_flow(
+        res = lemon_cli::registry_pull_flow(
             client, normalized_model, false, detected_source);
+    } else {
+        nlohmann::json model_data;
+        model_data["model_name"] = config.model;
+        res = client.pull_model(model_data, "", /*upgrade=*/true);
     }
 
-    nlohmann::json model_data;
-    model_data["model_name"] = config.model;
-    // Explicit `lemonade pull`: opt into the configured registry update check.
-    return client.pull_model(model_data, "", /*upgrade=*/true);
+    if (res == 0 && !config.alias_name.empty()) {
+        client.alias_add(config.alias_name, config.model);
+    }
+    return res;
 }
 
 static int handle_export_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -1345,9 +1354,22 @@ int main(int argc, char* argv[]) {
         ->group("Manual Configuration Options")
         ->type_name("MODEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    pull_cmd->add_option("--alias", config.alias_name, "Optional alias to register for the pulled model")
+        ->type_name("ALIAS");
     pull_cmd->footer(
         "Manual Configuration Guide:\n"
         "  https://lemonade-server.ai/docs/guide/configuration/custom-models/");
+
+    // Alias subcommands
+    CLI::App* alias_cmd = app.add_subcommand("alias", "Manage model aliases")->group("Model management");
+    CLI::App* alias_add_cmd = alias_cmd->add_subcommand("add", "Create a model alias")->group("Subcommands");
+    alias_add_cmd->add_option("alias", config.alias_name, "Alias name")->required()->type_name("ALIAS");
+    alias_add_cmd->add_option("target", config.alias_target, "Target model name")->required()->type_name("TARGET");
+
+    CLI::App* alias_remove_cmd = alias_cmd->add_subcommand("remove", "Remove a model alias")->group("Subcommands");
+    alias_remove_cmd->add_option("alias", config.alias_name, "Alias name")->required()->type_name("ALIAS");
+
+    CLI::App* alias_list_cmd = alias_cmd->add_subcommand("list", "List registered model aliases")->group("Subcommands");
 
     // Import options
     import_cmd->add_option("json_file", config.model, "Path to JSON file")->type_name("JSON_FILE");
@@ -1460,7 +1482,8 @@ int main(int argc, char* argv[]) {
         std::string clean_host;
         int clean_port = config.port;
         bool is_ssl = false;
-        lemonade::LemonadeClient::parse_target_url(config.host, clean_host, clean_port, is_ssl);
+        bool explicit_port = port_opt->count() > 0;
+        lemonade::LemonadeClient::parse_target_url(config.host, clean_host, clean_port, is_ssl, !explicit_port);
         config.host = clean_host;
         config.port = clean_port;
         config.is_ssl = is_ssl;
@@ -1558,6 +1581,17 @@ int main(int argc, char* argv[]) {
         return handle_backends_command(client, config,
                                        backends_install_cmd->count() > 0,
                                        backends_uninstall_cmd->count() > 0);
+    } else if (alias_cmd->count() > 0) {
+        if (alias_add_cmd->count() > 0) {
+            return client.alias_add(config.alias_name, config.alias_target);
+        }
+        if (alias_remove_cmd->count() > 0) {
+            return client.alias_remove(config.alias_name);
+        }
+        if (alias_list_cmd->count() > 0) {
+            return client.alias_list();
+        }
+        return client.alias_list();
     } else if (cloud_cmd->count() > 0) {
         if (cloud_install_cmd->count() > 0) {
             return client.install_cloud_provider(config.cloud_provider,

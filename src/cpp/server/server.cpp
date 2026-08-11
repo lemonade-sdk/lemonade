@@ -19,6 +19,7 @@
 #include <cstring>
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/model_name_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
@@ -129,6 +130,20 @@ int get_error_status_code(const json& response, int default_status_code = 500) {
             if (valid_error_status(status_code)) {
                 return status_code;
             }
+        }
+    }
+
+    if (error.contains("type") && error["type"].is_string()) {
+        const std::string type = error["type"].get<std::string>();
+
+        if (type == ErrorType::INVALID_REQUEST ||
+            type == "invalid_request_error" ||
+            type == ErrorType::UNSUPPORTED_OPERATION) {
+            return 400;
+        }
+
+        if (type == ErrorType::MODEL_NOT_LOADED) {
+            return 404;
         }
     }
 
@@ -362,6 +377,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         }
     }
 
+    alias_manager_ = std::make_unique<AliasManager>(cache_dir_);
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
     model_manager_->set_cloud_registry(cloud_registry_.get());
 
@@ -372,6 +388,24 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                                        model_manager_.get(),
                                        backend_manager_.get());
     router_->set_cloud_registry(cloud_registry_.get());
+
+    // When a router collection is added, edited, or removed (via the API or an
+    // on-disk edit), reclaim any routing helper no remaining policy references.
+    model_manager_->set_models_changed_callback([this](uint64_t generation) {
+        router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
+    });
+
+    // Seed the router's needed-helper set from policies already present at
+    // startup so a helper loaded before the first policy change still validates
+    // against an authoritative set (see Router::load_model). Reserve the
+    // generation BEFORE snapshotting the policies: the directory watcher may
+    // already be publishing newer snapshots, and evaluating next_notify_generation()
+    // after computing the snapshot (argument evaluation order is unspecified in
+    // C++) could stamp this stale snapshot with a newer generation and clobber
+    // the watcher's authoritative state.
+    const uint64_t seed_generation = model_manager_->next_notify_generation();
+    const std::set<std::string> seed_needed = active_policy_helper_models();
+    router_->reconcile_routing_helpers(seed_needed, seed_generation);
 
     {
         lemon::jobs::OpProviders providers;
@@ -1072,10 +1106,15 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_embeddings(req, res);
     });
 
-    // Reranking
-    register_post("reranking", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_reranking(req, res);
-    });
+    // Reranking.
+    // `/rerank` is the de-facto convention that most clients expect.
+    // `/reranking` (Lemonade's original path) is kept as an alias for backward compatibility.
+    // `/reranker` is added as an additional alias.
+    for (const char* rerank_path : {"rerank", "reranking", "reranker"}) {
+        register_post(rerank_path, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_reranking(req, res);
+        });
+    }
 
     register_post("classify", [this](const httplib::Request& req, httplib::Response& res) {
         handle_classify(req, res);
@@ -1282,6 +1321,16 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
         handle_simulate_vram_pressure(req, res);
+    });
+
+    web_server.Get("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_get(req, res);
+    });
+    web_server.Post("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_add(req, res);
+    });
+    web_server.Delete(R"(/internal/aliases/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_remove(req, res);
     });
 
     // Server-side MCP client host foundation (admin-gated through the existing
@@ -2497,6 +2546,25 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
         response["data"].push_back(model_info_to_json(model_id, model_info));
     }
 
+    if (alias_manager_) {
+        auto all_aliases = alias_manager_->get_all_aliases();
+        for (const auto& [alias_id, target_name] : all_aliases) {
+            if (models.count(alias_id) > 0) {
+                continue;
+            }
+            std::string ultimate_target = target_name;
+            if (auto resolved = alias_manager_->resolve_alias(alias_id)) {
+                ultimate_target = *resolved;
+            }
+            std::string canonical_target = model_manager_->resolve_model_name(ultimate_target);
+            if (models.count(canonical_target) > 0) {
+                response["data"].push_back(model_info_to_json(alias_id, models.at(canonical_target)));
+            } else if (models.count(ultimate_target) > 0) {
+                response["data"].push_back(model_info_to_json(alias_id, models.at(ultimate_target)));
+            }
+        }
+    }
+
     res.set_content(response.dump(), "application/json");
 }
 
@@ -2613,15 +2681,33 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 }
 
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
-    std::string model_id = req.matches[1];
+    std::string model_id = utils::normalize_model_name(req.matches[1]);
 
     if (model_manager_->model_exists(model_id)) {
         auto info = model_manager_->get_model_info(model_id);
-        // Emit the wire-format id (bare for the precedence-winner, canonical-prefixed
-        // for shadowed sources), regardless of which form the client requested.
         std::string canonical_cache_key = model_manager_->resolve_model_name(model_id);
         std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
+        if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+            wire_id = model_id;
+        }
         res.set_content(model_info_to_json(wire_id, info).dump(), "application/json");
+    } else if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+        auto resolved_target = alias_manager_->resolve_alias(model_id);
+        if (resolved_target) {
+            std::string canonical_target = model_manager_->resolve_model_name(*resolved_target);
+            if (model_manager_->model_exists(canonical_target)) {
+                auto info = model_manager_->get_model_info(canonical_target);
+                res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
+                return;
+            } else if (model_manager_->model_exists(*resolved_target)) {
+                auto info = model_manager_->get_model_info(*resolved_target);
+                res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
+                return;
+            }
+        }
+        res.status = 404;
+        auto error_response = create_model_error(model_id, "Model not found");
+        res.set_content(error_response.dump(), "application/json");
     } else {
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
@@ -2752,7 +2838,9 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
             auto_load_model_if_needed(m, json::object(),
                                       LoadPurpose::RoutingDependency);
         });
-    RoutingPolicyEngine engine(std::move(policy), std::move(services));
+    CostServices cost_services = make_router_cost_services(*router_);
+    RoutingPolicyEngine engine(std::move(policy), std::move(services),
+                               std::move(cost_services));
 
     RouteContext ctx = build_route_context(request_json, collection_info.model_name);
     const bool want_trace = request_json.value("route_trace", false);
@@ -2908,6 +2996,20 @@ std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
     return std::nullopt;
 }
 
+std::set<std::string> Server::active_policy_helper_models() {
+    std::set<std::string> needed;
+    for (const auto& [name, info] : model_manager_->get_supported_models()) {
+        (void)name;
+        if (!info.route_policy) {
+            continue;
+        }
+        for (const auto& helper : info.route_policy->helper_models) {
+            needed.insert(helper);
+        }
+    }
+    return needed;
+}
+
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
@@ -2917,6 +3019,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
@@ -3194,6 +3297,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
@@ -3409,6 +3513,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 void Server::handle_embeddings(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -3451,6 +3557,11 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
 
         // Call router's embeddings method
         auto response = router_->embeddings(request_json);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3506,6 +3617,11 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
 
         // Call router's reranking method
         auto response = router_->reranking(request_json);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3529,6 +3645,9 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
             res.set_content(error.dump(), "application/json");
             return;
         }
+
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Reject malformed requests before any model gets loaded.
         std::string validation_error;
@@ -3674,6 +3793,11 @@ void Server::handle_slots(const httplib::Request& req, httplib::Response& res) {
 
         // Call router's get_slots method
         auto response = router_->get_slots();
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3741,6 +3865,11 @@ void Server::handle_slots_by_id(const httplib::Request& req, httplib::Response& 
 
         // Call router's slots_action method with slot ID, action, and request body
         auto response = router_->slots_action(slot_id, action_param, request_body);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3788,6 +3917,11 @@ void Server::handle_tokenize(const httplib::Request& req, httplib::Response& res
 
         // Forward request to router
         auto response = router_->tokenize(request_body);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3820,6 +3954,8 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         if (req.form.has_field("model")) {
             request_json["model"] = req.form.get_field("model");
         }
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
         if (req.form.has_field("language")) {
             request_json["language"] = req.form.get_field("language");
         }
@@ -3906,6 +4042,8 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
 void Server::handle_audio_speech(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Handle model loading
         if (request_json.contains("model")) {
@@ -4078,14 +4216,7 @@ void Server::serve_media_or_error(httplib::Response& res, const std::string& mim
         return;
     }
     if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
-        res.status = 500;
-        const auto& err = error_payload["error"];
-        if (err.is_object() && err.contains("status") && err["status"].is_number_integer()) {
-            const int status = err["status"].get<int>();
-            if (status >= 400 && status <= 599) {
-                res.status = status;
-            }
-        }
+        res.status = get_error_status_code(error_payload, 500);
         res.set_content(error_payload.dump(), "application/json");
         return;
     }
@@ -4278,6 +4409,8 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         LOG(INFO, "Server") << "POST /api/v1/images/generations" << std::endl;
 
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Validate required fields
         if (!request_json.contains("prompt")) {
@@ -4795,6 +4928,8 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
@@ -5251,6 +5386,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
+    normalize_and_resolve_request_model(request_json);
 
     try {
         model_name = request_json["model_name"];
@@ -5371,6 +5507,8 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
         if (!req.body.empty()) {
             try {
                 auto request_json = nlohmann::json::parse(req.body);
+                normalize_client_model_name(request_json);
+                normalize_and_resolve_request_model(request_json);
                 if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
                     model_name = request_json["model_name"].get<std::string>();
                 } else if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -5563,6 +5701,140 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
         res.status = 500;
         auto error_response = create_model_error("", e.what());
         res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+void Server::handle_aliases_get(const httplib::Request& req, httplib::Response& res) {
+    try {
+        nlohmann::json alias_list = nlohmann::json::array();
+        if (alias_manager_) {
+            for (const auto& [alias, target] : alias_manager_->get_all_aliases()) {
+                bool downloaded = false;
+                std::string recipe = "llamacpp";
+                try {
+                    if (model_manager_->model_exists(target)) {
+                        std::string canonical = model_manager_->resolve_model_name(target);
+                        downloaded = model_manager_->is_model_downloaded(canonical);
+                        ModelInfo info = model_manager_->get_model_info(canonical);
+                        recipe = info.recipe;
+                    }
+                } catch (...) {}
+                alias_list.push_back({
+                    {"alias", alias},
+                    {"target", target},
+                    {"downloaded", downloaded},
+                    {"recipe", recipe}
+                });
+            }
+        }
+        res.set_content(nlohmann::json{{"aliases", alias_list}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(create_model_error("", e.what()).dump(), "application/json");
+    }
+}
+
+void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto req_json = nlohmann::json::parse(req.body);
+        std::string alias = utils::normalize_model_name(req_json.value("alias", ""));
+        std::string target = utils::normalize_model_name(req_json.value("target", req_json.value("model", "")));
+
+        if (alias.empty() || target.empty()) {
+            res.status = 400;
+            res.set_content(create_model_error("", "Alias and target fields are required").dump(), "application/json");
+            return;
+        }
+
+        if (alias == target) {
+            res.status = 400;
+            res.set_content(create_model_error(alias, "Alias cannot point to itself").dump(), "application/json");
+            return;
+        }
+
+        if (alias.rfind("user.", 0) == 0 || alias.rfind("extra.", 0) == 0 || alias.rfind("builtin.", 0) == 0) {
+            res.status = 400;
+            res.set_content(create_model_error(alias, "Alias name cannot use reserved prefixes (user., extra., builtin.)").dump(), "application/json");
+            return;
+        }
+
+        if (model_manager_->model_exists(alias)) {
+            std::string canonical = model_manager_->resolve_model_name(alias);
+            if (canonical == alias || canonical == "user." + alias || canonical == "builtin." + alias) {
+                res.status = 409;
+                res.set_content(create_model_error(alias, "Cannot create alias '" + alias + "': Name conflicts with an existing canonical model").dump(), "application/json");
+                return;
+            }
+        }
+
+        if (!alias_manager_) {
+            res.status = 500;
+            res.set_content(create_model_error(alias, "AliasManager uninitialized").dump(), "application/json");
+            return;
+        }
+
+        std::string err_msg;
+        if (!alias_manager_->set_alias(alias, target, err_msg)) {
+            res.status = 409;
+            res.set_content(create_model_error(alias, err_msg).dump(), "application/json");
+            return;
+        }
+
+        nlohmann::json response = {
+            {"status", "ok"},
+            {"alias", alias},
+            {"target", target}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(create_model_error("", e.what()).dump(), "application/json");
+    }
+}
+
+void Server::handle_aliases_remove(const httplib::Request& req, httplib::Response& res) {
+    std::string alias = utils::normalize_model_name(req.matches[1]);
+    try {
+        if (!alias_manager_ || !alias_manager_->remove_alias(alias)) {
+            res.status = 404;
+            res.set_content(create_model_error(alias, "Alias not found: " + alias).dump(), "application/json");
+            return;
+        }
+        nlohmann::json response = {
+            {"status", "deleted"},
+            {"alias", alias}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(create_model_error(alias, e.what()).dump(), "application/json");
+    }
+}
+
+std::string Server::resolve_alias_target(const std::string& model_name) const {
+    if (alias_manager_) {
+        auto resolved = alias_manager_->resolve_alias(model_name);
+        if (resolved.has_value()) {
+            return resolved.value();
+        }
+    }
+    return model_name;
+}
+
+void Server::normalize_and_resolve_request_model(nlohmann::json& request_json) const {
+    if (request_json.contains("model") && request_json["model"].is_string()) {
+        std::string raw_name = request_json["model"].get<std::string>();
+        std::string resolved = resolve_alias_target(raw_name);
+        if (resolved != raw_name) {
+            request_json["model"] = resolved;
+        }
+    }
+    if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
+        std::string raw_name = request_json["model_name"].get<std::string>();
+        std::string resolved = resolve_alias_target(raw_name);
+        if (resolved != raw_name) {
+            request_json["model_name"] = resolved;
+        }
     }
 }
 

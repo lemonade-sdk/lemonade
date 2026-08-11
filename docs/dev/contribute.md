@@ -36,7 +36,7 @@ Issues are a great way to document a bug or feature request. However, Lemonade i
 Each contribution needs to:
 
 1. Adhere to the [philosophy](./philosophy.md).
-2. Pass the CI tests.
+2. Pass the CI tests and follow the [testing guide](./testing.md).
     - Contributors: make sure the code builds locally before creating the PR.
     - Reviewers: make sure to check the code *before* allowing CI to run!
 3. Sustain the overall code quality and standards of the rest of the repo.

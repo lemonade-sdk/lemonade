@@ -638,7 +638,8 @@ sys.exit(0)
                     timeout=10,
                 )
                 if response.status_code < 400:
-                    print("[OK] Restored host to localhost")
+                    wait_for_server(port=PORT, timeout=30)
+                    print("[OK] Restored host to localhost and server is reachable")
                 else:
                     print(
                         "Warning: Failed to restore host to localhost: "
