@@ -279,17 +279,43 @@ static bool decisions_match(const json& expected, const json& produced) {
     return true;
 }
 
+// A trace score delta that decisions_match() already accepted within
+// kScoreTolerance. json::diff is exact, so it flags these; dropping them keeps
+// the report pointed at the difference that actually failed the case.
+static bool is_within_tolerance_score(const std::string& path, const json& expected,
+                                      const json& produced) {
+    static const std::string kSuffix = "/score";
+    if (path.size() < kSuffix.size() ||
+        path.compare(path.size() - kSuffix.size(), kSuffix.size(), kSuffix) != 0) {
+        return false;
+    }
+    const auto ptr = json::json_pointer(path);
+    if (!expected.contains(ptr) || !produced.contains(ptr)) return false;
+    const json& exp = expected.at(ptr);
+    const json& prod = produced.at(ptr);
+    return exp.is_number() && prod.is_number() &&
+           std::fabs(exp.get<double>() - prod.get<double>()) <= kScoreTolerance;
+}
+
 static void report_mismatch(const json& expected, const json& produced) {
     std::printf("  expected: %s\n", expected.dump().c_str());
     std::printf("  produced: %s\n", produced.dump().c_str());
-    const json patch = json::diff(expected, produced);
-    std::printf("  %zu field(s) differ:\n", patch.size());
-    for (const auto& op : patch) {
-        const auto ptr = json::json_pointer(op.value("path", ""));
+
+    std::vector<json> diffs;
+    for (const auto& op : json::diff(expected, produced)) {
+        if (!is_within_tolerance_score(op.value("path", ""), expected, produced)) {
+            diffs.push_back(op);
+        }
+    }
+
+    std::printf("  %zu field(s) differ:\n", diffs.size());
+    for (const auto& op : diffs) {
+        const std::string path = op.value("path", "");
+        const auto ptr = json::json_pointer(path);
         const std::string exp = expected.contains(ptr) ? expected.at(ptr).dump() : "<absent>";
         const std::string prod = produced.contains(ptr) ? produced.at(ptr).dump() : "<absent>";
-        std::printf("    %s: expected: %s, produced: %s\n", op.value("path", "").c_str(),
-                    exp.c_str(), prod.c_str());
+        std::printf("    %s: expected: %s, produced: %s\n", path.c_str(), exp.c_str(),
+                    prod.c_str());
     }
 }
 
