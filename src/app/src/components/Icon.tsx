@@ -51,11 +51,12 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
   );
 };
 
-export type CapabilityIconTarget = ModelCapability | 'all' | 'vision' | 'code' | 'transcription' | 'popular' | 'tool' | 'tools' | 'reasoning' | 'mtp';
+export type CapabilityIconTarget = ModelCapability | 'all' | 'vision' | 'code' | 'transcription' | 'hot' | 'popular' | 'tool' | 'tools' | 'reasoning' | 'mtp';
 
 export function capabilityIconName(capability: CapabilityIconTarget): IconName {
   switch (capability) {
     case 'all': return 'globe';
+    case 'hot': return 'flame';
     case 'popular': return 'flame';
     case 'tool': return 'wrench';
     case 'tools': return 'wrench';

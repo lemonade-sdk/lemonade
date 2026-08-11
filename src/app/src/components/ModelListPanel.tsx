@@ -354,7 +354,7 @@ export function modelMatchesBackend(m: ModelInfo, backend: string): boolean {
 }
 
 /** Curated tag chips (model families + size hints) shown in the left rail. */
-export const TAG_CHIPS: string[] = ['Recommended', 'Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
+export const TAG_CHIPS: string[] = ['Recommended', 'Hot', 'Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
 
 export function modelIsRecommended(m: ModelInfo): boolean {
   const raw = m as any;
@@ -366,12 +366,29 @@ export function modelIsRecommended(m: ModelInfo): boolean {
   return labels.some(label => ['recommended', 'featured', 'suggested'].includes(label));
 }
 
+/**
+ * Hot is server metadata, not a fuzzy family/name tag. Current lemond builds
+ * expose it as a label; capability-aware sources may expose it through the
+ * capabilities array. Match both exact metadata forms so a model named
+ * something like "hotpot" does not become Hot accidentally.
+ */
+export function modelIsHot(m: ModelInfo): boolean {
+  const raw = m as any;
+  const metadata = [
+    ...(Array.isArray(raw.capabilities) ? raw.capabilities : []),
+    ...(Array.isArray(raw.labels) ? raw.labels : []),
+    ...(Array.isArray(raw.tags) ? raw.tags : []),
+  ].map(value => String(value).trim().toLowerCase());
+  return metadata.includes('hot');
+}
+
 /** A tag matches model metadata, labels, or its name/family. */
 export function modelMatchesTag(m: ModelInfo, tag: string | null): boolean {
   if (!tag) return true;
   const t = tag.trim().toLowerCase();
   if (!t) return true;
   if (t === 'recommended') return modelIsRecommended(m);
+  if (t === 'hot') return modelIsHot(m);
   const labels = [
     ...(Array.isArray(m.labels) ? m.labels : []),
     ...(Array.isArray((m as any).tags) ? (m as any).tags : []),

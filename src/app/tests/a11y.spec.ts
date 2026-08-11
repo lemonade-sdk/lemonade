@@ -2282,7 +2282,7 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools', 'hot'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
             { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
             { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
             { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },
@@ -2406,6 +2406,17 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await recommended.click();
     await page.waitForTimeout(150);
     expect(await recommended.getAttribute('aria-pressed')).toBe('true');
+    await expect(page.locator('.model-list-item')).toHaveCount(1);
+    await expect(page.locator('.model-list-item').first()).toContainText('Llama');
+  });
+
+  test('A131bb — Hot is a built-in exact server-metadata filter', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const hot = page.locator('.model-nav-rail__tag-chip').filter({ hasText: /^Hot/ });
+    await expect(hot).toBeVisible();
+    await hot.click();
+    await page.waitForTimeout(150);
+    expect(await hot.getAttribute('aria-pressed')).toBe('true');
     await expect(page.locator('.model-list-item')).toHaveCount(1);
     await expect(page.locator('.model-list-item').first()).toContainText('Llama');
   });
