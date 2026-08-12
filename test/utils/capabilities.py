@@ -249,6 +249,19 @@ CAPABILITIES = {
                 "tts_design": "MOSS-VoiceGen",
             },
         },
+        "voxcpm2": {
+            "backends": ["metal", "vulkan", "cuda", "cpu"],
+            "supports": {
+                "tts": True,
+                # The engine clones from reference audio, but Lemonade does not
+                # expose a request field for it yet.
+                "voice_cloning": False,
+                "voice_design": True,
+            },
+            "test_models": {
+                "tts": "VoxCPM2",
+            },
+        },
     },
     "omni": {
         # Omni "collection" models run a server-side tool-calling loop. The

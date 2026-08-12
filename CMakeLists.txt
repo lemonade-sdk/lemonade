@@ -168,6 +168,7 @@ set(LEMON_BACKENDS
     "onnxruntime|onnxruntime"
     "trellis|trellis"
     "openmoss|openmoss"
+    "voxcpm2|voxcpm2"
 )
 
 # ============================================================
