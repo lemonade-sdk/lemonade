@@ -296,21 +296,28 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     }
   }, [modelName, isModelLoaded, onReload, loadEffective]);
 
+  const resolvedContextRaw = resolved?.tuning.recipe_options?.ctx_size;
+  const autoContextSizeEnabled = isAutoContextSize(loadModelTuning(modelName)?.recipe_options?.ctx_size);
+
   const contextSetting = useMemo(() => {
     const runtimeContext = positiveContextSize(loadedContextSize);
+    if (autoContextSizeEnabled) {
+      if (runtimeContext !== null) {
+        return { value: `${runtimeContext.toLocaleString()} (auto)`, source: 'Runtime' };
+      }
+      if (loadedModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
+      return { value: 'Auto', source: 'Configuration' };
+    }
+
     if (runtimeContext !== null) {
       return { value: runtimeContext.toLocaleString(), source: 'Runtime' };
     }
 
     const effectiveContext = positiveContextSize(effective?.options?.ctx_size);
     if (effectiveContext !== null) {
-      return {
-        value: effectiveContext.toLocaleString(),
-        source: effective?.ctx_size_auto_resolved ? 'Auto estimate' : 'Effective load',
-      };
+      return { value: effectiveContext.toLocaleString(), source: 'Effective load' };
     }
 
-    const resolvedContextRaw = resolved?.tuning.recipe_options?.ctx_size;
     const resolvedContext = positiveContextSize(resolvedContextRaw);
     if (resolvedContext !== null) {
       return {
@@ -319,13 +326,9 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       };
     }
 
-    if (isAutoContextSize(effective?.options?.ctx_size) || isAutoContextSize(resolvedContextRaw)) {
-      return { value: 'Auto (resolved on load)', source: 'Auto tune' };
-    }
-
     if (loadedModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
     return { value: 'Unavailable', source: 'Configuration' };
-  }, [effective, loadedContextSize, loadedModel, resolved, resolvingContextSize]);
+  }, [autoContextSizeEnabled, effective, loadedContextSize, loadedModel, resolved, resolvedContextRaw, resolvingContextSize]);
 
   const sourceRows = useMemo<SourceRow[]>(() => {
     if (!resolved) return [];
@@ -341,6 +344,15 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     }
     return rows;
   }, [resolved]);
+
+  const samplingInputId = (key: keyof SamplingParams) => `effective-sampling-${key}`;
+  const stepSamplingInput = (key: keyof SamplingParams, direction: -1 | 1) => {
+    const input = document.getElementById(samplingInputId(key));
+    if (!(input instanceof HTMLInputElement)) return;
+    if (direction > 0) input.stepUp();
+    else input.stepDown();
+    setSamplingDraft(current => ({ ...current, [key]: input.value }));
+  };
 
   const saveSampling = () => {
     const sampling: SamplingParams = {};
@@ -374,7 +386,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
         onClick={e => e.stopPropagation()}
       >
         <div className="inspect-modal-header">
-          <h4><Icon name="sliders-horizontal" size={15} /> Effective settings</h4>
+          <h4>Effective settings</h4>
           <WorkspaceActionButton
             ref={closeRef}
             appearance="quiet"
@@ -398,7 +410,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <h5 className="effective-settings__section-title">Settings by source</h5>
             <p className="effective-settings__note">
               <Icon name="info" size={12} />
-              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Effective load command</strong> below is authoritative — it includes architecture and global defaults applied by the server that may not appear here.</span>
+              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Effective load command</strong> below is authoritative. It includes architecture and global defaults applied by the server that may not appear here.</span>
             </p>
             <div className="effective-settings__rows">
               <div className="effective-settings__row">
@@ -429,26 +441,46 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
                 <p className="effective-settings__empty">Model tuning details are unavailable for this model.</p>
               )}
             </div>
+            {autoContextSizeEnabled && (
+              <p className="effective-settings__note">
+                <Icon name="info" size={12} /> Context size is auto-resolved from available memory. This is an estimate - the final value is computed at load time after any model eviction.
+              </p>
+            )}
           </section>
 
           <section className="effective-settings__section">
             <h5 className="effective-settings__section-title">Chat sampling</h5>
             <p className="effective-settings__note"><Icon name="info" size={12} /> Leave fields empty to use the backend defaults. Saved values are sent with future chat requests for this model.</p>
             <div className="effective-settings__sampling">
-              {(Object.keys(SAMPLING_LABELS) as Array<keyof SamplingParams>).map(key => (
-                <label key={key} className="effective-settings__sampling-field">
-                  <span>{SAMPLING_LABELS[key]}</span>
-                  <input
-                    className="input"
-                    type="number"
-                    step={key === 'top_k' ? 1 : 0.01}
-                    min={key === 'repeat_penalty' ? 0 : 0}
-                    value={samplingDraft[key]}
-                    placeholder="Backend default"
-                    onChange={event => setSamplingDraft(current => ({ ...current, [key]: event.target.value }))}
-                  />
-                </label>
-              ))}
+              {(Object.keys(SAMPLING_LABELS) as Array<keyof SamplingParams>).map(key => {
+                const inputId = samplingInputId(key);
+                const label = SAMPLING_LABELS[key] || key;
+                return (
+                  <div key={key} className="effective-settings__sampling-field">
+                    <label htmlFor={inputId}>{label}</label>
+                    <div className="detail-configuration__number-control">
+                      <input
+                        id={inputId}
+                        className="input detail-configuration__number-input"
+                        type="number"
+                        step={key === 'top_k' ? 1 : 0.01}
+                        min={0}
+                        value={samplingDraft[key]}
+                        placeholder="Backend default"
+                        onChange={event => setSamplingDraft(current => ({ ...current, [key]: event.target.value }))}
+                      />
+                      <span className="detail-configuration__context-stepper">
+                        <button type="button" onClick={() => stepSamplingInput(key, 1)} aria-label={`Increase ${label}`}>
+                          <Icon name="chevron-up" size={11} aria-hidden="true" />
+                        </button>
+                        <button type="button" onClick={() => stepSamplingInput(key, -1)} aria-label={`Decrease ${label}`}>
+                          <Icon name="chevron-down" size={11} aria-hidden="true" />
+                        </button>
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <div className="effective-settings__actions">
               <WorkspaceActionButton appearance="secondary" size="small" onClick={saveSampling}>
@@ -467,11 +499,6 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
                 <p className="effective-settings__note">
                   <Icon name="info" size={12} /> Fixed launch flags (model path, port, chat template, metrics) are added by the server at load time and are not shown here.
                 </p>
-                {(preview?.ctx_size_auto_resolved ?? effective?.ctx_size_auto_resolved) && (
-                  <p className="effective-settings__note">
-                    <Icon name="info" size={12} /> Context size is auto-resolved from available memory. This is an estimate — the final value is computed at load time after any model eviction.
-                  </p>
-                )}
               </>
             )}
           </section>
@@ -480,7 +507,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <section className="effective-settings__section effective-settings__danger">
               <label className="effective-settings__ack">
                 <input type="checkbox" checked={unlocked} onChange={e => setUnlocked(e.target.checked)} />
-                <span><Icon name="alert" size={13} /> I know what I am doing — let me edit the final loading arguments</span>
+                <span><Icon name="alert" size={13} /> I know what I am doing. Let me edit the final loading arguments</span>
               </label>
               {unlocked && (
                 <div className="effective-settings__editor">
@@ -493,7 +520,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
                     rows={3}
                   />
                   <p className="effective-settings__hint">
-                    These raw backend arguments replace the resolved ones for the next load of this model. Session-only — nothing is written to disk, and it resets when you reload the app.
+                    These raw backend arguments replace the resolved ones for the next load of this model. Session-only - nothing is written to disk, and it resets when you reload the app.
                   </p>
                   {previewError && <p className="effective-settings__error">{previewError}</p>}
                   <div className="effective-settings__actions">
