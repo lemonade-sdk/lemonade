@@ -3876,7 +3876,7 @@ ${finalText}`
               aria-haspopup={mcpPickerOpen ? 'dialog' : 'menu'}
               aria-expanded={addMenuOpen}
             >
-              <Icon name="plus" size={18} />
+              <Icon name="plus" size={20} />
             </button>
             {addMenuOpen && !mcpPickerOpen && (
               <div className="composer__add-menu" role="menu" aria-label="Add to chat">
