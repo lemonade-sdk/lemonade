@@ -47,8 +47,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "ctx_size": -1,
   "disable_model_filtering": false,
   "ds4": {
-    "args": "",
-    "backend": "auto"
+    "args": ""
   },
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",

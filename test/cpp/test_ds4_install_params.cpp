@@ -5,6 +5,7 @@
 #include "lemon/backends/ds4/ds4.h"
 #include "lemon/backends/ds4/ds4_server.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/custom_args.h"
 
 using lemon::SystemInfo;
 using lemon::backends::Ds4Server;
@@ -76,6 +77,26 @@ int main() {
 
     expect(lemon::backends::ds4::descriptor.experimental,
            "ds4 is marked experimental");
+
+    // ds4-server parses left-to-right, so anything appended after Lemonade's
+    // own flags wins. Every argument Lemonade manages must be refused.
+    const auto& reserved = lemon::backends::ds4::reserved_custom_arg_flags();
+    for (const char* flag : {"-m", "--model", "--host", "--port", "-c", "--ctx"}) {
+        expect(!lemon::utils::validate_custom_args(std::string(flag) + " x", reserved).empty(),
+               std::string("rejects managed argument ") + flag);
+    }
+
+    // ds4-server also selects its compute device with these, which would run
+    // the child somewhere other than the backend Lemonade is tracking.
+    for (const char* flag : {"--backend", "--cpu", "--metal", "--rocm", "--cuda"}) {
+        expect(!lemon::utils::validate_custom_args(std::string(flag) + " x", reserved).empty(),
+               std::string("rejects backend-selection argument ") + flag);
+    }
+
+    expect(lemon::utils::validate_custom_args("--power 100", reserved).empty(),
+           "allows arguments Lemonade does not manage");
+    expect(lemon::utils::validate_custom_args("", reserved).empty(),
+           "allows empty custom arguments");
 
     if (failures == 0) {
         std::cout << "All ds4 install-param tests passed" << std::endl;

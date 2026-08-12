@@ -4,7 +4,6 @@
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/model_manager.h"
-#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
@@ -69,11 +68,9 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
                                  "' (checkpoint: " + model_info.checkpoint() + ")");
     }
 
-    std::string backend = options.get_option("ds4_backend");
-    if (backend.empty()) {
-        backend = "rocm";
-    }
-    RuntimeConfig::validate_backend_choice("ds4", backend);
+    // rocm is the only published variant, so there is no backend option to
+    // read; ds4_args cannot select one either (see reserved_custom_arg_flags).
+    const std::string backend = "rocm";
     device_type_ = DEVICE_GPU;
 
     backend_manager_->install_backend(ds4::spec()->recipe, backend);
@@ -93,14 +90,9 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
         args.push_back(std::to_string(ctx_size));
     }
 
-    // ds4 parses left-to-right, so a later flag wins. Custom args must not be
-    // able to move the port (breaks readiness and proxying), rebind the host
-    // (exposes the backend), or swap the model out from under the router.
     if (!ds4_args.empty()) {
-        static const std::set<std::string> reserved_flags = {
-            "-m", "--model", "--host", "--port", "-c", "--ctx",
-        };
-        const std::string validation_error = validate_custom_args(ds4_args, reserved_flags);
+        const std::string validation_error =
+            validate_custom_args(ds4_args, ds4::reserved_custom_arg_flags());
         if (!validation_error.empty()) {
             throw std::invalid_argument("Invalid custom ds4-server arguments:\n" + validation_error);
         }
