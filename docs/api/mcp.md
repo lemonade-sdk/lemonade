@@ -2,6 +2,8 @@
 
 Lemonade exposes its inference capabilities as a Model Context Protocol (MCP) server, so any MCP-compatible client (GitHub Copilot, Claude Desktop, MCP Inspector, Cursor, the `mcp` Python client, etc.) can call your locally running models as tools.
 
+> **Server vs. client host:** This page documents Lemonade acting as an MCP **server** at `/mcp`. Lemonade can also act as an MCP **client** for external Streamable HTTP or stdio servers through its internal administration API. See [External MCP client host](./lemonade.md#external-mcp-client-host).
+
 The gateway implements the **MCP "Streamable HTTP" transport** (spec version `2025-06-18`) with the `tools` capability only. All traffic flows through a single endpoint:
 
 | Endpoint | Status | Notes |

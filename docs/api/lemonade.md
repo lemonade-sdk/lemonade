@@ -37,6 +37,103 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/internal/aliases`](#get-internalaliases) | List all active model aliases |
 | `POST` | [`/internal/aliases`](#post-internalaliases) | Create or update a model alias |
 | `DELETE` | [`/internal/aliases/{alias}`](#delete-internalaliasesalias) | Remove a model alias |
+| `GET` | [`/internal/mcp/servers`](#external-mcp-client-host) | List configured external MCP servers and their current state |
+| `GET` | [`/internal/mcp/tools`](#external-mcp-client-host) | List tools exposed by connected external MCP servers |
+| `POST` | [`/internal/mcp/servers`](#external-mcp-client-host) | Create or update an external MCP server configuration |
+| `POST` | [`/internal/mcp/servers/test`](#external-mcp-client-host) | Test a server configuration without persisting it |
+| `DELETE` | [`/internal/mcp/servers/{id}`](#external-mcp-client-host) | Remove an external MCP server configuration |
+| `POST` | [`/internal/mcp/servers/{id}/connect`](#external-mcp-client-host) | Connect to an external MCP server |
+| `POST` | [`/internal/mcp/servers/{id}/disconnect`](#external-mcp-client-host) | Disconnect from an external MCP server |
+| `POST` | [`/internal/mcp/servers/{id}/refresh-tools`](#external-mcp-client-host) | Refresh the server tool catalogue |
+| `POST` | [`/internal/mcp/servers/{id}/tools/call`](#external-mcp-client-host) | Call a tool on an external MCP server |
+
+## External MCP client host
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Lemonade can also act as an **MCP client host** for external MCP servers. This is separate from the [`POST /mcp`](./mcp.md) gateway, where Lemonade itself acts as an MCP server.
+
+External servers are managed through the `/internal/mcp/*` administration API. The client host supports two transports:
+
+- **`streamable-http`** for remote or local MCP HTTP endpoints.
+- **`stdio`** for locally launched MCP processes. Existing configurations remain backward compatible because an omitted `transport` still defaults to `stdio`.
+
+### Streamable HTTP configuration
+
+A Streamable HTTP server configuration uses the following fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | no on create/test | Stable server identifier. When omitted for create/test, Lemonade derives one from the name or URL. |
+| `name` | no | Human-readable name. Defaults to the resolved id. |
+| `transport` | yes | Use `streamable-http`. `http` is accepted as an alias and normalized to `streamable-http`. |
+| `url` | yes | MCP endpoint URL. HTTP and HTTPS are supported. |
+| `bearer_token` | no | Bearer credential as a `${VARIABLE}` environment reference. Raw tokens are rejected and are never persisted. |
+| `allow_insecure_http` | no | Allow plain HTTP to a non-loopback host. Plain HTTP to localhost/loopback is allowed without this flag. Defaults to `false`. |
+| `enabled` | no | Whether the configured server may be connected. Defaults to `true`. |
+| `timeout_ms` | no | Request timeout in milliseconds, from 1000 to 300000. Defaults to 30000. |
+
+Streamable HTTP configurations must not include stdio-only fields such as `command`, `args`, `env`, or `working_dir`.
+
+Example:
+
+```json
+{
+  "server": {
+    "id": "example-mcp",
+    "name": "Example MCP",
+    "transport": "streamable-http",
+    "url": "https://example.com/mcp",
+    "bearer_token": "${EXAMPLE_MCP_TOKEN}",
+    "timeout_ms": 30000,
+    "enabled": true
+  }
+}
+```
+
+### Local stdio configuration
+
+The existing stdio transport remains available for MCP servers that Lemonade should launch and supervise locally:
+
+```json
+{
+  "server": {
+    "id": "local-mcp",
+    "name": "Local MCP",
+    "transport": "stdio",
+    "command": "python",
+    "args": ["/absolute/path/server.py"],
+    "env": {
+      "SERVICE_TOKEN": "${SERVICE_TOKEN}"
+    },
+    "timeout_ms": 30000,
+    "enabled": true
+  }
+}
+```
+
+Values in `env` must also be `${VARIABLE}` references. HTTP-only fields such as `url`, `bearer_token`, and `allow_insecure_http` are rejected for stdio configurations.
+
+### Administration endpoints
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/internal/mcp/servers` | List configured servers and current connection state. |
+| `GET` | `/internal/mcp/tools` | List tools exposed by connected external servers. |
+| `POST` | `/internal/mcp/servers` | Create or update a persisted server configuration. |
+| `POST` | `/internal/mcp/servers/test` | Connect, initialize, discover tools, disconnect, and return the result without persisting the draft. |
+| `DELETE` | `/internal/mcp/servers/{id}` | Remove a persisted configuration. |
+| `POST` | `/internal/mcp/servers/{id}/connect` | Connect and perform the MCP initialization handshake. |
+| `POST` | `/internal/mcp/servers/{id}/disconnect` | Disconnect and clear local connection state. |
+| `POST` | `/internal/mcp/servers/{id}/refresh-tools` | Refresh `tools/list`. |
+| `POST` | `/internal/mcp/servers/{id}/tools/call` | Call a remote tool. The body requires `name` and may include an `arguments` object. |
+
+These are internal administrative routes and follow Lemonade's existing authentication rules for `/internal/*` endpoints.
+
+### Streamable HTTP behavior
+
+For Streamable HTTP connections, Lemonade performs the MCP initialization flow, negotiates a supported protocol version, and then sends `notifications/initialized`. It supports both JSON responses and `text/event-stream` responses, carries the negotiated `MCP-Protocol-Version` header, tracks `Mcp-Session-Id`, and performs best-effort session cleanup with HTTP `DELETE` on disconnect.
+
+If an HTTP session expires and the server returns `404`, Lemonade invalidates the local session so a later operation can establish a fresh connection. Incoming server requests are handled while waiting for a response; `ping` is answered directly and unsupported methods receive a JSON-RPC method-not-found response.
 
 ## `POST /v1/classify`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
