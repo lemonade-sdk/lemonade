@@ -207,7 +207,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |-------|-----------|--------|
 | `kokoro-v1` | 0.354 | tts |
 
-#### `llamacpp` — Llama.cpp GPU (87 models)
+#### `llamacpp` — Llama.cpp GPU (88 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
@@ -249,6 +249,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `MiniCPM4.1-8B-GGUF` | 4.97 | reasoning |
 | `MiniCPM5-1B-GGUF` | 0.69 | hot, reasoning |
 | `Ministral-3-3B-Instruct-2512-GGUF` | 2.99 | vision |
+| `Muse-Glimmer-30B-GGUF` | 19.9 | hot, tool-calling, vision, reasoning, llamacpp, dflash |
 | `Nemotron-3-Nano-30B-A3B-GGUF` | 22.8 | — |
 | `Phi-4-mini-instruct-GGUF` | 2.49 | — |
 | `Playable1-GGUF` | 4.68 | coding |
