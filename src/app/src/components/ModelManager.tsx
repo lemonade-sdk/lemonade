@@ -91,7 +91,7 @@ function labelDisplay(label: string): string {
     'reasoning': 'Reasoning',
     'coding': 'Code',
     'code': 'Code',
-    'hot': 'Popular',
+    'hot': 'Hot',
     'popular': 'Popular',
     'mtp': 'MTP',
     'embedding': 'Embedding',
