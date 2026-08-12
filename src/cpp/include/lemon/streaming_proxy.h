@@ -60,6 +60,12 @@ public:
 
     static void process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback);
 
+    /// Emit any trailing partial SSE line left in *line_buffer* (no final ``\\n``).
+    /// Providers sometimes omit the newline on the last ``data: [DONE]`` frame;
+    /// without this flush the line stays buffered and is never sent downstream.
+    static void flush_sse_line_buffer(std::string& line_buffer,
+                                      std::function<void(const std::string&)> line_callback);
+
     static TelemetryData parse_telemetry(const std::string& buffer);
 
     static void accumulate_responses_delta(const nlohmann::json& parsed, std::string& accumulated_text);
