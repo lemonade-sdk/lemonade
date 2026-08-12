@@ -4498,7 +4498,7 @@ optgroup {
 
 .options-block__btn:hover {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border-color: var(--accent-fg);
 }
 
@@ -4508,14 +4508,14 @@ optgroup {
 
 .options-block__btn--selected {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border-color: var(--accent-fg);
   cursor: default;
 }
 
 .options-block__btn--selected:hover {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border-color: var(--accent-fg);
 }
 
@@ -4553,7 +4553,7 @@ optgroup {
 
 .options-block__submit {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border: none;
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-3);

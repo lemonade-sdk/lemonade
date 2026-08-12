@@ -58,6 +58,20 @@ for (const filename of collectTsx(path.join(root, 'src'))) {
   visit(sourceFile);
 }
 
+// The accent stays yellow in both themes but every --bg-* token flips from
+// near-black to near-white, so accent-background text must come from --accent-on.
+const accentBackground = /background(?:-color)?:\s*var\(--accent(?:-hover|-strong)?\)/;
+const themeFlippedText = /color:\s*var\(--bg-[\w-]+\)/;
+
+for (const stylesheet of ['src/styles/styles.css', 'src/styles/critical.generated.css']) {
+  const css = fs.readFileSync(path.join(root, stylesheet), 'utf8');
+  for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (accentBackground.test(body) && themeFlippedText.test(body)) {
+      assert.fail(`${stylesheet}: ${selector.trim().split('\n').pop().trim()} puts theme-flipped text on an accent background; use var(--accent-on)`);
+    }
+  }
+}
+
 assert.match(sources.app, /<span className="titlebar__brand-name">lemonade<\/span>/);
 assert.match(sources.app, /type="search"[\s\S]*?role="combobox"[\s\S]*?aria-expanded=\{navigationSearchOpen\}/);
 assert.match(sources.app, /aria-activedescendant=/);
