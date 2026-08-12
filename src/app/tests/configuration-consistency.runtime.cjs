@@ -78,6 +78,18 @@ assert.match(detailSource, /className="detail-configuration__context-number"/);
 assert.match(detailSource, /className="detail-configuration__context-stepper"/);
 assert.match(detailSource, /aria-label=\{`Increase context size by \$\{ctxStep\} tokens`\}/);
 assert.match(detailSource, /aria-label=\{`Decrease context size by \$\{ctxStep\} tokens`\}/);
+// Everything auto tune hides sits below the checkbox, so the heading above it
+// cannot shift when the checkbox is toggled.
+const autoTunePosition = detailSource.indexOf('className="detail-configuration__autotune"');
+const contextNumberPosition = detailSource.indexOf('className="detail-configuration__context-number"');
+const sliderRowPosition = detailSource.indexOf('className="detail-configuration__slider-row"');
+assert.ok(autoTunePosition >= 0 && autoTunePosition < contextNumberPosition && contextNumberPosition < sliderRowPosition,
+  'context size controls must render in checkbox, number field, slider order');
+
+// Load must apply the configuration on screen, saved or not.
+assert.match(detailSource, /loadOptionsRef\.current = buildLoadOptions;/);
+assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onLoad, model\)\}/);
+assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onPullAndLoad, model\)\}/);
 assert.match(detailSource, /import \{ TTS_VOICES \}/);
 assert.match(detailSource, /knownVoiceOptionsForModel/);
 assert.match(detailSource, /<option value=\{customVoiceSentinel\}>Custom voice…<\/option>/);

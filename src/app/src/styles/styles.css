@@ -7639,6 +7639,24 @@ optgroup {
   color: var(--success);
 }
 
+/* Source chip: which registry the weights come from, owner/repo, and quant. */
+.model-detail-panel__source {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.model-detail-panel__source-registry {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.model-detail-panel__source-checkpoint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .model-detail-panel__error {
   font-size: var(--text-xs);
   color: var(--status-error);
@@ -8479,19 +8497,22 @@ optgroup {
   }
 }
 /* -- Model Configuration Tab ---------------------------------------- */
+/* Spacing climbs a major-fourth ladder rounded to the token scale: 12px within
+ * a control row, 16px between the rows of one control, 24px between the parts
+ * of a section, 32px between control groups and between sections. */
 .detail-configuration {
   flex: 1;
   overflow-y: auto;
   padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-6);
 }
 
 .detail-configuration__section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
   padding: 0;
 }
 
@@ -8517,28 +8538,6 @@ optgroup {
   line-height: 1.45;
 }
 
-.detail-configuration__status {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  background: var(--surface-base);
-  color: var(--text-tertiary);
-  font-size: var(--type-overline-size);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-}
-
-.detail-configuration__status.is-loaded {
-  border-color: color-mix(in srgb, var(--success) 36%, var(--border-subtle));
-  background: color-mix(in srgb, var(--success) 10%, var(--surface-base));
-  color: var(--success);
-}
-
 .detail-configuration__actions {
   padding-top: var(--space-2);
   border-top: 1px solid var(--border-subtle);
@@ -8546,7 +8545,7 @@ optgroup {
 
 .detail-configuration__load-controls {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-6);
 }
 
 .detail-configuration__context-card,
@@ -8559,12 +8558,17 @@ optgroup {
   box-shadow: none;
 }
 
+.detail-configuration__context-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
 .detail-configuration__control-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
 }
 
 .detail-configuration__control-head label,
@@ -8577,13 +8581,11 @@ optgroup {
 .detail-configuration__context-number {
   position: relative;
   width: 9.5rem;
-  flex: 0 0 9.5rem;
 }
 
 .detail-configuration__context-input {
   width: 100%;
   padding-inline-end: 2.75rem;
-  text-align: right;
   font-family: var(--font-mono, monospace);
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
@@ -8677,7 +8679,6 @@ optgroup {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
-  translate: 0 6px;
 }
 
 .detail-configuration__slider-row span,
@@ -8792,20 +8793,6 @@ optgroup {
 @media (max-width: 780px) {
   .detail-configuration__selector-grid {
     grid-template-columns: 1fr;
-  }
-
-  .detail-configuration__control-head {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .detail-configuration__context-input {
-    text-align: left;
-  }
-
-  .detail-configuration__context-number {
-    width: 100%;
-    flex-basis: auto;
   }
 }
 

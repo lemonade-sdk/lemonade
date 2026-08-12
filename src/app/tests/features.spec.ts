@@ -757,6 +757,96 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect.poll(() => loadRequestBody?.ctx_size).toBe(-1);
   });
 
+  test('13d — Detail header links the model source and Load applies unsaved settings', async ({ page }) => {
+    let loadRequestBody: Record<string, unknown> | null = null;
+    await page.addInitScript(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.includes('model_tunings')) localStorage.removeItem(key);
+      }
+    });
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: {
+        recipes: {
+          llamacpp: {
+            default_backend: 'cpu',
+            backends: { cpu: { state: 'installed', version: 'test' }, vulkan: { state: 'installed', version: 'test' } },
+          },
+        },
+      },
+    }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: [{
+          id: 'source-hf-model',
+          name: 'source-hf-model',
+          display_name: 'Source HF Model',
+          labels: ['llm'],
+          recipe: 'llamacpp',
+          checkpoint: 'unsloth/Qwen3-0.6B-GGUF:Q4_0',
+          downloaded: true,
+          max_context_window: 65536,
+        }, {
+          id: 'source-ms-model',
+          name: 'source-ms-model',
+          display_name: 'Source MS Model',
+          labels: ['llm'],
+          recipe: 'llamacpp',
+          source: 'modelscope',
+          checkpoint: 'OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf',
+          downloaded: true,
+        }],
+      }),
+    }));
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.locator('.model-list-item').filter({ hasText: 'Source HF Model' }).click();
+
+    // The source is a chip in the metadata row, linking to the model's repo.
+    const source = page.locator('.workspace-metadata-chip.model-detail-panel__source');
+    await expect(source).toHaveAttribute('href', 'https://huggingface.co/unsloth/Qwen3-0.6B-GGUF');
+    await expect(source.locator('.model-detail-panel__source-registry')).toHaveText('Hugging Face:');
+    await expect(source.locator('.model-detail-panel__source-checkpoint')).toHaveText('unsloth/Qwen3-0.6B-GGUF:Q4_0');
+
+    // ModelScope models link to their own registry; the quant comes out of the filename.
+    await page.locator('.model-list-item').filter({ hasText: 'Source MS Model' }).click();
+    await expect(source).toHaveAttribute('href', 'https://modelscope.cn/models/OpenBMB/MiniCPM5-1B-GGUF');
+    await expect(source.locator('.model-detail-panel__source-registry')).toHaveText('ModelScope:');
+    await expect(source.locator('.model-detail-panel__source-checkpoint')).toHaveText('OpenBMB/MiniCPM5-1B-GGUF:Q4_K_M');
+
+    // Load uses the settings on screen; only Save writes them down.
+    await page.locator('.model-list-item').filter({ hasText: 'Source HF Model' }).click();
+    const panel = page.locator('#detail-panel-config');
+    await panel.locator('[id$="llamacpp_backend"]').selectOption('vulkan');
+    await panel.getByRole('checkbox', { name: 'Auto tune context size' }).uncheck();
+    await panel.getByLabel('Context size tokens').fill('16384');
+
+    await page.getByRole('button', { name: 'Load source-hf-model' }).click();
+    await expect.poll(() => loadRequestBody?.llamacpp_backend).toBe('vulkan');
+    expect(loadRequestBody?.ctx_size).toBe(16384);
+
+    const storedTunings = await page.evaluate(() => {
+      const key = Object.keys(localStorage).find(k => k.endsWith('model_tunings'));
+      return key ? localStorage.getItem(key) : null;
+    });
+    expect(storedTunings).toBeNull();
+
+    // Loading switches to Chat; back on Models the settings are still shown and
+    // still unsaved.
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(panel.getByLabel('Context size tokens')).toHaveValue('16384');
+    await expect(panel.getByRole('button', { name: 'Save', exact: true })).toHaveClass(/btn--primary/);
+    await expect(panel.getByRole('button', { name: 'Discard changes' })).toBeVisible();
+  });
+
 
   test('14 — Backends view shows matrix and device info', async ({ page }) => {
     await page.goto('/');

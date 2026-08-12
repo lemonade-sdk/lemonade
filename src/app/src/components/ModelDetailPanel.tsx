@@ -510,6 +510,62 @@ function deriveHFRepo(
   return null;
 }
 
+const REMOTE_PROVIDER_META: Record<ModelRegistryProvider, { label: string; url: (id: string) => string }> = {
+  huggingface: { label: 'Hugging Face', url: id => `https://huggingface.co/${id}` },
+  modelscope: { label: 'ModelScope', url: id => `https://modelscope.cn/models/${id}` },
+};
+
+const QUANT_RE = /(?:^|[-_.])((?:UD-)?(?:IQ|Q)\d+(?:_[A-Za-z0-9]+)*|BF16|F16|F32|FP8|MXFP4|INT4|INT8)(?=$|[-_.])/gi;
+
+/**
+ * Quant label for a checkpoint variant, which is either the label itself
+ * (`Q4_0`) or a weights filename to pull it out of (`Qwen3-4B-Q4_K_M.gguf`).
+ * Null when the variant carries no quant, as for `ggml-tiny.bin`.
+ */
+function quantFromVariant(variant: string): string | null {
+  const value = variant.trim();
+  if (!value) return null;
+  const matches = [...value.matchAll(QUANT_RE)];
+  if (matches.length > 0) return matches[matches.length - 1][1].toUpperCase();
+  return /\.[a-z0-9]+$/i.test(value) ? null : value;
+}
+
+interface ModelSourceRef {
+  provider: ModelRegistryProvider;
+  providerLabel: string;
+  repo: string;
+  quant: string | null;
+  url: string;
+}
+
+/** Where a model's weights come from: registry, `owner/repo`, and quant. */
+function modelSourceRef(model: ModelInfo | null | undefined): ModelSourceRef | null {
+  if (!model) return null;
+  const checkpoints = (model as any).checkpoints as Record<string, string> | null ?? null;
+  const candidates: Array<string | undefined> = [
+    String((model as any).checkpoint || '') || undefined,
+    checkpoints?.main,
+    ...(checkpoints ? Object.values(checkpoints) : []),
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const separator = candidate.indexOf(':');
+    const repo = (separator >= 0 ? candidate.slice(0, separator) : candidate).trim();
+    if (!HF_REPO_RE.test(repo)) continue;
+    const source = String((model as any).registry_source || (model as any).source || '').trim().toLowerCase();
+    const provider: ModelRegistryProvider = source === 'modelscope' || source === 'ms' ? 'modelscope' : 'huggingface';
+    const meta = REMOTE_PROVIDER_META[provider];
+    return {
+      provider,
+      providerLabel: meta.label,
+      repo,
+      quant: separator >= 0 ? quantFromVariant(candidate.slice(separator + 1)) : null,
+      url: meta.url(repo),
+    };
+  }
+  return null;
+}
+
 /* ── Shared markdown-it instance for README rendering ─────────── */
 
 // html:true is safe here because the rendered output is passed through the
@@ -855,11 +911,6 @@ const HF_DETAIL_TABS: Array<{ id: HfDetailTab; label: string }> = [
   { id: 'readme', label: 'README' },
 ];
 
-const REMOTE_PROVIDER_META: Record<ModelRegistryProvider, { label: string; url: (id: string) => string }> = {
-  huggingface: { label: 'Hugging Face', url: id => `https://huggingface.co/${id}` },
-  modelscope: { label: 'ModelScope', url: id => `https://modelscope.cn/models/${id}` },
-};
-
 const HfDetailView: React.FC<{
   hfModel: HFModelResult;
   provider: ModelRegistryProvider;
@@ -1032,7 +1083,10 @@ const ModelConfigurationTab: React.FC<{
   isLoadingThis?: boolean;
   onReloadModel?: (model: LoadedModel, recipeOptions?: Record<string, unknown>) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
-}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onReloadModel, onDirtyChange }) => {
+  /** Filled with a getter for the load settings as shown, so the panel's Load
+      action can apply them without saving them. */
+  loadOptionsRef?: React.MutableRefObject<(() => Record<string, unknown>) | null>;
+}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onReloadModel, onDirtyChange, loadOptionsRef }) => {
   const name = mdName(model);
   const [notice, setNotice] = useState<string | null>(null);
   const [isReloading, setIsReloading] = useState(false);
@@ -1186,8 +1240,27 @@ const ModelConfigurationTab: React.FC<{
   const discardConfig = () => {
     loadFromStore();
     onDirtyChange?.(false);
-    setNotice('Unsaved load setting changes discarded.');
+    setNotice('Reverted to your saved load settings.');
   };
+
+  const buildLoadOptions = (): Record<string, unknown> => {
+    const options: Record<string, unknown> = { ...buildConfigOptions() };
+    // A field the user blanked out is sent as undefined, which drops it from
+    // the request body instead of letting the stored value come back.
+    const stored = loadModelTuning(name)?.recipe_options || {};
+    for (const key of recipeKeys) {
+      if (!(key in options) && key in stored) options[key] = undefined;
+    }
+    return options;
+  };
+
+  // No dependency array: the panel's Load button fires outside React's data
+  // flow and must always read the current draft.
+  useEffect(() => {
+    if (!loadOptionsRef) return undefined;
+    loadOptionsRef.current = buildLoadOptions;
+    return () => { loadOptionsRef.current = null; };
+  });
 
   const reloadViaPanel = async () => {
     if (!loadedModel || !onReloadModel) return;
@@ -1394,9 +1467,6 @@ const ModelConfigurationTab: React.FC<{
               Settings used when this model loads or reloads.
             </p>
           </div>
-          {loadedModel && (
-            <span className="detail-configuration__status is-loaded">Loaded now</span>
-          )}
         </div>
 
         <div className="detail-configuration__load-controls">
@@ -1404,7 +1474,21 @@ const ModelConfigurationTab: React.FC<{
             <div className="detail-configuration__context-card">
               <div className="detail-configuration__control-head">
                 <label htmlFor={ctxSliderId}>Context size</label>
-                {!isAutoTuning && (
+              </div>
+              <label
+                className="detail-configuration__autotune"
+                title={autoTuneTooltip}
+              >
+                <input
+                  type="checkbox"
+                  checked={isAutoTuning}
+                  onChange={e => setCtxSizeDraft(e.target.checked ? '-1' : String(currentCtxSize))}
+                />
+                <span>Auto tune context size</span>
+                <Icon name="info" size={14} aria-hidden="true" />
+              </label>
+              {!isAutoTuning && (
+                <>
                   <div className="detail-configuration__context-number">
                     <input
                       id={ctxSizeId}
@@ -1437,35 +1521,21 @@ const ModelConfigurationTab: React.FC<{
                       </button>
                     </span>
                   </div>
-                )}
-              </div>
-              <label
-                className="detail-configuration__autotune"
-                title={autoTuneTooltip}
-              >
-                <input
-                  type="checkbox"
-                  checked={isAutoTuning}
-                  onChange={e => setCtxSizeDraft(e.target.checked ? '-1' : String(currentCtxSize))}
-                />
-                <span>Auto tune context size</span>
-                <Icon name="info" size={14} aria-hidden="true" />
-              </label>
-              {!isAutoTuning && (
-                <div className="detail-configuration__slider-row">
-                  <span>{formatContextSize(ctxMin)}</span>
-                  <input
-                    id={ctxSliderId}
-                    className="slider detail-configuration__context-slider"
-                    type="range"
-                    min={ctxMin}
-                    max={ctxMax}
-                    step={ctxStep}
-                    value={currentCtxSize}
-                    onChange={e => setCtxSizeDraft(e.target.value)}
-                  />
-                  <span>{formatContextSize(ctxMax)}</span>
-                </div>
+                  <div className="detail-configuration__slider-row">
+                    <span>{formatContextSize(ctxMin)}</span>
+                    <input
+                      id={ctxSliderId}
+                      className="slider detail-configuration__context-slider"
+                      type="range"
+                      min={ctxMin}
+                      max={ctxMax}
+                      step={ctxStep}
+                      value={currentCtxSize}
+                      onChange={e => setCtxSizeDraft(e.target.value)}
+                    />
+                    <span>{formatContextSize(ctxMax)}</span>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -1914,7 +1984,8 @@ export interface ModelDetailPanelProps {
   loadingModel: string | null;
   pulling: Record<string, number>;
   loadError: { modelName: string; message: string } | null;
-  onLoad: (model: ModelInfo) => void;
+  /** Load a model, optionally with load settings that override the stored ones. */
+  onLoad: (model: ModelInfo, recipeOptions?: Record<string, unknown>) => void;
   onUnload: (model: LoadedModel) => void;
   /** Reload an already-loaded model with updated load-time configuration. */
   onReloadModel?: (
@@ -1922,7 +1993,7 @@ export interface ModelDetailPanelProps {
     recipeOptions?: Record<string, unknown>,
   ) => Promise<void>;
   onPull: (model: ModelInfo) => void;
-  onPullAndLoad: (model: ModelInfo) => void;
+  onPullAndLoad: (model: ModelInfo, recipeOptions?: Record<string, unknown>) => void;
   onDelete: (model: ModelInfo) => void;
   onCancelPull: (name: string) => void;
   serverDefaultCtxSize: number;
@@ -2009,6 +2080,14 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
   const [configHasUnsavedChanges, setConfigHasUnsavedChanges] = useState(false);
+  const configLoadOptionsRef = useRef<(() => Record<string, unknown>) | null>(null);
+
+  const loadWithShownConfiguration = useCallback((
+    start: (model: ModelInfo, recipeOptions?: Record<string, unknown>) => void,
+    target: ModelInfo,
+  ) => {
+    start(target, configLoadOptionsRef.current?.());
+  }, []);
 
   const detailName = model ? mdName(model) : '';
   const isRouterCollection = Boolean(model && activeRecipeForModel(model) === 'collection.router');
@@ -2090,9 +2169,10 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   const name = mdName(model);
   const recipe = String((model as any).recipe || '');
-  const checkpoint = String((model as any).checkpoint || '');
-  const checkpoints = (model as any).checkpoints as Record<string, string> | null ?? null;
-  const hfRepo = deriveHFRepo(checkpoint || null, checkpoints);
+  const sourceRef = modelSourceRef(model);
+  const sourceLinkLabel = sourceRef
+    ? `Open ${sourceRef.repo}${sourceRef.quant ? ` (${sourceRef.quant})` : ''} on ${sourceRef.providerLabel} (opens in new tab)`
+    : '';
   const isLoaded = !!loadedModel;
   const isLoadingThis = loadingModel === name;
   const isPulling = pulling[name] !== undefined;
@@ -2122,16 +2202,20 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       {isDownloaded && !isLoaded && (
         <WorkspaceMetadataChip emphasis="high" tone="success">Ready</WorkspaceMetadataChip>
       )}
-      {hfRepo && (
+      {sourceRef && (
         <WorkspaceMetadataChip
+          className="model-detail-panel__source"
           emphasis="low"
-          icon="globe"
-          href={`https://huggingface.co/${hfRepo}`}
+          href={sourceRef.url}
           target="_blank"
           rel="noopener noreferrer"
-          title={`View ${name} on Hugging Face`}
+          title={sourceLinkLabel}
         >
-          Hugging Face
+          <span className="model-detail-panel__source-registry">{sourceRef.providerLabel}:</span>
+          <span className="model-detail-panel__source-checkpoint">
+            {sourceRef.repo}{sourceRef.quant ? `:${sourceRef.quant}` : ''}
+          </span>
+          <Icon name="external-link" size={11} aria-hidden="true" />
         </WorkspaceMetadataChip>
       )}
     </>
@@ -2167,7 +2251,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         <WorkspaceActionButton
           appearance="primary"
           icon="play"
-          onClick={() => onLoad(model)}
+          onClick={() => loadWithShownConfiguration(onLoad, model)}
           disabled={isLoadingThis}
           aria-label={isLoadingThis ? `Loading ${name}…` : `Load ${name}`}
         >
@@ -2175,7 +2259,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         </WorkspaceActionButton>
       ) : (
         <>
-          <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPullAndLoad(model)} aria-label={`Get and load ${name}`}>
+          <WorkspaceActionButton appearance="primary" icon="download" onClick={() => loadWithShownConfiguration(onPullAndLoad, model)} aria-label={`Get and load ${name}`}>
             Get & Load
           </WorkspaceActionButton>
           <WorkspaceActionButton appearance="secondary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
@@ -2306,6 +2390,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
                         isLoadingThis={isLoadingThis}
                         onReloadModel={onReloadModel}
                         onDirtyChange={setConfigHasUnsavedChanges}
+                        loadOptionsRef={configLoadOptionsRef}
                       />
                     )}
                     {tab.id === 'files' && (
