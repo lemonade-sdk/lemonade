@@ -2899,6 +2899,18 @@ void ModelManager::register_user_model(const std::string& model_name,
     // loop above; this local is just for the collection handling below.
     std::string recipe = model_data.value("recipe", "");
 
+    {
+        std::string checkpoint = model_data.value("checkpoint", "");
+        if (checkpoint.empty() && model_data.contains("checkpoints") &&
+            model_data["checkpoints"].is_object() &&
+            model_data["checkpoints"].contains("main") &&
+            model_data["checkpoints"]["main"].is_string()) {
+            checkpoint = model_data["checkpoints"]["main"].get<std::string>();
+        }
+        auto inferred = infer_labels_from_name(clean_name, checkpoint);
+        labels.insert(inferred.begin(), inferred.end());
+    }
+
     model_entry["labels"] = labels;
     model_entry["suggested"] = true; // Always set suggested=true for user models
 
