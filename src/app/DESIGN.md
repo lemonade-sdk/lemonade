@@ -19,6 +19,7 @@ This document is the contract for Lemonade's desktop and web UI. It describes th
 - `src/styles/styles.css` implements components and feature layout with those tokens.
 - Shared component classes use the `workspace-*` prefix. Feature classes may refine a shared component but must not redefine its typography, spacing scale, surface hierarchy, focus treatment, or control shape.
 - React implementations of the shared panels and controls live in `src/components/WorkspacePanels.tsx`, `WorkspaceRailHeader.tsx`, and `WorkspaceMobileMenuButton.tsx`.
+- Every list renders `WorkspaceList` + `WorkspaceListRow` (`.workspace-list` / `.workspace-list-row`). A tab supplies the row's content, never its geometry, typography, status idiom, or selection treatment.
 - Dynamic values such as progress percentage, measured resizer position, chart geometry, and backend identity may be passed through inline custom properties. Repeated fixed values use tokens; feature-local geometry stays in its named class.
 
 ### Color
@@ -108,6 +109,32 @@ The canonical information architecture is:
 
 Use two panels when selection does not require a distinct list, and three when filtering/navigation, selection, and detail are separate tasks. `.workspace-pane__header`, `.workspace-list-panel__header`, and `.workspace-detail-panel__header` establish the same visual hierarchy at different levels.
 
+### Selection lists
+
+Every list the user selects from — the model catalog, remote registry results, chat history, captured requests, and the composer's model picker — is one 52 px row on a two-column grid: a 16 px lead glyph and a flexible two-line body. Only the body flexes, so nothing shifts between states. A list inside a popover is still this list: the picker adds only the popover frame and a search field that hands ArrowDown to the list.
+
+| Line | Slot | Holds | Priority |
+| --- | --- | --- | --- |
+| — | Lead | Primary modality, tinted with its `--cap-*` token | Never dropped |
+| Title | Title | The row's identity, `--text-sm` / `--weight-medium` | Never dropped |
+| Meta | Status **or** facts | An in-flight state and its words, **or** the secondary glyphs and measurements — never both | Status never dropped; glyphs dropped first |
+| Meta | Anchor | The fact that decides between two otherwise identical rows: the engine for a thing you might run, the time for a thing that happened | Never dropped |
+| — | Action | One row-scoped command, overlaying the right edge at full row height | — |
+
+The meta line holds one thing at a time. A row that is downloading, running, generating, or asking for attention gives the whole line to its status; every other row gives it to glyphs and facts. Both competing for one line is what made a dot and a lead glyph fight for the same glance.
+
+Hover and selection are **translucent, never an opaque surface value**. The lists do not share a ground — the catalog scrolls over `--surface-base`, the chat and telemetry rails are `--surface-1`, the composer's picker floats on `--surface-raised`, and the light theme collapses the first two onto one color — so a color tuned against one list is invisible or inverted on another. A scrim composites the same lift over all of them and self-corrects per theme.
+
+Four rules keep the grammar honest. **The dot and its words are one unit** — a mark placed away from the thing it marks leaves color carrying state on its own, so `.workspace-list-row__status` renders both together at the head of the meta line and takes the state's tone. **The title owns its line.** It is what the eye scans, so nothing shares its measure — the anchor ends the meta line instead, alongside the metadata it ranks with. **The action overlays the row's right edge at full height** rather than holding a column, and stays hidden until the row is hovered or focused; the anchor then goes invisible without giving up its width, so the meta line cannot reflow. A column reserved for a control on every row put a button beside every timestamp and engine label in the app and stopped the anchor short of the edge. The title reserves the action's width at its end, because space reserved on a left-aligned, ellipsised run costs nothing visible, where the same reservation on a right-aligned label reads as misalignment. An action may be **latched**, holding the edge permanently and replacing the anchor: a pinned model shows its pin instead of its engine, a loaded model in the picker always offers eject, and a download in flight always offers cancel — in each case the control is the more useful fact about that row and must not need a hover to find. Coarse pointers cannot hover at all, so there the action takes the edge outright — reusing the latched visual rather than returning the button to flow, which would auto-place it into an implicit third grid row. **Rows degrade by priority, not position** — `@container` queries on `.workspace-list` drop the secondary glyphs, never the name, modality, anchor, or status.
+
+**Status is transient, and a steady state is a section.** Only `live`, `busy`, `attention`, and `error` render — `Downloading 62%`, `Running`, `Generating`, `Engine update required`, `Failed`. A row that is simply downloaded, or simply available, shows nothing: repeating one of two constants down a whole column is noise, and it competes with the lead glyph for the same glance. What every row in a run shares belongs on a `WorkspaceListGroup` heading instead — the catalog reads `Pinned`, `Downloaded`, `Not downloaded`, matching the `Hugging Face` and `ModelScope` headings the registry results already carry. A section always states the truth about its rows, so grouping is structural and the chosen sort orders rows *within* each section rather than deciding the sections.
+
+When status does render it owns the line, so a caller composes whatever words belong there — a slow captured request keeps its metrics (`Slow · 4.8s · 210 tok`) because that is precisely when they are evidence. A successful request stays wordless: `OK` restates the dot without adding anything.
+
+A list is either **chosen from** or **read**. The catalog, registry, history, picker, and captured requests are listboxes of options. Monitor's loaded-models readout is a plain list whose rows carry their own eject control — `selectable={false}` on both the list and its rows renders `list`/`listitem` instead of `listbox`/`option`. The row template is identical; only the semantics change. This is not a style choice: a button nested inside `role="option"` is an illegal nested interactive control, and a readout that announces itself as a selection widget misdescribes what it is.
+
+`WorkspaceList` owns the ARIA listbox keyboard contract — roving tabindex, Arrow/Home/End, Enter/Space — for every list. A list supplies policy (`wrap`, `activateOnMove`) and two callbacks (`onRowFocus`, `onRowActivate`); rows are matched by `data-row-id`. A tab must not re-implement listbox navigation, and the row's tone follows from its `status` rather than being passed alongside it. A tab supplies `statusText` for the words and `meta` for the facts; it must not pack state into the facts slot.
+
 ### Shared controls and content
 
 - Actions use `WorkspaceActionButton`, `WorkspaceActionLink`, and `WorkspaceActionGroup`. Appearances are `primary`, `secondary`, `quiet`, and `danger`; sizes are `small`, `medium`, and `toolbar`.
@@ -135,15 +162,15 @@ The labels below are normative boundaries, not backlog states. **Justified speci
 
 **Justified specialization:** conversational message rhythm, Markdown/code rendering, capability-specific composer controls, generated media, and the centered empty-state hero are unique to chat. The mobile history bottom sheet is justified because conversations are frequently switched while retaining draft context.
 
-**Prohibited variation:** independent rail header, button, badge, or mobile-menu geometry. These must inherit the workspace tokens and shared controls. Capability color is semantic, never decorative.
+**Prohibited variation:** independent rail header, button, badge, or mobile-menu geometry. These must inherit the workspace tokens and shared controls. Capability color is semantic, never decorative. Conversation rows and the composer's model picker are both the shared selection list; capability and generating state belong in the lead glyph and the status dot, not in per-row pills, and eject belongs in the row action slot.
 
 ### Models
 
 **Layout:** three panels: `.model-nav-rail` filter rail, `.model-list-panel.workspace-list-panel`, and `.model-detail-panel.workspace-detail-panel`. The list may be resized on desktop.
 
-**Justified specialization:** dense model availability rows, provider search results, download progress, backend identity marks, README/files/tuning tabs, and the resizer reflect model-management data.
+**Justified specialization:** download progress, backend identity marks, README/files/tuning tabs, and the resizer reflect model-management data.
 
-**Prohibited variation:** custom list/detail backgrounds, headings, action buttons, metadata order, editor shells, or filter sizing. Model list/detail panels share the workspace grammar. Custom model, router, and global-settings editors occupy the same detail shell.
+**Prohibited variation:** custom list/detail backgrounds, headings, action buttons, metadata order, editor shells, or filter sizing. Model list/detail panels share the workspace grammar. Custom model, router, and global-settings editors occupy the same detail shell. Built-in catalog rows and remote registry results are the shared selection list — a taller registry row, a provider tile repeating what the zone header already says, or tag chips inside a row are not model-management data, they are a second row design.
 
 ### Backends
 
@@ -159,7 +186,11 @@ The labels below are normative boundaries, not backlog states. **Justified speci
 
 **Performance — justified specialization:** charts, gauges, metric cards, tabular numerals, and stable `--chart-*` series colors. Glow and ornamental gradients are prohibited.
 
-**Telemetry — justified specialization:** trace waterfall, metric strip, prompt diff, and replay/improvement workspaces. These are dense diagnostic artifacts. Their surrounding header, tabs, forms, buttons, cards, and modals still use system tokens.
+**Performance — the loaded-models card** renders the shared list with `selectable={false}`: it is a readout, not a selection. Every row in it is loaded, so no row carries a status; each offers a latched eject.
+
+**Telemetry — justified specialization:** trace waterfall, metric strip, prompt diff, and replay/improvement workspaces. These are dense diagnostic artifacts. Their surrounding header, tabs, forms, buttons, cards, and modals still use system tokens. The request list is the shared selection list; it keeps `--font-mono` and tabular figures on its metrics because those digits are compared down a column.
+
+**Telemetry — prohibited variation:** a per-row kind pill, a second status dot, or a redundant `OK` label. Request kind belongs in the lead glyph and status in the one shared dot, with any non-nominal state named in words.
 
 **Logs — justified specialization:** monospace virtualized output, severity markers, and compact fixed-height rows. The filter panel, search control, header, and actions are standard workspace UI.
 

@@ -1,7 +1,7 @@
 import React, { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
-import { capabilityFromModelInfo } from '../modelCapabilities';
+import { capabilityFromModelInfo, modelCapabilityTags } from '../modelCapabilities';
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomModelRecord, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
@@ -13,7 +13,7 @@ import {
 } from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
-import { ModelListPanel, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
+import { ModelListPanel, capabilityTagIconTarget, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
 import type { FilterTab, PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
@@ -21,7 +21,8 @@ import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { useWorkspacePanelResize } from '../hooks/useWorkspacePanelResize';
 import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
 import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
-import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, WorkspaceMetadataChip, WorkspacePanelResizer } from './WorkspacePanels';
+import {WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, WorkspaceList, WorkspaceListRow, WorkspaceMetadataChip, WorkspacePanelResizer } from './WorkspacePanels';
+
 import { ROUTER_RECIPE, type RouterPullRequest } from '../features/router/routerTypes';
 import { deleteRouterRecord, loadRouterRecords, routerRecordToModelInfo } from '../features/router/routerStore';
 import {
@@ -134,13 +135,6 @@ function formatDownloads(n: number): string {
   return String(n);
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
-  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(0)} KB`;
-  return `${bytes} B`;
-}
-
 
 
 function safeFileName(value: string): string {
@@ -165,32 +159,6 @@ function implicitCustomModelName(displayName: string, checkpoint: string, fallba
   const checkpointName = checkpoint.trim().split(/[\\/]/).pop()?.split(':')[0]?.trim();
   return checkpointName || fallback;
 }
-
-const CopyInlineButton: React.FC<{ text: string; title?: string }> = ({ text, title = 'Copy model name' }) => {
-  const [copied, setCopied] = useState(false);
-  const handleClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    try {
-      await copyTextToClipboard(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    } catch {
-      setCopied(false);
-    }
-  };
-  return (
-    <button
-      type="button"
-      className={`copy-inline${copied ? ' copy-inline--copied' : ''}`}
-      onClick={handleClick}
-      title={copied ? 'Copied' : title}
-      aria-label={copied ? 'Copied' : title}
-    >
-      {copied ? <Icon name="check" size={13} /> : <Icon name="copy" size={13} />}
-    </button>
-  );
-};
 
 const RECIPE_BADGES: Record<string, string> = {
   llamacpp: 'llama.cpp',
@@ -1128,13 +1096,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     huggingface: true,
     modelscope: true,
   });
+  const [copiedRemoteKey, setCopiedRemoteKey] = useState<string | null>(null);
   const [hfResults, setHfResults] = useState<HFModelResult[]>([]);
   const [hfLoading, setHfLoading] = useState(false);
   const [hfError, setHfError] = useState<string | null>(null);
   const [modelScopeResults, setModelScopeResults] = useState<HFModelResult[]>([]);
   const [modelScopeLoading, setModelScopeLoading] = useState(false);
   const [modelScopeError, setModelScopeError] = useState<string | null>(null);
-  const [expandedRemoteModel, setExpandedRemoteModel] = useState<string | null>(null);
   const [selectedRemoteModel, setSelectedRemoteModel] = useState<HFModelResult | null>(null);
   const [selectedRemoteProvider, setSelectedRemoteProvider] = useState<ModelRegistryProvider>('huggingface');
   const [pullingRemote, setPullingRemote] = useState<Record<string, { percent: number; modelName: string; checkpoint: string }>>({});
@@ -1478,7 +1446,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   }, [hfResults, providerEnabled.huggingface]);
 
   useEffect(() => {
-    setExpandedRemoteModel(null);
     setSelectedRemoteModel(null);
   }, [searchQuery]);
 
@@ -1487,7 +1454,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const key = providerKey('huggingface', selectedRemoteModel.id);
     if (!Object.prototype.hasOwnProperty.call(hfDetectedRecipes, key)
       || isCompatibleHuggingFaceRecipe(hfDetectedRecipes[key])) return;
-    setExpandedRemoteModel(null);
     setSelectedRemoteModel(null);
     setMobileDetailOpen(false);
   }, [hfDetectedRecipes, selectedRemoteModel, selectedRemoteProvider]);
@@ -2572,189 +2538,92 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
 
-  const renderRemoteRow = (provider: ModelRegistryProvider, result: HFModelResult) => {
+  /* One row per results list is the list's tab stop. Keying it off selection alone
+     would leave a freshly returned list unreachable by Tab, since nothing is
+     selected until the user picks something — so the first result stands in. */
+  const remoteRovingId = (provider: ModelRegistryProvider, results: HFModelResult[]) => {
+    const selected = selectedRemoteProvider === provider
+      && results.some(item => item.id === selectedRemoteModel?.id)
+      ? selectedRemoteModel?.id
+      : null;
+    return selected ?? results[0]?.id ?? null;
+  };
+
+  const renderRemoteRow = (provider: ModelRegistryProvider, result: HFModelResult, rovingId: string | null) => {
     const key = providerKey(provider, result.id);
-    const providerMeta = PROVIDER_META[provider];
-    const isExpanded = expandedRemoteModel === key;
-    const pipelineTag = result.pipeline_tag || '';
     const variants = remoteVariants[key];
-    const displayTags = Array.from(new Set([
-      ...(result.tags || []),
-      ...(variants?.suggested_labels || []),
-    ]))
-      .filter(tag => !['gguf', 'transformers', 'pytorch', 'safetensors'].includes(tag.toLowerCase()))
-      .slice(0, 6);
     const remotePull = activeRemotePull(provider, result.id, variants);
     const pullPercent = remotePull?.percent;
     const isPulling = pullPercent !== undefined;
-    const isLoadingVariants = remoteVariantsLoading[key] || false;
     const recipeBadge = variants ? (RECIPE_BADGES[variants.recipe] || variants.recipe) : '';
+    const isSelected = selectedRemoteModel?.id === result.id && selectedRemoteProvider === provider;
 
-    const handleExpand = () => {
-      const next = isExpanded ? null : key;
-      setExpandedRemoteModel(next);
-      if (next) void fetchRemoteVariants(provider, result.id);
+    // Provider identity stays on the zone header, so the row spends its lead
+    // slot on modality — the same question the built-in catalog answers there.
+    // Going through ModelInfo derives the capability evidence once and then
+    // reads it back the same way the built-in catalog rows do.
+    const remoteInfo = remoteResultAsModelInfo(result, variants);
+    const primaryCapability = capabilityFromModelInfo(remoteInfo);
+    const secondaryTags = modelCapabilityTags(remoteInfo)
+      .filter(tag => tag !== (primaryCapability as string));
+    const reach = `${formatDownloads(result.downloads)} ↓ · ${formatDownloads(result.likes)} ♥`;
+
+    const handleSelect = () => {
       setSelectedRemoteModel(result);
       setSelectedRemoteProvider(provider);
       setSelectedDetailModelId(null);
       setMobileDetailOpen(true);
     };
 
-    return (
-      <div className={`row row--remote row--${provider} row--${provider === 'huggingface' ? 'hf' : 'modelscope'}${isExpanded ? ' row--expanded' : ''}`} key={key}>
-        <div className="row__summary">
-          <button type="button" className="row__content" onClick={handleExpand} aria-expanded={isExpanded}>
-            <div className="row__main">
-              <div className={`row__icon row__icon--${provider}`}><Icon name="cloud" size={18} /></div>
-              <div className="row__text">
-                <span className="row__name-wrap"><span className="row__name">{result.id}</span></span>
-                <span className="row__sub">
-                  {recipeBadge ? `${recipeBadge} · ` : ''}{pipelineTag && `${pipelineTag} · `}
-                  {formatDownloads(result.downloads)} downloads · {formatDownloads(result.likes)} likes
-                </span>
-                {displayTags.length > 0 && (
-                  <div className="row__labels">
-                    {displayTags.map(tag => (
-                      <span key={tag} className={`row__label row__label--${provider}`}>{tag}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <span className="row__expand">{isExpanded ? '▾' : '▸'}</span>
-          </button>
-          <div className="row__right">
-            <CopyInlineButton text={result.id} title={`Copy repository name: ${result.id}`} />
-            {isPulling ? (
-              <div className="row__progress">
-                <div className="row__progress-bar">
-                  <div className="row__progress-fill" style={{ width: `${pullPercent}%` }} />
-                </div>
-                <span className="row__progress-text">{pullPercent.toFixed(0)}%</span>
-                <button
-                  className="row__action row__action--cancel"
-                  onClick={(event) => { event.stopPropagation(); void handleCancelRemotePull(provider, result.id); }}
-                  title={`Cancel download of ${result.id}`}
-                  aria-label={`Cancel download of ${result.id}`}
-                ><Icon name="x" size={13} /></button>
-              </div>
-            ) : (
-              <button
-                className="row__action row__action--download"
-                aria-label={`Download ${result.id}`}
-                onClick={(event) => { event.stopPropagation(); handleExpand(); }}
-                title={variants?.variants.length === 0 && variants.recipe !== 'llamacpp'
-                  ? 'Expand to download repository'
-                  : 'Expand to pick a variant to download'}
-              >
-                <Icon name="download" size={13} /> Download
-              </button>
-            )}
-            <a
-              className="row__action row__action--hf-link"
-              href={providerMeta.url(result.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={event => event.stopPropagation()}
-            >
-              View
-            </a>
-          </div>
-        </div>
+    const handleCopy = async () => {
+      try {
+        await copyTextToClipboard(result.id);
+        setCopiedRemoteKey(key);
+        window.setTimeout(() => setCopiedRemoteKey(current => (current === key ? null : current)), 1200);
+      } catch {
+        setCopiedRemoteKey(null);
+      }
+    };
 
-        {isExpanded && (
-          <div className={`row__detail row__detail--remote row__detail--${provider}`}>
-            <div className="detail__grid">
-              <div className="detail__meta">
-                <div className="detail__field">
-                  <span className="detail__label">Provider</span>
-                  <span className="detail__value">{providerMeta.label}</span>
-                </div>
-                <div className="detail__field">
-                  <span className="detail__label">Repository</span>
-                  <span className="detail__value detail__value--mono">{result.id}</span>
-                </div>
-                {pipelineTag && (
-                  <div className="detail__field">
-                    <span className="detail__label">Pipeline</span>
-                    <span className="detail__value">{pipelineTag}</span>
-                  </div>
-                )}
-                {variants && (
-                  <>
-                    <div className="detail__field">
-                      <span className="detail__label">Backend</span>
-                      <span className="detail__value">{RECIPE_BADGES[variants.recipe] || variants.recipe}</span>
-                    </div>
-                    {variants.suggested_labels.length > 0 && (
-                      <div className="detail__field">
-                        <span className="detail__label">Capabilities</span>
-                        <span className="detail__value">{variants.suggested_labels.join(', ')}</span>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-              <div className="detail__source">
-                {isLoadingVariants && (
-                  <div className="detail__field"><span className="detail__label">Loading variants…</span></div>
-                )}
-                {variants && variants.variants.length > 0 && (
-                  <div className="detail__field">
-                    <span className="detail__label">Variants — pick one to download</span>
-                    <div className="hf-detail__gguf-list">
-                      {variants.variants.map(variant => (
-                        <button
-                          key={variant.name}
-                          className="hf-detail__gguf-btn"
-                          aria-label={`Download ${variant.name} from ${result.id}`}
-                          disabled={isPulling}
-                          onClick={() => void handleRemotePull(provider, result.id, variant.name, variants.recipe)}
-                        >
-                          <span className="hf-detail__gguf-name">
-                            {variant.name}{variant.sharded ? ' (sharded)' : ''}
-                          </span>
-                          <span className="hf-detail__gguf-size">{formatBytes(variant.size_bytes)}</span>
-                          <span className="hf-detail__gguf-action">Download</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {variants && variants.variants.length === 0 && variants.recipe !== 'llamacpp' && (
-                  <div className="detail__field">
-                    <span className="detail__label">Repository download</span>
-                    <div className="hf-detail__gguf-list">
-                      <button
-                        className="hf-detail__gguf-btn"
-                        aria-label={`Download ${result.id}`}
-                        disabled={isPulling}
-                        onClick={() => void handleRemotePull(provider, result.id, '', variants.recipe)}
-                      >
-                        <span className="hf-detail__gguf-name">{result.id}</span>
-                        <span className="hf-detail__gguf-action">Download</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <a className="detail__hf-link" href={providerMeta.url(result.id)} target="_blank" rel="noopener noreferrer">
-                  View on {providerMeta.label}
-                </a>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+    return (
+      <WorkspaceListRow
+        key={key}
+        rowId={result.id}
+        capability={primaryCapability}
+        title={result.id}
+        meta={reach}
+        glyphs={secondaryTags.map(capabilityTagIconTarget)}
+        anchor={recipeBadge || undefined}
+        status={isPulling ? 'busy' : undefined}
+        statusText={isPulling ? `Downloading ${pullPercent.toFixed(0)}%` : undefined}
+        statusLabel={isPulling ? `Downloading ${result.id}` : undefined}
+        progress={isPulling ? pullPercent : undefined}
+        selected={isSelected}
+        tabIndex={rovingId === result.id ? 0 : -1}
+        ariaLabel={`${result.id}, ${formatDownloads(result.downloads)} downloads, ${formatDownloads(result.likes)} likes${recipeBadge ? `, ${recipeBadge}` : ''}${isPulling ? `, downloading ${pullPercent.toFixed(0)}%` : ', not downloaded'}`}
+        onClick={handleSelect}
+        action={isPulling
+          ? {
+            icon: 'x',
+            label: `Cancel download of ${result.id}`,
+            onClick: () => { void handleCancelRemotePull(provider, result.id); },
+            // Cancelling a download in flight must stay reachable without hover.
+            latched: true,
+          }
+          : {
+            icon: copiedRemoteKey === key ? 'check' : 'copy',
+            label: copiedRemoteKey === key ? 'Copied' : `Copy repository name: ${result.id}`,
+            onClick: () => { void handleCopy(); },
+          }}
+      />
     );
   };
-
 
   /* ── Stats ───────────────────────────────────────────────── */
   const searchActive = searchQuery.trim().length >= 2;
   const hasHuggingFaceActivity = searchActive && primaryFilter === 'all' && providerEnabled.huggingface;
   const hasModelScopeActivity = searchActive && primaryFilter === 'all' && providerEnabled.modelscope;
   const hasRemoteActivity = hasHuggingFaceActivity || hasModelScopeActivity;
-  const remoteResultCount = filteredHfResults.length + filteredModelScopeResults.length;
   const providerCounts: Record<ModelRegistryProvider, number> = {
     huggingface: hasHuggingFaceActivity ? filteredHfResults.length : 0,
     modelscope: hasModelScopeActivity ? filteredModelScopeResults.length : 0,
@@ -2808,7 +2677,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setProviderEnabled(prev => ({ ...prev, [provider]: !prev[provider] }));
     if (selectedRemoteModel && selectedRemoteProvider === provider) {
       setSelectedRemoteModel(null);
-      setExpandedRemoteModel(null);
       setMobileDetailOpen(false);
     }
   };
@@ -2820,6 +2688,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const results = provider === 'huggingface' ? filteredHfResults : filteredModelScopeResults;
     const enabled = providerEnabled[provider];
     if (!searchActive || !enabled) return null;
+    const rovingId = remoteRovingId(provider, results);
     return (
       <section
         className={`zone zone--registry zone--${provider === 'huggingface' ? 'hf' : 'modelscope'}`}
@@ -2848,7 +2717,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             <span>No compatible {meta.label} models match the active filters.</span>
           </div>
         ) : (
-          results.map(result => renderRemoteRow(provider, result))
+          <WorkspaceList
+            label={`${meta.label} results`}
+            onRowActivate={id => {
+              const match = results.find(item => item.id === id);
+              if (!match) return;
+              setSelectedRemoteModel(match);
+              setSelectedRemoteProvider(provider);
+              setSelectedDetailModelId(null);
+              setMobileDetailOpen(true);
+            }}
+          >
+            {results.map(result => renderRemoteRow(provider, result, rovingId))}
+          </WorkspaceList>
         )}
       </section>
     );
@@ -2931,7 +2812,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         favoriteNames={favoriteNameSet}
         registryZoneTop={hasRemoteActivity && !hasLocalMatches ? renderRegistryZones() : undefined}
         registryZone={hasRemoteActivity && hasLocalMatches ? renderRegistryZones() : undefined}
-        registryResultCount={remoteResultCount}
         systemInfo={systemInfo}
       />
 

@@ -73,7 +73,10 @@
   --cap-router:     #3289D1;
   --cap-vision:     #B58CFF;
   --cap-code:       #6AD0A3;
-  --cap-embedding: #665F59;
+  /* Lifted from #665F59, which measured 2.83:1 on --surface-1 and so failed the
+     3:1 floor WCAG 1.4.11 sets for non-text UI once it began tinting the list
+     row's primary modality glyph. */
+  --cap-embedding: #8A8279;
   --cap-reranking:  #FF9D6A;
   --cap-image:      #D8752B;
   --cap-image-edit: #D8752B;

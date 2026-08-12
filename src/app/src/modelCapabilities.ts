@@ -72,6 +72,11 @@ export function capabilityFromType(type?: string | null): ModelCapability {
   return TYPE_TO_CAPABILITY[normalizeModelType(type)] || 'unknown';
 }
 
+export function isRouterRecipe(recipe?: string | null): boolean {
+  const r = normalizeModelType(recipe);
+  return r === 'collection.router' || r.startsWith('collection.router.');
+}
+
 export function capabilityFromRecipe(recipe?: string | null): ModelCapability {
   const r = normalizeModelType(recipe);
   if (!r || r === 'unknown') return 'unknown';
@@ -473,6 +478,18 @@ const BASE_CAPABILITY_TAG: Partial<Record<ModelCapability, CapabilityTag>> = {
   'audio-generation': 'audio-generation', tts: 'tts', model3d: 'model3d',
   embedding: 'embedding', reranking: 'reranking',
 };
+
+/**
+ * The identity a selection row leads with. `capabilityFromRecipe` resolves a
+ * router collection to chat because chat is what it ultimately serves; a row
+ * instead shows the router itself. Omni needs no such override — it already
+ * resolves to `omni` through its recipe.
+ */
+export function rowCapability(model: ModelInfo): ModelCapability | 'router' {
+  return isRouterRecipe(String((model as any).recipe || ''))
+    ? 'router'
+    : capabilityFromModelInfo(model);
+}
 
 export function modelCapabilityTags(model: ModelInfo): CapabilityTag[] {
   const declaredCapabilities = Array.isArray((model as any).capabilities)

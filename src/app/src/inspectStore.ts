@@ -317,6 +317,22 @@ class InspectStoreClass {
     this.showToast('Session cleared');
   }
 
+  removeTrace(id: string) {
+    const index = this.state.traces.findIndex((t) => t.id === id);
+    if (index === -1) return;
+
+    const traces = this.state.traces.filter((t) => t.id !== id);
+    // Deleting the selected request keeps the selection in place by falling to
+    // the row that slid up into it, so the detail pane never goes blank on a
+    // list the user is working through.
+    const selectedTraceId = this.state.selectedTraceId === id
+      ? (traces[index] || traces[index - 1] || null)?.id ?? null
+      : this.state.selectedTraceId;
+
+    this.setState({ traces, selectedTraceId });
+    this.showToast('Request deleted');
+  }
+
   selectTrace(id: string | null) {
     this.setState({ selectedTraceId: id });
   }

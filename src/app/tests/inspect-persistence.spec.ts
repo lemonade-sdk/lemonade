@@ -142,7 +142,7 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
   await page.waitForTimeout(1000);
 
   // Verify a trace was captured in the left rail list
-  const traceItems = page.locator('.trace-row');
+  const traceItems = page.locator('.inspect-rail__list .workspace-list-row');
   await expect(traceItems).toHaveCount(1);
   const originalTraceId = await traceItems.first().getAttribute('data-trace-id');
 
@@ -150,7 +150,7 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
   await page.reload();
   await page.waitForTimeout(1000);
 
-  const traceItemsReloaded = page.locator('.trace-row');
+  const traceItemsReloaded = page.locator('.inspect-rail__list .workspace-list-row');
   await expect(traceItemsReloaded).toHaveCount(1);
   const reloadedTraceId = await traceItemsReloaded.first().getAttribute('data-trace-id');
   expect(reloadedTraceId).toBe(originalTraceId);
@@ -158,10 +158,10 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
   // 7. Click "Clear" specifically in the inspect rail footer
   await page.click('.inspect-rail__footer button:has-text("Clear")');
   await page.waitForTimeout(500);
-  await expect(page.locator('.trace-row')).toHaveCount(0);
+  await expect(page.locator('.inspect-rail__list .workspace-list-row')).toHaveCount(0);
 
   // 8. Reload again and check if it's still cleared
   await page.reload();
   await page.waitForTimeout(1000);
-  await expect(page.locator('.trace-row')).toHaveCount(0);
+  await expect(page.locator('.inspect-rail__list .workspace-list-row')).toHaveCount(0);
 });

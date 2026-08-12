@@ -5,6 +5,8 @@ import { Icon, CapabilityIcon } from './Icon';
 
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
+import { WorkspaceList, WorkspaceListRow } from './WorkspacePanels';
+import { backendCompactLabel } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
@@ -35,6 +37,7 @@ import {
   snapshotFromLoaded,
   snapshotFromModelInfo,
   snapshotFromName,
+  isRouterRecipe,
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
 import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../features/chatHistory/historySettings';
@@ -324,11 +327,6 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
   return servers
     .filter(server => selected.has(server.id))
     .flatMap(server => server.toolOptions.map(tool => tool.runtimeName));
-}
-
-function isRouterRecipe(recipe?: string | null): boolean {
-  const normalized = String(recipe || '').trim().toLowerCase();
-  return normalized === 'collection.router' || normalized.startsWith('collection.router.');
 }
 
 function modelModeBadge(capability: ModelCapability, recipe?: string | null): string {
@@ -815,6 +813,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [chatLogsWidth, setChatLogsWidth] = useState(() => loadChatLogsWidth());
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerQuery, setModelPickerQuery] = useState('');
+  const modelPickerListRef = useRef<HTMLUListElement>(null);
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
   const [modelPickerError, setModelPickerError] = useState<string | null>(null);
   const [modelPickerUnloading, setModelPickerUnloading] = useState<string | null>(null);
@@ -1305,6 +1304,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     capability: ModelCapability;
     recipe?: string;
     loaded: boolean;
+    /** Already on this machine. Decides whether the row offers load or fetch. */
+    downloaded: boolean;
     audioInput: boolean;
     info?: ModelInfo;
     detail: string;
@@ -1336,8 +1337,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       capability: capabilityForLoaded(model),
       recipe: model.recipe,
       loaded: true,
+      downloaded: true,
       audioInput: audioInputForLoaded(model),
-      detail: `Loaded · ${model.recipe || 'runtime'}${model.device ? ` · ${model.device}` : ''}`,
+      detail: `Loaded${model.device ? ` · ${model.device}` : ''}`,
     }));
 
     knownModelInfos.forEach(info => {
@@ -1350,6 +1352,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         capability,
         recipe: typeof info.recipe === 'string' ? info.recipe : undefined,
         loaded: false,
+        downloaded: true,
         audioInput: modelSupportsChatAudioInput(info, null),
         info,
         detail: configuredDefault ? 'Downloaded · loads when you send' : 'Downloaded · click to load',
@@ -1361,6 +1364,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       name: model.name,
       capability: 'chat',
       loaded: false,
+      downloaded: false,
       audioInput: false,
       info: findModelInfoByName(knownModelInfos, model.name) || lemonadeDefaultModelInfo(model),
       detail: model.description,
@@ -1953,40 +1957,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     setActiveId(id);
   }, []);
 
-  const handleDeleteConversation = useCallback((e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
+  const handleDeleteConversation = useCallback((id: string) => {
     setConversations(prev => prev.filter(c => c.id !== id));
     if (activeId === id) setActiveId(null);
   }, [activeId]);
 
-  const handleRailKeyDown = useCallback((e: React.KeyboardEvent<HTMLUListElement>) => {
-    const list = e.currentTarget;
-    const options = Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'));
-    if (!options.length) return;
-    const currentIdx = options.findIndex(el =>
-      el === document.activeElement || el.contains(document.activeElement as Node),
-    );
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      const next = currentIdx < 0 ? 0 : (currentIdx + 1) % options.length;
-      options[next].focus();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      const prev = currentIdx < 0 ? options.length - 1 : (currentIdx - 1 + options.length) % options.length;
-      options[prev].focus();
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      options[0].focus();
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      options[options.length - 1].focus();
-    } else if ((e.key === 'Enter' || e.key === ' ') && currentIdx >= 0) {
-      if ((e.target as HTMLElement).tagName !== 'BUTTON') {
-        e.preventDefault();
-        handleSelectConversation(conversations[currentIdx].id);
-      }
-    }
-  }, [conversations, handleSelectConversation]);
 
 
   const handleRailToggle = useCallback(() => {
@@ -2002,35 +1977,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     sheetTriggerRef.current?.focus();
   }, []);
 
-  const handleSheetKeyDown = useCallback((e: React.KeyboardEvent<HTMLUListElement>) => {
-    const list = e.currentTarget;
-    const options = Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'));
-    if (!options.length) return;
-    const currentIdx = options.findIndex(el =>
-      el === document.activeElement || el.contains(document.activeElement as Node),
-    );
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      const next = currentIdx < 0 ? 0 : (currentIdx + 1) % options.length;
-      options[next].focus();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      const prev = currentIdx < 0 ? options.length - 1 : (currentIdx - 1 + options.length) % options.length;
-      options[prev].focus();
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      options[0].focus();
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      options[options.length - 1].focus();
-    } else if ((e.key === 'Enter' || e.key === ' ') && currentIdx >= 0) {
-      if ((e.target as HTMLElement).tagName !== 'BUTTON') {
-        e.preventDefault();
-        handleSelectConversation(conversations[currentIdx].id);
-        closeMobileSheet();
-      }
-    }
-  }, [conversations, handleSelectConversation, closeMobileSheet]);
 
   // ESC closes mobile sheet
   useEffect(() => {
@@ -2942,8 +2888,8 @@ ${finalText}`
     return () => window.removeEventListener(CHAT_HISTORY_PREFERENCE_EVENT, onPreferenceChange);
   }, []);
 
-  const handleModelPickerUnload = useCallback(async (modelName: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  // The shared row already stops the click from selecting the row.
+  const handleModelPickerUnload = useCallback(async (modelName: string) => {
     if (modelPickerUnloading) return;
     setModelPickerUnloading(modelName);
     try {
@@ -3119,6 +3065,49 @@ ${finalText}`
     [knownModelInfos],
   );
 
+  /* The rail and the mobile sheet are the same list in two containers, so they
+     render the same row. An idle conversation has no operational state and
+     deliberately shows no status marker — that keeps the one row that is
+     generating findable. */
+  const renderConversationRow = (
+    c: Conversation,
+    idx: number,
+    idPrefix: string,
+    onSelect: () => void,
+  ) => {
+    const capability = c.model?.capability || 'chat';
+    const isSelected = c.id === activeId;
+    const isTabTarget = isSelected || (idx === 0 && !activeId);
+    const convTitle = c.title || deriveTitle(c.messages);
+    const isStreaming = streaming.streamingConvoIds.has(c.id);
+    const lastMessage = c.messages[c.messages.length - 1];
+    const failed = !isStreaming && Boolean(lastMessage?.isError);
+
+    return (
+      <WorkspaceListRow
+        key={c.id}
+        id={`${idPrefix}-conv-${c.id}`}
+        rowId={c.id}
+        capability={isRouterRecipe(c.model?.recipe) ? 'router' : capability}
+        title={convTitle}
+        meta={c.model?.name || undefined}
+        anchor={timeAgo(c.updatedAt)}
+        status={isStreaming ? 'live' : failed ? 'error' : undefined}
+        statusText={isStreaming ? 'Generating' : failed ? 'Last reply failed' : undefined}
+        statusLabel={isStreaming ? 'Generating a reply' : failed ? 'The last reply failed' : undefined}
+        selected={isSelected}
+        tabIndex={isTabTarget ? 0 : -1}
+        ariaLabel={`${convTitle}${c.model?.name ? `, ${c.model.name}` : ''}${isStreaming ? ', generating' : failed ? ', last reply failed' : ''}, ${timeAgo(c.updatedAt)}`}
+        onClick={onSelect}
+        action={{
+          icon: 'trash',
+          label: `Delete conversation: ${convTitle}`,
+          onClick: () => handleDeleteConversation(c.id),
+        }}
+      />
+    );
+  };
+
   return (
     <>
       <div
@@ -3143,45 +3132,11 @@ ${finalText}`
           </button>
         </div>
 
-        <ul className="rail__list" role="listbox" aria-label="Conversations" onKeyDown={handleRailKeyDown}>
-          {conversations.map((c, idx) => {
-            const badge = modelModeBadge(c.model?.capability || 'chat', c.model?.recipe);
-            const isSelected = c.id === activeId;
-            const isTabTarget = isSelected || (idx === 0 && !activeId);
-            const convTitle = c.title || deriveTitle(c.messages);
-            return (
-              <li
-                id={`rail-conv-${c.id}`}
-                className={`rail__item ${isSelected ? 'is-active' : ''}`}
-                key={c.id}
-                role="option"
-                aria-selected={isSelected}
-                tabIndex={isTabTarget ? 0 : -1}
-                onClick={() => handleSelectConversation(c.id)}
-              >
-                <span className="rail__item-title">
-                  {convTitle}
-                </span>
-                <span className="rail__item-meta">
-                  {streaming.streamingConvoIds.has(c.id) && (
-                    <span className="rail__streaming-badge">● generating</span>
-                  )}
-                  <span className={`rail__model-badge rail__model-badge--${badge}`}>
-                    {badge}
-                  </span>
-                  <span>{timeAgo(c.updatedAt)}</span>
-                </span>
-                <button
-                  className="rail__item-delete"
-                  onClick={(e) => handleDeleteConversation(e, c.id)}
-                  aria-label={`Delete conversation: ${convTitle}`}
-                  title="Delete"
-                  tabIndex={-1}
-                >×</button>
-              </li>
-            );
-          })}
-        </ul>
+        <WorkspaceList className="rail__list" label="Conversations" wrap onRowActivate={handleSelectConversation}>
+          {conversations.map((c, idx) => renderConversationRow(
+            c, idx, 'rail', () => handleSelectConversation(c.id),
+          ))}
+        </WorkspaceList>
         {conversations.length === 0 && (
           <p className="rail__empty">No conversations yet</p>
         )}
@@ -3206,53 +3161,51 @@ ${finalText}`
         </div>
         <div className="bottom-sheet__header">
           <strong>Conversations</strong>
-          <button type="button" className="btn btn--quiet btn--toolbar btn--icon-only workspace-action-button workspace-action-button--quiet workspace-action-button--toolbar workspace-action-button--icon-only" onClick={closeMobileSheet} aria-label="Close conversation history" title="Close panel">
+          <button
+            type="button"
+            className="btn btn--quiet btn--toolbar btn--icon-only workspace-action-button workspace-action-button--quiet workspace-action-button--toolbar workspace-action-button--icon-only"
+            onClick={closeMobileSheet}
+            aria-label="Close conversation history"
+            title="Close panel"
+          >
             <Icon name="x" size={16} aria-hidden="true" />
           </button>
         </div>
-        <button type="button" className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium bottom-sheet__new" onClick={() => { handleNewChat(); closeMobileSheet(); }}>
+
+        <button
+          type="button"
+          className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium bottom-sheet__new"
+          onClick={() => {
+            handleNewChat();
+            closeMobileSheet();
+          }}
+        >
           <Icon name="compose" size={14} aria-hidden="true" />
           <span className="workspace-action-button__label">New chat</span>
         </button>
-        <ul className="bottom-sheet__list rail__list" role="listbox" aria-label="Conversations" onKeyDown={handleSheetKeyDown}>
-          {conversations.map((c, idx) => {
-            const badge = modelModeBadge(c.model?.capability || 'chat', c.model?.recipe);
-            const isSelected = c.id === activeId;
-            const isTabTarget = isSelected || (idx === 0 && !activeId);
-            const convTitle = c.title || deriveTitle(c.messages);
-            return (
-              <li
-                id={`sheet-conv-${c.id}`}
-                className={`rail__item ${isSelected ? 'is-active' : ''}`}
-                key={c.id}
-                role="option"
-                aria-selected={isSelected}
-                tabIndex={isTabTarget ? 0 : -1}
-                onClick={() => { handleSelectConversation(c.id); closeMobileSheet(); }}
-              >
-                <span className="rail__item-title">
-                  {convTitle}
-                </span>
-                <span className="rail__item-meta">
-                  {streaming.streamingConvoIds.has(c.id) && (
-                    <span className="rail__streaming-badge">● generating</span>
-                  )}
-                  <span className={`rail__model-badge rail__model-badge--${badge}`}>
-                    {badge}
-                  </span>
-                  <span>{timeAgo(c.updatedAt)}</span>
-                </span>
-                <button
-                  className="rail__item-delete"
-                  onClick={(e) => handleDeleteConversation(e, c.id)}
-                  aria-label={`Delete conversation: ${convTitle}`}
-                  title="Delete"
-                  tabIndex={-1}
-                >×</button>
-              </li>
-            );
-          })}
-        </ul>
+
+        <WorkspaceList
+          className="bottom-sheet__list rail__list"
+          label="Conversations"
+          wrap
+          onRowActivate={id => {
+            handleSelectConversation(id);
+            closeMobileSheet();
+          }}
+        >
+          {conversations.map((c, idx) =>
+            renderConversationRow(
+              c,
+              idx,
+              'sheet',
+              () => {
+                handleSelectConversation(c.id);
+                closeMobileSheet();
+              },
+            )
+          )}
+        </WorkspaceList>
+
         {conversations.length === 0 && (
           <p className="rail__empty">No conversations yet</p>
         )}
@@ -3447,50 +3400,79 @@ ${finalText}`
                       value={modelPickerQuery}
                       placeholder="Search ready or Lemonade default models…"
                       onChange={e => setModelPickerQuery(e.target.value)}
+                      // Typing filters, then Down hands off to the list's own
+                      // roving-tabindex navigation.
+                      onKeyDown={e => {
+                        if (e.key !== 'ArrowDown') return;
+                        e.preventDefault();
+                        modelPickerListRef.current
+                          ?.querySelector<HTMLElement>('[role="option"]:not([aria-disabled="true"])')
+                          ?.focus();
+                      }}
                     />
                   </label>
-                  <div className="composer__model-results" role="listbox">
-                    {modelPickerOptions.map(option => (
-                      <div
-                        key={option.name}
-                        className={`composer__model-option-row${option.name === currentModel ? ' is-active' : ''}${modelPickerUnloading === option.name ? ' is-unloading' : ''}`}
-                      >
-                        <button
-                          type="button"
-                          className="composer__model-option"
+                  <WorkspaceList
+                    listRef={modelPickerListRef}
+                    className="composer__model-results"
+                    label="Models"
+                    onRowActivate={name => {
+                      const option = modelPickerOptions.find(item => item.name === name);
+                      if (option) handleModelPickerSelect(option);
+                    }}
+                  >
+                    {modelPickerOptions.map(option => {
+                      const isLoading = modelPickerLoading === option.name;
+                      const isUnloading = modelPickerUnloading === option.name;
+                      const busy = isLoading || isUnloading;
+                      const capability = isRouterRecipe(option.recipe) ? 'router' : option.capability;
+                      // Collections route to backends rather than being one, so
+                      // they name no engine — same rule as the models catalog.
+                      const isCollection = capability === 'omni' || capability === 'router';
+                      // The picker gives its trailing slot to eject, so the
+                      // engine joins the facts instead of competing for it.
+                      // A loaded row's status owns the whole meta line, so the
+                      // same composed line has to travel with the status.
+                      const detailParts = [
+                        option.detail,
+                        option.defaultLabel,
+                        option.recipe && !isCollection ? backendCompactLabel(option.recipe) : '',
+                      ].filter(Boolean);
+                      return (
+                        <WorkspaceListRow
+                          key={option.name}
+                          rowId={option.name}
+                          capability={capability}
+                          title={option.name}
+                          meta={detailParts}
+                          glyphs={option.audioInput && option.capability === 'chat' ? ['audio'] : undefined}
+                          status={busy ? 'busy' : option.loaded ? 'live' : undefined}
+                          statusText={isLoading ? 'Loading…' : isUnloading ? 'Ejecting…' : undefined}
+                          selected={option.name === currentModel}
+                          disabled={busy}
+                          tabIndex={option.name === currentModel ? 0 : -1}
+                          ariaLabel={`${option.name}, ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe)}, ${option.detail}${option.defaultLabel ? `, ${option.defaultLabel}` : ''}`}
                           onClick={() => handleModelPickerSelect(option)}
-                          disabled={modelPickerLoading === option.name || modelPickerUnloading === option.name}
-                          role="option"
-                          aria-selected={option.name === currentModel}
-                        >
-                          <ModelModeIcons capability={option.capability} recipe={option.recipe} audioInput={option.audioInput} size={15} />
-                          {option.defaultIcon && option.defaultLabel && (
-                            <span className="composer__model-default-icon" title={option.defaultLabel} aria-label={option.defaultLabel}>
-                              <Icon name={option.defaultIcon} size={14} />
-                            </span>
-                          )}
-                          <span className="composer__model-option-text">
-                            <strong>{option.name}</strong>
-                            <span>{modelModeDisplayLabel(option.capability, option.audioInput, option.recipe)} · {option.detail}</span>
-                          </span>
-                          {modelPickerLoading === option.name && <span className="composer__model-option-loading">Loading…</span>}
-                        </button>
-                        {option.loaded && (
-                          <button
-                            type="button"
-                            className="composer__model-option-unload"
-                            onClick={(e) => handleModelPickerUnload(option.name, e)}
-                            disabled={!!modelPickerUnloading || !!modelPickerLoading}
-                            aria-label={`Eject model ${option.name}`}
-                            title="Eject model"
-                          >
-                            {modelPickerUnloading === option.name ? '…' : <Icon name="eject" size={16} aria-hidden="true" />}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    {modelPickerOptions.length === 0 && <div className="composer__model-empty">No matching models</div>}
-                  </div>
+                          // Each row offers the one thing left to do to it. Eject
+                          // latches because a loaded model is holding memory and
+                          // that must not need a hover to find; load and fetch
+                          // are ordinary affordances that wait to be reached for.
+                          action={busy ? undefined : option.loaded ? {
+                            icon: 'eject',
+                            label: `Eject model ${option.name}`,
+                            onClick: () => handleModelPickerUnload(option.name),
+                            latched: true,
+                          } : {
+                            icon: option.downloaded ? 'play' : 'download',
+                            label: option.downloaded
+                              ? `Load model ${option.name}`
+                              : `Download model ${option.name}`,
+                            onClick: () => { void handleModelPickerSelect(option); },
+                          }}
+                        />
+                      );
+                    })}
+                    {modelPickerOptions.length === 0 && <li className="composer__model-empty">No matching models</li>}
+                  </WorkspaceList>
                   {modelPickerLoading && <div className="composer__model-loading-bar">Loading {modelPickerLoading}…</div>}
                   {modelPickerError && <div className="composer__model-error">{modelPickerError}</div>}
                 </div>

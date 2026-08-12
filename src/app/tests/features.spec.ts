@@ -361,7 +361,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const hfVisible = await hfZone.isVisible().catch(() => false);
     console.log(`HuggingFace zone visible: ${hfVisible}`);
     if (hfVisible) {
-      const hfRows = await page.locator('.row--hf').count();
+      const hfRows = await page.locator('.zone--hf .workspace-list-row').count();
       console.log(`HuggingFace results: ${hfRows}`);
       await page.screenshot({ path: 'screenshots/07b2-models-hf-zone.png', fullPage: true });
     }
@@ -685,7 +685,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(page.locator('.titlebar__status-dot--brand')).toHaveClass(/titlebar__status-dot--connected/);
-    await page.locator('.model-list-item').filter({ hasText: 'Config Beta Model' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Config Beta Model' }).click();
     await page.getByRole('tab', { name: 'Configuration' }).click();
 
     const panel = page.locator('#detail-panel-config');
@@ -736,13 +736,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.getByRole('button', { name: 'Delete downloaded files for config-beta-model' }))
       .toHaveClass(/workspace-action-button--secondary/);
 
-    await page.locator('.model-list-item').filter({ hasText: 'Speech Beta Model' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Speech Beta Model' }).click();
     await page.getByRole('tab', { name: 'Configuration' }).click();
     const speechPanel = page.locator('#detail-panel-config');
     await expect(speechPanel.getByRole('checkbox', { name: 'Auto tune context size' })).toHaveCount(0);
     await expect(speechPanel.getByLabel('Context size tokens')).toHaveCount(0);
 
-    await page.locator('.model-list-item').filter({ hasText: 'Unknown Context Model' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Unknown Context Model' }).click();
     await page.getByRole('tab', { name: 'Configuration' }).click();
     const unknownPanel = page.locator('#detail-panel-config');
     const unknownAutoTune = unknownPanel.getByRole('checkbox', { name: 'Auto tune context size' });
@@ -1028,22 +1028,26 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.chat');
 
-    // Verify the streaming badge CSS class exists in the stylesheet
-    const hasBadgeStyle = await page.evaluate(() => {
+    // Streaming moved from a rail-specific badge to the shared list-row live
+    // status. Verify the marker keeps both its state color and pulse animation.
+    const hasStreamingStatusStyle = await page.evaluate(() => {
+      let hasLiveColor = false;
+      let hasLivePulse = false;
       const sheets = document.styleSheets;
       for (let i = 0; i < sheets.length; i++) {
         try {
           const rules = sheets[i].cssRules;
           for (let j = 0; j < rules.length; j++) {
-            if ((rules[j] as CSSStyleRule).selectorText?.includes('rail__streaming-badge')) {
-              return true;
-            }
+            const rule = rules[j] as CSSStyleRule;
+            if (!rule.selectorText?.includes('.workspace-list-row__status--live::before')) continue;
+            if (rule.style.background) hasLiveColor = true;
+            if (rule.style.animation) hasLivePulse = true;
           }
         } catch { /* cross-origin */ }
       }
-      return false;
+      return hasLiveColor && hasLivePulse;
     });
-    expect(hasBadgeStyle).toBeTruthy();
+    expect(hasStreamingStatusStyle).toBeTruthy();
 
     await page.screenshot({ path: 'screenshots/19-streaming-badge-style.png', fullPage: true });
   });
@@ -1393,8 +1397,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await page.locator('.titlebar__nav').getByText('Models').click();
-    await page.waitForSelector('.model-list-item', { timeout: 5000 });
-    await page.locator('.model-list-item').first().click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.locator('#detail-tab-config').click();
 
     const autoTune = page.getByRole('checkbox', { name: 'Auto tune context size' });
@@ -1449,10 +1453,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.goto('/');
     await page.locator('.titlebar__nav').getByText('Models').click();
-    await page.waitForSelector('.model-list-item', { timeout: 5000 });
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
 
     // Select model A and open Configuration tab
-    await page.locator('.model-list-item').filter({ hasText: modelA }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelA }).click();
     await page.locator('#detail-tab-config').click();
     const panel = page.locator('#detail-panel-config');
     await expect(panel).toBeVisible();
@@ -1463,7 +1467,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel.locator('.detail-tuning__notice')).toContainText('Saved for future loads');
 
     // Switch to model B — stale notice must be gone
-    await page.locator('.model-list-item').filter({ hasText: modelB }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelB }).click();
     await expect(panel.locator('.detail-tuning__notice')).toHaveCount(0);
   });
 
