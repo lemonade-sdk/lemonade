@@ -36,20 +36,23 @@ checklist against the v1 semantics table in
 `src/cpp/resources/schemas/README.md`.
 
 One directory holds one `policy.json`, so the split follows the **policies**, not
-the topics. Behaviors that differ only in the policy need their own directory —
-`l2_semantic_on_error` and `l2_semantic_on_error_match_true` differ by one
-`on_error` value and cannot share one. Conversely, anything a request can vary
-(`route_trace`, the input, `metadata`) belongs in the directory whose policy it
-exercises, not in a directory of its own. That is why the count of directories is
-higher than the count of semantics.
+the topics. Behaviors that need genuinely different policies get their own
+directory — `l1_conditions_features` and `l1_conditions_features_negated` route
+the same tool-less request to opposite candidates, so they cannot share one.
+Behaviors that differ only in a per-classifier field can live together as two
+classifiers in one policy: `l2_semantic_on_error` and `l3_classifier_on_error`
+each hold a default-`on_error` classifier and a `match_true` classifier side by
+side. Conversely, anything a request can vary (`route_trace`, the input,
+`metadata`) belongs in the directory whose policy it exercises, not in a directory
+of its own. That is why the count of directories is higher than the count of
+semantics.
 
 ```
 1/
   l0a_desugaring_core_form/   # llm router in core form (llm classifier + identity rules): reply picks a candidate
-  l0a_desugaring_sugar_form/  # llm router in routing.router sugar form; desugars to an llm classifier + identity rules: reply picks a candidate
   l0a_llm_implicit_label/     # omitted label => llm classifier's default_label score (never the picked candidate, never primary())
   l0a_llm_on_error/           # llm router on_error: match_true fires only on a failed call, not a normal miss
-  l0a_router_reply_contract/  # what counts as a valid router reply: strict {model, rationale}, code-fence stripping, and how the reply surfaces in the trace
+  l0a_router_reply_contract/  # valid router reply: strict {model, rationale}, code-fence stripping, reply in the trace; plus routing.router sugar desugaring to __route_N identity rules (same outcomes as core form)
   l1_conditions_char_bounds/  # min_chars / max_chars (own policy: length rules are greedy)
   l1_conditions_features/     # boolean request-feature ops: has_tools / has_images
   l1_conditions_features_negated/  # authored has_tools:false — equality, matches when absent
@@ -61,8 +64,7 @@ higher than the count of semantics.
   l1_trace/                   # route_trace=true: per-leaf trace, accumulation, short-circuit, default
   l2_semantic_concepts/       # semantic_similarity: each label reads its own concept's score; first-match over rules
   l2_semantic_implicit_label/ # omitted label => classifier's default_label concept score (never the max concept, never primary())
-  l2_semantic_on_error/       # undefined cosine (empty / zero / mismatched-length input) => classifier fails
-  l2_semantic_on_error_match_true/  # on_error match_true fires the band only on a failed embed, not a real miss
+  l2_semantic_on_error/       # two classifiers: default on_error (undefined cosine from empty / zero / mismatched-length input => fails match_false) and match_true (a failed embed fires the band, a real low score still misses)
   l2_semantic_scoring/        # max cosine over a concept's phrases, floored at 0, inclusive band boundary
   l3_classifier_all_combinator/     # all combinator over classifier leaves, with on_error children
   l3_classifier_band/         # min_score/max_score band: two-sided, default, and point (min==max)
@@ -165,7 +167,7 @@ a real backend's numeric drift can never change the recorded `Decision`).
 | reply picking `default_model` explicitly ⇒ `default_used: false` (not fall-through) | `l0a_desugaring_core_form/picks-default-candidate` |
 | reply naming a non-candidate ⇒ no rule ⇒ default | `l0a_desugaring_core_form/unknown-model-falls-open` |
 | router call fails, no `on_error` ⇒ no-match ⇒ default | `l0a_desugaring_core_form/chat-failure-falls-open` |
-| `routing.router` sugar desugars to one `llm` classifier + identity rules (`__route_N`); same outcomes as the core form | `l0a_desugaring_sugar_form/` |
+| `routing.router` sugar desugars to one `llm` classifier + identity rules (`__route_N`); same outcomes as the core form | `l0a_router_reply_contract/picks-first-candidate` |
 | router call fails + `on_error: match_true` ⇒ rule fires as matched | `l0a_llm_on_error/failure-fires-via-match-true` |
 | a successful reply matches its rule normally (not via `on_error`) | `l0a_llm_on_error/success-match-routes` |
 | `match_true` does not fire on a normal mismatch, only on a failed call | `l0a_llm_on_error/success-miss-falls-open` |
@@ -303,8 +305,8 @@ the cases would break if the engine's `std::regex::ECMAScript` grammar changed.
 | embed failure ⇒ classifier fails ⇒ `match_false` | `l2_semantic_on_error/input-embedding-failure-fails-open` |
 | zero-norm input vector ⇒ undefined ⇒ fails | `l2_semantic_on_error/zero-vector-input-fails-open` |
 | input vector length ≠ phrase length ⇒ undefined ⇒ fails | `l2_semantic_on_error/dimension-mismatch-fails-open` |
-| embed failure + `on_error: match_true` ⇒ band counts as matched (trace score absent, result true) | `l2_semantic_on_error_match_true/failure-fires-via-match-true` |
-| `on_error` acts only on failure; a real low score still misses | `l2_semantic_on_error_match_true/success-below-threshold-misses` |
+| embed failure + `on_error: match_true` ⇒ band counts as matched (trace score absent, result true) | `l2_semantic_on_error/failure-fires-via-match-true` |
+| `on_error` acts only on failure; a real low score still misses | `l2_semantic_on_error/success-below-threshold-misses` |
 
 A `semantic_similarity` classifier always declares at least one concept
 (`reference_phrases` is non-empty), so its labels are never empty: a leaf that
