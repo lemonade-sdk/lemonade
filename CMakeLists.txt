@@ -2732,6 +2732,13 @@ if(EXISTS "${_URL_UTILS_TEST_SRC}")
     add_cpp_ci_test(UrlUtilsTest CI OFF COMMAND test_url_utils)
 endif()
 
+set(_PROCESS_SSE_LINES_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_process_sse_lines.cpp")
+if(EXISTS "${_PROCESS_SSE_LINES_TEST_SRC}")
+    add_executable(test_process_sse_lines test/cpp/test_process_sse_lines.cpp)
+    target_link_libraries(test_process_sse_lines PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ProcessSseLinesTest CI ON COMMAND test_process_sse_lines)
+endif()
+
 # vLLM CDNA gating: the vllm descriptor support row + asset-family resolution for
 # AMD Instinct (gfx942), alongside the existing RDNA families.
 set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gating.cpp")
