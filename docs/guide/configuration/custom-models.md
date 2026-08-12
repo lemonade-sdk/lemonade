@@ -88,7 +88,7 @@ Supported registration flags:
 | `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. |
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
 | `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
-| `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
+| `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
 ### Register an omni collection

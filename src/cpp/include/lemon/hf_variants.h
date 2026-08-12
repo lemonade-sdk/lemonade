@@ -27,6 +27,7 @@ struct GgufVariant {
 struct GgufVariantSet {
     std::vector<GgufVariant> variants;
     std::vector<std::string> mmproj_files;  // Bare filenames of mmproj-*.gguf files.
+    std::vector<std::string> draft_files;   // Bare filenames of recognized draft GGUF companions.
 };
 
 // Enumerate GGUF variants from a normalized repository file list.
