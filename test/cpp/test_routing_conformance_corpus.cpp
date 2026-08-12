@@ -463,6 +463,14 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
     const std::optional<json> policy_json = load_policy_json(case_dir, rel);
     if (!policy_json) return 0;
 
+    // Build + compile it once too, so a structurally bad policy fails the whole
+    // directory here rather than on whichever row runs first. Compile never calls
+    // the services, so an empty fake is enough. The per-case build below stays.
+    lemon::testing::FakeClassifierServices probe;
+    std::optional<RoutePolicy> probe_policy = build_policy(*policy_json, rel);
+    if (!probe_policy) return 0;
+    if (!compile_engine(std::move(*probe_policy), probe.make(), rel)) return 0;
+
     int executed = 0;
     int line_no = 0;
     std::string line;
