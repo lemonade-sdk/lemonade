@@ -34,6 +34,30 @@ for (const [key, filename] of Object.entries(files)) {
   assert.equal(errors.length, 0, errors.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n'));
 }
 
+// JSX text and JSX attribute strings are not JavaScript string literals: a `\uXXXX`
+// sequence there reaches the user verbatim instead of the character it names.
+const jsxEscape = /\\(?:u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2})/;
+const collectTsx = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+  const full = path.join(dir, entry.name);
+  if (entry.isDirectory()) return collectTsx(full);
+  return entry.isFile() && full.endsWith('.tsx') ? [full] : [];
+});
+
+for (const filename of collectTsx(path.join(root, 'src'))) {
+  const sourceFile = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'), ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
+  const visit = node => {
+    if (ts.isJsxText(node) || (ts.isStringLiteral(node) && node.parent && ts.isJsxAttribute(node.parent))) {
+      const found = node.getText(sourceFile).match(jsxEscape);
+      if (found) {
+        const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        assert.fail(`${path.relative(root, filename)}:${line + 1} renders "${found[0]}" literally; write the character itself`);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+}
+
 assert.match(sources.app, /<span className="titlebar__brand-name">lemonade<\/span>/);
 assert.match(sources.app, /type="search"[\s\S]*?role="combobox"[\s\S]*?aria-expanded=\{navigationSearchOpen\}/);
 assert.match(sources.app, /aria-activedescendant=/);
