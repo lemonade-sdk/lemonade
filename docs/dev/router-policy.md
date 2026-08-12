@@ -212,11 +212,15 @@ is **not** loaded and no completion runs:
 ```
 
 The `x-lemonade-route` header is set as usual, `decision.trace` appears when
-`"route_trace": true` is also sent, and `stream` is ignored. On a model that is
-not a router collection the response is
+`"route_trace": true` is also sent, and `stream` is ignored. On a **registered**
+model that is not a router collection the response is
 `{"requested_model": m, "selected_model": m, "routed": false}` — uniform for
-callers sweeping mixed model lists. Use this for policy debugging and CI,
-pre-estimating a workload's local/cloud split, and router evaluation harnesses.
+callers sweeping mixed model lists. `routed: false` means exactly that; an
+unknown model or a router whose dispatch fails returns the same error a real
+request would, and a non-boolean `route_only` value fails closed with `400`
+(never silently degrading into a real completion). Use this for policy
+debugging and CI, pre-estimating a workload's local/cloud split, and router
+evaluation harnesses.
 
 Related: `POST /api/v1/routing/validate` evaluates an **unregistered policy
 document** against caller-supplied features (`prompt`, `has_tools`,

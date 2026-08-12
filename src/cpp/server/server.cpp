@@ -2962,43 +2962,81 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
 
 namespace {
 
-bool take_route_only_flag(nlohmann::json& request_json) {
+// Returns false when the request was rejected (response already written).
+// route_only means "decision without inference", so an invalid value fails
+// closed with 400 rather than silently degrading into a real completion.
+bool take_route_only_flag(nlohmann::json& request_json, httplib::Response& res,
+                          bool& route_only) {
+    route_only = false;
     if (!request_json.contains("route_only")) {
+        return true;
+    }
+    if (!request_json["route_only"].is_boolean()) {
+        res.status = 400;
+        res.set_content(
+            R"({"error": {"message": "'route_only' must be a boolean", "type": "invalid_request_error", "param": "route_only"}})",
+            "application/json");
         return false;
     }
-    const bool enabled = request_json["route_only"].is_boolean() &&
-                         request_json["route_only"].get<bool>();
+    route_only = request_json["route_only"].get<bool>();
     request_json.erase("route_only");
-    return enabled;
+    return true;
 }
 
-void set_route_only_response(const nlohmann::json& request_json,
-                             const std::optional<RouterDispatchResult>& dispatch,
-                             httplib::Response& res) {
-    nlohmann::json body;
+} // namespace
+
+void Server::respond_route_only(const nlohmann::json& request_json,
+                                const std::optional<RouterDispatchResult>& dispatch,
+                                httplib::Response& res) {
     if (dispatch) {
-        body = {
+        nlohmann::json body = {
             {"requested_model", dispatch->requested_model},
             {"selected_model", dispatch->selected_model},
             {"routed", true},
             {"decision", route_decision_to_json(dispatch->decision)},
         };
         attach_route_header(res, dispatch->decision);
-    } else {
-        std::string model;
-        if (request_json.contains("model") && request_json["model"].is_string()) {
-            model = request_json["model"].get<std::string>();
-        }
-        body = {
-            {"requested_model", model},
-            {"selected_model", model},
-            {"routed", false},
-        };
+        res.set_content(body.dump(), "application/json");
+        return;
     }
+
+    std::string model;
+    if (request_json.contains("model") && request_json["model"].is_string()) {
+        model = request_json["model"].get<std::string>();
+    }
+    if (model.empty()) {
+        res.status = 400;
+        res.set_content(
+            R"({"error": {"message": "route_only requires a 'model' field", "type": "invalid_request_error", "param": "model"}})",
+            "application/json");
+        return;
+    }
+    // routed: false is reserved for "exists and is not a router". Lookup and
+    // dispatch failures keep the same error behavior a real request would get.
+    if (!model_manager_->model_exists(model)) {
+        nlohmann::json error_response =
+            create_model_error(model, "Model not found: " + model);
+        res.status = get_http_status_from_error(
+            error_response["error"]["code"].get<std::string>());
+        res.set_content(error_response.dump(), "application/json");
+        return;
+    }
+    if (is_router_collection_recipe(model_manager_->get_model_info(model).recipe)) {
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", "router dispatch failed for '" + model + "'"},
+            {"type", "server_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+    nlohmann::json body = {
+        {"requested_model", model},
+        {"selected_model", model},
+        {"routed", false},
+    };
     res.set_content(body.dump(), "application/json");
 }
-
-} // namespace
 
 std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
     nlohmann::json& request_json) {
@@ -3061,7 +3099,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
 
-        const bool route_only = take_route_only_flag(request_json);
+        bool route_only = false;
+        if (!take_route_only_flag(request_json, res, route_only)) {
+            return;
+        }
 
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
@@ -3084,7 +3125,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                     ModelInfo info = model_manager_->get_model_info(requested_model);
                     if (is_omni_collection_recipe(info.recipe)) {
                         if (route_only) {
-                            set_route_only_response(request_json, std::nullopt, res);
+                            respond_route_only(request_json, std::nullopt, res);
                             return;
                         }
                         handle_collection_chat_completions(request_json, info, res);
@@ -3116,7 +3157,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         }
 
         if (route_only) {
-            set_route_only_response(request_json, route_dispatch, res);
+            respond_route_only(request_json, route_dispatch, res);
             return;
         }
 
@@ -3350,7 +3391,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
 
-        const bool route_only = take_route_only_flag(request_json);
+        bool route_only = false;
+        if (!take_route_only_flag(request_json, res, route_only)) {
+            return;
+        }
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
@@ -3358,7 +3402,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
             apply_router_collection_dispatch(request_json);
 
         if (route_only) {
-            set_route_only_response(request_json, route_dispatch, res);
+            respond_route_only(request_json, route_dispatch, res);
             return;
         }
 
@@ -5010,7 +5054,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
 
-        const bool route_only = take_route_only_flag(request_json);
+        bool route_only = false;
+        if (!take_route_only_flag(request_json, res, route_only)) {
+            return;
+        }
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
@@ -5018,7 +5065,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             apply_router_collection_dispatch(request_json);
 
         if (route_only) {
-            set_route_only_response(request_json, route_dispatch, res);
+            respond_route_only(request_json, route_dispatch, res);
             return;
         }
 

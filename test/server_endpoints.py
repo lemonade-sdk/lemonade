@@ -3646,7 +3646,7 @@ class EndpointTests(ServerTestBase):
                 )
                 self.assertNotIn("choices", sibling_body, endpoint)
 
-            # A non-router model answers uniformly with routed: false.
+            # A registered non-router model answers uniformly with routed: false.
             plain = requests.post(
                 f"{self.base_url}/chat/completions",
                 json={
@@ -3661,6 +3661,39 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(plain_body.get("routed"), False)
             self.assertEqual(plain_body.get("selected_model"), ENDPOINT_TEST_MODEL)
             self.assertNotIn("choices", plain_body)
+
+            # route_only fails closed: a non-boolean value must be rejected with
+            # 400, never silently dropped into a real completion.
+            for bad_value in ("true", 1, None):
+                bad = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json={
+                        "model": public_name,
+                        "route_only": bad_value,
+                        "messages": [{"role": "user", "content": "hi"}],
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    bad.status_code, 400, f"route_only={bad_value!r}: {bad.text}"
+                )
+                self.assertIn("error", bad.json())
+
+            # routed: false is reserved for registered non-routers: an unknown
+            # model keeps the normal not-found error, not a 200.
+            missing = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": f"NoSuchModel-{suffix}",
+                    "route_only": True,
+                    "messages": [{"role": "user", "content": "hi"}],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(missing.status_code, 404, missing.text)
+            missing_body = missing.json()
+            self.assertIn("error", missing_body)
+            self.assertNotIn("routed", missing_body)
 
             print(f"[OK] route_only returned decisions for {public_name} without inference")
         finally:

@@ -124,6 +124,9 @@ private:
     // If request_json addresses a collection.router model, rewrite its "model"
     // field in place to the engine-selected candidate and return the Decision.
     // No-op otherwise.
+    void respond_route_only(const nlohmann::json& request_json,
+                            const std::optional<RouterDispatchResult>& dispatch,
+                            httplib::Response& res);
     std::optional<RouterDispatchResult> apply_router_collection_dispatch(
         nlohmann::json& request_json);
     // Union of routing-helper models across every active router collection's
