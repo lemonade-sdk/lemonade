@@ -4,7 +4,7 @@ import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo } from '../modelCapabilities';
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomModelRecord, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import {
   detectHuggingFaceBackend,
@@ -55,6 +55,12 @@ function modelName(m: ModelInfo | null | undefined): string {
   if (!m) return '';
   const raw = (m as any).model_name ?? m.name ?? m.id ?? '';
   return String(raw).trim();
+}
+
+function canonicalCustomModelName(m: ModelInfo | null | undefined): string {
+  const name = modelName(m);
+  if (!name || !m || !modelIsCustom(m) || name.toLowerCase().startsWith('user.')) return name;
+  return `user.${name}`;
 }
 
 function objectRecord(value: unknown): Record<string, unknown> {
@@ -1489,8 +1495,30 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   /* ── Actions ─────────────────────────────────────────────── */
 
   const findCurrentModel = (name: string): ModelInfo | null => {
-    const target = name.toLowerCase();
-    return allModels.find(mi => modelName(mi).toLowerCase() === target) || null;
+    const target = name.trim().toLowerCase();
+    if (!target) return null;
+    const targetBare = target.startsWith('user.') ? target.slice('user.'.length) : target;
+    const matchesName = (candidateName: string, custom: boolean): boolean => {
+      const candidate = candidateName.toLowerCase();
+      if (candidate === target) return true;
+      if (!custom) return false;
+      const candidateBare = candidate.startsWith('user.') ? candidate.slice('user.'.length) : candidate;
+      return candidateBare === targetBare;
+    };
+    const current = allModels.find(mi => matchesName(modelName(mi), modelIsCustom(mi)));
+    if (current) return current;
+
+    // Legacy custom records may still carry a bare name in localStorage even
+    // though lemond requires user.* for any definition with checkpoint/recipe.
+    const local = loadCustomModels().find(record => matchesName(record.name, true));
+    return local ? customModelToModelInfo(local) : null;
+  };
+
+  const canonicalComponentName = (name: string): string => {
+    const trimmed = name.trim();
+    if (!trimmed) return '';
+    const info = findCurrentModel(trimmed);
+    return info && modelIsCustom(info) ? canonicalCustomModelName(info) : trimmed;
   };
 
   const modelCheckpoint = (model: ModelInfo | null | undefined): string => {
@@ -1707,7 +1735,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       return;
     }
     if (modelIsCustom(model)) {
-      if (!confirm(`Delete custom model definition "${model.display_name || name}"? This does not remove external model files.`)) return;
+      const displayName = model.display_name || name;
+      const message = isCollectionModel(model)
+        ? `Delete Omni collection "${displayName}"? This removes only the collection definition. Component model files will not be removed.`
+        : `Delete custom model "${displayName}"? This removes the model definition and downloaded model files, if present.`;
+      if (!confirm(message)) return;
       try {
         if (api.isConnected) await api.deleteModel(name);
         deleteCustomModel(String((model as any).id || name));
@@ -2087,6 +2119,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const handleSaveCustomModel = async (e: React.FormEvent) => {
     e.preventDefault();
     setCustomError(null);
+    let pendingCollectionSave: { saved: ReturnType<typeof upsertCustomModel>; previous: CustomModelRecord | null } | null = null;
     try {
       if (!customDraft.displayName.trim()) {
         throw new Error('Enter a model name.');
@@ -2096,12 +2129,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       }
       const isOmniCollection = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
       const componentRoles = {
-        llm: customDraft.llmComponent,
-        vision: customDraft.visionComponent,
-        image: customDraft.imageComponent,
-        edit: customDraft.editComponent,
-        transcription: customDraft.transcriptionComponent,
-        speech: customDraft.speechComponent,
+        llm: canonicalComponentName(customDraft.llmComponent),
+        vision: canonicalComponentName(customDraft.visionComponent),
+        image: canonicalComponentName(customDraft.imageComponent),
+        edit: canonicalComponentName(customDraft.editComponent),
+        transcription: canonicalComponentName(customDraft.transcriptionComponent),
+        speech: canonicalComponentName(customDraft.speechComponent),
       };
       const builtinToolNames = new Set(['generate_image', 'edit_image', 'text_to_speech', 'transcribe_audio', 'analyze_image']);
       const seenCustomToolNames = new Set<string>();
@@ -2135,7 +2168,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             id: tool.id,
             name,
             description,
-            target_model: targetModel,
+            target_model: canonicalComponentName(targetModel),
             target_type: tool.targetType,
             system_prompt: tool.systemPrompt.trim() || undefined,
             prompt_template: tool.promptTemplate.trim() || undefined,
@@ -2168,8 +2201,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const checkpoints = checkpoint && Object.keys(extraCheckpoints).length > 0
         ? { main: checkpoint, ...extraCheckpoints }
         : undefined;
+      const saveName = editingCustomModelName || implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model');
+      const previousCustomModel = isOmniCollection
+        ? loadCustomModels().find(record => record.name.toLowerCase() === saveName.toLowerCase()) || null
+        : null;
       const saved = upsertCustomModel({
-        name: editingCustomModelName || implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model'),
+        name: saveName,
         displayName: customDraft.displayName,
         checkpoint,
         checkpoints,
@@ -2186,7 +2223,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         componentRoles,
         customTools,
       });
-      reloadCustomModels();
+      if (isOmniCollection) {
+        pendingCollectionSave = { saved, previous: previousCustomModel };
+      } else {
+        reloadCustomModels();
+      }
 
       // A custom collection is a server model definition, not merely UI state.
       // Register custom component definitions first, then synchronously persist
@@ -2196,8 +2237,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         const savedInfo = customModelToModelInfo(saved);
         for (const componentName of getCollectionComponents(savedInfo)) {
           const componentInfo = findCurrentModel(componentName);
-          if (componentInfo && (componentInfo as any).custom) {
-            await api.registerModelDefinition(modelName(componentInfo), customRegistrationOptions(componentInfo));
+          if (componentInfo && modelIsCustom(componentInfo)) {
+            await api.registerModelDefinition(canonicalCustomModelName(componentInfo), customRegistrationOptions(componentInfo));
           }
         }
         await api.registerModelDefinition(saved.name, customRegistrationOptions(savedInfo));
@@ -2206,6 +2247,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         if (!persisted) {
           throw new Error(`Lemond acknowledged the collection but did not expose ${saved.name} through /api/v1/models.`);
         }
+        // Only expose the local collection after lemond confirms persistence.
+        // Until this point a failed /pull is rolled back below and never becomes
+        // a ghost entry in the model list.
+        pendingCollectionSave = null;
+        reloadCustomModels();
         await refresh();
       }
 
@@ -2217,6 +2263,35 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       setMobileDetailOpen(true);
       setCustomDraft(createEmptyCustomDraft());
     } catch (err) {
+      if (pendingCollectionSave) {
+        const { saved, previous } = pendingCollectionSave;
+        try {
+          if (previous) {
+            upsertCustomModel({
+              name: previous.name,
+              displayName: previous.display_name,
+              checkpoint: previous.checkpoint,
+              checkpoints: previous.checkpoints,
+              mmproj: previous.mmproj,
+              recipe: previous.recipe,
+              capability: previous.type,
+              maxContextWindow: previous.max_context_window,
+              labels: previous.labels,
+              components: previous.components,
+              componentRoles: previous.component_roles,
+              recipeOptions: previous.recipe_options,
+              system_prompt: previous.system_prompt,
+              customTools: previous.custom_tools,
+            });
+          } else {
+            deleteCustomModel(saved.id || saved.name);
+          }
+          reloadCustomModels();
+          if (selectedDetailModelId === saved.name) setSelectedDetailModelId(null);
+        } catch (rollbackError) {
+          console.error('Failed to roll back local custom collection after server registration failed:', rollbackError);
+        }
+      }
       setCustomError(err instanceof Error ? err.message : 'Could not save custom model.');
     }
   };
