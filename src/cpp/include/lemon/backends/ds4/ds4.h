@@ -31,7 +31,7 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 // commit and bundles the ROCm runtime alongside it.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "ds4",
-    /*display_name*/    "DS4 DwarfStar (experimental)",
+    /*display_name*/    "DwarfStar4 (experimental)",
     /*binary*/          "ds4-server",
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,

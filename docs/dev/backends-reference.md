@@ -10,7 +10,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
-| `ds4` | DS4 DwarfStar (experimental) | no | yes | rocm |
+| `ds4` | DwarfStar4 (experimental) | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
@@ -90,7 +90,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|----------|------|---------|-------------|
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
 
-#### `ds4` — DS4 DwarfStar (experimental)
+#### `ds4` — DwarfStar4 (experimental)
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
@@ -210,11 +210,11 @@ the generator instead. Prose outside the markers is preserved. -->
 | `RPG-HaloTales-V1` | 39.77 | — |
 | `Ultra Collection` |  | — |
 
-#### `ds4` — DS4 DwarfStar (experimental) (1 models)
+#### `ds4` — DwarfStar4 (experimental) (1 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
-| `DeepSeek-V4-Flash-DS4` | 81.0 | reasoning, tool-calling |
+| `DeepSeek-V4-Flash-IQ2XXS-DS4` | 81.0 | reasoning, tool-calling |
 
 #### `kokoro` — Kokoro (1 models)
 

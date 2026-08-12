@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.5.2)
+project(lemon_cpp VERSION 11.6.0)
 
 include(CTest)
 
@@ -2819,6 +2819,13 @@ if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC}")
     add_cpp_ci_test(RuntimeConfigBackendValidationTest CI ON
         COMMAND test_runtime_config_backend_validation
     )
+endif()
+
+set(_CONFIG_DEFAULT_SOURCE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_default_source.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONFIG_DEFAULT_SOURCE_TEST_SRC}")
+    add_executable(test_config_default_source test/cpp/test_config_default_source.cpp)
+    target_link_libraries(test_config_default_source PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigDefaultSourceTest CI ON COMMAND test_config_default_source)
 endif()
 
 # ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
