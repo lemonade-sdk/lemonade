@@ -28,7 +28,15 @@ public:
     void audio_speech(const json& request, httplib::DataSink& sink) override;
     std::vector<std::string> supported_audio_formats() const override { return {"wav"}; }
 
+    // The cpu variant runs entirely on the CPU, so the router must not account
+    // for it against a GPU slot the way the descriptor's default_device implies.
+    DeviceType effective_device(const RecipeOptions& options) const override;
+
 private:
+    // Resolves the backend variant the way load() will, or "" if this system
+    // supports none. Kept in one place so the device reported before the load
+    // cannot disagree with the variant the load actually picks.
+    std::string resolve_backend(const RecipeOptions& options) const;
     std::string resolve_binary_path(const std::string& backend);
 };
 

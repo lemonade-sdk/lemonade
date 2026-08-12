@@ -55,6 +55,23 @@ std::string VoxCPM2Server::resolve_binary_path(const std::string& backend) {
     return BackendUtils::get_backend_binary_path(*spec, backend);
 }
 
+std::string VoxCPM2Server::resolve_backend(const RecipeOptions& options) const {
+    std::string backend = options.get_option("voxcpm2_backend");
+    if (!backend.empty()) {
+        return backend;
+    }
+    auto supported = SystemInfo::get_supported_backends("voxcpm2");
+    return supported.backends.empty() ? std::string() : supported.backends[0];
+}
+
+DeviceType VoxCPM2Server::effective_device(const RecipeOptions& options) const {
+    const std::string backend = resolve_backend(options);
+    if (backend.empty()) {
+        return WrappedServer::effective_device(options);
+    }
+    return backend == "cpu" ? DEVICE_CPU : DEVICE_GPU;
+}
+
 void VoxCPM2Server::load(const std::string& model_name,
                          const ModelInfo& model_info,
                          const RecipeOptions& options,
@@ -71,14 +88,10 @@ void VoxCPM2Server::load(const std::string& model_name,
         throw std::runtime_error("Acoustic path not found for checkpoint: " + model_info.checkpoint("acoustic"));
     }
 
-    std::string backend = options.get_option("voxcpm2_backend");
+    const std::string backend = resolve_backend(options);
     if (backend.empty()) {
-        auto supported = SystemInfo::get_supported_backends("voxcpm2");
-        if (supported.backends.empty()) {
-            throw UnsupportedOperationException(
-                "VoxCPM2", "this system: no supported backend (Metal, Vulkan, ROCm, CUDA, or CPU) detected");
-        }
-        backend = supported.backends[0];
+        throw UnsupportedOperationException(
+            "VoxCPM2", "this system: no supported backend (Metal, Vulkan, CUDA, or CPU) detected");
     }
     RuntimeConfig::validate_backend_choice("voxcpm2", backend);
     const std::string exe_path = resolve_binary_path(backend);
