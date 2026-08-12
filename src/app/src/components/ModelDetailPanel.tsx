@@ -9,10 +9,11 @@ import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
 import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow } from '../api';
 import api from '../api';
+import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo, capabilityLabel } from '../modelCapabilities';
 import {
   modelBaseTuningForModel, loadModelTuning, saveModelTuning, resetModelTuning,
-  sanitizeRecipeOptions,
+  modelSupportsContextSize, sanitizeRecipeOptions,
   type RecipeOptions,
 } from '../modelConfiguration';
 import { Icon, CapabilityIcon } from './Icon';
@@ -38,6 +39,33 @@ function mdName(m: ModelInfo | null | undefined): string {
   if (!m) return '';
   return String((m as any).model_name ?? m.name ?? m.id ?? '').trim();
 }
+
+const CopyModelNameButton: React.FC<{ modelName: string }> = ({ modelName }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleClick = async () => {
+    try {
+      await copyTextToClipboard(modelName);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const label = copied ? `Copied model name: ${modelName}` : `Copy model name: ${modelName}`;
+  return (
+    <button
+      type="button"
+      className={`model-detail-panel__copy-name${copied ? ' model-detail-panel__copy-name--copied' : ''}`}
+      onClick={handleClick}
+      title={label}
+      aria-label={label}
+    >
+      <Icon name={copied ? 'check' : 'copy'} size={12} aria-hidden="true" />
+    </button>
+  );
+};
 
 function isImageOnlyModel(model: ModelInfo | null | undefined): boolean {
   return model ? capabilityFromModelInfo(model) === 'image' : false;
@@ -1022,17 +1050,13 @@ const ModelConfigurationTab: React.FC<{
   loadedModel: LoadedModel | null;
   isActive: boolean;
   serverDefaultCtxSize: number;
-  isDownloaded?: boolean;
   isLoadingThis?: boolean;
   onReloadModel?: (model: LoadedModel, recipeOptions?: Record<string, unknown>) => Promise<void>;
-  onLoadWithOptions?: (recipeOptions: RecipeOptions) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
-}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isDownloaded, isLoadingThis, onReloadModel, onLoadWithOptions, onDirtyChange }) => {
+}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onReloadModel, onDirtyChange }) => {
   const name = mdName(model);
-  const imageOnly = isImageOnlyModel(model);
   const [notice, setNotice] = useState<string | null>(null);
   const [isReloading, setIsReloading] = useState(false);
-  const [isLoadingViaPanel, setIsLoadingViaPanel] = useState(false);
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
 
 
@@ -1051,11 +1075,15 @@ const ModelConfigurationTab: React.FC<{
     () => modelBaseTuningForModel(model, serverDefaultCtxSize),
     [model, serverDefaultCtxSize],
   );
+  const supportsContextSize = modelSupportsContextSize(model);
   const recipeKeys = useMemo(() => tuningKeysForModel(model), [model]);
   const knownVoiceOptions = useMemo(() => knownVoiceOptionsForModel(model), [model]);
   const knownVoiceIds = useMemo(() => new Set(knownVoiceOptions.map(option => option.id.toLowerCase())), [knownVoiceOptions]);
 
-  const [ctxSizeDraft, setCtxSizeDraft] = useState('');
+  const [ctxSizeDraft, setCtxSizeDraft] = useState(() => {
+    const ctxRaw = loadModelTuning(name)?.recipe_options?.ctx_size;
+    return ctxRaw != null ? String(ctxRaw) : '-1';
+  });
   const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
   const [customVoiceMode, setCustomVoiceMode] = useState(false);
 
@@ -1067,7 +1095,7 @@ const ModelConfigurationTab: React.FC<{
     }
     const ctxRaw = userTuning?.recipe_options?.ctx_size;
     return {
-      ctxSize: ctxRaw != null ? String(ctxRaw) : '',
+      ctxSize: ctxRaw != null ? String(ctxRaw) : '-1',
       recipe: nextRecipe,
     };
   }, [name]);
@@ -1091,6 +1119,10 @@ const ModelConfigurationTab: React.FC<{
     onDirtyChange?.(hasLoadSettingChanges);
   }, [hasLoadSettingChanges, onDirtyChange]);
 
+  useEffect(() => {
+    if (hasLoadSettingChanges && notice === 'Saved for future loads') setNotice(null);
+  }, [hasLoadSettingChanges, notice]);
+
   const ctxSizeId = `config-${name}-ctx_size`.replace(/[^a-zA-Z0-9_-]/g, '-');
   const ctxSliderId = `${ctxSizeId}-slider`;
   const info = systemInfo || {};
@@ -1107,6 +1139,9 @@ const ModelConfigurationTab: React.FC<{
     ?? 4096;
   const isAutoTuning = ctxSizeDraft === '-1';
   const currentCtxSize = positiveCtxValue(ctxSizeDraft) ?? baseCtxSize;
+  const autoTuneTooltip = isAutoTuning
+    ? 'Lemonade estimates the context size from available memory when the model loads. Uncheck to use a fixed value.'
+    : `Context size is fixed at ${currentCtxSize.toLocaleString()} tokens. Check Auto tune context size to let Lemonade estimate it from available memory at load time.`;
   const ctxMax = Math.max(
     ctxMin,
     currentCtxSize,
@@ -1138,7 +1173,7 @@ const ModelConfigurationTab: React.FC<{
       }
     }
     const ctxNum = parseNumberOrUndefined(ctxSizeDraft);
-    if (ctxNum !== undefined) (raw as Record<string, unknown>).ctx_size = ctxNum;
+    if (supportsContextSize && ctxNum !== undefined) (raw as Record<string, unknown>).ctx_size = ctxNum;
     return sanitizeRecipeOptions(raw);
   };
 
@@ -1149,7 +1184,7 @@ const ModelConfigurationTab: React.FC<{
       recipe_options: buildConfigOptions(),
       sampling: existingTuning?.sampling || {},
     });
-    if (showNotice) setNotice('Defaults saved for future loads.');
+    if (showNotice) setNotice('Saved for future loads');
   };
 
   const resetConfig = () => {
@@ -1163,7 +1198,7 @@ const ModelConfigurationTab: React.FC<{
     } else {
       resetModelTuning(name);
     }
-    setCtxSizeDraft('');
+    setCtxSizeDraft('-1');
     setRecipeDraft({});
     setCustomVoiceMode(false);
     setNotice('Load settings reset to built-in defaults.');
@@ -1173,18 +1208,6 @@ const ModelConfigurationTab: React.FC<{
     loadFromStore();
     onDirtyChange?.(false);
     setNotice('Unsaved load setting changes discarded.');
-  };
-
-  const loadViaPanel = async () => {
-    if (!onLoadWithOptions) return;
-    saveConfig(false);
-    setIsLoadingViaPanel(true);
-    try {
-      await onLoadWithOptions(buildConfigOptions());
-      setNotice('Model loaded with current settings.');
-    } finally {
-      setIsLoadingViaPanel(false);
-    }
   };
 
   const reloadViaPanel = async () => {
@@ -1392,82 +1415,79 @@ const ModelConfigurationTab: React.FC<{
               Settings used when this model loads or reloads.
             </p>
           </div>
-          <span className={`detail-configuration__status ${loadedModel ? 'is-loaded' : ''}`}>
-            {loadedModel ? 'Loaded now' : 'Saved defaults'}
-          </span>
+          {loadedModel && (
+            <span className="detail-configuration__status is-loaded">Loaded now</span>
+          )}
         </div>
 
         <div className="detail-configuration__load-controls">
-          {!imageOnly && (
+          {supportsContextSize && (
             <div className="detail-configuration__context-card">
               <div className="detail-configuration__control-head">
                 <label htmlFor={ctxSliderId}>Context size</label>
-                <div className="detail-configuration__context-number">
-                  <input
-                    id={ctxSizeId}
-                    className="input detail-configuration__context-input"
-                    type="number"
-                    min={ctxMin}
-                    max={ctxMax}
-                    step={ctxStep}
-                    value={ctxSizeDraft}
-                    placeholder={String(baseCtxSize)}
-                    onChange={e => setCtxSizeDraft(e.target.value)}
-                    aria-label="Context size tokens"
-                    disabled={isAutoTuning}
-                  />
-                  <span className="detail-configuration__context-stepper">
-                    <button
-                      type="button"
-                      onClick={() => stepContextSize(1)}
-                      disabled={isAutoTuning || currentCtxSize >= ctxMax}
-                      aria-label={`Increase context size by ${ctxStep} tokens`}
-                    >
-                      <Icon name="chevron-up" size={11} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => stepContextSize(-1)}
-                      disabled={isAutoTuning || currentCtxSize <= ctxMin}
-                      aria-label={`Decrease context size by ${ctxStep} tokens`}
-                    >
-                      <Icon name="chevron-down" size={11} aria-hidden="true" />
-                    </button>
-                  </span>
-                </div>
+                {!isAutoTuning && (
+                  <div className="detail-configuration__context-number">
+                    <input
+                      id={ctxSizeId}
+                      className="input detail-configuration__context-input"
+                      type="number"
+                      min={ctxMin}
+                      max={ctxMax}
+                      step={ctxStep}
+                      value={ctxSizeDraft}
+                      placeholder={String(baseCtxSize)}
+                      onChange={e => setCtxSizeDraft(e.target.value)}
+                      aria-label="Context size tokens"
+                    />
+                    <span className="detail-configuration__context-stepper">
+                      <button
+                        type="button"
+                        onClick={() => stepContextSize(1)}
+                        disabled={currentCtxSize >= ctxMax}
+                        aria-label={`Increase context size by ${ctxStep} tokens`}
+                      >
+                        <Icon name="chevron-up" size={11} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => stepContextSize(-1)}
+                        disabled={currentCtxSize <= ctxMin}
+                        aria-label={`Decrease context size by ${ctxStep} tokens`}
+                      >
+                        <Icon name="chevron-down" size={11} aria-hidden="true" />
+                      </button>
+                    </span>
+                  </div>
+                )}
               </div>
               <label
                 className="detail-configuration__autotune"
-                title="Lemonade estimates a context size from available memory at load time. The result can differ if other models are loaded or memory use changes."
+                title={autoTuneTooltip}
               >
                 <input
                   type="checkbox"
                   checked={isAutoTuning}
-                  onChange={e => setCtxSizeDraft(e.target.checked ? '-1' : '')}
-                  aria-describedby={`${ctxSizeId}-autotune-help`}
+                  onChange={e => setCtxSizeDraft(e.target.checked ? '-1' : String(currentCtxSize))}
                 />
                 <span>Auto tune context size</span>
                 <Icon name="info" size={14} aria-hidden="true" />
               </label>
-              <small id={`${ctxSizeId}-autotune-help`} className="detail-configuration__autotune-help">
-                Estimates a safe context size from available memory when the model loads. Turn it off to choose a fixed value.
-              </small>
-              <div className="detail-configuration__slider-row">
-                <span>{formatContextSize(ctxMin)}</span>
-                <input
-                  id={ctxSliderId}
-                  className="slider detail-configuration__context-slider"
-                  type="range"
-                  min={ctxMin}
-                  max={ctxMax}
-                  step={ctxStep}
-                  value={currentCtxSize}
-                  onChange={e => setCtxSizeDraft(e.target.value)}
-                  disabled={isAutoTuning}
-                />
-                <span>{formatContextSize(ctxMax)}</span>
-              </div>
-              <small>{isAutoTuning ? 'Estimated at load time' : `${currentCtxSize.toLocaleString()} tokens`}</small>
+              {!isAutoTuning && (
+                <div className="detail-configuration__slider-row">
+                  <span>{formatContextSize(ctxMin)}</span>
+                  <input
+                    id={ctxSliderId}
+                    className="slider detail-configuration__context-slider"
+                    type="range"
+                    min={ctxMin}
+                    max={ctxMax}
+                    step={ctxStep}
+                    value={currentCtxSize}
+                    onChange={e => setCtxSizeDraft(e.target.value)}
+                  />
+                  <span>{formatContextSize(ctxMax)}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1491,17 +1511,6 @@ const ModelConfigurationTab: React.FC<{
         </div>
 
         <div className="detail-tuning__actions detail-configuration__actions">
-          {!loadedModel && isDownloaded && onLoadWithOptions && (
-            <button
-              type="button"
-              className="btn btn--primary btn--sm"
-              onClick={loadViaPanel}
-              disabled={isLoadingViaPanel || isLoadingThis}
-              aria-busy={isLoadingViaPanel}
-            >
-              <Icon name="play" size={13} aria-hidden="true" /> {isLoadingViaPanel ? 'Loading\u2026' : 'Load model'}
-            </button>
-          )}
           {loadedModel && onReloadModel && (
             <button
               type="button"
@@ -1513,7 +1522,7 @@ const ModelConfigurationTab: React.FC<{
               <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading\u2026' : 'Reload model'}
             </button>
           )}
-          <button type="button" className="btn btn--ghost btn--sm" onClick={() => saveConfig()}>Save defaults</button>
+          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()}>Save</button>
           {hasLoadSettingChanges && (
             <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>Discard changes</button>
           )}
@@ -1938,9 +1947,13 @@ export interface ModelDetailPanelProps {
   onDelete: (model: ModelInfo) => void;
   onCancelPull: (name: string) => void;
   serverDefaultCtxSize: number;
-  /** Whether this model is currently marked a favorite (client-local pin store). */
+  /** Whether this model is currently pinned in the client-local model list. */
+  isPinned?: boolean;
+  /** Toggle this model's pinned state. Receives the model name. */
+  onTogglePin?: (name: string) => void;
+  /** Whether this model is currently marked as a favorite. */
   isFavorite?: boolean;
-  /** Toggle this model's favorite/pin state. Receives the model name. */
+  /** Toggle this model's favorite state. Receives the model name. */
   onToggleFavorite?: (name: string) => void;
   /** Open the persistent settings editor for a saved custom Omni collection. */
   onEditCustomCollection?: (model: ModelInfo) => void;
@@ -1965,8 +1978,6 @@ export interface ModelDetailPanelProps {
   pullingHf?: Record<string, number>;
   /** Cancel an in-progress HF download. */
   onCancelHfPull?: (hfId: string) => void;
-  /** Load a model with explicit recipe options. */
-  onLoadWithOptions?: (model: ModelInfo, recipeOptions: Record<string, unknown>) => Promise<void>;
 }
 
 type DetailTab = 'settings' | 'readme' | 'config' | 'files';
@@ -1999,6 +2010,8 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   onDelete,
   onCancelPull,
   serverDefaultCtxSize,
+  isPinned = false,
+  onTogglePin,
   isFavorite = false,
   onToggleFavorite,
   onEditCustomCollection,
@@ -2012,7 +2025,6 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   onHfPull,
   pullingHf,
   onCancelHfPull,
-  onLoadWithOptions,
 }) => {
   const [activeTab, setActiveTab] = useState<DetailTab>('config');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -2107,6 +2119,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const isPulling = pulling[name] !== undefined;
   const pullPct = pulling[name] ?? 0;
   const isDownloaded = Boolean((model as any).downloaded) && !isPulling;
+  const isCustom = modelIsCustom(model);
   const cap = capabilityFromModelInfo(model);
 
   const detailMetadata = (
@@ -2173,25 +2186,15 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           </WorkspaceActionButton>
         </>
       ) : isDownloaded ? (
-        <>
-          <WorkspaceActionButton
-            appearance="quiet"
-            icon="sliders-horizontal"
-            onClick={() => setActiveTab('config')}
-            title="Configure runtime options before loading"
-          >
-            Configure…
-          </WorkspaceActionButton>
-          <WorkspaceActionButton
-            appearance="primary"
-            icon="play"
-            onClick={() => onLoad(model)}
-            disabled={isLoadingThis}
-            aria-label={isLoadingThis ? `Loading ${name}…` : `Load ${name}`}
-          >
-            {isLoadingThis ? 'Loading…' : 'Load'}
-          </WorkspaceActionButton>
-        </>
+        <WorkspaceActionButton
+          appearance="primary"
+          icon="play"
+          onClick={() => onLoad(model)}
+          disabled={isLoadingThis}
+          aria-label={isLoadingThis ? `Loading ${name}…` : `Load ${name}`}
+        >
+          {isLoadingThis ? 'Loading…' : 'Load'}
+        </WorkspaceActionButton>
       ) : (
         <>
           <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPullAndLoad(model)} aria-label={`Get and load ${name}`}>
@@ -2201,6 +2204,19 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             Download
           </WorkspaceActionButton>
         </>
+      )}
+      {onTogglePin && (
+        <WorkspaceActionButton
+          className={`model-detail-panel__fav-btn${isPinned ? ' model-detail-panel__fav-btn--on' : ''}`}
+          appearance="quiet"
+          icon="pin"
+          onClick={() => onTogglePin(name)}
+          aria-pressed={isPinned}
+          aria-label={isPinned ? `Unpin ${name}` : `Pin ${name}`}
+          title={isPinned ? 'Unpin model' : 'Pin model'}
+        >
+          {isPinned ? 'Pinned' : 'Pin'}
+        </WorkspaceActionButton>
       )}
       {onToggleFavorite && (
         <WorkspaceActionButton
@@ -2215,14 +2231,14 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           {isFavorite ? 'Favorited' : 'Favorite'}
         </WorkspaceActionButton>
       )}
-      {(isDownloaded || isLoaded) && (
+      {!isPulling && (isCustom || isDownloaded || isLoaded) && (
         <WorkspaceActionButton
-          appearance="danger"
+          appearance="secondary"
           icon="trash"
           onClick={() => onDelete(model)}
           disabled={isLoadingThis}
-          aria-label={(model as any).custom ? `Delete custom model definition for ${name}` : `Delete downloaded files for ${name}`}
-          title={(model as any).custom ? 'Delete model definition' : 'Delete downloaded files'}
+          aria-label={isCustom ? `Delete custom model definition for ${name}` : `Delete downloaded files for ${name}`}
+          title={isCustom ? 'Delete model definition' : 'Delete downloaded files'}
         >
           Delete
         </WorkspaceActionButton>
@@ -2245,9 +2261,12 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       className="model-detail-panel"
       ariaLabel={`Model details: ${name}`}
       title={(
-        <h2 className="workspace-detail-panel__title model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
-          {model.display_name || name}
-        </h2>
+        <div className="model-detail-panel__title-line">
+          <h2 className="workspace-detail-panel__title model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
+            {model.display_name || name}
+          </h2>
+          <CopyModelNameButton key={name} modelName={name} />
+        </div>
       )}
       metadata={detailMetadata}
       actions={detailActions}
@@ -2306,10 +2325,8 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
                         loadedModel={loadedModel}
                         isActive={activeTab === 'config'}
                         serverDefaultCtxSize={serverDefaultCtxSize}
-                        isDownloaded={isDownloaded}
                         isLoadingThis={isLoadingThis}
                         onReloadModel={onReloadModel}
-                        onLoadWithOptions={onLoadWithOptions ? (opts) => onLoadWithOptions(model, opts as Record<string, unknown>) : undefined}
                         onDirtyChange={setConfigHasUnsavedChanges}
                       />
                     )}

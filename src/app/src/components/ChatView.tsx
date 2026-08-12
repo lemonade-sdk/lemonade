@@ -740,35 +740,6 @@ async function wavVoiceSampleToBase64(file: File): Promise<string> {
 
 
 
-const CopyInlineButton: React.FC<{ text: string; title?: string; className?: string }> = ({ text, title = 'Copy', className = '' }) => {
-  const [copied, setCopied] = useState(false);
-  const disabled = !text;
-  const handleClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (disabled) return;
-    try {
-      await copyTextToClipboard(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    } catch {
-      setCopied(false);
-    }
-  };
-  return (
-    <button
-      type="button"
-      className={`copy-inline${copied ? ' copy-inline--copied' : ''}${className ? ` ${className}` : ''}`}
-      onClick={handleClick}
-      disabled={disabled}
-      title={copied ? 'Copied' : title}
-      aria-label={copied ? 'Copied' : title}
-    >
-      {copied ? <Icon name="check" size={13} /> : <Icon name="copy" size={13} />}
-    </button>
-  );
-};
-
 function friendlyErrorMessage(error: unknown): string {
   if (error && typeof error === 'object') {
     const value = error as { userMessage?: unknown; message?: unknown };
@@ -3053,6 +3024,11 @@ ${finalText}`
             : currentCapability === 'tts'
               ? (isOpenMossCloneMode ? 'Type text to speak, then attach a WAV voice sample…' : `Text to speak with ${currentModel}…`)
               : `Message ${currentModel}…`;
+  const hasComposerSettings = currentCapability === 'image'
+    || currentCapability === 'audio-generation'
+    || currentCapability === 'model3d'
+    || (currentCapability === 'tts' && isOpenMossTts);
+
   const composerHint = modelPreparation
     ? (modelPreparation.phase === 'loading'
       ? `Loading ${modelPreparation.modelName} for chat…`
@@ -3280,7 +3256,6 @@ ${finalText}`
                   <div className="message__body">
                     <div className="message__author-row">
                       <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
-                      {currentModelSnapshot?.name && <CopyInlineButton text={currentModelSnapshot.name} title="Copy model name" className="copy-inline--author" />}
                     </div>
                     {streamingThinking && (
                       <details className="message__thinking" open={streaming.thinkingExpanded}>
@@ -3338,7 +3313,6 @@ ${finalText}`
                   <div className="message__body">
                     <div className="message__author-row">
                       <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
-                      {currentModelSnapshot?.name && <CopyInlineButton text={currentModelSnapshot.name} title="Copy model name" className="copy-inline--author" />}
                     </div>
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor" aria-hidden="true" />
@@ -3557,6 +3531,7 @@ ${finalText}`
             {streamingToolStatus}
           </div>
         )}
+        <div className={`composer__entry${hasComposerSettings ? ' composer__entry--with-settings' : ''}`}>
         {currentCapability === 'image' && (
           <div className="composer__image-settings" aria-label="Image generation settings">
             <label className="composer__image-setting composer__image-setting--mode">
@@ -4116,6 +4091,7 @@ ${finalText}`
             ><Icon name="send" size={16} /></button>
           )}
         </div>
+        </div>
         <div className="composer__hint">{composerHint}</div>
       </div>
       </div>
@@ -4200,7 +4176,6 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
                       >
                         {m.model_name}
                       </button>
-                      <CopyInlineButton text={m.model_name} title="Copy model name" />
                     </div>
                     <div className="active-card__meta">{m.recipe || 'runtime'} · {m.checkpoint || 'default'}</div>
                   </div>
@@ -4406,7 +4381,6 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
       <div className="message__body">
         <div className="message__author-row">
           <div className="message__author">{message.isError ? 'Lemonade' : modelDisplayName(displayModel)}</div>
-          {!message.isError && displayModel?.name && <CopyInlineButton text={displayModel.name} title="Copy model name" className="copy-inline--author" />}
         </div>
         {message.thinking && (
           <details

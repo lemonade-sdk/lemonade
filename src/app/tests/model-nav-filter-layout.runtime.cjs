@@ -57,6 +57,9 @@ assert.match(list, /if \(filter === 'router'\) return modelIsRouter\(m\);/);
 assert.match(list, /if \(filter === 'omni'\) return modelIsOmni\(m\);/);
 assert.match(list, /if \(filter === 'llm'\) return cap === 'chat' && !modelIsRouter\(m\);/);
 assert.match(list, /raw\.recommended === true \|\| raw\.is_recommended === true \|\| raw\.featured === true \|\| raw\.suggested === true/);
+assert.match(list, /TAG_CHIPS: string\[\] = \['Recommended', 'Hot'/);
+assert.match(list, /if \(t === 'hot'\) return modelIsHot\(m\);/);
+assert.match(list, /Array\.isArray\(raw\.capabilities\)/);
 assert.match(list, /const FILTER_TABS:[\s\S]*?key: 'llm', label: 'Chat'[\s\S]*?key: 'embedding', label: 'Embed'/,
   'task filter labels must remain defined because the selected-task live region depends on FILTER_TABS');
 assert.match(list, /Array\.from\(taskFilters\)\.map\(task => FILTER_TABS\.find/,
@@ -191,12 +194,15 @@ function loadListHelpers() {
     listPath,
     path.dirname(listPath),
   );
-  return module.exports;
+  return { ...module.exports, __modelCapabilities: capModule.exports };
 }
 
 const helpers = loadListHelpers();
 const chatModel = { id: 'Qwen-Chat', name: 'Qwen-Chat', labels: ['chat'], recipe: 'llamacpp', suggested: true };
 const audioModel = { id: 'Whisper', name: 'Whisper', labels: ['audio'], recipe: 'whispercpp' };
+const hotLabelModel = { id: 'Gemma-Hot', name: 'Gemma-4-31B', labels: ['hot', 'tool-calling'], recipe: 'llamacpp', suggested: true };
+const hotCapabilityModel = { id: 'Future-Hot', name: 'Future-Model', capabilities: ['hot'], labels: ['chat'], recipe: 'llamacpp' };
+const hotNameOnlyModel = { id: 'Hotpot-Model', name: 'Hotpot-Model', labels: ['chat'], recipe: 'llamacpp' };
 const routerModel = { id: 'user.router', name: 'user.router', labels: ['custom'], recipe: 'collection.router' };
 const omniModel = { id: 'user.omni', name: 'user.omni', labels: ['custom'], recipe: 'collection.omni' };
 
@@ -226,5 +232,9 @@ assert.equal(helpers.modelHasFilterableBackend(omniModel), false);
 assert.equal(helpers.modelMatchesTasks(omniModel, new Set(['omni'])), true);
 assert.equal(helpers.modelMatchesTags(chatModel, new Set(['Recommended', 'Llama'])), true);
 assert.equal(helpers.modelMatchesTags(audioModel, new Set(['Recommended', 'Llama'])), false);
+assert.equal(helpers.modelMatchesTags(hotLabelModel, new Set(['Hot'])), true, 'server hot labels must match the built-in Hot filter');
+assert.equal(helpers.modelMatchesTags(hotCapabilityModel, new Set(['Hot'])), true, 'capability hot must match the built-in Hot filter');
+assert.equal(helpers.modelMatchesTags(hotNameOnlyModel, new Set(['Hot'])), false, 'Hot is exact metadata, not a fuzzy name match');
+assert.equal(helpers.__modelCapabilities.modelCapabilityTags(hotLabelModel).includes('hot'), true, 'hot server metadata must be recognized as a first-class capability tag');
 
 console.log('Model nav filter behavior checks passed.');

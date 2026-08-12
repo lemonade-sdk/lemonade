@@ -439,23 +439,24 @@ export function modelInitial(model: ModelSnapshot | null | undefined): string { 
 
 /* Functional capability tags drive both the model filters and row badges. */
 export type CapabilityTag =
-  | 'popular' | 'chat' | 'omni' | 'vision' | 'tool' | 'reasoning'
+  | 'hot' | 'popular' | 'chat' | 'omni' | 'vision' | 'tool' | 'reasoning'
   | 'code' | 'audio' | 'audio-generation' | 'image' | 'tts' | 'model3d'
   | 'embedding' | 'reranking';
 
 export const CAPABILITY_TAG_ORDER: CapabilityTag[] = [
-  'popular', 'chat', 'omni', 'vision', 'tool', 'reasoning',
+  'hot', 'popular', 'chat', 'omni', 'vision', 'tool', 'reasoning',
   'code', 'audio', 'audio-generation', 'image', 'tts', 'model3d', 'embedding', 'reranking',
 ];
 
 export const CAPABILITY_TAG_LABELS: Record<CapabilityTag, string> = {
-  popular: 'Popular', chat: 'Chat', omni: 'Omni', vision: 'Vision',
+  hot: 'Hot', popular: 'Popular', chat: 'Chat', omni: 'Omni', vision: 'Vision',
   tool: 'Tool use', reasoning: 'Reasoning', code: 'Code', audio: 'Audio',
   'audio-generation': 'Music & SFX', image: 'Image', tts: 'Speech (TTS)',
   model3d: '3D', embedding: 'Embeddings', reranking: 'Reranking',
 };
 
 const CAPABILITY_TAG_ALIASES: Record<CapabilityTag, string[]> = {
+  hot: ['hot'],
   popular: ['popular', 'trending', 'featured', 'recommended'],
   chat: ['chat', 'llm', 'text', 'language', 'instruct', 'text-generation'],
   omni: ['omni', 'multimodal', 'multi-modal'],

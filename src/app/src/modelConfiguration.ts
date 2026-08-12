@@ -574,6 +574,16 @@ function activeRecipeName(model: ModelInfo | null | undefined): string {
   return recipeName(recipesForModel(model)[0]);
 }
 
+const CONTEXT_SIZE_RECIPES = new Set(['llamacpp', 'flm', 'ryzenai-llm', 'vllm']);
+
+export function modelSupportsContextSize(model: ModelInfo | null | undefined): boolean {
+  if (!model) return false;
+  const capability = capabilityFromModelInfo(model);
+  if (capability === 'chat') return true;
+  if (capability !== 'unknown') return false;
+  return CONTEXT_SIZE_RECIPES.has(activeRecipeName(model));
+}
+
 function readNumberFromActiveRecipe(model: ModelInfo | null | undefined, paths: string[][]): number | undefined {
   const recipes = recipesForModel(model);
   const active = activeRecipeName(model);
@@ -927,6 +937,9 @@ export function recipeOptionsForModel(
   const modelOptions = model
     ? recipeOptionsForCapability(directTuning?.recipe_options || {}, capability!)
     : (directTuning?.recipe_options || {});
+  if (modelSupportsContextSize(model) && modelOptions.ctx_size === undefined) {
+    modelOptions.ctx_size = -1;
+  }
 
   const backendTuning = activeBackendTuningForModel(model, {
     explicitOptions,

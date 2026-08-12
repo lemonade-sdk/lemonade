@@ -2295,7 +2295,7 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools', 'hot'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
             { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
             { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
             { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },
@@ -2421,6 +2421,17 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     expect(await recommended.getAttribute('aria-pressed')).toBe('true');
     await expect(page.locator('.model-list-panel__list .workspace-list-row')).toHaveCount(1);
     await expect(page.locator('.model-list-panel__list .workspace-list-row').first()).toContainText('Llama');
+  });
+
+  test('A131bb — Hot is a built-in exact server-metadata filter', async ({ page }) => {
+    await goToModelsWithNavMock(page);
+    const hot = page.locator('.model-nav-rail__tag-chip').filter({ hasText: /^Hot/ });
+    await expect(hot).toBeVisible();
+    await hot.click();
+    await page.waitForTimeout(150);
+    expect(await hot.getAttribute('aria-pressed')).toBe('true');
+    await expect(page.locator('.model-list-item')).toHaveCount(1);
+    await expect(page.locator('.model-list-item').first()).toContainText('Llama');
   });
 
   test('A131c — custom tags can be added, selected, and removed', async ({ page }) => {
@@ -2561,7 +2572,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await goToModelsRefined(page);
     await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(200);
-    const star = page.locator('.model-detail-panel__fav-btn');
+    const star = page.locator('.model-detail-panel').getByRole('button', { name: /favorites/i });
     await expect(star).toBeVisible();
     await expect(star).toHaveRole('button');
     // Off state: not pressed, label invites adding to favorites and names the model.
@@ -2580,7 +2591,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await goToModelsRefined(page);
     await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.waitForTimeout(150);
-    await page.locator('.model-detail-panel__fav-btn').click();
+    await page.locator('.model-detail-panel').getByRole('button', { name: /favorites/i }).click();
     await page.waitForTimeout(150);
 
     // Favorites primary-nav entry now reports one model (via its sr-only phrase).
