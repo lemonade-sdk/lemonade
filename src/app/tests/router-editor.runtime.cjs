@@ -5,7 +5,7 @@ const ts = require('typescript');
 
 const root = path.resolve(__dirname, '..');
 
-function loadTypeScriptModule(filename) {
+function loadTypeScriptModule(filename, dependencyOverrides = {}) {
   const source = fs.readFileSync(filename, 'utf8');
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
@@ -22,9 +22,12 @@ function loadTypeScriptModule(filename) {
     (compiled.diagnostics || []).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n'),
   );
   const module = { exports: {} };
+  const localRequire = (request) => Object.prototype.hasOwnProperty.call(dependencyOverrides, request)
+    ? dependencyOverrides[request]
+    : require(request);
   Function('exports', 'require', 'module', '__filename', '__dirname', compiled.outputText)(
     module.exports,
-    require,
+    localRequire,
     module,
     filename,
     path.dirname(filename),
@@ -32,23 +35,54 @@ function loadTypeScriptModule(filename) {
   return module.exports;
 }
 
+function assertTypeScriptSyntax(filename) {
+  const source = fs.readFileSync(filename, 'utf8');
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2020,
+      module: ts.ModuleKind.CommonJS,
+      esModuleInterop: true,
+      jsx: ts.JsxEmit.ReactJSX,
+    },
+    fileName: filename,
+    reportDiagnostics: true,
+  });
+  assert.equal(
+    (compiled.diagnostics || []).length,
+    0,
+    (compiled.diagnostics || []).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n'),
+  );
+}
+
 const routerTypesPath = path.join(root, 'src/features/router/routerTypes.ts');
 const managerPath = path.join(root, 'src/components/ModelManager.tsx');
 const listPath = path.join(root, 'src/components/ModelListPanel.tsx');
 const editorPath = path.join(root, 'src/components/RouterEditorPanel.tsx');
 const nodeEditorPath = path.join(root, 'src/components/RouterNodeEditor.tsx');
+const graphPath = path.join(root, 'src/components/RouterRuleGraph.tsx');
+const graphUtilsPath = path.join(root, 'src/features/router/routerGraph.ts');
+const modelPickerPath = path.join(root, 'src/components/RouterModelPicker.tsx');
+const stylesPath = path.join(root, 'src/styles/styles.css');
 const connectionPath = path.join(root, 'src/features/router/routerConnections.ts');
 const detailPath = path.join(root, 'src/components/ModelDetailPanel.tsx');
 const apiPath = path.join(root, 'src/api.ts');
 
 const router = loadTypeScriptModule(routerTypesPath);
+const graphUtils = loadTypeScriptModule(graphUtilsPath, { './routerTypes': router });
 const connections = loadTypeScriptModule(connectionPath);
 const managerSource = fs.readFileSync(managerPath, 'utf8');
 const listSource = fs.readFileSync(listPath, 'utf8');
 const editorSource = fs.readFileSync(editorPath, 'utf8');
 const nodeEditorSource = fs.readFileSync(nodeEditorPath, 'utf8');
+const graphSource = fs.readFileSync(graphPath, 'utf8');
+const modelPickerSource = fs.readFileSync(modelPickerPath, 'utf8');
+const stylesSource = fs.readFileSync(stylesPath, 'utf8');
 const detailSource = fs.readFileSync(detailPath, 'utf8');
 const apiSource = fs.readFileSync(apiPath, 'utf8');
+
+assertTypeScriptSyntax(editorPath);
+assertTypeScriptSyntax(graphPath);
+assertTypeScriptSyntax(modelPickerPath);
 
 const draft = {
   name: 'Fast or smart',
@@ -174,6 +208,33 @@ const unary = {
 };
 assert.equal(router.normalizeRouterNode(unary).kind, 'leaf', 'one-child groups must collapse instead of becoming invalid');
 
+const graphRoot = router.createRouterLeaf('has_tools');
+const graphWithSibling = graphUtils.appendRouterNodeAtPath(graphRoot, [], router.createRouterLeaf('has_images'));
+assert.equal(graphWithSibling.kind, 'group', 'dropping a second leaf on a leaf must create a visual AND gate');
+assert.equal(graphWithSibling.operator, 'all');
+assert.equal(graphWithSibling.children.length, 2);
+const graphNestedGate = graphUtils.createEmptyRouterGraphGroup('any');
+const graphWithGate = graphUtils.appendRouterNodeAtPath(graphWithSibling, [], graphNestedGate);
+assert.equal(graphWithGate.children.length, 3, 'dropping a gate on a root group must append it as a child');
+const graphWithNestedLeaf = graphUtils.appendRouterNodeAtPath(graphWithGate, [2], router.createRouterLeaf('regex'));
+assert.equal(graphUtils.routerNodeAtPath(graphWithNestedLeaf, [2, 0]).type, 'regex');
+assert.throws(
+  () => {
+    const notGate = graphUtils.createEmptyRouterGraphGroup('not');
+    const withChild = graphUtils.appendRouterNodeAtPath(notGate, [], router.createRouterLeaf('has_tools'));
+    graphUtils.appendRouterNodeAtPath(withChild, [], router.createRouterLeaf('has_images'));
+  },
+  /NOT can contain only one condition/,
+  'graph drag/drop must not create an invalid multi-child NOT gate',
+);
+assert.equal(graphUtils.isBlankRouterGraphNode(router.createRouterLeaf()), true, 'the seeded empty rule should render as an empty graph canvas');
+assert.equal(graphUtils.removeRouterNodeAtPath(graphWithSibling, [1]).kind, 'leaf', 'removing a sibling should normalize a one-child gate');
+const notWithChild = graphUtils.appendRouterNodeAtPath(graphUtils.createEmptyRouterGraphGroup('not'), [], router.createRouterLeaf('has_tools'));
+const emptiedNot = graphUtils.removeRouterNodeAtPath(notWithChild, [0]);
+assert.equal(emptiedNot.kind, 'group');
+assert.equal(emptiedNot.operator, 'not');
+assert.equal(emptiedNot.children.length, 0, 'removing a NOT child should leave a valid graph drop target instead of inserting a hidden placeholder condition');
+
 const renamedLabelTree = router.renameClassifierLabelReference(
   draft.rules[1].condition,
   'topic',
@@ -285,10 +346,13 @@ assert.match(nodeEditorSource, /metadataComparator/);
 assert.match(nodeEditorSource, /normalizeRouterNode/);
 assert.match(nodeEditorSource, />AND<|>AND<\/button>/, 'a leaf must be wrappable into a compound rule');
 assert.match(editorSource, /Switching modes clears incompatible configuration after confirmation/);
-assert.match(editorSource, /routerDraftHasRulesProgress\(draft\)[\s\S]*window\.confirm/, 'rules-to-LLM mode changes must warn before clearing meaningful work');
-assert.match(editorSource, /routerDraftHasLlmProgress\(draft\)[\s\S]*window\.confirm/, 'LLM-to-rules mode changes must warn before clearing meaningful work');
-assert.match(editorSource, /switchRouterDraftMode\(current, 'llm'\)/, 'switching to LLM must use the tested destructive transition helper');
-assert.match(editorSource, /switchRouterDraftMode\(current, 'rules'\)/, 'switching to rules must use the tested destructive transition helper');
+assert.doesNotMatch(editorSource, /window\.confirm/, 'router editor confirmations must use GUI3-native dialogs rather than browser confirm');
+assert.match(editorSource, /routerDraftHasRulesProgress\(draft\)[\s\S]*kind: 'switch-llm'/, 'rules-to-LLM mode changes must open a branded warning before clearing meaningful work');
+assert.match(editorSource, /routerDraftHasLlmProgress\(draft\)[\s\S]*kind: 'switch-rules'/, 'LLM-to-rules mode changes must open a branded warning before clearing meaningful work');
+assert.match(editorSource, /routerDraftHasRulesProgress\(draft\) \|\| routerDraftHasLlmProgress\(draft\)[\s\S]*kind: 'reset'/, 'New must warn only when the draft contains meaningful router progress');
+assert.match(editorSource, /switchRouterDraftMode\(current, mode\)/, 'confirmed mode changes must use the tested destructive transition helper');
+assert.match(editorSource, /<Modal[\s\S]*router-confirm-dialog-title/, 'destructive router actions must render through the GUI3 modal surface');
+assert.match(editorSource, /router-editor__toast[\s\S]*role="status"/, 'successful registration feedback must remain visible in a bottom-right status toast');
 assert.match(editorSource, /api\.modelDetail\(modelNameValue\)/, 'editing a server router must fetch its full model detail before parsing the policy');
 const detailCallIndex = editorSource.indexOf('api.modelDetail(modelNameValue)');
 const localFallbackIndex = editorSource.indexOf('if ((initialModel as any).routing)', detailCallIndex);
@@ -296,7 +360,24 @@ assert.ok(detailCallIndex >= 0 && localFallbackIndex > detailCallIndex, 'cached 
 assert.match(editorSource, /const embeddingModels = useMemo[\s\S]*normalized === 'embedding' \|\| normalized === 'embeddings'/, 'semantic similarity picker must use explicitly labelled embedding models');
 assert.match(editorSource, /const classifierModels = useMemo[\s\S]*classification/, 'text classifier picker must only expose classification models');
 assert.doesNotMatch(editorSource, /explicit\.length \? explicit : models/, 'embedding picker must not fall back to every model');
-assert.match(editorSource, /classifier\.type === 'llm' \? candidateModels : classifierModels/, 'classifier pickers must use type-specific model lists');
+assert.match(editorSource, /models=\{classifier\.type === 'semantic_similarity' \? embeddingModels : classifier\.type === 'llm' \? candidateModels : classifierModels\}/, 'classifier pickers must use type-specific model lists');
+assert.ok((editorSource.match(/<RouterModelPicker/g) || []).length >= 2, 'NL router and classifier model fields must use searchable model pickers');
+assert.match(modelPickerSource, /router-model-picker__search/, 'model picker must expose a search field inside the dropdown');
+assert.match(modelPickerSource, /role="combobox"/, 'model picker search must expose combobox semantics');
+assert.match(modelPickerSource, /model\.labels/, 'model picker search should match model labels as well as names');
+assert.match(modelPickerSource, /createPortal[\s\S]*document\.body/, 'searchable model menus must escape capped list overflow via a portal');
+assert.match(editorSource, /<RouterRuleGraph/, 'ordered rules must use the visual GUI3 graph builder');
+assert.match(editorSource, /router-editor__rules-workspace[\s\S]*router-editor__rule-list[\s\S]*router-editor__rule-builder/, 'rules must use the GUI2-style compact-list plus selected-canvas pipeline instead of embedding a canvas in every rule');
+assert.match(editorSource, /selectedRuleIndex/, 'the visual pipeline must keep one selected rule bound to the graph canvas');
+assert.match(graphSource, /application\/x-lemonade-router-node/, 'graph builder must use an isolated drag payload type');
+assert.match(graphSource, /draggable[\s\S]*Logic gates|Logic gates[\s\S]*draggable/, 'graph toolbox must provide draggable logic gates');
+assert.match(graphSource, /onDrop=\{event =>/, 'graph canvas must accept drag/drop input');
+assert.match(graphSource, /setPan[\s\S]*setZoom|setZoom[\s\S]*setPan/, 'graph canvas must retain GUI2-style pan and zoom controls');
+assert.match(graphSource, /RouterNodeEditor/, 'selected graph nodes must remain fully editable through the existing validated node editor');
+assert.match(editorSource, /router-editor__drag-handle[\s\S]*draggable/, 'ordered rules must be draggable for reordering while keeping keyboard move controls');
+assert.match(stylesSource, /router-editor__classifier-list \{ max-height:[\s\S]*router-editor__rule-list \{ max-height:/, 'classifier and rule lists must be height-capped with internal scrolling');
+assert.match(stylesSource, /router-editor__classifier-list,[\s\S]*router-editor__rule-list[\s\S]*overflow-y: auto/, 'router lists must scroll internally rather than expanding without bound');
+assert.match(stylesSource, /router-editor__rules-workspace[\s\S]*grid-template-columns/, 'rule layout must preserve the compact-list plus graph-canvas split on desktop');
 
 
 const providerRows = [{

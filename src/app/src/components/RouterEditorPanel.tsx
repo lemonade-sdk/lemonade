@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import api, { type CloudProviderRow, type ModelInfo } from '../api';
 import { capabilityFromModelInfo, isRouterRecipe } from '../modelCapabilities';
 import { Icon } from './Icon';
-import RouterNodeEditor from './RouterNodeEditor';
+import Modal from './inspect/Modal';
+import RouterModelPicker from './RouterModelPicker';
+import RouterRuleGraph from './RouterRuleGraph';
 import {
   WorkspaceActionButton,
   WorkspaceActionGroup,
@@ -106,6 +108,24 @@ interface RouterEditorPanelProps {
   onClose: () => void;
 }
 
+type RouterConfirmationKind = 'switch-rules' | 'switch-llm' | 'reset' | 'delete';
+
+interface RouterConfirmation {
+  kind: RouterConfirmationKind;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  tone: 'primary' | 'danger';
+}
+
+function moveItemTo<T>(items: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return items;
+  const next = [...items];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
 export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   models,
   initialModel,
@@ -121,6 +141,9 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<RouterConfirmation | null>(null);
+  const [dragRuleIndex, setDragRuleIndex] = useState<number | null>(null);
+  const [selectedRuleIndex, setSelectedRuleIndex] = useState(0);
   const [cloudProviders, setCloudProviders] = useState<CloudProviderRow[]>([]);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
@@ -146,11 +169,26 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   }, [refreshCloudProviders]);
 
   useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(current => current === notice ? null : current), 4200);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  useEffect(() => {
+    if (draft.rules.length === 0) {
+      if (selectedRuleIndex !== 0) setSelectedRuleIndex(0);
+      return;
+    }
+    if (selectedRuleIndex >= draft.rules.length) setSelectedRuleIndex(draft.rules.length - 1);
+  }, [draft.rules.length, selectedRuleIndex]);
+
+  useEffect(() => {
     if (!initialModel || !isRouterRecipe((initialModel as any).recipe)) return;
 
     const applyModel = (sourceModel: ModelInfo) => {
       try {
         setDraft(routerDraftFromModelInfo(sourceModel));
+        setSelectedRuleIndex(0);
         setError(null);
         setNotice(null);
       } catch (initialError) {
@@ -245,40 +283,72 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     setNotice(null);
   };
 
-  const setRoutingMode = (mode: RouterDraft['mode']) => {
-    if (mode === draft.mode) return;
-
-    if (draft.mode === 'rules') {
-      if (routerDraftHasRulesProgress(draft) && !window.confirm(
-        'Switch to Natural-language router?\n\nSwitching modes will clear your existing rules and classifiers. This cannot be undone.',
-      )) return;
-      setDraft(current => switchRouterDraftMode(current, 'llm'));
-    } else {
-      if (routerDraftHasLlmProgress(draft) && !window.confirm(
-        'Switch to ordered rules?\n\nSwitching modes will clear your Natural-language routing model and instruction. This cannot be undone.',
-      )) return;
-      setDraft(current => switchRouterDraftMode(current, 'rules'));
-    }
+  const applyRoutingMode = (mode: RouterDraft['mode']) => {
+    setDraft(current => switchRouterDraftMode(current, mode));
+    setSelectedRuleIndex(0);
     setError(null);
     setNotice(null);
+  };
+
+  const setRoutingMode = (mode: RouterDraft['mode']) => {
+    if (mode === draft.mode) return;
+    if (draft.mode === 'rules' && routerDraftHasRulesProgress(draft)) {
+      setConfirmation({
+        kind: 'switch-llm',
+        title: 'Switch routing strategy?',
+        message: 'Switching to the Natural-language router will clear the current ordered rules and classifiers. This cannot be undone.',
+        confirmLabel: 'Switch and clear rules',
+        tone: 'danger',
+      });
+      return;
+    }
+    if (draft.mode === 'llm' && routerDraftHasLlmProgress(draft)) {
+      setConfirmation({
+        kind: 'switch-rules',
+        title: 'Switch routing strategy?',
+        message: 'Switching to Ordered rules will clear the current routing model and instruction. This cannot be undone.',
+        confirmLabel: 'Switch and clear NL router',
+        tone: 'danger',
+      });
+      return;
+    }
+    applyRoutingMode(mode);
   };
 
   const resetDraft = () => {
     setDraft(createEmptyRouterDraft());
+    setSelectedRuleIndex(0);
     setError(null);
     setNotice(null);
     setTab('builder');
+    setCandidateSearch('');
+    setDragRuleIndex(null);
+  };
+
+  const requestResetDraft = () => {
+    if (routerDraftHasRulesProgress(draft) || routerDraftHasLlmProgress(draft)) {
+      setConfirmation({
+        kind: 'reset',
+        title: 'Start a new router?',
+        message: 'This will discard the routing work currently in the editor. Saved routers are not affected.',
+        confirmLabel: 'Discard draft',
+        tone: 'danger',
+      });
+      return;
+    }
+    resetDraft();
   };
 
   const loadSaved = (modelNameValue: string) => {
     if (!modelNameValue) {
-      resetDraft();
+      requestResetDraft();
       return;
     }
     const record = savedRecords.find(item => item.model_name === modelNameValue);
     if (!record) return;
     try {
       setDraft(routerRecordToDraft(record));
+      setSelectedRuleIndex(0);
       setError(null);
       setNotice(`Loaded ${record.display_name}.`);
     } catch (loadError) {
@@ -360,6 +430,27 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     const rule = createRouterRule(draft.rules.length, draft.defaultModel);
     rule.id = nextSafeId('rule', draft.rules.map(item => item.id));
     setPatch({ rules: [...draft.rules, rule] });
+    setSelectedRuleIndex(draft.rules.length);
+  };
+
+  const moveRuleTo = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= draft.rules.length || to >= draft.rules.length) return;
+    setPatch({ rules: moveItemTo(draft.rules, from, to) });
+    setSelectedRuleIndex(current => {
+      if (current === from) return to;
+      if (from < current && to >= current) return current - 1;
+      if (from > current && to <= current) return current + 1;
+      return current;
+    });
+  };
+
+  const removeRuleAt = (index: number) => {
+    setPatch({ rules: draft.rules.filter((_, itemIndex) => itemIndex !== index) });
+    setSelectedRuleIndex(current => {
+      if (current > index) return current - 1;
+      if (current === index) return Math.max(0, Math.min(index, draft.rules.length - 2));
+      return current;
+    });
   };
 
   const importFile = async (file: File | undefined) => {
@@ -367,6 +458,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     try {
       const parsed = JSON.parse(await file.text());
       setDraft(parseRouterPayload(parsed));
+      setSelectedRuleIndex(0);
       setError(null);
       setNotice(`Imported ${file.name}. Save & register to persist it.`);
       setTab('builder');
@@ -437,7 +529,6 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   const deleteCurrent = async () => {
     const modelNameValue = draft.modelName;
     if (!modelNameValue) return;
-    if (!window.confirm(`Delete ${modelNameValue}?`)) return;
     try {
       await onDeleted?.(modelNameValue);
       refreshSaved();
@@ -447,6 +538,38 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       setError(deleteError instanceof Error ? deleteError.message : 'Could not delete router.');
     }
   };
+
+  const requestDeleteCurrent = () => {
+    if (!draft.modelName) return;
+    setConfirmation({
+      kind: 'delete',
+      title: 'Delete router?',
+      message: `Delete ${draft.modelName}? This removes the saved router definition from Lemonade.`,
+      confirmLabel: 'Delete router',
+      tone: 'danger',
+    });
+  };
+
+  const confirmPendingAction = () => {
+    const pending = confirmation;
+    if (!pending) return;
+    setConfirmation(null);
+    if (pending.kind === 'switch-llm') {
+      applyRoutingMode('llm');
+      return;
+    }
+    if (pending.kind === 'switch-rules') {
+      applyRoutingMode('rules');
+      return;
+    }
+    if (pending.kind === 'reset') {
+      resetDraft();
+      return;
+    }
+    void deleteCurrent();
+  };
+
+  const selectedRule = draft.rules[selectedRuleIndex] || null;
 
   return (
     <WorkspaceDetailPanel
@@ -462,7 +585,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
             {saving ? 'Registering…' : 'Save & register'}
           </WorkspaceActionButton>
           {draft.modelName && (
-            <WorkspaceActionButton appearance="danger" icon="trash" onClick={() => { void deleteCurrent(); }}>Delete</WorkspaceActionButton>
+            <WorkspaceActionButton appearance="danger" icon="trash" onClick={requestDeleteCurrent}>Delete</WorkspaceActionButton>
           )}
           <span className="workspace-action-group__spacer" />
           <WorkspaceActionButton appearance="secondary" icon="x" onClick={onClose}>Close</WorkspaceActionButton>
@@ -473,7 +596,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     >
 
       <div className="router-editor__toolbar">
-        <WorkspaceActionButton size="small" icon="compose" onClick={resetDraft}>New</WorkspaceActionButton>
+        <WorkspaceActionButton size="small" icon="compose" onClick={requestResetDraft}>New</WorkspaceActionButton>
         <label className="router-editor__saved-select">
           <span className="sr-only">Saved routers</span>
           <select className="select" value={draft.modelName || ''} onChange={event => loadSaved(event.target.value)}>
@@ -654,17 +777,17 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                   <WorkspaceMetadataChip emphasis="high" tone="accent">routing.router</WorkspaceMetadataChip>
                 </div>
                 <div className="router-editor__form-grid">
-                  <label className="router-editor__wide">
+                  <div className="router-editor__wide router-editor__field">
                     <span>Routing model <small>Usually a small, fast chat model.</small></span>
-                    <select
-                      className="select"
+                    <RouterModelPicker
+                      models={candidateModels}
                       value={draft.llmRouter.model}
-                      onChange={event => setPatch({ llmRouter: { ...draft.llmRouter, model: event.target.value } })}
-                    >
-                      <option value="">Select routing model</option>
-                      {candidateModels.map(model => <option key={modelName(model)} value={modelName(model)}>{modelLabel(model)} · {modelName(model)}</option>)}
-                    </select>
-                  </label>
+                      onChange={model => setPatch({ llmRouter: { ...draft.llmRouter, model } })}
+                      placeholder="Select routing model"
+                      searchPlaceholder="Search routing models"
+                      ariaLabel="Natural-language routing model"
+                    />
+                  </div>
                   <label className="router-editor__wide">
                     <span>Routing instruction <small>Describe clearly when each candidate should be selected.</small></span>
                     <textarea
@@ -701,7 +824,17 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                         <div className="router-editor__form-grid router-editor__form-grid--classifier">
                           <label><span>ID</span><input className="input" value={classifier.id} onChange={event => updateClassifier(index, { id: event.target.value })} /></label>
                           <label><span>Type</span><select className="select" value={classifier.type} onChange={event => updateClassifier(index, { ...createRouterClassifier(index, event.target.value as RouterClassifier['type']), id: classifier.id })}><option value="classifier">classifier</option><option value="semantic_similarity">semantic_similarity</option><option value="llm">llm</option></select></label>
-                          <label className="router-editor__wide"><span>Model</span><select className="select" value={classifier.model} onChange={event => updateClassifier(index, { model: event.target.value })}><option value="">Select model</option>{(classifier.type === 'semantic_similarity' ? embeddingModels : classifier.type === 'llm' ? candidateModels : classifierModels).map(model => <option key={modelName(model)} value={modelName(model)}>{modelLabel(model)} · {modelName(model)}</option>)}</select></label>
+                          <div className="router-editor__wide router-editor__field">
+                            <span>Model</span>
+                            <RouterModelPicker
+                              models={classifier.type === 'semantic_similarity' ? embeddingModels : classifier.type === 'llm' ? candidateModels : classifierModels}
+                              value={classifier.model}
+                              onChange={model => updateClassifier(index, { model })}
+                              placeholder="Select model"
+                              searchPlaceholder={classifier.type === 'semantic_similarity' ? 'Search embedding models' : classifier.type === 'llm' ? 'Search chat models' : 'Search classification models'}
+                              ariaLabel={`${classifier.id || `Classifier ${index + 1}`} model`}
+                            />
+                          </div>
                           {classifier.type === 'semantic_similarity' ? (
                             <div className="router-editor__wide router-editor__concepts">
                               <div className="router-editor__mini-head"><span>Concepts and reference phrases</span><WorkspaceActionButton size="small" icon="plus" onClick={() => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [nextConceptName(classifier.referencePhrases)]: ['example phrase'] } })}>Concept</WorkspaceActionButton></div>
@@ -739,30 +872,98 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                 <div><h3>Ordered rules</h3><p>First matching rule wins. The default model handles the remainder.</p></div>
                 <WorkspaceActionButton size="small" icon="plus" onClick={addRule}>Rule</WorkspaceActionButton>
               </div>
-              <div className="router-editor__rule-list">
-                {draft.rules.map((rule, index) => (
-                  <article className="router-editor__rule" key={`${rule.id}-${index}`}>
-                    <div className="router-editor__card-head">
-                      <span className="router-editor__rule-order">{index + 1}</span>
-                      <strong>{rule.id || `Rule ${index + 1}`}</strong>
+              <div className="router-editor__rules-workspace">
+                <div className="router-editor__rule-list" aria-label="Ordered routing rules">
+                  {draft.rules.map((rule, index) => (
+                    <div
+                      className={`router-editor__rule-summary ${selectedRuleIndex === index ? 'is-selected' : ''} ${dragRuleIndex === index ? 'is-dragging' : ''}`}
+                      key={`${rule.id}-${index}`}
+                      onDragOver={event => {
+                        if (dragRuleIndex == null || dragRuleIndex === index) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDrop={event => {
+                        if (dragRuleIndex == null || dragRuleIndex === index) return;
+                        event.preventDefault();
+                        moveRuleTo(dragRuleIndex, index);
+                        setDragRuleIndex(null);
+                      }}
+                    >
+                      <span
+                        className="router-editor__drag-handle"
+                        draggable
+                        aria-hidden="true"
+                        title="Drag to reorder rule"
+                        onDragStart={event => {
+                          setDragRuleIndex(index);
+                          event.dataTransfer.effectAllowed = 'move';
+                          event.dataTransfer.setData('text/plain', rule.id || String(index));
+                        }}
+                        onDragEnd={() => setDragRuleIndex(null)}
+                      >
+                        ⠿
+                      </span>
+                      <button
+                        type="button"
+                        className="router-editor__rule-summary-main"
+                        onClick={() => setSelectedRuleIndex(index)}
+                        aria-current={selectedRuleIndex === index ? 'true' : undefined}
+                      >
+                        <span className="router-editor__rule-order">{index + 1}</span>
+                        <span className="router-editor__rule-summary-copy">
+                          <strong>{rule.id || `Rule ${index + 1}`}</strong>
+                          <small>{rule.routeTo ? `→ ${rule.routeTo}` : 'No route selected'}</small>
+                        </span>
+                      </button>
                       <div className="router-editor__rule-actions">
-                        <button type="button" disabled={index === 0} onClick={() => setPatch({ rules: moveItem(draft.rules, index, -1) })} title="Move rule up"><Icon name="chevron-up" size={14} /></button>
-                        <button type="button" disabled={index === draft.rules.length - 1} onClick={() => setPatch({ rules: moveItem(draft.rules, index, 1) })} title="Move rule down"><Icon name="chevron-down" size={14} /></button>
-                        <button type="button" onClick={() => setPatch({ rules: draft.rules.filter((_, itemIndex) => itemIndex !== index) })} title="Remove rule"><Icon name="trash" size={14} /></button>
+                        <button type="button" disabled={index === 0} onClick={() => moveRuleTo(index, index - 1)} title="Move rule up"><Icon name="chevron-up" size={14} /></button>
+                        <button type="button" disabled={index === draft.rules.length - 1} onClick={() => moveRuleTo(index, index + 1)} title="Move rule down"><Icon name="chevron-down" size={14} /></button>
+                        <button type="button" onClick={() => removeRuleAt(index)} title="Remove rule"><Icon name="trash" size={14} /></button>
                       </div>
                     </div>
-                    <div className="router-editor__rule-meta">
-                      <label><span>Rule ID</span><input className="input" value={rule.id} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === index ? { ...item, id: event.target.value } : item) })} /></label>
-                      <label><span>Route to</span><select className="select" value={rule.routeTo} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === index ? { ...item, routeTo: event.target.value } : item) })}><option value="">Select candidate</option>{draft.candidates.map(candidate => <option key={candidate} value={candidate}>{candidate}</option>)}</select></label>
+                  ))}
+                  {draft.rules.length === 0 && <div className="router-editor__empty">At least one rule is required.</div>}
+                  {draft.defaultModel && (
+                    <div className="router-editor__default-rule">
+                      <span className="router-editor__rule-order">↩</span>
+                      <span><strong>Default</strong><small>→ {draft.defaultModel}</small></span>
                     </div>
-                    <RouterNodeEditor node={rule.condition} classifiers={draft.classifiers} onChange={condition => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === index ? { ...item, condition } : item) })} />
-                    <details className="router-editor__outputs">
-                      <summary>Optional decision outputs</summary>
-                      <textarea className="textarea" value={rule.outputsText || ''} placeholder={'{\n  "tier": "fast"\n}'} spellCheck={false} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === index ? { ...item, outputsText: event.target.value } : item) })} />
-                    </details>
-                  </article>
-                ))}
-                {draft.rules.length === 0 && <div className="router-editor__empty">At least one rule is required.</div>}
+                  )}
+                </div>
+
+                <div className="router-editor__rule-builder">
+                  {selectedRule ? (
+                    <>
+                      <div className="router-editor__rule-builder-head">
+                        <div>
+                          <strong>Rule {selectedRuleIndex + 1}: {selectedRule.id || 'Untitled rule'}</strong>
+                          <span>Build the match expression by dragging gates and conditions onto the graph.</span>
+                        </div>
+                      </div>
+                      <div className="router-editor__rule-meta">
+                        <label><span>Rule ID</span><input className="input" value={selectedRule.id} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, id: event.target.value } : item) })} /></label>
+                        <label><span>Route to</span><select className="select" value={selectedRule.routeTo} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, routeTo: event.target.value } : item) })}><option value="">Select candidate</option>{draft.candidates.map(candidate => <option key={candidate} value={candidate}>{candidate}</option>)}</select></label>
+                      </div>
+                      <RouterRuleGraph
+                        key={`${selectedRuleIndex}-${selectedRule.id}`}
+                        node={selectedRule.condition}
+                        classifiers={draft.classifiers}
+                        onChange={condition => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, condition } : item) })}
+                      />
+                      <details className="router-editor__outputs">
+                        <summary>Optional decision outputs</summary>
+                        <textarea className="textarea" value={selectedRule.outputsText || ''} placeholder={'{\n  "tier": "fast"\n}'} spellCheck={false} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, outputsText: event.target.value } : item) })} />
+                      </details>
+                    </>
+                  ) : (
+                    <div className="router-editor__rule-builder-empty">
+                      <Icon name="router" size={18} />
+                      <strong>Select or add a rule</strong>
+                      <span>The graph editor will appear here.</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </section>
               </>
@@ -777,8 +978,32 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
           </section>
         )}
         {error && <div className="router-editor__message router-editor__message--error"><Icon name="alert" size={14} /> {error}</div>}
-        {notice && <div className="router-editor__message router-editor__message--success"><Icon name="check" size={14} /> {notice}</div>}
       </div>
+
+      {notice && (
+        <div className="router-editor__toast" role="status" aria-live="polite">
+          <Icon name="check" size={15} />
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss notification"><Icon name="x" size={12} /></button>
+        </div>
+      )}
+
+      <Modal
+        isOpen={confirmation != null}
+        onClose={() => setConfirmation(null)}
+        title={confirmation?.title || 'Confirm action'}
+        maxWidth="480px"
+        ariaLabelledBy="router-confirm-dialog-title"
+      >
+        <div className="inspect-modal-body router-confirm-dialog__body">
+          <div className="router-confirm-dialog__icon"><Icon name="alert" size={18} /></div>
+          <p>{confirmation?.message}</p>
+        </div>
+        <div className="inspect-modal-footer">
+          <WorkspaceActionButton appearance="secondary" onClick={() => setConfirmation(null)}>Cancel</WorkspaceActionButton>
+          <WorkspaceActionButton appearance={confirmation?.tone || 'primary'} onClick={confirmPendingAction}>{confirmation?.confirmLabel || 'Continue'}</WorkspaceActionButton>
+        </div>
+      </Modal>
 
     </WorkspaceDetailPanel>
   );
