@@ -430,6 +430,25 @@ export const WorkspaceList: React.FC<WorkspaceListProps> = ({
       case 'ArrowUp': next = step(-1); break;
       case 'Home': next = 0; break;
       case 'End': next = last; break;
+      case 'ArrowRight': {
+        /* A row's action is a distinct command — delete this conversation, cancel
+           this download — and an option may not own a second tab stop, so Tab
+           alone can never reach it. ArrowRight steps into it and ArrowLeft steps
+           back out, which also keeps ArrowUp/Down working from the button since
+           `current` matches on containment. */
+        if (current < 0) return;
+        const action = options[current].querySelector<HTMLElement>('button.workspace-list-row__action');
+        if (!action) return;
+        event.preventDefault();
+        action.focus();
+        return;
+      }
+      case 'ArrowLeft': {
+        if (current < 0 || document.activeElement === options[current]) return;
+        event.preventDefault();
+        options[current].focus();
+        return;
+      }
       case 'Enter':
       case ' ': {
         // Let the row's own action button keep its activation.
@@ -665,9 +684,11 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
           onClick={event => { event.stopPropagation(); action.onClick(); }}
           aria-label={action.label}
           title={action.label}
-          // Keep the existing listbox/readout focus contract for every non-pin
-          // action: selectable rows use roving focus; readouts expose the button.
+          // A readout's rows are not chosen from, so its button is an ordinary tab
+          // stop. Inside a listbox the option owns the only tab stop, so the button
+          // is reached with ArrowRight instead (see WorkspaceList's key handler).
           tabIndex={selectable ? -1 : 0}
+          aria-keyshortcuts={selectable ? 'ArrowRight' : undefined}
         >
           <Icon name={action.icon} size={16} aria-hidden="true" />
         </button>

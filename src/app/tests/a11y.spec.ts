@@ -1131,6 +1131,27 @@ test.describe('Accessibility — conversation rail listbox', () => {
     expect(label!.toLowerCase()).toContain('delete');
     expect(label).toContain('Alpha conversation');
   });
+
+  test('A67 — ArrowRight reaches the row action and ArrowLeft returns to the row', async ({ page }) => {
+    await page.locator('#rail-conv-rc1').focus();
+    await page.keyboard.press('ArrowRight');
+
+    const action = await page.evaluate(() => {
+      const active = document.activeElement as HTMLElement | null;
+      return {
+        isAction: active?.classList.contains('workspace-list-row__action') ?? false,
+        label: active?.getAttribute('aria-label') ?? '',
+      };
+    });
+    expect(action.isAction).toBe(true);
+    expect(action.label.toLowerCase()).toContain('delete');
+
+    await page.keyboard.press('ArrowLeft');
+    const backOnRow = await page.evaluate(
+      () => (document.activeElement as HTMLElement | null)?.id ?? '',
+    );
+    expect(backOnRow).toBe('rail-conv-rc1');
+  });
 });
 
 // ─── 19. Group F — Omni picker combobox semantics ─────────────────────────────
@@ -2430,8 +2451,8 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
     await hot.click();
     await page.waitForTimeout(150);
     expect(await hot.getAttribute('aria-pressed')).toBe('true');
-    await expect(page.locator('.model-list-item')).toHaveCount(1);
-    await expect(page.locator('.model-list-item').first()).toContainText('Llama');
+    await expect(page.locator('.model-list-panel__list .workspace-list-row')).toHaveCount(1);
+    await expect(page.locator('.model-list-panel__list .workspace-list-row').first()).toContainText('Llama');
   });
 
   test('A131c — custom tags can be added, selected, and removed', async ({ page }) => {

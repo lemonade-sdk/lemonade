@@ -602,7 +602,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     ];
     const byKey = Object.fromEntries(sections.map(s => [s.key, s]));
     for (const entry of flatList) {
-      const key = entry.pinned ? 'pinned' : entry.status === 'available' ? 'available' : 'downloaded';
+      /* A download in flight has not arrived yet, so it stays with the rows that
+         are not on this machine; its own busy status and progress hairline are
+         what say it is on the way. */
+      const onThisMachine = entry.status !== 'available' && entry.status !== 'downloading';
+      const key = entry.pinned ? 'pinned' : onThisMachine ? 'downloaded' : 'available';
       byKey[key].entries.push(entry);
     }
     return sections.filter(section => section.entries.length > 0);

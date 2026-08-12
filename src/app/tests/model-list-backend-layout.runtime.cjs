@@ -269,6 +269,33 @@ assert.match(styles, /\.workspace-list\s*\{[^}]*container-type:\s*inline-size;[^
 assert.match(styles, /@container workspace-list \(max-width: 260px\)\s*\{\s*\.workspace-list-row__glyphs > :nth-child\(n \+ 3\)/);
 assert.match(styles, /@container workspace-list \(max-width: 210px\)\s*\{\s*\.workspace-list-row__glyphs\s*\{\s*display:\s*none/);
 
+/* ── Keyboard reach ──────────────────────────────────────────────── */
+
+/* A listbox option owns the only tab stop in its row, so a row action that is a
+   real control can never be tabbed to. Arrow keys carry focus in and back out
+   instead, which is what keeps deleting a conversation, cancelling a download or
+   ejecting a model available without a pointer. */
+assert.match(panels, /case 'ArrowRight': \{[\s\S]*?querySelector<HTMLElement>\('button\.workspace-list-row__action'\)[\s\S]*?\.focus\(\);/,
+  'ArrowRight moves focus from the row onto its action button');
+assert.match(panels, /case 'ArrowLeft': \{[\s\S]*?options\[current\]\.focus\(\);/,
+  'ArrowLeft returns focus from the action button to its row');
+assert.match(panels, /aria-keyshortcuts=\{selectable \? 'ArrowRight' : undefined\}/,
+  'a listbox row advertises the key that reaches its action');
+
+/* Results arrive with nothing selected, so keying the tab stop off selection
+   alone left a whole provider list unreachable by Tab. */
+assert.match(manager, /const remoteRovingId = [\s\S]*?return selected \?\? results\[0\]\?\.id \?\? null;/,
+  'the first remote result stands in as the tab stop until one is selected');
+assert.match(manager, /tabIndex=\{rovingId === result\.id \? 0 : -1\}/,
+  'the remote row takes its tab stop from the roving id, not from selection');
+
+/* ── Sections must state a truth ─────────────────────────────────── */
+
+/* A model still being fetched is not on this machine yet, and a heading that
+   says otherwise invites treating a partial download as ready. */
+assert.match(component, /entry\.status !== 'available' && entry\.status !== 'downloading'/,
+  'a download in flight is not grouped under Downloaded');
+
 /* ── Retired treatments must not come back ───────────────────────── */
 
 assert.doesNotMatch(styles, /\.model-list-item|\.rail__item|--model-list-line/,

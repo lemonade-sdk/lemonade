@@ -736,13 +736,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.getByRole('button', { name: 'Delete downloaded files for config-beta-model' }))
       .toHaveClass(/workspace-action-button--secondary/);
 
-    await page.locator('.model-list-item').filter({ hasText: 'Speech Beta Model' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Speech Beta Model' }).click();
     await page.getByRole('tab', { name: 'Configuration' }).click();
     const speechPanel = page.locator('#detail-panel-config');
     await expect(speechPanel.getByRole('checkbox', { name: 'Auto tune context size' })).toHaveCount(0);
     await expect(speechPanel.getByLabel('Context size tokens')).toHaveCount(0);
 
-    await page.locator('.model-list-item').filter({ hasText: 'Unknown Context Model' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Unknown Context Model' }).click();
     await page.getByRole('tab', { name: 'Configuration' }).click();
     const unknownPanel = page.locator('#detail-panel-config');
     const unknownAutoTune = unknownPanel.getByRole('checkbox', { name: 'Auto tune context size' });

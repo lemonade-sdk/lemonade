@@ -2538,7 +2538,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
 
-  const renderRemoteRow = (provider: ModelRegistryProvider, result: HFModelResult) => {
+  /* One row per results list is the list's tab stop. Keying it off selection alone
+     would leave a freshly returned list unreachable by Tab, since nothing is
+     selected until the user picks something — so the first result stands in. */
+  const remoteRovingId = (provider: ModelRegistryProvider, results: HFModelResult[]) => {
+    const selected = selectedRemoteProvider === provider
+      && results.some(item => item.id === selectedRemoteModel?.id)
+      ? selectedRemoteModel?.id
+      : null;
+    return selected ?? results[0]?.id ?? null;
+  };
+
+  const renderRemoteRow = (provider: ModelRegistryProvider, result: HFModelResult, rovingId: string | null) => {
     const key = providerKey(provider, result.id);
     const variants = remoteVariants[key];
     const remotePull = activeRemotePull(provider, result.id, variants);
@@ -2588,7 +2599,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         statusLabel={isPulling ? `Downloading ${result.id}` : undefined}
         progress={isPulling ? pullPercent : undefined}
         selected={isSelected}
-        tabIndex={isSelected ? 0 : -1}
+        tabIndex={rovingId === result.id ? 0 : -1}
         ariaLabel={`${result.id}, ${formatDownloads(result.downloads)} downloads, ${formatDownloads(result.likes)} likes${recipeBadge ? `, ${recipeBadge}` : ''}${isPulling ? `, downloading ${pullPercent.toFixed(0)}%` : ', not downloaded'}`}
         onClick={handleSelect}
         action={isPulling
@@ -2677,6 +2688,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const results = provider === 'huggingface' ? filteredHfResults : filteredModelScopeResults;
     const enabled = providerEnabled[provider];
     if (!searchActive || !enabled) return null;
+    const rovingId = remoteRovingId(provider, results);
     return (
       <section
         className={`zone zone--registry zone--${provider === 'huggingface' ? 'hf' : 'modelscope'}`}
@@ -2716,7 +2728,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
               setMobileDetailOpen(true);
             }}
           >
-            {results.map(result => renderRemoteRow(provider, result))}
+            {results.map(result => renderRemoteRow(provider, result, rovingId))}
           </WorkspaceList>
         )}
       </section>
