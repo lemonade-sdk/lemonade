@@ -3538,6 +3538,141 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_021za_route_only_returns_decision_without_inference(self):
+        """route_only: true returns the routing decision without loading or
+        invoking the selected candidate (#3098). The decision must be the same
+        dispatch a real request would get, the candidate must stay unloaded,
+        trace stays opt-in via route_trace, and a non-router model answers
+        routed: false."""
+        suffix = uuid.uuid4().hex[:8]
+        canonical_name = f"user.RouterDry-{suffix}"
+        public_name = canonical_name[5:]
+        try:
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "version": "1",
+                    "recipe": "collection.router",
+                    "components": [ENDPOINT_TEST_MODEL],
+                    "routing": {
+                        "candidates": [ENDPOINT_TEST_MODEL],
+                        "default_model": ENDPOINT_TEST_MODEL,
+                        "rules": [
+                            {
+                                "id": "code-to-test-model",
+                                "match": {"keywords_any": ["code", "def "]},
+                                "route_to": ENDPOINT_TEST_MODEL,
+                            }
+                        ],
+                    },
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            # Start from an empty router so we can prove route_only loads nothing.
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "route_only": True,
+                    "messages": [
+                        {"role": "user", "content": "Please write code for me"}
+                    ],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            body = response.json()
+            self.assertEqual(body.get("requested_model"), public_name)
+            self.assertEqual(body.get("selected_model"), ENDPOINT_TEST_MODEL)
+            self.assertEqual(body.get("routed"), True)
+            self.assertNotIn("choices", body, "route_only must not run a completion")
+            decision = body.get("decision")
+            self.assertIsInstance(decision, dict)
+            self.assertEqual(decision.get("route_to"), ENDPOINT_TEST_MODEL)
+            self.assertEqual(decision.get("matched_rule"), "code-to-test-model")
+            self.assertEqual(decision.get("default_used"), False)
+            self.assertNotIn("trace", decision, "trace must be opt-in via route_trace")
+            self.assertEqual(
+                response.headers.get("x-lemonade-route"), "code-to-test-model"
+            )
+
+            # The static keyword rule decided without touching any backend.
+            health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(
+                health.get("all_models_loaded"),
+                [],
+                "route_only must not load the selected candidate",
+            )
+
+            # route_trace: true adds the per-condition trace to the decision.
+            traced = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "route_only": True,
+                    "route_trace": True,
+                    "messages": [{"role": "user", "content": "Hello there"}],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(traced.status_code, 200, traced.text)
+            traced_decision = traced.json().get("decision", {})
+            self.assertEqual(traced_decision.get("default_used"), True)
+            self.assertIn("trace", traced_decision)
+            self.assertEqual(traced.headers.get("x-lemonade-route"), "default")
+
+            # Same option on /completions and /responses.
+            for endpoint, payload in (
+                ("completions", {"prompt": "write code"}),
+                ("responses", {"input": "write code"}),
+            ):
+                sibling = requests.post(
+                    f"{self.base_url}/{endpoint}",
+                    json={"model": public_name, "route_only": True, **payload},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(sibling.status_code, 200, f"{endpoint}: {sibling.text}")
+                sibling_body = sibling.json()
+                self.assertEqual(sibling_body.get("routed"), True, endpoint)
+                self.assertEqual(
+                    sibling_body.get("selected_model"), ENDPOINT_TEST_MODEL, endpoint
+                )
+                self.assertNotIn("choices", sibling_body, endpoint)
+
+            # A non-router model answers uniformly with routed: false.
+            plain = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": ENDPOINT_TEST_MODEL,
+                    "route_only": True,
+                    "messages": [{"role": "user", "content": "hi"}],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(plain.status_code, 200, plain.text)
+            plain_body = plain.json()
+            self.assertEqual(plain_body.get("routed"), False)
+            self.assertEqual(plain_body.get("selected_model"), ENDPOINT_TEST_MODEL)
+            self.assertNotIn("choices", plain_body)
+
+            print(f"[OK] route_only returned decisions for {public_name} without inference")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
     def test_021zh_router_collection_repull_overwrite(self):
         """Re-pulling an already-registered collection.router under the same
         name must succeed (#2703). On overwrite the registration data is

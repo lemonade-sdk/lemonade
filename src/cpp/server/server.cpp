@@ -2960,6 +2960,46 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
     }
 }
 
+namespace {
+
+bool take_route_only_flag(nlohmann::json& request_json) {
+    if (!request_json.contains("route_only")) {
+        return false;
+    }
+    const bool enabled = request_json["route_only"].is_boolean() &&
+                         request_json["route_only"].get<bool>();
+    request_json.erase("route_only");
+    return enabled;
+}
+
+void set_route_only_response(const nlohmann::json& request_json,
+                             const std::optional<RouterDispatchResult>& dispatch,
+                             httplib::Response& res) {
+    nlohmann::json body;
+    if (dispatch) {
+        body = {
+            {"requested_model", dispatch->requested_model},
+            {"selected_model", dispatch->selected_model},
+            {"routed", true},
+            {"decision", route_decision_to_json(dispatch->decision)},
+        };
+        attach_route_header(res, dispatch->decision);
+    } else {
+        std::string model;
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            model = request_json["model"].get<std::string>();
+        }
+        body = {
+            {"requested_model", model},
+            {"selected_model", model},
+            {"routed", false},
+        };
+    }
+    res.set_content(body.dump(), "application/json");
+}
+
+} // namespace
+
 std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
     nlohmann::json& request_json) {
     if (!request_json.contains("model") || !request_json["model"].is_string()) {
@@ -3021,6 +3061,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
 
+        const bool route_only = take_route_only_flag(request_json);
+
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
             LOG(DEBUG, "Server") << "Tools present in request: " << request_json["tools"].size() << " tool(s)" << std::endl;
@@ -3041,6 +3083,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 if (model_manager_->model_exists(requested_model)) {
                     ModelInfo info = model_manager_->get_model_info(requested_model);
                     if (is_omni_collection_recipe(info.recipe)) {
+                        if (route_only) {
+                            set_route_only_response(request_json, std::nullopt, res);
+                            return;
+                        }
                         handle_collection_chat_completions(request_json, info, res);
                         return;
                     }
@@ -3067,6 +3113,11 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 LOG(DEBUG, "Server") << "Collection check failed for '" << requested_model
                                      << "': " << e.what() << std::endl;
             }
+        }
+
+        if (route_only) {
+            set_route_only_response(request_json, route_dispatch, res);
+            return;
         }
 
         std::string requested_model;
@@ -3299,10 +3350,17 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
 
+        const bool route_only = take_route_only_flag(request_json);
+
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
         std::optional<RouterDispatchResult> route_dispatch =
             apply_router_collection_dispatch(request_json);
+
+        if (route_only) {
+            set_route_only_response(request_json, route_dispatch, res);
+            return;
+        }
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -4952,10 +5010,17 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
 
+        const bool route_only = take_route_only_flag(request_json);
+
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
         std::optional<RouterDispatchResult> route_dispatch =
             apply_router_collection_dispatch(request_json);
+
+        if (route_only) {
+            set_route_only_response(request_json, route_dispatch, res);
+            return;
+        }
 
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {

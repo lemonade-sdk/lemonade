@@ -192,6 +192,38 @@ also carries an **`x_lemonade_route`** object:
 `route_to` is the candidate that actually answered. For streaming responses the
 same object is attached to the first SSE event as `x_lemonade_route`.
 
+## Dry-route: decision without inference
+
+Add `"route_only": true` to a `chat/completions`, `completions`, or `responses`
+request and the server runs dispatch exactly as it would for a real request —
+rules, classifiers, LLM-as-router; classifier helper models load as usual — then
+returns the decision instead of forwarding to a backend. The selected candidate
+is **not** loaded and no completion runs:
+
+```json
+{
+  "requested_model": "user.My-Router",
+  "selected_model": "Big-GGUF",
+  "routed": true,
+  "decision": { "version": "1", "route_to": "Big-GGUF",
+                "matched_rule": "coding-or-long-to-big",
+                "default_used": false, "outputs": {} }
+}
+```
+
+The `x-lemonade-route` header is set as usual, `decision.trace` appears when
+`"route_trace": true` is also sent, and `stream` is ignored. On a model that is
+not a router collection the response is
+`{"requested_model": m, "selected_model": m, "routed": false}` — uniform for
+callers sweeping mixed model lists. Use this for policy debugging and CI,
+pre-estimating a workload's local/cloud split, and router evaluation harnesses.
+
+Related: `POST /api/v1/routing/validate` evaluates an **unregistered policy
+document** against caller-supplied features (`prompt`, `has_tools`,
+`metadata`). `route_only` answers the complementary question — what the
+server would do with a real request against a **registered** router, including
+the request-feature extraction a live request gets.
+
 ## Cloud candidates
 
 A candidate may be a cloud model — the router derives the route category from the
