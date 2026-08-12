@@ -801,7 +801,7 @@ const HfOverviewTab: React.FC<{
           )}
           {hfVariants.variants.length > 0 ? (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Variants — select one</span>
+              <span className="hf-detail__overview-label">Variants (select one)</span>
               {selectedVariant && (
                 <div className="hf-detail__gguf-primary-action">
                   <WorkspaceActionButton

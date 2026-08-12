@@ -3004,7 +3004,7 @@ ${finalText}`
             ? (!!inputValue.trim() && !openMossDescribeUnavailable && !openMossCloneUnavailable)
             : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
-    ? 'Draft a message — connect and load a model to send…'
+    ? 'Draft a message. Connect and load a model to send…'
     : currentCapability === 'omni'
       ? `Message ${currentModel} through the Omni collection…`
       : currentCapability === 'chat' && supportsChatImageInput && supportsChatAudioInput

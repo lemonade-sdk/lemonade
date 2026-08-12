@@ -803,7 +803,7 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
     if (response.status_code != 200) {
         LOG(WARNING, "Cloud") << "GET " << url << " returned HTTP "
                               << response.status_code
-                              << " — no models discovered for provider '" << provider
+                              << ", no models discovered for provider '" << provider
                               << "'. Body: " << response.body.substr(0, 200) << std::endl;
         return models;
     }
