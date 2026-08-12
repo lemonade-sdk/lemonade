@@ -9,6 +9,7 @@ import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
 import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow } from '../api';
 import api from '../api';
+import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo, capabilityLabel } from '../modelCapabilities';
 import {
   modelBaseTuningForModel, loadModelTuning, saveModelTuning, resetModelTuning,
@@ -38,6 +39,33 @@ function mdName(m: ModelInfo | null | undefined): string {
   if (!m) return '';
   return String((m as any).model_name ?? m.name ?? m.id ?? '').trim();
 }
+
+const CopyModelNameButton: React.FC<{ modelName: string }> = ({ modelName }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleClick = async () => {
+    try {
+      await copyTextToClipboard(modelName);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const label = copied ? `Copied model name: ${modelName}` : `Copy model name: ${modelName}`;
+  return (
+    <button
+      type="button"
+      className={`model-detail-panel__copy-name${copied ? ' model-detail-panel__copy-name--copied' : ''}`}
+      onClick={handleClick}
+      title={label}
+      aria-label={label}
+    >
+      <Icon name={copied ? 'check' : 'copy'} size={12} aria-hidden="true" />
+    </button>
+  );
+};
 
 function isImageOnlyModel(model: ModelInfo | null | undefined): boolean {
   return model ? capabilityFromModelInfo(model) === 'image' : false;
@@ -2224,9 +2252,12 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       className="model-detail-panel"
       ariaLabel={`Model details: ${name}`}
       title={(
-        <h2 className="workspace-detail-panel__title model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
-          {model.display_name || name}
-        </h2>
+        <div className="model-detail-panel__title-line">
+          <h2 className="workspace-detail-panel__title model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
+            {model.display_name || name}
+          </h2>
+          <CopyModelNameButton key={name} modelName={name} />
+        </div>
       )}
       metadata={detailMetadata}
       actions={detailActions}
