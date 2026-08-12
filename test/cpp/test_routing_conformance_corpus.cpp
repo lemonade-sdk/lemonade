@@ -331,20 +331,31 @@ static void report_mismatch(const json& expected, const json& produced,
     }
 }
 
-// The case dir name is the schema major the policy must declare, so a policy
-// filed under the wrong version cannot pass unnoticed.
-static std::optional<RoutePolicy> load_case_policy(const fs::path& case_dir, const std::string& rel) {
+// The directory name is the schema major the policy must declare, so a policy
+// under the wrong version cannot pass unnoticed. Read once per directory.
+static std::optional<json> load_policy_json(const fs::path& case_dir, const std::string& rel) {
     try {
-        const json policy_json = load_json_file(case_dir / "policy.json");
+        json policy_json = load_json_file(case_dir / "policy.json");
         const std::string directory_version = case_dir.parent_path().filename().string();
         if (!policy_json.contains("version") || !policy_json["version"].is_string() ||
             policy_json["version"].get<std::string>() != directory_version) {
             check(rel + ": policy version matches schema-major directory", false);
             return std::nullopt;
         }
-        return lemon::parse_route_policy_collection(policy_json);
+        return policy_json;
     } catch (const std::exception& e) {
         fail(rel + ": policy.json parses", e.what());
+        return std::nullopt;
+    }
+}
+
+// Built per case: a semantic_similarity classifier caches its embeddings on its
+// own instance, so a shared policy would pin every case to the first's vectors.
+static std::optional<RoutePolicy> build_policy(const json& policy_json, const std::string& rel) {
+    try {
+        return lemon::parse_route_policy_collection(policy_json);
+    } catch (const std::exception& e) {
+        fail(rel + ": route policy builds", e.what());
         return std::nullopt;
     }
 }
@@ -447,6 +458,11 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
         return 0;
     }
 
+    // Read the shared policy once, up front, so a bad policy fails here instead
+    // of on whichever row runs first.
+    const std::optional<json> policy_json = load_policy_json(case_dir, rel);
+    if (!policy_json) return 0;
+
     int executed = 0;
     int line_no = 0;
     std::string line;
@@ -462,16 +478,14 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
         const json& request = row->at("request");
         const lemon::RouteContext request_context = lemon::build_route_context(request, request.value("model", ""));
 
-        // Fresh fake, policy and engine per case: a semantic_similarity classifier
-        // caches reference-phrase embeddings on its instance, so reusing one would
-        // pin later cases to the first's vectors. The fake outlives the engine.
+        // Fresh fake, policy and engine per case; the fake outlives the engine.
         lemon::testing::FakeClassifierServices fake;
         if (row->contains("services") &&
             !apply_row_services(fake, row->at("services"), name + ".services")) {
             continue;
         }
 
-        std::optional<RoutePolicy> policy = load_case_policy(case_dir, rel);
+        std::optional<RoutePolicy> policy = build_policy(*policy_json, rel);
         if (!policy) return executed;
         std::optional<RoutingPolicyEngine> engine = compile_engine(std::move(*policy), fake.make(), rel);
         if (!engine) return executed;
