@@ -9,6 +9,7 @@
 // FakeClassifierServices and declare the answers it returns, so a case tests
 // the engine's threshold and selection logic rather than a real model's floats.
 
+#include "test_conformance_row_harness.h"
 #include "fake_classifier_services.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
@@ -176,7 +177,7 @@ static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, con
     bool ok = true;
     for (auto service = spec.begin(); service != spec.end(); ++service) {
         const std::string& name = service.key();
-        if (name != "embed" && name != "run_classifier" && name != "chat") {
+        if (lemon::conformance::allowed_service_names().count(name) == 0) {
             check(where + ": unknown service '" + name + "'", false);
             ok = false;
             continue;
@@ -378,7 +379,6 @@ static std::optional<RoutingPolicyEngine> compile_engine(RoutePolicy policy,
 // file: the coverage matrix maps one behavior to one named case.
 static std::optional<json> read_case_row(const std::string& line, const std::string& rel,
                                          int line_no, std::set<std::string>& seen_names) {
-    static const std::set<std::string> kAllowedRowKeys = {"name", "note", "request", "decision", "services"};
     const std::string where = rel + ": cases.jsonl line " + std::to_string(line_no);
 
     json row;
@@ -393,25 +393,25 @@ static std::optional<json> read_case_row(const std::string& line, const std::str
         check(where + " has object request+decision", false);
         return std::nullopt;
     }
-    bool keys_ok = true;
-    for (auto it = row.begin(); it != row.end(); ++it) {
-        if (kAllowedRowKeys.count(it.key()) == 0) {
-            check(where + " unknown key '" + it.key() + "'", false);
-            keys_ok = false;
-        }
+    const std::vector<std::string> unknown_keys = lemon::conformance::unknown_row_keys(row);
+    for (const auto& key : unknown_keys) {
+        check(where + " unknown key '" + key + "'", false);
     }
-    if (!keys_ok) {
+    if (!unknown_keys.empty()) {
         return std::nullopt;
     }
     const std::string case_name = row.value("name", "");
-    if (case_name.empty()) {
-        check(where + " has a name", false);
-        return std::nullopt;
+    switch (lemon::conformance::check_case_name(row, seen_names)) {
+        case lemon::conformance::NameStatus::kMissing:
+            check(where + " has a name", false);
+            return std::nullopt;
+        case lemon::conformance::NameStatus::kDuplicate:
+            check(where + " duplicate case name '" + case_name + "'", false);
+            return std::nullopt;
+        case lemon::conformance::NameStatus::kOk:
+            break;
     }
-    if (!seen_names.insert(case_name).second) {
-        check(where + " duplicate case name '" + case_name + "'", false);
-        return std::nullopt;
-    }
+    seen_names.insert(case_name);
     return row;
 }
 
