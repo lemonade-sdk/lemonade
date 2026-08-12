@@ -36,6 +36,11 @@ export interface ModelRegistrationData {
   vision?: boolean;
   embedding?: boolean;
   reranking?: boolean;
+  // Illustrative pricing metadata — see AddModelPanel.tsx's ModelInstallData.
+  cost_tier?: 'free' | 'low' | 'medium' | 'high';
+  cost_input_per_million?: number;
+  cost_output_per_million?: number;
+  latency_ms_hint?: number;
 }
 
 /**

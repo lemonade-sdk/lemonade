@@ -235,6 +235,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           vision: data.vision,
           embedding: data.embedding,
           reranking: data.reranking,
+          ...(data.costTier ? { cost_tier: data.costTier } : {}),
+          ...(data.costInputPerMillion !== undefined ? { cost_input_per_million: data.costInputPerMillion } : {}),
+          ...(data.costOutputPerMillion !== undefined ? { cost_output_per_million: data.costOutputPerMillion } : {}),
+          ...(data.latencyMsHint !== undefined ? { latency_ms_hint: data.latencyMsHint } : {}),
         },
       },
     }));

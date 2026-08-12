@@ -17,6 +17,8 @@ export interface AddModelInitialValues {
   embedding?: boolean;
 }
 
+export type ModelCostTier = 'free' | 'low' | 'medium' | 'high';
+
 export interface ModelInstallData {
   name: string;
   checkpoint: string;
@@ -31,6 +33,13 @@ export interface ModelInstallData {
   vision?: boolean;
   embedding?: boolean;
   reranking?: boolean;
+  // Illustrative pricing metadata (never billed automatically): consumed by
+  // outputs.estimated_cost reporting and routing.router.type "cost_select"
+  // on a collection.router policy that lists this model as a candidate.
+  costTier?: ModelCostTier;
+  costInputPerMillion?: number;
+  costOutputPerMillion?: number;
+  latencyMsHint?: number;
 }
 
 interface AddModelPanelProps {
@@ -103,6 +112,12 @@ type AddModelFormState = {
   vision: boolean;
   embedding: boolean;
   reranking: boolean;
+  // '' means unset for all four; the numeric two are kept as text so an
+  // in-progress edit (e.g. "0.") isn't clobbered by a premature number parse.
+  costTier: ModelCostTier | '';
+  costInputPerMillion: string;
+  costOutputPerMillion: string;
+  latencyMsHint: string;
 };
 
 const createEmptyForm = (initial?: AddModelInitialValues): AddModelFormState => ({
@@ -117,6 +132,10 @@ const createEmptyForm = (initial?: AddModelInitialValues): AddModelFormState => 
   vision: initial?.vision ?? false,
   embedding: initial?.embedding ?? false,
   reranking: initial?.reranking ?? false,
+  costTier: '',
+  costInputPerMillion: '',
+  costOutputPerMillion: '',
+  latencyMsHint: '',
 });
 
 const hasRepoRelativeFilePath = (checkpoint: string): boolean => {
@@ -127,6 +146,17 @@ const hasRepoRelativeFilePath = (checkpoint: string): boolean => {
 };
 
 const isGgufCheckpoint = (checkpoint: string): boolean => checkpoint.toLowerCase().includes('gguf');
+
+// Parses an optional cost/latency field: blank is a valid "unset", anything
+// else must be a finite, non-negative number. Returns 'error' rather than
+// throwing so the caller can attach a field-specific message.
+const parseOptionalNonNegativeNumber = (value: string): number | undefined | 'error' => {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < 0) return 'error';
+  return parsed;
+};
 
 const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initialValues }) => {
   const { supportedRecipes, ensureSystemInfoLoaded } = useSystem();
@@ -202,6 +232,22 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
       return;
     }
 
+    const costInputPerMillion = parseOptionalNonNegativeNumber(form.costInputPerMillion);
+    if (costInputPerMillion === 'error') {
+      setError('Input price must be a non-negative number, e.g. 0.15.');
+      return;
+    }
+    const costOutputPerMillion = parseOptionalNonNegativeNumber(form.costOutputPerMillion);
+    if (costOutputPerMillion === 'error') {
+      setError('Output price must be a non-negative number, e.g. 0.30.');
+      return;
+    }
+    const latencyMsHint = parseOptionalNonNegativeNumber(form.latencyMsHint);
+    if (latencyMsHint === 'error') {
+      setError('Latency hint must be a non-negative number of milliseconds.');
+      return;
+    }
+
     const labels = (initialValues?.labels ?? []).filter(label => label !== 'vision');
 
     onInstall({
@@ -220,6 +266,10 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
       vision: !isSdCpp ? form.vision : false,
       embedding: !isSdCpp ? form.embedding : false,
       reranking: !isSdCpp ? form.reranking : false,
+      costTier: form.costTier || undefined,
+      costInputPerMillion,
+      costOutputPerMillion,
+      latencyMsHint,
     });
   };
 
@@ -383,6 +433,73 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
             </div>
           )}
           {mmprojField}
+        </div>
+
+        <div className="form-section">
+          <label
+            className="form-label"
+            title="Illustrative pricing metadata: shown on a collection.router decision as outputs.estimated_cost, and used by a routing.router.type &quot;cost_select&quot; policy to pick the cheapest candidate. Never billed automatically and has no effect on how this model runs."
+          >
+            Cost metadata (Optional)
+          </label>
+          <div className="form-subsection">
+            <label className="form-label-secondary" title="Coarse cost bucket, shown alongside per-token pricing">
+              Cost tier
+            </label>
+            <select
+              className="form-input form-select"
+              value={form.costTier}
+              onChange={(e) => handleChange('costTier', e.target.value as ModelCostTier | '')}
+            >
+              <option value="">Unset</option>
+              <option value="free">Free</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div className="form-subsection">
+            <label className="form-label-secondary" title="USD per 1,000,000 input tokens">
+              Input price (USD / 1M tokens)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              className="form-input"
+              placeholder="0.15"
+              value={form.costInputPerMillion}
+              onChange={(e) => handleChange('costInputPerMillion', e.target.value)}
+            />
+          </div>
+          <div className="form-subsection">
+            <label className="form-label-secondary" title="USD per 1,000,000 output tokens">
+              Output price (USD / 1M tokens)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              className="form-input"
+              placeholder="0.30"
+              value={form.costOutputPerMillion}
+              onChange={(e) => handleChange('costOutputPerMillion', e.target.value)}
+            />
+          </div>
+          <div className="form-subsection">
+            <label className="form-label-secondary" title="Local/compute latency hint in milliseconds, for illustrative comparison only">
+              Latency hint (ms)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              className="form-input"
+              placeholder="40"
+              value={form.latencyMsHint}
+              onChange={(e) => handleChange('latencyMsHint', e.target.value)}
+            />
+          </div>
         </div>
 
         {!isSdCpp && (
