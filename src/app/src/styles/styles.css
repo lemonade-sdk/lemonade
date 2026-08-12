@@ -5296,14 +5296,6 @@ optgroup {
   background: var(--success-soft);
 }
 
-.copy-inline--author {
-  width: 20px;
-  height: 20px;
-  min-width: 20px;
-  font-size: var(--text-xs);
-  transform: translateY(-1px);
-}
-
 .message__actions {
   display: flex;
   align-items: center;
@@ -7558,6 +7550,45 @@ optgroup {
 
 .model-detail-panel__name:focus-visible {
   outline: none;
+}
+
+.model-detail-panel__title-line {
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-self: start;
+  gap: 2px;
+}
+
+.model-detail-panel__title-line .model-detail-panel__name {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.model-detail-panel__copy-name {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  margin-top: -3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+}
+
+.model-detail-panel__copy-name:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.model-detail-panel__copy-name--copied {
+  color: var(--success);
 }
 
 .model-detail-panel__error {
