@@ -832,6 +832,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.getByRole('button', { name: 'Load source-hf-model' }).click();
     await expect.poll(() => loadRequestBody?.llamacpp_backend).toBe('vulkan');
     expect(loadRequestBody?.ctx_size).toBe(16384);
+    // Applying settings for one load must not make them the server's new default.
+    expect(loadRequestBody?.save_options).toBe(false);
 
     const storedTunings = await page.evaluate(() => {
       const key = Object.keys(localStorage).find(k => k.endsWith('model_tunings'));
@@ -845,6 +847,14 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel.getByLabel('Context size tokens')).toHaveValue('16384');
     await expect(panel.getByRole('button', { name: 'Save', exact: true })).toHaveClass(/btn--primary/);
     await expect(panel.getByRole('button', { name: 'Discard changes' })).toBeVisible();
+
+    // With a size saved, clearing the field and loading means auto, not the
+    // saved size coming back.
+    await panel.getByRole('button', { name: 'Save', exact: true }).click();
+    await panel.getByLabel('Context size tokens').fill('');
+    loadRequestBody = null;
+    await page.getByRole('button', { name: 'Load source-hf-model' }).click();
+    await expect.poll(() => loadRequestBody?.ctx_size).toBe(-1);
   });
 
 

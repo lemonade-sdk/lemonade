@@ -517,11 +517,6 @@ const REMOTE_PROVIDER_META: Record<ModelRegistryProvider, { label: string; url: 
 
 const QUANT_RE = /(?:^|[-_.])((?:UD-)?(?:IQ|Q)\d+(?:_[A-Za-z0-9]+)*|BF16|F16|F32|FP8|MXFP4|INT4|INT8)(?=$|[-_.])/gi;
 
-/**
- * Quant label for a checkpoint variant, which is either the label itself
- * (`Q4_0`) or a weights filename to pull it out of (`Qwen3-4B-Q4_K_M.gguf`).
- * Null when the variant carries no quant, as for `ggml-tiny.bin`.
- */
 function quantFromVariant(variant: string): string | null {
   const value = variant.trim();
   if (!value) return null;
@@ -1251,6 +1246,9 @@ const ModelConfigurationTab: React.FC<{
     for (const key of recipeKeys) {
       if (!(key in options) && key in stored) options[key] = undefined;
     }
+    // recipeKeys omits ctx_size, so a cleared context field needs its own auto
+    // sentinel to keep a stored size from coming back.
+    if (supportsContextSize && !('ctx_size' in options)) options.ctx_size = -1;
     return options;
   };
 
@@ -2206,6 +2204,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         <WorkspaceMetadataChip
           className="model-detail-panel__source"
           emphasis="low"
+          icon="globe"
           href={sourceRef.url}
           target="_blank"
           rel="noopener noreferrer"

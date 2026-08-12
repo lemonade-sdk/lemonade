@@ -90,15 +90,21 @@ assert.ok(autoTunePosition >= 0 && autoTunePosition < contextNumberPosition && c
 assert.match(detailSource, /loadOptionsRef\.current = buildLoadOptions;/);
 assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onLoad, model\)\}/);
 assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onPullAndLoad, model\)\}/);
+// A cleared context field falls outside recipeKeys, so it needs the auto sentinel.
+assert.match(detailSource, /if \(supportsContextSize && !\('ctx_size' in options\)\) options\.ctx_size = -1;/);
+
+// The source chip reads as a link out to the registry.
+assert.match(detailSource, /className="model-detail-panel__source"\s*\n\s*emphasis="low"\s*\n\s*icon="globe"/);
+assert.match(styles, /\.model-detail-panel__source > svg\s*\{[^}]*flex:\s*0 0 auto;/s);
 assert.match(detailSource, /import \{ TTS_VOICES \}/);
 assert.match(detailSource, /knownVoiceOptionsForModel/);
 assert.match(detailSource, /<option value=\{customVoiceSentinel\}>Custom voice…<\/option>/);
 assert.match(detailSource, /placeholder="Enter custom voice ID"/);
 
-assert.match(apiSource, /const body: Record<string, unknown> = \{[\s\S]*model_name: modelName,[\s\S]*save_options: true,[\s\S]*\.\.\.recipeOptions,[\s\S]*\};/);
-const saveDefaultPosition = apiSource.indexOf('save_options: true');
+assert.match(apiSource, /const body: Record<string, unknown> = \{[\s\S]*model_name: modelName,[\s\S]*save_options: false,[\s\S]*\.\.\.recipeOptions,[\s\S]*\};/);
+const saveDefaultPosition = apiSource.indexOf('save_options: false');
 const callerOverridePosition = apiSource.indexOf('...recipeOptions', saveDefaultPosition);
 assert.ok(saveDefaultPosition >= 0 && callerOverridePosition > saveDefaultPosition,
-  'GUI3 loads must persist recipe options by default while preserving explicit save_options: false overrides');
+  'GUI3 loads must not persist recipe options by default while preserving explicit save_options overrides');
 
 console.log('GUI3 configuration consistency contract checks passed.');

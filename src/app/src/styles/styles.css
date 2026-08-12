@@ -7645,6 +7645,10 @@ optgroup {
   max-width: 100%;
 }
 
+.model-detail-panel__source > svg {
+  flex: 0 0 auto;
+}
+
 .model-detail-panel__source-registry {
   flex: 0 0 auto;
   color: var(--text-tertiary);
