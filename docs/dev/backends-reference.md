@@ -67,7 +67,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `trellis` | cuda | linux, windows | nvidia_gpu |
 | `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `trellis` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X, gfx942, gfx950) |
 | `whispercpp` | npu | windows | amd_npu (XDNA2) |
 | `whispercpp` | metal | macos | metal |
 | `whispercpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64) |

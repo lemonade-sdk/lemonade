@@ -5,13 +5,13 @@ Lemonade integrates [vLLM](https://github.com/vllm-project/vllm) as an experimen
 1. **Day-0 model support.** vLLM typically supports new transformer architectures within hours of their release on Hugging Face — checkpoints load directly, with no per-architecture porting.
 2. **Concurrency and multi-GPU.** Paged-attention KV cache, continuous batching, and chunked prefill scale aggregate throughput with in-flight request count; tensor and pipeline parallelism are supported across multiple GPUs.
 
-> **Status: experimental.** The backend has been validated on **gfx1151 (Strix Halo)** and **gfx1150 (Strix Point)**. Prebuilt wheels also exist for `gfx110X` (RDNA3) and `gfx120X` (RDNA4) but those targets have not been exercised end-to-end yet. **gfx942 (AMD Instinct MI300X, CDNA3)** is **staged, not auto-installable yet** — the resolver, per-architecture pinning, launch policy, and recipes are all in place and have been manually validated on real MI300X hardware, but gfx942 is held out of the installable support matrix until the official `-gfx942` release asset is published (see [Deploying on MI300X](#deploying-on-mi300x-gfx942)).
+> **Status: experimental.** The backend has been validated on **gfx1151 (Strix Halo)** and **gfx1150 (Strix Point)**. Prebuilt wheels also exist for `gfx110X` (RDNA3) and `gfx120X` (RDNA4) but those targets have not been exercised end-to-end yet. **gfx942 (AMD Instinct MI300X, CDNA3)** installs from its own official release line and has been validated on MI300X hardware; **gfx950 (MI355X, CDNA4)** installs from the same line but has not been exercised on hardware yet (see [Deploying on MI300X](#deploying-on-mi300x-gfx942)).
 
 ## Available Backend
 
 ### ROCm
 - **Platform**: Linux only
-- **Hardware**: validated on gfx1151 (Strix Halo) and gfx1150 (Strix Point); prebuilt wheels also exist for gfx110X (RDNA3) and gfx120X (RDNA4); gfx942 (MI300X, CDNA3) is **staged / manually validated, not auto-installable** until the official per-arch release asset ships
+- **Hardware**: validated on gfx1151 (Strix Halo) and gfx1150 (Strix Point); prebuilt wheels also exist for gfx110X (RDNA3) and gfx120X (RDNA4); gfx942 (MI300X, CDNA3) validated on hardware; gfx950 (MI355X, CDNA4) installable, not yet hardware-validated
 - **Bundle**: a self-contained tarball from [lemonade-sdk/vllm-rocm](https://github.com/lemonade-sdk/vllm-rocm) with a relocatable Python interpreter, PyTorch (ROCm), the ROCm user-space libs, Triton, and vLLM. No system Python / PyTorch / ROCm install is required on the host.
 
 ## Prerequisites
@@ -35,24 +35,15 @@ The install fetches a per-GPU-target release (e.g. `…-gfx1151`, `…-gfx1150`)
 
 #### Per-architecture release overrides
 
-Some GPU targets ride a different vLLM/ROCm wheel cadence than the default pin and cannot share a single release tag — CDNA-dcgpu (gfx942 / MI300X), for example, uses its own vLLM/ROCm release line, separate from the RDNA line (its official asset is not published yet — see the staged-status note above). For those, `backend_versions.json` carries an optional `vllm.rocm_arch_overrides` map keyed by asset family; the override base is resolved for the detected arch (falling back to the default pin otherwise) before the `-{gfx_target}` suffix is appended. An explicit `vllm.rocm_bin` pin (`latest` or a specific tag) still takes precedence over the builtin per-arch override — the override only replaces the *default* base. A pin that already carries a `-{gfx_target}` suffix must match the detected architecture: a cross-arch pin (for example a repo-wide `latest` that resolved to a suffixed RDNA tag, or an explicit tag for a different target) is **rejected** rather than installed against the wrong architecture line. Note that pinning `vllm.rocm_bin` to the exact default base tag is treated the same as leaving it unset (`builtin`) — the per-arch override still applies; set an explicit *non-default* tag to opt out of the override.
+Some GPU targets ride a different vLLM/ROCm wheel cadence than the default pin and cannot share a single release tag — CDNA-dcgpu (gfx942 / MI300X), for example, uses its own vLLM/ROCm release line, separate from the RDNA line. For those, `backend_versions.json` carries an optional `vllm.rocm_arch_overrides` map keyed by asset family; the override base is resolved for the detected arch (falling back to the default pin otherwise) before the `-{gfx_target}` suffix is appended. An explicit `vllm.rocm_bin` pin (`latest` or a specific tag) still takes precedence over the builtin per-arch override — the override only replaces the *default* base. A pin that already carries a `-{gfx_target}` suffix must match the detected architecture: a cross-arch pin (for example a repo-wide `latest` that resolved to a suffixed RDNA tag, or an explicit tag for a different target) is **rejected** rather than installed against the wrong architecture line. Note that pinning `vllm.rocm_bin` to the exact default base tag is treated the same as leaving it unset (`builtin`) — the per-arch override still applies; set an explicit *non-default* tag to opt out of the override.
 
 ### Deploying on MI300X (gfx942)
 
-> **gfx942 is currently staged, not auto-installable.** The resolver, per-arch release pinning,
-> device-class launch policy, and FP8/MTP recipes are all in place, but gfx942 is intentionally
-> **not** in the public installable support matrix yet because its per-arch vLLM/ROCm release asset
-> is not published in `lemonade-sdk/vllm-rocm`. Once that official `gfx94X-dcgpu` asset ships, gfx942
-> is enabled with a one-line matrix flip and the steps below become a one-click `install`.
+The minimum path to a working gfx942 deployment with the FP8 + MTP recipes:
 
-The minimum path to a working gfx942 deployment today with the FP8 + MTP recipes:
-
-1. **Runtime asset.** Until the official asset ships, use the community-built, hardware-validated
-   tarball (`ianbmacdonald/vllm-rocm-cdna`, tag `vllm0.19.1-rocm7.13.0-gfx942`) by **manually sideloading**
-   it into the vLLM backend install directory. A `vllm.rocm_bin` pin changes only the tag/version, not
-   the source repository, so it cannot redirect the built-in install to a fork's build — the sideload
-   is the supported interim path (the standalone runbook published alongside the tarball covers the
-   exact steps).
+1. **Runtime asset.** `lemonade backends install vllm:rocm` installs the official gfx942 release
+   (`vllm0.23.1.dev0+rocm7.15.0a20260721.g0fc695fc6.d20260723-rocm7.15.0-gfx942` from `lemonade-sdk/vllm-rocm`). CDNA uses the nightly line
+   because the stable `vllm0.19.1-rocm7.13.0` CDNA asset does not start.
 2. **Recipes.** The `Qwen3.6-27B-FP8-vLLM-{low,high}conc` and `Qwen3.6-35B-A3B-FP8-vLLM-{low,high}conc`
    recipes are built in; `lemonade run Qwen3.6-27B-FP8-vLLM-lowconc` pulls and serves. To register a
    pre-quantized checkpoint yourself: `lemonade pull user.MyModel --checkpoint Qwen/Qwen3.6-27B-FP8 --recipe vllm`.
@@ -60,8 +51,7 @@ The minimum path to a working gfx942 deployment today with the FP8 + MTP recipes
    the 27B dense recipe, gfx942). Discrete-HBM launch defaults apply automatically; force eager for a
    newly-added or misbehaving model with `lemonade config set vllm.args="--enforce-eager"`.
 
-A standalone copy of this runbook and importable recipe JSONs are published alongside the gfx942
-runtime tarball as release assets. AITER (fused-MoE FP8 kernels) is a separate build-repo bake — the
+AITER (fused-MoE FP8 kernels) is a separate build-repo bake — the
 recipes serve correctly without it.
 
 ## Use

@@ -30,12 +30,10 @@ void expect(bool condition, const std::string& label) {
 }  // namespace
 
 int main() {
-    // gfx942 is not in the installable matrix until its asset ships, though everything
-    // below it is wired and tested.
-    expect(!SystemInfo::backend_supports_arch("vllm", "rocm", "gfx942"),
-           "vllm:rocm gfx942 is NOT advertised installable yet (asset pending; infra staged)");
-    expect(!SystemInfo::backend_supports_arch("vllm", "rocm", "gfx950"),
-           "vllm:rocm gfx950 is NOT advertised installable yet (asset pending; infra staged)");
+    expect(SystemInfo::backend_supports_arch("vllm", "rocm", "gfx942"),
+           "vllm:rocm gfx942 (CDNA3, MI300X) is installable");
+    expect(SystemInfo::backend_supports_arch("vllm", "rocm", "gfx950"),
+           "vllm:rocm gfx950 (CDNA4, MI355X) is installable");
 
     expect(SystemInfo::backend_supports_arch("vllm", "rocm", "gfx1100"),
            "vllm:rocm still supports gfx1100 via gfx110X wildcard");
@@ -62,9 +60,9 @@ int main() {
 
     // Per-arch version override: gfx942 (CDNA-dcgpu) pins a distinct vLLM/ROCm
     // release line from the RDNA default, since no single tag carries both.
-    expect(SystemInfo::vllm_rocm_version_override("gfx942") == "vllm0.19.1-rocm7.13.0",
+    expect(SystemInfo::vllm_rocm_version_override("gfx942") == "vllm0.23.1.dev0+rocm7.15.0a20260721.g0fc695fc6.d20260723-rocm7.15.0",
            "vllm gfx942 overrides to its own dcgpu release line");
-    expect(SystemInfo::vllm_rocm_version_override("gfx950") == "vllm0.19.1-rocm7.13.0",
+    expect(SystemInfo::vllm_rocm_version_override("gfx950") == "vllm0.23.1.dev0+rocm7.15.0a20260721.g0fc695fc6.d20260723-rocm7.15.0",
            "vllm gfx950 (CDNA4) rides the same CDNA release line as gfx942");
     expect(SystemInfo::vllm_rocm_version_override("gfx110X").empty(),
            "vllm RDNA families use the default pin (no override)");

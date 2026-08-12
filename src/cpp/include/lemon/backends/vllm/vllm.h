@@ -25,9 +25,7 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to vllm-server", "vLLM Options"},
     },
     /*support*/ {
-        // gfx942/gfx950 (CDNA) omitted until their vLLM/ROCm assets ship in lemonade-sdk/vllm-rocm;
-        // everything else is wired (incl. the rocm_arch_overrides pins), so re-add them here once that lands.
-        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Strix Halo iGPU (gfx1151)"},
+        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X", "gfx942", "gfx950"}}}, "Strix Halo iGPU (gfx1151); AMD Instinct MI300X/MI355X (gfx942/gfx950)"},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
