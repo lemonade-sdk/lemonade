@@ -28,8 +28,20 @@ InstallParams Ds4Server::get_install_params(const std::string& backend, const st
     }
 
     // One archive per GPU target under a single release tag, named so it is
-    // derivable from the tag alone.
+    // derivable from the tag alone. Check the architecture is one we publish
+    // before building a name from it: model filtering normally keeps
+    // unsupported hosts away, but the install path does not depend on that
+    // having run, and an unchecked arch resolves to an asset that 404s.
     const std::string target_arch = SystemInfo::get_rocm_arch();
+    if (target_arch.empty()) {
+        throw std::runtime_error(
+            "ds4 backend 'rocm' requires a ROCm GPU, but no ROCm architecture was detected");
+    }
+    if (!SystemInfo::backend_supports_arch("ds4", "rocm", target_arch)) {
+        throw std::runtime_error(
+            "ds4 backend 'rocm' publishes no build for " + target_arch +
+            "; only gfx1151 is validated upstream");
+    }
 
     InstallParams params;
     params.repo = "lemonade-sdk/ds4-rocm";

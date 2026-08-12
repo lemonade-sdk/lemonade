@@ -39,6 +39,18 @@ bool throws_for_backend(const std::string& backend) {
     return false;
 }
 
+bool throws_for_arch(const std::string& arch) {
+    SystemInfo::set_rocm_arch_override(arch);
+    bool threw = false;
+    try {
+        Ds4Server::get_install_params("rocm", "b0001");
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    SystemInfo::set_rocm_arch_override("");
+    return threw;
+}
+
 }  // namespace
 
 int main() {
@@ -74,6 +86,19 @@ int main() {
            "rocm is published for gfx1151");
     expect(!SystemInfo::backend_supports_arch("ds4", "rocm", "gfx1150"),
            "rocm is not advertised for unvalidated architectures");
+
+    // Install must refuse an architecture we publish nothing for, rather than
+    // composing a plausible-looking asset name that 404s. Model filtering
+    // normally keeps such hosts away, but the install path cannot assume it ran.
+    expect(throws_for_arch("gfx1150"),
+           "install refuses an unsupported architecture");
+    expect(throws_for_arch("gfx942"),
+           "install refuses a CDNA architecture");
+    expect(!throws_for_arch("gfx1151"),
+           "install still resolves for the supported architecture");
+    // The no-GPU case (get_rocm_arch() == "") is guarded in get_install_params
+    // but cannot be asserted here: an empty override clears the override rather
+    // than setting an empty architecture, so the probe falls back to hardware.
 
     expect(lemon::backends::ds4::descriptor.experimental,
            "ds4 is marked experimental");
