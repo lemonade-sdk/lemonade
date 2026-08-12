@@ -405,7 +405,8 @@ static std::optional<json> read_case_row(const std::string& line, const std::str
 }
 
 static void run_case(const RoutingPolicyEngine& engine, const lemon::RouteContext& request_context,
-                     const json& row, const std::string& name) {
+                     const lemon::testing::FakeClassifierServices& fake, const json& row,
+                     const std::string& name) {
     const Decision decision = engine.route(request_context, row.at("request").value("route_trace", false));
 
     const json produced = lemon::route_decision_to_json(decision);
@@ -420,9 +421,17 @@ static void run_case(const RoutingPolicyEngine& engine, const lemon::RouteContex
         }
     }
 
-    const bool ok = decisions_match(expected, produced, semantic_conditions);
+    // A backend call the case did not stub means the decision rests on a
+    // placeholder default, so it fails regardless of whether the fields matched.
+    const std::vector<std::string>& unexpected = fake.unexpected_calls();
+    const bool ok = decisions_match(expected, produced, semantic_conditions) && unexpected.empty();
     check(name, ok);
-    if (!ok) report_mismatch(expected, produced, semantic_conditions);
+    if (!unexpected.empty()) {
+        std::printf("  unstubbed backend call(s):\n");
+        for (const auto& call : unexpected) std::printf("    %s\n", call.c_str());
+    } else if (!ok) {
+        report_mismatch(expected, produced, semantic_conditions);
+    }
 }
 
 static bool is_blank(const std::string& line) {
@@ -467,7 +476,7 @@ static int run_case_dir(const fs::path& case_dir, const fs::path& root) {
         std::optional<RoutingPolicyEngine> engine = compile_engine(std::move(*policy), fake.make(), rel);
         if (!engine) return executed;
 
-        run_case(*engine, request_context, *row, name);
+        run_case(*engine, request_context, fake, *row, name);
         ++executed;
     }
 

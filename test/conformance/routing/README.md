@@ -128,6 +128,11 @@ A failed service (a `null` answer) is what drives the `on_error` cases: the
 classifier reports failure and its leaf resolves by `on_error` (default
 `match_false`, or `match_true` when set).
 
+The fake backend is **strict**: a case must declare a stub answer for
+every backend call. A call with no stub answer triggers a failure. If a case
+needs a classifier to score below its threshold, an explicit answer is needed, for
+example `{"code": 0.0}`.
+
 Two things an author of an `embed` case must get right, or the recorded `score`
 will not match:
 
@@ -339,7 +344,7 @@ therefore reachable only for the `classifier` type and are locked there
 | an empty score map is a success ⇒ rule evaluation continues | `l3_classifier_on_error/empty-map-on-first-classifier-continues` |
 | all empty maps ⇒ every label 0 ⇒ default (`match_true` does not fire) | `l3_classifier_on_error/both-maps-empty-default` |
 | `all` — every child matches ⇒ fires | `l3_classifier_all_combinator/all-both-match-fires` |
-| `all` short-circuits false on the first missing child | `l3_classifier_all_combinator/all-one-child-below-defaults` |
+| `all` short-circuits false on the first below-threshold child | `l3_classifier_all_combinator/all-one-child-below-defaults` |
 | `all` — a `match_false` failed child ⇒ false, short-circuits | `l3_classifier_all_combinator/all-failed-match-false-child-defaults` |
 | `all` — a `match_true` failed child counts as true | `l3_classifier_all_combinator/all-failed-match-true-child-still-matches` |
 | `any` — a `match_true` failed child ⇒ true, short-circuits | `l3_classifier_combinator_match_true/any-with-failed-match-true-child-fires` |
