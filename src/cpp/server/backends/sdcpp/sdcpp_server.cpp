@@ -326,9 +326,16 @@ void SDServer::load(const std::string& model_name,
         if (resolved_backend == "rocm-stable") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
-                std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
+                std::vector<std::string> therock_dirs = BackendUtils::get_therock_lib_paths(rocm_arch);
+                std::string therock_bin = therock_dirs.empty() ? std::string() : therock_dirs.front();
                 if (!therock_bin.empty()) {
-                    new_path = therock_bin + ";" + new_path;
+                    // Prepend ALL runtime dirs so both the HIP DLLs
+                    // (_rocm_sdk_core/bin) and the BLAS DLLs
+                    // (_rocm_sdk_libraries/bin) resolve; a single-dir PATH makes
+                    // sd-server fail at load with STATUS_DLL_NOT_FOUND.
+                    for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
+                        new_path = *it + ";" + new_path;
+                    }
 
                     // Copy amdhip64_7.dll from TheRock to sd-server.exe directory to override System32 version.
                     // Windows DLL search order checks System32 BEFORE PATH, so PATH-only approach fails.
