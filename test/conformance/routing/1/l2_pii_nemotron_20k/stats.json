@@ -1,0 +1,176 @@
+{
+  "source": "nvidia/Nemotron-PII",
+  "split": "test",
+  "seed": 42,
+  "n_pii": 20000,
+  "n_benign": 1,
+  "n_pii_relabeled_benign_due_to_truncation": 0,
+  "total": 20001,
+  "privacy_model": "Qwen3.5-9B-NoThinking",
+  "cloud_model": "fireworks.kimi-k2p6",
+  "max_chars": 0,
+  "top_pii_types": [
+    [
+      "first_name",
+      9468
+    ],
+    [
+      "date",
+      8922
+    ],
+    [
+      "email",
+      8535
+    ],
+    [
+      "last_name",
+      7293
+    ],
+    [
+      "url",
+      6652
+    ],
+    [
+      "company_name",
+      5439
+    ],
+    [
+      "occupation",
+      4234
+    ],
+    [
+      "phone_number",
+      3957
+    ],
+    [
+      "customer_id",
+      3385
+    ],
+    [
+      "country",
+      3255
+    ],
+    [
+      "time",
+      3240
+    ],
+    [
+      "date_of_birth",
+      3230
+    ],
+    [
+      "street_address",
+      3019
+    ],
+    [
+      "account_number",
+      2826
+    ],
+    [
+      "state",
+      2680
+    ],
+    [
+      "city",
+      2579
+    ],
+    [
+      "credit_debit_card",
+      2267
+    ],
+    [
+      "user_name",
+      2214
+    ],
+    [
+      "medical_record_number",
+      2034
+    ],
+    [
+      "date_time",
+      2002
+    ]
+  ],
+  "top_domains": [
+    [
+      "User Account and Transaction Services",
+      775
+    ],
+    [
+      "Access Control Systems",
+      772
+    ],
+    [
+      "Human Resources",
+      764
+    ],
+    [
+      "Life",
+      757
+    ],
+    [
+      "Social Science",
+      754
+    ],
+    [
+      "Healthcare Providers",
+      752
+    ],
+    [
+      "Information Technology",
+      752
+    ],
+    [
+      "Banking",
+      743
+    ],
+    [
+      "Services",
+      737
+    ],
+    [
+      "Brokerage",
+      731
+    ],
+    [
+      "Health",
+      726
+    ],
+    [
+      "Marketing",
+      721
+    ],
+    [
+      "Disability",
+      717
+    ],
+    [
+      "Consulting",
+      713
+    ],
+    [
+      "Advertising",
+      692
+    ],
+    [
+      "Credit",
+      686
+    ],
+    [
+      "Travel",
+      678
+    ],
+    [
+      "Elections",
+      657
+    ],
+    [
+      "Mortgage",
+      656
+    ],
+    [
+      "Investment",
+      654
+    ]
+  ]
+}

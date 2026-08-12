@@ -2,9 +2,9 @@
   "version": "1",
   "model_name": "user.PII-Regex-Router",
   "recipe": "collection.router",
-  "components": ["fireworks.kimi-k2p6", "Qwen3.5-9B-NoThinking"],
+  "components": ["fireworks.kimi-k2p6", "Qwen3.5-0.8B-GGUF"],
   "routing": {
-    "candidates": ["Qwen3.5-9B-NoThinking", "fireworks.kimi-k2p6"],
+    "candidates": ["Qwen3.5-0.8B-GGUF", "fireworks.kimi-k2p6"],
     "default_model": "fireworks.kimi-k2p6",
     "rules": [
       {
@@ -24,7 +24,7 @@
             { "regex": "\\b(0[1-9]|1[0-2])[\\-\\/](0[1-9]|[12]\\d|3[01])[\\-\\/](19|20)\\d{2}\\b" }
           ]
         },
-        "route_to": "Qwen3.5-9B-NoThinking"
+        "route_to": "Qwen3.5-0.8B-GGUF"
       }
     ]
   }

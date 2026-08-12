@@ -7,9 +7,10 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
-        # Allow the vendored model-viewer bundle (see src/app/src/renderer/vendor/README.md),
-        # which is necessarily larger than 500 KB.
-        exclude: ^src/app/src/renderer/vendor/model-viewer\.min\.js$
+        # Allow the vendored model-viewer bundle (see src/app/src/renderer/vendor/README.md)
+        # and the PII routing eval fixtures (test/eval/build_nemotron_corpus.py), which are
+        # necessarily larger than 500 KB.
+        exclude: ^(src/app/src/renderer/vendor/model-viewer\.min\.js|test/conformance/routing/1/l2_pii_(embedding|nemotron|nemotron_20k)/cases\.jsonl)$
 
   - repo: https://github.com/psf/black
     rev: 26.1.0

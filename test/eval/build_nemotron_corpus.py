@@ -48,6 +48,14 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
+# Dataset-derived strings (domain names, doc types) can carry non-ASCII text
+# that Windows' default cp1252 console encoding can't represent, crashing
+# print() mid-run. Force UTF-8 with graceful fallback instead.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):
+    pass
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
@@ -96,8 +104,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--max-chars",
         type=int,
-        default=2000,
-        help="Truncate document text to this many characters",
+        default=0,
+        help="Truncate document text to this many characters (0 = no truncation, "
+        "the default). The router must see the full document since PII can "
+        "land anywhere in it; only set this if you have a specific reason to cap "
+        "prompt size.",
     )
     p.add_argument(
         "--streaming",
@@ -122,8 +133,11 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 
 def normalize_text(text: str, max_chars: int) -> str:
+    """Collapse whitespace. Does NOT truncate content unless max_chars > 0:
+    the router must see the full document, since PII can land anywhere in it
+    and a truncated prompt would silently drop entities from what's evaluated."""
     text = _WHITESPACE_RE.sub(" ", text).strip()
-    if len(text) > max_chars:
+    if max_chars > 0 and len(text) > max_chars:
         text = text[:max_chars].rsplit(" ", 1)[0] + " …"
     return text
 
@@ -147,7 +161,9 @@ def pii_types_from_spans(spans: list) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for span in spans:
-        label = span.get("label", "").strip()
+        if not isinstance(span, dict):
+            continue
+        label = str(span.get("label", "")).strip()
         if label and label not in seen:
             seen.add(label)
             result.append(label)
@@ -174,7 +190,13 @@ def wrap_in_message(text: str, rng: random.Random) -> dict:
     prefix = rng.choice(PROMPT_PREFIXES)
     content = prefix + text if prefix else text
     return {
-        "model": "user.PII-Regex-Router",
+        # pii_routing_eval.py's chat_completion() always overwrites this with
+        # whatever --policy's model_name actually is before sending the
+        # request, so the corpus is reusable across any policy. Left as an
+        # unambiguous placeholder (rather than a real collection name like
+        # "user.PII-Regex-Router") so nobody reading the raw fixture mistakes
+        # it for the value actually used at request time.
+        "model": "REPLACED_AT_EVAL_TIME",
         "messages": [{"role": "user", "content": content}],
     }
 
@@ -267,29 +289,81 @@ def build_corpus(args: argparse.Namespace) -> None:
     type_counter: Counter = Counter()
     domain_counter: Counter = Counter()
 
+    truncated_to_benign = 0
     for i, row in enumerate(selected_pii):
         text = normalize_text(row["text"], args.max_chars)
         spans = parse_spans(row.get("spans"))
-        types = pii_types_from_spans(spans)
+
+        # normalize_text() may truncate the document to --max-chars, but spans
+        # carry offsets into the *untruncated* original text. An entity whose
+        # offset falls past the cutoff (or whose surrounding whitespace was
+        # collapsed differently) never makes it into the prompt actually sent
+        # to the router, so labeling on the full-document spans would expect
+        # local routing for a document the router genuinely can't see any PII
+        # in. Only count spans whose literal text survived into the final
+        # prompt.
+        surviving_spans = [
+            s
+            for s in spans
+            if isinstance(s, dict)
+            and s.get("text") is not None
+            and str(s["text"]) in text
+        ]
+        types = pii_types_from_spans(surviving_spans)
         domain = row.get("domain", "unknown")
         doc_type = row.get("document_type", "unknown")
 
         type_counter.update(types)
         domain_counter[domain] += 1
 
-        case = {
-            "name": f"nemotron-pii-{i:05d}",
-            "pii_category": ",".join(types) if types else "unknown",
-            "note": f"Nemotron-PII {args.split} split. domain={domain} doc_type={doc_type} entities={len(spans)}",
-            "request": wrap_in_message(text, rng),
-            "decision": {
-                "version": "1",
-                "route_to": args.privacy_model,
-                "matched_rule": "pii-detected",
-                "default_used": False,
-                "outputs": {},
-            },
-        }
+        if not surviving_spans:
+            # With truncation on (--max-chars > 0), this usually means every
+            # entity fell past the cutoff. With truncation off (the default),
+            # it means whitespace normalization shifted an entity's exact
+            # substring (rare) rather than any content being dropped. Either
+            # way this document is now indistinguishable from a benign one, so
+            # label it as such rather than expecting local routing for text
+            # that contains no PII.
+            truncated_to_benign += 1
+            survival_note = (
+                f"all {len(spans)} truncated out of the {args.max_chars}-char prompt"
+                if args.max_chars > 0
+                else f"all {len(spans)} entities not found verbatim after whitespace normalization"
+            )
+            case = {
+                "name": f"nemotron-pii-{i:05d}",
+                "pii_category": "none",
+                "note": f"Nemotron-PII {args.split} split. domain={domain} doc_type={doc_type} "
+                f"entities={len(spans)} ({survival_note})",
+                "request": wrap_in_message(text, rng),
+                "decision": {
+                    "version": "1",
+                    "route_to": args.cloud_model,
+                    "matched_rule": "",
+                    "default_used": True,
+                    "outputs": {},
+                },
+            }
+        else:
+            survival_note = (
+                f"{len(surviving_spans)}/{len(spans)} survived truncation"
+                if args.max_chars > 0
+                else f"{len(surviving_spans)}/{len(spans)} matched verbatim in prompt"
+            )
+            case = {
+                "name": f"nemotron-pii-{i:05d}",
+                "pii_category": ",".join(types) if types else "unknown",
+                "note": f"Nemotron-PII {args.split} split. domain={domain} doc_type={doc_type} "
+                f"entities={survival_note}",
+                "request": wrap_in_message(text, rng),
+                "decision": {
+                    "version": "1",
+                    "route_to": args.privacy_model,
+                    "matched_rule": "pii-detected",
+                    "default_used": False,
+                    "outputs": {},
+                },
+            }
         cases.append(case)
 
     for i, row in enumerate(selected_benign):
@@ -330,6 +404,7 @@ def build_corpus(args: argparse.Namespace) -> None:
         "seed": args.seed,
         "n_pii": len(selected_pii),
         "n_benign": len(selected_benign),
+        "n_pii_relabeled_benign_due_to_truncation": truncated_to_benign,
         "total": len(cases),
         "privacy_model": args.privacy_model,
         "cloud_model": args.cloud_model,
@@ -344,6 +419,12 @@ def build_corpus(args: argparse.Namespace) -> None:
 
     print(f"\nWrote {len(cases):,} cases -> {cases_path}")
     print(f"Wrote stats        -> {stats_path}")
+    if truncated_to_benign:
+        print(
+            f"\n{truncated_to_benign} PII cases were relabeled as benign: "
+            f"truncation to --max-chars {args.max_chars} removed every PII "
+            f"entity from the prompt actually sent."
+        )
     print(f"\nTop PII types:")
     for label, count in type_counter.most_common(10):
         print(f"  {label:<35} {count:>5}")

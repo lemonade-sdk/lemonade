@@ -189,3 +189,6 @@ CLAUDE.local.md
 # WiX Toolset build artifacts
 *.msi
 *.wixpdb
+
+# PII routing eval run backups (pii_routing_eval.py --log-dir)
+test/conformance/routing/**/runs/

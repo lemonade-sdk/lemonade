@@ -4,14 +4,15 @@
   "seed": 42,
   "n_pii": 2500,
   "n_benign": 1,
+  "n_pii_relabeled_benign_due_to_truncation": 0,
   "total": 2501,
-  "privacy_model": "Qwen3.5-9B-NoThinking",
+  "privacy_model": "Qwen3.5-0.8B-GGUF",
   "cloud_model": "fireworks.kimi-k2p6",
-  "max_chars": 2000,
+  "max_chars": 0,
   "top_pii_types": [
     [
       "first_name",
-      1195
+      1194
     ],
     [
       "date",
@@ -19,7 +20,7 @@
     ],
     [
       "email",
-      929
+      924
     ],
     [
       "url",
@@ -27,7 +28,7 @@
     ],
     [
       "last_name",
-      890
+      889
     ],
     [
       "company_name",
@@ -35,7 +36,7 @@
     ],
     [
       "occupation",
-      587
+      574
     ],
     [
       "phone_number",
@@ -43,7 +44,7 @@
     ],
     [
       "time",
-      441
+      440
     ],
     [
       "street_address",
@@ -79,7 +80,7 @@
     ],
     [
       "county",
-      297
+      296
     ],
     [
       "medical_record_number",

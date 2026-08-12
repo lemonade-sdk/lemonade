@@ -1,0 +1,55 @@
+{
+  "version": "1",
+  "model_name": "user.PII-Embedding-Router",
+  "recipe": "collection.router",
+  "components": [
+    "fireworks.kimi-k2p6",
+    "Qwen3.5-9B-NoThinking",
+    "Qwen3-Embedding-4B-GGUF"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3.5-9B-NoThinking",
+      "fireworks.kimi-k2p6"
+    ],
+    "default_model": "fireworks.kimi-k2p6",
+    "classifiers": [
+      {
+        "id": "pii-embedding",
+        "type": "semantic_similarity",
+        "model": "Qwen3-Embedding-4B-GGUF",
+        "reference_phrases": {
+          "PII": [
+            "My social security number is 123-45-6789",
+            "Please wire the funds to my bank account number for payroll",
+            "Here is my email address and phone number for follow-up",
+            "This document lists an employee's salary and equity compensation",
+            "My date of birth is January 5th, 1990",
+            "This contains personally identifiable information that must stay private and never leave the local machine"
+          ],
+          "non-PII": [
+            "What is the capital of France",
+            "Can you help me write a Python function to sort a list",
+            "Explain how photosynthesis works",
+            "What's a good recipe for chocolate chip cookies",
+            "Summarize this public news article about renewable energy",
+            "What's the weather usually like in autumn"
+          ]
+        },
+        "default_label": "non-PII",
+        "on_error": "match_false"
+      }
+    ],
+    "rules": [
+      {
+        "id": "pii-detected",
+        "match": {
+          "classifier": "pii-embedding",
+          "label": "PII",
+          "min_score": 0.5
+        },
+        "route_to": "Qwen3.5-9B-NoThinking"
+      }
+    ]
+  }
+}

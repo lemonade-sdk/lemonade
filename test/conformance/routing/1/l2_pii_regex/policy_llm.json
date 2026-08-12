@@ -4,18 +4,18 @@
   "recipe": "collection.router",
   "components": [
     "fireworks.kimi-k2p6",
-    "Qwen3.5-9B-NoThinking"
+    "Qwen3.5-0.8B-GGUF"
   ],
   "routing": {
     "candidates": [
-      "Qwen3.5-9B-NoThinking",
+      "Qwen3.5-0.8B-GGUF",
       "fireworks.kimi-k2p6"
     ],
-    "default_model": "Qwen3.5-9B-NoThinking",
+    "default_model": "Qwen3.5-0.8B-GGUF",
     "router": {
       "type": "llm",
-      "model": "Qwen3.5-9B-NoThinking",
-      "prompt": "You are a routing assistant for an AI company. Your job is to choose which model should handle each request.\n\nUse Qwen3.5-9B-NoThinking (local, private) when:\n- The request contains personally identifiable information (PII), such as names with salaries, Social Security numbers (SSNs), bank account numbers, email addresses, compensation data, equity details, or dates of birth.\n- Data privacy is paramount — anything that should never leave the local machine.\n\nUse fireworks.kimi-k2p6 (cloud, powerful) for all other requests.\n\nIf the request is ambiguous, default to Qwen3.5-9B-NoThinking. When in doubt, prioritize privacy over capability."
+      "model": "Qwen3.5-0.8B-GGUF",
+      "prompt": "You are a routing assistant for an AI company. Your job is to choose which model should handle each request.\n\nUse Qwen3.5-0.8B-GGUF (local, private) when:\n- The request contains personally identifiable information (PII), such as names with salaries, Social Security numbers (SSNs), bank account numbers, email addresses, compensation data, equity details, or dates of birth.\n- Data privacy is paramount — anything that should never leave the local machine.\n\nUse fireworks.kimi-k2p6 (cloud, powerful) for all other requests.\n\nIf the request is ambiguous, default to Qwen3.5-0.8B-GGUF. When in doubt, prioritize privacy over capability."
     }
   }
 }
