@@ -29,7 +29,7 @@ const RECIPE_DISPLAY_NAMES = {
   'ryzenai-llm': 'Ryzen AI SW NPU',
   vllm: 'vLLM ROCm (experimental)',
   thenoise: 'thenoise',
-  ds4: 'DS4 DwarfStar (experimental)',
+  ds4: 'DwarfStar4 (experimental)',
   thinksound: 'ThinkSound',
   acestep: 'ACE-Step',
   onnxruntime: 'ONNX Runtime',
