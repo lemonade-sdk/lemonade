@@ -630,7 +630,8 @@
             "tool-calling",
             "vision",
             "reasoning",
-            "llamacpp"
+            "llamacpp",
+            "dflash"
         ],
         "size": 21.4
     },
