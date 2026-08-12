@@ -1242,14 +1242,31 @@ jobs:
             }
           }
 
+      # DEBUG (harkgill/debug-sd-no-teardown): on SD failure, preserve the box state
+      # (cache, DLLs, sd_server_stdout.log) and hold so it can be inspected via SSH/RDP.
+      - name: Hold environment on SD failure (DEBUG)
+        if: failure() && matrix.name == 'stable-diffusion'
+        shell: PowerShell
+        run: |
+          Write-Host "=== SD test FAILED - holding environment for debug (1h) ===" -ForegroundColor Yellow
+          Write-Host "sd-server output log:"
+          Write-Host "  C:\lemonade-ci\cache\stable-diffusion\bin\sd-cpp\rocm-stable\sd_server_stdout.log"
+          Get-ChildItem C:\lemonade-ci\cache\stable-diffusion\bin\sd-cpp\rocm-stable -ErrorAction SilentlyContinue | Format-Table -AutoSize
+          if (Test-Path "C:\lemonade-ci\cache\stable-diffusion\bin\sd-cpp\rocm-stable\sd_server_stdout.log") {
+            Write-Host "--- sd_server_stdout.log (tail) ---"
+            Get-Content "C:\lemonade-ci\cache\stable-diffusion\bin\sd-cpp\rocm-stable\sd_server_stdout.log" -Tail 60
+          }
+          Start-Sleep -Seconds 3600
+
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs
         with:
           artifact-name: server-logs-exe-${{ matrix.name }}
 
+      # DEBUG: skip teardown for the stable-diffusion job so the failed state persists.
       - name: Teardown Windows CI environment
-        if: always()
+        if: always() && matrix.name != 'stable-diffusion'
         uses: ./.github/actions/teardown-windows-ci-env
 
 

@@ -408,14 +408,35 @@ void SDServer::load(const std::string& model_name,
 
     std::string process_exe_path = exe_path;
     std::string working_dir;
+    std::vector<std::string> launch_args = args;
 #ifdef _WIN32
     process_exe_path = path_to_utf8(executable_path);
     working_dir = path_to_utf8(executable_path.parent_path());
+
+    // DEBUG (harkgill/debug-sd-no-teardown): capture sd-server's own stdout/stderr
+    // (which normally goes to inherited console handles and is lost) to a file, and
+    // force verbose HIP + kpack logging so we can diagnose the rocm launch failure.
+    if (is_rocm_backend(resolved_backend)) {
+        env_vars.push_back({"AMD_LOG_LEVEL", "4"});
+        env_vars.push_back({"ROCM_KPACK_DEBUG", "1"});
+
+        fs::path sd_log = executable_path.parent_path() / "sd_server_stdout.log";
+        std::string joined_args;
+        for (const auto& a : args) {
+            joined_args += " \"" + a + "\"";
+        }
+        std::string redirect_cmd = "\"" + process_exe_path + "\"" + joined_args +
+                                   " > \"" + path_to_utf8(sd_log) + "\" 2>&1";
+        LOG(INFO, "SDServer") << "DEBUG: launching sd-server via cmd, output -> "
+                              << path_to_utf8(sd_log) << std::endl;
+        process_exe_path = "cmd.exe";
+        launch_args = {"/c", redirect_cmd};
+    }
 #endif
 
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         process_exe_path,
-        args,
+        launch_args,
         working_dir,
         is_debug(),  // inherit_output
         false,  // filter_health_logs
