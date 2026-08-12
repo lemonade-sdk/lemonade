@@ -256,7 +256,9 @@ void SDServer::load(const std::string& model_name,
         args.push_back(vae_path);
     }
 
-    if (is_debug()) {
+    if (is_debug() || is_rocm_backend(resolved_backend)) {
+        // Force verbose for rocm (NOT for merge) so the captured output has detail
+        // when diagnosing the Windows launch failure.
         args.push_back("-v");
     }
 
@@ -415,38 +417,29 @@ void SDServer::load(const std::string& model_name,
 
     std::string process_exe_path = exe_path;
     std::string working_dir;
-    std::vector<std::string> launch_args = args;
 #ifdef _WIN32
     process_exe_path = path_to_utf8(executable_path);
     working_dir = path_to_utf8(executable_path.parent_path());
+#endif
 
-    // DEBUG (harkgill/debug-sd-no-teardown): capture sd-server's own stdout/stderr
-    // (which normally goes to inherited console handles and is lost) to a file, and
-    // force verbose HIP + kpack logging so we can diagnose the rocm launch failure.
+    // DEBUG (harkgill/debug-sd-no-teardown, NOT for merge): force verbose HIP + kpack
+    // logging and ALWAYS capture sd-server's stdout/stderr into the lemonade server
+    // log so a failed rocm launch is diagnosable in CI. inherit_output=true +
+    // filter_health_logs=true routes the child output through ProcessManager's pipe
+    // -> LOG("Process"), which lands in the server log file (and CI artifacts)
+    // instead of a lost inherited console handle. The old cmd.exe /c "> file" redirect
+    // was broken by Windows quote-stripping (sd-server never launched); this replaces it.
     if (is_rocm_backend(resolved_backend)) {
         env_vars.push_back({"AMD_LOG_LEVEL", "4"});
         env_vars.push_back({"ROCM_KPACK_DEBUG", "1"});
-
-        fs::path sd_log = executable_path.parent_path() / "sd_server_stdout.log";
-        std::string joined_args;
-        for (const auto& a : args) {
-            joined_args += " \"" + a + "\"";
-        }
-        std::string redirect_cmd = "\"" + process_exe_path + "\"" + joined_args +
-                                   " > \"" + path_to_utf8(sd_log) + "\" 2>&1";
-        LOG(INFO, "SDServer") << "DEBUG: launching sd-server via cmd, output -> "
-                              << path_to_utf8(sd_log) << std::endl;
-        process_exe_path = "cmd.exe";
-        launch_args = {"/c", redirect_cmd};
     }
-#endif
 
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         process_exe_path,
-        launch_args,
+        args,
         working_dir,
-        is_debug(),  // inherit_output
-        false,  // filter_health_logs
+        true,  // inherit_output: always capture for diagnosis
+        true,  // filter_health_logs -> pipe-capture into the server log
         env_vars
     );
     set_process_handle(started_handle);
