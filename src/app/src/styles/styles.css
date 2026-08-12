@@ -1725,6 +1725,54 @@ input[type="checkbox"]:disabled {
   background: var(--surface-raised);
 }
 
+.composer__entry--with-settings {
+  max-width: var(--max-content-width);
+  margin: 0 auto;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+}
+
+[data-theme="light"] .composer__entry--with-settings {
+  background: var(--surface-raised);
+}
+
+.composer__entry--with-settings:focus-within {
+  border-color: var(--accent-fg);
+  background: var(--surface-2);
+}
+
+[data-theme="light"] .composer__entry--with-settings:focus-within {
+  background: var(--surface-raised);
+}
+
+.composer__entry--with-settings > .composer__image-settings,
+.composer__entry--with-settings > .composer__capability-settings {
+  max-width: none;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.composer__entry--with-settings > .composer__bar {
+  max-width: none;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+}
+
+.composer__entry--with-settings > .composer__bar:focus-within,
+[data-theme="light"] .composer__entry--with-settings > .composer__bar,
+[data-theme="light"] .composer__entry--with-settings > .composer__bar:focus-within {
+  background: transparent;
+}
+
 .composer__input {
   flex: 1;
   resize: none;

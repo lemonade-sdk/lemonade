@@ -3107,6 +3107,11 @@ ${finalText}`
             : currentCapability === 'tts'
               ? (isOpenMossCloneMode ? 'Type text to speak, then attach a WAV voice sample…' : `Text to speak with ${currentModel}…`)
               : `Message ${currentModel}…`;
+  const hasComposerSettings = currentCapability === 'image'
+    || currentCapability === 'audio-generation'
+    || currentCapability === 'model3d'
+    || (currentCapability === 'tts' && isOpenMossTts);
+
   const composerHint = modelPreparation
     ? (modelPreparation.phase === 'loading'
       ? `Loading ${modelPreparation.modelName} for chat…`
@@ -3575,6 +3580,7 @@ ${finalText}`
             {streamingToolStatus}
           </div>
         )}
+        <div className={`composer__entry${hasComposerSettings ? ' composer__entry--with-settings' : ''}`}>
         {currentCapability === 'image' && (
           <div className="composer__image-settings" aria-label="Image generation settings">
             <label className="composer__image-setting composer__image-setting--mode">
@@ -4133,6 +4139,7 @@ ${finalText}`
               aria-label="Send"
             ><Icon name="send" size={16} /></button>
           )}
+        </div>
         </div>
         <div className="composer__hint">{composerHint}</div>
       </div>
