@@ -723,9 +723,20 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 return;
             }
 
-            // 200 OK: if streaming_mode is true we've already flushed everything.
+            // 200 OK: if streaming_mode is true we've already flushed complete
+            // lines. Still flush any trailing partial SSE line (providers may
+            // omit the final newline, including on `data: [DONE]`), then emit a
+            // synthetic DONE only if the marker never appeared.
             // If we somehow buffered on a 200 (provider sent non-SSE success),
             // flush the buffer now so the client at least sees the payload.
+            if (streaming_mode) {
+                StreamingProxy::flush_sse_line_buffer(sse_line_buffer, [&](const std::string& line) {
+                    process_cloud_line(line);
+                    std::string out = rewrite_sse_model_line(line, public_model);
+                    out.push_back('\n');
+                    sink.write(out.data(), out.size());
+                });
+            }
             if (!body_buffer.empty()) {
                 sink.write(body_buffer.data(), body_buffer.size());
             }
