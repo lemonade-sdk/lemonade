@@ -633,7 +633,7 @@
             "llamacpp",
             "dflash"
         ],
-        "size": 21.4
+        "size": 19.9
     },
     "MiniCPM-o-4.5-Vision-GGUF": {
         "source": "modelscope",
