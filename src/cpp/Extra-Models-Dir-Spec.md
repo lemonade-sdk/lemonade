@@ -20,6 +20,12 @@ The `--extra-models-dir PATH` argument specifies a secondary directory to scan f
 2. Discovered models are added to the model list alongside registered models from `server_models.json` and `user_models.json`.
 3. HuggingFace cache remains the primary source for registered models.
 
+### Access and Failure Behavior
+
+When `extra_models_dir` is updated at runtime, an existing path must be a directory that the `lemond` process can enumerate. Permission and I/O failures reject the config update. A path that does not exist yet is accepted so the directory watcher can observe it if it is created later.
+
+During discovery, inaccessible nested directories are skipped. Extra-model discovery is optional: a filesystem failure must not remove or hide models from `server_models.json` or `user_models.json`.
+
 ### Naming Convention
 
 All discovered models are prefixed with `extra.` to prevent naming conflicts with registered models (similar to how user-added models are prefixed with `user.`):
