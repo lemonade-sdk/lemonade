@@ -119,6 +119,11 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     else setProviders([]);
   }, [isActive, status, loadCloudProviders]);
 
+  useEffect(() => {
+    setDirectoryNotice(null);
+    setDirectoryError(null);
+  }, [isActive, activeSection]);
+
   const handleConnect = async () => {
     setConnecting(true);
     setError(null);
@@ -262,6 +267,12 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     }
   };
 
+  const handleDirectoryChange = (key: 'modelsDir' | 'extraModelsDir', value: string) => {
+    setDirectories(prev => ({ ...prev, [key]: value }));
+    setDirectoryNotice(null);
+    setDirectoryError(null);
+  };
+
   const handleSaveDirectories = async () => {
     setSavingDirectories(true);
     setDirectoryError(null);
@@ -270,7 +281,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
       const saved = await api.saveDirectorySettings(directories.modelsDir, directories.extraModelsDir);
       setDirectories(saved);
       setDirectoryNotice(saved.canPersist
-        ? 'Directory settings saved. Restart or rescan the Lemonade server for model discovery changes to take effect.'
+        ? 'Directory settings saved.'
         : 'This runtime cannot persist directory settings; use the desktop app host bridge or start lemond with --extra-models-dir.');
     } catch (err) {
       setDirectoryError(friendlyErrorMessage(err));
@@ -420,10 +431,10 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
           <p className="connect__hint">Keep the normal Lemonade model cache separate from an external GGUF directory scanned as extra custom models.</p>
           <div className="connect__directory-grid">
             <label className="form-field"><span className="form-field__label">Models directory</span>
-              <input className="input" value={directories.modelsDir} onChange={e => setDirectories(prev => ({ ...prev, modelsDir: e.target.value }))} placeholder="Default Lemonade model cache" />
+              <input className="input" value={directories.modelsDir} onChange={e => handleDirectoryChange('modelsDir', e.target.value)} placeholder="Default Lemonade model cache" />
             </label>
             <label className="form-field"><span className="form-field__label">External custom models directory</span>
-              <input className="input" value={directories.extraModelsDir} onChange={e => setDirectories(prev => ({ ...prev, extraModelsDir: e.target.value }))} placeholder="/path/to/llama.cpp/models" />
+              <input className="input" value={directories.extraModelsDir} onChange={e => handleDirectoryChange('extraModelsDir', e.target.value)} placeholder="/path/to/llama.cpp/models" />
             </label>
           </div>
           <WorkspaceActionGroup className="connect__actions" label="Directory actions">

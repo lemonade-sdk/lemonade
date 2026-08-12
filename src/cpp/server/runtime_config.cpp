@@ -53,6 +53,48 @@ static bool has_backend_selection(const std::string& config_section) {
     return false;
 }
 
+static void validate_extra_models_dir_access(const std::string& raw_dir) {
+    if (raw_dir.empty()) {
+        return;
+    }
+
+    const fs::path dir = utils::path_from_utf8(raw_dir);
+    std::error_code status_ec;
+    const fs::file_status status = fs::status(dir, status_ec);
+
+    // Keep the existing runtime semantics for paths that do not exist yet:
+    // DirectoryWatcher may observe the directory if it is created shortly after
+    // configuration. Permission and I/O failures, however, must not be accepted
+    // as a successful config update.
+    if (status_ec) {
+        if (status_ec == std::errc::no_such_file_or_directory) {
+            return;
+        }
+        throw std::invalid_argument(
+            "'extra_models_dir' is not accessible by the Lemonade server: " +
+            raw_dir + " (" + status_ec.message() + ")");
+    }
+    if (!fs::exists(status)) {
+        return;
+    }
+    if (!fs::is_directory(status)) {
+        throw std::invalid_argument(
+            "'extra_models_dir' must reference a directory: " + raw_dir);
+    }
+
+    // status() can succeed when the process can traverse the path but cannot
+    // enumerate the directory. Probe enumeration so the GUI can report a
+    // permission error before RuntimeConfig::set applies either directory key.
+    std::error_code read_ec;
+    fs::directory_iterator probe(dir, read_ec);
+    (void)probe;
+    if (read_ec) {
+        throw std::invalid_argument(
+            "'extra_models_dir' is not readable by the Lemonade server: " +
+            raw_dir + " (" + read_ec.message() + ")");
+    }
+}
+
 static std::pair<json, std::string> normalize_config_set_changes(const json& changes) {
     json normalized = changes;
     std::string message;
@@ -540,6 +582,9 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
     } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + key + "' must be a string");
+        }
+        if (key == "extra_models_dir") {
+            validate_extra_models_dir_access(value.get<std::string>());
         }
     } else if (key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||

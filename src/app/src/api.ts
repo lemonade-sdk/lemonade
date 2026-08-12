@@ -711,21 +711,6 @@ function mergeConnectionSettings(settings: unknown, baseUrl: string, apiKey: str
   };
 }
 
-function mergeDirectorySettings(settings: unknown, modelsDir: string, extraModelsDir: string): Record<string, unknown> {
-  const current = isObject(settings) ? { ...settings } : {};
-  const modelsDirSetting = typedStringSetting(modelsDir);
-  const extraModelsDirSetting = typedStringSetting(extraModelsDir);
-  return {
-    ...current,
-    // Keep both camelCase and snake_case keys so the redesign can interoperate
-    // with host settings bridges while the server-side naming settles.
-    modelsDir: modelsDirSetting,
-    models_dir: modelsDirSetting,
-    extraModelsDir: extraModelsDirSetting,
-    extra_models_dir: extraModelsDirSetting,
-  };
-}
-
 function normalizeCloudProviderRow(value: unknown): CloudProviderRow | null {
   if (!isObject(value)) return null;
   const name = String(value.name || '').trim();
@@ -924,25 +909,24 @@ class LemonadeAPI {
   }
 
   async loadDirectorySettings(): Promise<DirectorySettings> {
-    const hostApi = await waitForHostSettingsApi();
-    if (!hostApi?.getSettings || !hostApi?.saveSettings) {
-      return { modelsDir: '', extraModelsDir: '', canPersist: false };
-    }
-    const settings = await hostApi.getSettings();
+    const config = await this.getRuntimeConfig();
+    const configuredModelsDir = typeof config.models_dir === 'string' ? config.models_dir : '';
     return {
-      modelsDir: typedSettingString(settings, 'modelsDir') || typedSettingString(settings, 'models_dir'),
-      extraModelsDir: typedSettingString(settings, 'extraModelsDir') || typedSettingString(settings, 'extra_models_dir'),
+      modelsDir: configuredModelsDir === 'auto' ? '' : configuredModelsDir,
+      extraModelsDir: typeof config.extra_models_dir === 'string' ? config.extra_models_dir : '',
       canPersist: true,
     };
   }
 
   async saveDirectorySettings(modelsDir: string, extraModelsDir: string): Promise<DirectorySettings> {
-    const hostApi = await waitForHostSettingsApi();
-    if (!hostApi?.getSettings || !hostApi?.saveSettings) {
-      return { modelsDir, extraModelsDir, canPersist: false };
-    }
-    const currentSettings = await hostApi.getSettings();
-    await hostApi.saveSettings(mergeDirectorySettings(currentSettings, modelsDir, extraModelsDir));
+    await this._json('/internal/set', {
+      method: 'POST',
+      body: {
+        models_dir: modelsDir.trim() ? modelsDir : 'auto',
+        extra_models_dir: extraModelsDir.trim() ? extraModelsDir : '',
+      },
+    });
+    await this.refresh();
     return { modelsDir, extraModelsDir, canPersist: true };
   }
 
