@@ -670,6 +670,14 @@ test.describe('Lemonade UI — Feature Parity', () => {
           labels: ['transcription'],
           recipe: 'whispercpp',
           downloaded: true,
+        }, {
+          id: 'unknown-context-model',
+          name: 'unknown-context-model',
+          display_name: 'Unknown Context Model',
+          registry_source: 'huggingface',
+          recipe: 'llamacpp',
+          downloaded: true,
+          max_context_window: 32768,
         }],
       }),
     }));
@@ -683,8 +691,16 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const panel = page.locator('#detail-panel-config');
     await expect(panel).toBeVisible();
     await expect(panel.getByRole('heading', { name: 'Load settings' })).toBeVisible();
+    await expect(panel.getByText('Saved defaults', { exact: true })).toHaveCount(0);
     const autoTune = panel.getByRole('checkbox', { name: 'Auto tune context size' });
+    const autoTuneControl = panel.locator('.detail-configuration__autotune');
     await expect(autoTune).toBeChecked();
+    await expect(autoTuneControl).toHaveAttribute(
+      'title',
+      'Lemonade estimates the context size from available memory when the model loads. Uncheck to use a fixed value.',
+    );
+    await expect(panel.getByText('Estimated at load time', { exact: true })).toHaveCount(0);
+    await expect(panel.getByText(/Estimates a safe context size from available memory/)).toHaveCount(0);
     await expect(panel.getByLabel('Context size tokens')).toHaveCount(0);
     await expect(panel.locator('.detail-configuration__slider-row')).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Load model' })).toHaveCount(0);
@@ -692,16 +708,23 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(loadButton).toBeVisible();
     await expect(page.getByText('Configure…', { exact: true })).toHaveCount(0);
 
-    const saveDefaults = panel.getByRole('button', { name: 'Save defaults' });
-    await expect(saveDefaults).toHaveClass(/btn--ghost/);
+    const save = panel.getByRole('button', { name: 'Save', exact: true });
+    await expect(save).toHaveClass(/btn--ghost/);
     await autoTune.uncheck();
     await expect(panel.getByLabel('Context size tokens')).toBeVisible();
     await expect(panel.locator('.detail-configuration__slider-row')).toBeVisible();
-    await expect(saveDefaults).toHaveClass(/btn--primary/);
+    await expect(autoTuneControl).toHaveAttribute('title', /Context size is fixed at .* tokens.*Check Auto tune context size/);
+    await expect(save).toHaveClass(/btn--primary/);
+    await save.click();
+    await expect(save).toHaveClass(/btn--ghost/);
+    await expect(panel.locator('.detail-tuning__notice')).toHaveText('Saved for future loads');
     await autoTune.check();
+    await expect(panel.locator('.detail-tuning__notice')).toHaveCount(0);
     await expect(panel.getByLabel('Context size tokens')).toHaveCount(0);
     await expect(panel.locator('.detail-configuration__slider-row')).toHaveCount(0);
-    await expect(saveDefaults).toHaveClass(/btn--ghost/);
+    await expect(save).toHaveClass(/btn--primary/);
+    await save.click();
+    await expect(save).toHaveClass(/btn--ghost/);
     await expect(panel.locator('[id$="llamacpp_backend"]')).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Reset' })).toBeVisible();
 
@@ -719,8 +742,18 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(speechPanel.getByRole('checkbox', { name: 'Auto tune context size' })).toHaveCount(0);
     await expect(speechPanel.getByLabel('Context size tokens')).toHaveCount(0);
 
-    await page.locator('.model-list-item').filter({ hasText: 'Config Beta Model' }).click();
-    await page.getByRole('button', { name: 'Load config-beta-model' }).click();
+    await page.locator('.model-list-item').filter({ hasText: 'Unknown Context Model' }).click();
+    await page.getByRole('tab', { name: 'Configuration' }).click();
+    const unknownPanel = page.locator('#detail-panel-config');
+    const unknownAutoTune = unknownPanel.getByRole('checkbox', { name: 'Auto tune context size' });
+    await expect(unknownAutoTune).toBeChecked();
+    await unknownAutoTune.uncheck();
+    await expect(unknownPanel.getByLabel('Context size tokens')).toBeVisible();
+    await expect(unknownPanel.locator('.detail-configuration__slider-row')).toBeVisible();
+    await unknownAutoTune.check();
+
+    await page.getByRole('button', { name: 'Load unknown-context-model' }).click();
+    await expect.poll(() => loadRequestBody?.model_name).toBe('unknown-context-model');
     await expect.poll(() => loadRequestBody?.ctx_size).toBe(-1);
   });
 
@@ -1373,7 +1406,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('[id$="llamacpp_backend"]')).toBeVisible();
 
     await page.getByLabel('Context size tokens').fill('16384');
-    await page.getByRole('button', { name: 'Save defaults' }).click();
+    await page.getByRole('button', { name: 'Save' }).click();
 
     const saved = await page.evaluate(({ model }) => {
       for (const key of Object.keys(localStorage)) {
@@ -1425,9 +1458,9 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel).toBeVisible();
 
     // Save — notice must appear and stay visible
-    await panel.getByRole('button', { name: 'Save defaults' }).click();
+    await panel.getByRole('button', { name: 'Save' }).click();
     await expect(panel.locator('.detail-tuning__notice')).toBeVisible();
-    await expect(panel.locator('.detail-tuning__notice')).toContainText('Defaults saved for future loads.');
+    await expect(panel.locator('.detail-tuning__notice')).toContainText('Saved for future loads');
 
     // Switch to model B — stale notice must be gone
     await page.locator('.model-list-item').filter({ hasText: modelB }).click();

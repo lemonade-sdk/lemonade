@@ -8598,6 +8598,7 @@ optgroup {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
+  translate: 0 6px;
 }
 
 .detail-configuration__slider-row span,

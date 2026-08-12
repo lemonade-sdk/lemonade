@@ -12,7 +12,7 @@ import api from '../api';
 import { capabilityFromModelInfo, capabilityLabel } from '../modelCapabilities';
 import {
   modelBaseTuningForModel, loadModelTuning, saveModelTuning, resetModelTuning,
-  sanitizeRecipeOptions,
+  modelSupportsContextSize, sanitizeRecipeOptions,
   type RecipeOptions,
 } from '../modelConfiguration';
 import { Icon, CapabilityIcon } from './Icon';
@@ -1006,7 +1006,6 @@ const ModelConfigurationTab: React.FC<{
   onDirtyChange?: (dirty: boolean) => void;
 }> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onReloadModel, onDirtyChange }) => {
   const name = mdName(model);
-  const supportsContextSize = capabilityFromModelInfo(model) === 'chat';
   const [notice, setNotice] = useState<string | null>(null);
   const [isReloading, setIsReloading] = useState(false);
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
@@ -1027,6 +1026,7 @@ const ModelConfigurationTab: React.FC<{
     () => modelBaseTuningForModel(model, serverDefaultCtxSize),
     [model, serverDefaultCtxSize],
   );
+  const supportsContextSize = modelSupportsContextSize(model);
   const recipeKeys = useMemo(() => tuningKeysForModel(model), [model]);
   const knownVoiceOptions = useMemo(() => knownVoiceOptionsForModel(model), [model]);
   const knownVoiceIds = useMemo(() => new Set(knownVoiceOptions.map(option => option.id.toLowerCase())), [knownVoiceOptions]);
@@ -1070,6 +1070,10 @@ const ModelConfigurationTab: React.FC<{
     onDirtyChange?.(hasLoadSettingChanges);
   }, [hasLoadSettingChanges, onDirtyChange]);
 
+  useEffect(() => {
+    if (hasLoadSettingChanges && notice === 'Saved for future loads') setNotice(null);
+  }, [hasLoadSettingChanges, notice]);
+
   const ctxSizeId = `config-${name}-ctx_size`.replace(/[^a-zA-Z0-9_-]/g, '-');
   const ctxSliderId = `${ctxSizeId}-slider`;
   const info = systemInfo || {};
@@ -1086,6 +1090,9 @@ const ModelConfigurationTab: React.FC<{
     ?? 4096;
   const isAutoTuning = ctxSizeDraft === '-1';
   const currentCtxSize = positiveCtxValue(ctxSizeDraft) ?? baseCtxSize;
+  const autoTuneTooltip = isAutoTuning
+    ? 'Lemonade estimates the context size from available memory when the model loads. Uncheck to use a fixed value.'
+    : `Context size is fixed at ${currentCtxSize.toLocaleString()} tokens. Check Auto tune context size to let Lemonade estimate it from available memory at load time.`;
   const ctxMax = Math.max(
     ctxMin,
     currentCtxSize,
@@ -1128,7 +1135,7 @@ const ModelConfigurationTab: React.FC<{
       recipe_options: buildConfigOptions(),
       sampling: existingTuning?.sampling || {},
     });
-    if (showNotice) setNotice('Defaults saved for future loads.');
+    if (showNotice) setNotice('Saved for future loads');
   };
 
   const resetConfig = () => {
@@ -1359,9 +1366,9 @@ const ModelConfigurationTab: React.FC<{
               Settings used when this model loads or reloads.
             </p>
           </div>
-          <span className={`detail-configuration__status ${loadedModel ? 'is-loaded' : ''}`}>
-            {loadedModel ? 'Loaded now' : 'Saved defaults'}
-          </span>
+          {loadedModel && (
+            <span className="detail-configuration__status is-loaded">Loaded now</span>
+          )}
         </div>
 
         <div className="detail-configuration__load-controls">
@@ -1406,20 +1413,16 @@ const ModelConfigurationTab: React.FC<{
               </div>
               <label
                 className="detail-configuration__autotune"
-                title="Lemonade estimates a context size from available memory at load time. The result can differ if other models are loaded or memory use changes."
+                title={autoTuneTooltip}
               >
                 <input
                   type="checkbox"
                   checked={isAutoTuning}
                   onChange={e => setCtxSizeDraft(e.target.checked ? '-1' : String(currentCtxSize))}
-                  aria-describedby={`${ctxSizeId}-autotune-help`}
                 />
                 <span>Auto tune context size</span>
                 <Icon name="info" size={14} aria-hidden="true" />
               </label>
-              <small id={`${ctxSizeId}-autotune-help`} className="detail-configuration__autotune-help">
-                Estimates a safe context size from available memory when the model loads. Turn it off to choose a fixed value.
-              </small>
               {!isAutoTuning && (
                 <div className="detail-configuration__slider-row">
                   <span>{formatContextSize(ctxMin)}</span>
@@ -1436,7 +1439,6 @@ const ModelConfigurationTab: React.FC<{
                   <span>{formatContextSize(ctxMax)}</span>
                 </div>
               )}
-              <small>{isAutoTuning ? 'Estimated at load time' : `${currentCtxSize.toLocaleString()} tokens`}</small>
             </div>
           )}
 
@@ -1471,7 +1473,7 @@ const ModelConfigurationTab: React.FC<{
               <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading\u2026' : 'Reload model'}
             </button>
           )}
-          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()}>Save defaults</button>
+          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()}>Save</button>
           {hasLoadSettingChanges && (
             <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>Discard changes</button>
           )}
