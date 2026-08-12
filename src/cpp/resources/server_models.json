@@ -617,6 +617,23 @@
         ],
         "size": 3.15
     },
+    "Muse-Glimmer-30B-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/Muse-Glimmer-30B-GGUF:UD-Q4_K_XL",
+            "draft": "unsloth/Muse-Glimmer-30B-GGUF:dflash-kquant.gguf",
+            "mmproj": "unsloth/Muse-Glimmer-30B-GGUF:mmproj-Muse-Glimmer-30B-BF16.gguf"
+        },
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "hot",
+            "tool-calling",
+            "vision",
+            "reasoning",
+            "llamacpp"
+        ],
+        "size": 21.4
+    },
     "MiniCPM-o-4.5-Vision-GGUF": {
         "source": "modelscope",
         "checkpoint": "OpenBMB/MiniCPM-o-4_5-gguf:MiniCPM-o-4_5-Q4_K_M.gguf",
