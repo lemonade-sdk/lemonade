@@ -54,12 +54,10 @@ higher than the count of semantics.
   l1_conditions_features/     # boolean request-feature ops: has_tools / has_images
   l1_conditions_features_negated/  # authored has_tools:false — equality, matches when absent
   l1_conditions_metadata/     # metadata equals / any / exists / token-set semantics
-  l1_conditions_regex_dialect/  # regex dialect lock: ECMAScript \d digit class (not a literal d)
-  l1_conditions_vocab/        # keyword / regex ops + any / all / not / implicit-all
+  l1_conditions_vocab/        # keyword / regex ops (incl. ECMAScript \d dialect lock) + any / all / not / implicit-all
   l1_input_forms/             # routing-input extraction: latest user turn, and messages > prompt > input
   l1_leaf_order/              # multi-key leaf: children run in op-name order and short-circuit there
-  l1_outputs/                 # matched rule's nested outputs bag copied verbatim into Decision
-  l1_resolution/              # rule-list resolution: first-match-wins, fail-open default, explicit route to default
+  l1_resolution/              # rule-list resolution: first-match-wins, fail-open default, explicit route to default, matched rule's outputs bag copied verbatim
   l1_trace/                   # route_trace=true: per-leaf trace, accumulation, short-circuit, default
   l2_semantic_concepts/       # semantic_similarity: each label reads its own concept's score; first-match over rules
   l2_semantic_implicit_label/ # omitted label => classifier's default_label concept score (never the max concept, never primary())
@@ -209,8 +207,8 @@ path is unreachable: a leaf that omits `label` resolves through `default_label`.
 | `regex` — pattern searched for anywhere in the input, not matched against all of it | `l1_conditions_vocab/regex-matches-substring` |
 | `regex` — non-matching input ⇒ no match | `l1_conditions_vocab/regex-no-match` |
 | `regex` — case-sensitive (uppercase input misses lowercase pattern) | `l1_conditions_vocab/regex-case-sensitive-no-match` |
-| `regex` — ECMAScript dialect: `\d` is the digit class (matches a digit) | `l1_conditions_regex_dialect/ecmascript-digit-class-matches` |
-| `regex` — ECMAScript `\d` is not a literal `d` ⇒ `id-draft` misses | `l1_conditions_regex_dialect/ecmascript-digit-class-not-literal-d` |
+| `regex` — ECMAScript dialect: `\d` is the digit class (matches a digit) | `l1_conditions_vocab/ecmascript-digit-class-matches` |
+| `regex` — ECMAScript `\d` is not a literal `d` ⇒ `id-draft` misses | `l1_conditions_vocab/ecmascript-digit-class-not-literal-d` |
 | `any` — matches if at least one child matches | `l1_conditions_vocab/any-one-child-matches` |
 | `any` — no child matches ⇒ no match | `l1_conditions_vocab/any-no-child-matches` |
 | `all` — matches only if every child matches | `l1_conditions_vocab/all-both-children-match` |
@@ -247,7 +245,7 @@ path is unreachable: a leaf that omits `label` resolves through `default_label`.
 | `metadata` — whitespace-only value counts as absent | `l1_conditions_metadata/metadata-whitespace-counts-absent` |
 | `metadata` `any` — comma-separated value, one token listed | `l1_conditions_metadata/metadata-any-comma-separated` |
 | `metadata` — a non-string value is dropped, so it counts as absent (the request schema allows strings only; this locks the defensive handling) | `l1_conditions_metadata/metadata-non-string-value-dropped` |
-| matched rule's non-empty nested `outputs` copied verbatim into `Decision` | `l1_outputs/nested-outputs-verbatim` |
+| matched rule's non-empty nested `outputs` copied verbatim into `Decision` | `l1_resolution/nested-outputs-verbatim` |
 | first-match-wins (earlier rule beats a later match) | `l1_resolution/first-match-wins` |
 | later rule fires when earlier misses | `l1_resolution/later-rule-when-earlier-misses` |
 | fail-open to `default_model` | `l1_resolution/fail-open-to-default` |
@@ -280,11 +278,11 @@ The one trace-emitting family not in the table above is the classifier band
 (`classifier:<id>`); it is model-backed and is locked by the `l0a` tier above
 and the `l2` / `l3` tiers below.
 
-The regex **dialect** is locked by `l1_conditions_regex_dialect` (in the table
-above). Most regex cases use grammar-neutral syntax (`[0-9]`) that every dialect
-shares, but that group uses the ECMAScript-only `\d` digit class: `\d` matches a
-digit and not a literal `d`, so the cases would break if the engine's
-`std::regex::ECMAScript` grammar changed.
+The regex **dialect** is locked by the `digit-class-rule` cases in
+`l1_conditions_vocab` (in the table above). Most regex cases use grammar-neutral
+syntax (`[0-9]`) that every dialect shares, but those two cases use the
+ECMAScript-only `\d` digit class: `\d` matches a digit and not a literal `d`, so
+the cases would break if the engine's `std::regex::ECMAScript` grammar changed.
 
 ### L2 — `semantic_similarity` (embeddings + cosine)
 
