@@ -3733,6 +3733,51 @@ double LinuxSystemInfo::get_amd_vram(const std::string& drm_render_minor) {
     return parse_memory_sysfs(drm_render_minor, "mem_info_vram_total");
 }
 
+double LinuxSystemInfo::get_igpu_carveout_gb() {
+    // An integrated GPU's "VRAM" is system DRAM the firmware reserved before the
+    // kernel booted, so it never appears in MemTotal. Discrete VRAM is separate
+    // silicon and must not be counted here.
+    std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
+    if (!fs::exists(kfd_path) || !fs::is_directory(kfd_path)) {
+        return 0.0;
+    }
+
+    double carveout_gb = 0.0;
+    std::error_code ec;
+    for (const auto& node_entry : fs::directory_iterator(kfd_path, ec)) {
+        if (!node_entry.is_directory()) continue;
+
+        std::ifstream props(node_entry.path().string() + "/properties");
+        if (!props.is_open()) continue;
+
+        std::string line;
+        std::string drm_render_minor;
+        bool is_gpu = false;
+
+        while (std::getline(props, line)) {
+            if (line.find("gfx_target_version") == 0) {
+                std::string version = line.substr(line.find(" ") + 1);
+                version.erase(version.find_last_not_of(" \t\n\r") + 1);
+                try {
+                    is_gpu = !version.empty() && std::stoi(version) != 0;
+                } catch (...) {
+                    is_gpu = false;
+                }
+            } else if (line.find("drm_render_minor") == 0) {
+                drm_render_minor = line.substr(line.find(" ") + 1);
+                drm_render_minor.erase(drm_render_minor.find_last_not_of(" \t\n\r") + 1);
+            }
+        }
+
+        if (!is_gpu || drm_render_minor.empty() || drm_render_minor == "-1") continue;
+        if (!get_amd_is_igpu(drm_render_minor)) continue;
+
+        carveout_gb += get_amd_vram(drm_render_minor);
+    }
+
+    return carveout_gb;
+}
+
 json LinuxSystemInfo::get_system_info_dict() {
     json info = SystemInfo::get_system_info_dict();  // Get base fields
     info["Processor"] = get_processor_name();
@@ -3833,8 +3878,15 @@ std::string LinuxSystemInfo::get_physical_memory() {
         if(token == "MemTotal:") {
             // Get the token after "MemTotal:"
             if(double mem; file >> mem) {
+                // MemTotal excludes an integrated GPU's firmware-reserved
+                // carveout, which on a unified-memory APU is ordinary system
+                // DRAM the model can still be run out of. Report installed
+                // capacity, matching Windows, so model size filtering does not
+                // hide models that fit (a 128 GB Strix Halo with a 64 GB
+                // carveout otherwise reports ~61 GB).
+                double total_gb = mem / 1024.0 / 1024.0 + get_igpu_carveout_gb();
                 std::ostringstream oss;
-                oss << std::fixed << std::setprecision(2) << std::round(mem / 1024.0 / 1024.0 * 100.0) / 100.0 << " GB";
+                oss << std::fixed << std::setprecision(2) << std::round(total_gb * 100.0) / 100.0 << " GB";
                 return oss.str();
             }
             break;
