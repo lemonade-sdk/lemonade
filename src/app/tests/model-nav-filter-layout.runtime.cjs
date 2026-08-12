@@ -7,18 +7,16 @@ const root = path.resolve(__dirname, '..');
 const navPath = path.join(root, 'src/components/ModelNavRail.tsx');
 const listPath = path.join(root, 'src/components/ModelListPanel.tsx');
 const managerPath = path.join(root, 'src/components/ModelManager.tsx');
-const backendVisibilityPath = path.join(root, 'src/features/models/backendRailVisibility.ts');
 const stylesPath = path.join(root, 'src/styles/styles.css');
 const a11yPath = path.join(root, 'tests/a11y.spec.ts');
 
 const nav = fs.readFileSync(navPath, 'utf8');
 const list = fs.readFileSync(listPath, 'utf8');
 const manager = fs.readFileSync(managerPath, 'utf8');
-const backendVisibility = fs.readFileSync(backendVisibilityPath, 'utf8');
 const styles = fs.readFileSync(stylesPath, 'utf8');
 const a11y = fs.readFileSync(a11yPath, 'utf8');
 
-for (const [fileName, source] of [[navPath, nav], [listPath, list], [managerPath, manager], [backendVisibilityPath, backendVisibility], [a11yPath, a11y]]) {
+for (const [fileName, source] of [[navPath, nav], [listPath, list], [managerPath, manager], [a11yPath, a11y]]) {
   const compiled = ts.transpileModule(source, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX },
     fileName,
@@ -33,11 +31,9 @@ assert.match(nav, /key: 'llm', label: 'Chat'/);
 assert.match(nav, /key: 'router', label: 'Router'/);
 assert.match(nav, /model-nav-rail__task-chip/);
 assert.match(nav, /model-nav-rail__backend-chip/);
-assert.match(nav, /visibleBackends\.map/);
-assert.match(nav, /model-nav-rail__backend-more/);
-assert.match(nav, /hiddenBackendCount > 0/);
-assert.match(nav, /backendShortcutsRemovable/);
-assert.match(nav, /model-nav-rail__backend-remove/);
+assert.match(nav, /\{backends\.map\(backend => \{/, 'the rail must render every derived backend');
+assert.doesNotMatch(nav, /model-nav-rail__backend-more/, 'the "+N" reveal pill must not return');
+assert.doesNotMatch(nav, /model-nav-rail__backend-remove/, 'backend chips must not carry a per-chip hide control');
 assert.match(nav, /model-nav-rail__tag-chip/);
 assert.match(nav, /aria-pressed=\{active\}/);
 assert.match(nav, /onTaskFiltersChange\(next\)/);
@@ -83,8 +79,8 @@ assert.match(styles, /\.model-nav-rail__backend-chip\s*\{[^}]*--filter-chip-colo
 assert.match(styles, /\.model-nav-rail__backend-chip\.is-active\s*\{[^}]*color:\s*var\(--text-primary\);/s);
 assert.doesNotMatch(styles, /\.model-nav-rail__backend-chip::before\s*\{/,
   'backend filters must stay neutral without introducing a colored identity marker');
-assert.match(styles, /\.model-nav-rail__backend-wrap\.is-removable \.model-nav-rail__backend-chip\s*\{[^}]*padding-inline-end:\s*19px;/s);
-assert.match(styles, /\.model-nav-rail__backend-remove,/);
+assert.doesNotMatch(styles, /\.model-nav-rail__backend-(?:wrap|more|remove)\b/,
+  'styles for the removed backend reveal/hide affordances must not linger');
 assert.doesNotMatch(styles, /\.model-list-panel__filter-(?:btn|popover|option|clear)/, 'removed middle filter styles must not remain');
 
 assert.doesNotMatch(a11y, /A95 — funnel filter button has aria-expanded and aria-haspopup/,
@@ -98,45 +94,9 @@ assert.match(a11y, /A96 — left-rail task filtering remains usable after funnel
 assert.match(a11y, /model-list-panel__count[\s\S]*?toContainText\('\(Chat\)'\)/,
   'the regression test must render the selected task label, catching missing FILTER_TABS at runtime');
 
-const visibilityCompiled = ts.transpileModule(backendVisibility, {
-  compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
-  fileName: backendVisibilityPath,
-});
-const visibilityModule = { exports: {} };
-Function('exports', 'require', 'module', visibilityCompiled.outputText)(
-  visibilityModule.exports,
-  require,
-  visibilityModule,
-);
-
-const {
-  DEFAULT_VISIBLE_BACKEND_COUNT,
-  resolveBackendRailVisibility,
-  revealNextBackend,
-  hideBackendShortcut,
-} = visibilityModule.exports;
-
-const backendValues = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-const initialVisibility = resolveBackendRailVisibility(backendValues, null);
-assert.equal(DEFAULT_VISIBLE_BACKEND_COUNT, 6);
-assert.deepEqual(initialVisibility, { order: backendValues, visibleCount: 6 });
-
-const sevenVisible = revealNextBackend(initialVisibility);
-assert.equal(sevenVisible.visibleCount, 7, 'the plus pill reveals exactly one backend');
-
-const curatedVisibility = hideBackendShortcut(sevenVisible, 'a');
-assert.equal(curatedVisibility.visibleCount, 6);
-assert.deepEqual(curatedVisibility.order, ['b', 'c', 'd', 'e', 'f', 'g', 'h', 'a']);
-assert.deepEqual(
-  revealNextBackend(curatedVisibility).order.slice(0, 7),
-  ['b', 'c', 'd', 'e', 'f', 'g', 'h'],
-  'removing a top backend must advance to the next hidden backend instead of immediately restoring it',
-);
-
-assert.deepEqual(
-  hideBackendShortcut(initialVisibility, 'a'),
-  initialVisibility,
-  'backend shortcuts cannot be removed while only the default six are visible',
+assert.ok(
+  !fs.existsSync(path.join(root, 'src/features/models/backendRailVisibility.ts')),
+  'the backend rail visibility module is obsolete now that every backend renders',
 );
 
 console.log('Model nav Task/Backend/Tag multi-select contract checks passed.');
