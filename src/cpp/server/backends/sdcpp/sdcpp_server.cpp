@@ -361,6 +361,21 @@ void SDServer::load(const std::string& model_name,
                     } else {
                         LOG(DEBUG, "SDServer") << "rocm_kpack.dll not found in TheRock at " << path_to_utf8(therock_kpack_dll) << std::endl;
                     }
+
+                    // Copy amd_comgr.dll from TheRock to sd-server.exe directory to override System32 version.
+                    fs::path therock_comgr_dll = fs::path(therock_bin) / "amd_comgr.dll";
+                    fs::path target_comgr_dll = exe_dir / "amd_comgr.dll";
+                    if (fs::exists(therock_comgr_dll)) {
+                        std::error_code ec;
+                        fs::copy_file(therock_comgr_dll, target_comgr_dll, fs::copy_options::overwrite_existing, ec);
+                        if (!ec) {
+                            LOG(INFO, "SDServer") << "Copied amd_comgr.dll from TheRock to " << path_to_utf8(target_comgr_dll) << std::endl;
+                        } else {
+                            LOG(WARNING, "SDServer") << "Failed to copy amd_comgr.dll: " << ec.message() << std::endl;
+                        }
+                    } else {
+                        LOG(DEBUG, "SDServer") << "amd_comgr.dll not found in TheRock at " << path_to_utf8(therock_comgr_dll) << std::endl;
+                    }
                 }
             }
         }
