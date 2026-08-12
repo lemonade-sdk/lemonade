@@ -96,6 +96,16 @@ int main() {
            "install refuses a CDNA architecture");
     expect(!throws_for_arch("gfx1151"),
            "install still resolves for the supported architecture");
+    // The support row is Linux-only, and the direct backend-install endpoint
+    // does not go through model filtering, so a Windows gfx1151 host would
+    // otherwise pass the arch check and resolve the Linux asset.
+    expect(lemon::backends::ds4::publishes_for_os("linux"),
+           "publishes for linux");
+    expect(!lemon::backends::ds4::publishes_for_os("windows"),
+           "does not publish for windows");
+    expect(!lemon::backends::ds4::publishes_for_os("macos"),
+           "does not publish for macos");
+
     // The no-GPU case (get_rocm_arch() == "") is guarded in get_install_params
     // but cannot be asserted here: an empty override clears the override rather
     // than setting an empty architecture, so the probe falls back to hardware.

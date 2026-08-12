@@ -32,6 +32,12 @@ InstallParams Ds4Server::get_install_params(const std::string& backend, const st
     // before building a name from it: model filtering normally keeps
     // unsupported hosts away, but the install path does not depend on that
     // having run, and an unchecked arch resolves to an asset that 404s.
+    const std::string current_os = get_current_os();
+    if (!ds4::publishes_for_os(current_os)) {
+        throw std::runtime_error(
+            "ds4 backend 'rocm' publishes no build for " + current_os + "; Linux only");
+    }
+
     const std::string target_arch = SystemInfo::get_rocm_arch();
     if (target_arch.empty()) {
         throw std::runtime_error(
