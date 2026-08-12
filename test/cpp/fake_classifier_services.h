@@ -14,12 +14,17 @@
 // instead of the live Router so they run with no backend subprocess.
 //
 // It returns fixed, caller-configured outputs:
-//   - embed(model, text)          -> a fixed vector (default: one configured per
-//                                    model, else a deterministic unit vector).
+//   - embed(model, text)          -> a fixed vector (per (model, text), else a
+//                                    per-model default).
 //   - run_classifier(model, text) -> a fixed label->score map per model.
 //   - chat(model, prompt, input)  -> a fixed reply per model.
 //
 // A model can also be marked as failing, so callers can exercise on_error.
+//
+// A call with no configured stub is recorded in unexpected_calls() and served a
+// placeholder default (unit vector / empty map / empty string). A strict caller
+// (the conformance corpus) checks unexpected_calls() is empty, so a missing stub
+// fails the test instead of passing on that default.
 //
 // Nothing here implements routing or scoring logic; tests dictate every output.
 
