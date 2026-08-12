@@ -35,17 +35,12 @@ bool contains_ci(const std::string& s, const std::string& needle) {
     return to_lower(s).find(to_lower(needle)) != std::string::npos;
 }
 
-std::string draft_companion_label(const std::string& path) {
+bool is_draft_companion(const std::string& path) {
     std::string filename = to_lower(path);
     size_t slash = filename.find_last_of('/');
     if (slash != std::string::npos) filename = filename.substr(slash + 1);
-    if (filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf") return "dflash";
-    if (filename.rfind("mtp-", 0) == 0) return "mtp";
-    return {};
-}
-
-bool is_draft_companion(const std::string& path) {
-    return !draft_companion_label(path).empty();
+    return filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf" ||
+           filename.rfind("mtp-", 0) == 0;
 }
 
 // Quant token extractor. Recognizes the variants we actually see in
@@ -131,9 +126,6 @@ GgufVariantSet enumerate_gguf_variants(
     }
     std::sort(result.mmproj_files.begin(), result.mmproj_files.end());
     std::sort(result.draft_files.begin(), result.draft_files.end());
-    if (result.draft_files.size() == 1) {
-        result.draft_label = draft_companion_label(result.draft_files.front());
-    }
 
     // Group by top-level folder vs root files.
     std::map<std::string, std::vector<std::string>> folder_groups;
@@ -396,7 +388,6 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     // Suggested labels.
     std::vector<std::string> labels;
     if (!vset.mmproj_files.empty()) add_label(labels, "vision");
-    if (!vset.draft_label.empty()) add_label(labels, vset.draft_label);
     {
         std::string id_lower = to_lower(checkpoint);
         if (id_lower.find("embed") != std::string::npos) add_label(labels, "embeddings");
