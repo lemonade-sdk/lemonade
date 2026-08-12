@@ -1557,7 +1557,7 @@ namespace lemon::backends {
 #endif
     }
 
-    std::string BackendUtils::get_therock_lib_path(const std::string& rocm_arch) {
+    std::vector<std::string> BackendUtils::get_therock_lib_paths(const std::string& rocm_arch) {
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
         json config = utils::JsonUtils::load_from_file(config_path);
 
@@ -1568,8 +1568,13 @@ namespace lemon::backends {
         std::string version = config["therock"]["version"].get<std::string>();
 
         // Prefer the lemonade-managed pip-wheel install when present. Its ROCm
-        // runtime is split across two directories (_rocm_sdk_core/bin and
-        // _rocm_sdk_libraries/bin), recorded in runtime_paths.txt at install time.
+        // runtime is split across multiple directories (_rocm_sdk_core/bin,
+        // _rocm_sdk_core/lib, _rocm_sdk_libraries/bin), recorded in
+        // runtime_paths.txt at install time. ALL of them must be on the loader
+        // path: amdhip64/amd_comgr/rocm_kpack live in _rocm_sdk_core/bin while
+        // rocblas/hipblas/hipblaslt live in _rocm_sdk_libraries/bin, and a
+        // consumer that loads only the first directory fails to resolve the
+        // BLAS DLLs (STATUS_DLL_NOT_FOUND).
         {
             fs::path paths_file =
                 fs::path(get_therock_wheel_dir(rocm_arch, version)) / "runtime_paths.txt";
@@ -1577,27 +1582,24 @@ namespace lemon::backends {
             if (fs::exists(paths_file, ec)) {
                 std::ifstream pf(paths_file);
                 std::string line;
-                bool first = true;
-                std::string lib_path;
+                std::vector<std::string> lib_paths;
                 while (std::getline(pf, line)) {
                     if (!line.empty() && line.back() == '\r') {
                         line.pop_back();
                     }
-                    if (!line.empty()) {
-                        if (!first) {
-                            break;
-                        }
-                        std::error_code dir_ec;
-                        if (fs::is_directory(line, dir_ec)) {
-                            lib_path = line;
-                            first = false;
-                        }
+                    if (line.empty()) {
+                        continue;
+                    }
+                    std::error_code dir_ec;
+                    if (fs::is_directory(line, dir_ec)) {
+                        lib_paths.push_back(line);
                     }
                 }
-                if (!lib_path.empty()) {
+                if (!lib_paths.empty()) {
                     LOG(DEBUG, "BackendUtils")
-                        << "Returning ROCm wheel runtime path: " << lib_path << std::endl;
-                    return lib_path;
+                        << "Returning " << lib_paths.size()
+                        << " ROCm wheel runtime path(s); first: " << lib_paths.front() << std::endl;
+                    return lib_paths;
                 }
             }
         }
@@ -1614,10 +1616,19 @@ namespace lemon::backends {
             std::string lib_path = (fs::path(install_dir) / "lib").string();
 #endif
             LOG(DEBUG, "BackendUtils") << "Returning TheRock runtime path: " << lib_path << std::endl;
-            return lib_path;
+            return {lib_path};
         }
 
-        return "";
+        return {};
+    }
+
+    std::string BackendUtils::get_therock_lib_path(const std::string& rocm_arch) {
+        // Back-compat single-directory accessor. Returns the FIRST runtime dir
+        // (the wheel's _rocm_sdk_core/bin, which holds amdhip64/amd_comgr/
+        // rocm_kpack). Callers that build a loader path should use
+        // get_therock_lib_paths() so the BLAS libraries dir is included too.
+        std::vector<std::string> paths = get_therock_lib_paths(rocm_arch);
+        return paths.empty() ? std::string() : paths.front();
     }
 
     std::string BackendUtils::join_runtime_dirs(const std::vector<std::string>& dirs,
