@@ -21,6 +21,28 @@ Score failed_score() {
     return score;
 }
 
+// Best-effort cost lookups (CostServices::cost_of is caller-injected) must
+// never spam logs when one candidate persistently fails — emit at most one
+// WARNING per candidate per process. Shared by attach_estimated_cost() and
+// the "cost" classifier, both of which treat a throwing cost_of the same way:
+// log once, then treat the candidate as having no cost data.
+void log_cost_of_failure_once(const std::string& candidate, const char* detail) {
+    static std::mutex logged_mu;
+    static std::set<std::string> logged_candidates;
+    bool should_log = false;
+    {
+        std::lock_guard<std::mutex> lock(logged_mu);
+        should_log = logged_candidates.insert(candidate).second;
+    }
+    if (!should_log) {
+        return;
+    }
+    LOG(WARNING, "Routing") << "CostServices::cost_of threw for candidate '"
+                            << candidate << "': " << detail
+                            << " (further throws for this candidate suppressed)"
+                            << std::endl;
+}
+
 // Trim leading/trailing ASCII whitespace. Used by the llm router to normalize a
 // chat reply before matching it against candidate names.
 std::string trim_copy(const std::string& s) {
@@ -182,7 +204,8 @@ private:
         auto [it, inserted] = ctx.memo.try_emplace(classifier_->id());
         if (inserted) {
             try {
-                it->second = classifier_->evaluate(ClassifierContext{ctx.request, ctx.services});
+                it->second = classifier_->evaluate(
+                    ClassifierContext{ctx.request, ctx.services, ctx.cost_services});
             } catch (const std::exception& e) {
                 // Classifier implementations should return Score{ok=false}
                 // rather than throw. Keep this catch as a permanent safety
@@ -412,6 +435,94 @@ private:
 
 private:
     std::string prompt_;
+};
+
+// Ranking metric for the "cost" classifier: sum of the two per-million
+// prices. Output token count isn't known before generation, so this is a
+// proxy rather than an exact per-request cost — the standard "cheapest
+// model" heuristic. A candidate must resolve BOTH per-million fields to get a
+// score; a model's two prices are set or unset together in practice (cloud
+// auto-discovery sets both, providers that don't publish pricing set
+// neither), so a partial resolution is treated as "no data" rather than
+// scored on one field alone.
+std::optional<double> compute_cost_score(const CostInfo& info) {
+    if (!info.cost_input_per_million || !info.cost_output_per_million) {
+        return std::nullopt;
+    }
+    return *info.cost_input_per_million + *info.cost_output_per_million;
+}
+
+// The deterministic "cost" classifier / L0(b) on-ramp. Given `labels` = the
+// candidate list, scores each candidate via CostServices::cost_of and reports
+// the cheapest (argmin compute_cost_score) as the winning label (score 1.0) —
+// mirroring the `llm` classifier's single-winner shape so the same
+// identity-rule desugaring works for both `router.type: "llm"` and
+// `router.type: "cost_select"`.
+//
+// A candidate whose cost_of throws, or whose CostInfo doesn't resolve to a
+// score, is excluded from ranking rather than failing the classifier — same
+// treatment attach_estimated_cost() gives a throwing cost_of. If NO candidate
+// has cost data, the winner is candidates[0] (first-authored-order fallback);
+// this falls out naturally from initializing best_index to 0 and only
+// overwriting it on a strictly lower score, which also makes exact-tie
+// resolution first-occurrence-wins. Only a totally unset cost_services.cost_of
+// (the services object itself wasn't wired) is a classifier-level failure
+// (Score::ok = false), matching how the other classifiers treat their unset
+// service function.
+class CostClassifier final : public Classifier {
+public:
+    CostClassifier(std::string id, std::string type, OnError on_error,
+                   std::vector<std::string> labels,
+                   std::optional<std::string> default_label)
+        : Classifier(std::move(id), std::move(type), on_error,
+                     /*model_name=*/std::string(), std::move(labels),
+                     std::move(default_label)) {
+        if (this->labels().empty()) {
+            throw std::invalid_argument("cost classifier requires at least one label (candidate)");
+        }
+    }
+
+    Score evaluate(const ClassifierContext& ctx) const override {
+        if (!ctx.cost_services.cost_of) {
+            return failed_score();
+        }
+
+        const auto& candidates = labels();
+        std::size_t best_index = 0;
+        std::optional<double> best_score;
+        for (std::size_t i = 0; i < candidates.size(); ++i) {
+            std::optional<double> score;
+            try {
+                score = compute_cost_score(ctx.cost_services.cost_of(candidates[i]));
+            } catch (const std::exception& e) {
+                log_cost_of_failure_once(candidates[i], e.what());
+                continue;
+            } catch (...) {
+                log_cost_of_failure_once(candidates[i], "unknown exception");
+                continue;
+            }
+            if (!score.has_value()) {
+                continue;
+            }
+            if (!best_score.has_value() || *score < *best_score) {
+                best_score = score;
+                best_index = i;
+            }
+        }
+
+        Score result;
+        result.ok = true;
+        result.labels[candidates[best_index]] = 1.0;
+        if (best_score.has_value()) {
+            result.rationale = "lowest estimated cost ($" + std::to_string(*best_score) +
+                                "/M tokens) among " + std::to_string(candidates.size()) +
+                                " candidates";
+        } else {
+            result.rationale = "no cost data available for any candidate; "
+                                "falling back to the first-listed candidate";
+        }
+        return result;
+    }
 };
 
 class SemanticSimilarityClassifier final : public Classifier {
@@ -1118,6 +1229,13 @@ ClassifierPtr make_classifier(const json& config) {
             on_error, std::move(labels), std::move(default_label));
     }
 
+    if (type == "cost") {
+        std::vector<std::string> labels = parse_labels(config, id);
+        std::optional<std::string> default_label = parse_default_label(config, labels, id);
+        return std::make_shared<CostClassifier>(
+            id, type, on_error, std::move(labels), std::move(default_label));
+    }
+
     if (type == "pii_detection" || type == "prompt_safety" ||
         type == "language_detection" || type == "domain_classification" ||
         type == "complexity" || type == "sentiment") {
@@ -1295,23 +1413,6 @@ NamedLeafFactories make_deterministic_leaf_factories() {
 
 namespace {
 
-void log_cost_of_failure_once(const std::string& candidate, const char* detail) {
-    static std::mutex logged_mu;
-    static std::set<std::string> logged_candidates;
-    bool should_log = false;
-    {
-        std::lock_guard<std::mutex> lock(logged_mu);
-        should_log = logged_candidates.insert(candidate).second;
-    }
-    if (!should_log) {
-        return;
-    }
-    LOG(WARNING, "Routing") << "CostServices::cost_of threw for candidate '"
-                            << candidate << "': " << detail
-                            << " (further throws for this candidate suppressed)"
-                            << std::endl;
-}
-
 // Best-effort: cost_of is caller-injected and must never make route() throw,
 // so any exception here is logged and swallowed rather than propagated. Also
 // leaves an author-set outputs["estimated_cost"] alone rather than clobbering it.
@@ -1357,7 +1458,7 @@ RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices 
 }
 
 Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) const {
-    EvalContext eval{ctx, services_, want_trace, {}, {}, {}};
+    EvalContext eval{ctx, services_, want_trace, {}, {}, {}, cost_services_};
 
     // First-match-wins over the compiled rules. A classifier-level failure is
     // already absorbed upstream by ClassifierBandCondition (Score::ok + the

@@ -84,7 +84,8 @@ v1** (pinned in the schema field descriptions):
 | `metadata` | reads a request `metadata` key; **case-sensitive** comparison, value decoded into a comma-split, trimmed **token set** (`equals` raw exact / `any` set-intersection / `exists` presence). A missing, empty, or **whitespace-only** value counts as absent (matches only `exists:false`) |
 | multi-key leaf object | interpreted as implicit **`all`**; e.g. `{"keywords_any":[...],"max_chars":1000}` means both leaves must match |
 | `on_error` (omitted) | default **`match_false`** (fail-open) |
-| `routing.router` desugaring | expansion to one `llm` classifier + identity rules is deterministic and behavior-equivalent across versions |
+| `routing.router` desugaring | `type: "llm"` expands to one `llm` classifier + identity rules; `type: "cost_select"` expands to one `cost` classifier + identity rules. Both are deterministic and behavior-equivalent across versions |
+| `cost` classifier ranking | sum of `cost_input_per_million + cost_output_per_million`; a candidate resolving only one of the two fields is unranked (treated as no data); ties resolve to the first-listed candidate; if no candidate has any cost data, the winner is the first-listed candidate |
 
 Anything fancier (token/BM25 keyword matching, a different regex engine,
 token-based length) ships as a new, separately named op — never by changing one
@@ -99,6 +100,7 @@ redistribution. Fixtures live in `test/cpp/fixtures/routing/`:
 | Fixture | Level | Mechanism |
 |---------|-------|-----------|
 | `l0a_llm_router.json` | L0(a) | `routing.router` LLM-as-router (desugars to one `llm` classifier + identity rules) |
+| `l0b_cost_select.json` | L0(b) | `routing.router` cost-as-router (desugars to one `cost` classifier + identity rules; see "Cost reporting" below) |
 | `l1_keywords.json` | L1 | Deterministic `keywords_any` / `regex` / `min_chars` |
 | `l1_metadata.json` | L1 | Deterministic `metadata` match on caller-supplied routing inputs (`task_class` / `consent`) |
 | `l2_semantic.json` | L2 | `semantic_similarity` classifier (embeddings + cosine) |
@@ -138,8 +140,20 @@ No `server_models.json` schema change is required: unrecognized keys already lan
 in `extras`. Authors can add e.g. `"cost_tier": "free"` or
 `"cost_input_per_million": 3.0` on a model entry today.
 
-Phase A is reporting only. Automated cheapest-candidate selection (`cost_select`
-on `route_to`) is deferred.
+**Phase B — automated cheapest-candidate selection.** `routing.router.type:
+"cost_select"` (see the levels table above and `l0b_cost_select.json`) picks
+route_to automatically: it desugars into a deterministic `cost` classifier that
+ranks every candidate by the same `cost_input_per_million +
+cost_output_per_million` sum shown above and routes to the cheapest. The
+chosen candidate's own cost is still reported via `outputs.estimated_cost`
+exactly as for any other route_to — Phase A's reporting and Phase B's
+selection compose, they don't replace each other. The ranking metric, the
+tie-break (first-listed candidate wins), and the no-data fallback
+(first-listed candidate) are frozen v1 behavior alongside the other semantics
+in the table above; changing any of them later needs a new major, per this
+file's own evolution rule.
+
+Phase C (spend/budget tracking) remains deferred.
 
 ## Contract surface
 
@@ -153,4 +167,13 @@ The C++ types/interfaces these schemas back live in
 - **Behavioral back-compat** — `test/cpp/test_routing_conformance_corpus.cpp`
   (CTest target `RoutingConformanceCorpusTest`): replays the golden corpus under
   `test/conformance/routing/` and asserts each emitted `Decision` equals its
-  recorded expectation.
+  recorded expectation. Deterministic cases only today — model-backed
+  classifiers (`llm`, `cost`, `semantic_similarity`, `classifier`) have no
+  stub-injection harness yet, so `l0a_router`, `l0b_cost_router`, `l2_semantic`,
+  and `l3_classifier` corpus groups all remain unadded; see
+  `test/conformance/routing/README.md`.
+- **`llm` / `cost` router classifiers** — `test/cpp/test_routing_policy_llm_router.cpp`
+  and `test/cpp/test_routing_policy_cost_router.cpp` (CTest targets
+  `RoutingPolicyLlmRouterTest` / `RoutingPolicyCostRouterTest`): classifier-level,
+  parser-desugar-level, and end-to-end coverage against a fake
+  `ClassifierServices` / `CostServices`.

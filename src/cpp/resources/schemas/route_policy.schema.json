@@ -56,15 +56,21 @@
       "additionalProperties": false
     },
     "router_sugar": {
-      "description": "Zero-config L0(a) LLM-as-router. Desugars at load into one `llm` classifier (labels = candidates) + identity rules (label X -> route_to X). This desugaring is pure, deterministic engine logic and is frozen for v1: its expansion must stay behavior-equivalent so existing L0(a) policies keep routing identically across server versions.",
+      "description": "Zero-config L0 sugar. `llm` (L0(a)) desugars at load into one `llm` classifier (labels = candidates) + identity rules (label X -> route_to X). `cost_select` (L0(b)) desugars the same way into one `cost` classifier instead, ranking candidates by cost_input_per_million + cost_output_per_million and falling back to the first-listed candidate when no candidate has cost data. Both desugarings are pure, deterministic engine logic and are frozen for v1: their expansion must stay behavior-equivalent so existing policies keep routing identically across server versions.",
       "type": "object",
-      "required": ["type", "model", "prompt"],
+      "required": ["type"],
       "properties": {
-        "type": { "const": "llm" },
+        "type": { "enum": ["llm", "cost_select"] },
         "model": { "type": "string", "minLength": 1 },
         "prompt": { "type": "string", "minLength": 1 }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "llm" } } },
+          "then": { "required": ["model", "prompt"] } },
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "cost_select" } } },
+          "then": { "not": { "anyOf": [{ "required": ["model"] }, { "required": ["prompt"] }] } } }
+      ]
     },
     "classifier": {
       "type": "object",
@@ -72,11 +78,12 @@
       "properties": {
         "id": { "type": "string" },
         "type": {
-          "description": "v1: semantic_similarity, classifier, llm. Reserved vLLM-SR presets ship post-v1 as thin presets over `classifier`.",
+          "description": "v1: semantic_similarity, classifier, llm, cost. Reserved vLLM-SR presets ship post-v1 as thin presets over `classifier`.",
           "enum": [
             "semantic_similarity",
             "classifier",
             "llm",
+            "cost",
             "pii_detection",
             "prompt_safety",
             "language_detection",
@@ -120,7 +127,13 @@
           "then": { "required": ["model"] } },
         { "if":   { "required": ["type"], "properties": { "type": { "const": "llm" } } },
           "then": { "required": ["model", "prompt", "labels"],
-                    "properties": { "labels": { "minItems": 1 } } } }
+                    "properties": { "labels": { "minItems": 1 } } } },
+        { "if":   { "required": ["type"], "properties": { "type": { "const": "cost" } } },
+          "then": { "required": ["labels"],
+                    "properties": { "labels": { "minItems": 1 } },
+                    "not": { "anyOf": [{ "required": ["model"] },
+                                       { "required": ["prompt"] },
+                                       { "required": ["reference_phrases"] }] } } }
       ]
     },
     "rule": {
