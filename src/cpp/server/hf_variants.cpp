@@ -35,6 +35,14 @@ bool contains_ci(const std::string& s, const std::string& needle) {
     return to_lower(s).find(to_lower(needle)) != std::string::npos;
 }
 
+bool is_draft_companion(const std::string& path) {
+    std::string filename = to_lower(path);
+    size_t slash = filename.find_last_of('/');
+    if (slash != std::string::npos) filename = filename.substr(slash + 1);
+    return filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf" ||
+           filename.rfind("mtp-", 0) == 0;
+}
+
 // Quant token extractor. Recognizes the variants we actually see in
 // production GGUF repos (see src/cpp/resources/server_models.json), including
 // the `UD-` Unsloth Dynamic prefix and the `_XL` "extra-large" suffix that
@@ -101,19 +109,23 @@ GgufVariantSet enumerate_gguf_variants(
         return it == size_by_file.end() ? 0 : it->second;
     };
 
-    // Partition into mmproj vs regular gguf files.
+    // Companion GGUFs must not become selectable main-model variants.
     std::vector<std::string> gguf_files;
     for (const auto& f : repo_files) {
         std::string f_lower = to_lower(f);
         if (!ends_with(f_lower, ".gguf")) continue;
+        size_t slash = f.find_last_of('/');
+        std::string bare = slash == std::string::npos ? f : f.substr(slash + 1);
         if (f_lower.find("mmproj") != std::string::npos) {
-            size_t slash = f.find_last_of('/');
-            result.mmproj_files.push_back(slash == std::string::npos ? f : f.substr(slash + 1));
+            result.mmproj_files.push_back(bare);
+        } else if (is_draft_companion(f)) {
+            result.draft_files.push_back(bare);
         } else {
             gguf_files.push_back(f);
         }
     }
     std::sort(result.mmproj_files.begin(), result.mmproj_files.end());
+    std::sort(result.draft_files.begin(), result.draft_files.end());
 
     // Group by top-level folder vs root files.
     std::map<std::string, std::vector<std::string>> folder_groups;
@@ -289,6 +301,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         out["suggested_name"] = suggested_name;
         out["suggested_labels"] = nlohmann::json::array();
         out["mmproj_files"] = nlohmann::json::array();
+        out["draft_files"] = nlohmann::json::array();
         out["variants"] = nlohmann::json::array({vj});
         return out;
     }
@@ -354,6 +367,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         out["suggested_name"] = suggested_name;
         out["suggested_labels"] = nlohmann::json::array();
         out["mmproj_files"] = nlohmann::json::array();
+        out["draft_files"] = nlohmann::json::array();
         out["variants"] = nlohmann::json::array();
         if (manifest.contains("size") && manifest["size"].is_number()) {
             out["size"] = manifest["size"];
@@ -388,6 +402,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     out["suggested_name"] = suggested_name;
     out["suggested_labels"] = labels;
     out["mmproj_files"] = vset.mmproj_files;
+    out["draft_files"] = vset.draft_files;
 
     nlohmann::json variants_json = nlohmann::json::array();
     for (const auto& v : vset.variants) {

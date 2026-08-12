@@ -36,6 +36,17 @@ public:
 
     // ITextToSpeechServer implementation
     void audio_speech(const json& request, httplib::DataSink& sink) override;
+    // Kokoros deserializes all six OpenAI formats but only implements four; aac and
+    // flac silently fall back to MP3 bytes, so they are not advertised.
+    std::vector<std::string> supported_audio_formats() const override {
+        return {"mp3", "wav", "opus", "pcm"};
+    }
+    // Its streaming path returns headerless s16le regardless of response_format
+    // ("Force PCM for optimal streaming performance"), so anything else would be
+    // served under a Content-Type the bytes don't match.
+    std::vector<std::string> supported_streaming_audio_formats() const override {
+        return {"pcm"};
+    }
 };
 
 namespace kokoro {

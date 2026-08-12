@@ -14,6 +14,7 @@
 #include <lemon/backends/cloud/cloud_server.h>
 #include <lemon/backends/fastflowlm/fastflowlm_models.h>
 #include <lemon/cloud_provider_registry.h>
+#include <lemon/gguf_shard_utils.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -549,9 +550,10 @@ static void cleanup_empty_parents(const fs::path& file_path, const fs::path& sto
     }
 }
 
-// Return the on-disk size of a resolved model path. Some recipes (for
-// example Moonshine streaming) resolve to a directory of artifacts rather than
-// to a single model file. std::filesystem::file_size() fails on directories
+// Size of one resolved path. Deliberately per-path: list_model_files() reports
+// this as an individual file's size, so shard aggregation must not happen here.
+// Directories (e.g. Moonshine artifacts) are summed recursively because
+// std::filesystem::file_size() fails on them.
 static uintmax_t resolved_path_size_bytes(const fs::path& path) {
     std::error_code ec;
     if (!safe_exists(path)) {
@@ -585,14 +587,52 @@ static uintmax_t resolved_path_size_bytes(const fs::path& path) {
 }
 
 
+std::uintmax_t sharded_gguf_size_bytes(const fs::path& shard_path) {
+    std::string base;
+    int total = 0;
+    if (!is_gguf_shard_filename(shard_path.filename().string(), &base, &total)) {
+        return 0;
+    }
+
+    const fs::path dir = shard_path.parent_path();
+    if (!safe_is_directory(dir)) {
+        return 0;
+    }
+
+    uintmax_t sum = 0;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(dir, safe_dir_options, ec)) {
+        if (!entry.is_regular_file(ec)) {
+            if (ec) ec.clear();
+            continue;
+        }
+        if (!same_shard_family(entry.path().filename().string(), base, total)) {
+            continue;
+        }
+
+        auto size = fs::file_size(entry.path(), ec);
+        if (!ec) {
+            sum += size;
+        } else {
+            ec.clear();
+        }
+    }
+    return sum;
+}
+
+
 // Replace the static registry size with the aggregate on-disk size once the
 // files exist, so directory-checkpoint models (whose repos can carry more than
-// the registry estimate) report what was actually downloaded.
+// the registry estimate) report what was actually downloaded. A sharded GGUF
+// resolves to a single shard, which for unsloth-style layouts is a small stub,
+// so the whole family is summed instead.
 static void refresh_on_disk_size(ModelInfo& info) {
     uintmax_t total_size = 0;
     for (auto& [type, path] : info.resolved_paths) {
         (void)type;
-        total_size += resolved_path_size_bytes(path_from_utf8(path));
+        fs::path resolved = path_from_utf8(path);
+        uintmax_t shard_total = sharded_gguf_size_bytes(resolved);
+        total_size += (shard_total > 0) ? shard_total : resolved_path_size_bytes(resolved);
     }
     if (total_size == 0) {
         return;

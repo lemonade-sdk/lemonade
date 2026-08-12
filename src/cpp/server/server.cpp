@@ -4085,7 +4085,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             if (request_json["stream_format"] != "audio") {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
-                    {"message", "Only pcm audio streaming format is supported"},
+                    {"message", "Only 'audio' is supported for stream_format"},
                     {"type", "invalid_request_error"}
                 }}};
                 res.set_content(error.dump(), "application/json");
@@ -4093,15 +4093,32 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
-        const auto supported_formats =
-            router_->audio_speech_supported_formats(request_json["model"].get<std::string>());
-        std::string response_format = "mp3";
+        const std::string speech_model = request_json["model"].get<std::string>();
+        // A backend's streaming encoder is often narrower than its buffered one, so
+        // which constraint applies depends on the transport in play.
+        auto supported_formats = router_->audio_speech_supported_formats(speech_model);
         if (is_streaming) {
-            response_format = "pcm";
-        } else if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            auto streaming_formats = router_->audio_speech_supported_streaming_formats(speech_model);
+            if (!streaming_formats.empty()) {
+                supported_formats = std::move(streaming_formats);
+            }
+        }
+        // Streaming and encoding are orthogonal: stream_format picks the transport,
+        // response_format the container. An explicit response_format therefore wins
+        // even when streaming, and is rejected below rather than silently swapped if
+        // the backend can't emit it. Only the implicit default differs by transport,
+        // and it yields to whatever the backend declares.
+        std::string response_format;
+        if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
             response_format = request_json["response_format"].get<std::string>();
-        } else if (!supported_formats.empty()) {
-            response_format = supported_formats.front();
+        } else {
+            response_format = is_streaming ? "pcm" : "mp3";
+            const bool default_supported = supported_formats.empty() ||
+                std::find(supported_formats.begin(), supported_formats.end(),
+                          response_format) != supported_formats.end();
+            if (!default_supported) {
+                response_format = supported_formats.front();
+            }
         }
         if (!MIME_TYPES.contains(response_format)) {
             res.status = 400;
@@ -4131,6 +4148,10 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             return;
         }
         std::string mime_type = MIME_TYPES[response_format];
+        // The backend has to encode what the Content-Type above promises. Without
+        // this it would receive whatever the client sent -- nothing, when the
+        // format came from a default -- and fall back to its own choice.
+        request_json["response_format"] = response_format;
 
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
@@ -5050,6 +5071,21 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         bool subscribe = request_json.value("subscribe", true);
         bool local_import = request_json.value("local_import", false);
 
+        // Resolve the pull's registry provenance once, up front, so download,
+        // cache layout, and later refresh stay consistent. A registry-backed
+        // checkpoint that names no source inherits the configured default; a
+        // provider URL is normalized to owner/repo and its registry adopted.
+        // Self-managed backends (flm/cloud), non-registry checkpoints, explicit
+        // sources, and bare `pull <registered-name>` refreshes are left as-is.
+        try {
+            lemon::apply_default_pull_source(request_json, config_->default_model_source());
+        } catch (const std::invalid_argument& e) {
+            bad_request(e.what());
+            return;
+        }
+        // The helper may have rewritten a provider URL into an owner/repo id.
+        checkpoint = request_json.value("checkpoint", "");
+
         // Validate and canonicalize remote-registry provenance before anything is
         // persisted. `source` remains backward-compatible with local origins, while
         // remote registrations store a canonical huggingface/modelscope value.
@@ -5330,6 +5366,11 @@ void Server::handle_registry_search(const httplib::Request& req, httplib::Respon
 }
 
 void Server::handle_pull_variants(const httplib::Request& req, httplib::Response& res) {
+    auto bad_request = [&res](const std::string& message) {
+        res.status = 400;
+        nlohmann::json error = {{"error", message}};
+        res.set_content(error.dump(), "application/json");
+    };
     try {
         std::string checkpoint = req.get_param_value("checkpoint");
         if (checkpoint.empty()) {
@@ -5338,6 +5379,44 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
+        // Detect the URL provider upfront so we can reject mismatches with
+        // an explicit `--source` param (just like /pull and the CLI do).
+        lemon::RemoteRegistrySource url_source;
+        std::string url_repo_id;
+        bool has_url = lemon::detect_registry_url(checkpoint, url_source, url_repo_id);
+
+        // Explicit `--source` was provided (or not).  Capture the raw param
+        // now while checkpoint still holds the URL for error messages.
+        std::string raw_source;
+        if (req.has_param("source")) {
+            raw_source = req.get_param_value("source");
+        }
+
+        // Reject mismatches between explicit source and detected URL source.
+        // Canonicalize the raw param first so accepted aliases (e.g. `hf`) are
+        // not rejected against the URL's canonical registry name.
+        if (has_url && !raw_source.empty()) {
+            if (parse_remote_registry_source(raw_source) != url_source) {
+                bad_request(
+                    "checkpoint URL uses " + remote_registry_source_name(url_source) +
+                    " but source was set to '" + raw_source + "'");
+                return;
+            }
+        }
+
+        // A provider URL is authoritative: normalize it to owner/repo and adopt
+        // its registry. Otherwise honor an explicit source param, falling back
+        // to the server's configured default when none is given.
+        if (has_url) {
+            checkpoint = url_repo_id;
+        }
+        std::string source;
+        if (has_url) {
+            source = remote_registry_source_name(url_source);
+        } else {
+            source = req.has_param("source")
+                ? req.get_param_value("source") : config_->default_model_source();
+        }
         if (checkpoint.find('/') == std::string::npos) {
             res.status = 400;
             nlohmann::json error = {{"error",
@@ -5345,8 +5424,6 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
-        const std::string source = req.has_param("source")
-            ? req.get_param_value("source") : "huggingface";
         const auto parsed_source = parse_remote_registry_source(source);
         if (config_->offline()) {
             res.status = 400;
@@ -5355,14 +5432,18 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             return;
         }
         bool not_found = false;
+        const std::string resolved_source = remote_registry_source_name(parsed_source);
         nlohmann::json body = lemon::fetch_pull_variants(
-            checkpoint, remote_registry_source_name(parsed_source), not_found);
+            checkpoint, resolved_source, not_found);
         if (not_found) {
             res.status = 404;
             nlohmann::json error = {{"error", "Checkpoint '" + checkpoint + "' not found on " +
                 remote_registry_display_name(parsed_source)}};
             res.set_content(error.dump(), "application/json");
             return;
+        }
+        if (body.is_object()) {
+            body["source"] = resolved_source;
         }
         res.set_content(body.dump(), "application/json");
     } catch (const std::invalid_argument& e) {
