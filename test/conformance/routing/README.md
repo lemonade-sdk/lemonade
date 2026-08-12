@@ -52,7 +52,7 @@ semantics.
   l0a_desugaring_core_form/   # llm router in core form (llm classifier + identity rules): reply picks a candidate
   l0a_llm_implicit_label/     # omitted label => llm classifier's default_label score (never the picked candidate, never primary())
   l0a_llm_on_error/           # llm router on_error: match_true fires only on a failed call, not a normal miss
-  l0a_router_reply_contract/  # valid router reply: strict {model, rationale}, code-fence stripping, reply in the trace; plus routing.router sugar desugaring to __route_N identity rules (same outcomes as core form)
+  l0a_router_sugar/           # routing.router sugar form: valid router reply (strict {model, rationale}, code-fence stripping, reply in the trace) and desugaring to __route_N identity rules (same outcomes as core form)
   l1_conditions_char_bounds/  # min_chars / max_chars (own policy: length rules are greedy)
   l1_conditions_features/     # boolean request-feature ops: has_tools / has_images
   l1_conditions_features_negated/  # authored has_tools:false — equality, matches when absent
@@ -167,26 +167,26 @@ a real backend's numeric drift can never change the recorded `Decision`).
 | reply picking `default_model` explicitly ⇒ `default_used: false` (not fall-through) | `l0a_desugaring_core_form/picks-default-candidate` |
 | reply naming a non-candidate ⇒ no rule ⇒ default | `l0a_desugaring_core_form/unknown-model-falls-open` |
 | router call fails, no `on_error` ⇒ no-match ⇒ default | `l0a_desugaring_core_form/chat-failure-falls-open` |
-| `routing.router` sugar desugars to one `llm` classifier + identity rules (`__route_N`); same outcomes as the core form | `l0a_router_reply_contract/picks-first-candidate` |
+| `routing.router` sugar desugars to one `llm` classifier + identity rules (`__route_N`); same outcomes as the core form | `l0a_router_sugar/picks-first-candidate` |
 | router call fails + `on_error: match_true` ⇒ rule fires as matched | `l0a_llm_on_error/failure-fires-via-match-true` |
 | a successful reply matches its rule normally (not via `on_error`) | `l0a_llm_on_error/success-match-routes` |
 | `match_true` does not fire on a normal mismatch, only on a failed call | `l0a_llm_on_error/success-miss-falls-open` |
-| reply must be JSON (non-JSON ⇒ fall open) | `l0a_router_reply_contract/non-json-reply-falls-open` |
-| reply must be a JSON object, not an array | `l0a_router_reply_contract/json-array-reply-falls-open` |
-| reply keys are exactly `{model, rationale}` — an extra key is rejected | `l0a_router_reply_contract/extra-key-falls-open` |
-| `rationale` is required | `l0a_router_reply_contract/missing-rationale-falls-open` |
-| `model` is required | `l0a_router_reply_contract/missing-model-falls-open` |
-| a whitespace-only `rationale` trims to empty and is rejected | `l0a_router_reply_contract/blank-rationale-falls-open` |
-| `model` must be a string | `l0a_router_reply_contract/model-not-string-falls-open` |
-| `rationale` must be a string | `l0a_router_reply_contract/rationale-not-string-falls-open` |
-| candidate-name match is exact — a superstring of a candidate is not the candidate | `l0a_router_reply_contract/superstring-name-no-exact-match` |
-| candidate-name match is case-sensitive | `l0a_router_reply_contract/case-mismatched-name-no-match` |
-| one wrapping code fence is stripped, then the object is parsed | `l0a_router_reply_contract/fenced-reply-routes` |
-| text after the closing fence ⇒ rejected | `l0a_router_reply_contract/fenced-trailing-prose-falls-open` |
-| an opening fence with no closing fence ⇒ rejected | `l0a_router_reply_contract/no-closing-fence-falls-open` |
-| an opening fence with no newline ⇒ rejected | `l0a_router_reply_contract/no-newline-fence-falls-open` |
-| trace: only the picked candidate's entry carries the rationale | `l0a_router_reply_contract/winner-carries-rationale-loser-does-not` |
-| trace: an unmatched reply leaves every candidate scored 0 with no rationale; the default carries the trace | `l0a_router_reply_contract/fail-open-trace-scores-zero` |
+| reply must be JSON (non-JSON ⇒ fall open) | `l0a_router_sugar/non-json-reply-falls-open` |
+| reply must be a JSON object, not an array | `l0a_router_sugar/json-array-reply-falls-open` |
+| reply keys are exactly `{model, rationale}` — an extra key is rejected | `l0a_router_sugar/extra-key-falls-open` |
+| `rationale` is required | `l0a_router_sugar/missing-rationale-falls-open` |
+| `model` is required | `l0a_router_sugar/missing-model-falls-open` |
+| a whitespace-only `rationale` trims to empty and is rejected | `l0a_router_sugar/blank-rationale-falls-open` |
+| `model` must be a string | `l0a_router_sugar/model-not-string-falls-open` |
+| `rationale` must be a string | `l0a_router_sugar/rationale-not-string-falls-open` |
+| candidate-name match is exact — a superstring of a candidate is not the candidate | `l0a_router_sugar/superstring-name-no-exact-match` |
+| candidate-name match is case-sensitive | `l0a_router_sugar/case-mismatched-name-no-match` |
+| one wrapping code fence is stripped, then the object is parsed | `l0a_router_sugar/fenced-reply-routes` |
+| text after the closing fence ⇒ rejected | `l0a_router_sugar/fenced-trailing-prose-falls-open` |
+| an opening fence with no closing fence ⇒ rejected | `l0a_router_sugar/no-closing-fence-falls-open` |
+| an opening fence with no newline ⇒ rejected | `l0a_router_sugar/no-newline-fence-falls-open` |
+| trace: only the picked candidate's entry carries the rationale | `l0a_router_sugar/winner-carries-rationale-loser-does-not` |
+| trace: an unmatched reply leaves every candidate scored 0 with no rationale; the default carries the trace | `l0a_router_sugar/fail-open-trace-scores-zero` |
 | omitted label ⇒ the llm classifier's `default_label` score (the reply picks that candidate ⇒ fires) | `l0a_llm_implicit_label/default-label-used-when-label-omitted` |
 | omitted label reads `default_label` even when the reply picks another candidate — proves it is not the picked label and not `primary()` | `l0a_llm_implicit_label/default-label-read-not-primary` |
 

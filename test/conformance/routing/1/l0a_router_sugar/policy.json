@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "model_name": "user.Router-L0a-Reply",
+  "model_name": "user.Router-L0a-Sugar",
   "recipe": "collection.router",
   "components": ["TinyLLM", "BigLLM", "DefaultLLM", "RouterLLM"],
   "routing": {
