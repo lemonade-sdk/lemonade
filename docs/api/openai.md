@@ -1061,11 +1061,13 @@ curl http://localhost:13305/v1/models?show_all=true
 
 Labels describe what a model can do. A model may carry multiple labels.
 
-**Deployment labels** — determine which backend endpoint the model is routed to:
+**Deployment labels** — determine which backend endpoint the model is routed to.
+Every model carries exactly one of these:
 
 | Label | Endpoint | Description |
 |-------|----------|-------------|
-| `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). Mutually exclusive with LLM deployment. |
+| `chat` | `/chat/completions`, `/completions`, `/responses` | Text-generating LLM. This label is what makes a model an LLM — it is not inferred from `reasoning`/`vision`/`tool-calling`, which are characteristics rather than deployment modes. |
+| `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). A model carrying both `chat` and `transcription` deploys as an LLM. |
 | `embeddings` | `/embeddings` | Produces text embedding vectors. |
 | `reranking` | `/rerank` | Scores and reranks a list of passages given a query. Also reachable at the aliases `/reranking` and `/reranker`. |
 | `image` | `/images/generations` | Text-to-image generation model. |

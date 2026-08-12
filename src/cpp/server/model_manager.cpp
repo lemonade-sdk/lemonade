@@ -152,11 +152,9 @@ static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
 static ModelType get_deployment_model_type(const std::string& recipe,
                                            const std::vector<std::string>& labels) {
     if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
-        for (const auto& label : desc->default_labels) {
-            ModelType backend_type = get_model_type_from_labels({label});
-            if (backend_type != ModelType::LLM) {
-                return backend_type;
-            }
+        ModelType backend_type = get_model_type_from_labels(desc->default_labels);
+        if (backend_type != ModelType::LLM) {
+            return backend_type;
         }
     }
     ModelType type = get_model_type_from_labels(labels);
@@ -1218,7 +1216,7 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     info.suggested = true;
     info.downloaded = true;
     info.source = EXTRA_MODEL_SOURCE;
-    info.labels.push_back("custom");
+    info.labels = {"custom", "chat"};
     info.device = device_type_for_recipe(EXTRA_MODEL_RECIPE);
     return info;
 }
@@ -2090,6 +2088,10 @@ void ModelManager::build_cache() {
                 info.labels.push_back(label.get<std::string>());
             }
         }
+        // Entries persisted before "chat" existed carry no deployment label, and
+        // registration is not re-run on load; stamp here so an upgrade doesn't
+        // hide them from every consumer that tests for the label.
+        ensure_chat_label(info.labels);
 
         parse_image_defaults(info, value);
         parse_extras(info, value);
@@ -2861,7 +2863,13 @@ static std::set<std::string> normalized_definition_labels(const json& model_data
             lemon::backends::descriptor_for(model_data.value("recipe", std::string()))) {
         for (const auto& label : desc->default_labels) labels.insert(label);
     }
-    return labels;
+    // Must run last: a definition that names no labels of its own gets its
+    // deployment mode from the descriptor above (sd-cpp -> "image",
+    // whispercpp -> "transcription"), and stamping "chat" before that lands
+    // would deploy an image or ASR model as an LLM.
+    std::vector<std::string> ordered(labels.begin(), labels.end());
+    ensure_chat_label(ordered);
+    return {ordered.begin(), ordered.end()};
 }
 
 // Whether the persisted user-model entry under `key` is a router collection.

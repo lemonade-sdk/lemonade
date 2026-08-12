@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -117,20 +118,15 @@ inline std::string device_type_to_string(DeviceType device) {
 // ASR, embedding, etc.) and the LRU bucket the router uses. These are different
 // concepts.
 //
-// Label semantics:
-//   "transcription"          → model can serve /audio/transcriptions (functional)
-//   "realtime-transcription" → model supports WebSocket /realtime streaming
-//   "chat-transcription"     → model accepts audio input in /chat/completions
-//
-// Resolution: chat-indicator labels win. The "transcription" label triggers
-// ModelType::TRANSCRIPTION only when no chat indicator is present (pure Whisper).
-// "chat-transcription" is an LLM input-modality label and does not change the
-// deployment mode.
+// Exactly one label names each deployment mode. The chat markers are checked
+// first so that input-modality labels on a chat model cannot deploy it as
+// something else: "chat-transcription" means chat with audio input, so an omni
+// model carrying both it and "transcription" still deploys as an LLM.
+// Characteristic labels — "vision", "reasoning", "tool-calling", "coding", "hot"
+// — never name a deployment mode.
 inline ModelType get_model_type_from_labels(const std::vector<std::string>& labels) {
     for (const auto& label : labels) {
-        if (label == "vision" || label == "reasoning" ||
-            label == "tool-calling" || label == "tools" ||
-            label == "chat-transcription") {
+        if (label == "chat" || label == "chat-transcription") {
             return ModelType::LLM;
         }
     }
@@ -160,7 +156,30 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
             return ModelType::MESH;
         }
     }
+    // Safety net for label sets that predate the "chat" label, such as a
+    // user_models.json written by an older build. Every ingest path stamps the
+    // label, so this should not be reached for a freshly discovered model.
     return ModelType::LLM;
+}
+
+inline bool add_label_once(std::vector<std::string>& labels, const std::string& label) {
+    if (std::find(labels.begin(), labels.end(), label) != labels.end()) return false;
+    labels.push_back(label);
+    return true;
+}
+
+// Stamp the "chat" label on models from sources that cannot declare it
+// themselves: FastFlowLM reports its own vocabulary through `flm list --json`
+// and has no chat marker at all (many of its chat models report no labels),
+// cloud providers report their own schema, extra_models_dir entries are bare
+// GGUF files, and a user_models.json written by an older build predates the
+// label. Doing it here, at the ingest boundary, is what lets the rest of the
+// codebase test for the label instead of inferring chat-ness from which other
+// labels happen to be absent.
+inline void ensure_chat_label(std::vector<std::string>& labels) {
+    if (get_model_type_from_labels(labels) == ModelType::LLM) {
+        add_label_once(labels, "chat");
+    }
 }
 
 // Fallback device type for recipes with no registered backend descriptor

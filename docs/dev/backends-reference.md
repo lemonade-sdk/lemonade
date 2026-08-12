@@ -191,15 +191,13 @@ the generator instead. Prose outside the markers is preserved. -->
 |-------|-----------|--------|
 | `ACE-Step-Music` | 10.5 | audio-generation |
 
-#### `collection.omni` — collection.omni (5 models)
+#### `collection.omni` — collection.omni (3 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
-| `LMX-Omni-5.5B-Lite` | 9.3 | — |
-| `LMX-Omni-52B-Halo` | 44.77 | — |
-| `Lite Collection` |  | — |
-| `RPG-HaloTales-V1` | 39.77 | — |
-| `Ultra Collection` |  | — |
+| `LMX-Omni-5.5B-Lite` | 9.3 | chat |
+| `LMX-Omni-52B-Halo` | 44.77 | chat |
+| `RPG-HaloTales-V1` | 39.77 | chat |
 
 #### `kokoro` — Kokoro (1 models)
 
@@ -211,90 +209,90 @@ the generator instead. Prose outside the markers is preserved. -->
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
-| `Bonsai-1.7B-gguf` | 0.25 | llamacpp |
-| `Bonsai-4B-gguf` | 0.572 | llamacpp |
-| `Bonsai-8B-gguf` | 1.16 | llamacpp |
-| `Cogito-v2-llama-109B-MoE-GGUF` | 65.4 | vision |
-| `DeepSeek-Qwen3-8B-GGUF` | 5.25 | reasoning |
-| `Devstral-Small-2507-GGUF` | 14.3 | coding, tool-calling |
-| `GLM-4.5-Air-UD-Q4K-XL-GGUF` | 67.7 | reasoning |
-| `GLM-4.7-Flash-GGUF` | 17.5 | tool-calling |
-| `Gemma-3-4b-it-GGUF` | 3.34 | vision |
-| `Gemma-4-12B-it-GGUF` | 7.29 | tool-calling, vision, llamacpp |
-| `Gemma-4-12B-it-MTP-GGUF` | 7.75 | tool-calling, llamacpp, vision, mtp |
-| `Gemma-4-26B-A4B-it-GGUF` | 18.1 | hot, tool-calling, vision, llamacpp |
-| `Gemma-4-26B-A4B-it-MTP-GGUF` | 18.5 | hot, tool-calling, vision, llamacpp, mtp |
-| `Gemma-4-31B-it-GGUF` | 19.5 | hot, tool-calling, vision, llamacpp |
-| `Gemma-4-31B-it-MTP-GGUF` | 20.0 | hot, tool-calling, vision, llamacpp, mtp |
-| `Gemma-4-E2B-it-GGUF` | 4.09 | tool-calling, vision, llamacpp |
-| `Gemma-4-E4B-it-GGUF` | 5.97 | tool-calling, vision, llamacpp |
-| `Jan-nano-128k-GGUF` | 2.5 | — |
-| `Jan-v1-4B-GGUF` | 2.5 | — |
-| `LFM2-1.2B-GGUF` | 0.731 | — |
-| `LFM2-24B-A2B-GGUF` | 14.4 | — |
-| `LFM2-8B-A1B-GGUF` | 5.04 | — |
-| `LFM2.5-1.2B-Instruct-GGUF` | 0.731 | — |
-| `LFM2.5-8B-A1B` | 5.16 | — |
-| `Llama-3.2-1B-Instruct-GGUF` | 0.834 | — |
-| `Llama-3.2-3B-Instruct-GGUF` | 2.06 | — |
-| `Llama-4-Scout-17B-16E-Instruct-GGUF` | 63.2 | vision |
-| `MiniCPM-V-4-GGUF` | 3.15 | vision |
-| `MiniCPM-V-4.5-GGUF` | 6.12 | vision |
-| `MiniCPM-V-4.6-GGUF` | 1.64 | hot, vision |
-| `MiniCPM-V-4.6-Thinking-GGUF` | 1.64 | reasoning, vision |
-| `MiniCPM-o-2.6-Vision-GGUF` | 5.73 | vision |
-| `MiniCPM-o-4.5-Vision-GGUF` | 6.12 | vision |
-| `MiniCPM3-4B-GGUF` | 2.47 | — |
-| `MiniCPM4-8B-GGUF` | 4.97 | — |
-| `MiniCPM4.1-8B-GGUF` | 4.97 | reasoning |
-| `MiniCPM5-1B-GGUF` | 0.69 | hot, reasoning |
-| `Ministral-3-3B-Instruct-2512-GGUF` | 2.99 | vision |
-| `Nemotron-3-Nano-30B-A3B-GGUF` | 22.8 | — |
-| `Phi-4-mini-instruct-GGUF` | 2.49 | — |
-| `Playable1-GGUF` | 4.68 | coding |
-| `PromptBridge-0.6b-Alpha-GGUF` | 0.397 | — |
-| `Qwen2.5-Coder-32B-Instruct-GGUF` | 19.9 | coding |
-| `Qwen2.5-Omni-3B-GGUF` | 4.73 | vision, chat-transcription |
-| `Qwen2.5-Omni-7B-GGUF` | 7.33 | vision, chat-transcription |
-| `Qwen2.5-VL-3B-Instruct-GGUF` | 3.27 | vision |
-| `Qwen2.5-VL-7B-Instruct-GGUF` | 6.04 | vision |
-| `Qwen3-0.6B-GGUF` | 0.38 | reasoning |
-| `Qwen3-1.7B-GGUF` | 1.06 | reasoning |
-| `Qwen3-14B-GGUF` | 8.54 | reasoning |
-| `Qwen3-30B-A3B-GGUF` | 17.4 | reasoning |
-| `Qwen3-30B-A3B-Instruct-2507-GGUF` | 17.4 | tool-calling |
-| `Qwen3-4B-GGUF` | 2.38 | reasoning |
-| `Qwen3-4B-Instruct-2507-GGUF` | 2.5 | tool-calling |
-| `Qwen3-8B-GGUF` | 5.25 | reasoning |
-| `Qwen3-Coder-30B-A3B-Instruct-GGUF` | 18.6 | coding, tool-calling, hot |
-| `Qwen3-Coder-Next-GGUF` | 48.0 | coding, tool-calling, hot |
+| `Bonsai-1.7B-gguf` | 0.25 | chat, llamacpp |
+| `Bonsai-4B-gguf` | 0.572 | chat, llamacpp |
+| `Bonsai-8B-gguf` | 1.16 | chat, llamacpp |
+| `Cogito-v2-llama-109B-MoE-GGUF` | 65.4 | chat, vision |
+| `DeepSeek-Qwen3-8B-GGUF` | 5.25 | chat, reasoning |
+| `Devstral-Small-2507-GGUF` | 14.3 | chat, coding, tool-calling |
+| `GLM-4.5-Air-UD-Q4K-XL-GGUF` | 67.7 | chat, reasoning |
+| `GLM-4.7-Flash-GGUF` | 17.5 | chat, tool-calling |
+| `Gemma-3-4b-it-GGUF` | 3.34 | chat, vision |
+| `Gemma-4-12B-it-GGUF` | 7.29 | chat, tool-calling, vision, llamacpp |
+| `Gemma-4-12B-it-MTP-GGUF` | 7.75 | chat, tool-calling, llamacpp, vision, mtp |
+| `Gemma-4-26B-A4B-it-GGUF` | 18.1 | chat, hot, tool-calling, vision, llamacpp |
+| `Gemma-4-26B-A4B-it-MTP-GGUF` | 18.5 | chat, hot, tool-calling, vision, llamacpp, mtp |
+| `Gemma-4-31B-it-GGUF` | 19.5 | chat, hot, tool-calling, vision, llamacpp |
+| `Gemma-4-31B-it-MTP-GGUF` | 20.0 | chat, hot, tool-calling, vision, llamacpp, mtp |
+| `Gemma-4-E2B-it-GGUF` | 4.09 | chat, tool-calling, vision, llamacpp |
+| `Gemma-4-E4B-it-GGUF` | 5.97 | chat, tool-calling, vision, llamacpp |
+| `Jan-nano-128k-GGUF` | 2.5 | chat |
+| `Jan-v1-4B-GGUF` | 2.5 | chat |
+| `LFM2-1.2B-GGUF` | 0.731 | chat |
+| `LFM2-24B-A2B-GGUF` | 14.4 | chat |
+| `LFM2-8B-A1B-GGUF` | 5.04 | chat |
+| `LFM2.5-1.2B-Instruct-GGUF` | 0.731 | chat |
+| `LFM2.5-8B-A1B` | 5.16 | chat |
+| `Llama-3.2-1B-Instruct-GGUF` | 0.834 | chat |
+| `Llama-3.2-3B-Instruct-GGUF` | 2.06 | chat |
+| `Llama-4-Scout-17B-16E-Instruct-GGUF` | 63.2 | chat, vision |
+| `MiniCPM-V-4-GGUF` | 3.15 | chat, vision |
+| `MiniCPM-V-4.5-GGUF` | 6.12 | chat, vision |
+| `MiniCPM-V-4.6-GGUF` | 1.64 | chat, hot, vision |
+| `MiniCPM-V-4.6-Thinking-GGUF` | 1.64 | chat, reasoning, vision |
+| `MiniCPM-o-2.6-Vision-GGUF` | 5.73 | chat, vision |
+| `MiniCPM-o-4.5-Vision-GGUF` | 6.12 | chat, vision |
+| `MiniCPM3-4B-GGUF` | 2.47 | chat |
+| `MiniCPM4-8B-GGUF` | 4.97 | chat |
+| `MiniCPM4.1-8B-GGUF` | 4.97 | chat, reasoning |
+| `MiniCPM5-1B-GGUF` | 0.69 | chat, hot, reasoning |
+| `Ministral-3-3B-Instruct-2512-GGUF` | 2.99 | chat, vision |
+| `Nemotron-3-Nano-30B-A3B-GGUF` | 22.8 | chat |
+| `Phi-4-mini-instruct-GGUF` | 2.49 | chat |
+| `Playable1-GGUF` | 4.68 | chat, coding |
+| `PromptBridge-0.6b-Alpha-GGUF` | 0.397 | chat |
+| `Qwen2.5-Coder-32B-Instruct-GGUF` | 19.9 | chat, coding |
+| `Qwen2.5-Omni-3B-GGUF` | 4.73 | chat, vision, chat-transcription |
+| `Qwen2.5-Omni-7B-GGUF` | 7.33 | chat, vision, chat-transcription |
+| `Qwen2.5-VL-3B-Instruct-GGUF` | 3.27 | chat, vision |
+| `Qwen2.5-VL-7B-Instruct-GGUF` | 6.04 | chat, vision |
+| `Qwen3-0.6B-GGUF` | 0.38 | chat, reasoning |
+| `Qwen3-1.7B-GGUF` | 1.06 | chat, reasoning |
+| `Qwen3-14B-GGUF` | 8.54 | chat, reasoning |
+| `Qwen3-30B-A3B-GGUF` | 17.4 | chat, reasoning |
+| `Qwen3-30B-A3B-Instruct-2507-GGUF` | 17.4 | chat, tool-calling |
+| `Qwen3-4B-GGUF` | 2.38 | chat, reasoning |
+| `Qwen3-4B-Instruct-2507-GGUF` | 2.5 | chat, tool-calling |
+| `Qwen3-8B-GGUF` | 5.25 | chat, reasoning |
+| `Qwen3-Coder-30B-A3B-Instruct-GGUF` | 18.6 | chat, coding, tool-calling, hot |
+| `Qwen3-Coder-Next-GGUF` | 48.0 | chat, coding, tool-calling, hot |
 | `Qwen3-Embedding-0.6B-GGUF` | 0.64 | embeddings |
 | `Qwen3-Embedding-4B-GGUF` | 4.28 | embeddings |
 | `Qwen3-Embedding-8B-GGUF` | 8.05 | embeddings |
-| `Qwen3-Next-80B-A3B-Instruct-GGUF` | 46.1 | tool-calling |
-| `Qwen3-VL-4B-Instruct-GGUF` | 3.33 | vision |
-| `Qwen3-VL-8B-Instruct-GGUF` | 6.19 | vision |
-| `Qwen3.5-0.8B-GGUF` | 0.764 | vision, tool-calling |
-| `Qwen3.5-122B-A10B-GGUF` | 77.9 | vision, tool-calling |
-| `Qwen3.5-122B-A10B-MTP-GGUF` | 79.6 | vision, tool-calling, mtp |
-| `Qwen3.5-27B-GGUF` | 18.5 | vision, tool-calling |
-| `Qwen3.5-2B-GGUF` | 2.01 | vision, tool-calling |
-| `Qwen3.5-35B-A3B-GGUF` | 23.1 | vision, tool-calling |
-| `Qwen3.5-4B-GGUF` | 3.58 | vision, tool-calling, hot |
-| `Qwen3.5-4B-MTP-GGUF` | 3.66 | vision, tool-calling, mtp |
-| `Qwen3.5-9B-GGUF` | 6.88 | vision, tool-calling |
-| `Qwen3.6-27B-GGUF` | 18.5 | vision, tool-calling |
-| `Qwen3.6-27B-MTP-GGUF` | 18.8 | vision, tool-calling, mtp, hot |
-| `Qwen3.6-35B-A3B-GGUF` | 23.3 | vision, tool-calling, hot |
-| `Qwen3.6-35B-A3B-MTP-GGUF` | 23.8 | vision, tool-calling, mtp |
-| `SmolLM3-3B-GGUF` | 1.94 | — |
-| `Tiny-Test-Model-GGUF` | 0.18 | — |
+| `Qwen3-Next-80B-A3B-Instruct-GGUF` | 46.1 | chat, tool-calling |
+| `Qwen3-VL-4B-Instruct-GGUF` | 3.33 | chat, vision |
+| `Qwen3-VL-8B-Instruct-GGUF` | 6.19 | chat, vision |
+| `Qwen3.5-0.8B-GGUF` | 0.764 | chat, vision, tool-calling |
+| `Qwen3.5-122B-A10B-GGUF` | 77.9 | chat, vision, tool-calling |
+| `Qwen3.5-122B-A10B-MTP-GGUF` | 79.6 | chat, vision, tool-calling, mtp |
+| `Qwen3.5-27B-GGUF` | 18.5 | chat, vision, tool-calling |
+| `Qwen3.5-2B-GGUF` | 2.01 | chat, vision, tool-calling |
+| `Qwen3.5-35B-A3B-GGUF` | 23.1 | chat, vision, tool-calling |
+| `Qwen3.5-4B-GGUF` | 3.58 | chat, vision, tool-calling, hot |
+| `Qwen3.5-4B-MTP-GGUF` | 3.66 | chat, vision, tool-calling, mtp |
+| `Qwen3.5-9B-GGUF` | 6.88 | chat, vision, tool-calling |
+| `Qwen3.6-27B-GGUF` | 18.5 | chat, vision, tool-calling |
+| `Qwen3.6-27B-MTP-GGUF` | 18.8 | chat, vision, tool-calling, mtp, hot |
+| `Qwen3.6-35B-A3B-GGUF` | 23.3 | chat, vision, tool-calling, hot |
+| `Qwen3.6-35B-A3B-MTP-GGUF` | 23.8 | chat, vision, tool-calling, mtp |
+| `SmolLM3-3B-GGUF` | 1.94 | chat |
+| `Tiny-Test-Model-GGUF` | 0.18 | chat |
 | `bge-reranker-v2-m3-GGUF` | 0.636 | reranking |
-| `gpt-oss-120b-GGUF` | 62.8 | reasoning, tool-calling |
-| `gpt-oss-120b-mxfp-GGUF` | 63.4 | hot, reasoning, tool-calling |
-| `gpt-oss-20b-GGUF` | 11.6 | reasoning, tool-calling |
-| `gpt-oss-20b-mxfp4-GGUF` | 12.1 | hot, reasoning, tool-calling |
-| `granite-4.0-h-tiny-GGUF` | 4.25 | tool-calling |
+| `gpt-oss-120b-GGUF` | 62.8 | chat, reasoning, tool-calling |
+| `gpt-oss-120b-mxfp-GGUF` | 63.4 | chat, hot, reasoning, tool-calling |
+| `gpt-oss-20b-GGUF` | 11.6 | chat, reasoning, tool-calling |
+| `gpt-oss-20b-mxfp4-GGUF` | 12.1 | chat, hot, reasoning, tool-calling |
+| `granite-4.0-h-tiny-GGUF` | 4.25 | chat, tool-calling |
 | `jina-reranker-v1-tiny-en-GGUF` | 0.0367 | reranking |
 | `nomic-embed-text-v1-GGUF` | 0.0781 | embeddings |
 | `nomic-embed-text-v2-moe-GGUF` | 0.51 | embeddings |
@@ -325,85 +323,85 @@ the generator instead. Prose outside the markers is preserved. -->
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
-| `AMD-OLMo-1B-SFT-DPO-Hybrid` | 1.48 | — |
-| `CodeLlama-7b-Instruct-hf-Hybrid` | 7.24 | coding |
-| `CodeLlama-7b-Instruct-hf-NPU` | 7.54 | coding |
-| `DeepSeek-R1-Distill-Llama-8B-CPU` | 6.2 | reasoning |
-| `DeepSeek-R1-Distill-Llama-8B-Hybrid` | 9.09 | reasoning |
-| `DeepSeek-R1-Distill-Llama-8B-NPU` | 9.3 | reasoning |
-| `DeepSeek-R1-Distill-Qwen-1.5B-Hybrid` | 2.19 | reasoning |
-| `DeepSeek-R1-Distill-Qwen-1.5B-NPU` | 2.3 | reasoning |
-| `DeepSeek-R1-Distill-Qwen-7B-CPU` | 6.2 | reasoning |
-| `DeepSeek-R1-Distill-Qwen-7B-Hybrid` | 8.67 | reasoning |
-| `DeepSeek-R1-Distill-Qwen-7B-NPU` | 8.87 | reasoning |
-| `Gemma-3-4b-it-mm-NPU` | 6.68 | vision |
-| `Llama-2-7b-chat-hf-Hybrid` | 7.31 | — |
-| `Llama-2-7b-chat-hf-NPU` | 7.47 | — |
-| `Llama-2-7b-hf-Hybrid` | 7.31 | — |
-| `Llama-2-7b-hf-NPU` | 7.47 | — |
-| `Llama-3.1-8B-Hybrid` | 9.09 | — |
-| `Llama-3.1-8B-NPU` | 9.3 | — |
-| `Llama-3.2-1B-Hybrid` | 1.89 | — |
-| `Llama-3.2-1B-Instruct-CPU` | 1.76 | — |
-| `Llama-3.2-1B-Instruct-Hybrid` | 1.89 | — |
-| `Llama-3.2-1B-Instruct-NPU` | 1.96 | — |
-| `Llama-3.2-1B-NPU` | 1.96 | — |
-| `Llama-3.2-3B-Hybrid` | 4.28 | — |
-| `Llama-3.2-3B-Instruct-CPU` | 3.38 | — |
-| `Llama-3.2-3B-Instruct-Hybrid` | 4.28 | — |
-| `Meta-Llama-3-8B-Hybrid` | 9.06 | — |
-| `Meta-Llama-3-8B-NPU` | 9.23 | — |
-| `Meta-Llama-3.1-8B-Instruct-Hybrid` | 9.09 | — |
-| `Meta-Llama-3.1-8B-Instruct-NPU` | 9.3 | — |
-| `Mistral-7B-Instruct-v0.1-Hybrid` | 7.34 | — |
-| `Mistral-7B-Instruct-v0.1-NPU` | 8.01 | — |
-| `Mistral-7B-Instruct-v0.2-Hybrid` | 7.34 | — |
-| `Mistral-7B-Instruct-v0.2-NPU` | 8.01 | — |
-| `Mistral-7B-Instruct-v0.3-Hybrid` | 7.35 | — |
-| `Mistral-7B-Instruct-v0.3-NPU` | 8.09 | — |
-| `Mistral-7B-v0.3-Hybrid` | 7.35 | — |
-| `Mistral-7B-v0.3-NPU` | 8.09 | — |
-| `Phi-3-Mini-Instruct-CPU` | 2.39 | — |
-| `Phi-3-mini-128k-instruct-Hybrid` | 4.21 | — |
-| `Phi-3-mini-128k-instruct-NPU` | 4.35 | — |
-| `Phi-3-mini-4k-instruct-Hybrid` | 4.19 | — |
-| `Phi-3-mini-4k-instruct-NPU` | 4.3 | — |
-| `Phi-3.5-mini-instruct-Hybrid` | 4.21 | — |
-| `Phi-3.5-mini-instruct-NPU` | 4.35 | — |
-| `Phi-4-mini-instruct-Hybrid` | 5.47 | — |
-| `Phi-4-mini-instruct-NPU` | 5.59 | — |
-| `Phi-4-mini-reasoning-Hybrid` | 5.47 | reasoning |
-| `Qwen-1.5-7B-Chat-CPU` | 6.32 | — |
-| `Qwen-2.5-1.5B-Instruct-Hybrid` | 2.17 | — |
-| `Qwen-2.5-1.5B-Instruct-NPU` | 2.25 | — |
-| `Qwen1.5-7B-Chat-Hybrid` | 8.83 | — |
-| `Qwen1.5-7B-Chat-NPU` | 9.02 | — |
-| `Qwen2-1.5B-Hybrid` | 2.19 | — |
-| `Qwen2-1.5B-NPU` | 2.3 | — |
-| `Qwen2-7B-Hybrid` | 8.68 | — |
-| `Qwen2-7B-NPU` | 8.88 | — |
-| `Qwen2.5-0.5B-Instruct-CPU` | 0.834 | — |
-| `Qwen2.5-0.5B-Instruct-Hybrid` | 0.828 | — |
-| `Qwen2.5-14B-instruct-Hybrid` | 16.5 | — |
-| `Qwen2.5-3B-Instruct-Hybrid` | 3.97 | — |
-| `Qwen2.5-3B-Instruct-NPU` | 4.1 | — |
-| `Qwen2.5-7B-Instruct-Hybrid` | 8.65 | — |
-| `Qwen2.5-7B-Instruct-NPU` | 8.83 | — |
-| `Qwen2.5-Coder-0.5B-Instruct-Hybrid` | 0.828 | coding |
-| `Qwen2.5-Coder-1.5B-Instruct-Hybrid` | 2.17 | coding |
-| `Qwen2.5-Coder-1.5B-Instruct-NPU` | 2.25 | coding |
-| `Qwen2.5-Coder-7B-Instruct-Hybrid` | 8.65 | coding |
-| `Qwen2.5-Coder-7B-Instruct-NPU` | 8.83 | coding |
-| `Qwen3-1.7B-Hybrid` | 2.55 | reasoning |
-| `Qwen3-14B-Hybrid` | 16.5 | reasoning |
-| `Qwen3-4B-Hybrid` | 5.17 | reasoning |
-| `Qwen3-8B-Hybrid` | 9.42 | reasoning |
-| `SmolLM-135M-Instruct-Hybrid` | 0.232 | — |
-| `SmolLM2-135M-Instruct-Hybrid` | 0.233 | — |
-| `chatglm3-6b-Hybrid` | 6.9 | — |
-| `chatglm3-6b-NPU` | 7.04 | — |
-| `gemma-2-2b-Hybrid` | 4.04 | — |
-| `gpt-oss-20b-NPU` | 13.4 | — |
+| `AMD-OLMo-1B-SFT-DPO-Hybrid` | 1.48 | chat |
+| `CodeLlama-7b-Instruct-hf-Hybrid` | 7.24 | chat, coding |
+| `CodeLlama-7b-Instruct-hf-NPU` | 7.54 | chat, coding |
+| `DeepSeek-R1-Distill-Llama-8B-CPU` | 6.2 | chat, reasoning |
+| `DeepSeek-R1-Distill-Llama-8B-Hybrid` | 9.09 | chat, reasoning |
+| `DeepSeek-R1-Distill-Llama-8B-NPU` | 9.3 | chat, reasoning |
+| `DeepSeek-R1-Distill-Qwen-1.5B-Hybrid` | 2.19 | chat, reasoning |
+| `DeepSeek-R1-Distill-Qwen-1.5B-NPU` | 2.3 | chat, reasoning |
+| `DeepSeek-R1-Distill-Qwen-7B-CPU` | 6.2 | chat, reasoning |
+| `DeepSeek-R1-Distill-Qwen-7B-Hybrid` | 8.67 | chat, reasoning |
+| `DeepSeek-R1-Distill-Qwen-7B-NPU` | 8.87 | chat, reasoning |
+| `Gemma-3-4b-it-mm-NPU` | 6.68 | chat, vision |
+| `Llama-2-7b-chat-hf-Hybrid` | 7.31 | chat |
+| `Llama-2-7b-chat-hf-NPU` | 7.47 | chat |
+| `Llama-2-7b-hf-Hybrid` | 7.31 | chat |
+| `Llama-2-7b-hf-NPU` | 7.47 | chat |
+| `Llama-3.1-8B-Hybrid` | 9.09 | chat |
+| `Llama-3.1-8B-NPU` | 9.3 | chat |
+| `Llama-3.2-1B-Hybrid` | 1.89 | chat |
+| `Llama-3.2-1B-Instruct-CPU` | 1.76 | chat |
+| `Llama-3.2-1B-Instruct-Hybrid` | 1.89 | chat |
+| `Llama-3.2-1B-Instruct-NPU` | 1.96 | chat |
+| `Llama-3.2-1B-NPU` | 1.96 | chat |
+| `Llama-3.2-3B-Hybrid` | 4.28 | chat |
+| `Llama-3.2-3B-Instruct-CPU` | 3.38 | chat |
+| `Llama-3.2-3B-Instruct-Hybrid` | 4.28 | chat |
+| `Meta-Llama-3-8B-Hybrid` | 9.06 | chat |
+| `Meta-Llama-3-8B-NPU` | 9.23 | chat |
+| `Meta-Llama-3.1-8B-Instruct-Hybrid` | 9.09 | chat |
+| `Meta-Llama-3.1-8B-Instruct-NPU` | 9.3 | chat |
+| `Mistral-7B-Instruct-v0.1-Hybrid` | 7.34 | chat |
+| `Mistral-7B-Instruct-v0.1-NPU` | 8.01 | chat |
+| `Mistral-7B-Instruct-v0.2-Hybrid` | 7.34 | chat |
+| `Mistral-7B-Instruct-v0.2-NPU` | 8.01 | chat |
+| `Mistral-7B-Instruct-v0.3-Hybrid` | 7.35 | chat |
+| `Mistral-7B-Instruct-v0.3-NPU` | 8.09 | chat |
+| `Mistral-7B-v0.3-Hybrid` | 7.35 | chat |
+| `Mistral-7B-v0.3-NPU` | 8.09 | chat |
+| `Phi-3-Mini-Instruct-CPU` | 2.39 | chat |
+| `Phi-3-mini-128k-instruct-Hybrid` | 4.21 | chat |
+| `Phi-3-mini-128k-instruct-NPU` | 4.35 | chat |
+| `Phi-3-mini-4k-instruct-Hybrid` | 4.19 | chat |
+| `Phi-3-mini-4k-instruct-NPU` | 4.3 | chat |
+| `Phi-3.5-mini-instruct-Hybrid` | 4.21 | chat |
+| `Phi-3.5-mini-instruct-NPU` | 4.35 | chat |
+| `Phi-4-mini-instruct-Hybrid` | 5.47 | chat |
+| `Phi-4-mini-instruct-NPU` | 5.59 | chat |
+| `Phi-4-mini-reasoning-Hybrid` | 5.47 | chat, reasoning |
+| `Qwen-1.5-7B-Chat-CPU` | 6.32 | chat |
+| `Qwen-2.5-1.5B-Instruct-Hybrid` | 2.17 | chat |
+| `Qwen-2.5-1.5B-Instruct-NPU` | 2.25 | chat |
+| `Qwen1.5-7B-Chat-Hybrid` | 8.83 | chat |
+| `Qwen1.5-7B-Chat-NPU` | 9.02 | chat |
+| `Qwen2-1.5B-Hybrid` | 2.19 | chat |
+| `Qwen2-1.5B-NPU` | 2.3 | chat |
+| `Qwen2-7B-Hybrid` | 8.68 | chat |
+| `Qwen2-7B-NPU` | 8.88 | chat |
+| `Qwen2.5-0.5B-Instruct-CPU` | 0.834 | chat |
+| `Qwen2.5-0.5B-Instruct-Hybrid` | 0.828 | chat |
+| `Qwen2.5-14B-instruct-Hybrid` | 16.5 | chat |
+| `Qwen2.5-3B-Instruct-Hybrid` | 3.97 | chat |
+| `Qwen2.5-3B-Instruct-NPU` | 4.1 | chat |
+| `Qwen2.5-7B-Instruct-Hybrid` | 8.65 | chat |
+| `Qwen2.5-7B-Instruct-NPU` | 8.83 | chat |
+| `Qwen2.5-Coder-0.5B-Instruct-Hybrid` | 0.828 | chat, coding |
+| `Qwen2.5-Coder-1.5B-Instruct-Hybrid` | 2.17 | chat, coding |
+| `Qwen2.5-Coder-1.5B-Instruct-NPU` | 2.25 | chat, coding |
+| `Qwen2.5-Coder-7B-Instruct-Hybrid` | 8.65 | chat, coding |
+| `Qwen2.5-Coder-7B-Instruct-NPU` | 8.83 | chat, coding |
+| `Qwen3-1.7B-Hybrid` | 2.55 | chat, reasoning |
+| `Qwen3-14B-Hybrid` | 16.5 | chat, reasoning |
+| `Qwen3-4B-Hybrid` | 5.17 | chat, reasoning |
+| `Qwen3-8B-Hybrid` | 9.42 | chat, reasoning |
+| `SmolLM-135M-Instruct-Hybrid` | 0.232 | chat |
+| `SmolLM2-135M-Instruct-Hybrid` | 0.233 | chat |
+| `chatglm3-6b-Hybrid` | 6.9 | chat |
+| `chatglm3-6b-NPU` | 7.04 | chat |
+| `gemma-2-2b-Hybrid` | 4.04 | chat |
+| `gpt-oss-20b-NPU` | 13.4 | chat |
 
 #### `sd-cpp` — StableDiffusion.cpp (12 models)
 
@@ -447,17 +445,17 @@ the generator instead. Prose outside the markers is preserved. -->
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
-| `GLM-4.7-Flash-FP16-vLLM` | 62.47 | reasoning, tool-calling |
-| `Qwen3.5-0.8B-FP16-vLLM` | 1.77 | reasoning |
-| `Qwen3.5-2B-FP16-vLLM` | 4.57 | reasoning, tool-calling |
-| `Qwen3.5-4B-FP16-vLLM` | 9.34 | reasoning, hot, tool-calling |
-| `Qwen3.5-9B-FP16-vLLM` | 19.3 | reasoning, tool-calling |
-| `Qwen3.6-27B-FP16-vLLM` | 55.59 | reasoning, tool-calling, vision |
-| `Qwen3.6-27B-FP8-vLLM-highconc` | 27.8 | reasoning, tool-calling, vision, mtp |
-| `Qwen3.6-27B-FP8-vLLM-lowconc` | 27.8 | reasoning, tool-calling, vision, mtp |
-| `Qwen3.6-35B-A3B-FP16-vLLM` | 71.93 | reasoning, tool-calling, vision |
-| `Qwen3.6-35B-A3B-FP8-vLLM-highconc` | 36.0 | reasoning, tool-calling, vision, mtp |
-| `Qwen3.6-35B-A3B-FP8-vLLM-lowconc` | 36.0 | reasoning, tool-calling, vision, mtp |
+| `GLM-4.7-Flash-FP16-vLLM` | 62.47 | chat, reasoning, tool-calling |
+| `Qwen3.5-0.8B-FP16-vLLM` | 1.77 | chat, reasoning |
+| `Qwen3.5-2B-FP16-vLLM` | 4.57 | chat, reasoning, tool-calling |
+| `Qwen3.5-4B-FP16-vLLM` | 9.34 | chat, reasoning, hot, tool-calling |
+| `Qwen3.5-9B-FP16-vLLM` | 19.3 | chat, reasoning, tool-calling |
+| `Qwen3.6-27B-FP16-vLLM` | 55.59 | chat, reasoning, tool-calling, vision |
+| `Qwen3.6-27B-FP8-vLLM-highconc` | 27.8 | chat, reasoning, tool-calling, vision, mtp |
+| `Qwen3.6-27B-FP8-vLLM-lowconc` | 27.8 | chat, reasoning, tool-calling, vision, mtp |
+| `Qwen3.6-35B-A3B-FP16-vLLM` | 71.93 | chat, reasoning, tool-calling, vision |
+| `Qwen3.6-35B-A3B-FP8-vLLM-highconc` | 36.0 | chat, reasoning, tool-calling, vision, mtp |
+| `Qwen3.6-35B-A3B-FP8-vLLM-lowconc` | 36.0 | chat, reasoning, tool-calling, vision, mtp |
 
 #### `whispercpp` — Whisper.cpp (6 models)
 

@@ -22,17 +22,6 @@ namespace lemon {
 
 namespace {
 
-// Labels that identify a concrete non-chat component. A planner candidate is a
-// component carrying none of these. Mirrors NON_CHAT_PLANNER_LABELS in
-// src/app/src/renderer/utils/modelLabels.ts.
-const std::set<std::string>& non_chat_planner_labels() {
-    static const std::set<std::string> labels = {
-        "image", "speech", "tts", "transcription", "embeddings",
-        "embedding", "reranking", "edit", "esrgan",
-    };
-    return labels;
-}
-
 // Omni tools the server executes internally. v1 scope: image gen/edit + TTS.
 // (transcribe_audio and analyze_image stay client-path tools — see
 // docs/dev/lemonade-omni.md.)
@@ -375,10 +364,11 @@ CollectionOrchestrator::ToolSet CollectionOrchestrator::build_tools(const ModelI
         }
     }
 
-    // Pick the chat/planner component: first that carries no non-chat label,
-    // else the first component.
+    // Pick the chat/planner component: the first one labeled "chat", else the
+    // first component.
     for (const auto& c : components) {
-        if (!labels_intersect(labels[c], non_chat_planner_labels())) {
+        const auto& cl = labels[c];
+        if (std::find(cl.begin(), cl.end(), "chat") != cl.end()) {
             result.chat_model = c;
             break;
         }

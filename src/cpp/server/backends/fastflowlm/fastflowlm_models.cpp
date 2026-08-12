@@ -288,6 +288,7 @@ std::vector<ModelInfo> flm_discover_models() {
                         }
                     }
 
+                    ensure_chat_label(info.labels);
                     info.type = get_model_type_from_labels(info.labels);
                     const BackendDescriptor* flm_desc = descriptor_for("flm");
                     info.device = flm_desc ? flm_desc->default_device : DEVICE_NPU;
