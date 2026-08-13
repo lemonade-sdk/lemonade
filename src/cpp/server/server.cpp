@@ -2800,8 +2800,11 @@ static std::string validate_option_value(const RuntimeConfig& config,
                                          const nlohmann::json& expected,
                                          const nlohmann::json& value) {
     if (key == "ctx_size") {
-        if (!value.is_number_integer() || value.get<int64_t>() < -1) {
-            return "'ctx_size' must be a whole number, or -1 to size it automatically";
+        // 0 is not a shorthand for anything here: only -1 auto-resolves, so a 0
+        // reaches the backend verbatim and FastFlowLM and vLLM both reject it.
+        if (!value.is_number_integer() || value.get<int64_t>() < -1 || value == 0) {
+            return "'ctx_size' must be a positive whole number, "
+                   "or -1 to size it automatically";
         }
         return "";
     }
@@ -2919,12 +2922,22 @@ void Server::respond_with_model_options(
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Failed to handle options for '" << model_id
                              << "': " << e.what() << std::endl;
-        // Keyed on the resolved name: an alias is deliberately absent from the
-        // registry, so reporting against the requested name would turn every
-        // server-side failure into "model not found".
-        auto error_response = create_model_error(model_key, e.what());
-        res.status = get_http_status_from_error(error_response["error"]["code"].get<std::string>());
-        res.set_content(error_response.dump(), "application/json");
+        if (!model_manager_->model_exists(model_key)) {
+            // The model went away between the existence check and the read.
+            res.status = 404;
+            res.set_content(create_model_error(model_key, e.what()).dump(), "application/json");
+            return;
+        }
+        // Anything else is a server-side failure, most often the options file
+        // being unwritable. Reporting it through create_model_error would call
+        // it a load failure, which this endpoint never performs.
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", "Failed to read or update options for '" + model_id + "': " + e.what()},
+            {"type", "server_error"},
+            {"code", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
     }
 }
 
@@ -3004,11 +3017,12 @@ void Server::handle_model_options_delete(const httplib::Request& req, httplib::R
     respond_with_model_options(req, res,
         [this](const std::string& model_key, const ModelInfo&, httplib::Response&,
                bool& touched_pinned) {
-            // Only a saved pin is this endpoint's to reset. A pin a /load
-            // request applied to the live process is not part of the entry
-            // being erased, and `effective` reports it either way.
-            touched_pinned = model_manager_->get_saved_model_options(model_key).contains("pinned");
-            if (!model_manager_->get_saved_model_options(model_key).empty()) {
+            const nlohmann::json saved = model_manager_->get_saved_model_options(model_key);
+            // Only an active saved pin needs undoing. A saved `false`, or a pin
+            // a /load request applied to the live process, is not something this
+            // erase turned off, and `effective` reports the live pin either way.
+            touched_pinned = saved.value("pinned", false) == true;
+            if (!saved.empty()) {
                 model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
             }
             return true;

@@ -1109,6 +1109,7 @@ class EndpointTests(ServerTestBase):
             {"ctx_size": "big"},  # wrong type
             {"ctx_size": "8192"},  # numeric, but still a string
             {"ctx_size": -5},  # out of range: only -1 is a valid negative
+            {"ctx_size": 0},  # only -1 auto-resolves; 0 reaches the backend
             {"ctx_size": 4096.5},  # not a whole number
             {"auto_evict": "sometimes"},  # wrong type for a null-default option
             {"llamacpp_backend": "nonsense"},  # not a backend this host supports
@@ -1362,6 +1363,23 @@ class EndpointTests(ServerTestBase):
         self.assertTrue(
             live_pinned(), "DELETE must not reset a pin that was never saved"
         )
+
+        # A saved `pinned: false` is not an active pin, so erasing it must not
+        # turn off a pin that a /load request applied to the live process.
+        requests.post(
+            self._options_url(), json={"pinned": False}, timeout=TIMEOUT_DEFAULT
+        )
+        requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "pinned": True},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertTrue(live_pinned())
+        self._reset_options()
+        self.assertTrue(
+            live_pinned(), "Erasing a saved `pinned: false` must not unpin anything"
+        )
+
         requests.post(
             f"{self.base_url}/load",
             json={"model_name": ENDPOINT_TEST_MODEL, "pinned": False},
@@ -1482,6 +1500,9 @@ class EndpointTests(ServerTestBase):
                 json={"model_name": model_name},
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
+            # /delete removes the checkpoint file, which this model shares with
+            # ENDPOINT_TEST_MODEL, so restore it for the tests that follow.
+            pull_model_with_retry(ENDPOINT_TEST_MODEL)
 
         self.addCleanup(cleanup)
         # Reuses the endpoint test model's checkpoint, so nothing new downloads.
