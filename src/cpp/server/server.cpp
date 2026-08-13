@@ -2866,13 +2866,7 @@ void Server::respond_with_model_options(
         effective_json["model_name"] = model_id;
         defaults_json["model_name"] = model_id;
 
-        // The `lemonade load` rendering of the effective options, with an auto
-        // ctx_size concretized to the size a load right now would pick.
         const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
-        nlohmann::json args_source = effective.to_json();
-        if (auto_ctx != -2) {
-            args_source["ctx_size"] = auto_ctx;
-        }
         const nlohmann::json effective_ctx = effective.get_option("ctx_size");
         const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
             : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
@@ -2883,7 +2877,6 @@ void Server::respond_with_model_options(
             {"saved", model_manager_->get_saved_model_options(model_key)},
             {"effective", effective_json},
             {"defaults", defaults_json},
-            {"args", RecipeOptions::to_cli_options(args_source)},
             {"resolved_ctx_size", resolved_ctx}
         };
         res.set_content(response.dump(), "application/json");
