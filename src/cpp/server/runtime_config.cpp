@@ -86,8 +86,7 @@ static void validate_extra_models_dir_access(const std::string& raw_dir) {
     // enumerate the directory. Probe enumeration so the GUI can report a
     // permission error before RuntimeConfig::set applies either directory key.
     std::error_code read_ec;
-    fs::directory_iterator probe(dir, read_ec);
-    (void)probe;
+    fs::directory_iterator{dir, read_ec};
     if (read_ec) {
         throw std::invalid_argument(
             "'extra_models_dir' is not readable by the Lemonade server: " +
