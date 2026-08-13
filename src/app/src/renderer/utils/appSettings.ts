@@ -33,8 +33,14 @@ export interface TTSSettings {
   model: StringSetting;
   userVoice: StringSetting;
   assistantVoice: StringSetting;
+  userVoiceSample: StringSetting;
+  assistantVoiceSample: StringSetting;
   enableTTS: BooleanSetting;
   enableUserTTS: BooleanSetting;
+}
+
+export interface ModelManagerSettings {
+  showDownloadedOnly: boolean;
 }
 
 export interface AppSettings {
@@ -48,6 +54,7 @@ export interface AppSettings {
   apiKey: StringSetting;
   layout: LayoutSettings;
   tts: TTSSettings;
+  modelManager: ModelManagerSettings;
 }
 
 type BaseSettingValues = Record<NumericSettingKey, number> & {
@@ -92,8 +99,14 @@ export const DEFAULT_TTS_SETTINGS: TTSSettings = {
   model: { value: 'kokoro-v1', useDefault: true },
   userVoice: { value: 'fable', useDefault: true },
   assistantVoice: { value: 'alloy', useDefault: true },
+  userVoiceSample: { value: '', useDefault: true },
+  assistantVoiceSample: { value: '', useDefault: true },
   enableTTS: { value: false, useDefault: true },
   enableUserTTS: { value: false, useDefault: true }
+};
+
+export const DEFAULT_MODEL_MANAGER_SETTINGS: ModelManagerSettings = {
+  showDownloadedOnly: false,
 };
 
 export const createDefaultSettings = (): AppSettings => ({
@@ -106,7 +119,8 @@ export const createDefaultSettings = (): AppSettings => ({
   baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
   apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
-  tts: {...DEFAULT_TTS_SETTINGS}
+  tts: {...DEFAULT_TTS_SETTINGS},
+  modelManager: { ...DEFAULT_MODEL_MANAGER_SETTINGS },
 });
 
 export const cloneSettings = (settings: AppSettings): AppSettings => ({
@@ -120,6 +134,7 @@ export const cloneSettings = (settings: AppSettings): AppSettings => ({
   apiKey: { ...settings.apiKey },
   layout: { ...settings.layout },
   tts: { ...settings.tts },
+  modelManager: { ...settings.modelManager },
 });
 
 export const clampNumericSettingValue = (key: NumericSettingKey, value: number): number => {
@@ -276,6 +291,13 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
         (defaults.tts[key] as (StringSetting | BooleanSetting)) = { value, useDefault };
       }
     });
+  }
+
+  const rawModelManager = incoming.modelManager;
+  if (rawModelManager && typeof rawModelManager === 'object') {
+    if (typeof rawModelManager.showDownloadedOnly === 'boolean') {
+      defaults.modelManager.showDownloadedOnly = rawModelManager.showDownloadedOnly;
+    }
   }
 
   return defaults;

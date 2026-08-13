@@ -1,16 +1,11 @@
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/install_staging.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
-#include "lemon/backends/llamacpp_server.h"
-#include "lemon/backends/whisper_server.h"
-#include "lemon/backends/sd_server.h"
-#include "lemon/backends/kokoro_server.h"
-#include "lemon/backends/ryzenaiserver.h"
-#include "lemon/backends/vllm_server.h"
-#include "lemon/backends/fastflowlm_server.h"
-#include "lemon/backends/moonshine_server.h"
+#include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
+#include "lemon/utils/github_api.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
@@ -22,8 +17,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
+#include <system_error>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -39,15 +36,8 @@ using json = nlohmann::json;
 namespace lemon::backends {
 
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe) {
-        if (recipe == "llamacpp") return &LlamaCppServer::SPEC;
-        if (recipe == "whispercpp") return &WhisperServer::SPEC;
-        if (recipe == "sd-cpp") return &SDServer::SPEC;
-        if (recipe == "kokoro") return &KokoroServer::SPEC;
-        if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
-        if (recipe == "vllm") return &VLLMServer::SPEC;
-        if (recipe == "flm") return &FastFlowLMServer::SPEC;
-        if (recipe == "moonshine") return &MoonshineServer::SPEC;
-        return nullptr;
+        // Each backend exposes its install/download spec through the registry.
+        return spec_for(recipe);
     }
 
     static std::string hash_string_from_json(const json& node) {
@@ -149,10 +139,96 @@ namespace lemon::backends {
         return ends_with(filename, ".7z");
     }
 
+    // Greedy glob match where '*' matches any (possibly empty) run of
+    // characters. No '?' support — release asset names only need '*'.
+    static bool wildcard_match(const std::string& pattern, const std::string& text) {
+        size_t p = 0, t = 0, star = std::string::npos, mark = 0;
+        while (t < text.size()) {
+            if (p < pattern.size() && pattern[p] == '*') {
+                star = p++;
+                mark = t;
+            } else if (p < pattern.size() && pattern[p] == text[t]) {
+                ++p;
+                ++t;
+            } else if (star != std::string::npos) {
+                p = star + 1;
+                t = ++mark;
+            } else {
+                return false;
+            }
+        }
+        while (p < pattern.size() && pattern[p] == '*') {
+            ++p;
+        }
+        return p == pattern.size();
+    }
+
+    // Resolve a '*' wildcard in a release asset filename to the concrete asset
+    // name published for `tag`. Some upstreams embed a component that changes
+    // on every build (e.g. the macOS runner version in sd-cpp's Darwin asset:
+    // sd-...-bin-Darwin-macOS-15.7.7-arm64.zip). Rather than hardcode and chase
+    // that value on every bump, the backend spec carries a '*' placeholder and
+    // we look up the real asset name here via the GitHub Releases API. Returns
+    // the pattern unchanged when it contains no wildcard.
+    static std::string resolve_asset_wildcard(const std::string& repo,
+                                              const std::string& tag,
+                                              const std::string& pattern,
+                                              const BackendSpec& spec) {
+        if (pattern.find('*') == std::string::npos) {
+            return pattern;
+        }
+
+        const std::string url = "https://api.github.com/repos/" + repo +
+                                "/releases/tags/" + tag;
+
+        LOG(DEBUG, spec.log_name()) << "Resolving asset wildcard '" << pattern
+            << "' for " << repo << "@" << tag << " via " << url << std::endl;
+
+        utils::HttpResponse resp;
+        try {
+            resp = utils::github_api::get(url);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+                "Failed to query GitHub for release '" + tag + "' of " + repo +
+                " to resolve asset '" + pattern + "': " + e.what());
+        }
+        if (resp.status_code < 200 || resp.status_code >= 300) {
+            throw std::runtime_error(
+                "GitHub returned HTTP " + std::to_string(resp.status_code) +
+                " when resolving asset '" + pattern + "' for " + repo + "@" + tag);
+        }
+
+        json body;
+        try {
+            body = json::parse(resp.body);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+                "Failed to parse GitHub release response for " + repo + "@" +
+                tag + ": " + e.what());
+        }
+
+        if (body.contains("assets") && body["assets"].is_array()) {
+            for (const auto& asset : body["assets"]) {
+                if (!asset.contains("name") || !asset["name"].is_string()) {
+                    continue;
+                }
+                const std::string name = asset["name"].get<std::string>();
+                if (wildcard_match(pattern, name)) {
+                    LOG(INFO, spec.log_name()) << "Resolved asset wildcard '"
+                        << pattern << "' to '" << name << "'" << std::endl;
+                    return name;
+                }
+            }
+        }
+
+        throw std::runtime_error(
+            "No release asset matching '" + pattern + "' found for " + repo +
+            "@" + tag);
+    }
+
     bool BackendUtils::extract_seven_zip(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
         // CUDA Windows release assets are .7z and use the existing native tar.exe path.
         // Linux CUDA assets are .tar.xz, so Linux should not require bsdtar/7z/p7zip.
-        std::string command;
         fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting 7z to " << dest_dir << std::endl;
 #ifdef _WIN32
@@ -167,9 +243,14 @@ namespace lemon::backends {
         }
         {
             std::string tar_path = platform->get_native_tar_path();
-            std::string probe_cmd = tar_path + " --list -f \"" + archive_path + "\" >nul 2>&1";
-            std::string unused;
-            if (lemon::utils::ProcessManager::run_command(probe_cmd, unused, 10) != 0) {
+            int probe_result = lemon::utils::ProcessManager::run_process_with_output(
+                tar_path,
+                {"--list", "-f", archive_path},
+                [](const std::string&) { return true; },
+                "",
+                10
+            );
+            if (probe_result != 0) {
                 LOG(ERROR, backend_name) << "Error: tar.exe cannot read this .7z archive. Windows 11 22H2+ (bsdtar/libarchive) required." << std::endl;
                 return false;
             }
@@ -177,17 +258,27 @@ namespace lemon::backends {
         // Note: do NOT use --strip-components=1 here. The CUDA .7z archives from
         // lemonade-sdk/llama.cpp have no top-level directory — files sit at the
         // archive root. Stripping would discard every entry and produce an empty dir.
-        command = platform->get_native_tar_path() + " -xf \"" + archive_path + "\" -C \"" + dest_dir + "\"";
+        std::string output;
+        int result = lemon::utils::ProcessManager::run_process_with_output(
+            platform->get_native_tar_path(),
+            {"-xf", archive_path, "-C", dest_dir},
+            [&output](const std::string& line) {
+                output += line + "\n";
+                return true;
+            },
+            "",
+            300
+        );
+        if (result != 0) {
+            LOG(ERROR, backend_name) << "Extraction failed with code: " << result
+                                     << (output.empty() ? "" : " - " + output) << std::endl;
+            return false;
+        }
+        return true;
 #else
         LOG(ERROR, backend_name) << "Error: .7z backend archives are only expected on Windows. Linux CUDA assets should be .tar.xz." << std::endl;
         return false;
 #endif
-        int result = system(command.c_str());
-        if (result != 0) {
-            LOG(ERROR, backend_name) << "Extraction failed with code: " << result << std::endl;
-            return false;
-        }
-        return true;
     }
 
     static fs::path get_backend_download_cache_dir() {
@@ -220,8 +311,8 @@ namespace lemon::backends {
                                               std::string& out_section,
                                               std::string& out_bin_key) {
         std::string config_backend = backend;
-        if ((recipe == "llamacpp" || recipe == "sd-cpp") &&
-            (backend == "rocm-stable" || backend == "rocm-nightly")) {
+        if ((recipe_has_rocm_channels(recipe) &&
+            (backend == "rocm-stable" || backend == "rocm-nightly"))) {
             config_backend = "rocm";
         }
         out_section = RuntimeConfig::recipe_to_config_section(recipe);
@@ -229,12 +320,9 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {
-        auto* cfg = lemon::RuntimeConfig::global();
-        if (!cfg) return "";
-
         std::string section, bin_key;
         build_bin_config_key(recipe, backend, section, bin_key);
-        std::string bin_value = cfg->backend_string(section, bin_key);
+        std::string bin_value = get_bin_config_value(recipe, backend);
 
         // Reserved keywords and bare version tags are handled by the install flow.
         if (bin_value.empty() || bin_value == "builtin" || bin_value == "latest") {
@@ -249,35 +337,25 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_bin_config_value(const std::string& recipe, const std::string& backend) {
-        auto* cfg = lemon::RuntimeConfig::global();
-        if (!cfg) return "";
         std::string section, bin_key;
         build_bin_config_key(recipe, backend, section, bin_key);
+
+        std::string env_name = "LEMONADE_" + section + "_" + bin_key;
+        std::transform(env_name.begin(), env_name.end(), env_name.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+
+        std::string bin_value = utils::get_environment_variable_utf8(env_name);
+        if (!bin_value.empty()) return bin_value;
+
+        auto* cfg = lemon::RuntimeConfig::global();
+        if (!cfg) return "";
         return cfg->backend_string(section, bin_key);
     }
 
     std::string BackendUtils::find_executable_in_install_dir(const std::string& install_dir, const std::string& binary_name) {
-        if (fs::exists(install_dir)) {
-            // On Windows, executables have a .exe extension that may not be in binary_name
-#ifdef _WIN32
-            const std::string binary_name_exe = binary_name + ".exe";
-#endif
-            // This could be optimized with a cache but saving a few milliseconds every few minutes/hours is not going to do much
-            for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(install_dir)) {
-                if (dir_entry.is_regular_file()) {
-                    const auto& fname = dir_entry.path().filename();
-                    if (fname == binary_name
-#ifdef _WIN32
-                        || fname == binary_name_exe
-#endif
-                    ) {
-                        return dir_entry.path().string();
-                    }
-                }
-            }
-        }
-
-        return "";
+        // Delegates to the header-only helper so the executable-lookup logic has
+        // a single source of truth shared with commit_staged_install().
+        return find_executable_in_dir(install_dir, binary_name);
     }
 
     std::string BackendUtils::get_backend_binary_path(const BackendSpec& spec, const std::string& backend) {
@@ -292,7 +370,7 @@ namespace lemon::backends {
 
         // Resolve "rocm" to actual channel for backends that support ROCm channels
         std::string resolved_backend = backend;
-        if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(spec.recipe) && backend == "rocm") {
             std::string channel = "stable";  // default to stable
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(spec.recipe);
@@ -332,7 +410,7 @@ namespace lemon::backends {
         // directory or ROCm backends remain stuck in update_required after a
         // successful install.
         std::string resolved_backend = backend;
-        if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(spec.recipe) && backend == "rocm") {
             std::string channel = "stable";
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(spec.recipe);
@@ -346,7 +424,7 @@ namespace lemon::backends {
 
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string resolved_backend = backend;
-        if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+        if (recipe_has_rocm_channels(recipe) && backend == "rocm") {
             // Map "rocm" to the appropriate channel based on config
             std::string channel = "stable";  // default to stable for now
             if (auto* cfg = RuntimeConfig::global()) {
@@ -377,7 +455,7 @@ namespace lemon::backends {
     void BackendUtils::install_from_github(const BackendSpec& spec,
                                            const std::string& expected_version,
                                            const std::string& repo,
-                                           const std::string& filename,
+                                           const std::string& asset_pattern,
                                            const std::string& backend,
                                            DownloadProgressCallback progress_cb) {
         std::string install_dir;
@@ -403,7 +481,11 @@ namespace lemon::backends {
                     LOG(INFO, spec.log_name()) << "Upgrading " << spec.binary << " from " << installed_version
                             << " to " << expected_version << std::endl;
                     needs_install = true;
-                    fs::remove_all(install_dir);
+                    // NOTE: do NOT remove install_dir here. The existing working
+                    // binary is kept in place until the replacement has been
+                    // downloaded, extracted, and verified; the atomic swap below
+                    // (commit_staged_install) handles removal so an interrupted
+                    // download cannot leave the backend with no usable binary.
                 }
             } else if (!needs_install && !expected_version.empty()) {
                 // If the executable exists but version.txt is missing, SystemInfo
@@ -413,7 +495,7 @@ namespace lemon::backends {
                 LOG(INFO, spec.log_name()) << "Installed executable is missing version.txt; reinstalling "
                         << spec.binary << " version " << expected_version << std::endl;
                 needs_install = true;
-                fs::remove_all(install_dir);
+                // See note above: removal is deferred to the verified atomic swap.
             }
         }
 
@@ -421,11 +503,43 @@ namespace lemon::backends {
             LOG(INFO, spec.log_name()) << "Installing " << spec.binary << " (version: "
                     << expected_version << ")" << std::endl;
 
-            // Create install directory
-            fs::create_directories(install_dir);
+            // Resolve any '*' wildcard in the asset name (e.g. the macOS runner
+            // version in sd-cpp's Darwin asset) to the concrete published name
+            // before building any download URL. No-op when there is no wildcard.
+            const std::string filename =
+                resolve_asset_wildcard(repo, expected_version, asset_pattern, spec);
 
-            std::string url = "https://github.com/" + repo + "/releases/download/" +
-                            expected_version + "/" + filename;
+            // Stage the new install in a sibling directory so the currently
+            // installed (working) binary is left untouched until the download is
+            // complete, extracted, and verified. Only then is staging atomically
+            // swapped into place (see commit_staged_install below), so a slow or
+            // interrupted download never destroys a working binary.
+            const std::string staging_dir = install_dir + ".staging";
+            std::error_code staging_ec;
+            fs::remove_all(staging_dir, staging_ec);  // clear any leftover from a prior aborted install
+            fs::remove_all(install_dir + ".old", staging_ec);  // and any orphaned swap backup
+            // If a stale staging tree could not be cleared (e.g. a locked file on
+            // Windows), fail rather than extracting into it — a leftover binary
+            // could otherwise satisfy verification and get promoted as a stale or
+            // mixed install over the working one.
+            if (fs::exists(staging_dir)) {
+                throw std::runtime_error("Could not clear stale staging directory: " + staging_dir);
+            }
+            fs::create_directories(staging_dir);
+
+            // Remove the staging tree on any early exit (exception) before the
+            // swap, so a failed download/extraction never leaves a half-built
+            // tree behind for the next attempt to trip over.
+            struct StagingGuard {
+                const std::string& dir;
+                bool active = true;
+                ~StagingGuard() {
+                    if (active) {
+                        std::error_code ec;
+                        fs::remove_all(dir, ec);
+                    }
+                }
+            } staging_guard{staging_dir};
 
             // Download archive to cache directory.
             // Preserve the actual filename (sanitised for use in a path) so that
@@ -441,6 +555,17 @@ namespace lemon::backends {
             std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + "_" + safe_filename)).string();
 
             LOG(DEBUG, spec.log_name()) << "Downloading to: " << zip_path << std::endl;
+
+            // Remove the downloaded archive on ANY exit from here on — success
+            // OR exception, including a throw from commit_staged_install() below
+            // (a swap/rename failure) — so the cache archive is never leaked.
+            struct ZipGuard {
+                const std::string& path;
+                ~ZipGuard() {
+                    std::error_code ec;
+                    fs::remove(path, ec);
+                }
+            } zip_guard{zip_path};
 
             const std::string base_download_url = "https://github.com/" + repo + "/releases/download/" +
                                                   expected_version + "/";
@@ -522,6 +647,7 @@ namespace lemon::backends {
                 utils::DownloadOptions archive_download_opts;
                 archive_download_opts.expected_hash = lookup_expected_asset_hash(
                     spec.recipe, backend, expected_version, repo, filename);
+                archive_download_opts.resume_partial = false;
 
                 auto download_result = utils::HttpClient::download_file(
                     url, zip_path, http_progress_cb, {}, archive_download_opts);
@@ -578,6 +704,7 @@ namespace lemon::backends {
                     utils::DownloadOptions part_download_opts;
                     part_download_opts.expected_hash = lookup_expected_asset_hash(
                         spec.recipe, backend, expected_version, repo, part_filename);
+                    part_download_opts.resume_partial = false;
 
                     auto part_result = utils::HttpClient::download_file(
                         part_url, part_path, part_http_cb, {}, part_download_opts);
@@ -585,7 +712,6 @@ namespace lemon::backends {
                     if (!part_result.success) {
                         combined.close();
                         fs::remove(part_path);
-                        fs::remove(zip_path);
                         throw std::runtime_error("Failed to download " + part_filename + " from: " + part_url +
                                                  " - " + part_result.error_message);
                     }
@@ -610,47 +736,66 @@ namespace lemon::backends {
             LOG(DEBUG, spec.log_name()) << "Downloaded archive file size: "
                     << (file_size / 1024 / 1024) << " MB" << std::endl;
 
-            // Extract
-            if (!extract_archive(zip_path, install_dir, spec.log_name())) {
-                fs::remove(zip_path);
-                fs::remove_all(install_dir);
+            // Extract into the staging directory (NOT install_dir) so a failed
+            // extraction cannot destroy the currently-installed binary. The
+            // staging guard removes the partial tree when we throw.
+            if (!extract_archive(zip_path, staging_dir, spec.log_name())) {
                 throw std::runtime_error("Failed to extract archive: " + zip_path);
             }
 
-            // Verify extraction
-            exe_path = find_executable_in_install_dir(install_dir, spec.binary);
-            if (exe_path.empty()) {
-                LOG(ERROR, spec.log_name()) << "Extraction completed but executable not found" << std::endl;
-                fs::remove(zip_path);
-                fs::remove_all(install_dir);
-                throw std::runtime_error("Extraction failed: executable not found");
+            // Save version info into the staging tree so it travels with the
+            // atomic swap below. Fail cleanly on a write error rather than
+            // promoting a backend with no version.txt (which would make the next
+            // status check force an unnecessary reinstall).
+            {
+                const std::string staged_version_file = (fs::path(staging_dir) / "version.txt").string();
+                std::ofstream vf(staged_version_file);
+                vf << expected_version;
+                vf.flush();
+                if (!vf.good()) {
+                    throw std::runtime_error("Failed to write version file: " + staged_version_file);
+                }
             }
 
-            LOG(DEBUG, spec.log_name()) << "Executable verified at: " << exe_path << std::endl;
-
-            // Save version info
-            std::ofstream vf(version_file);
-            vf << expected_version;
-            vf.close();
-
-    #ifndef _WIN32
-            // Make all binaries in bin/ executable (tar may lose permissions)
+            // Normalize executable permissions for every regular file in the
+            // staging tree.  Archives may place binaries under bin/ or directly
+            // in the tree root (the llama.cpp Vulkan tarball does the latter),
+            // and tarballs may strip the execute bit.  Recurse over the whole
+            // tree so no layout is missed.  Fixing in staging (not post-swap)
+            // preserves rollback on chmod failure.  On Windows chmod is a no-op.
+            #ifndef _WIN32
             {
-                auto bin_dir = fs::path(install_dir) / "bin";
-                if (fs::exists(bin_dir)) {
-                    for (auto& entry : fs::directory_iterator(bin_dir)) {
-                        if (entry.is_regular_file()) {
-                            chmod(entry.path().c_str(), 0755);
+                for (const auto& entry : fs::recursive_directory_iterator(staging_dir)) {
+                    if (entry.is_regular_file()) {
+                        if (chmod(entry.path().c_str(), 0755) != 0) {
+                            std::error_code ec;
+                            ec.assign(errno, std::generic_category());
+                            throw std::runtime_error(
+                                "Failed to set executable permission on staged file "
+                                + entry.path().string() + ": " + ec.message());
                         }
                     }
                 }
             }
-            // Also make the found executable itself executable
-            chmod(exe_path.c_str(), 0755);
-    #endif
+            #endif
 
-            // Delete ZIP file
-            fs::remove(zip_path);
+            // Verify the staged tree contains the executable, then atomically
+            // swap it into place. commit_staged_install keeps a recoverable .old
+            // backup across the swap: it removes the staging tree and leaves
+            // install_dir untouched on verification failure (returns ""), and on
+            // a swap (rename) failure it rolls the backup back and throws — so a
+            // botched download/extraction/swap never destroys the working binary.
+            exe_path = commit_staged_install(staging_dir, install_dir, spec.binary);
+            if (exe_path.empty()) {
+                LOG(ERROR, spec.log_name()) << "Extraction completed but executable not found" << std::endl;
+                throw std::runtime_error("Extraction failed: executable not found");
+            }
+            // Swap succeeded: staging was consumed by the rename, so disarm the guard.
+            staging_guard.active = false;
+
+            LOG(DEBUG, spec.log_name()) << "Executable verified at: " << exe_path << std::endl;
+
+            // (The downloaded archive is removed by zip_guard on scope exit.)
 
             // Send completion event now that installation is fully done.
             // For split archives the combined on-disk size is only known after
@@ -679,7 +824,7 @@ namespace lemon::backends {
             // Even if already installed, send a completion event so callers know it's done
             if (progress_cb) {
                 DownloadProgress p;
-                p.file = filename;
+                p.file = asset_pattern;
                 p.file_index = 1;
                 p.total_files = 1;
                 p.bytes_downloaded = 0;
@@ -690,50 +835,186 @@ namespace lemon::backends {
             }
         }
     }
-    bool BackendUtils::is_rocm_installed_system_wide() {
-#ifndef __linux__
-        return false;
+    namespace {
+        // Non-throwing fs overloads so a bogus user-supplied path reports
+        // "not a root" instead of throwing.
+        std::optional<fs::path> validate_rocm_root(const fs::path& root) {
+            std::error_code ec;
+            if (root.empty() || !fs::exists(root, ec)) {
+                return std::nullopt;
+            }
+#ifdef _WIN32
+            // ROCm 5.x/6.x ship bin\amdhip64.dll; ROCm 7.x version-suffixes it
+            // (bin\amdhip64_7.dll). Accept amdhip64.dll or amdhip64_<digits>.dll,
+            // not arbitrary suffixes like amdhip64_backup.dll.
+            const auto is_hip_runtime = [](const std::string& name) {
+                if (name == "amdhip64.dll") {
+                    return true;
+                }
+                static const std::string prefix = "amdhip64_";
+                static const std::string suffix = ".dll";
+                if (name.size() <= prefix.size() + suffix.size() ||
+                    name.compare(0, prefix.size(), prefix) != 0 ||
+                    name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
+                    return false;
+                }
+                const auto digits = name.substr(
+                    prefix.size(), name.size() - prefix.size() - suffix.size());
+                return std::all_of(digits.begin(), digits.end(),
+                                   [](unsigned char c) { return std::isdigit(c); });
+            };
+            for (const char* subdir : {"bin", "lib"}) {
+                const fs::path dir = root / subdir;
+                if (!fs::is_directory(dir, ec)) {
+                    continue;
+                }
+                for (fs::directory_iterator it(dir, ec), end; it != end && !ec; it.increment(ec)) {
+                    if (it->is_regular_file(ec) &&
+                        is_hip_runtime(it->path().filename().string())) {
+                        return root;
+                    }
+                }
+            }
 #else
-        // Only check /opt/rocm for system-wide installation
-        // (/usr is handled by the system backend separately)
-        fs::path rocm_root("/opt/rocm");
-
-        // Check for libamdhip64.so in lib directories
-        std::vector<std::string> lib_subdirs = {"lib", "lib64"};
-        bool found_lib = false;
-
-        for (const auto& lib_subdir : lib_subdirs) {
-            fs::path lib_path = rocm_root / lib_subdir / "libamdhip64.so";
-            if (fs::exists(lib_path)) {
-                found_lib = true;
-                break;
+            for (const char* lib_subdir : {"lib", "lib64"}) {
+                if (fs::exists(root / lib_subdir / "libamdhip64.so", ec)) {
+                    return root;
+                }
             }
-        }
-
-        if (!found_lib) {
-            LOG(DEBUG, "BackendUtils") << "No system-wide ROCm installation detected at /opt/rocm" << std::endl;
-            return false;
-        }
-
-        // Verify with version file
-        std::vector<std::string> version_paths = {
-            (rocm_root / ".info" / "version").string(),
-            (rocm_root / "share" / "rocm" / "version").string(),
-            (rocm_root / "version").string()
-        };
-
-        for (const auto& version_path : version_paths) {
-            if (fs::exists(version_path)) {
-                LOG(DEBUG, "BackendUtils") << "Found system ROCm at /opt/rocm with version file: "
-                          << version_path << std::endl;
-                return true;
-            }
-        }
-
-        // If we found the lib but no version file, log a warning but still accept it
-        LOG(DEBUG, "BackendUtils") << "Found ROCm libraries at /opt/rocm (no version file found)" << std::endl;
-        return true;
 #endif
+            return std::nullopt;
+        }
+
+        std::optional<fs::path> query_rocm_sdk_root() {
+#ifdef _WIN32
+            // SearchPathA (used by find_executable_in_path) does not append a
+            // default extension, so the console-script shim must be named
+            // explicitly. CreateProcess resolves the .exe for the spawn itself.
+            const char* rocm_sdk_exe = "rocm-sdk.exe";
+#else
+            const char* rocm_sdk_exe = "rocm-sdk";
+#endif
+            if (utils::find_executable_in_path(rocm_sdk_exe).empty()) {
+                return std::nullopt;
+            }
+
+            // run_process_with_output merges the child's stderr into stdout, and
+            // rocm-sdk is a Python console script that may emit warnings there.
+            // Collect every line and pick the first that validates, rather than
+            // trusting the first line (which could be a warning).
+            std::vector<std::string> lines;
+            auto on_line = [&lines](const std::string& line) {
+                lines.push_back(line);
+                return true;
+            };
+
+            int rc = utils::ProcessManager::run_process_with_output(
+                "rocm-sdk", {"path", "--root"}, on_line, /*working_dir=*/"",
+                /*timeout_seconds=*/5);
+            if (rc != 0) {
+                LOG(DEBUG, "BackendUtils") << "rocm-sdk path --root exited with " << rc
+                          << "; ignoring" << std::endl;
+                return std::nullopt;
+            }
+
+            for (const auto& candidate : BackendUtils::pick_rocm_root_candidates(lines)) {
+                if (auto root = validate_rocm_root(fs::path(candidate))) {
+                    return root;
+                }
+            }
+            return std::nullopt;
+        }
+    }  // namespace
+
+    std::optional<fs::path> BackendUtils::resolve_rocm_root(bool* resolved_explicitly) {
+        if (resolved_explicitly) {
+            *resolved_explicitly = false;
+        }
+
+        if (const char* env = std::getenv("ROCM_PATH"); env && *env != '\0') {
+            if (auto root = validate_rocm_root(fs::path(env))) {
+                if (resolved_explicitly) {
+                    *resolved_explicitly = true;
+                }
+                LOG(DEBUG, "BackendUtils") << "Resolved ROCm root from ROCM_PATH: "
+                          << root->string() << std::endl;
+                return root;
+            }
+            LOG(DEBUG, "BackendUtils") << "ROCM_PATH=" << env
+                      << " has no HIP runtime; trying other sources" << std::endl;
+        }
+
+        if (auto sdk_root = query_rocm_sdk_root()) {
+            if (resolved_explicitly) {
+                *resolved_explicitly = true;
+            }
+            LOG(DEBUG, "BackendUtils") << "Resolved ROCm root from rocm-sdk: "
+                      << sdk_root->string() << std::endl;
+            return *sdk_root;
+        }
+
+#ifdef _WIN32
+        // The AMD HIP SDK installer sets HIP_PATH; treat it as the platform
+        // default (like /opt/rocm on Linux), not a user selection.
+        if (const char* hip = std::getenv("HIP_PATH"); hip && *hip != '\0') {
+            if (auto root = validate_rocm_root(fs::path(hip))) {
+                LOG(DEBUG, "BackendUtils") << "Resolved ROCm root at default HIP_PATH: "
+                          << root->string() << std::endl;
+                return root;
+            }
+        }
+#else
+        if (auto root = validate_rocm_root("/opt/rocm")) {
+            LOG(DEBUG, "BackendUtils") << "Resolved ROCm root at default /opt/rocm" << std::endl;
+            return root;
+        }
+#endif
+
+        return std::nullopt;
+    }
+
+    std::vector<std::string> BackendUtils::pick_rocm_root_candidates(
+        const std::vector<std::string>& lines) {
+        std::vector<std::string> candidates;
+        for (const auto& line : lines) {
+            const auto first = line.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos) {
+                continue;
+            }
+            const auto last = line.find_last_not_of(" \t\r\n");
+            std::string trimmed = line.substr(first, last - first + 1);
+            if (fs::path(trimmed).is_absolute()) {
+                candidates.push_back(std::move(trimmed));
+            }
+        }
+        return candidates;
+    }
+
+    std::string BackendUtils::read_rocm_version_from_root(const fs::path& root) {
+        const std::vector<fs::path> version_paths = {
+            root / ".info" / "version",
+            root / "share" / "rocm" / "version",
+            root / "version"
+        };
+        for (const auto& version_path : version_paths) {
+            std::error_code ec;
+            if (!fs::exists(version_path, ec)) {
+                continue;
+            }
+            std::ifstream file(version_path);
+            if (!file.is_open()) {
+                continue;
+            }
+            std::string line;
+            std::getline(file, line);
+            const auto first = line.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos) {
+                continue;
+            }
+            const auto last = line.find_last_not_of(" \t\r\n");
+            return line.substr(first, last - first + 1);
+        }
+        return "";
     }
 
     std::string BackendUtils::get_therock_install_dir(const std::string& arch, const std::string& version) {
@@ -949,8 +1230,8 @@ namespace lemon::backends {
             const std::string& log_tag,
             bool skip_visible_devices) {
         if (!skip_visible_devices) {
-            const char* existing_visible_devices = std::getenv("CUDA_VISIBLE_DEVICES");
-            const bool has_visible_override = existing_visible_devices && existing_visible_devices[0] != '\0';
+            std::string existing_visible_devices = utils::get_environment_variable_utf8("CUDA_VISIBLE_DEVICES");
+            const bool has_visible_override = !existing_visible_devices.empty();
 
             if (has_visible_override) {
                 LOG(INFO, log_tag) << "Respecting existing CUDA_VISIBLE_DEVICES="
@@ -977,5 +1258,48 @@ namespace lemon::backends {
                                << std::endl;
         }
 #endif
+    }
+
+    void BackendUtils::validate_device_backend_match(
+            const std::string& backend,
+            const std::string& target_device) {
+        if (backend.empty() || backend == "auto" || backend == "system" || target_device.empty()) {
+            return;
+        }
+
+        std::string lower_device = target_device;
+        for (char& c : lower_device) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+
+        std::string lower_backend = backend;
+        for (char& c : lower_backend) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+
+        const bool is_rocm_device = (lower_device.rfind("rocm", 0) == 0);
+        const bool is_cuda_device = (lower_device.rfind("cuda", 0) == 0);
+        const bool is_vulkan_device = (lower_device.rfind("vulkan", 0) == 0);
+
+        const bool is_rocm_backend = (lower_backend.rfind("rocm", 0) == 0);
+        const bool is_cuda_backend = (lower_backend.rfind("cuda", 0) == 0);
+        const bool is_vulkan_backend = (lower_backend.rfind("vulkan", 0) == 0);
+
+        if (is_rocm_device && !is_rocm_backend) {
+            throw std::invalid_argument(
+                "Device selection '" + target_device + "' contradicts backend choice '" + backend +
+                "'. Expected a " + backend + " device identifier (e.g. " +
+                (is_vulkan_backend ? "Vulkan0" : is_cuda_backend ? "CUDA0" : "a matching device") + ").");
+        }
+        if (is_cuda_device && !is_cuda_backend) {
+            throw std::invalid_argument(
+                "Device selection '" + target_device + "' contradicts backend choice '" + backend +
+                "'. Expected a " + backend + " device identifier.");
+        }
+        if (is_vulkan_device && !is_vulkan_backend) {
+            throw std::invalid_argument(
+                "Device selection '" + target_device + "' contradicts backend choice '" + backend +
+                "'. Expected a " + backend + " device identifier.");
+        }
     }
 } // namespace lemon::backends

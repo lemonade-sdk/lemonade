@@ -664,6 +664,40 @@ class StableDiffusionTests(ServerTestBase):
         )
         print(f"[OK] Upscale successful ({len(decoded)} bytes)")
 
+    def test_021_image_edit_array_field(self):
+        """Test basic image edit using array parameter syntax."""
+        png_bytes = create_minimal_png(256, 256)
+        print(f"[INFO] Sending image edit request with model {SD_MODEL}")
+
+        response = requests.post(
+            f"{self.base_url}/images/edits",
+            files={"image[]": ("test.png", io.BytesIO(png_bytes), "image/png")},
+            data={
+                "model": SD_MODEL,
+                "prompt": "A red circle",
+                "size": "256x256",
+                "n": "1",
+                "response_format": "b64_json",
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Image edit failed with status {response.status_code}: {response.text}",
+        )
+
+        result = response.json()
+        self.assertIn("data", result, "Response should contain 'data' field")
+        self.assertGreater(
+            len(result["data"]), 0, "Data should have at least one image"
+        )
+        b64_data = result["data"][0]["b64_json"]
+        decoded = base64.b64decode(b64_data)
+        self.assertTrue(decoded[:4] == b"\x89PNG", "Result should be a valid PNG")
+        print(f"[OK] Image edit successful ({len(decoded)} bytes)")
+
 
 if __name__ == "__main__":
     run_server_tests(

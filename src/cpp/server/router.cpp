@@ -1,24 +1,57 @@
 #include "lemon/router.h"
 #include "lemon/cloud_provider_registry.h"
-#include "lemon/backends/cloud_server.h"
-#include "lemon/backends/llamacpp_server.h"
-#include "lemon/backends/fastflowlm_server.h"
-#include "lemon/backends/ryzenaiserver.h"
-#include "lemon/backends/whisper_server.h"
-#include "lemon/backends/moonshine_server.h"
-#include "lemon/backends/kokoro_server.h"
-#include "lemon/backends/sd_server.h"
-#include "lemon/backends/vllm_server.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/backends/fastflowlm/fastflowlm_server.h"
+#include "lemon/backends/ryzenai/ryzenai_server.h"
+#include "lemon/backends/whispercpp/whispercpp_server.h"
+#include "lemon/backends/moonshine/moonshine_server.h"
+#include "lemon/backends/kokoro/kokoro_server.h"
+#include "lemon/backends/sdcpp/sdcpp_server.h"
+#include "lemon/backends/vllm/vllm_server.h"
 #include "lemon/server_capabilities.h"
+#include "lemon/streaming_proxy.h"
 #include "lemon/error_types.h"
 #include "lemon/recipe_options.h"
-#include <iostream>
+#include "lemon/auto_tune.h"
+#include "telemetry.h"
 #include <algorithm>
+#include <condition_variable>
+#include <iostream>
+#include <mutex>
+#include <queue>
+#include <thread>
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/global_vram_monitor.h"
 #include "lemon/eviction_engine.h"
+#include "lemon/suspend_inhibitor.h"
+#include "lemon/utils/http_client.h"
 
 namespace lemon {
+
+namespace {
+
+// RAII: holds a suspend-inhibitor refcount for the duration of one inference,
+// but only when the feature is enabled in config. Released on scope exit so all
+// early-return/exception paths are covered.
+class InhibitGuard {
+public:
+    InhibitGuard(SuspendInhibitor* inhibitor, bool enabled)
+        : inhibitor_(enabled ? inhibitor : nullptr) {
+        if (inhibitor_) inhibitor_->acquire();
+    }
+    ~InhibitGuard() {
+        if (inhibitor_) inhibitor_->release();
+    }
+    InhibitGuard(const InhibitGuard&) = delete;
+    InhibitGuard& operator=(const InhibitGuard&) = delete;
+
+private:
+    SuspendInhibitor* inhibitor_;
+};
+
+} // namespace
 
 Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManager* backend_manager)
     : config_(config), model_manager_(model_manager), backend_manager_(backend_manager) {
@@ -32,6 +65,9 @@ Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManage
 
     vram_monitor_ = std::make_unique<GlobalVramMonitor>();
     eviction_engine_ = std::make_unique<EvictionEngine>(this, vram_monitor_.get());
+    suspend_inhibitor_ = create_suspend_inhibitor();
+    reclaim_executor_ = std::make_shared<RoutingHelperReclaimExecutor>(
+        [this](const std::string& model_name) { reclaim_stale_helper_if_idle(model_name); });
 
     // Always start the monitor/engine threads; they are cheap no-ops until the
     // user opts in. The monitor skips the VRAM poll when auto_evict is disabled,
@@ -46,6 +82,14 @@ Router::~Router() {
     LOG(DEBUG, "Router") << "Destructor: stopping monitors and unloading all models" << std::endl;
     if (eviction_engine_) eviction_engine_->stop();
     if (vram_monitor_) vram_monitor_->stop();
+    // Wake any reclaim task blocked waiting for the residency slot, then join the
+    // executor before we tear down the state its tasks touch.
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        reclaim_shutdown_ = true;
+    }
+    load_cv_.notify_all();
+    if (reclaim_executor_) reclaim_executor_->stop();
     unload_model("");  // Unload all
 }
 
@@ -73,17 +117,42 @@ std::string Router::resolve_model_name(const std::string& model_name) const {
     return model_name.empty() ? model_name : model_manager_->resolve_model_name(model_name);
 }
 
-WrappedServer* Router::get_most_recent_server() const {
-    WrappedServer* most_recent = nullptr;
-    for (const auto& server : loaded_servers_) {
-        if (!server->is_backend_alive()) {
-            continue;
-        }
-        if (!most_recent || server->get_last_access_time() > most_recent->get_last_access_time()) {
-            most_recent = server.get();
-        }
+std::optional<ModelInfo> Router::try_get_model_info(const std::string& model_name) const {
+    if (model_name.empty()) {
+        return std::nullopt;
     }
-    return most_recent;
+    try {
+        if (!model_manager_->model_exists(model_name)) {
+            return std::nullopt;
+        }
+        return model_manager_->get_model_info(model_name);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+WrappedServer* Router::get_most_recent_server() const {
+    auto most_recent_in_class = [this](ResidencyClass residency_class) {
+        WrappedServer* most_recent = nullptr;
+        for (const auto& server : loaded_servers_) {
+            if (!server->is_backend_alive() ||
+                server->get_residency_class() != residency_class) {
+                continue;
+            }
+            if (!most_recent ||
+                server->get_last_access_time() > most_recent->get_last_access_time()) {
+                most_recent = server.get();
+            }
+        }
+        return most_recent;
+    };
+
+    // Internal routing dependencies must not become the implicit user-facing
+    // model merely because the classifier ran immediately before dispatch.
+    if (auto* standard = most_recent_in_class(ResidencyClass::Standard)) {
+        return standard;
+    }
+    return most_recent_in_class(ResidencyClass::RoutingHelper);
 }
 
 void Router::prune_unavailable_servers_locked() {
@@ -125,7 +194,18 @@ bool Router::reload_model_after_watchdog_reset(const std::string& requested_mode
         LOG(WARNING, "Router") << "Reloading model after backend watchdog reset: "
                                 << requested_model << std::endl;
         auto info = model_manager_->get_model_info(requested_model);
-        load_model(requested_model, info, options, true, false);
+        bool was_pinned = false;
+        ResidencyClass was_residency_class = ResidencyClass::Standard;
+        {
+            std::lock_guard<std::mutex> lock(load_mutex_);
+            auto* existing = find_server_by_model_name(requested_model);
+            if (existing) {
+                was_pinned = existing->is_pinned();
+                was_residency_class = existing->get_residency_class();
+            }
+        }
+        load_model(requested_model, info, options, true, false, was_pinned,
+                   load_purpose_for_residency_class(was_residency_class));
         return true;
     } catch (const std::exception& e) {
         LOG(ERROR, "Router") << "Automatic reload after watchdog reset failed for "
@@ -134,32 +214,64 @@ bool Router::reload_model_after_watchdog_reset(const std::string& requested_mode
     }
 }
 
-int Router::count_servers_by_type(ModelType type) const {
+// Slot/eviction policy for a recipe, from its descriptor (default Standard).
+// This is the recipe-static policy used for pre-load slot decisions.
+static SlotPolicy slot_policy_for_recipe(const std::string& recipe) {
+    if (const auto* desc = backends::descriptor_for(recipe)) {
+        return desc->slot_policy;
+    }
+    return SlotPolicy::Standard;
+}
+
+static bool is_unmetered_recipe(const std::string& recipe) {
+    return slot_policy_for_recipe(recipe) == SlotPolicy::Unmetered;
+}
+
+int Router::count_servers_in_pool(ModelType type,
+                                  ResidencyClass residency_class,
+                                  const std::string& model_name) const {
     int count = 0;
     for (const auto& server : loaded_servers_) {
-        // Cloud servers consume no local memory and stay loaded for free, so
-        // they are excluded from the slot accounting that drives LRU eviction.
-        if (server->get_recipe_options().get_recipe() == "cloud") {
+        // Unmetered backends (cloud) consume no local memory and therefore do
+        // not consume either a standard or routing-helper capacity slot.
+        if (is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
             continue;
         }
-        if (server->is_backend_alive() && server->get_model_type() == type) {
+        if (server->is_backend_alive() &&
+            same_residency_pool(server->get_model_type(),
+                                server->get_residency_class(),
+                                server->get_model_name(),
+                                type,
+                                residency_class,
+                                model_name)) {
             count++;
         }
     }
     return count;
 }
 
-WrappedServer* Router::find_lru_server_by_type(ModelType type) const {
+WrappedServer* Router::find_lru_server_in_pool(
+    ModelType type,
+    ResidencyClass residency_class,
+    const std::string& model_name) const {
     WrappedServer* lru = nullptr;
 
     for (const auto& server : loaded_servers_) {
-        // Cloud servers are not eviction candidates; they have no memory cost
-        // and reloading them is essentially free, but evicting them throws
-        // away the cached api key/upstream-id binding for no benefit.
-        if (server->get_recipe_options().get_recipe() == "cloud") {
+        // Unmetered backends (cloud) are not eviction candidates; they have no
+        // local memory cost and retain provider/upstream bindings while warm.
+        if (is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
             continue;
         }
-        if (server->is_backend_alive() && server->get_model_type() == type) {
+        if (server->is_backend_alive() &&
+            same_residency_pool(server->get_model_type(),
+                                server->get_residency_class(),
+                                server->get_model_name(),
+                                type,
+                                residency_class,
+                                model_name)) {
+            if (server->is_pinned()) {
+                continue;
+            }
             if (!lru || server->get_last_access_time() < lru->get_last_access_time()) {
                 lru = server.get();
             }
@@ -167,6 +279,260 @@ WrappedServer* Router::find_lru_server_by_type(ModelType type) const {
     }
 
     return lru;
+}
+
+void Router::ensure_residency_capacity(
+    ModelType type,
+    ResidencyClass residency_class,
+    const std::string& model_name) {
+    const int limit = residency_limit(residency_class, config_->max_loaded_models());
+    if (limit == -1 || count_servers_in_pool(type, residency_class, model_name) < limit) {
+        return;
+    }
+
+    WrappedServer* lru = find_lru_server_in_pool(type, residency_class, model_name);
+    if (!lru) {
+        throw SlotsPinnedException(residency_pool_to_string(type, residency_class));
+    }
+
+    LOG(INFO, "Router") << "Slot limit reached for pool "
+                         << residency_pool_to_string(type, residency_class)
+                         << ", evicting LRU: " << lru->get_model_name() << std::endl;
+    evict_server(lru);
+}
+
+void Router::transition_server_residency_locked(
+    WrappedServer* server,
+    ResidencyClass requested_residency_class) {
+    if (!server || server->get_residency_class() == requested_residency_class) {
+        return;
+    }
+
+    if (!is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
+        // Admit into the destination pool before changing the live role. Standard
+        // admission remains type-wide; helper admission is keyed by model name.
+        ensure_residency_capacity(
+            server->get_model_type(), requested_residency_class,
+            server->get_model_name());
+    }
+
+    const ResidencyClass previous = server->get_residency_class();
+    server->set_residency_class(requested_residency_class);
+
+    LOG(INFO, "Router") << "Changed loaded model " << server->get_model_name()
+                         << " residency from "
+                         << residency_class_to_string(previous)
+                         << " to "
+                         << residency_class_to_string(requested_residency_class)
+                         << std::endl;
+}
+
+bool Router::ensure_loaded_model_residency(
+    const std::string& model_name,
+    LoadPurpose load_purpose) {
+    return ensure_loaded_model_residency_canonical(
+        resolve_model_name(model_name), load_purpose);
+}
+
+bool Router::ensure_loaded_model_residency_canonical(
+    const std::string& canonical_model_name,
+    LoadPurpose load_purpose) {
+    const ResidencyClass requested_residency_class =
+        residency_class_for_load_purpose(load_purpose);
+
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    load_cv_.wait(lock, [&] {
+        return !is_loading_ &&
+               (!exclusive_active_ ||
+                exclusive_owner_ == std::this_thread::get_id());
+    });
+
+    prune_unavailable_servers_locked();
+
+    WrappedServer* existing =
+        find_server_by_model_name(canonical_model_name);
+    if (!existing || !existing->is_backend_alive()) {
+        return false;
+    }
+
+    // Refuse to durably promote an already-loaded Standard model into a routing
+    // helper for a policy that no longer needs it. An in-flight request can carry
+    // a copy of a policy that was edited or deleted after it started; without this
+    // guard that stale copy would flip a user-facing Standard model to
+    // RoutingHelper, bypassing every stale-helper check in load_model() and
+    // stranding it since reconcile ignored it while it was still Standard. Checking
+    // the needed-set directly (not pinning) keeps a pin from letting an obsolete
+    // policy override the current role. The backend stays resident and still serves
+    // the old request as Standard.
+    if (requested_residency_class == ResidencyClass::RoutingHelper &&
+        existing->get_residency_class() != ResidencyClass::RoutingHelper &&
+        !is_needed_helper_locked(canonical_model_name)) {
+        existing->update_access_time();
+        return true;
+    }
+
+    transition_server_residency_locked(
+        existing, requested_residency_class);
+    existing->update_access_time();
+    return true;
+}
+
+void Router::reconcile_routing_helpers(const std::set<std::string>& needed_helper_models,
+                                       uint64_t generation) {
+    // Canonicalize the policy-authored names outside the lock so they match the
+    // (already-canonical) live WrappedServer::get_model_name() during eviction.
+    std::set<std::string> needed;
+    for (const auto& model : needed_helper_models) {
+        needed.insert(resolve_model_name(model));
+    }
+    apply_routing_helper_reconcile(std::move(needed), generation);
+}
+
+void Router::apply_routing_helper_reconcile(std::set<std::string> needed, uint64_t generation) {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+
+    // Discard a notification that lost a race to a newer one. Policy callbacks can
+    // run concurrently and finish out of order; republishing an older set would
+    // resurrect helpers a newer policy already dropped (or drop ones it re-added).
+    // The newest generation always carries the final registry state, so keeping
+    // only the highest generation converges on the authoritative set.
+    if (generation <= last_reconcile_generation_) {
+        return;
+    }
+    last_reconcile_generation_ = generation;
+
+    // Publish the authoritative set immediately, even while a load is in flight.
+    // A helper's backend loads with load_mutex_ released, so a concurrent load
+    // re-acquires the lock at completion and validates against this fresh set
+    // (see load_model) — closing the load-versus-policy-change race without a
+    // timer. Deferring the publish behind the wait below would let that load
+    // commit an already-obsolete helper.
+    needed_helper_models_ = std::move(needed);
+
+    // Only the eviction pass must wait for a quiet slot: evict_server mutates
+    // loaded_servers_ and blocks on request drain, neither of which is safe to
+    // interleave with an in-flight load.
+    load_cv_.wait(lock, [&] {
+        return !is_loading_ &&
+               (!exclusive_active_ ||
+                exclusive_owner_ == std::this_thread::get_id());
+    });
+    prune_stale_routing_helpers_locked();
+}
+
+void Router::prune_stale_routing_helpers_locked() {
+    // Collect first; evict_server mutates loaded_servers_.
+    std::vector<WrappedServer*> stale;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive() ||
+            server->get_residency_class() != ResidencyClass::RoutingHelper) {
+            continue;
+        }
+        if (reclaim_or_defer_helper_locked(server.get())) {
+            stale.push_back(server.get());
+        }
+    }
+
+    for (auto* server : stale) {
+        LOG(INFO, "Router") << "Routing helper " << server->get_model_name()
+                            << " referenced by no active policy, evicting" << std::endl;
+        evict_server(server);
+    }
+}
+
+bool Router::reclaim_or_defer_helper_locked(WrappedServer* server) {
+    // A user pin is an explicit "keep" and a policy re-adding the model both
+    // cancel a pending reclaim; only a still-stale helper is a candidate.
+    if (!routing_helper_no_longer_needed(server->get_model_name(),
+                                         ResidencyClass::RoutingHelper,
+                                         server->is_pinned())) {
+        server->clear_pending_stale();
+        return false;
+    }
+    // Atomically: if the helper is still busy, arm the release-triggered reclaim
+    // (evicting now would block on the request drain); if it went idle in the
+    // meantime, report so the caller evicts it directly. Doing both under one
+    // state lock closes the check-then-arm lost-wakeup race.
+    if (server->mark_pending_stale_if_busy()) {
+        return false;
+    }
+    return true;
+}
+
+void Router::reclaim_stale_helper_if_idle(const std::string& model_name) {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+
+    while (true) {
+        // Wait for the residency slot to clear rather than giving up and relying
+        // on a later prune (not guaranteed to run when the load / exclusive
+        // session ends). The wait is broken on shutdown so the executor worker
+        // can drain and join.
+        load_cv_.wait(lock, [&] {
+            return reclaim_shutdown_ ||
+                   (!is_loading_ &&
+                    (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id()));
+        });
+        if (reclaim_shutdown_) {
+            return;
+        }
+
+        WrappedServer* server = find_server_by_model_name(model_name);
+        if (!server || !server->is_backend_alive() ||
+            server->get_residency_class() != ResidencyClass::RoutingHelper) {
+            return;
+        }
+
+        // Rescued (pin / re-added) or still busy: the shared helper cancels or
+        // re-arms the reclaim and reports there is nothing to evict right now.
+        if (!reclaim_or_defer_helper_locked(server)) {
+            return;
+        }
+
+        // Stale and idle at the decision above. Commit the eviction atomically; a
+        // request that slipped in between rescues the model and this returns false.
+        if (server->try_evict_if_idle()) {
+            server->clear_pending_stale();
+            LOG(INFO, "Router") << "Routing helper " << model_name
+                                << " released and referenced by no active policy, evicting"
+                                << std::endl;
+            evict_server(server);
+            return;
+        }
+
+        // A request rescued the model between the idle decision and the commit.
+        // This reclaim already consumed the pending intent when it was dispatched,
+        // so we must restore it: re-arm if the helper is busy again. If it went
+        // idle within this window, mark_pending_stale_if_busy reports so and we
+        // retry the commit immediately instead of opening a fresh check/arm gap.
+        if (server->mark_pending_stale_if_busy()) {
+            return;
+        }
+    }
+}
+
+void Router::install_reclaim_notifier(WrappedServer* server) {
+    std::weak_ptr<RoutingHelperReclaimExecutor> weak_executor = reclaim_executor_;
+    std::string model_name = server->get_model_name();
+    server->set_reclaim_notifier([weak_executor, model_name] {
+        if (auto executor = weak_executor.lock()) {
+            executor->post(model_name);
+        }
+    });
+}
+
+bool Router::is_needed_helper_locked(const std::string& canonical_model_name) const {
+    return needed_helper_models_.count(canonical_model_name) != 0;
+}
+
+bool Router::routing_helper_no_longer_needed(const std::string& canonical_model_name,
+                                             ResidencyClass requested_residency_class,
+                                             bool pinned) const {
+    // Only routing helpers are subject to policy churn; a pin is an explicit
+    // "keep" that outranks it. Any other backend is never considered stale.
+    if (requested_residency_class != ResidencyClass::RoutingHelper || pinned) {
+        return false;
+    }
+    return !is_needed_helper_locked(canonical_model_name);
 }
 
 bool Router::has_npu_server() const {
@@ -198,10 +564,11 @@ WrappedServer* Router::find_npu_server_by_recipe(const std::string& recipe) cons
     return nullptr;
 }
 
-WrappedServer* Router::find_flm_server_by_type(ModelType type) const {
+WrappedServer* Router::find_coexisting_server_by_type(ModelType type) const {
     for (const auto& server : loaded_servers_) {
         if (server->is_backend_alive() &&
-            server->get_recipe_options().get_recipe() == "flm" &&
+            slot_policy_for_recipe(server->get_recipe_options().get_recipe()) ==
+                SlotPolicy::CoexistByType &&
             server->get_model_type() == type) {
             return server.get();
         }
@@ -287,57 +654,138 @@ void Router::simulate_vram_pressure(double pct) {
 }
 
 std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& model_info) {
-    std::unique_ptr<WrappedServer> new_server;
     std::string log_level = config_->log_level();
 
-    if (model_info.recipe == "cloud") {
-        LOG(DEBUG, "Router") << "Creating CloudServer backend (provider: "
-                             << model_info.cloud_provider << ")" << std::endl;
-        new_server = std::make_unique<backends::CloudServer>(model_info.cloud_provider, log_level,
-                                                              model_manager_, backend_manager_,
-                                                              cloud_registry_);
-    } else if (model_info.recipe == "whispercpp") {
-        LOG(DEBUG, "Router") << "Creating WhisperServer backend" << std::endl;
-        new_server = std::make_unique<backends::WhisperServer>(log_level, model_manager_, backend_manager_);
-    } else if (model_info.recipe == "moonshine") {
-        LOG(DEBUG, "Router") << "Creating MoonshineServer backend" << std::endl;
-        new_server = std::make_unique<backends::MoonshineServer>(log_level, model_manager_, backend_manager_);
-    } else if (model_info.recipe == "kokoro") {
-        LOG(DEBUG, "Router") << "Creating Kokoro backend" << std::endl;
-        new_server = std::make_unique<backends::KokoroServer>(log_level, model_manager_, backend_manager_);
-    } else if (model_info.recipe == "sd-cpp") {
-        LOG(DEBUG, "Router") << "Creating SDServer backend" << std::endl;
-        new_server = std::make_unique<backends::SDServer>(log_level, model_manager_, backend_manager_);
-    } else if (model_info.recipe == "flm") {
-        LOG(DEBUG, "Router") << "Creating FastFlowLM backend" << std::endl;
-        new_server = std::make_unique<backends::FastFlowLMServer>(log_level, model_manager_, backend_manager_);
-    } else if (model_info.recipe == "ryzenai-llm") {
-        LOG(DEBUG, "Router") << "Creating RyzenAI-Server backend" << std::endl;
+    backends::BackendContext ctx;
+    ctx.log_level = log_level;
+    ctx.model_manager = model_manager_;
+    ctx.backend_manager = backend_manager_;
+    ctx.cloud_registry = cloud_registry_;
+    ctx.model_info = &model_info;
 
-        std::string model_path = model_info.resolved_path();
-        LOG(DEBUG, "Router") << "Using model path: " << model_path << std::endl;
-
-        auto* ryzenai_server = new RyzenAIServer(model_info.model_name,
-                                                  log_level == "debug", model_manager_, backend_manager_);
-        ryzenai_server->set_model_path(model_path);
-        new_server.reset(ryzenai_server);
-    } else if (model_info.recipe == "vllm") {
-        LOG(DEBUG, "Router") << "Creating vLLM backend" << std::endl;
-        new_server = std::make_unique<backends::VLLMServer>(log_level, model_manager_, backend_manager_);
-    } else {
-        LOG(DEBUG, "Router") << "Creating LlamaCpp backend" << std::endl;
-        new_server = std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
+    // The backend registry binds each recipe to its create() (see LEMON_BACKENDS).
+    std::unique_ptr<WrappedServer> new_server = backends::create_server(model_info.recipe, ctx);
+    if (new_server) {
+        LOG(DEBUG, "Router") << "Created backend for recipe '" << model_info.recipe
+                             << "' via registry" << std::endl;
+        return new_server;
     }
 
-    return new_server;
+    // Unknown recipe: fall back to llamacpp, preserving the historical default.
+    LOG(DEBUG, "Router") << "No registered backend for recipe '" << model_info.recipe
+                         << "', defaulting to LlamaCpp" << std::endl;
+    return std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
+}
+
+bool Router::begin_exclusive(std::atomic<bool>* cancel) {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    exclusive_active_ = true;
+    exclusive_owner_ = std::this_thread::get_id();
+    while (true) {
+        if (cancel && cancel->load()) {
+            exclusive_active_ = false;
+            exclusive_owner_ = std::thread::id{};
+            exclusive_cv_.notify_all();
+            load_cv_.notify_all();
+            return false;
+        }
+        if (is_loading_) {
+            load_cv_.wait_for(lock, std::chrono::milliseconds(25));
+            continue;
+        }
+        bool busy = false;
+        for (const auto& server : loaded_servers_) {
+            if (server->is_busy()) {
+                busy = true;
+                break;
+            }
+        }
+        if (!busy) break;
+        lock.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        lock.lock();
+    }
+    exclusive_cv_.notify_all();
+    load_cv_.notify_all();
+    return true;
+}
+
+void Router::end_exclusive() {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    exclusive_active_ = false;
+    exclusive_owner_ = std::thread::id{};
+    exclusive_cv_.notify_all();
+    load_cv_.notify_all();
+}
+
+void Router::wait_for_slot_clearance(std::unique_lock<std::mutex>& lock) {
+    exclusive_cv_.wait(lock, [&] {
+        return !exclusive_active_ || exclusive_owner_ == std::this_thread::get_id();
+    });
+}
+
+std::map<std::string, bool> Router::snapshot_loaded_models() const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::map<std::string, bool> models;
+    for (const auto& server : loaded_servers_)
+        if (server->is_backend_alive()) models[server->get_model_name()] = server->is_pinned();
+    return models;
+}
+
+std::map<std::string, json> Router::unload_job_models(const std::map<std::string, int>& owned_live,
+                                                      const std::map<std::string, bool>& snapshot_pins) {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    wait_for_slot_clearance(lock);
+    std::map<std::string, int> resolved_owned;
+    for (const auto& kv : owned_live) resolved_owned[resolve_model_name(kv.first)] = kv.second;
+    std::map<std::string, json> captured;
+    std::vector<WrappedServer*> victims;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive()) continue;
+        const std::string name = server->get_model_name();
+        auto pin_it = snapshot_pins.find(name);
+        if (pin_it != snapshot_pins.end()) {
+            if (server->is_pinned() != pin_it->second) server->set_pinned(pin_it->second);
+            continue;
+        }
+        auto own_it = resolved_owned.find(name);
+        if (own_it == resolved_owned.end()) continue;
+        if (server->get_process_id() != own_it->second) continue;
+        captured[name] = {{"options", server->get_recipe_options().to_json()},
+                          {"pinned", server->is_pinned()}};
+        victims.push_back(server.get());
+    }
+    for (auto* victim : victims) {
+        if (victim->is_pinned()) victim->set_pinned(false);
+        LOG(INFO, "Router") << "Reconcile-unload of job-loaded model: "
+                            << victim->get_model_name() << std::endl;
+        evict_server(victim);
+    }
+    return captured;
+}
+
+int Router::loaded_model_pid(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    WrappedServer* server = find_server_by_model_name(resolve_model_name(model_name));
+    return server && server->is_backend_alive() ? server->get_process_id() : -1;
+}
+
+std::string Router::canonical_model_name(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    return resolve_model_name(model_name);
 }
 
 void Router::load_model(const std::string& model_name,
-                       const ModelInfo& model_info,
-                       RecipeOptions options,
-                       bool do_not_upgrade,
-                       bool allow_reload_on_option_change) {
+                        const ModelInfo& model_info,
+                        RecipeOptions options,
+                        bool do_not_upgrade,
+                        bool allow_reload_on_option_change,
+                        std::optional<bool> pinned,
+                        LoadPurpose load_purpose,
+                        std::atomic<bool>* cancel_flag) {
     const std::string canonical_model_name = resolve_model_name(model_name);
+    const ResidencyClass requested_residency_class =
+        residency_class_for_load_purpose(load_purpose);
     const std::string backend_option = model_info.recipe + "_backend";
 
     RecipeOptions tentative = options.inherit(model_info.recipe_options.inherit(
@@ -345,32 +793,62 @@ void Router::load_model(const std::string& model_name,
     json backend_json = tentative.get_option(backend_option);
     const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
 
-    // Second pass: rebuild defaults using the resolved backend
+    // Second pass: rebuild defaults using the resolved backend.
+    // Per-architecture defaults sit between global config and model-level recipe_options.
     RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
-    RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(default_opt));
-
-    LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
+    RecipeOptions arch_opts(model_info.recipe,
+                            model_manager_->get_architecture_defaults(model_info.gguf.architecture));
+    RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
 
-    // Wait if another thread is currently loading
-    while (is_loading_) {
-    LOG(INFO, "Router") << "Another load is in progress, waiting..." << std::endl;
-        load_cv_.wait(lock);
-    }
+    load_cv_.wait(lock, [&] {
+        return !is_loading_
+               && (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id());
+    });
 
-    // Mark that we're now loading (prevents concurrent loads)
     is_loading_ = true;
 
     LOG(DEBUG, "Router") << "Loading model: " << canonical_model_name
             << " (checkpoint: " << model_info.checkpoint()
             << ", recipe: " << model_info.recipe
             << ", type: " << model_type_to_string(model_info.type)
-            << ", device: " << device_type_to_string(model_info.device) << ")" << std::endl;
+            << ", device: " << device_type_to_string(model_info.device)
+            << ", residency: "
+            << residency_class_to_string(requested_residency_class) << ")" << std::endl;
 
     try {
+        WrappedServer* existing_pre = find_server_by_model_name(canonical_model_name);
+        bool final_pinned = false;
+        if (pinned.has_value()) {
+            final_pinned = pinned.value();
+        } else if (existing_pre) {
+            final_pinned = existing_pre->is_pinned();
+        } else {
+            final_pinned = (effective_options.get_option("pinned").is_boolean() && effective_options.get_option("pinned").get<bool>());
+        }
+
         prune_unavailable_servers_locked();
+
+        // Reclaim any idle routing helper a policy change already dropped from
+        // the needed set (e.g. one that was busy during the triggering
+        // reconcile). Cheap and non-blocking; runs before every load path.
+        prune_stale_routing_helpers_locked();
+
+        // If this load is itself for a routing helper the active policies no
+        // longer reference, abandon it now — before any destructive side effect
+        // (NPU/FLM eviction, capacity making room, or the nuclear retry below).
+        // Committing it would only be undone at load-completion anyway.
+        if (routing_helper_no_longer_needed(canonical_model_name,
+                                            requested_residency_class, final_pinned)) {
+            LOG(INFO, "Router") << "Skipping load of routing helper "
+                                << canonical_model_name
+                                << "; referenced by no active policy" << std::endl;
+            is_loading_ = false;
+            load_cv_.notify_all();
+            return;
+        }
 
         // Check if model is already loaded. Watchdog-reset or otherwise dead
         // entries are evicted first so auto-load performs a real lazy restart.
@@ -384,13 +862,22 @@ void Router::load_model(const std::string& model_name,
             existing = nullptr;
         }
         if (existing) {
-            if (allow_reload_on_option_change &&
-                existing->get_recipe_options().to_json() != effective_options.to_json()) {
+            json existing_opts = existing->get_recipe_options().to_json();
+            json requested_opts = effective_options.to_json();
+            existing_opts.erase("pinned");
+            requested_opts.erase("pinned");
+            if (allow_reload_on_option_change && existing_opts != requested_opts) {
                 LOG(INFO, "Router") << "Options changed, reloading model: " << canonical_model_name << std::endl;
                 evict_server(existing);
                 // Fall through to create and load with new options
             } else {
-                LOG(INFO, "Router") << "Model already loaded, updating access time" << std::endl;
+                // Residency follows the current use of the live process. Promotion
+                // and demotion both reuse the process and obey destination-pool
+                // admission and pinning rules.
+                transition_server_residency_locked(
+                    existing, requested_residency_class);
+                LOG(DEBUG, "Router") << "Model already loaded, updating access time and pinned status" << std::endl;
+                existing->set_pinned(final_pinned);
                 existing->update_access_time();
                 is_loading_ = false;
                 load_cv_.notify_all();
@@ -402,69 +889,111 @@ void Router::load_model(const std::string& model_name,
         ModelType model_type = model_info.type;
         DeviceType device_type = model_info.device;
 
-        // Get max models for this type (same limit for all types)
-        int max_models = config_->max_loaded_models();
-
-        // NPU EXCLUSIVITY CHECK (recipe-aware rules)
-        // FLM can run up to 3 concurrent NPU processes (1 LLM + 1 transcription + 1 embedding)
-        // RyzenAI and WhisperCpp lock the entire NPU exclusively
-        if (device_type & DEVICE_NPU) {
-            if (model_info.recipe == "ryzenai-llm" || model_info.recipe == "whispercpp") {
-                // Exclusive NPU recipes - evict ALL NPU servers
+        // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
+        //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
+        //                evicting ALL NPU servers first.
+        //   CoexistByType (flm): coexist with other FLM types (max 1 per type),
+        //                but evict exclusive-NPU peers.
+        // Standard/Unmetered backends share no device exclusivity.
+        switch (slot_policy_for_recipe(model_info.recipe)) {
+            case SlotPolicy::ExclusiveNpu: {
+                // Hardware exclusivity is stronger than count-based pools. Never
+                // alternate a router helper and its candidate across the same NPU:
+                // reject the cross-residency combination deterministically instead.
+                for (const auto& server : loaded_servers_) {
+                    if (server->is_backend_alive() &&
+                        (server->get_device_type() & DEVICE_NPU) &&
+                        should_reject_residency_displacement(
+                            requested_residency_class,
+                            server->get_residency_class())) {
+                        throw RouterResidencyConflictException(
+                            canonical_model_name,
+                            server->get_model_name(),
+                            model_info.recipe + " requires exclusive NPU access");
+                    }
+                }
                 if (has_npu_server()) {
                     LOG(INFO, "Router") << model_info.recipe
                               << " requires exclusive NPU access, evicting all NPU servers..." << std::endl;
                     evict_all_npu_servers();
                 }
-            } else if (model_info.recipe == "flm") {
-                // FLM can coexist with other FLM types, but not with exclusive-NPU recipes
-                // 1. Evict any exclusive-NPU server (mutually exclusive)
-                for (const std::string& exclusive_recipe : {"ryzenai-llm", "whispercpp"}) {
-                    WrappedServer* exclusive_server = find_npu_server_by_recipe(exclusive_recipe);
-                    if (exclusive_server) {
-                        LOG(INFO, "Router") << "FLM cannot coexist with " << exclusive_recipe
-                                  << ", evicting: " << exclusive_server->get_model_name() << std::endl;
-                        evict_server(exclusive_server);
+                break;
+            }
+            case SlotPolicy::CoexistByType: {
+                // 1. Evict every NPU holder that is not itself a coexisting (FLM)
+                //    backend — i.e. exclusive-NPU peers like ryzenai-llm and
+                //    whisper-on-npu. Collect first; evict_server mutates loaded_servers_.
+                std::vector<WrappedServer*> exclusive_peers;
+                for (const auto& server : loaded_servers_) {
+                    if (server->is_backend_alive() && (server->get_device_type() & DEVICE_NPU) &&
+                        slot_policy_for_recipe(server->get_recipe_options().get_recipe()) !=
+                            SlotPolicy::CoexistByType) {
+                        if (should_reject_residency_displacement(
+                                requested_residency_class,
+                                server->get_residency_class())) {
+                            throw RouterResidencyConflictException(
+                                canonical_model_name,
+                                server->get_model_name(),
+                                "FLM cannot coexist with the resident exclusive-NPU backend");
+                        }
+                        exclusive_peers.push_back(server.get());
                     }
                 }
+                for (auto* peer : exclusive_peers) {
+                    LOG(INFO, "Router") << "FLM cannot coexist with "
+                              << peer->get_recipe_options().get_recipe()
+                              << ", evicting: " << peer->get_model_name() << std::endl;
+                    evict_server(peer);
+                }
                 // 2. Evict FLM of the SAME model type (max 1 per type: 1 LLM, 1 transcription, 1 embed)
-                WrappedServer* same_type_flm = find_flm_server_by_type(model_type);
+                WrappedServer* same_type_flm = find_coexisting_server_by_type(model_type);
                 if (same_type_flm) {
+                    if (should_reject_residency_displacement(
+                            requested_residency_class,
+                            same_type_flm->get_residency_class())) {
+                        throw RouterResidencyConflictException(
+                            canonical_model_name,
+                            same_type_flm->get_model_name(),
+                            "FLM supports only one resident model per ModelType");
+                    }
                     LOG(INFO, "Router") << "FLM " << model_type_to_string(model_type)
                               << " slot occupied by: " << same_type_flm->get_model_name()
                               << ", evicting..." << std::endl;
                     evict_server(same_type_flm);
                 }
-            } else {
-                // Unknown NPU recipe - default to exclusive access
-                if (has_npu_server()) {
-                    LOG(INFO, "Router") << "Unknown NPU recipe, evicting all NPU servers..." << std::endl;
-                    evict_all_npu_servers();
-                }
+                break;
             }
+            case SlotPolicy::Standard:
+            case SlotPolicy::Unmetered:
+                break;
         }
 
-        // LRU EVICTION CHECK (from spec: Least Recently Used Cache)
-        // Skip eviction if unlimited (-1). Cloud-recipe loads also skip the
-        // check entirely: they consume no local resources, so they have no
-        // business kicking a warm local model out of memory.
-        bool is_cloud_load = (model_info.recipe == "cloud");
-        int current_count = count_servers_by_type(model_type);
-        if (!is_cloud_load && max_models != -1 && current_count >= max_models) {
-            WrappedServer* lru = find_lru_server_by_type(model_type);
-            if (lru) {
-                LOG(INFO, "Router") << "Slot limit reached for type "
-                          << model_type_to_string(model_type)
-                          << ", evicting LRU: " << lru->get_model_name() << std::endl;
-                evict_server(lru);
-            }
+        // Count-based LRU is scoped to (ModelType, ResidencyClass). A local
+        // routing helper therefore does not consume or evict a normal candidate
+        // slot of the same ModelType. Cloud remains unmetered and outside both pools.
+        const bool is_unmetered_load = is_unmetered_recipe(model_info.recipe);
+        if (!is_unmetered_load) {
+            ensure_residency_capacity(model_type, requested_residency_class,
+                                      canonical_model_name);
         }
+
+        // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
+        // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
+        int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
+        if (auto_ctx > 0) {
+            LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
+            effective_options.set_option("ctx_size", auto_ctx);
+        }
+
+        LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
 
         // Create new backend server
         std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info);
 
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        new_server->set_residency_class(requested_residency_class);
+        new_server->set_pinned(final_pinned);
         new_server->update_access_time();
 
         // CRITICAL: Release lock before slow backend startup
@@ -475,6 +1004,8 @@ void Router::load_model(const std::string& model_name,
         bool load_success = false;
         std::string error_message;
         auto load_start = std::chrono::steady_clock::now();
+
+        new_server->set_load_cancel_flag(cancel_flag);
 
         try {
             new_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
@@ -488,9 +1019,27 @@ void Router::load_model(const std::string& model_name,
             LOG(ERROR, "Router") << "Backend load failed: " << error_message << std::endl;
         }
 
+        new_server->set_load_cancel_flag(nullptr);
+
         lock.lock();
 
         if (load_success) {
+            // A policy change may have dropped this helper while its backend was
+            // starting (the load ran with load_mutex_ released). Now that we hold
+            // the lock again, validate against the authoritative needed set so a
+            // helper no active policy references is never committed.
+            if (routing_helper_no_longer_needed(canonical_model_name,
+                                                requested_residency_class,
+                                                new_server->is_pinned())) {
+                LOG(INFO, "Router") << "Routing helper " << canonical_model_name
+                          << " no longer referenced by any active policy; "
+                          << "discarding freshly loaded backend" << std::endl;
+                new_server->unload();
+                is_loading_ = false;
+                load_cv_.notify_all();
+                return;
+            }
+
             // Success: Refresh access time so this model is returned by
             // get_most_recent_server() (the pre-load timestamp from line 316
             // may have been overtaken by other models serving requests while
@@ -499,6 +1048,7 @@ void Router::load_model(const std::string& model_name,
             new_server->set_state(ModelState::READY);
 
             // Add to loaded servers
+            install_reclaim_notifier(new_server.get());
             loaded_servers_.push_back(std::move(new_server));
 
             is_loading_ = false;
@@ -516,9 +1066,26 @@ void Router::load_model(const std::string& model_name,
             is_loading_ = false;
             load_cv_.notify_all();
 
+            if (cancel_flag && cancel_flag->load()) {
+                LOG(INFO, "Router") << "Load cancelled, skipping nuclear retry" << std::endl;
+                throw std::runtime_error("load cancelled");
+            }
+
             if (is_file_not_found) {
                 LOG(ERROR, "Router") << "File not found error, NOT evicting other models" << std::endl;
                 throw std::runtime_error(error_message);
+            }
+
+            // A policy change may have dropped this helper during the failed
+            // load. Don't unleash the nuclear eviction on behalf of a backend we
+            // would immediately discard at commit time anyway.
+            if (routing_helper_no_longer_needed(canonical_model_name,
+                                                requested_residency_class, final_pinned)) {
+                LOG(INFO, "Router") << "Routing helper " << canonical_model_name
+                          << " no longer referenced by any active policy; "
+                          << "abandoning nuclear retry" << std::endl;
+                load_cv_.notify_all();
+                return;
             }
 
             // Nuclear option: evict all models and retry
@@ -533,7 +1100,10 @@ void Router::load_model(const std::string& model_name,
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+            retry_server->set_residency_class(requested_residency_class);
+            retry_server->set_pinned(final_pinned);
             retry_server->update_access_time();
+            retry_server->set_load_cancel_flag(cancel_flag);
 
             lock.unlock();
 
@@ -546,13 +1116,33 @@ void Router::load_model(const std::string& model_name,
 
                 lock.lock();
 
+                retry_server->set_load_cancel_flag(nullptr);
+
+                // Same policy-churn guard as the initial load: a helper the
+                // active policy dropped while this retry backend was starting
+                // must be discarded, not committed.
+                if (routing_helper_no_longer_needed(canonical_model_name,
+                                                    requested_residency_class,
+                                                    retry_server->is_pinned())) {
+                    LOG(INFO, "Router") << "Routing helper " << canonical_model_name
+                              << " no longer referenced by any active policy; "
+                              << "discarding freshly loaded backend" << std::endl;
+                    retry_server->unload();
+                    is_loading_ = false;
+                    load_cv_.notify_all();
+                    return;
+                }
+
                 retry_server->set_state(ModelState::READY);
+                const auto retry_duration_ms = retry_server->get_load_duration_ms();
+                install_reclaim_notifier(retry_server.get());
                 loaded_servers_.push_back(std::move(retry_server));
                 is_loading_ = false;
                 load_cv_.notify_all();
 
-                LOG(DEBUG, "Router") << "Retry successful in " << retry_server->get_load_duration_ms() << "ms!" << std::endl;
+                LOG(DEBUG, "Router") << "Retry successful in " << retry_duration_ms << "ms!" << std::endl;
             } catch (const std::exception& retry_error) {
+                retry_server->set_load_cancel_flag(nullptr);
                 lock.lock();
                 is_loading_ = false;
                 load_cv_.notify_all();
@@ -576,7 +1166,8 @@ void Router::load_model(const std::string& model_name,
 }
 
 void Router::unload_model(const std::string& model_name) {
-    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    wait_for_slot_clearance(lock);
 
     if (model_name.empty()) {
         // Unload all models
@@ -600,6 +1191,17 @@ void Router::evict_if_committed(const std::string& model_name) {
     WrappedServer* server = find_server_by_model_name(model_name);
     if (!server) {
         return;  // Already gone
+    }
+
+    // An exclusive session may have started (and re-pinned this model via the
+    // job snapshot reconcile) since the EVICTING mark was set. Neither state
+    // was known when the eviction was decided, so abandon it.
+    if (exclusive_active_ || server->is_pinned()) {
+        server->rescue_from_eviction();
+        LOG(INFO, "Router") << "Eviction of " << model_name << " cancelled ("
+                            << (server->is_pinned() ? "pinned" : "exclusive session active")
+                            << ")" << std::endl;
+        return;
     }
 
     // Atomically confirm the model is still idle and EVICTING. If a request
@@ -629,6 +1231,34 @@ std::string Router::get_loaded_recipe() const {
     return server->get_recipe_options().get_recipe();
 }
 
+std::string Router::get_sole_loaded_model_of_type(ModelType type) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+
+    WrappedServer* standard_match = nullptr;
+    WrappedServer* helper_match = nullptr;
+    bool helper_ambiguous = false;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive() || server->get_model_type() != type) {
+            continue;
+        }
+        if (server->get_residency_class() == ResidencyClass::Standard) {
+            if (standard_match) return "";  // multiple user-facing models
+            standard_match = server.get();
+        } else if (helper_match) {
+            helper_ambiguous = true;
+        } else {
+            helper_match = server.get();
+        }
+    }
+
+    // A single standard model remains an unambiguous default even while an
+    // internal router/classifier model of the same ModelType is resident.
+    WrappedServer* match = standard_match
+        ? standard_match
+        : (helper_ambiguous ? nullptr : helper_match);
+    return match ? model_manager_->get_public_model_name(match->get_model_name()) : "";
+}
+
 json Router::get_all_loaded_models() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
 
@@ -644,6 +1274,12 @@ json Router::get_all_loaded_models() const {
         model_info["model_name"] = model_manager_->get_public_model_name(server->get_model_name());
         model_info["checkpoint"] = server->get_checkpoint();
         model_info["type"] = model_type_to_string(server->get_model_type());
+        model_info["residency_class"] = residency_class_to_string(server->get_residency_class());
+        model_info["slot_pool"] = is_unmetered_recipe(
+            server->get_recipe_options().get_recipe())
+            ? "unmetered"
+            : residency_pool_to_string(
+                  server->get_model_type(), server->get_residency_class());
         model_info["device"] = device_type_to_string(server->get_device_type());
         model_info["backend_url"] = server->get_address();  // For debugging port issues
         model_info["pid"] = server->get_process_id();
@@ -656,9 +1292,12 @@ json Router::get_all_loaded_models() const {
         if (!watchdog_reason.empty()) {
             model_info["watchdog_reset_reason"] = watchdog_reason;
         }
+        model_info["pinned"] = server->is_pinned();
         RecipeOptions recipe_options =  server->get_recipe_options();
         model_info["recipe"] = recipe_options.get_recipe();
         model_info["recipe_options"] = recipe_options.to_json();
+        model_info["is_busy"] = server->is_busy();
+        model_info["is_streaming"] = server->is_streaming();
 
         // Static metadata from the registry entry. Cloud models carry the
         // provider-reported context window + per-million-token cost (recorded
@@ -699,7 +1338,8 @@ json Router::get_max_model_limits() const {
         {"reranking", max},
         {"transcription", max},
         {"image", max},
-        {"tts", max}
+        {"tts", max},
+        {"classification", max}
     };
 }
 
@@ -779,7 +1419,8 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
         bool should_reload_before_request = false;
 
         {
-            std::lock_guard<std::mutex> lock(load_mutex_);
+            std::unique_lock<std::mutex> lock(load_mutex_);
+            wait_for_slot_clearance(lock);
             server = find_server_by_model_name(resolve_model_name(requested_model));
             if (!server) {
                 return ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
@@ -810,6 +1451,8 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
                 {{"code", "backend_unavailable"}, {"retryable", true}}
             );
         }
+
+        InhibitGuard inhibit_guard(suspend_inhibitor_.get(), config_->inhibit_suspend());
 
         try {
             auto response = inference_func(server);
@@ -848,7 +1491,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
 
 // Template method for streaming execution
 template<typename Func>
-void Router::execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func) {
+void Router::execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span) {
     WrappedServer* server = nullptr;
     std::string requested_model;
 
@@ -876,7 +1519,8 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
         bool should_reload_before_request = false;
 
         {
-            std::lock_guard<std::mutex> lock(load_mutex_);
+            std::unique_lock<std::mutex> lock(load_mutex_);
+            wait_for_slot_clearance(lock);
             server = find_server_by_model_name(resolve_model_name(requested_model));
             if (!server) {
                 json error = ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
@@ -922,6 +1566,8 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             return;
         }
 
+        InhibitGuard inhibit_guard(suspend_inhibitor_.get(), config_->inhibit_suspend());
+
         try {
             streaming_func(server);
             const bool watchdog_reset = server->was_watchdog_triggered();
@@ -955,6 +1601,10 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
                 continue;
             }
 
+            if (span) {
+                span->end_with_error(e.what());
+            }
+
             json error = ErrorResponse::create(
                 std::string("Backend for model '") + requested_model +
                     "' crashed before streaming started and could not be reloaded: " + e.what(),
@@ -972,40 +1622,330 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
     }
 }
 
-json Router::chat_completion(const json& request) {
-    return execute_inference(request, [&](WrappedServer* server) {
-        return server->chat_completion(request);
-    });
+json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
+
+    struct RequestCancelScope {
+        WrappedServer* server = nullptr;
+        ~RequestCancelScope() {
+            if (server) server->set_request_cancel_flag(nullptr);
+        }
+    } cancel_scope;
+
+    try {
+        WrappedServer* active_server = nullptr;
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            active_server = server;
+            if (cancel) {
+                server->set_request_cancel_flag(cancel);
+                cancel_scope.server = server;
+            }
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("llm.backend", identity.recipe);
+                span->set_attribute("llm.device_type", identity.device);
+                span->set_attribute("llm.checkpoint", identity.checkpoint);
+                span->set_attribute("llm.recipe", identity.recipe);
+                if (request.contains("temperature")) span->set_attribute("llm.config.temperature", request["temperature"]);
+                if (request.contains("top_p")) span->set_attribute("llm.config.top_p", request["top_p"]);
+                if (request.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request["max_tokens"]);
+                if (request.contains("max_completion_tokens")) span->set_attribute("llm.config.max_completion_tokens", request["max_completion_tokens"]);
+            }
+            return server->chat_completion(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                nlohmann::json usage_payload = nlohmann::json::object();
+                std::string text_output = "";
+                if (response.contains("usage") && response["usage"].is_object()) {
+                    auto usage = response["usage"];
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
+                    if (usage.contains("completion_tokens")) {
+                        usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                    } else if (usage.contains("output_tokens")) {
+                        usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
+                    }
+                }
+                if (response.contains("timings")) {
+                    auto timings = response["timings"];
+                    if (timings.contains("prompt_n")) usage_payload["prompt_tokens"] = timings["prompt_n"].get<int>();
+                    if (timings.contains("predicted_n")) usage_payload["completion_tokens"] = timings["predicted_n"].get<int>();
+
+                    if (timings.contains("prompt_ms") && timings.contains("prompt_n")) {
+                        double prompt_ms = timings["prompt_ms"].get<double>();
+                        if (prompt_ms > 0) {
+                            span->set_attribute("llm.performance.time_to_first_token", prompt_ms / 1000.0);
+                        }
+                    }
+                    if (timings.contains("predicted_ms") && timings.contains("predicted_n")) {
+                        double predicted_ms = timings["predicted_ms"].get<double>();
+                        int predicted_n = timings["predicted_n"].get<int>();
+                        if (predicted_ms > 0 && predicted_n > 0) {
+                            span->set_attribute("llm.performance.tokens_per_second", (predicted_n / (predicted_ms / 1000.0)));
+                        }
+                    }
+                }
+
+                if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
+                    auto choice = response["choices"][0];
+                    std::string reasoning_output = "";
+                    if (choice.contains("message")) {
+                        auto msg = choice["message"];
+                        if (msg.contains("reasoning_content") && msg["reasoning_content"].is_string()) {
+                            reasoning_output = msg["reasoning_content"].get<std::string>();
+                        } else if (msg.contains("thinking") && msg["thinking"].is_string()) {
+                            reasoning_output = msg["thinking"].get<std::string>();
+                        }
+                        if (msg.contains("content") && msg["content"].is_string()) {
+                            text_output = msg["content"].get<std::string>();
+                        }
+                    }
+                    if (!reasoning_output.empty()) {
+                        text_output = "<think>\n" + reasoning_output + "\n</think>\n" + text_output;
+                    }
+                }
+
+                std::string url;
+                std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
+                if (active_server) {
+                    url = active_server->get_additional_telemetry_url();
+                    parser = active_server->get_additional_telemetry_parser();
+                }
+                telemetry::end_llm_span_async(span, url, parser, usage_payload, text_output);
+            }
+        }
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
 }
 
 json Router::completion(const json& request) {
-    return execute_inference(request, [&](WrappedServer* server) {
-        return server->completion(request);
-    });
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request);
+
+    try {
+        WrappedServer* active_server = nullptr;
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            active_server = server;
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("llm.backend", identity.recipe);
+                span->set_attribute("llm.device_type", identity.device);
+                span->set_attribute("llm.checkpoint", identity.checkpoint);
+                span->set_attribute("llm.recipe", identity.recipe);
+                if (request.contains("temperature")) span->set_attribute("llm.config.temperature", request["temperature"]);
+                if (request.contains("top_p")) span->set_attribute("llm.config.top_p", request["top_p"]);
+                if (request.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request["max_tokens"]);
+            }
+            return server->completion(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                nlohmann::json usage_payload = nlohmann::json::object();
+                std::string text_output = "";
+                if (response.contains("usage") && response["usage"].is_object()) {
+                    auto usage = response["usage"];
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
+                    if (usage.contains("completion_tokens")) {
+                        usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
+                    } else if (usage.contains("output_tokens")) {
+                        usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
+                    }
+                }
+
+                if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
+                    auto choice = response["choices"][0];
+                    if (choice.contains("text") && choice["text"].is_string()) {
+                        text_output = choice["text"].get<std::string>();
+                    }
+                }
+
+                std::string url;
+                std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
+                if (active_server) {
+                    url = active_server->get_additional_telemetry_url();
+                    parser = active_server->get_additional_telemetry_parser();
+                }
+                telemetry::end_llm_span_async(span, url, parser, usage_payload, text_output);
+            }
+        }
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
 }
 
 json Router::embeddings(const json& request) {
-    return execute_inference(request, [&](WrappedServer* server) {
-        auto embeddings_server = dynamic_cast<IEmbeddingsServer*>(server);
-        if (!embeddings_server) {
-            return ErrorResponse::from_exception(
-                UnsupportedOperationException("Embeddings", device_type_to_string(server->get_device_type()))
-            );
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("EMBEDDING", "embeddings", requested_model, request);
+
+    try {
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("embedding.backend", identity.recipe);
+                span->set_attribute("embedding.device_type", identity.device);
+                span->set_attribute("embedding.checkpoint", identity.checkpoint);
+                span->set_attribute("embedding.recipe", identity.recipe);
+            }
+            auto embeddings_server = dynamic_cast<IEmbeddingsServer*>(server);
+            if (!embeddings_server) {
+                return ErrorResponse::from_exception(
+                    UnsupportedOperationException("Embeddings", device_type_to_string(server->get_device_type()))
+                );
+            }
+            return embeddings_server->embeddings(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                nlohmann::json usage_payload = nlohmann::json::object();
+                if (response.contains("usage") && response["usage"].is_object()) {
+                    auto usage = response["usage"];
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
+                    if (usage.contains("total_tokens")) usage_payload["total_tokens"] = usage["total_tokens"].get<int>();
+                }
+                std::string output_dump = "";
+                if (response.contains("data") && response["data"].is_array()) {
+                    output_dump = "Embeddings data with " + std::to_string(response["data"].size()) + " vectors.";
+                } else {
+                    output_dump = response.dump();
+                }
+                span->end_with_success(usage_payload, output_dump);
+            }
         }
-        return embeddings_server->embeddings(request);
-    });
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
 }
 
 json Router::reranking(const json& request) {
-    return execute_inference(request, [&](WrappedServer* server) {
-        auto reranking_server = dynamic_cast<IRerankingServer*>(server);
-        if (!reranking_server) {
-            return ErrorResponse::from_exception(
-                UnsupportedOperationException("Reranking", device_type_to_string(server->get_device_type()))
-            );
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("RERANKER", "reranking", requested_model, request);
+
+    try {
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("reranker.backend", identity.recipe);
+                span->set_attribute("reranker.device_type", identity.device);
+                span->set_attribute("reranker.checkpoint", identity.checkpoint);
+                span->set_attribute("reranker.recipe", identity.recipe);
+            }
+            auto reranking_server = dynamic_cast<IRerankingServer*>(server);
+            if (!reranking_server) {
+                return ErrorResponse::from_exception(
+                    UnsupportedOperationException("Reranking", device_type_to_string(server->get_device_type()))
+                );
+            }
+            return reranking_server->reranking(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                nlohmann::json usage_payload = nlohmann::json::object();
+                if (response.contains("usage") && response["usage"].is_object()) {
+                    auto usage = response["usage"];
+                    if (usage.contains("prompt_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
+                    } else if (usage.contains("input_tokens")) {
+                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
+                    }
+                    if (usage.contains("total_tokens")) usage_payload["total_tokens"] = usage["total_tokens"].get<int>();
+                }
+                span->end_with_success(usage_payload, response.dump());
+            }
         }
-        return reranking_server->reranking(request);
-    });
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
+}
+
+json Router::classify(const json& request) {
+    std::string requested_model = request.value("model", "");
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "classify", requested_model, request);
+
+    try {
+        json response = execute_inference(request, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+            if (span) {
+                span->set_attribute("classifier.backend", identity.recipe);
+                span->set_attribute("classifier.device_type", identity.device);
+                span->set_attribute("classifier.checkpoint", identity.checkpoint);
+                span->set_attribute("classifier.recipe", identity.recipe);
+            }
+            auto classification_server = dynamic_cast<IClassificationServer*>(server);
+            if (!classification_server) {
+                return ErrorResponse::from_exception(
+                    UnsupportedOperationException("Classification", device_type_to_string(server->get_device_type()))
+                );
+            }
+            return classification_server->classify(request);
+        });
+
+        if (span) {
+            if (response.contains("error")) {
+                std::string error_msg = "Request failed";
+                if (response["error"].contains("message") && response["error"]["message"].is_string()) {
+                    error_msg = response["error"]["message"].get<std::string>();
+                }
+                span->end_with_error(error_msg);
+            } else {
+                // Label scores classify user content; keep them out of telemetry.
+                span->end_with_success(nlohmann::json::object(), "");
+            }
+        }
+        return response;
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    }
 }
 
 json Router::get_slots() {
@@ -1013,7 +1953,8 @@ json Router::get_slots() {
     ISlotsServer* slots_server = nullptr;
 
     {
-        std::lock_guard<std::mutex> lock(load_mutex_);
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
         server = get_most_recent_server();
         if (!server) {
             return ErrorResponse::from_exception(
@@ -1052,7 +1993,8 @@ json Router::slots_action(int slot_id, const std::string& action, const json& re
     ISlotsServer* slots_server = nullptr;
 
     {
-        std::lock_guard<std::mutex> lock(load_mutex_);
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
         server = get_most_recent_server();
         if (!server) {
             return ErrorResponse::from_exception(
@@ -1091,7 +2033,8 @@ json Router::tokenize(const json& request_body) {
     ITokenizerServer* tokenizer_server = nullptr;
 
     {
-        std::lock_guard<std::mutex> lock(load_mutex_);
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
         server = get_most_recent_server();
         if (!server) {
             return ErrorResponse::from_exception(
@@ -1153,6 +2096,20 @@ void Router::audio_speech(const json& request, httplib::DataSink& sink) {
     });
 }
 
+std::vector<std::string> Router::audio_speech_supported_formats(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto tts_server = dynamic_cast<ITextToSpeechServer*>(
+        find_server_by_model_name(resolve_model_name(model_name)));
+    return tts_server ? tts_server->supported_audio_formats() : std::vector<std::string>{};
+}
+
+std::vector<std::string> Router::audio_speech_supported_streaming_formats(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto tts_server = dynamic_cast<ITextToSpeechServer*>(
+        find_server_by_model_name(resolve_model_name(model_name)));
+    return tts_server ? tts_server->supported_streaming_audio_formats() : std::vector<std::string>{};
+}
+
 json Router::image_generations(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
@@ -1186,6 +2143,33 @@ json Router::image_variations(const json& request) {
             );
         }
         return image_server->image_variations(request);
+    });
+}
+
+void Router::audio_generations(const json& request, httplib::DataSink& sink) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        auto audio_server = dynamic_cast<IAudioGenerationServer*>(server);
+        if (!audio_server) {
+            throw UnsupportedOperationException("Audio generation", device_type_to_string(server->get_device_type()));
+        }
+        audio_server->audio_generations(request, sink);
+    });
+}
+
+std::vector<std::string> Router::audio_generation_supported_formats(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto audio_server = dynamic_cast<IAudioGenerationServer*>(
+        find_server_by_model_name(resolve_model_name(model_name)));
+    return audio_server ? audio_server->supported_audio_formats() : std::vector<std::string>{};
+}
+
+void Router::model_3d_generations(const json& request, httplib::DataSink& sink) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        auto model_server = dynamic_cast<IModel3DServer*>(server);
+        if (!model_server) {
+            throw UnsupportedOperationException("3D generation", device_type_to_string(server->get_device_type()));
+        }
+        model_server->model_3d_generations(request, sink);
     });
 }
 
@@ -1360,48 +2344,427 @@ void Router::update_prompt_tokens(const std::string& model_name, int prompt_toke
 }
 
 void Router::chat_completion_stream(const std::string& request_body, httplib::DataSink& sink) {
-    execute_streaming(request_body, sink, [&](WrappedServer* server) {
-        ModelTelemetryIdentity identity = get_telemetry_identity(server);
-        server->forward_streaming_request("/v1/chat/completions", request_body, sink, true, 0,
-            [this, identity](int input_tokens,
-                             int output_tokens,
-                             double time_to_first_token,
-                             double tokens_per_second) {
-                record_telemetry_for_model(identity, input_tokens, output_tokens,
-                                           time_to_first_token, tokens_per_second);
-                record_prompt_tokens_for_model(identity, input_tokens);
-            });
-    });
+    json request_json;
+    try {
+        request_json = json::parse(request_body);
+    } catch (...) {}
+    std::string requested_model = request_json.value("model", "");
+
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request_json);
+
+    bool hide_outputs = false;
+    bool hide_thinking = false;
+    if (auto* config = RuntimeConfig::global()) {
+        hide_outputs = config->telemetry_hide_outputs();
+        hide_thinking = config->telemetry_hide_thinking();
+    }
+
+    auto accumulated_text = std::make_shared<std::string>();
+    auto accumulated_reasoning = std::make_shared<std::string>();
+    auto line_buffer = std::make_shared<std::string>();
+
+    httplib::DataSink telemetry_sink;
+    telemetry_sink.write = [accumulated_text, accumulated_reasoning, line_buffer, &sink, hide_outputs, hide_thinking](const char* data, size_t len) -> bool {
+        bool success = false;
+        if (sink.write) {
+            success = sink.write(data, len);
+        }
+        line_buffer->append(data, len);
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, accumulated_reasoning, hide_outputs, hide_thinking](const std::string& line) {
+            if (line.rfind("data: ", 0) == 0) {
+                std::string json_str = line.substr(6);
+                if (json_str.find("[DONE]") == std::string::npos) {
+                    try {
+                        auto parsed = json::parse(json_str);
+                        if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
+                            auto delta = parsed["choices"][0]["delta"];
+                            if (!hide_thinking) {
+                                if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
+                                    *accumulated_reasoning += delta["reasoning_content"].get<std::string>();
+                                } else if (delta.contains("thinking") && delta["thinking"].is_string()) {
+                                    *accumulated_reasoning += delta["thinking"].get<std::string>();
+                                }
+                            }
+                            if (!hide_outputs) {
+                                if (delta.contains("content") && delta["content"].is_string()) {
+                                    *accumulated_text += delta["content"].get<std::string>();
+                                }
+                            }
+                        }
+                    } catch (...) {}
+                }
+            }
+        });
+        return success;
+    };
+
+    telemetry_sink.is_writable = [&sink]() -> bool {
+        return sink.is_writable ? sink.is_writable() : true;
+    };
+
+    telemetry_sink.done = [&sink]() {
+        if (sink.done) {
+            sink.done();
+        }
+    };
+
+    telemetry_sink.done_with_trailer = [&sink](const httplib::Headers& trailer) {
+        if (sink.done_with_trailer) {
+            sink.done_with_trailer(trailer);
+        } else if (sink.done) {
+            sink.done();
+        }
+    };
+
+    try {
+        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+
+            if (span) {
+                span->set_attribute("llm.backend", identity.recipe);
+                span->set_attribute("llm.device_type", identity.device);
+                span->set_attribute("llm.checkpoint", identity.checkpoint);
+                span->set_attribute("llm.recipe", identity.recipe);
+                if (request_json.contains("temperature")) span->set_attribute("llm.config.temperature", request_json["temperature"]);
+                if (request_json.contains("top_p")) span->set_attribute("llm.config.top_p", request_json["top_p"]);
+                if (request_json.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request_json["max_tokens"]);
+                if (request_json.contains("max_completion_tokens")) span->set_attribute("llm.config.max_completion_tokens", request_json["max_completion_tokens"]);
+            }
+
+            server->forward_streaming_request("/v1/chat/completions", request_body, telemetry_sink, true, 0,
+                [this, identity, span, accumulated_text, accumulated_reasoning, server](int input_tokens,
+                                 int output_tokens,
+                                 double time_to_first_token,
+                                 double tokens_per_second,
+                                 const std::string& error_message) {
+                    if (!error_message.empty()) {
+                        if (span) {
+                            span->end_with_error(error_message);
+                        }
+                        return;
+                    }
+                    record_telemetry_for_model(identity, input_tokens, output_tokens,
+                                               time_to_first_token, tokens_per_second);
+                    record_prompt_tokens_for_model(identity, input_tokens);
+
+                    if (span) {
+                        nlohmann::json usage_payload = {
+                            {"prompt_tokens", input_tokens},
+                            {"completion_tokens", output_tokens}
+                        };
+                        span->set_attribute("llm.performance.time_to_first_token", time_to_first_token);
+                        span->set_attribute("llm.performance.tokens_per_second", tokens_per_second);
+                        std::string final_output = *accumulated_text;
+                        if (!accumulated_reasoning->empty()) {
+                            final_output = "<think>\n" + *accumulated_reasoning + "\n</think>\n" + final_output;
+                        }
+
+                        std::string url;
+                        std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
+                        if (server) {
+                            url = server->get_additional_telemetry_url();
+                            parser = server->get_additional_telemetry_parser();
+                        }
+                        telemetry::end_llm_span_async(span, url, parser, usage_payload, final_output);
+                    }
+                });
+        }, span);
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    } catch (...) {
+        if (span) span->end_with_error("Unknown error during streaming");
+        throw;
+    }
 }
 
 void Router::completion_stream(const std::string& request_body, httplib::DataSink& sink) {
-    execute_streaming(request_body, sink, [&](WrappedServer* server) {
-        ModelTelemetryIdentity identity = get_telemetry_identity(server);
-        server->forward_streaming_request("/v1/completions", request_body, sink, true, 0,
-            [this, identity](int input_tokens,
-                             int output_tokens,
-                             double time_to_first_token,
-                             double tokens_per_second) {
-                record_telemetry_for_model(identity, input_tokens, output_tokens,
-                                           time_to_first_token, tokens_per_second);
-                record_prompt_tokens_for_model(identity, input_tokens);
-            });
-    });
+    json request_json;
+    try {
+        request_json = json::parse(request_body);
+    } catch (...) {}
+    std::string requested_model = request_json.value("model", "");
+
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request_json);
+
+    bool hide_outputs = false;
+    if (auto* config = RuntimeConfig::global()) {
+        hide_outputs = config->telemetry_hide_outputs();
+    }
+
+    auto accumulated_text = std::make_shared<std::string>();
+    auto line_buffer = std::make_shared<std::string>();
+
+    httplib::DataSink telemetry_sink;
+    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs](const char* data, size_t len) -> bool {
+        bool success = false;
+        if (sink.write) {
+            success = sink.write(data, len);
+        }
+        line_buffer->append(data, len);
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs](const std::string& line) {
+            if (line.rfind("data: ", 0) == 0) {
+                std::string json_str = line.substr(6);
+                if (json_str.find("[DONE]") == std::string::npos) {
+                    try {
+                        auto parsed = json::parse(json_str);
+                        if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
+                            auto choice = parsed["choices"][0];
+                            if (!hide_outputs) {
+                                if (choice.contains("text") && choice["text"].is_string()) {
+                                    *accumulated_text += choice["text"].get<std::string>();
+                                }
+                            }
+                        }
+                    } catch (...) {}
+                }
+            }
+        });
+        return success;
+    };
+
+    telemetry_sink.is_writable = [&sink]() -> bool {
+        return sink.is_writable ? sink.is_writable() : true;
+    };
+
+    telemetry_sink.done = [&sink]() {
+        if (sink.done) {
+            sink.done();
+        }
+    };
+
+    telemetry_sink.done_with_trailer = [&sink](const httplib::Headers& trailer) {
+        if (sink.done_with_trailer) {
+            sink.done_with_trailer(trailer);
+        } else if (sink.done) {
+            sink.done();
+        }
+    };
+
+    try {
+        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+
+            if (span) {
+                span->set_attribute("llm.backend", identity.recipe);
+                span->set_attribute("llm.device_type", identity.device);
+                span->set_attribute("llm.checkpoint", identity.checkpoint);
+                span->set_attribute("llm.recipe", identity.recipe);
+                if (request_json.contains("temperature")) span->set_attribute("llm.config.temperature", request_json["temperature"]);
+                if (request_json.contains("top_p")) span->set_attribute("llm.config.top_p", request_json["top_p"]);
+                if (request_json.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request_json["max_tokens"]);
+            }
+
+            server->forward_streaming_request("/v1/completions", request_body, telemetry_sink, true, 0,
+                [this, identity, span, accumulated_text, server](int input_tokens,
+                                 int output_tokens,
+                                 double time_to_first_token,
+                                 double tokens_per_second,
+                                 const std::string& error_message) {
+                    if (!error_message.empty()) {
+                        if (span) {
+                            span->end_with_error(error_message);
+                        }
+                        return;
+                    }
+                    record_telemetry_for_model(identity, input_tokens, output_tokens,
+                                               time_to_first_token, tokens_per_second);
+                    record_prompt_tokens_for_model(identity, input_tokens);
+
+                    if (span) {
+                        nlohmann::json usage_payload = {
+                            {"prompt_tokens", input_tokens},
+                            {"completion_tokens", output_tokens}
+                        };
+                        span->set_attribute("llm.performance.time_to_first_token", time_to_first_token);
+                        span->set_attribute("llm.performance.tokens_per_second", tokens_per_second);
+
+                        std::string url;
+                        std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
+                        if (server) {
+                            url = server->get_additional_telemetry_url();
+                            parser = server->get_additional_telemetry_parser();
+                        }
+                        telemetry::end_llm_span_async(span, url, parser, usage_payload, *accumulated_text);
+                    }
+                });
+        }, span);
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    } catch (...) {
+        if (span) span->end_with_error("Unknown error during streaming");
+        throw;
+    }
 }
 
 void Router::responses_stream(const std::string& request_body, httplib::DataSink& sink) {
-    execute_streaming(request_body, sink, [&](WrappedServer* server) {
-        ModelTelemetryIdentity identity = get_telemetry_identity(server);
-        server->forward_streaming_request("/v1/responses", request_body, sink, true, 0,
-            [this, identity](int input_tokens,
-                             int output_tokens,
-                             double time_to_first_token,
-                             double tokens_per_second) {
-                record_telemetry_for_model(identity, input_tokens, output_tokens,
-                                           time_to_first_token, tokens_per_second);
-                record_prompt_tokens_for_model(identity, input_tokens);
-            });
-    });
+    json request_json;
+    try {
+        request_json = json::parse(request_body);
+    } catch (...) {}
+    std::string requested_model = request_json.value("model", "");
+
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "responses", requested_model, request_json);
+
+    bool hide_outputs = false;
+    if (auto* config = RuntimeConfig::global()) {
+        hide_outputs = config->telemetry_hide_outputs();
+    }
+
+    auto accumulated_text = std::make_shared<std::string>();
+    auto line_buffer = std::make_shared<std::string>();
+
+    httplib::DataSink telemetry_sink;
+    telemetry_sink.write = [accumulated_text, line_buffer, &sink, hide_outputs](const char* data, size_t len) -> bool {
+        bool success = false;
+        if (sink.write) {
+            success = sink.write(data, len);
+        }
+        line_buffer->append(data, len);
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, hide_outputs](const std::string& line) {
+            if (line.rfind("data: ", 0) == 0) {
+                std::string json_str = line.substr(6);
+                if (json_str.find("[DONE]") == std::string::npos) {
+                    try {
+                        auto parsed = json::parse(json_str);
+                        if (!hide_outputs) {
+                            StreamingProxy::accumulate_responses_delta(parsed, *accumulated_text);
+                        }
+                    } catch (...) {}
+                }
+            }
+        });
+        return success;
+    };
+
+    telemetry_sink.is_writable = [&sink]() -> bool {
+        return sink.is_writable ? sink.is_writable() : true;
+    };
+
+    telemetry_sink.done = [&sink]() {
+        if (sink.done) {
+            sink.done();
+        }
+    };
+
+    telemetry_sink.done_with_trailer = [&sink](const httplib::Headers& trailer) {
+        if (sink.done_with_trailer) {
+            sink.done_with_trailer(trailer);
+        } else if (sink.done) {
+            sink.done();
+        }
+    };
+
+    try {
+        execute_streaming(request_body, telemetry_sink, [&](WrappedServer* server) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server);
+
+            if (span) {
+                span->set_attribute("llm.backend", identity.recipe);
+                span->set_attribute("llm.device_type", identity.device);
+                span->set_attribute("llm.checkpoint", identity.checkpoint);
+                span->set_attribute("llm.recipe", identity.recipe);
+                if (request_json.contains("temperature")) span->set_attribute("llm.config.temperature", request_json["temperature"]);
+                if (request_json.contains("top_p")) span->set_attribute("llm.config.top_p", request_json["top_p"]);
+                if (request_json.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request_json["max_tokens"]);
+            }
+
+            server->forward_streaming_request("/v1/responses", request_body, telemetry_sink, true, 0,
+                [this, identity, span, accumulated_text, server](int input_tokens,
+                                 int output_tokens,
+                                 double time_to_first_token,
+                                 double tokens_per_second,
+                                 const std::string& error_message) {
+                    if (!error_message.empty()) {
+                        if (span) {
+                            span->end_with_error(error_message);
+                        }
+                        return;
+                    }
+                    record_telemetry_for_model(identity, input_tokens, output_tokens,
+                                               time_to_first_token, tokens_per_second);
+                    record_prompt_tokens_for_model(identity, input_tokens);
+
+                    if (span) {
+                        nlohmann::json usage_payload = {
+                            {"prompt_tokens", input_tokens},
+                            {"completion_tokens", output_tokens}
+                        };
+                        span->set_attribute("llm.performance.time_to_first_token", time_to_first_token);
+                        span->set_attribute("llm.performance.tokens_per_second", tokens_per_second);
+
+                        std::string url;
+                        std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
+                        if (server) {
+                            url = server->get_additional_telemetry_url();
+                            parser = server->get_additional_telemetry_parser();
+                        }
+                        telemetry::end_llm_span_async(span, url, parser, usage_payload, *accumulated_text);
+                    }
+                });
+        }, span);
+    } catch (const std::exception& e) {
+        if (span) span->end_with_error(e.what());
+        throw;
+    } catch (...) {
+        if (span) span->end_with_error("Unknown error during streaming");
+        throw;
+    }
+}
+
+int Router::count_pinned_servers_in_pool(
+    ModelType type,
+    ResidencyClass residency_class) const {
+    int count = 0;
+    for (const auto& server : loaded_servers_) {
+        if (is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
+            continue;
+        }
+        if (server->is_backend_alive() &&
+            server->get_model_type() == type &&
+            server->get_residency_class() == residency_class &&
+            server->is_pinned()) {
+            count++;
+        }
+    }
+    return count;
+}
+
+json Router::get_pinned_model_counts() const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    return {
+        {"llm", count_pinned_servers_in_pool(ModelType::LLM, ResidencyClass::Standard)},
+        {"embedding", count_pinned_servers_in_pool(ModelType::EMBEDDING, ResidencyClass::Standard)},
+        {"reranking", count_pinned_servers_in_pool(ModelType::RERANKING, ResidencyClass::Standard)},
+        {"transcription", count_pinned_servers_in_pool(ModelType::TRANSCRIPTION, ResidencyClass::Standard)},
+        {"image", count_pinned_servers_in_pool(ModelType::IMAGE, ResidencyClass::Standard)},
+        {"tts", count_pinned_servers_in_pool(ModelType::TTS, ResidencyClass::Standard)},
+        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::Standard)}
+    };
+}
+
+json Router::get_pinned_helper_counts() const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    return {
+        {"llm", count_pinned_servers_in_pool(ModelType::LLM, ResidencyClass::RoutingHelper)},
+        {"embedding", count_pinned_servers_in_pool(ModelType::EMBEDDING, ResidencyClass::RoutingHelper)},
+        {"reranking", count_pinned_servers_in_pool(ModelType::RERANKING, ResidencyClass::RoutingHelper)},
+        {"transcription", count_pinned_servers_in_pool(ModelType::TRANSCRIPTION, ResidencyClass::RoutingHelper)},
+        {"image", count_pinned_servers_in_pool(ModelType::IMAGE, ResidencyClass::RoutingHelper)},
+        {"tts", count_pinned_servers_in_pool(ModelType::TTS, ResidencyClass::RoutingHelper)},
+        {"classification", count_pinned_servers_in_pool(ModelType::CLASSIFICATION, ResidencyClass::RoutingHelper)}
+    };
+}
+
+void Router::set_model_pinned(const std::string& model_name, bool pinned) {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    wait_for_slot_clearance(lock);
+    WrappedServer* server = find_server_by_model_name(model_name);
+    if (!server) {
+        throw std::runtime_error("Model not loaded: " + model_name);
+    }
+    server->set_pinned(pinned);
 }
 
 } // namespace lemon

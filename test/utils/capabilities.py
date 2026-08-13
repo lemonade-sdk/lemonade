@@ -8,6 +8,7 @@ Tests use the skip_if_unsupported decorator to skip tests for unsupported featur
 """
 
 from functools import wraps
+import os
 import unittest
 
 # Global state for current test configuration
@@ -180,6 +181,72 @@ CAPABILITIES = {
             },
             "test_models": {
                 "image": "SD-Turbo",
+            },
+        },
+        "thenoise": {
+            "backends": ["rocm"],
+            "supports": {
+                "image_generation": True,
+                "image_generation_b64": True,
+            },
+            "test_models": {
+                "image": "Anima-Turbo",
+            },
+        },
+    },
+    "audio_generation": {
+        "thinksound": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "audio_generation": True,
+            },
+            "test_models": {
+                "audio_generation": "ThinkSound-SFX",
+            },
+        },
+        "acestep": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "audio_generation": True,
+            },
+            "test_models": {
+                "audio_generation": "ACE-Step-Music",
+            },
+        },
+    },
+    "model3d": {
+        "trellis": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "model_3d_generation": True,
+            },
+            "test_models": {
+                "model3d": "TRELLIS-3D",
+            },
+        },
+    },
+    "classification": {
+        "onnxruntime": {
+            "backends": ["cpu"],
+            "supports": {
+                "classify": True,
+            },
+            "test_models": {
+                "classification": "Phishing-Email-Detection-ONNX",
+            },
+        },
+    },
+    "tts": {
+        "openmoss": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "tts": True,
+                "voice_cloning": True,
+                "voice_design": True,
+            },
+            "test_models": {
+                "tts": "OpenMOSS-TTS",
+                "tts_design": "MOSS-VoiceGen",
             },
         },
     },
@@ -355,3 +422,21 @@ def requires_backend(backend: str):
         return wrapper
 
     return decorator
+
+
+def skip_heavy(test_func):
+    """
+    Skip a heavy, non-critical test by default to keep CI fast.
+
+    Heavy tests (e.g. slow GPU inference) are disabled unless
+    LEMONADE_TEST_HEAVY=1 is set (e.g. on a dedicated runner).
+
+    Usage:
+        @skip_heavy
+        def test_slow_generation(self):
+            ...
+    """
+    return unittest.skipUnless(
+        os.environ.get("LEMONADE_TEST_HEAVY") == "1",
+        "Heavy test disabled by default; set LEMONADE_TEST_HEAVY=1 to enable",
+    )(test_func)

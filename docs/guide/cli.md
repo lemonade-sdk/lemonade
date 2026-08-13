@@ -8,6 +8,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 - [Global Options](#global-options)
 - [Options for list](#options-for-list)
 - [Options for pull](#options-for-pull)
+- [Options for alias](#options-for-alias)
 - [Options for import](#options-for-import)
 - [Options for load](#options-for-load)
 - [Options for run](#options-for-run)
@@ -16,6 +17,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 - [Options for launch](#options-for-launch)
 - [Options for bench](#options-for-bench)
 - [Options for scan](#options-for-scan)
+- [Options for telemetry](#options-for-telemetry)
 
 ## Commands
 
@@ -26,7 +28,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | Command             | Description                         |
 |---------------------|-------------------------------------|
 | `run MODEL_NAME`    | Load a model for inference and open the web app in the browser. See command options [below](#options-for-run). |
-| `chat [MODEL_NAME]` | Open an interactive chat REPL in the terminal. See the [chat guide](../server/cli-chat.md). |
+| `chat [MODEL_NAME]` | Open an interactive chat REPL in the terminal. See the [chat guide](./cli-chat.md). |
 | `launch AGENT`      | Launch an agent with a model. See command options [below](#options-for-launch). |
 
 ### Server
@@ -35,20 +37,26 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 |---------------------|-------------------------------------|
 | `status`            | Check if server can be reached. If it is, prints server information. Use `--json` for machine-readable output. |
 | `logs`              | Open server logs in the web UI. |
-| `backends`          | List available recipes and backends. Use `install` or `uninstall` to manage backends. |
+| `backends`          | List supported recipes and backends or list all available recipes and backends with `--all`. Use `install` or `uninstall` to manage backends. |
 | `cloud`             | Manage cloud OpenAI-compatible providers. See command options [below](#options-for-cloud). |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
+| `telemetry`         | Dynamically enable or disable telemetry tracing. See command options [below](#options-for-telemetry). |
 
 ### Model Management
 
 | Command             | Description                         |
 |---------------------|-------------------------------------|
 | `list`              | List all available models. |
-| `pull MODEL_OR_CHECKPOINT` | Download a registered model, pull a Hugging Face checkpoint, or manually register a `user.*` model with `--checkpoint`/`--recipe`. See command options [below](#options-for-pull). |
+| `pull MODEL_OR_CHECKPOINT` | Download a registered model, pull a Hugging Face or ModelScope checkpoint, or manually register a `user.*` model with `--checkpoint`/`--recipe`. See command options [below](#options-for-pull). |
+| `alias add ALIAS TARGET_MODEL` | Bind an alias to a target model. See command options [below](#options-for-alias). |
+| `alias remove ALIAS` | Remove an existing model alias binding. |
+| `alias list` | List all active model alias bindings. |
 | `import JSON_FILE`  | Import a model from a JSON configuration file. See command options [below](#options-for-import). |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
 | `unload [MODEL_NAME]` | Unload a model. If no model name is provided, unload all loaded models. |
+| `pin MODEL_NAME`    | Pin a loaded model to prevent auto-eviction. See options [below](#options-for-pin-and-unpin). |
+| `unpin MODEL_NAME`  | Unpin a loaded model to allow auto-eviction. See options [below](#options-for-pin-and-unpin). |
 | `export MODEL_NAME` | Export model information to JSON format. See command options [below](#options-for-export). |
 
 ### Benchmarking
@@ -167,7 +175,7 @@ The `pull` command downloads and installs models. It can also register a custom 
 Common forms:
 
 ```bash
-lemonade pull MODEL_OR_CHECKPOINT [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL] [--components MODEL ...]
+lemonade pull MODEL_OR_CHECKPOINT [--alias ALIAS] [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL] [--components MODEL ...]
 ```
 
 ```bash
@@ -180,17 +188,56 @@ lemonade pull unsloth/Qwen3-8B-GGUF
 # Pull a specific Hugging Face variant
 lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
-# Register and pull a custom model
-lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp
+# Register and pull a custom model with an alias
+lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp --alias my-alias
 ```
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face checkpoint | Yes |
+| `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face/ModelScope checkpoint | Yes |
+| `--source` | Remote registry for checkpoint pulls: `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. Direct hub URLs are auto-detected | No |
+| `--alias ALIAS` | Add an alias for the model being registered or pulled. | No |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
 | `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`) | No |
 | `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
 | `--components MODEL [MODEL ...]` | Omni-model registration: component names to bundle. Use with `--recipe collection.omni`. Components must already be registered (built-in or previously pulled `user.*`); any not-yet-downloaded components are pulled by the same call. | No |
+
+## Options for alias
+
+The `alias` command family allows you to view, add, and remove model aliases. Aliases provide a Symbolic Routing Layer, letting application code write against a stable identifier while the underlying target model can be updated dynamically.
+
+```bash
+lemonade alias list
+lemonade alias add ALIAS TARGET_MODEL
+lemonade alias remove ALIAS
+```
+
+### Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `alias list` | List all registered model aliases with their target models and recipes. |
+| `alias add ALIAS TARGET_MODEL` | Bind `ALIAS` to `TARGET_MODEL`. Requests for `ALIAS` will resolve to `TARGET_MODEL`. |
+| `alias remove ALIAS` | Remove the alias binding for `ALIAS`. |
+
+**Examples:**
+
+```bash
+# Bind an alias to a model
+lemonade alias add llama Qwen3-0.6B-GGUF
+
+# Environment-independent naming: map a generic application identifier to a specific model
+lemonade alias add production-llm Qwen2.5-Coder-1.5B-Instruct
+
+# Active-standby failover: instantly swap the alias target to a fallback model without restarting clients
+lemonade alias add production-llm Tiny-Test-Model-GGUF
+
+# List all active aliases
+lemonade alias list
+
+# Remove an alias binding
+lemonade alias remove llama
+```
 
 ## Options for import
 
@@ -303,60 +350,117 @@ lemonade import model-with-id-alias.json
 
 ## Options for load
 
-The `load` command loads a model into memory for inference. It supports recipe-specific options that are passed to the backend server:
+The `load` command loads a model into memory for inference. It supports both general options and recipe-specific options that are passed to the backend server:
 
 ```bash
 lemonade load MODEL_NAME [options]
 ```
 
+### General Options
+
+The following options apply to all model loads:
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--pinned` | Pin the model in memory to prevent auto-eviction under capacity limits. | `false` |
+| `--save-options` | Persist the supplied recipe options in `recipe_options.json` for future loads. | `false` |
+| `--merge-args` / `--no-merge-args` | Merge global and model arguments when loading the model (if `false`, per-model replaces global entirely). | `true` |
+
 ### Recipe-Specific Options
 
 The following options are available depending on the recipe being used:
 
-#### Llama.cpp (`llamacpp` recipe)
+<!-- BEGIN GENERATED: cli-recipe-options -->
+#### Llama.cpp GPU (`llamacpp` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
+| `--ctx-size SIZE` | Context size for the model | auto |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
-| `--llamacpp-device DEVICE` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | (empty) |
-| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
-
-#### FLM (`flm` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
-
-#### RyzenAI LLM (`ryzenai-llm` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | `4096` |
-
-#### SD.cpp (`sd-cpp` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--sdcpp BACKEND` | SD.cpp backend to use (`cpu` for CPU, `rocm` for AMD GPU) | Auto-detected |
-| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
-| `--steps N` | Number of inference steps for image generation | `20` |
-| `--cfg-scale SCALE` | Classifier-free guidance scale for image generation | `7.0` |
-| `--width PX` | Image width in pixels | `512` |
-| `--height PX` | Image height in pixels | `512` |
+| `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
+| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
 
 #### Whisper.cpp (`whispercpp` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--whispercpp BACKEND` | WhisperCpp backend to use | Auto-detected |
-| `--merge-args` / `--no-merge-args` | Merge global and model arguments when loading the model | `true` |
+| `--whispercpp-args ARGS` | Custom arguments to pass to whisper-server | `""` |
 
+#### Moonshine (`moonshine` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--moonshine-args ARGS` | Custom arguments to pass to moonshine-server | `""` |
+
+#### StableDiffusion.cpp (`sd-cpp` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
+| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
+
+#### FastFlowLM NPU (`flm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--flm-args ARGS` | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption | `""` |
+
+#### Ryzen AI LLM (`ryzenai-llm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
+#### vLLM ROCm (experimental) (`vllm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--vllm BACKEND` | vLLM backend to use | Auto-detected |
+| `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
+
+#### TheNoise ROCm (experimental) (`thenoise` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
+
+#### ThinkSound (`thinksound` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--thinksound BACKEND` | ThinkSound backend to use | Auto-detected |
+
+#### ACE-Step (`acestep` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--acestep BACKEND` | ACE-Step backend to use | Auto-detected |
+
+#### ONNX Runtime (`onnxruntime` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--onnxruntime-args ARGS` | Custom arguments to pass to ort-server | `""` |
+
+#### TRELLIS.2 (`trellis` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--trellis BACKEND` | Trellis backend to use | Auto-detected |
+| `--trellis-args ARGS` | Custom arguments to pass to trellis-server | `""` |
+
+#### OpenMOSS TTS (`openmoss` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
+<!-- END GENERATED: cli-recipe-options -->
 **Notes:**
-- Use `--save-options` to persist your configuration for the model
 - Unspecified options will use the backend's default values
 - Backend options (`--llamacpp`, `--sdcpp`, `--whispercpp`) are auto-detected based on system capabilities
-- `--merge-args` controls whether `*_args` from global config are merged with per-model args (default: merge). Use `--no-merge-args` to replace global args entirely with per-model args.
 
 **Examples:**
 
@@ -381,6 +485,25 @@ lemonade load Qwen3-0.6B-GGUF --no-merge-args --llamacpp-args "--flash-attn on"
 
 # Load an image generation model with custom settings
 lemonade load Z-Image-Turbo --sdcpp rocm --steps 8 --cfg-scale 1 --width 1024 --height 1024
+```
+
+## Options for pin and unpin
+
+The `pin` and `unpin` commands dynamically modify the pinned status of a currently loaded model. Pinned models are excluded from Least Recently Used (LRU) eviction.
+
+```bash
+lemonade pin MODEL_NAME
+lemonade unpin MODEL_NAME
+```
+
+**Examples:**
+
+```bash
+# Pin a loaded model to prevent it from being auto-evicted
+lemonade pin Qwen3-0.6B-GGUF
+
+# Unpin a model to allow it to be evicted when slots are full
+lemonade unpin Qwen3-0.6B-GGUF
 ```
 
 ## Options for run
@@ -432,30 +555,35 @@ lemonade export Qwen3-0.6B-GGUF --output model.json && cat model.json
 
 ## Options for backends
 
-The `backends` command lists available recipes and their backends. Use the `install` and `uninstall` subcommands to manage them:
+The `backends` command lists supported recipes and their backends. Use `--all` to list all available backends or use the `install` and `uninstall` subcommands to manage them:
 
 ```bash
 lemonade backends
+lemonade backends --all
 lemonade backends install SPEC [--force]
 lemonade backends uninstall SPEC
 ```
 
 | Command | Description |
 |--------|-------------|
-| `lemonade backends` | List available recipes and backends |
+| `lemonade backends` | List supported recipes and backends |
+| `lemonade backends --all` | List all available recipes and backends |
 | `lemonade backends install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
 | `lemonade backends uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) |
 | `lemonade backends install SPEC --force` | Bypass hardware filtering and attempt the install anyway |
 
 **Notes:**
-- Available backends depend on your system and the recipe
-- Use `lemonade backends` to list all available recipes and backends
+- Supported backends depend on your system and the recipe
+- Use `lemonade backends --all` to list all available recipes and backends
 
 **Examples:**
 
 ```bash
-# List all available recipes and backends
+# List supported recipes and backends
 lemonade backends
+
+# List all available recipes and backends
+lemonade backends --all
 
 # Install Vulkan backend for llamacpp
 lemonade backends install llamacpp:vulkan
@@ -500,7 +628,7 @@ Codex-only option:
 - `--api-key` is propagated to the launched agent process.
 - For `codex`, launch now injects a Lemonade model provider by default so host/port settings are honored.
 - `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
-- Existing `LEMONADE_*` recipe env vars such as `LEMONADE_CTX_SIZE` are still honored by `launch`.
+- To customize recipe options (e.g. context size) for the launched model, configure them ahead of time with `lemonade load <model> ... --save-options`, or with `lemonade config set`.
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`, `pi`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
@@ -626,6 +754,29 @@ lemonade scan
 lemonade scan --duration 5
 ```
 
+## Options for telemetry
+
+Dynamically toggle telemetry tracing on the server. This setting is applied immediately in-memory without requiring a server restart, but is not persisted to the server's `config.json` (meaning it will revert when the server restarts).
+
+```bash
+lemonade telemetry <on|off>
+```
+
+| Argument | Description |
+|----------|-------------|
+| `on`     | Enable telemetry tracing. |
+| `off`    | Disable telemetry tracing. |
+
+**Examples:**
+
+```bash
+# Enable telemetry tracing dynamically
+lemonade telemetry on
+
+# Disable telemetry tracing dynamically
+lemonade telemetry off
+```
+
 ## Options for bench
 
 The `bench` command measures chat completion performance (TTFT and tokens-per-second) for one or more models across one or more installed backends, context sizes, and scenario workloads. It sends `POST /api/v1/chat/completions` requests and extracts timing data from the server response.
@@ -657,6 +808,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
 | `--no-reload` | Skip model reload between scenarios (faster, but prompt cache may skew results) | Model reloaded |
+| `--response-log FILE` | Write response produced by the benchmark to a JSONL logfile, for later quality evaluation. | - |
 | `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Repeat for multiple arg sets. | — |
 | `--vllm-args ARGS` | Custom args for vllm-server. Repeat for multiple. | — |
 
@@ -677,7 +829,8 @@ Scenarios are defined in JSON files. Each file contains a `scenarios` array wher
 |-------|------|-------------|
 | `name` | string | Unique scenario name (required) |
 | `category` | string | Category label for grouping (default: `"general"`) |
-| `messages` | array | Chat messages in OpenAI format (required) |
+| `messages` | array | Chat messages in OpenAI format (required for text generation) |
+| `input` | array | Chat messages in OpenAI format (required for embedding test) |
 | `max_tokens` | int | Maximum output tokens (default: `128`) |
 | `warmup_runs` | int | Override warmup runs for this scenario (default: `0`) |
 | `measurement_runs` | int | Override measurement runs for this scenario (default: `3`) |
@@ -701,10 +854,67 @@ Lemonade ships with a bundled set of scenarios (`bench_scenarios.json`) covering
 - **Chat** — Short and long conversational turns
 - **Coding** — Code generation, explanation, and debugging
 - **Long-context** — 32K, 64K, 128K context windows and multi-turn conversation memory
+- **Embed** - Embeddings, converting text input into a vector
 
 You can override these with `--scenario-file` or `--scenario-dir`.
 
-**Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them, or `--scenarios all` to run every scenario.
+**Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them. Embedding tests are also excluded by default but can be enabled with `--scenarios embed`. To enable all scenarios, regardless of type, runtime, or resource requirement use `--scenarios all`.
+
+#### Vision Scenarios
+
+Vision scenarios benchmark a multimodal model on image understanding tasks (e.g., transcription, captioning, visual Q&A). They are **not** part of the default scenario set, so you must opt in explicitly with `--scenarios vision` (or filter by a specific scenario name).
+
+A vision scenario differs from a textgen scenario in a few ways:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `category` | string | Must be `"vision"` (required, case-sensitive) |
+| `image_path` | string | Path to the image file, relative to the scenario file (required, non-empty) |
+| `messages` | array | Chat messages in OpenAI format (required) |
+| `max_tokens` | int | Maximum output tokens (default: `1024`) |
+
+Notes on behavior:
+
+- `image_path` is **required** for vision scenarios. A missing or empty value is rejected at parse time.
+- The image path is resolved **relative to the scenario file's directory** and must reside in that same directory. Absolute paths, `../` traversal, and paths into subdirectories beneath the scenario file are rejected.
+- The image is base64-encoded and embedded into the **first `user` message** as an `image_url` data URI. Only a single image is supported; multiple user messages do not receive additional copies.
+- Supported formats are `jpeg`/`jpg`, `png`, `webp`, and `gif`.
+- The model must support vision (i.e., carry the `vision` label).
+- Some models perform better with more tokens. Gemma4, for example, may perform better on text transcription tasks when run with `--image-max-tokens 1120 --image-min-tokens 1120 --ubatch-size 2048`. Consult the model card for additional parameter suggestions.
+
+Here is an example scenario file that mirrors the bundled `bench_scenarios_vision.json`:
+
+```json
+{
+  "scenarios": [
+    {
+      "name": "hello-world",
+      "category": "vision",
+      "image_path": "hello_world.jpg",
+      "messages": [ {"role": "user", "content": "transcribe this image"} ],
+      "max_tokens": 4096
+    },
+    {
+      "name": "declaration-of-independence",
+      "category": "vision",
+      "image_path": "declaration.jpg",
+      "messages": [ {"role": "user", "content": "transcribe this image"} ],
+      "max_tokens": 4096
+    }
+  ]
+}
+```
+
+Each entry pairs a descriptive scenario `name` with an `image_path` that points to an image file stored alongside the scenario file. To build your own data set, drop the image files next to the scenario JSON (so `image_path` is a bare filename) and reference them from `image_path`.
+
+Run a vision benchmark against a vision-capable model with:
+
+```
+lemonade bench --scenario-file bench_scenarios_vision.json --scenarios vision Qwen2.5-VL-7B-GGUF
+```
+
+Vision scenarios are excluded by default both because they require a vision-capable model and because embedding and transferring image payloads adds overhead; opt in deliberately when benchmarking a multimodal model.
+
 
 ### Output
 
@@ -730,6 +940,9 @@ code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
 With `--json`, results are emitted as structured JSON. Use `--output FILE` to save them for later comparison with `--compare`.
 The top-level JSON always includes a `models` array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
 Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run.
+
+With `--response-log FILE`, the actual model output will be saved to the named destination as JSONL (one JSON object per line),
+along with test parameters such as backend, model, scenario, and context size.
 
 ### Comparison Mode
 

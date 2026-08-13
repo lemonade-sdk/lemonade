@@ -25,6 +25,11 @@ public:
     // Merge two JSON objects
     static json merge(const json& base, const json& overlay);
 
+    // OpenAI compatibility: mirror max_completion_tokens to legacy max_tokens
+    // when the request does not already provide max_tokens.
+    static void add_legacy_max_tokens_alias(json& request);
+    static json with_legacy_max_tokens_alias(const json& request);
+
     // Check if JSON has key
     static bool has_key(const json& j, const std::string& key);
 

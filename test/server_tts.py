@@ -153,6 +153,24 @@ class TextToSpeechTests(ServerTestBase):
             f"Speech generation failed with status {response.status_code}: {response.text}",
         )
 
+        content_type = response.headers.get("Content-Type", "")
+        self.assertTrue(
+            content_type.startswith("audio/l16"),
+            f"Streamed audio should be declared as raw PCM, got '{content_type}'",
+        )
+
+        # Kokoros streams headerless s16le. A container magic here would mean the
+        # bytes and the Content-Type disagree.
+        for magic, kind in ((b"RIFF", "WAV"), (b"ID3", "MP3"), (b"OggS", "Ogg")):
+            self.assertFalse(
+                response.content.startswith(magic),
+                f"Streamed body declared as PCM but starts with {kind} magic",
+            )
+
+        self.assertGreater(
+            len(response.content), 1000, "Streamed clip should be substantial"
+        )
+
         print(f"[OK] Speech generation successful")
 
     def test_006_tts_speed(self):
@@ -185,6 +203,36 @@ class TextToSpeechTests(ServerTestBase):
         )
 
         print(f"[OK] Speech generation successful")
+
+    def test_007_tts_stream_rejects_unstreamable_format(self):
+        """A format the backend can only emit buffered must not be streamed."""
+        payload = {
+            "model": TTS_MODEL,
+            "input": "Lemonade can speak",
+            "stream_format": "audio",
+            "response_format": "mp3",
+        }
+
+        print(f"[INFO] Requesting streamed mp3 from {TTS_MODEL} (expected to fail)")
+
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        # Kokoros forces raw PCM on its streaming path whatever the request asks
+        # for, so serving this as mp3 would hand back undecodable bytes under a
+        # Content-Type that does not match them.
+        self.assertEqual(
+            response.status_code,
+            400,
+            "Streaming a format the backend cannot encode should be rejected, "
+            f"got {response.status_code} with Content-Type "
+            f"'{response.headers.get('Content-Type', '')}'",
+        )
+
+        print(f"[OK] Unstreamable format rejected")
 
 
 if __name__ == "__main__":

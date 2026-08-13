@@ -42,8 +42,34 @@ public:
 
     CollectionOrchestrator(Router& router, ModelManager& model_manager, EnsureLoadedFn ensure_loaded);
 
+    // A piece of media produced by a tool this turn. Public so non-OpenAI
+    // surfaces (the MCP gateway) can render artifacts as their own native
+    // content blocks instead of markdown/HTML data-URIs.
+    struct Artifact {
+        std::string type;  // "image" | "audio"
+        std::string data;  // base64 payload
+        std::string mime;  // e.g. "image/png", "audio/mpeg"
+    };
+
+    // Structured view of one orchestrator turn. For callers (MCP) that need
+    // the artifacts as separate values instead of having them folded into a
+    // markdown chat.completion message.
+    struct ChatParts {
+        bool ok = true;
+        std::string error_message;             // populated when !ok
+        std::string final_text;                // terminal assistant text
+        std::vector<Artifact> artifacts;       // media produced this turn, in order
+        json app_tool_calls = nullptr;         // non-null array => passthrough to caller
+        std::string finish_reason = "stop";    // "stop" | "tool_calls"
+    };
+
     // Run the loop and return a complete OpenAI chat.completion JSON object.
     json chat_completion(const json& request, const ModelInfo& collection_info);
+
+    // Run the loop and return text + raw artifacts separately. Used by the MCP
+    // gateway, which renders artifacts as native image/audio content blocks
+    // (or writes them to disk) rather than embedding data URIs in markdown.
+    ChatParts chat_completion_parts(const json& request, const ModelInfo& collection_info);
 
     // Run the loop and stream chat.completion.chunk SSE frames to `sink`
     // (terminated by `data: [DONE]`). Media is emitted as a content delta the
@@ -52,12 +78,6 @@ public:
                                 httplib::DataSink& sink);
 
 private:
-    struct Artifact {
-        std::string type;  // "image" | "audio"
-        std::string data;
-        std::string mime;
-    };
-
     struct ToolSet {
         json tools = json::array();
         std::string system_prompt;

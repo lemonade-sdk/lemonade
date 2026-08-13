@@ -58,38 +58,41 @@ except ImportError as e:
     ) from e
 
 
-def convert_tokenizer_json_to_bin(tokenizer_json_path: str, tokenizer_bin_path: str) -> None:
+def convert_tokenizer_json_to_bin(
+    tokenizer_json_path: str, tokenizer_bin_path: str
+) -> None:
     """Convert a HuggingFace tokenizer.json to moonshine's tokenizer.bin format."""
     import json
-    with open(tokenizer_json_path, 'r', encoding='utf-8') as f:
+
+    with open(tokenizer_json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    model = data.get('model', {})
-    vocab = model.get('vocab', {})
+    model = data.get("model", {})
+    vocab = model.get("vocab", {})
     if not vocab:
         raise ValueError(f"No vocabulary found in {tokenizer_json_path}")
 
     vocab_size = len(vocab)
-    tokens = [b''] * vocab_size
+    tokens = [b""] * vocab_size
     for token_str, token_id in vocab.items():
         if token_id < vocab_size:
-            tokens[token_id] = token_str.encode('utf-8')
+            tokens[token_id] = token_str.encode("utf-8")
 
-    added_tokens = data.get('added_tokens', [])
+    added_tokens = data.get("added_tokens", [])
     for added in added_tokens:
-        token_id = added.get('id')
-        content = added.get('content', '')
+        token_id = added.get("id")
+        content = added.get("content", "")
         if token_id is not None and token_id < len(tokens):
-            tokens[token_id] = content.encode('utf-8')
+            tokens[token_id] = content.encode("utf-8")
         elif token_id is not None and token_id >= len(tokens):
-            tokens.extend([b''] * (token_id - len(tokens) + 1))
-            tokens[token_id] = content.encode('utf-8')
+            tokens.extend([b""] * (token_id - len(tokens) + 1))
+            tokens[token_id] = content.encode("utf-8")
 
-    with open(tokenizer_bin_path, 'wb') as f:
+    with open(tokenizer_bin_path, "wb") as f:
         for token_bytes in tokens:
             length = len(token_bytes)
             if length == 0:
-                f.write(b'\x00')
+                f.write(b"\x00")
             elif length < 128:
                 f.write(bytes([length]))
                 f.write(token_bytes)
@@ -103,15 +106,19 @@ def convert_tokenizer_json_to_bin(tokenizer_json_path: str, tokenizer_bin_path: 
 def ensure_tokenizer_bin(model_path: str) -> None:
     """Ensure tokenizer.bin exists in model_path, converting from tokenizer.json if needed."""
     import os
-    bin_path = os.path.join(model_path, 'tokenizer.bin')
+
+    bin_path = os.path.join(model_path, "tokenizer.bin")
     if os.path.exists(bin_path):
         return
-    json_path = os.path.join(model_path, 'tokenizer.json')
+    json_path = os.path.join(model_path, "tokenizer.json")
     if not os.path.exists(json_path):
         raise FileNotFoundError(
             f"Neither tokenizer.bin nor tokenizer.json found in {model_path}"
         )
-    print(f"[moonshine-server] Converting tokenizer.json -> tokenizer.bin ...", file=sys.stderr)
+    print(
+        f"[moonshine-server] Converting tokenizer.json -> tokenizer.bin ...",
+        file=sys.stderr,
+    )
     convert_tokenizer_json_to_bin(json_path, bin_path)
     print(f"[moonshine-server] Wrote {bin_path}", file=sys.stderr)
 
@@ -119,6 +126,7 @@ def ensure_tokenizer_bin(model_path: str) -> None:
 def load_model(model_path: str, model_arch: int):
     """Lazy import and load moonshine model."""
     from moonshine_voice import Transcriber, ModelArch
+
     ensure_tokenizer_bin(model_path)
     arch = ModelArch(model_arch)
     return Transcriber(model_path=model_path, model_arch=arch)
@@ -141,6 +149,7 @@ def _generate_id(prefix: str = "sess_", length: int = 24) -> str:
 
 class _EventSender:
     """Abstract base for sending events to a client."""
+
     def send(self, msg: dict):
         raise NotImplementedError
 
@@ -159,8 +168,7 @@ class WebSocketEventSender(_EventSender):
             return
         try:
             asyncio.run_coroutine_threadsafe(
-                self.websocket.send(json.dumps(msg)),
-                self.loop
+                self.websocket.send(json.dumps(msg)), self.loop
             )
         except Exception:
             self._closed = True
@@ -239,10 +247,12 @@ class StreamingListener(TranscriptEventListener):
             return
         text = event.line.text or ""
         self._current_text = text
-        self.sender.send({
-            "type": "conversation.item.input_audio_transcription.delta",
-            "delta": text,
-        })
+        self.sender.send(
+            {
+                "type": "conversation.item.input_audio_transcription.delta",
+                "delta": text,
+            }
+        )
 
     def on_line_completed(self, event):
         if self._suppress_line:
@@ -254,10 +264,12 @@ class StreamingListener(TranscriptEventListener):
         # stop event before the final transcript, mirroring the OpenAI ordering
         # (speech_stopped -> transcription.completed).
         self.sender.send({"type": "input_audio_buffer.speech_stopped"})
-        self.sender.send({
-            "type": "conversation.item.input_audio_transcription.completed",
-            "transcript": text,
-        })
+        self.sender.send(
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "transcript": text,
+            }
+        )
         self._current_text = ""
 
 
@@ -335,10 +347,12 @@ async def _handle_streaming_session(reader, sender: _EventSender, transcriber_fa
                     # No finalizer available — synthesize the final transcript
                     # from the last interim so the client is never left waiting.
                     sender.send({"type": "input_audio_buffer.speech_stopped"})
-                    sender.send({
-                        "type": "conversation.item.input_audio_transcription.completed",
-                        "transcript": listener._current_text,
-                    })
+                    sender.send(
+                        {
+                            "type": "conversation.item.input_audio_transcription.completed",
+                            "transcript": listener._current_text,
+                        }
+                    )
                     listener._current_text = ""
 
             elif msg_type == "session.update":
@@ -363,15 +377,14 @@ async def websocket_handler(websocket, transcriber_factory):
     loop = asyncio.get_running_loop()
 
     sender = WebSocketEventSender(loop, websocket)
-    sender.send({
-        "type": "session.created",
-        "session": {"id": session_id}
-    })
+    sender.send({"type": "session.created", "session": {"id": session_id}})
 
     await _handle_streaming_session(websocket, sender, transcriber_factory)
 
 
-async def tcp_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, transcriber_factory):
+async def tcp_handler(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, transcriber_factory
+):
     """Handle a single TCP connection for line-delimited JSON streaming."""
     sender = TcpEventSender(writer)
     await _handle_streaming_session(reader, sender, transcriber_factory)
@@ -452,7 +465,9 @@ def get_handler(transcriber, tcp_ready=None):
                     ".flac": ".flac",
                     ".webm": ".webm",
                 }
-                client_ext = os.path.splitext(file_item.filename or "audio.wav")[1].lower()
+                client_ext = os.path.splitext(file_item.filename or "audio.wav")[
+                    1
+                ].lower()
                 ext = allowed_exts.get(client_ext, ".wav")
                 with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
                     tmp.write(audio_bytes)
@@ -460,7 +475,12 @@ def get_handler(transcriber, tcp_ready=None):
 
                 try:
                     from moonshine_voice import load_wav_file
-                    audio_data, sample_rate = load_wav_file(tmp_path)
+
+                    try:
+                        audio_data, sample_rate = load_wav_file(tmp_path)
+                    except Exception as e:
+                        self._error(400, f"Invalid audio file: {str(e)}")
+                        return
                 finally:
                     try:
                         os.unlink(tmp_path)
@@ -468,7 +488,9 @@ def get_handler(transcriber, tcp_ready=None):
                         pass
 
                 # Transcribe
-                result = transcriber.transcribe_without_streaming(audio_data, sample_rate)
+                result = transcriber.transcribe_without_streaming(
+                    audio_data, sample_rate
+                )
 
                 # Build OpenAI-compatible response
                 text = " ".join(line.text for line in result.lines)
@@ -537,16 +559,22 @@ def _fmt_timestamp(seconds: float, vtt: bool = False) -> str:
 
 def run_websocket_server(host: str, port: int, transcriber_factory):
     """Run the WebSocket server in a dedicated asyncio event loop (thread target)."""
+
     async def _serve():
         async def _handler(websocket):
             await websocket_handler(websocket, transcriber_factory)
 
         # Suppress websockets library logging noise
         import logging
+
         logging.getLogger("websockets").setLevel(logging.WARNING)
 
         async with websockets.serve(_handler, host, port):
-            print(f"[moonshine-server] WebSocket listening on ws://{host}:{port}", file=sys.stderr, flush=True)
+            print(
+                f"[moonshine-server] WebSocket listening on ws://{host}:{port}",
+                file=sys.stderr,
+                flush=True,
+            )
             await asyncio.Future()  # Run forever
 
     loop = asyncio.new_event_loop()
@@ -556,12 +584,16 @@ def run_websocket_server(host: str, port: int, transcriber_factory):
 
 def run_tcp_server(host: str, port: int, transcriber_factory, ready_event=None):
     """Run the TCP line-delimited JSON server in a dedicated asyncio event loop (thread target)."""
+
     async def _serve():
         server = await asyncio.start_server(
-            lambda r, w: tcp_handler(r, w, transcriber_factory),
-            host, port
+            lambda r, w: tcp_handler(r, w, transcriber_factory), host, port
         )
-        print(f"[moonshine-server] TCP listening on {host}:{port}", file=sys.stderr, flush=True)
+        print(
+            f"[moonshine-server] TCP listening on {host}:{port}",
+            file=sys.stderr,
+            flush=True,
+        )
         if ready_event is not None:
             ready_event.set()
         async with server:
@@ -573,12 +605,29 @@ def run_tcp_server(host: str, port: int, transcriber_factory, ready_event=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Moonshine HTTP + WebSocket + TCP server for Lemonade")
+    parser = argparse.ArgumentParser(
+        description="Moonshine HTTP + WebSocket + TCP server for Lemonade"
+    )
     parser.add_argument("--model-path", required=True, help="Path to model directory")
-    parser.add_argument("--model-arch", type=int, default=5, help="Model architecture enum value (default: 5)")
+    parser.add_argument(
+        "--model-arch",
+        type=int,
+        default=5,
+        help="Model architecture enum value (default: 5)",
+    )
     parser.add_argument("--port", type=int, default=8080, help="HTTP server port")
-    parser.add_argument("--ws-port", type=int, default=None, help="WebSocket server port (default: HTTP port + 1)")
-    parser.add_argument("--tcp-port", type=int, default=None, help="TCP line-delimited JSON port (default: HTTP port + 2)")
+    parser.add_argument(
+        "--ws-port",
+        type=int,
+        default=None,
+        help="WebSocket server port (default: HTTP port + 1)",
+    )
+    parser.add_argument(
+        "--tcp-port",
+        type=int,
+        default=None,
+        help="TCP line-delimited JSON port (default: HTTP port + 2)",
+    )
     args = parser.parse_args()
 
     ws_port = args.ws_port if args.ws_port is not None else args.port + 1
@@ -586,9 +635,15 @@ def main():
 
     model_path = args.model_path
 
-    print(f"[moonshine-server] Loading model from {model_path} (arch={args.model_arch})...", file=sys.stderr)
+    print(
+        f"[moonshine-server] Loading model from {model_path} (arch={args.model_arch})...",
+        file=sys.stderr,
+    )
     transcriber = load_model(model_path, args.model_arch)
-    print(f"[moonshine-server] Model loaded. HTTP={args.port} WS={ws_port} TCP={tcp_port}", file=sys.stderr)
+    print(
+        f"[moonshine-server] Model loaded. HTTP={args.port} WS={ws_port} TCP={tcp_port}",
+        file=sys.stderr,
+    )
 
     # Share the loaded transcriber across connections; each streaming session
     # gets its own stream via create_stream(). Loading a fresh model per

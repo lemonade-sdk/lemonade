@@ -41,7 +41,8 @@ private:
     void register_anthropic_routes(httplib::Server& server, const std::shared_ptr<OllamaApi>& self);
 
     // Helpers
-    void auto_load_model(const std::string& model);
+    void auto_load_model(const std::string& model, const json& request_options = json::object());
+    static json extract_auto_load_options(const json& request);
     std::string normalize_model_name(const std::string& name);
     json build_ollama_model_entry(const std::string& id, const ModelInfo& info);
     json convert_openai_chat_to_ollama(const json& openai_response, const std::string& model);

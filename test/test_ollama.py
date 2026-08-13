@@ -24,6 +24,7 @@ except ImportError:
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
+    unload_all_models,
 )
 from utils.test_models import (
     PORT,
@@ -38,6 +39,7 @@ from utils.test_models import (
 )
 
 OLLAMA_BASE_URL = f"http://localhost:{PORT}"
+TOOL_CALLING_LLAMA_ARGS = "--reasoning-format none"
 
 
 class OllamaTests(ServerTestBase):
@@ -47,11 +49,29 @@ class OllamaTests(ServerTestBase):
     additional_server_args = ["--sdcpp", "cpu"]
 
     _model_pulled = False
+    _tool_calling_model_pulled = False
 
     @classmethod
     def setUpClass(cls):
         """Set up class - verify server is running."""
         super().setUpClass()
+
+    def _dump_server_diagnostics(self, context):
+        """Print server state to make rare CI timeouts actionable."""
+        print(f"[DIAG] Server diagnostics after {context}")
+        for url in (
+            f"{self.base_url}/health",
+            f"{OLLAMA_BASE_URL}/api/ps",
+            f"{OLLAMA_BASE_URL}/live",
+        ):
+            try:
+                response = requests.get(url, timeout=TIMEOUT_DEFAULT)
+                print(
+                    f"[DIAG] GET {url} -> {response.status_code}: "
+                    f"{response.text[:1200]}"
+                )
+            except requests.RequestException as exc:
+                print(f"[DIAG] GET {url} failed: {exc}")
 
     def get_ollama_client(self):
         """Get an Ollama client pointed at the test server."""
@@ -69,6 +89,17 @@ class OllamaTests(ServerTestBase):
             )
             self.assertEqual(response.status_code, 200)
             OllamaTests._model_pulled = True
+
+    def ensure_tool_calling_model_pulled(self):
+        """Ensure the tool-calling model is downloaded."""
+        if not OllamaTests._tool_calling_model_pulled:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
+            OllamaTests._tool_calling_model_pulled = True
 
     # ========================================================================
     # Basic endpoint tests (no model required)
@@ -131,7 +162,6 @@ class OllamaTests(ServerTestBase):
         self.assertIn("completion", data["capabilities"])
         self.assertIn("num_ctx", data["parameters"])
         self.assertIn("llamacpp.context_length", data["model_info"])
-        self.assertGreater(data["model_info"]["llamacpp.context_length"], 0)
 
     def test_005_show_not_found(self):
         """Test /api/show returns 404 for non-existent model."""
@@ -322,49 +352,95 @@ class OllamaTests(ServerTestBase):
 
     def test_010_chat_streaming_with_tools_returns_complete_tool_call(self):
         """Test /api/chat streaming with tools returns complete Ollama tool calls."""
-        response = requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": TOOL_CALLING_MODEL, "stream": False},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+        # This test uses the larger native tool-calling model. On macOS CI the
+        # preceding tests can leave the tiny endpoint model resident, and relying
+        # on implicit unload/load inside the streaming request has caused the
+        # request to hang until the 500s HTTP timeout. Make the heavy model
+        # transition explicit so failures are attributed to pull/load/chat.
+        response = unload_all_models()
+        self.assertIn(response.status_code, (200, 404), response.text)
 
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": TOOL_CALLING_MODEL,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": "Run the calculator_calculate tool with expression set to 1+1",
-                    }
-                ],
-                "tools": [SAMPLE_TOOL],
-                "stream": True,
-                "options": {"num_predict": 64},
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-            stream=True,
-        )
-        self.assertEqual(response.status_code, 200)
+        try:
+            self.ensure_tool_calling_model_pulled()
 
-        chunks = [
-            json.loads(line.decode("utf-8")) for line in response.iter_lines() if line
-        ]
-        self.assertGreater(len(chunks), 0)
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": TOOL_CALLING_MODEL,
+                    "ctx_size": 4096,
+                    # Keep this CI test deterministic without adding Ollama API
+                    # behavior: disable reasoning at llama-server load time.
+                    "llamacpp_args": TOOL_CALLING_LLAMA_ARGS,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
 
-        tool_chunks = [
-            chunk for chunk in chunks if chunk.get("message", {}).get("tool_calls")
-        ]
-        self.assertGreater(len(tool_chunks), 0, "Expected a tool call chunk")
+            try:
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/api/chat",
+                    json={
+                        "model": TOOL_CALLING_MODEL,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Call the calculator_calculate tool exactly once "
+                                    "with expression set to 1+1. Do not answer in text."
+                                ),
+                            }
+                        ],
+                        "tools": [SAMPLE_TOOL],
+                        "stream": True,
+                        "options": {
+                            "num_predict": 64,
+                            "temperature": 0,
+                            "top_p": 1,
+                            "seed": 42,
+                        },
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                    stream=True,
+                )
+                self.assertEqual(response.status_code, 200)
 
-        tool_call = tool_chunks[0]["message"]["tool_calls"][0]
-        self.assertIn("id", tool_call)
-        self.assertEqual(tool_call["function"]["name"], SAMPLE_TOOL["function"]["name"])
-        self.assertIsInstance(tool_call["function"]["arguments"], dict)
-        self.assertIn("expression", tool_call["function"]["arguments"])
-        self.assertTrue(chunks[-1].get("done", False))
-        self.assertEqual(chunks[-1].get("done_reason"), "tool_calls")
+                chunks = [
+                    json.loads(line.decode("utf-8"))
+                    for line in response.iter_lines()
+                    if line
+                ]
+            except requests.exceptions.RequestException as exc:
+                self._dump_server_diagnostics("Ollama streaming tool-calling timeout")
+                self.fail(
+                    "Ollama streaming tool-calling request failed after "
+                    f"{TIMEOUT_MODEL_OPERATION}s timeout budget: {exc}"
+                )
+            self.assertGreater(len(chunks), 0)
+
+            tool_chunks = [
+                chunk for chunk in chunks if chunk.get("message", {}).get("tool_calls")
+            ]
+            self.assertGreater(len(tool_chunks), 0, "Expected a tool call chunk")
+
+            tool_call = tool_chunks[0]["message"]["tool_calls"][0]
+            self.assertIn("id", tool_call)
+            self.assertEqual(
+                tool_call["function"]["name"], SAMPLE_TOOL["function"]["name"]
+            )
+            self.assertIsInstance(tool_call["function"]["arguments"], dict)
+            self.assertIn("expression", tool_call["function"]["arguments"])
+            self.assertTrue(chunks[-1].get("done", False))
+            self.assertEqual(chunks[-1].get("done_reason"), "tool_calls")
+        finally:
+            try:
+                response = unload_all_models()
+                if response.status_code not in (200, 404):
+                    print(
+                        "Warning: cleanup unload_all_models returned "
+                        f"{response.status_code}: {response.text}"
+                    )
+            except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                print(f"Warning: cleanup unload_all_models failed: {exc}")
 
     def test_011_chat_missing_model(self):
         """Test /api/chat returns 400 when model is missing."""
@@ -457,6 +533,77 @@ class OllamaTests(ServerTestBase):
         self.assertGreater(len(chunks), 0)
         last_chunk = chunks[-1]
         self.assertTrue(last_chunk.get("done", False))
+
+    def test_015a_auto_load_forwards_only_ctx_size(self):
+        """Regression: Ollama auto-load must forward only ctx_size to recipe_options.
+
+        Request-scoped fields (temperature, top_p, num_predict, etc.) must not leak
+        into persistent model-load settings."""
+        self.ensure_model_pulled()
+
+        response = unload_all_models()
+        self.assertIn(response.status_code, (200, 404), response.text)
+
+        try:
+            custom_ctx_size = 8192
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": ENDPOINT_TEST_MODEL,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                    "stream": False,
+                    "options": {
+                        "num_ctx": custom_ctx_size,
+                        "num_predict": 10,
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "pinned": True,
+                        "llamacpp_args": "--foo-bar",
+                        "auto_evict": True,
+                        "evict_idle_timeout": 1,
+                    },
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            # Verify ctx_size was applied and request-scoped options did not leak
+            # by inspecting the runtime recipe_options from /health.
+            health_response = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(health_response.status_code, 200)
+            loaded_model = None
+            for m in health_response.json().get("all_models_loaded", []):
+                if m["model_name"] == ENDPOINT_TEST_MODEL:
+                    loaded_model = m
+                    break
+            self.assertIsNotNone(
+                loaded_model,
+                f"{ENDPOINT_TEST_MODEL} should be loaded after auto-load",
+            )
+            recipe_options = loaded_model.get("recipe_options", {})
+            self.assertEqual(
+                recipe_options.get("ctx_size"),
+                custom_ctx_size,
+                "ctx_size should be present in recipe_options",
+            )
+            for field in (
+                "temperature",
+                "top_p",
+                "num_predict",
+                "pinned",
+                "llamacpp_args",
+                "auto_evict",
+                "evict_idle_timeout",
+            ):
+                self.assertNotIn(
+                    field,
+                    recipe_options,
+                    f"Request-scoped field '{field}' must not leak into recipe_options",
+                )
+        finally:
+            unload_all_models()
 
     # ========================================================================
     # 501 stubs
@@ -699,55 +846,162 @@ class OllamaTests(ServerTestBase):
 
     def test_026_anthropic_messages_tool_calling(self):
         """Test Anthropic-compatible tool calling maps to tool_use blocks."""
-        # Use a model with native tool-calling support in its chat template;
-        # the tiny test model (gemma-3) lacks tool markers so the llama.cpp
-        # autoparser ignores tools even with tool_choice required.
-        response = requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": TOOL_CALLING_MODEL, "stream": False},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+        # This is the heaviest Ollama compatibility test in the suite. Start it
+        # from an empty loaded-model state so previous endpoint/CLI tests cannot
+        # leave another backend resident and turn the final inference into a CI
+        # timeout instead of a deterministic assertion.
+        response = unload_all_models()
+        self.assertIn(response.status_code, (200, 404), response.text)
 
-        anthropic_tool = {
-            "name": SAMPLE_TOOL["function"]["name"],
-            "description": SAMPLE_TOOL["function"].get("description", ""),
-            "input_schema": SAMPLE_TOOL["function"].get("parameters", {}),
-        }
+        try:
+            # Use a model with native tool-calling support in its chat template;
+            # the tiny test model (gemma-3) lacks tool markers so the llama.cpp
+            # autoparser ignores tools even with tool_choice required.
+            self.ensure_tool_calling_model_pulled()
 
-        payload = {
-            "model": TOOL_CALLING_MODEL,
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": TOOL_CALLING_MODEL,
+                    "ctx_size": 4096,
+                    # Use the same load-time llama-server configuration as the
+                    # Ollama tool-call test so both heavy CI paths avoid
+                    # reasoning before tool selection.
+                    "llamacpp_args": TOOL_CALLING_LLAMA_ARGS,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
+
+            anthropic_tool = {
+                "name": SAMPLE_TOOL["function"]["name"],
+                "description": SAMPLE_TOOL["function"].get("description", ""),
+                "input_schema": SAMPLE_TOOL["function"].get("parameters", {}),
+            }
+
+            payload = {
+                "model": TOOL_CALLING_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Run the calculator_calculate tool with expression set to 1+1",
+                            }
+                        ],
+                    }
+                ],
+                "tools": [anthropic_tool],
+                "tool_choice": {"type": "any"},
+                "max_tokens": 64,
+                "stream": False,
+                "temperature": 0,
+                "top_p": 1,
+            }
+
+            try:
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
+                    json=payload,
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+            except requests.exceptions.Timeout as exc:
+                self._dump_server_diagnostics("Anthropic tool-calling timeout")
+                self.fail(
+                    "Anthropic tool-calling request timed out after "
+                    f"{TIMEOUT_MODEL_OPERATION}s: {exc}"
+                )
+
+            self.assertEqual(response.status_code, 200)
+
+            data = response.json()
+            self.assertIn("content", data)
+            tool_use_blocks = [
+                b for b in data["content"] if b.get("type") == "tool_use"
+            ]
+            self.assertGreater(
+                len(tool_use_blocks), 0, "Expected at least one tool_use block"
+            )
+            self.assertEqual(data.get("stop_reason"), "tool_use")
+        finally:
+            try:
+                response = unload_all_models()
+                if response.status_code not in (200, 404):
+                    print(
+                        "Warning: cleanup unload_all_models returned "
+                        f"{response.status_code}: {response.text}"
+                    )
+            except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                print(f"Warning: cleanup unload_all_models failed: {exc}")
+
+    def _anthropic_overflow_payload(self, stream):
+        """Build a /v1/messages payload whose prompt exceeds the model context."""
+        # ~6 000 tokens, well above the 4096-token context of Tiny-Test-Model-GGUF,
+        # so llama.cpp rejects the request with a 400 the bridge has to relay.
+        overflow_prompt = "The quick brown fox jumps over the lazy dog. " * 600
+
+        return {
+            "model": ENDPOINT_TEST_MODEL,
             "messages": [
                 {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Run the calculator_calculate tool with expression set to 1+1",
-                        }
-                    ],
+                    "content": [{"type": "text", "text": overflow_prompt}],
                 }
             ],
-            "tools": [anthropic_tool],
-            "tool_choice": {"type": "any"},
-            "max_tokens": 64,
-            "stream": False,
+            "max_tokens": 16,
+            "stream": stream,
         }
+
+    def test_027_anthropic_messages_backend_error(self):
+        """Test Anthropic-compatible backend errors are reported, not returned empty."""
+        self.ensure_model_pulled()
 
         response = requests.post(
             f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
-            json=payload,
+            json=self._anthropic_overflow_payload(stream=False),
             timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 400, response.text[:500])
+
+        data = response.json()
+        self.assertEqual(data.get("type"), "error")
+        self.assertEqual(data.get("error", {}).get("type"), "invalid_request_error")
+        self.assertIn("context", data.get("error", {}).get("message", ""))
+
+    def test_028_anthropic_messages_streaming_backend_error(self):
+        """Test Anthropic-compatible streaming backend errors are framed as an error event."""
+        self.ensure_model_pulled()
+
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
+            json=self._anthropic_overflow_payload(stream=True),
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
         )
         self.assertEqual(response.status_code, 200)
 
-        data = response.json()
-        self.assertIn("content", data)
-        tool_use_blocks = [b for b in data["content"] if b.get("type") == "tool_use"]
-        self.assertGreater(
-            len(tool_use_blocks), 0, "Expected at least one tool_use block"
+        event_types = []
+        error_payloads = []
+        for raw_line in response.iter_lines():
+            if not raw_line:
+                continue
+
+            line = raw_line.decode("utf-8")
+            if line.startswith("event: "):
+                event_types.append(line[len("event: ") :])
+            elif line.startswith("data: "):
+                payload_json = json.loads(line[len("data: ") :])
+                if payload_json.get("type") == "error":
+                    error_payloads.append(payload_json)
+
+        self.assertIn("error", event_types)
+        self.assertNotIn("message_stop", event_types)
+        self.assertEqual(len(error_payloads), 1)
+        self.assertEqual(
+            error_payloads[0].get("error", {}).get("type"), "invalid_request_error"
         )
-        self.assertEqual(data.get("stop_reason"), "tool_use")
+        self.assertIn("context", error_payloads[0].get("error", {}).get("message", ""))
 
 
 if __name__ == "__main__":

@@ -63,6 +63,43 @@ std::vector<GPUInfo> MacOSSystemInfo::detect_metal_gpus() {
         return {}; // or return empty vector
     }
 }
+
+// Apple Silicon presents a single unified-memory pool shared by CPU and GPU.
+// Report it as a GPUInfo so auto-tune can treat it like any other GPU device:
+//   vram_gb     = Metal's recommended GPU working-set budget (recommendedMaxWorkingSetSize)
+//   virtual_gb  = total physical RAM (hw.memsize), the rest of the unified pool
+GPUInfo MacOSSystemInfo::get_apple_silicon_device() {
+    GPUInfo gpu;
+
+    // Total unified memory (physical RAM).
+    uint64_t mem_bytes = 0;
+    size_t size = sizeof(mem_bytes);
+    double total_ram_gb = 0.0;
+    if (sysctlbyname("hw.memsize", &mem_bytes, &size, nullptr, 0) == 0 && mem_bytes > 0) {
+        total_ram_gb = mem_bytes / (1024.0 * 1024.0 * 1024.0);
+    }
+
+    // Metal's advertised GPU working-set budget (a conservative slice of unified memory).
+    std::vector<GPUInfo> metal_gpus = detect_metal_gpus();
+    if (!metal_gpus.empty() && metal_gpus[0].available) {
+        gpu = metal_gpus[0];
+        gpu.virtual_gb = total_ram_gb;
+        return gpu;
+    }
+
+    // No Metal device (e.g. very old macOS): fall back to reporting RAM only.
+    if (total_ram_gb > 0.0) {
+        gpu.available = true;
+        gpu.name = "Apple Silicon (unified memory)";
+        gpu.vram_gb = total_ram_gb;
+        gpu.virtual_gb = total_ram_gb;
+        return gpu;
+    }
+
+    gpu.available = false;
+    gpu.error = "Could not determine Apple Silicon unified memory";
+    return gpu;
+}
 } // namespace lemon
 
 #endif // __APPLE__

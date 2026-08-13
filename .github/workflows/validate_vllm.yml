@@ -8,6 +8,8 @@ on:
         type: boolean
         default: false
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  merge_group:
   schedule:
     # Sunday at 6:00 PM UTC
     - cron: "0 18 * * 0"
@@ -16,11 +18,15 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
   HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
-  LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
+  LITE_MODE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
 
 jobs:
   # ========================================================================
@@ -28,7 +34,10 @@ jobs:
   # ========================================================================
   get-latest-releases:
     name: Get latest releases
-    if: github.event_name != 'pull_request'
+    # Only the auto-update runs resolve upstream releases. Everywhere else the
+    # build validates the pins committed in backend_versions.json, so a bad
+    # upstream release can't fail a merge or hide a broken pin.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       vllm_rocm_release: ${{ steps.vllm_rocm.outputs.release }}
@@ -48,7 +57,8 @@ jobs:
   build:
     name: Build (Linux)
     needs: get-latest-releases
-    if: always() && !failure() && !cancelled()
+    # Label a PR `ci:upgrades` to opt it back in.
+    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -103,7 +113,7 @@ jobs:
     name: Validate vllm (rocm)
     needs: [get-latest-releases, build]
     if: always() && needs.build.result == 'success'
-    runs-on: [self-hosted, stx-halo, Linux]
+    runs-on: [self-hosted, stx-halo, Linux, lemon-prod]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -145,15 +155,57 @@ jobs:
           echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
 
-          ./build/lemond "$CACHE_DIR" --port 13305 --host 127.0.0.1 \
-            > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
-          LEMOND_PID=$!
-          echo "Started lemond PID $LEMOND_PID"
+          # This validate job runs on a shared self-hosted runner, so the default
+          # port 13305 may already be held by another job. lemond now refuses to
+          # bind an in-use port, so start on a job-unique free port and pass it to
+          # validate_vllm.py and the shutdown call.
+          pick_free_port() {
+            if command -v python3 >/dev/null 2>&1; then
+              python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()' && return 0
+            fi
+            for _ in $(seq 1 50); do
+              local p=$(( (RANDOM % 20000) + 20000 ))
+              if ! ss -ltn 2>/dev/null | grep -q ":$p "; then echo "$p"; return 0; fi
+            done
+            return 1
+          }
+
+          LEMOND_PID=""
+          started=0
+          for start_attempt in $(seq 1 5); do
+            PORT=$(pick_free_port) || { echo "ERROR: could not find a free port"; exit 1; }
+            echo "Attempt $start_attempt: starting lemond on 127.0.0.1:$PORT..."
+            ./build/lemond "$CACHE_DIR" --port "$PORT" --host 127.0.0.1 \
+              > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
+            LEMOND_PID=$!
+            for i in $(seq 1 30); do
+              if curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null 2>&1; then
+                echo "lemond is healthy on port $PORT (PID $LEMOND_PID)"
+                started=1
+                break
+              fi
+              if ! kill -0 "$LEMOND_PID" 2>/dev/null; then
+                echo "lemond (PID $LEMOND_PID) exited prematurely on port $PORT"
+                cat "$LOGS_DIR/lemond.stderr.log" 2>/dev/null || true
+                break
+              fi
+              sleep 2
+            done
+            [ "$started" = "1" ] && break
+            echo "Start attempt $start_attempt failed; retrying on a new port..."
+            kill -9 "$LEMOND_PID" 2>/dev/null || true
+            sleep 1
+          done
+          if [ "$started" != "1" ]; then
+            echo "ERROR: lemond failed to start after multiple attempts"
+            exit 1
+          fi
 
           EXIT_CODE=0
           VALIDATION_ARGS=(
             test/validate_vllm.py
             --backend rocm
+            --port "$PORT"
             --output vllm_validation_rocm.json
             --logs-dir "$LOGS_DIR"
           )
@@ -164,7 +216,7 @@ jobs:
           .venv/bin/python "${VALIDATION_ARGS[@]}" || EXIT_CODE=$?
 
           # Shut the server down cleanly so logs flush.
-          curl -sf -X POST http://127.0.0.1:13305/internal/shutdown || true
+          curl -sf -X POST "http://127.0.0.1:$PORT/internal/shutdown" || true
           sleep 2
           kill $LEMOND_PID 2>/dev/null || true
 
@@ -309,3 +361,32 @@ jobs:
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"
+
+  # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
+  # successfully (otherwise the merge is blocked), and 2. these jobs do not need
+  # to run on ordinary pull request pushes.
+  validation-gate:
+    name: vLLM validation
+    needs: [build, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+          # Fail if any job broke. In the merge queue, also fail if any never ran.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
+          fi

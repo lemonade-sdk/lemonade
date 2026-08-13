@@ -677,7 +677,7 @@ Image Editing API. You provide a source image and a text prompt describing the d
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `image` | Yes | The source image file to edit (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` / `image[]` | Yes | The source image file to edit (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -913,11 +913,11 @@ A typical workflow is to generate an image first, then upscale it:
 ## `POST /v1/audio/speech`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Speech Generation API. You provide a text input and receive an audio file. This API uses [Kokoros](https://github.com/lucasjinreal/Kokoros) as the backend.
+Speech Generation API. You provide a text input and receive an audio file. Which engine serves the request depends on the model.
 
-> **Note:** The model to use is called `kokoro-v1`. No other model is supported at the moment.
+> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` (voice cloning from a reference WAV) and `MOSS-VoiceGen` (voice design from a text description).
 >
-> **Limitations:** Only `mp3`, `wav`, `opus`, and `pcm` are supported. Streaming is supported in `audio` (`pcm`) mode.
+> **Limitations:** Which `response_format` values are accepted depends on the model's backend: `kokoro-v1` encodes `mp3`, `wav`, `opus`, and `pcm`, while OpenMOSS models natively produce `wav` only. A format the backend cannot encode is rejected with `400 Bad Request` listing the ones it does support. Streaming works for any TTS backend, but a backend's streamable set can be narrower than its buffered set — `kokoro-v1` streams `pcm` only, so an explicit `response_format` of `mp3` alongside `stream_format` is rejected rather than silently answered with PCM.
 
 ### Parameters
 
@@ -927,8 +927,10 @@ Speech Generation API. You provide a text input and receive an audio file. This 
 | `model` | Yes | The model to use (e.g., `kokoro-v1`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `speed` | No | Speaking speed. Default: `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `voice` | No | The voice to use. All OpenAI-defined voices can be used (`alloy`, `ash`, ...), as well as those defined by the kokoro model (`af_sky`, `am_echo`, ...). Default: `shimmer` | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `response_format` | No | Format of the response. `mp3`, `wav`, `opus`, and `pcm` are supported. Default: `mp3`| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `stream_format` | No | If set, the response will be streamed. Only `audio` is supported, which will output `pcm` audio. Default: not set| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `voice` (OpenMOSS) | No | For OpenMOSS models the field is a free-text voice/style instruction instead of a fixed voice name (e.g. `a calm, deep male narrator voice`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `reference_wav_b64` | No | Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the voice to clone. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `response_format` | No | Container for the returned audio. Which values are accepted depends on the model's backend (see Limitations above). Default: `mp3` when buffered and `pcm` when streaming, falling back to the backend's first supported format when it cannot encode that default. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `stream_format` | No | If set, the response is streamed. Only `audio` is supported. This selects the transport only — the container still comes from `response_format`, and an explicit one is honored on both transports. Default: not set| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 
 ### Example request
 
@@ -993,6 +995,7 @@ curl http://localhost:13305/v1/models?show_all=true
       "max_context_window": 40960,
       "downloaded": true,
       "suggested": true,
+      "update_available": false,
       "labels": ["reasoning"]
     },
     {
@@ -1042,6 +1045,7 @@ curl http://localhost:13305/v1/models?show_all=true
   - `size` - Model size in GB (omitted for models without size information)
   - `max_context_window` - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
+  - `update_available` - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. `false` otherwise.
   - `suggested` - Boolean indicating if the model is recommended for general use
   - `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](#model-labels) for the full list.
   - `image_defaults` - (Image models only) Default generation parameters for the model:
@@ -1049,6 +1053,8 @@ curl http://localhost:13305/v1/models?show_all=true
     - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
     - `width` - Default image width in pixels
     - `height` - Default image height in pixels
+  - `components` - (Omni collections only, `recipe: "collection.omni"`) Ordered array of the component model names that make up the collection
+  - `models` - (Omni collections only) Ordered array embedding each component's full model object (same shape as the entries in this list), parallel to `components`. This makes a collection's `/v1/models/{model_id}` response self-contained — exporting it produces a file that can be imported elsewhere via [`/v1/pull`](./lemonade.md#post-v1pull)
 
 
 ### Model Labels
@@ -1061,7 +1067,7 @@ Labels describe what a model can do. A model may carry multiple labels.
 |-------|----------|-------------|
 | `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). Mutually exclusive with LLM deployment. |
 | `embeddings` | `/embeddings` | Produces text embedding vectors. |
-| `reranking` | `/reranking` | Scores and reranks a list of passages given a query. |
+| `reranking` | `/rerank` | Scores and reranks a list of passages given a query. Also reachable at the aliases `/reranking` and `/reranker`. |
 | `image` | `/images/generations` | Text-to-image generation model. |
 | `edit` | Image editing model; supports the `/images/edits` endpoint. |
 | `tts` | `/audio/speech` | Text-to-speech synthesis model. |
@@ -1116,7 +1122,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
 
 ### Response format
 
-Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above.
+Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above. For Omni collections (`recipe: "collection.omni"`), the object additionally carries `components` (ordered component names) and `models` (each component's full model object) — see the [collection file documentation](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
 
 ```json
 {

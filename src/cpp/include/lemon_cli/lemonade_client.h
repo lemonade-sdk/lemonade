@@ -6,6 +6,7 @@
 #include <functional>
 #include <cstdint>
 #include <chrono>
+#include <optional>
 #include <nlohmann/json.hpp>
 
 // Forward declaration for httplib
@@ -52,6 +53,7 @@ struct ModelInfo {
     std::vector<std::string> labels;
     std::string download_url;
     std::string description;
+    std::vector<double> component_sizes;
 };
 
 // Recipe backend status structure
@@ -72,28 +74,37 @@ struct RecipeStatus {
 // Main CLI client class
 class LemonadeClient {
 public:
-    LemonadeClient(const std::string& host, int port, const std::string& api_key);
+    static void parse_target_url(const std::string& input_host, std::string& out_clean_host, int& out_port, bool& out_is_ssl, bool override_default_port = true);
+
+    LemonadeClient(const std::string& host, int port, const std::string& api_key, bool is_ssl = false);
     ~LemonadeClient();
 
     // Model management commands
     int list_models(bool show_all, const std::string& name_filter = "") const;
+    int check_model_updates() const;
     // Pulls/registers a model. By default the pull is cache-first
     // (do_not_upgrade=true): an already-downloaded model is reused without
     // contacting Hugging Face. Only the explicit `lemonade pull` update flow
     // should pass upgrade=true to force an HF update check.
     int pull_model(const nlohmann::json& model_data, const std::string& display_name = "", bool upgrade = false);
     int delete_model(const std::string& model_name) const;
-    int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false) const;
+    int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false, std::optional<bool> pinned = std::nullopt) const;
+    int pin_model(const std::string& model_name, bool pinned) const;
     int unload_model(const std::string& model_name) const;
     nlohmann::json get_model_info(const std::string& model_name) const;
     int launch_model(const std::string& model_name, const nlohmann::json& recipe_options, const std::string& agent);
+
+    // Alias management commands
+    int alias_add(const std::string& alias, const std::string& target_model) const;
+    int alias_remove(const std::string& alias) const;
+    int alias_list() const;
 
     // Status commands
     int status(int display_port = 0) const;
     std::vector<ModelInfo> get_models(bool show_all) const;
 
     // Recipe/backend commands
-    int list_recipes() const;
+    int list_recipes(bool show_all = false) const;
     int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
 
@@ -102,9 +113,12 @@ public:
     // server relies on env var or a later /v1/cloud/auth POST.
     int install_cloud_provider(const std::string& provider,
                                 const std::string& base_url,
-                                const std::string& api_key = "");
+                                const std::string& api_key = "",
+                                bool allow_insecure_http = false);
     int uninstall_cloud_provider(const std::string& provider);
-    int cloud_auth(const std::string& provider, const std::string& api_key);
+    int cloud_auth(const std::string& provider,
+                   const std::string& api_key,
+                   bool allow_insecure_http = false);
     int cloud_auth_clear(const std::string& provider);
     int cloud_list() const;
 
@@ -129,6 +143,7 @@ private:
     std::string host_;
     int port_;
     std::string api_key_;
+    bool is_ssl_ = false;
     std::string normalize_host(const std::string& host) const;
     std::string get_base_url() const;
 };

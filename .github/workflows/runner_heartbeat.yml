@@ -36,7 +36,7 @@ jobs:
       matrix:
         runner: ${{ fromJSON(needs.setup.outputs.runners) }}
       fail-fast: false  # Continue even if one runner fails
-    runs-on: [self-hosted, "${{ matrix.runner }}"]
+    runs-on: [self-hosted, "${{ matrix.runner }}", lemon-prod]
     # Fail fast if no runner is available to pick up this job, instead of
     # waiting indefinitely in the queue.
     timeout-minutes: 10

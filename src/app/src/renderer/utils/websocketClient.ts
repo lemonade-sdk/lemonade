@@ -2,7 +2,7 @@
  * WebSocket client for realtime transcription.
  * Uses a raw WebSocket with OpenAI Realtime API message format.
  */
-import { buildWebSocketUrl, serverFetch } from './serverConfig';
+import { buildWebSocketUrl, serverFetch, webSocketProtocols } from './serverConfig';
 
 export interface TranscriptionCallbacks {
   /** Called with transcription text. isFinal=false for interim results that replace previous interim. */
@@ -25,13 +25,13 @@ export class TranscriptionWebSocket {
    * Create a new TranscriptionWebSocket.
    * Use the static connect() method instead of calling this directly.
    */
-  private constructor(wsUrl: string, model: string, callbacks: TranscriptionCallbacks) {
+  private constructor(wsUrl: string, model: string, callbacks: TranscriptionCallbacks, protocols?: string[]) {
     this.wsUrl = wsUrl;
 
-    console.log('[WebSocket] Connecting to:', wsUrl);
+    const redactedUrl = wsUrl.replace(/\?.*/, '?<redacted>');
+    console.log('[WebSocket] Connecting to:', redactedUrl);
 
-    // Use raw WebSocket without subprotocols
-    this.socket = new WebSocket(wsUrl);
+    this.socket = new WebSocket(wsUrl, protocols);
 
     this.socket.addEventListener('open', () => {
       console.log('[WebSocket] Connection opened');
@@ -111,10 +111,11 @@ export class TranscriptionWebSocket {
     wsUrl: string,
     model: string,
     callbacks: TranscriptionCallbacks,
+    protocols?: string[],
     timeoutMs = 5000,
   ): Promise<TranscriptionWebSocket> {
     return new Promise((resolve, reject) => {
-      const client = new TranscriptionWebSocket(wsUrl, model, callbacks);
+      const client = new TranscriptionWebSocket(wsUrl, model, callbacks, protocols);
       const timer = setTimeout(() => {
         client.socket.close();
         reject(new Error(`WebSocket connect timeout: ${wsUrl}`));
@@ -143,10 +144,11 @@ export class TranscriptionWebSocket {
     callbacks: TranscriptionCallbacks,
   ): Promise<TranscriptionWebSocket> {
     const query = new URLSearchParams({ model });
+    const protocols = await webSocketProtocols();
 
     const mainUrl = buildWebSocketUrl('/v1/realtime', undefined, query);
     try {
-      return await TranscriptionWebSocket.openSocket(mainUrl, model, callbacks);
+      return await TranscriptionWebSocket.openSocket(mainUrl, model, callbacks, protocols);
     } catch (err) {
       console.warn('[WebSocket] Main-port connect failed, falling back to websocket_port:', err);
     }
@@ -163,7 +165,7 @@ export class TranscriptionWebSocket {
     }
 
     const legacyUrl = buildWebSocketUrl('/realtime', wsPort, query);
-    return TranscriptionWebSocket.openSocket(legacyUrl, model, callbacks);
+    return TranscriptionWebSocket.openSocket(legacyUrl, model, callbacks, protocols);
   }
 
   private send(msg: object) {

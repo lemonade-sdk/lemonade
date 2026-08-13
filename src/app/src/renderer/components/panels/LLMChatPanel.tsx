@@ -102,6 +102,35 @@ function splitDataUrl(dataUrl: string): { base64: string } {
   return { base64: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl };
 }
 
+
+function getToolArgs(toolCall: any): Record<string, any> {
+  try {
+    const args = JSON.parse(toolCall?.function?.arguments || '{}');
+    return args && typeof args === 'object' ? args : {};
+  } catch {
+    return {};
+  }
+}
+
+function getImageToolRequestKey(toolCall: any): string {
+  const args = getToolArgs(toolCall);
+  const normalize = (value: any): string => {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'string') return value.trim().replace(/\s+/g, ' ').toLowerCase();
+    return String(value);
+  };
+
+  return JSON.stringify({
+    prompt: normalize(args.prompt),
+    size: normalize(args.size),
+    steps: normalize(args.steps),
+    cfg_scale: normalize(args.cfg_scale),
+    seed: normalize(args.seed),
+    sample_method: normalize(args.sample_method),
+    flow_shift: normalize(args.flow_shift),
+  });
+}
+
 interface LLMChatPanelProps {
   isBusy: boolean;
   isPreFlight: boolean;
@@ -575,6 +604,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     // artifacts: generated this turn — rendered in the assistant response.
     const artifacts: Artifact[] = [];
 
+    // Track exact repeated generation requests only. Distinct prompts/options
+    // such as "cat" and "dog" or different camera angles remain allowed.
+    const generatedImageRequestKeys = new Set<string>();
+
     // Agentic loop
     const llmMessages = [...processedMessages];
 
@@ -639,38 +672,46 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       for (const toolCall of assistantMsg.tool_calls) {
         const funcName = toolCall.function.name;
         const toolModel = lemonadeTools.models[funcName];
+        const imageRequestKey = funcName === 'generate_image' ? getImageToolRequestKey(toolCall) : '';
 
         let resultContent: string;
         let imageAddedThisCall = false;
         if (toolModel) {
           try {
-            const context: ToolExecutionContext = {
-              extractedAudio,
-              extractedImages,
-              previousArtifacts: [...sourceArtifacts, ...artifacts],
-            };
-            const result = await executeLemonadeTool(toolCall, toolModel, context, modelsData, abortControllerRef.current?.signal);
-
-            if (result.type === 'image' && result.data) {
-              // For edits, replace the last generated image from this turn if
-              // one exists; otherwise append. The source image is never
-              // rendered, so there's nothing to replace on the first edit.
-              let lastImageIdx = -1;
-              for (let i = artifacts.length - 1; i >= 0; i--) {
-                if (artifacts[i].type === 'image') { lastImageIdx = i; break; }
-              }
-              if (funcName === 'edit_image' && lastImageIdx !== -1) {
-                artifacts[lastImageIdx] = { type: 'image', data: result.data, mime: result.mime || 'image/png' };
-              } else {
-                artifacts.push({ type: 'image', data: result.data, mime: result.mime || 'image/png' });
-              }
-              resultContent = funcName === 'edit_image' ? 'Image edited successfully.' : 'Image generated successfully.';
-              imageAddedThisCall = true;
-            } else if (result.type === 'audio' && result.data) {
-              artifacts.push({ type: 'audio', data: result.data, mime: result.mime || 'audio/wav' });
-              resultContent = 'Audio generated successfully.';
+            if (funcName === 'generate_image' && generatedImageRequestKeys.has(imageRequestKey)) {
+              resultContent = 'Duplicate image generation skipped because this exact image request was already generated for this turn.';
             } else {
-              resultContent = result.text || 'Tool executed successfully.';
+              const context: ToolExecutionContext = {
+                extractedAudio,
+                extractedImages,
+                previousArtifacts: [...sourceArtifacts, ...artifacts],
+              };
+              const result = await executeLemonadeTool(toolCall, toolModel, context, modelsData, abortControllerRef.current?.signal);
+
+              if (result.type === 'image' && result.data) {
+                // For edits, replace the last generated image from this turn if
+                // one exists; otherwise append. The source image is never
+                // rendered, so there's nothing to replace on the first edit.
+                let lastImageIdx = -1;
+                for (let i = artifacts.length - 1; i >= 0; i--) {
+                  if (artifacts[i].type === 'image') { lastImageIdx = i; break; }
+                }
+                if (funcName === 'edit_image' && lastImageIdx !== -1) {
+                  artifacts[lastImageIdx] = { type: 'image', data: result.data, mime: result.mime || 'image/png' };
+                } else {
+                  artifacts.push({ type: 'image', data: result.data, mime: result.mime || 'image/png' });
+                }
+                resultContent = funcName === 'edit_image' ? 'Image edited successfully.' : 'Image generated successfully.';
+                if (funcName === 'generate_image') {
+                  generatedImageRequestKeys.add(imageRequestKey);
+                }
+                imageAddedThisCall = true;
+              } else if (result.type === 'audio' && result.data) {
+                artifacts.push({ type: 'audio', data: result.data, mime: result.mime || 'audio/wav' });
+                resultContent = 'Audio generated successfully.';
+              } else {
+                resultContent = result.text || 'Tool executed successfully.';
+              }
             }
           } catch (err: any) {
             resultContent = `Error: ${err.message || 'Tool execution failed'}`;

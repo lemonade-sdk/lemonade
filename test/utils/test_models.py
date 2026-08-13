@@ -140,6 +140,11 @@ TIMEOUT_MODEL_OPERATION = 500
 # For requests that don't download a model (health, unload, stats, etc.)
 TIMEOUT_DEFAULT = 60
 
+# For pre-warming the ROCm (TheRock) runtime, which downloads a ~4.5 GB tarball
+# on a cold cache. Generous so a slow/interrupted download does not blow the
+# tighter per-request inference timeout above.
+TIMEOUT_ROCM_INSTALL = 1800
+
 # Standard test messages for chat completions
 STANDARD_MESSAGES = [
     {"role": "system", "content": "You are a helpful assistant."},
@@ -191,8 +196,15 @@ TOOL_CALLING_MODEL = "Qwen3-4B-Instruct-2507-GGUF"
 # Secondary model for multi-model testing (small, fast to load)
 MULTI_MODEL_SECONDARY = "Tiny-Test-Model-GGUF"
 
+# Secondary model for eviction testing
+SECOND_TEST_MODEL_EVICTION = "Phi-4-mini-instruct-GGUF"
+
 # Tertiary model for LRU eviction testing
 MULTI_MODEL_TERTIARY = "Qwen3-0.6B-GGUF"
+
+# A further small LLM, distinct from every model above, for tests that need one
+# more resident model. Kept small: runners without a model cache re-download it.
+MULTI_MODEL_QUATERNARY = "Llama-3.2-1B-Instruct-GGUF"
 
 # Whisper test configuration
 WHISPER_MODEL = "Whisper-Tiny"
@@ -204,12 +216,15 @@ TEST_AUDIO_URL = (
 VISION_MODEL = "Qwen3.5-0.8B-GGUF"
 
 # Stable Diffusion test configuration
-# Allow CI to override with a smaller model (e.g. SD-Turbo-GGUF) on memory-
-# constrained runners like GitHub-hosted macos-latest.
+# Runners without a persistent Hugging Face cache override this with the
+# SD-Turbo-GGUF build, which is a 2 GB download instead of 5.2 GB.
 SD_MODEL = os.environ.get("LEMONADE_TEST_SD_MODEL", "SD-Turbo")
 
 # ESRGAN upscale model test configuration
 ESRGAN_MODEL = "RealESRGAN-x4plus"
+
+# TheNoise image generation test configuration (ROCm-only)
+THENOISE_MODEL = os.environ.get("LEMONADE_TEST_THENOISE_MODEL", "Anima-Turbo")
 
 # Text-to-Speech test configuration
 TTS_MODEL = "kokoro-v1"
@@ -225,7 +240,9 @@ USER_MODEL_TE_CHECKPOINT = (
 # Using a file not at repo top-level
 USER_MODEL_VAE_CHECKPOINT = "Comfy-Org/z_image:split_files/vae/ae.safetensors"
 
-# Models for shared-repo dependency testing (same repo, different quants)
+# Models for shared-repo dependency testing (same repo, different quants).
+# Also used by server_endpoints.py::test_034 (shared-repo variant resolution after a
+# refs/main advance); keep both quants pointing at the same repo if these change.
 SHARED_REPO_MODEL_A_NAME = "user.SharedRepo-TestA"
 SHARED_REPO_MODEL_A_CHECKPOINT = (
     "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
@@ -244,13 +261,15 @@ MULTI_REPO_MODEL_A_MAIN = (
     "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
 )
 MULTI_REPO_MODEL_B_NAME = "user.MultiRepo-TestB"
-MULTI_REPO_MODEL_B_MAIN = "Comfy-Org/z_image:split_files/vae/ae.safetensors"
+MULTI_REPO_MODEL_B_MAIN = (
+    "bartowski/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
+)
 MULTI_REPO_SHARED_CHECKPOINT = (
     "mradermacher/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct.Q2_K.gguf"
 )
 # Cache directory names for on-disk verification (repo_id with / replaced by --)
 MULTI_REPO_MODEL_A_CACHE_DIR = "models--unsloth--SmolLM2-135M-Instruct-GGUF"
-MULTI_REPO_MODEL_B_CACHE_DIR = "models--Comfy-Org--z_image"
+MULTI_REPO_MODEL_B_CACHE_DIR = "models--bartowski--SmolLM2-135M-Instruct-GGUF"
 MULTI_REPO_SHARED_CACHE_DIR = "models--mradermacher--SmolLM2-135M-Instruct-GGUF"
 
 # Models that should be pre-downloaded for offline testing

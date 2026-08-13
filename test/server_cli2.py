@@ -582,62 +582,124 @@ sys.exit(0)
 
     def test_043_listen_all_via_runtime_config(self):
         """Test that setting host to 0.0.0.0 via /internal/set works."""
-        # Set host to 0.0.0.0 (listen on all interfaces)
         try:
-            set_server_config({"host": "0.0.0.0"})
-            print("[OK] Set host to 0.0.0.0 via /internal/set")
-        except Exception as e:
-            self.fail(f"Failed to set host to 0.0.0.0: {e}")
-
-        # Wait for server to finish rebinding. Use 127.0.0.1 explicitly
-        # because 0.0.0.0 only binds IPv4, and "localhost" may resolve to
-        # ::1 (IPv6) in some environments (e.g. Fedora containers).
-        for i in range(30):
+            # Set host to 0.0.0.0 (listen on all interfaces).
             try:
-                response = requests.get(
-                    f"http://127.0.0.1:{PORT}/api/v1/health",
-                    headers=_auth_headers(),
-                    timeout=2,
+                set_server_config({"host": "0.0.0.0"})
+                print("[OK] Set host to 0.0.0.0 via /internal/set")
+            except Exception as e:
+                self.fail(f"Failed to set host to 0.0.0.0: {e}")
+
+            # Wait for server to finish rebinding. Use 127.0.0.1 explicitly
+            # because 0.0.0.0 only binds IPv4, and "localhost" may resolve to
+            # ::1 (IPv6) in some environments (e.g. Fedora containers).
+            for i in range(30):
+                try:
+                    response = requests.get(
+                        f"http://127.0.0.1:{PORT}/api/v1/health",
+                        headers=_auth_headers(),
+                        timeout=2,
+                    )
+                    if response.status_code == 200:
+                        break
+                except requests.ConnectionError:
+                    pass
+                time.sleep(1)
+            else:
+                self.fail(
+                    "Server did not become reachable on 127.0.0.1 after rebind to 0.0.0.0"
                 )
-                if response.status_code == 200:
-                    break
-            except requests.ConnectionError:
-                pass
-            time.sleep(1)
-        else:
-            self.fail(
-                "Server did not become reachable on 127.0.0.1 after rebind to 0.0.0.0"
+
+            # Verify the server still responds (status command should work).
+            result = self.assertCommandSucceeds(["status"])
+            output = result.stdout.lower() + result.stderr.lower()
+            self.assertTrue(
+                "running" in output or "online" in output or "active" in output,
+                f"Status should indicate server is running on 0.0.0.0: {result.stdout}",
             )
 
-        # Verify the server still responds (status command should work)
-        result = self.assertCommandSucceeds(["status"])
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertTrue(
-            "running" in output or "online" in output or "active" in output,
-            f"Status should indicate server is running on 0.0.0.0: {result.stdout}",
-        )
+            # Verify via health endpoint too (use 127.0.0.1 for same IPv4 reason).
+            response = requests.get(
+                f"http://127.0.0.1:{PORT}/api/v1/health",
+                headers=_auth_headers(),
+                timeout=10,
+            )
+            self.assertEqual(response.status_code, 200)
+        finally:
+            # Best-effort restore: this test runs inside CI jobs that execute
+            # multiple modules against one long-lived server, so cleanup must not
+            # mask the primary assertion failure. reset_server_state also restores
+            # the host before subsequent CI suites.
+            try:
+                response = requests.post(
+                    f"http://127.0.0.1:{PORT}/internal/set",
+                    json={"host": "localhost"},
+                    headers=_auth_headers(),
+                    timeout=10,
+                )
+                if response.status_code < 400:
+                    wait_for_server(port=PORT, timeout=30)
+                    print("[OK] Restored host to localhost and server is reachable")
+                else:
+                    print(
+                        "Warning: Failed to restore host to localhost: "
+                        f"{response.status_code}: {response.text}"
+                    )
+            except Exception as e:  # noqa: BLE001 - best-effort cleanup
+                print(f"Warning: Failed to restore host to localhost: {e}")
 
-        # Verify via health endpoint too (use 127.0.0.1 for same IPv4 reason)
+    def test_044_config_set_flat_backend_key(self):
+        """Flat backend keys (e.g. vllm_args) map to their nested form (issue #1824)."""
+        try:
+            # The flat underscore form is what the CLI flags and docs use; it
+            # must be accepted and stored under the nested "vllm.args" key.
+            self.assertCommandSucceeds(
+                ["config", "set", "vllm_args=--max-num-seqs 128"]
+            )
+
+            result = self.assertCommandSucceeds(["config"])
+            output = result.stdout
+            self.assertIn(
+                "vllm.args",
+                output,
+                f"vllm.args should appear in config output: {output}",
+            )
+            self.assertIn(
+                "--max-num-seqs 128",
+                output,
+                f"flat vllm_args value should be stored under vllm.args: {output}",
+            )
+        finally:
+            # Restore the default (empty) value so later tests are unaffected.
+            run_cli_command(["config", "set", "vllm.args="])
+
+    def test_044_config_set_cli(self):
+        """Verify that CLI config set parses nested dotted keys and modifies the server config."""
+        # 1. Set some values using the CLI config set
+        result = self.assertCommandSucceeds(
+            [
+                "config",
+                "set",
+                "telemetry.otlp.endpoint=http://127.0.0.1:4444/v1/traces",
+                "telemetry.otlp.protocol=http/json",
+                'telemetry.otlp.semantics=["openinference"]',
+            ]
+        )
+        print(f"Config set output: {result.stdout}")
+
+        # 2. Query the params to verify it parsed correctly and merged
         response = requests.get(
-            f"http://127.0.0.1:{PORT}/api/v1/health",
+            f"http://localhost:{PORT}/api/v1/params",
             headers=_auth_headers(),
             timeout=10,
         )
         self.assertEqual(response.status_code, 200)
-
-        # Restore host back to localhost. Use 127.0.0.1 directly since
-        # the server is currently bound to 0.0.0.0 (IPv4 only).
-        try:
-            requests.post(
-                f"http://127.0.0.1:{PORT}/internal/set",
-                json={"host": "localhost"},
-                headers=_auth_headers(),
-                timeout=10,
-            )
-            print("[OK] Restored host to localhost")
-        except Exception as e:
-            # Best-effort restore — don't fail the test
-            print(f"Warning: Failed to restore host to localhost: {e}")
+        telemetry = response.json().get("telemetry", {})
+        self.assertEqual(
+            telemetry.get("otlp", {}).get("endpoint"), "http://127.0.0.1:4444/v1/traces"
+        )
+        self.assertEqual(telemetry.get("otlp", {}).get("protocol"), "http/json")
+        self.assertEqual(telemetry.get("otlp", {}).get("semantics"), ["openinference"])
 
     # =============================================================================
     # Pull Tests
@@ -741,8 +803,9 @@ sys.exit(0)
     def test_055_pull_components_omni_collection(self):
         """Test pull command with --components flag registers an omni collection."""
         collection_name = f"user.CliColl-{uuid.uuid4().hex[:8]}"
-        # Unique user.<name> entries surface under the bare public name.
-        public_name = collection_name[5:]
+        # Registered collections list under their canonical `user.` id (matching
+        # registration/fetch/chat); the bare name is a resolvable alias only.
+        bare_name = collection_name[5:]
         try:
             result = run_cli_pull_command_with_retry(
                 [
@@ -773,13 +836,34 @@ sys.exit(0)
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(response.status_code, 200)
-            entry = next(
-                (m for m in response.json()["data"] if m["id"] == public_name),
-                None,
+            ids = [m["id"] for m in response.json()["data"]]
+            self.assertIn(
+                collection_name,
+                ids,
+                f"{collection_name} should appear in /models under its user. id",
             )
-            self.assertIsNotNone(entry, f"{public_name} should appear in /models")
+            self.assertNotIn(
+                bare_name,
+                ids,
+                "Collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in response.json()["data"] if m["id"] == collection_name
+            )
             self.assertEqual(entry.get("recipe"), "collection.omni")
             self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
+
+            # Both the bare and prefixed ids still resolve on GET /models/{id}.
+            for lookup in (collection_name, bare_name):
+                single = requests.get(
+                    f"http://localhost:{PORT}/api/v1/models/{lookup}",
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    single.status_code, 200, f"{lookup} should resolve: {single.text}"
+                )
+                self.assertEqual(single.json().get("id"), collection_name)
         finally:
             try:
                 requests.post(
@@ -2157,6 +2241,79 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertNotIn("--llamacpp", launch_section)
 
 
+class CLIUrlSchemeTests(unittest.TestCase):
+    """Tests URL scheme parsing, HTTPS/TLS connections, and port overrides in the C++ CLI client."""
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server
+        import threading
+        import socket
+
+        class MockHTTPHandler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass
+
+            def do_GET(self):
+                if self.path.startswith("/api/v1/models") or self.path.startswith(
+                    "/api/v0/models"
+                ):
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"data":[]}')
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+        # Find a free port
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(("127.0.0.1", 0))
+        cls.mock_port = s.getsockname()[1]
+        s.close()
+
+        cls.server = http.server.HTTPServer(
+            ("127.0.0.1", cls.mock_port), MockHTTPHandler
+        )
+        cls.thread = threading.Thread(target=cls.server.serve_forever)
+        cls.thread.daemon = True
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.thread.join()
+
+    def test_http_scheme_port_default(self):
+        """Should connect successfully and default port when http:// scheme is used."""
+        env = os.environ.copy()
+        env["LEMONADE_HOST"] = f"http://127.0.0.1:{self.mock_port}"
+        result = run_cli_command(["list"], env=env, timeout=10)
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("No models available", output)
+
+    def test_https_scheme_connection_attempt(self):
+        """Should attempt a secure TLS connection when https:// scheme is used."""
+        # Connecting https://127.0.0.1:mock_port will attempt a TLS handshake on our HTTP server.
+        # This will fail (since the server is HTTP), but it verifies that:
+        # 1. The hostname/port were parsed correctly to 127.0.0.1:mock_port.
+        # 2. It attempted a TLS handshake.
+        env = os.environ.copy()
+        env["LEMONADE_HOST"] = f"https://127.0.0.1:{self.mock_port}"
+        result = run_cli_command(["list"], env=env, timeout=10)
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0)
+        # Verify it either tried to establish connection/handshake or failed because HTTPS is compiled out
+        self.assertTrue(
+            "Could not connect to Lemonade server" in output
+            or "HTTPS support is not compiled" in output
+            or "'https' scheme is not supported" in output,
+            f"Expected connection error or HTTPS unsupported error, got: {output}",
+        )
+
+
 def run_cli_client_tests():
     """Run CLI client tests based on command line arguments."""
     args = parse_cli_args()
@@ -2171,6 +2328,7 @@ def run_cli_client_tests():
     suite = unittest.TestSuite()
     suite.addTests(loader.loadTestsFromTestCase(PersistentServerCLIClientTests))
     suite.addTests(loader.loadTestsFromTestCase(CLIHelpDocsConsistencyTests))
+    suite.addTests(loader.loadTestsFromTestCase(CLIUrlSchemeTests))
 
     runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
     result = runner.run(suite)

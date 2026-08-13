@@ -239,8 +239,9 @@ Creates `lemonade-server_<VERSION>_amd64.deb` (e.g., `lemonade-server_9.0.3_amd6
 - Installs to `/opt/bin/` (executables)
 - Installs resources to `/opt/share/lemonade-server/`
 - Creates desktop entry in `/opt/share/applications/`
-- Declares dependencies: `libcurl4`, `libssl3`, `libz1`, `unzip`, `fonts-katex`
-- Recommends: `ffmpeg` for whisper.cpp audio resampling and/or transcoding, plus a Chromium-compatible browser for `lemonade-web-app`
+- Declares dependencies: `libcurl4`, `libssl3`, `libz1`, `unzip`, `fonts-katex`, `libcpp-httplib0.41`
+- Recommends: `ffmpeg` for whisper.cpp audio resampling and/or transcoding, `libxrt-npu2` for NPU acceleration,
+  plus a Chromium-compatible browser for `lemonade-web-app`
 - Package size: ~2.2 MB (clean, runtime-only package)
 - Includes postinst script that creates writable `/opt/share/lemonade-server/llama/` directory
 
@@ -265,7 +266,7 @@ lemonade --help
 lemond --help
 ```
 
-### Linux .rpm Package (Fedora 43 & 44)
+### Linux .rpm Package (Fedora, RHEL etc)
 
 **Building:**
 
@@ -394,9 +395,9 @@ The notarization process will:
 3. Install Dev Containers extension in Visual Studio Code by using
   control + p to open the command bar at the top of the IDE or if on mac with Cmd + p.
 4. Type "> Extensions: Install Extensions" which will open the Extensions side panel.
-5. in the extensions search type ```Dev Containers``` and install it.
+5. in the extensions search type `Dev Containers` and install it.
 6. Once completed with the prior steps you may run command
-```>Dev Containers: Open Workspace in Container``` or ```>Dev Containers: Open Folder in Container``` which you can do in the command bar in the IDE and it should reopen the visual studio code project.
+`Dev Containers: Open Workspace in Container` or `Dev Containers: Open Folder in Container` which you can do in the command bar in the IDE and it should reopen the visual studio code project.
 7. It will launch a docker and start building a new docker and then the project will open in visual studio code.
 
 ### Build & Compile Options
@@ -438,7 +439,7 @@ The notarization process will:
 > Cmake: Delete Cache and Reconfigure
 ```
 
-2. Custom configurations for cmake are in the root directory under ```.vscode/settings.json``` in which you may set custom args for launching the debug in the json key ```cmake.debugConfig```
+2. Custom configurations for cmake are in the root directory under `.vscode/settings.json` in which you may set custom args for launching the debug in the json key `cmake.debugConfig`
 
 > **Note**
 >
@@ -590,7 +591,7 @@ A GUI application for desktop users that exposes the server via a system tray ic
 The `lemonade` client communicates with `lemond` server via HTTP:
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
-- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`, `/internal/cleanup-cache`
+- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`, `/internal/cleanup-cache`, `/internal/pin`
 - **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/audio/transcriptions`
 
 The client automatically:
@@ -624,7 +625,9 @@ Internal endpoints accept connections from any address, so first-party clients o
 | `POST` | `/internal/shutdown` | Unloads all models and shuts down the server |
 | `POST` | `/internal/set` | Unified config setter (see below) |
 | `GET`  | `/internal/config` | Returns the full runtime config snapshot |
+| `GET`  | `/internal/config/defaults` | Returns the canonical default config (factory defaults) |
 | `POST` | `/internal/cleanup-cache` | Cleans up orphaned files in the Hugging Face cache |
+| `POST` | `/internal/pin` | Pin or unpin a loaded model |
 
 #### `POST /internal/set`
 
@@ -672,6 +675,15 @@ Returns the full runtime configuration as a flat JSON object containing all serv
 **Example:**
 ```bash
 curl http://localhost:13305/internal/config
+```
+
+#### `GET /internal/config/defaults`
+
+Returns the canonical default configuration — the values a brand-new `config.json` is seeded with, independent of this instance's current config or deployment overrides. The per-recipe sections come from the backend descriptors (each descriptor's `config_defaults()`), making this the authoritative source of the factory defaults. `docs/tools/gen_backend_boilerplate.py` reads this endpoint to regenerate the committed `src/cpp/resources/defaults.json`, and a CI `--check` fails if that file drifts from the descriptors.
+
+**Example:**
+```bash
+curl http://localhost:13305/internal/config/defaults
 ```
 
 ### Dependencies

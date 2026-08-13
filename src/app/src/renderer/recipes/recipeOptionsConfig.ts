@@ -37,6 +37,7 @@ export interface LlamaOptions {
   llamacppBackend: StringOption;
   llamacppArgs: StringOption;
   mergeArgs: BooleanOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -45,6 +46,7 @@ export interface WhisperOptions {
   whispercppBackend: StringOption;
   whispercppArgs: StringOption;
   mergeArgs: BooleanOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -52,6 +54,7 @@ export interface MoonshineOptions {
   recipe: 'moonshine';
   moonshineArgs: StringOption;
   mergeArgs: BooleanOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -59,6 +62,7 @@ export interface FlmOptions {
   recipe: 'flm';
   ctxSize: NumericOption;
   mergeArgs: BooleanOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -67,6 +71,7 @@ export type RyzenAIRecipe = 'ryzenai-llm';
 export interface RyzenAIOptions {
   recipe: RyzenAIRecipe;
   ctxSize: NumericOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -78,6 +83,7 @@ export interface StableDiffusionOptions {
   width: NumericOption;
   height: NumericOption;
   mergeArgs: BooleanOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -87,11 +93,40 @@ export interface VLLMOptions {
   vllmBackend: StringOption;
   vllmArgs: StringOption;
   mergeArgs: BooleanOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
+export interface ThinkSoundOptions {
+  recipe: 'thinksound';
+  thinksoundBackend: StringOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
+export interface AceStepOptions {
+  recipe: 'acestep';
+  acestepBackend: StringOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
+export interface TrellisOptions {
+  recipe: 'trellis';
+  trellisBackend: StringOption;
+  pinned: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
+export interface OpenMossOptions {
+  recipe: 'openmoss';
+  openmossBackend: StringOption;
+  pinned: BooleanOption;
   saveOptions: BooleanOption;
 }
 
 // Union type of all recipe options
-export type RecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions;
+export type RecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions | ThinkSoundOptions | AceStepOptions | TrellisOptions | OpenMossOptions;
 
 // =============================================================================
 // Recipe Constants
@@ -266,6 +301,40 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     description: 'Image height in pixels',
   },
 
+  // Audio-generation backends
+  thinksoundBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'ThinkSound backend to use',
+    isBackendOption: true,
+    backendRecipe: 'thinksound',
+  },
+  acestepBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'ACE-Step backend to use',
+    isBackendOption: true,
+    backendRecipe: 'acestep',
+  },
+  trellisBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'Trellis backend to use',
+    isBackendOption: true,
+    backendRecipe: 'trellis',
+  },
+  openmossBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'OpenMOSS TTS backend to use',
+    isBackendOption: true,
+    backendRecipe: 'openmoss',
+  },
+
   // Common option - save settings
   saveOptions: {
     type: 'boolean',
@@ -273,26 +342,38 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     label: 'Save Options',
     description: 'Save these options in lemonade server for future loads',
   },
+
+  // Pin model option
+  pinned: {
+    type: 'boolean',
+    default: false,
+    label: 'Pin Model',
+    description: 'Pin this model to prevent it from being auto-evicted',
+  },
 };
 
 // =============================================================================
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm';
+export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm' | 'thinksound' | 'acestep' | 'trellis' | 'openmoss';
 
 /**
  * Maps recipe names to the option keys they support.
  * This mirrors the C++ get_keys_for_recipe() function in recipe_options.cpp
  */
 export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
-  'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'mergeArgs', 'saveOptions'],
-  'whispercpp': ['whispercppBackend', 'whispercppArgs', 'mergeArgs', 'saveOptions'],
-  'moonshine': ['moonshineArgs', 'mergeArgs', 'saveOptions'],
-  'flm': ['ctxSize', 'mergeArgs', 'saveOptions'],
-  'ryzenai-llm': ['ctxSize', 'saveOptions'],
-  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'mergeArgs', 'saveOptions'],
-  'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'mergeArgs', 'saveOptions'],
+  'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'mergeArgs', 'pinned', 'saveOptions'],
+  'whispercpp': ['whispercppBackend', 'whispercppArgs', 'mergeArgs', 'pinned', 'saveOptions'],
+  'moonshine': ['moonshineArgs', 'mergeArgs', 'pinned', 'saveOptions'],
+  'flm': ['ctxSize', 'mergeArgs', 'pinned', 'saveOptions'],
+  'ryzenai-llm': ['ctxSize', 'pinned', 'saveOptions'],
+  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'mergeArgs', 'pinned', 'saveOptions'],
+  'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'mergeArgs', 'pinned', 'saveOptions'],
+  'thinksound': ['thinksoundBackend', 'pinned', 'saveOptions'],
+  'acestep': ['acestepBackend', 'pinned', 'saveOptions'],
+  'trellis': ['trellisBackend', 'pinned', 'saveOptions'],
+  'openmoss': ['openmossBackend', 'pinned', 'saveOptions'],
 };
 
 /**
@@ -325,6 +406,10 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   whispercppArgs: 'whispercpp_args',
   moonshineArgs: 'moonshine_args',
   sdcppBackend: 'sd-cpp_backend',
+  thinksoundBackend: 'thinksound_backend',
+  acestepBackend: 'acestep_backend',
+  trellisBackend: 'trellis_backend',
+  openmossBackend: 'openmoss_backend',
   cfgScale: 'cfg_scale',
   vllmBackend: 'vllm_backend',
   vllmArgs: 'vllm_args',

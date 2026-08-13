@@ -1,5 +1,6 @@
 #include "lemon/prometheus_metrics.h"
 
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/version.h"
 
 #include <algorithm>
@@ -274,7 +275,8 @@ void append_llamacpp_backend_metrics(PrometheusBuilder& metrics,
                                      const json& model,
                                      const std::map<std::string, std::string>& labels,
                                      std::set<std::string>& described_backend_metrics) {
-    if (model.value("recipe", "") != "llamacpp") {
+    const auto* desc = backends::descriptor_for(model.value("recipe", ""));
+    if (desc == nullptr || !desc->exposes_prometheus_metrics) {
         return;
     }
 

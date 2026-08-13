@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
@@ -87,6 +87,12 @@ jobs:
         run: |
           set -euo pipefail
           .venv/bin/python test/server_downloads.py --cli-binary ./build/lemonade
+
+      - name: Run GFX-topology backend-link tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python test/server_gfx_topology.py --cli-binary ./build/lemonade
 
       - name: Show lemond logs on failure
         if: failure()

@@ -203,8 +203,8 @@ KNOWN_LABELS = {
 AT_MOST_ONE_PREFIXES = ("engine::", "area::", "runtime::")
 
 # Deterministic community-priority labels. Computed from engagement counts
-# (commenters + supporting reactions), excluding anyone with write access so
-# maintainer discussion does not inflate signal.
+# (author + commenters + supporting reactions), excluding bots and anyone with
+# write access so automated/system or maintainer activity does not inflate signal.
 PRIORITY_WARM_LABEL = "priority::😎warm"
 PRIORITY_HOT_LABEL = "priority::🔥hot"
 COMMUNITY_WARM_THRESHOLD = 3
@@ -257,7 +257,23 @@ def has_write_access(login, repo):
     return data.get("permission") in WRITE_PERMISSIONS
 
 
-def _add_community_user(users, login, author_association, repo):
+def is_bot_user(user):
+    """Return True for GitHub bot accounts.
+    Bot activity should not count as community engagement for priority labels.
+    """
+    if not user:
+        return False
+    login = user.get("login") or ""
+    user_type = user.get("type") or ""
+    return user_type == "Bot" or login.lower().endswith("[bot]")
+
+
+def _add_community_user(users, user, author_association, repo):
+    if not user:
+        return
+    if is_bot_user(user):
+        return
+    login = user.get("login")
     if not login:
         return
     if author_association in WRITE_ASSOCIATIONS:
@@ -296,7 +312,7 @@ def community_priority_labels(item_num, existing, repo):
 
     _add_community_user(
         users,
-        (issue.get("user") or {}).get("login"),
+        issue.get("user") or {},
         issue.get("author_association"),
         repo,
     )
@@ -304,7 +320,7 @@ def community_priority_labels(item_num, existing, repo):
     for comment in comments:
         _add_community_user(
             users,
-            (comment.get("user") or {}).get("login"),
+            comment.get("user") or {},
             comment.get("author_association"),
             repo,
         )
@@ -312,7 +328,10 @@ def community_priority_labels(item_num, existing, repo):
     for reaction in reactions:
         if reaction.get("content") not in SUPPORTING_REACTIONS:
             continue
-        login = (reaction.get("user") or {}).get("login")
+        user = reaction.get("user") or {}
+        if is_bot_user(user):
+            continue
+        login = user.get("login")
         if login and not has_write_access(login, repo):
             users.add(login)
 

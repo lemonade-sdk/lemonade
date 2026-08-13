@@ -15,6 +15,7 @@ export const NON_LLM_LABELS = new Set([
   'embeddings',
   'embedding',
   'reranking',
+  'classification',
 ]);
 
 /**
@@ -32,6 +33,7 @@ export const NON_CHAT_PLANNER_LABELS = new Set([
   'reranking',
   'edit',
   'esrgan',
+  'classification',
 ]);
 
 export const hasAnyModelLabel = (info: ModelLabels | undefined, requiredLabels: string[]): boolean => {

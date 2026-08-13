@@ -4,44 +4,59 @@ This guide explains every supported way to add a custom model to Lemonade Server
 
 ## Choose a Workflow
 
-### Pull a Hugging Face model
+### Pull from Hugging Face or ModelScope
 
-For most Hugging Face GGUFs, use the repo id directly:
+A source-less pull uses the server's configured `default_model_source` (shipped default: Hugging Face), so existing commands keep working unchanged:
 
 ```bash
 lemonade pull org/repo
-```
-
-Lemonade fetches the repo, lists the available quantizations and sharded folder variants, auto-detects `mmproj-*.gguf` files for vision models, infers labels (`vision`/`embeddings`/`reranking`) from the repo id, and presents an interactive variant menu.
-
-To skip the menu, append a variant:
-
-```bash
 lemonade pull org/repo:Q4_K_M
 ```
+
+Choose ModelScope explicitly when the model is hosted or mirrored there:
+
+```bash
+lemonade pull --source modelscope org/repo
+lemonade pull --source modelscope org/repo:Q4_K_M
+```
+
+Full model URLs are accepted and select the registry automatically:
+
+```bash
+lemonade pull https://huggingface.co/unsloth/Qwen3-8B-GGUF
+lemonade pull https://modelscope.cn/models/Qwen/Qwen3-8B-GGUF
+```
+
+For supported repository layouts, Lemonade lists GGUF quantizations and sharded variants, auto-detects `mmproj-*.gguf` files, infers common labels, and presents the same interactive variant menu for either registry.
 
 Examples:
 
 ```bash
-# Interactive GGUF variant menu
-lemonade pull unsloth/Qwen3-8B-GGUF
-
-# Specific GGUF variant
+# Hugging Face (shipped default source)
 lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
-# Vision model with mmproj auto-detection
-lemonade pull ggml-org/gemma-3-4b-it-GGUF:Q4_K_M
-
-# Sharded variant
-lemonade pull unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
+# ModelScope
+lemonade pull --source modelscope Qwen/Qwen3-8B-GGUF:Q4_K_M
 ```
+
+The selected source is persisted with the model registration. Variant discovery, downloads, display links, cache lookup, deletion, and future update checks therefore continue to use the same registry. All checkpoints belonging to one model use one registry source.
+
+Private repositories can be authenticated with `HF_TOKEN` for Hugging Face or `MODELSCOPE_API_TOKEN` for ModelScope. `MODELSCOPE_ACCESS_TOKEN` is also accepted as a compatibility alias. Custom endpoints can be supplied with `HF_ENDPOINT` or `MODELSCOPE_ENDPOINT`.
+
+#### Cache and revision behavior
+
+Both registries share Lemonade's configured `models_dir`. Hugging Face keeps its established `models--org--repo` directory names. ModelScope uses the collision-free `modelscope--models--org--repo` namespace. Under either directory Lemonade uses the same `snapshots/<id>` and `refs/main` structure consumed by runtime resolution and cache cleanup.
+
+Hugging Face snapshots use the immutable commit returned by the Hub. ModelScope downloads use its branch/tag revision (normally `master`); Lemonade derives a stable local snapshot fingerprint from the normalized remote file tree so a changed ModelScope repository is detected even when the branch name stays the same.
+
+The desktop app's manual model form exposes the same source selector. The browse/search catalog remains Hugging Face-backed in this first version; ModelScope models can be added by repository ID through the manual form, CLI, or API.
 
 ### Register with explicit CLI flags
 
 Use a `user.*` name plus `--checkpoint` and `--recipe` when you need full control: multiple checkpoints, a non-default recipe, or custom labels.
 
 ```bash
-lemonade pull user.NAME --checkpoint TYPE CHECKPOINT --recipe RECIPE [--label LABEL ...]
+lemonade pull user.NAME --source SOURCE --checkpoint TYPE CHECKPOINT --recipe RECIPE [--label LABEL ...]
 ```
 
 Examples:
@@ -70,9 +85,10 @@ Supported registration flags:
 
 | Flag | Description |
 |------|-------------|
+| `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. |
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
-| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: `llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `collection.omni`. |
-| `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
+| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
+| `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
 ### Register an omni collection
@@ -114,9 +130,72 @@ The Omni Model editor only offers already-registered compatible models for each 
 
 If a component model is deleted later, the Omni Model entry remains registered but is hidden from the chat picker until every referenced component is available again.
 
+The editor also exposes a **System Prompt** field, pre-filled with the shipped default so you can see the text you'd be replacing. Edit it to override the default for this collection only; the override stays a *template* — both the `{tool_list}` and `{tool_guidance}` placeholders are **required** in any custom prompt and the editor blocks save/export when either is missing, because the server expands them at runtime based on which components are present. A collection whose textarea matches the default — or that has been reset via **Reset to default** — stores no override and keeps tracking whatever the global default is at runtime.
+
+### Share a collection: export, import, and model registries
+
+`lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
+collection's [`/v1/models/{model_id}`](../../api/openai.md#get-v1modelsmodel_id) object normalized into
+an import-ready [`/v1/pull`](../../api/lemonade.md#post-v1pull) body. The file carries `model_name`,
+`recipe`, `components`, and a `models` array embedding each component's definition, so it is
+self-contained — the importing machine does not need any of the components registered beforehand.
+Exported files never contain the user-specific runtime fields `suggested`, `created`, or `downloaded` —
+the server regenerates those on import (`suggested` is set to `true` for registered models;
+`downloaded` is computed from local files).
+
+The same file works, verbatim, in three places:
+
+- `lemonade import <CollectionName>.json` on the CLI (or **File > New Omni Model > From JSON** in the
+  desktop app).
+- `POST /v1/pull` with the file contents as the request body.
+- Uploaded to a Hugging Face or ModelScope model repo **named after the collection**, so that the
+  repo contains `<RepoName>.json`. Pull it with the corresponding source, for example
+  `lemonade pull <org>/<repo>` or `lemonade pull --source modelscope <org>/<repo>`. Lemonade
+  downloads the manifest, preserves its registry provenance, then registers and downloads every
+  component. Inline component definitions inherit the collection source unless they explicitly
+  declare their own source.
+
+On import, component names that are already registered keep their local definition (differences from
+the embedded definition are logged as warnings); unknown components are registered as `user.*` models
+from the embedded definitions.
+
+Example collection file:
+
+```json
+{
+    "model_name": "user.MyKit",
+    "recipe": "collection.omni",
+    "checkpoints": { "main": "" },
+    "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny"],
+    "models": [
+        {
+            "model_name": "Qwen3-0.6B-GGUF",
+            "recipe": "llamacpp",
+            "checkpoints": { "main": "unsloth/Qwen3-0.6B-GGUF:Q4_0" },
+            "labels": ["reasoning"],
+            "recipe_options": {},
+            "size": 0.38
+        },
+        {
+            "model_name": "Whisper-Tiny",
+            "recipe": "whispercpp",
+            "checkpoints": {
+                "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
+                "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
+            },
+            "labels": ["transcription", "realtime-transcription"],
+            "recipe_options": {},
+            "size": 0.075
+        }
+    ],
+    "labels": [],
+    "recipe_options": {}
+}
+```
+
 ### Register via API
 
-The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Use this when integrating Lemonade into another app or script:
+The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
 
 ```bash
 curl -X POST http://localhost:13305/v1/pull \
@@ -124,6 +203,7 @@ curl -X POST http://localhost:13305/v1/pull \
     -d '{
         "model_name": "user.MyModel",
         "recipe": "llamacpp",
+        "source": "modelscope",
         "checkpoint": "org/repo:Q4_0"
     }'
 ```
@@ -217,6 +297,56 @@ The CLI (`lemonade list`) prints the API `id` verbatim. That means the Name colu
 
 The Tauri desktop app and the web app apply a display transformation on top of the API id: bare ids render as `NAME`, and canonical-prefixed ids render as `NAME (registered)` / `NAME (imported)` / `NAME (builtin)`. The suffix appears only for shadowed sources.
 
+### Model Aliases (`aliases.json`)
+
+You can define custom **aliases for model names** in `aliases.json` — alternative high-level names that resolve to any target model name. The target model does not define or need to be aware of being aliased:
+
+1. **Standalone Alias Management**: Model aliases live in a dedicated `aliases.json` file in the Lemonade cache directory (`<cache_dir>/aliases.json`). They are managed via the CLI (`lemonade alias add ALIAS TARGET_MODEL`) or administrative REST API (`POST /internal/aliases`).
+2. **Persistence**: `aliases.json` is automatically loaded on server startup and saved on every alias mutation.
+3. **Decoupled Architecture**: Aliases function purely at the symbolic routing layer. They do not pollute model definition files (`user_models.json` or `server_models.json`).
+
+### Conceptual: Definition Layer vs. Symbolic Routing Layer
+
+Lemonade separates model definition from model routing to provide stable API endpoints for client applications.
+
+* **Definition Layer (User Models and Recipes)**: Defines concrete models and execution parameters (checkpoints, hardware targets, context sizes, and backend engines). Use this layer to introduce new models, adjust inference parameters, or support new hardware.
+* **Symbolic Routing Layer (Model Aliases)**: Defines client addressing. Aliases function as symbolic links, decoupling client SDKs from underlying model definitions.
+
+Use Model Aliases to abstract model identity from application code. This enables:
+
+1. **Environment-independent naming**: An application can request an alias like `default-llm`. Developers can map `default-llm` to a lightweight local model, while production servers map it to a larger model. The application code remains unchanged.
+2. **Active-standby failover**: Administrators can redirect an alias to a fallback model if a local hardware model degrades.
+3. **Capability preservation**: Aliases inherit all capabilities of their target models. You can alias a speech-to-text model to `system-stt` or an image generator to `system-image-gen` without losing functionality or LRU pool classification.
+
+#### OpenAI SDK & LiteLLM Integration Example
+
+When using the OpenAI SDK or LiteLLM, target the alias instead of the concrete model:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:13305/v1", api_key="dummy")
+
+# The client requests the alias "production-llm"
+response = client.chat.completions.create(
+    model="production-llm",
+    messages=[{"role": "user", "content": "Hello"}]
+)
+```
+
+If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or `POST /internal/aliases`. Client application code requires no updates.
+
+#### Alias Resolution & Target Model Independence
+
+When an alias is specified in any API request (e.g., `/v1/chat/completions`, `/v1/embeddings`, `/v1/load`) or CLI command, Lemonade resolves the alias to its underlying target model ID (e.g., `user.MyCustomModel` or `Qwen3-0.6B-GGUF`).
+
+* **Primary Model Precedence**: Concrete model names (`user.*`, `extra.*`, `builtin.*`) always take precedence over aliases. Creation of an alias that collides with an existing primary model ID is rejected.
+* **Target Independence**: Aliases function as symbolic links and can target any model ID or Hugging Face repository, even before the target model is pulled or registered locally.
+
+#### Independent Listing in `/v1/models`
+
+Every registered alias is exposed as an independent model entry in `/v1/models`, `/v1/models/{id}`, and `lemonade list`. Alias entries set `id` to the alias name while sharing the target model's recipe, downloaded status, and backend configuration.
+
 ### Five reference cases
 
 | Sources                                         | `/v1/models` ids                                      | Resolution                                                                 |
@@ -236,6 +366,7 @@ This file contains a JSON object where each key is a model name and each value d
 ```json
 {
     "MyCustomModel": {
+        "source": "modelscope",
         "checkpoint": "org/repo-name:filename.gguf",
         "recipe": "llamacpp",
         "size": 3.5
@@ -247,12 +378,13 @@ This file contains a JSON object where each key is a model name and each value d
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `checkpoint` | Yes* | String | HuggingFace checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
+| `source` | No | String | Remote registry: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A `source`/`registry_source` that conflicts with a provider URL in the checkpoint is rejected with 400. |
+| `checkpoint` | Yes* | String | Registry checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
 | `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |
 | `components` | Yes** | Array | Components for a collection. Required when `recipe: "collection.omni"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
-| `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same HuggingFace repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
+| `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same registry repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
 | `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` models. See [Image defaults](#image-defaults). |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
@@ -367,6 +499,7 @@ This file configures per-model runtime settings. Each key is a **canonical model
 ```json
 {
     "Qwen2.5-Coder-1.5B-Instruct": {
+        "source": "huggingface",
         "checkpoint": "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
         "recipe": "llamacpp",
         "size": 1.0
@@ -433,9 +566,12 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 
 1. Values explicitly passed in the `/api/v1/load` request
 2. Per-model values from `recipe_options.json`
-3. Global configuration values, see [Server Configuration](./README.md)
+3. Per-architecture defaults from `architecture_defaults.json` (shipped resource; keyed by GGUF architecture name read from the model file)
+4. Global configuration values, see [Server Configuration](./README.md)
 
 **`*_args` merge behavior:** For options ending in `_args` (e.g., `llamacpp_args`, `whispercpp_args`, `sdcpp_args`, `vllm_args`), the CLI/API arguments are **merged** rather than replaced. The merge works at the flag level with higher priority settings taking priority.
+
+For built-in models using `recipe: "vllm"`, also check [`vllm_model_config.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/vllm_model_config.json). Some vLLM families need family-level arguments such as tool-call parser settings; see the [vLLM model-family argument config](./vllm.md#model-family-argument-config) docs before adding or updating vLLM model entries.
 
 For full details, see the [load endpoint documentation](../../api/lemonade.md#post-v1load).
 

@@ -12,12 +12,19 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
 | `GET` | [`/v1/downloads`](#get-v1downloads) | List server-owned model download jobs |
 | `POST` | [`/v1/downloads/control`](#post-v1downloadscontrol) | Pause, cancel, or remove server-owned model download jobs |
+| `GET` | [`/v1/registry/search`](#get-v1registrysearch) | Search Hugging Face or ModelScope for model repositories |
 | `GET` | [`/v1/pull/variants`](#get-v1pullvariants) | Enumerate GGUF variants for a Hugging Face checkpoint |
 | `POST` | [`/v1/delete`](#post-v1delete) | Delete a model |
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
+| `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
+| `POST` | [`/v1/classify`](#post-v1classify) | Classify input text with an encoder classifier (label scores) |
+| `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh (GLB) from an image |
+| `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |
+| `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
+| `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
 | `GET` | [`/v1/system-info`](#get-v1system-info) | System information and device enumeration |
 | `POST` | [`/v1/install`](#post-v1install) | Install or update a backend, or register a cloud provider |
 | `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend or cloud provider |
@@ -26,6 +33,194 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `WS` | [`/logs/stream`](#log-streaming-api-websocket) | Log Streaming |
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 | `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
+| `POST` | [`/internal/telemetry/flush`](#post-internaltelemetryflush) | Force-flush all queued telemetry trace spans |
+| `GET` | [`/internal/aliases`](#get-internalaliases) | List all active model aliases |
+| `POST` | [`/internal/aliases`](#post-internalaliases) | Create or update a model alias |
+| `DELETE` | [`/internal/aliases/{alias}`](#delete-internalaliasesalias) | Remove a model alias |
+
+## `POST /v1/classify`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Run an encoder text-classifier (PII, prompt-safety, domain, etc.) on an input string and return per-label scores in `[0, 1]`. The target model must use the `onnxruntime` recipe. Both sequence-classification (one label set) and token-classification (aggregated span labels) models are supported.
+
+**Supported architectures:** single-sequence encoder families — BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT, CamemBERT. A stock `optimum-cli export onnx` directory of one of these works as-is.
+
+A servable model directory is `model.onnx` + `tokenizer.json` + `config.json`. The `config.json` is **always required**: it declares the architecture, which is checked against the list above so an unsupported family (e.g. XLNet, which uses different segment/special-token conventions) is **rejected at load time** rather than served with wrong scores. The output contract (labels, normalization, token budget) is read from that same config; an optional `manifest.json` overrides it but does not replace the config. Without a manifest, inference assumes **single-label softmax**; a multi-label (sigmoid) model must declare `problem_type: multi_label_classification` in its config or ship a `manifest.json`.
+
+This endpoint provides the classification capability that the router's `classifier` condition type will consume; the live routing-policy wiring is tracked in [#2384](https://github.com/lemonade-sdk/lemonade/issues/2384).
+
+The endpoint is available at:
+
+- `/v1/classify`
+- `/api/v1/classify`
+- `/v0/classify`
+- `/api/v0/classify`
+
+### Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `model` | string | yes* | Classifier model id (a model with the `onnxruntime` recipe). *Optional when a classification model is already loaded; the loaded model is used and echoed in the response. |
+| `input` | string | yes | Text to classify. `text` is accepted as an alias. |
+| `top_k` | integer | no | Return only the highest-scoring `k` labels. |
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/classify   -H "Content-Type: application/json"   -d '{"model": "Phishing-Email-Detection-ONNX", "input": "Please verify your account at http://secure-login.example now."}'
+```
+
+### Response format
+
+```json
+{
+  "object": "classification",
+  "model": "Phishing-Email-Detection-ONNX",
+  "labels": {
+    "LABEL_1": 0.982,
+    "LABEL_0": 0.011,
+    "LABEL_2": 0.005,
+    "LABEL_3": 0.002
+  }
+}
+```
+
+Label names come from the model's `id2label` — from `config.json`, or from `manifest.json` when one is present to override it; some upstream models only declare generic `LABEL_<n>` names — see the model card for their meaning.
+
+Malformed requests (invalid JSON, missing `input`/`text`, non-string fields, non-positive `top_k`) return `400` with an `error` object before any model is loaded.
+
+## Routing (`collection.router`)
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Naming a registered `collection.router` model in the `model` field of a
+`chat/completions` or `completions` request triggers the routing engine: the
+server picks a candidate by the policy's first-matching rule (fail-open to
+`default_model`) and forwards the request to it. No dedicated endpoint or `"auto"`
+model is involved.
+
+The decision is reported on the response:
+
+- Header **`x-lemonade-route`** — the matched rule id, or `default`.
+- Request field **`route_trace: true`** adds an **`x_lemonade_route`** object to the
+  response body: `{ route_to, matched_rule, default_used, outputs, trace[] }`
+  (`route_to` is the candidate that answered). For streaming responses it is
+  attached to the first SSE event.
+
+See [Router Policies](../dev/router-policy.md) for authoring the policy.
+
+## `POST /v1/models/check-updates`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Explicitly checks downloaded Hugging Face-backed models for newer upstream
+commits. This is the manual counterpart to the startup update check and works
+even when `auto_check_model_updates=false`.
+
+Full offline mode remains authoritative: when `offline=true`, this endpoint
+returns HTTP 409 and does not make network requests.
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/models/check-updates
+```
+
+The same action is available from the CLI:
+
+```bash
+lemonade check-updates
+```
+
+### Response format
+
+```json
+{
+  "status": "success",
+  "updates_available": 2,
+  "models": [
+    "Qwen3-4B-GGUF",
+    "Whisper-Tiny"
+  ]
+}
+```
+
+The endpoint is available at:
+
+- `/v1/models/check-updates`
+- `/api/v1/models/check-updates`
+- `/v0/models/check-updates`
+- `/api/v0/models/check-updates`
+
+## `GET /v1/models/{id}/files`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+List resolved local file metadata for a single model. This endpoint is intended for model-detail UIs such as the Files tab. It is per-model inventory, not system or drive storage accounting.
+
+The endpoint is available at:
+
+- `/v1/models/{id}/files`
+- `/api/v1/models/{id}/files`
+- `/v0/models/{id}/files`
+- `/api/v0/models/{id}/files`
+
+By default, the response does not include absolute filesystem paths. Trusted local clients that need paths for native UI actions can request them explicitly with `?include_paths=true`. Absolute paths may reveal local usernames and cache layout, so clients should only request them when that disclosure is acceptable.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/models/Qwen3-4B/files
+```
+
+### Response format
+
+```json
+{
+  "model_id": "Qwen3-4B",
+  "files": [
+    {
+      "name": "model.gguf",
+      "role": "main",
+      "size_bytes": 123456789,
+      "exists": true
+    },
+    {
+      "name": "mmproj.gguf",
+      "role": "mmproj",
+      "size_bytes": 12345678,
+      "exists": true
+    }
+  ]
+}
+```
+
+### Optional path disclosure
+
+```bash
+curl 'http://localhost:13305/v1/models/Qwen3-4B/files?include_paths=true'
+```
+
+When `include_paths=true` is supplied, each file entry also includes `path`:
+
+```json
+{
+  "name": "model.gguf",
+  "path": "/abs/path/model.gguf",
+  "role": "main",
+  "size_bytes": 123456789,
+  "exists": true
+}
+```
+
+### Fields
+
+| Field | Description |
+|-------|-------------|
+| `model_id` | Public model ID for the requested model. |
+| `files` | Array of resolved model files known to the registry. |
+| `files[].name` | Base filename from the resolved path. |
+| `files[].path` | Absolute resolved path on the local system. Only included when `include_paths=true`; privacy-sensitive. |
+| `files[].role` | Checkpoint role, for example `main`, `mmproj`, or another recipe-specific role. |
+| `files[].size_bytes` | File size in bytes. Directories are summed recursively. Missing files report `0`. |
+| `files[].exists` | Whether the resolved path currently exists on disk. |
 
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -81,22 +276,68 @@ The `recipe` field defines which software framework and device will be used to l
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | Namespaced [Lemonade Server model name](https://lemonade-server.ai/models.html) to register and install. |
-| `checkpoint` | Yes | HuggingFace checkpoint to install. |
 | `recipe` | Yes | Lemonade API recipe to load the model with. |
+| `checkpoint` | Yes`*` | HuggingFace "main" checkpoint to install. |
+| `checkpoints` | No | HuggingFace checkpoints to install, for multi-checkpoint models. |
 | `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). Adds 'reasoning' label. |
 | `vision` | No | Whether the model has vision capabilities for processing images (default: false). Adds 'vision' label. |
 | `embedding` | No | Whether the model is an embedding model (default: false). Adds 'embeddings' label. |
 | `reranking` | No | Whether the model is a reranking model (default: false). Adds 'reranking' label. |
 | `mmproj` | No | Multimodal Projector (mmproj) file to use for vision models. |
 
+A model definition requires at least a `main` checkpoint. This can be either
+be specified with the `checkpoint` parameter, or a `main` key in the
+`checkpoints` dict.
+
+Other checkpoint types may also be specified depending on the model type.
+This list is not exhaustive, and may change or grow over time as models
+and backends evolve:
+* `mmproj` - used by vision models, if not already embedded in `main`
+* `draft` - used by dflash, eagle, and multitoken-prediction, if not already embedded in `main`
+* `text_encoder` - text-to-token encoder used by image generation
+* `vae` - variational autoencoder used by image generation
+
 Example request:
 
 ```bash
+# Single checkpoint
 curl -X POST http://localhost:13305/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "user.Phi-4-Mini-GGUF",
     "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M",
+    "recipe": "llamacpp"
+  }'
+```
+
+Instead of defining a model by `checkpoint` and `mmproj`, a model can also
+be defined with a dict of checkpoint types and paths. These requests do the
+same thing, but the syntax for pulling the mmproj differs.
+
+```bash
+# Multi-checkpoint
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.My-Gemma3",
+    "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+    "mmproj": "mmproj-model-f16.gguf",
+	"vision": true,
+    "recipe": "llamacpp"
+  }'
+```
+
+```bash
+# Multi-checkpoint
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.My-Gemma3",
+    "checkpoints": {
+        "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+        "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"
+    },
+	"vision": true,
     "recipe": "llamacpp"
   }'
 ```
@@ -114,13 +355,14 @@ In case of an error, the status will be `error` and the message will contain the
 
 **Register an Omni-Model**
 
-An omni collection is a collection type that bundles several already-registered models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
+An omni collection is a collection type that bundles several models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | Namespaced model name, e.g. `user.MyKit`. |
 | `recipe` | Yes | Must be `"collection.omni"`. |
-| `components` | Yes | Non-empty array of registered model names. Each entry must already exist in the registry (built-in or a previously registered `user.*` model). |
+| `components` | Yes | Ordered, non-empty array of model names. Each component must be a regular model. |
+| `models` | No | Ordered array of full model definitions, one per `components` entry (the same fields as single-model registration, keyed by `model_name`). When present, component names that are not yet registered are registered from these definitions; names that already exist keep their local definition. When absent, every `components` entry must already exist in the registry (built-in or a previously registered `user.*` model). |
 
 Components do not need to be downloaded already — any not-yet-downloaded components are pulled by the same call. Deleting the collection removes only the collection entry; components stay on disk.
 
@@ -135,6 +377,15 @@ curl -X POST http://localhost:13305/v1/pull \
     "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
   }'
 ```
+
+### Import an Exported Model File
+
+Files written by `lemonade export` (and the desktop app's Export button) are import-ready
+`/v1/pull` request bodies — POST the file contents verbatim to register and install the model.
+This works for regular models and collections alike; exported collection files additionally
+carry `components` plus a `models` array embedding each component's definition (see the
+`models` parameter above). For the file format and the export/import/Hugging Face workflows,
+see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
 
 ### Streaming Response (stream=true)
 
@@ -322,6 +573,68 @@ If the job is already missing and `action` is `remove`, the endpoint returns:
 {"status":"ok","missing":true}
 ```
 
+## `GET /v1/registry/search`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Search a remote model registry (Hugging Face or ModelScope) for repositories matching a text query. This endpoint returns **candidate repositories** based on registry metadata; it does not verify that a repository contains servable files. The desktop app's Model Manager follows up with [`/v1/pull/variants`](#get-v1pullvariants) on each candidate and only offers a download for repositories whose file listing passes that validation.
+
+Requires network access: returns 400 with code `lemond_offline` when the server is in offline mode.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `query` | Yes | Search text, minimum 3 characters after trimming. `q` is accepted as an alias. |
+| `source` | No | Registry to search: `huggingface` (default) or `modelscope`. Aliases `hf` and `ms` are accepted; the canonical name is echoed in the response. |
+| `limit` | No | Maximum number of results, an integer from 1 to 50. Default 12. |
+| `format` | No | The only accepted value is `gguf`. Biases search and ranking toward GGUF repositories and echoes `"format": "gguf"` in the response. |
+
+Example request:
+
+```bash
+curl 'http://localhost:13305/v1/registry/search?source=modelscope&query=qwen&format=gguf'
+```
+
+### Response
+
+```json
+{
+  "source": "modelscope",
+  "query": "qwen",
+  "format": "gguf",
+  "total": 128,
+  "results": [
+    {
+      "repository_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+      "display_name": "Qwen2.5-3B-Instruct-GGUF",
+      "source": "modelscope",
+      "repository_type": "model",
+      "description": "GGUF quantizations of Qwen2.5-3B-Instruct",
+      "tags": ["gguf", "chat"],
+      "task": "text-generation",
+      "downloads": 222500,
+      "likes": 12,
+      "has_gguf": true
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `source`, `query` | Echoed input (`source` canonicalized to `huggingface` or `modelscope`). |
+| `format` | Present only when `format=gguf` was requested. |
+| `total` | Total match count reported by the upstream registry; may exceed the number of returned results. |
+| `results[]` | Up to `limit` repositories, each with `repository_id`, `display_name`, `source`, `repository_type`, `description`, `tags`, `task`, `downloads`, `likes`, and `has_gguf`. `has_gguf` is a hint derived from registry metadata, not proof of a servable model — [`/v1/pull/variants`](#get-v1pullvariants) performs the authoritative file-level validation. |
+
+### Error responses
+
+| Status | Cause |
+|--------|-------|
+| 400 | `query` shorter than 3 characters, invalid `source`, `limit`, or `format`, or the server is in offline mode (`code: lemond_offline`). |
+| 429 | The upstream registry rate-limited the request. |
+| 502 | Other upstream transport or parsing failures; the body includes the upstream status code when available. |
+
 ## `GET /v1/pull/variants`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -430,6 +743,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | Parameter | Required | Applies to | Description |
 |-----------|----------|------------|-------------|
 | `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
+| `pinned` | No | All | Boolean. If true, pins the loaded model to prevent LRU eviction. Defaults to `false`. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
 | `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
@@ -599,6 +913,113 @@ Error response (model not found):
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
+
+
+## `POST /v1/audio/generations`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Audio Generation API. You provide a text prompt and receive a generated audio clip. The loaded model decides the kind of audio: music with ACE-Step models (e.g. `ACE-Step-Music`), sound effects with ThinkSound models (e.g. `ThinkSound-SFX`).
+
+This endpoint is not part of the OpenAI API (OpenAI's audio endpoints cover speech and transcription only), so it is a Lemonade-specific extension.
+
+> **Performance:** generation runs on the GPU (Vulkan, ROCm, or CUDA) and takes from seconds (short sound effects) to minutes (full-length music) depending on duration and hardware.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model` | Yes | The audio-generation model to use (e.g., `ThinkSound-SFX`, `ACE-Step-Music`). |
+| `prompt` | Yes | Text description of the music or sound effect to generate. For music, this is the style description: genre, mood, tempo, instruments, and voice. |
+| `lyrics` | No | Lyrics to sing (ACE-Step only). When present and not empty, the track is generated with vocals singing these lyrics. Omitting the field, an empty string, or the sentinel `[Instrumental]` (any case) produces an instrumental track. See [Lyrics](#lyrics) below for the expected format. |
+| `vocal_language` | No | BCP-47 language code of the lyrics, e.g. `en`, `fr`, `ja` (ACE-Step only). Default: `en`. |
+| `duration` | No | Length of the clip in seconds. Defaults to the backend's native default. |
+| `steps` | No | Number of inference steps. Lower is faster, higher can improve quality. |
+| `cfg` | No | Classifier-free guidance strength (ThinkSound only). |
+| `seed` | No | Random seed for reproducibility. |
+| `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `wav`); other values are rejected with `400 Bad Request`. Default: `wav`. |
+
+### Lyrics
+
+ACE-Step vocals are a two-stage pipeline inside the backend: a language model first turns the style description and lyrics into audio codes, then the diffusion synthesizer renders those codes into audio. The instrumental path skips the language-model stage entirely, which also means lyrics embedded in the `prompt` field are treated as style text — they are never sung. Vocal generations take noticeably longer than instrumental ones of the same duration because of the extra language-model pass.
+
+Format the `lyrics` value the way the ACE-Step authors recommend:
+
+- Mark each song section with a structure tag on its own line: `[verse]`, `[chorus]`, `[bridge]`, `[intro]`, `[outro]`.
+- Write one sung phrase per line and separate sections with a blank line.
+- Describe the voice ("gentle female vocals", "raspy male baritone") in `prompt`, not in the lyrics.
+- Lyrics may be in any supported language; set `vocal_language` to match.
+
+### Response
+
+On success the raw audio bytes are returned with the matching content type (`audio/wav`). On failure the response is JSON with an `error` object: `400` for invalid requests, `404` for unknown models, `500` when the backend reports an error, and `502` when the backend produces no output.
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/audio/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "ThinkSound-SFX",
+        "prompt": "glass shattering on a stone floor",
+        "duration": 5,
+        "seed": 42
+      }' \
+  --output clip.wav
+```
+
+### Example request (music with vocals)
+
+```bash
+curl -X POST http://localhost:13305/v1/audio/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "ACE-Step-Music",
+        "prompt": "warm acoustic folk ballad, fingerpicked guitar, gentle female vocals",
+        "lyrics": "[verse]\nMoonlight spills across the floor\nShadows dancing by the door\n\n[chorus]\nWe sing until the morning light\nCarried on the wind tonight",
+        "duration": 60
+      }' \
+  --output song.wav
+```
+
+## `POST /v1/3d/generations`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+3D Generation API. You provide an input image and receive a textured 3D mesh as a glTF-binary (`.glb`) file. Serves TRELLIS models (e.g. `TRELLIS-3D`). The input image must be PNG, JPEG, BMP, or GIF.
+
+This endpoint is not part of the OpenAI API, so it is a Lemonade-specific extension.
+
+> **Performance:** 3D reconstruction runs on the GPU (Vulkan, ROCm, or CUDA) and takes on the order of minutes; higher cascade resolutions take longer.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model` | Yes | The 3D-generation model to use (e.g., `TRELLIS-3D`). |
+| `image` | Yes | Base64-encoded input image (optionally a `data:` URL). |
+| `resolution` | No | Cascade resolution: `512`, `1024`, or `1536`. Default: `512`. |
+| `bg_removal` | No | Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with real backgrounds. |
+| `uv` | No | UV atlas method: `xatlas` (default) or `box`. `xatlas` runs a full UV unwrap giving every face unique atlas space — best quality, but chart computation is superlinear in face count. `box` is a faster 6-plane projection with occlusion-aware bucket assignment and depth-tested rasterization; small texture artifacts remain possible in concave regions. |
+| `seed` | No | Random seed for reproducibility. |
+| `response_format` | No | Output encoding. Only formats the backend natively produces are accepted (currently `glb`); other values are rejected with `400 Bad Request`. Default: `glb`. |
+
+### Response
+
+On success the raw mesh bytes are returned as `model/gltf-binary`. On failure the response is JSON with an `error` object: `400` for invalid requests, `404` for unknown models, `500` when the backend reports an error, and `502` when the backend produces no output.
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/3d/generations \
+  -H "Content-Type: application/json" \
+  -d "{
+        \"model\": \"TRELLIS-3D\",
+        \"image\": \"$(base64 -w0 input.png)\",
+        \"resolution\": 512,
+        \"seed\": 42
+      }" \
+  --output model.glb
+```
+
 ## `GET /v1/health`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -629,6 +1050,7 @@ curl http://localhost:13305/v1/health
       "last_use": 1732123456.789,
       "type": "llm",
       "device": "gpu npu",
+      "pinned": true,
       "recipe": "ryzenai-llm",
       "pid": 12345,
       "recipe_options": {
@@ -642,6 +1064,7 @@ curl http://localhost:13305/v1/health
       "last_use": 1732123450.123,
       "type": "embedding",
       "device": "gpu",
+      "pinned": false,
       "recipe": "llamacpp",
       "pid": 12346,
       "recipe_options": {
@@ -652,6 +1075,14 @@ curl http://localhost:13305/v1/health
       "backend_url": "http://127.0.0.1:8002/v1"
     }
   ],
+  "pinned_models": {
+    "transcription":0,
+    "embedding":0,
+    "image":0,
+    "llm":1,
+    "reranking":0,
+    "tts":0
+  },
   "max_models": {
     "transcription":1,
     "embedding":1,
@@ -659,7 +1090,11 @@ curl http://localhost:13305/v1/health
     "llm":1,
     "reranking":1,
     "tts":1
-  }
+  },
+  "telemetry": {
+    "enabled": false
+  },
+  "update_check_done": true
 }
 ```
 
@@ -668,16 +1103,21 @@ curl http://localhost:13305/v1/health
 - `status` - Server health status, always `"ok"`
 - `version` - Version number of Lemonade Server
 - `model_loaded` - Model name of the most recently accessed model
+- `update_check_done` - Whether the background HuggingFace model update check has completed at startup. Poll this field after server start to know when `update_available` fields are ready.
 - `all_models_loaded` - Array of all currently loaded models with details:
   - `model_name` - Name of the loaded model
   - `checkpoint` - Full checkpoint identifier
   - `last_use` - Unix timestamp of last access (load or inference)
   - `type` - Model type: `"llm"`, `"embedding"`, `"reranking"`, `"transcription"`, `"image"`, or `"tts"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
+  - `pinned` - Boolean indicating if the model is currently pinned to prevent auto-eviction
+  - `is_busy` - Boolean indicating if the model has active requests or maintenance in progress
+  - `is_streaming` - Boolean indicating if the model is actively generating output tokens (true after first chunk arrives, false when all streaming requests complete)
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `pid` - The Process ID (PID) of the backend engine handling this model
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
+- `pinned_models` - Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
@@ -686,6 +1126,9 @@ curl http://localhost:13305/v1/health
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
 - `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
+- `telemetry` - Structured telemetry state object:
+  - `enabled` - Boolean indicating if telemetry collection is active
+  - `captures` - *(optional)* Array of captured telemetry components (e.g., `["inputs", "outputs", "thinking"]`), only present when `enabled` is `true`.
 
 ## `GET /v1/stats`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -721,6 +1164,43 @@ curl http://localhost:13305/v1/stats
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
 - `prompt_tokens` - Total prompt tokens including cached tokens
+
+## `GET /v1/system-stats`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Current host resource usage as measured by the Lemonade Server process. This endpoint is useful for first-party clients and dashboards that need lightweight runtime telemetry without scraping Prometheus.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/system-stats
+```
+
+### Response format
+
+```json
+{
+  "cpu_percent": 12.3,
+  "memory_gb": 8.4,
+  "gpu_percent": 45.0,
+  "vram_gb": 2.1,
+  "npu_percent": null
+}
+```
+
+**Field Descriptions:**
+
+- `cpu_percent` - System CPU utilization percentage, or `null` when unavailable
+- `memory_gb` - System RAM currently in use, in GiB
+- `gpu_percent` - GPU utilization percentage, or `null` when unavailable
+- `vram_gb` - GPU memory currently in use, in GiB, or `null` when unavailable
+- `npu_percent` - NPU utilization percentage, or `null` when unavailable
+
+GPU, VRAM, and NPU telemetry availability depends on the operating system and installed drivers. Unsupported values are returned as `null`.
 
 ## `GET /metrics`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -818,6 +1298,12 @@ curl "http://localhost:13305/v1/system-info"
   "BIOS Version": "1.0.0",
   "CPU Max Clock": "5100 MHz",
   "Windows Power Setting": "Balanced",
+  "model_storage": {
+    "path": "/path/to/models",
+    "used_bytes": 123456789,
+    "total_bytes": 987654321,
+    "free_bytes": 864197532
+  },
   "devices": {
     "cpu": {
       "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
@@ -931,6 +1417,12 @@ curl "http://localhost:13305/v1/system-info"
   - `BIOS Version` - BIOS information (Windows only)
   - `CPU Max Clock` - Maximum CPU clock speed (Windows only)
   - `Windows Power Setting` - Current power plan (Windows only)
+
+- `model_storage` - Drive-level storage information for the active configured model storage path. Values are reported in bytes for storage meters; this is not a recursive sum of Lemonade model files.
+  - `path` - Active model storage path from server configuration
+  - `used_bytes` - Used bytes on the model-storage drive
+  - `total_bytes` - Total capacity of the model-storage drive
+  - `free_bytes` - Free bytes available to the Lemonade Server process on the model-storage drive
 
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
@@ -1308,3 +1800,149 @@ curl http://localhost:13305/live
 ```json
 {"status":"ok"}
 ```
+
+## Job Engine API
+
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Run client-posted sequences of server operations as durable, background **jobs** — steps that pass data forward, branch on results, and have a pause / interrupt / resume / delete / query lifecycle that survives client disconnect and server restart. Exclusive ops (`load`/`unload`/`chat`) hold a Router slot so normal traffic queues behind a running job.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/v1/jobs` | Create a job from `{name, definition:{steps} \| steps, inputs}`; returns `202 {"id"}`, or `400` on an invalid step graph. |
+| `GET` | `/v1/jobs` | List job summaries. |
+| `GET` | `/v1/jobs/{id}` | Full job record (status, per-step state, context). |
+| `POST` | `/v1/jobs/{id}/pause` | Stop after the current step. |
+| `POST` | `/v1/jobs/{id}/interrupt` | Cancel the current step now; resumable. |
+| `POST` | `/v1/jobs/{id}/resume` | Continue a paused/interrupted job. |
+| `DELETE` | `/v1/jobs/{id}` | Remove a job. |
+
+See [`docs/dev/job-system.md`](../dev/job-system.md) for the step schema, op set, and lifecycle, and [`docs/dev/job-expression-language.md`](../dev/job-expression-language.md) for the `when`/`branch` expression grammar.
+
+## Internal Endpoints
+
+Internal endpoints are used for server control and configuration. By default, they are secured by `LEMONADE_ADMIN_API_KEY` (if set) to separate control privileges from standard inference operations.
+
+## `POST /internal/telemetry/flush`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Forces the in-memory telemetry queue to flush all buffered trace spans immediately to the configured OTLP collector. This call blocks until all currently queued spans are serialized and sent.
+
+#### Parameters
+
+None.
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/internal/telemetry/flush
+```
+
+#### Response Format
+
+Returns a JSON object indicating successful completion of the flush operation:
+
+```json
+{
+  "status": "flushed"
+}
+```
+
+## `GET /internal/aliases`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Retrieves a list of all active model alias mappings.
+
+#### Parameters
+
+None.
+
+Example request:
+
+```bash
+curl http://localhost:13305/internal/aliases
+```
+
+#### Response Format
+
+Returns a JSON object containing an array of active alias objects:
+
+```json
+{
+  "aliases": [
+    {
+      "alias": "my-alias-1",
+      "target": "user.custom-llama",
+      "downloaded": true,
+      "recipe": "llamacpp"
+    }
+  ]
+}
+```
+
+## `POST /internal/aliases`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Binds a model alias to a target model name.
+
+#### Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `alias` | string | yes | The alias name to create or update. |
+| `target` | string | yes | The target model name or canonical ID (also accepted as `model`). |
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/internal/aliases \
+  -H "Content-Type: application/json" \
+  -d '{
+    "alias": "my-alias-1",
+    "target": "user.custom-llama"
+  }'
+```
+
+#### Response Format
+
+Returns a JSON object confirming the alias binding:
+
+```json
+{
+  "status": "ok",
+  "alias": "my-alias-1",
+  "target": "user.custom-llama"
+}
+```
+
+Returns HTTP `400 Bad Request` if required fields are missing or invalid.
+
+## `DELETE /internal/aliases/{alias}`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Removes an existing model alias binding by name.
+
+#### Parameters
+
+| Path Parameter | Type | Description |
+|----------------|------|-------------|
+| `alias` | string | The alias name to remove. |
+
+Example request:
+
+```bash
+curl -X DELETE http://localhost:13305/internal/aliases/my-alias-1
+```
+
+#### Response Format
+
+Returns a JSON object confirming deletion:
+
+```json
+{
+  "status": "deleted",
+  "alias": "my-alias-1"
+}
+```
+
+Returns HTTP `404 Not Found` if the alias does not exist.
