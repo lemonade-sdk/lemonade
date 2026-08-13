@@ -31,11 +31,6 @@ public:
     /// Option names this recipe accepts, in declaration order.
     static std::vector<std::string> keys_for_recipe(const std::string& recipe);
 
-    /// True when `key` comes from the recipe's backend descriptor rather than
-    /// the universal kit (ctx_size, merge_args, the eviction options, pinned).
-    /// Only the former have a matching key in the global config.
-    static bool is_backend_option(const std::string& recipe, const std::string& key);
-
     /// True for values the constructor drops as "not set": null, -1, "" and
     /// "auto". ctx_size is the exception — every non-number is dropped there,
     /// since -1 is the storable value meaning "size the context automatically".

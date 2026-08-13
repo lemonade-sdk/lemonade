@@ -230,13 +230,6 @@ When `include_paths=true` is supplied, each file entry also includes `path`:
 
 Read a model's recipe options, separated by layer, without loading it. With `POST` and `DELETE` on the same path, this manages per-model options independently of [`/v1/load`](#post-v1load).
 
-The endpoint is available at:
-
-- `/v1/models/{id}/options`
-- `/api/v1/models/{id}/options`
-- `/v0/models/{id}/options`
-- `/api/v0/models/{id}/options`
-
 ### Example request
 
 ```bash
@@ -296,11 +289,11 @@ Options are merged into whatever is already saved, so keys you don't mention are
 
 `ctx_size` is the exception: `-1` is a value there, not an absence, and saving it pins the model to automatic context sizing. That matters when the server-wide `ctx_size` is a specific number, because removing the option would make the model inherit that number instead. It is cleared by `null`, `""`, and `"auto"`, but not by `-1`.
 
-Options are validated against the model's recipe, and nothing is saved unless every option in the request passes. A `400` reports an unrecognized option name, an option belonging to a different recipe, a value of the wrong type, a negative or fractional value where a whole number is expected, or a backend this host doesn't support.
+Options are validated against the model's recipe, and nothing is saved unless every option in the request passes. A `400` reports an unrecognized option name, an option belonging to a different recipe, a value of the wrong type, or an invalid `ctx_size`.
 
 Saving never loads or reloads the model, so a model that is already running keeps its current options until it is next loaded.
 
-> Note: `pinned` is not settable here. A load takes it from the running process rather than from saved options, so it belongs to [`/v1/load`](#post-v1load) and `/internal/pin`. It is omitted from `effective` and `defaults`, and a `POST` that includes it returns `400`.
+> Note: `pinned` is not settable here — it belongs to [`/v1/load`](#post-v1load) and `/internal/pin`, and is omitted from `effective` and `defaults`.
 
 ### Example requests
 

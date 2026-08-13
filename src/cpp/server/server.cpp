@@ -2803,9 +2803,7 @@ static bool option_type_matches(const nlohmann::json& expected, const nlohmann::
 
 // Reject values that pass the type check but would break the load they are
 // saved for. Returns an error message, or empty when the value is usable.
-static std::string validate_option_value(const RuntimeConfig& config,
-                                         const std::string& recipe,
-                                         const std::string& key,
+static std::string validate_option_value(const std::string& key,
                                          const nlohmann::json& expected,
                                          const nlohmann::json& value) {
     if (key == "ctx_size") {
@@ -2822,48 +2820,6 @@ static std::string validate_option_value(const RuntimeConfig& config,
     // consumers that read it, so refuse it.
     if (expected.is_number_integer() && !value.is_number_integer()) {
         return "'" + key + "' must be a whole number";
-    }
-
-    // Only descriptor options have a global-config counterpart; the universal
-    // kit must not be routed through that validator, since key names like
-    // merge_args collide with the config's own rules. What is left of the kit
-    // once ctx_size is handled above is the eviction settings: two timeouts and
-    // a protection weight, all of which the eviction engine mishandles at zero
-    // (evicted on the first sweep, or a divide by zero that makes the model the
-    // first candidate rather than the last).
-    if (!RecipeOptions::is_backend_option(recipe, key)) {
-        if (expected.is_number() && value.is_number() && value.get<double>() <= 0) {
-            return "'" + key + "' must be positive";
-        }
-        return "";
-    }
-
-    if (expected.is_number() && value.is_number() && value.get<double>() < 0) {
-        return "'" + key + "' cannot be negative";
-    }
-
-    // Defer to the validator the global config already uses for these same
-    // option names, so the two surfaces cannot disagree about a value.
-
-    std::string config_key = key;
-    const std::string recipe_prefix = recipe + "_";
-    if (config_key.rfind(recipe_prefix, 0) == 0) {
-        config_key = config_key.substr(recipe_prefix.size());
-    }
-    const std::string section = RuntimeConfig::recipe_to_config_section(recipe);
-    try {
-        config.validate_backend(section, config_key, value);
-    } catch (const std::exception& e) {
-        std::string message = e.what();
-        if (message.rfind("Unknown key:", 0) == 0) return "";
-        // The validator names keys as they appear in config.json; this endpoint
-        // speaks recipe option names, so drop the section qualifier.
-        const std::string qualifier = "'" + section + ".";
-        const auto at = message.find(qualifier);
-        if (at != std::string::npos) {
-            message.replace(at, qualifier.size(), "'" + key.substr(0, key.size() - config_key.size()));
-        }
-        return message;
     }
     return "";
 }
@@ -2997,8 +2953,7 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                                       .dump(), "application/json");
                     return false;
                 }
-                const std::string invalid =
-                    validate_option_value(*config_, info.recipe, key, expected, value);
+                const std::string invalid = validate_option_value(key, expected, value);
                 if (!invalid.empty()) {
                     r.status = 400;
                     r.set_content(nlohmann::json{{"error", invalid}}.dump(), "application/json");

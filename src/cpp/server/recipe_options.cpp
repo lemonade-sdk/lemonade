@@ -109,15 +109,6 @@ std::vector<std::string> RecipeOptions::keys_for_recipe(const std::string& recip
     return get_keys_for_recipe(recipe);
 }
 
-bool RecipeOptions::is_backend_option(const std::string& recipe, const std::string& key) {
-    const auto* desc = lemon::backends::descriptor_for(recipe);
-    if (!desc) return false;
-    for (const auto& opt : desc->options) {
-        if (opt.name == key) return true;
-    }
-    return false;
-}
-
 bool RecipeOptions::is_default_sentinel(const std::string& key, const json& value) {
     return is_empty_option(key, value);
 }

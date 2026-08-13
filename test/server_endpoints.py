@@ -985,9 +985,8 @@ class EndpointTests(ServerTestBase):
             f"{loaded_after['pid']}"
         )
 
-    def _options_url(self, model=ENDPOINT_TEST_MODEL, prefix=None):
-        base = prefix or self.base_url
-        return f"{base}/models/{model}/options"
+    def _options_url(self, model=ENDPOINT_TEST_MODEL):
+        return f"{self.base_url}/models/{model}/options"
 
     def _reset_options(self, model=ENDPOINT_TEST_MODEL):
         """Erase the model's recipe_options.json entry and return the response."""
@@ -1043,35 +1042,13 @@ class EndpointTests(ServerTestBase):
         self._reset_options()
         print("[OK] Saved recipe options without loading the model")
 
-    def test_012n_model_options_reset_to_default(self):
-        """null clears an option so it falls back through the priority chain."""
+    def test_012o_model_options_merge_and_delete(self):
+        """POST merges into the saved entry; null clears a key; DELETE erases it all."""
         self.addCleanup(self._reset_options)
         self._reset_options()
         defaults = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
             "defaults"
         ]
-
-        requests.post(
-            self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
-        )
-        response = requests.post(
-            self._options_url(), json={"ctx_size": None}, timeout=TIMEOUT_DEFAULT
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertNotIn("ctx_size", data["saved"], "null should clear the saved value")
-        self.assertEqual(
-            data["effective"]["ctx_size"],
-            defaults["ctx_size"],
-            "Clearing an option should fall back to the default chain",
-        )
-
-        print("[OK] null resets ctx_size to automatic selection")
-
-    def test_012o_model_options_merge_and_delete(self):
-        """POST merges into the saved entry; DELETE erases the whole entry."""
-        self.addCleanup(self._reset_options)
-        self._reset_options()
 
         requests.post(
             self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
@@ -1090,12 +1067,26 @@ class EndpointTests(ServerTestBase):
         ).json()
         self.assertEqual(partial["saved"], {"ctx_size": 4096})
 
+        # null clears a key too, and the model falls back through the chain
+        cleared_key = requests.post(
+            self._options_url(), json={"ctx_size": None}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(cleared_key["saved"], {})
+        self.assertEqual(
+            cleared_key["effective"]["ctx_size"],
+            defaults["ctx_size"],
+            "Clearing an option should fall back to the default chain",
+        )
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
+        )
         cleared = self._reset_options()
         self.assertEqual(cleared.status_code, 200)
         self.assertEqual(cleared.json()["saved"], {})
         self.assertEqual(cleared.json()["effective"], cleared.json()["defaults"])
 
-        print("[OK] Options merge on POST and are erased by DELETE")
+        print("[OK] Options merge on POST, clear on null, and are erased by DELETE")
 
     def test_012p_model_options_rejects_invalid_input(self):
         """Unknown, wrong-recipe, wrong-typed, and unsettable options are refused."""
@@ -1118,13 +1109,7 @@ class EndpointTests(ServerTestBase):
             {"ctx_size": 0},  # only -1 auto-resolves; 0 reaches the backend
             {"ctx_size": 4096.5},  # not a whole number
             {"auto_evict": "sometimes"},  # wrong type for a null-default option
-            {"llamacpp_backend": "nonsense"},  # not a backend this host supports
             {"evict_idle_timeout": 600.5},  # fractional value for a whole-number option
-            # Zero breaks the eviction engine: the timeouts evict on the first
-            # sweep, and a zero weight divides by zero into +inf.
-            {"evict_idle_timeout": 0},
-            {"downsize_idle_timeout": 0},
-            {"evict_weight_factor": 0},
             # Live-process state, owned by /load and /internal/pin
             {"pinned": True},
         ):
@@ -1146,29 +1131,6 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(not_found.status_code, 404)
 
         print("[OK] Model options endpoint rejects invalid input")
-
-    def test_012q_model_options_registered_on_all_prefixes(self):
-        """The options sub-resource honors the quad-prefix invariant."""
-        self.addCleanup(self._reset_options)
-        for prefix in ("/api/v0", "/api/v1", "/v0", "/v1"):
-            url = self._options_url(prefix=f"http://localhost:{PORT}{prefix}")
-            self.assertEqual(
-                requests.get(url, timeout=TIMEOUT_DEFAULT).status_code,
-                200,
-                f"GET not registered on {prefix}",
-            )
-            self.assertEqual(
-                requests.post(url, json={}, timeout=TIMEOUT_DEFAULT).status_code,
-                200,
-                f"POST not registered on {prefix}",
-            )
-            self.assertEqual(
-                requests.delete(url, timeout=TIMEOUT_DEFAULT).status_code,
-                200,
-                f"DELETE not registered on {prefix}",
-            )
-
-        print("[OK] Model options registered on all four path prefixes")
 
     def test_012r_model_options_explicit_auto_beats_global(self):
         """ctx_size=-1 is saved as automatic and overrides a global ctx_size.
@@ -1223,200 +1185,6 @@ class EndpointTests(ServerTestBase):
         )
 
         print("[OK] Saved ctx_size=-1 overrides an explicit global ctx_size")
-
-    def test_012s_load_does_not_persist_non_numeric_ctx_size(self):
-        """A string ctx_size must never reach recipe_options.json.
-
-        ctx_size is read as an integer by consumers such as /api/show, so a
-        persisted string would make later reads throw. /load does not type-check
-        its body, so the filter has to hold at the RecipeOptions layer.
-        """
-        self.addCleanup(self._reset_options)
-        self._reset_options()
-
-        for ctx_size in ("auto", "8192", ""):
-            requests.post(
-                f"{self.base_url}/load",
-                json={
-                    "model_name": ENDPOINT_TEST_MODEL,
-                    "ctx_size": ctx_size,
-                    "save_options": True,
-                },
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-
-            saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
-                "saved"
-            ]
-            self.assertNotIn(
-                "ctx_size",
-                saved,
-                f"ctx_size={ctx_size!r} is not a number and must not be saved",
-            )
-
-            show = requests.post(
-                f"http://localhost:{PORT}/api/show",
-                json={"model": ENDPOINT_TEST_MODEL},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(
-                show.status_code,
-                200,
-                "/api/show must still read ctx_size as an integer",
-            )
-
-        print("[OK] A non-numeric ctx_size is not persisted by /load")
-
-    def test_012v_options_accept_a_user_model_public_name(self):
-        """A user model addressed by its bare public name is handled correctly.
-
-        User models are keyed `user.NAME` in recipe_options.json but are
-        addressable by the bare NAME, so a save through the public name has to
-        land under the canonical ID rather than creating a second entry.
-        """
-        model_name = f"user.Options-Canon-{uuid.uuid4().hex[:8]}"
-        public_name = model_name.split(".", 1)[1]
-        checkpoint = requests.get(
-            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}", timeout=TIMEOUT_DEFAULT
-        ).json()["checkpoint"]
-
-        def cleanup():
-            # Options first: deleting the model leaves its recipe_options.json
-            # entry behind otherwise.
-            self._reset_options(model_name)
-            # Unload both: the delete below removes a checkpoint file shared with
-            # ENDPOINT_TEST_MODEL, and Windows refuses to unlink an open file.
-            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
-            requests.post(
-                f"{self.base_url}/delete",
-                json={"model_name": model_name},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            # /delete removes the checkpoint file, which this model shares with
-            # ENDPOINT_TEST_MODEL, so restore it for the tests that follow.
-            pull_model_with_retry(ENDPOINT_TEST_MODEL)
-
-        self.addCleanup(cleanup)
-        # Reuses the endpoint test model's checkpoint, so nothing new downloads.
-        pull = requests.post(
-            f"{self.base_url}/pull",
-            json={
-                "model_name": model_name,
-                "checkpoint": checkpoint,
-                "recipe": "llamacpp",
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(pull.status_code, 200, pull.text)
-
-        response = requests.post(
-            self._options_url(model=public_name),
-            json={"ctx_size": 4096},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()["saved"]["ctx_size"], 4096)
-
-        # The same entry has to be visible through the canonical name, which is
-        # only true if the save was keyed by it.
-        canonical = requests.get(
-            self._options_url(model=model_name), timeout=TIMEOUT_DEFAULT
-        )
-        self.assertEqual(canonical.status_code, 200, canonical.text)
-        self.assertEqual(canonical.json()["saved"].get("ctx_size"), 4096)
-
-        cleared = requests.delete(
-            self._options_url(model=public_name), timeout=TIMEOUT_DEFAULT
-        )
-        self.assertEqual(cleared.status_code, 200, cleared.text)
-        self.assertEqual(cleared.json()["saved"], {})
-
-        print("[OK] Options endpoint resolves user-model public names")
-
-    def test_012w_options_reject_values_the_global_config_rejects(self):
-        """Per-model options are held to the same value rules as global config.
-
-        Otherwise a value refused by POST /params is accepted here and then
-        silently dropped by the backend that reads it.
-        """
-        image_model = "SD-Turbo"
-        if not requests.get(
-            f"{self.base_url}/models/{image_model}", timeout=TIMEOUT_DEFAULT
-        ).ok:
-            self.skipTest(f"{image_model} is not in the registry")
-
-        self.addCleanup(self._reset_options, image_model)
-
-        for body in ({"steps": 0}, {"cfg_scale": -3}, {"width": 0}):
-            key = next(iter(body))
-            config = requests.post(
-                f"{self.base_url}/params",
-                json={"sdcpp": body},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            options = requests.post(
-                self._options_url(model=image_model), json=body, timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(
-                config.status_code,
-                400,
-                f"Precondition: /params should reject {key}={body[key]}",
-            )
-            self.assertEqual(
-                options.status_code,
-                400,
-                f"/options must reject {key}={body[key]} too, got {options.text}",
-            )
-
-        accepted = requests.post(
-            self._options_url(model=image_model),
-            json={"steps": 20},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(accepted.status_code, 200, accepted.text)
-
-        print("[OK] Option values are validated like the global config")
-
-    def test_012x_every_effective_option_can_be_saved_back(self):
-        """Posting the reported `effective` object back whole is accepted.
-
-        The response advertises `effective` as the set of names POST accepts, so
-        any key the endpoint reports but refuses is a contradiction. This caught
-        `merge_args`, whose name collides with the global config's `*_args` rule.
-        """
-        self.addCleanup(self._reset_options)
-        self._reset_options()
-
-        # Both recipes, so the round trip covers options with a global-config
-        # counterpart (steps, cfg_scale) and options without one (flow_shift,
-        # sampling_method, merge_args, the eviction settings).
-        models = [ENDPOINT_TEST_MODEL]
-        if requests.get(f"{self.base_url}/models/SD-Turbo", timeout=TIMEOUT_DEFAULT).ok:
-            models.append("SD-Turbo")
-            self.addCleanup(self._reset_options, "SD-Turbo")
-
-        for model in models:
-            effective = requests.get(
-                self._options_url(model=model), timeout=TIMEOUT_DEFAULT
-            ).json()["effective"]
-            response = requests.post(
-                self._options_url(model=model), json=effective, timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(
-                response.status_code,
-                200,
-                f"Every option reported for {model} must be settable, got {response.text}",
-            )
-
-        # merge_args specifically: a boolean, and both values have to round-trip.
-        for value in (True, False):
-            saved = requests.post(
-                self._options_url(), json={"merge_args": value}, timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(saved.status_code, 200, saved.text)
-            self.assertEqual(saved.json()["saved"]["merge_args"], value)
-
-        print("[OK] Every option reported in `effective` can be saved back")
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak

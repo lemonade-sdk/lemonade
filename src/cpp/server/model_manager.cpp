@@ -1589,30 +1589,13 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
 
     json snapshot;
-    json previous;
-    bool had_previous = false;
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        had_previous = recipe_options_.contains(id);
-        if (had_previous) previous = recipe_options_[id];
         recipe_options_[id] = info.recipe_options.to_json();
         snapshot = recipe_options_;
         update_model_options_in_cache_locked(info);
     }
-
-    try {
-        save_user_json(get_recipe_options_file(), snapshot);
-    } catch (...) {
-        // Keep memory matching disk, as write_saved_model_options does.
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        if (had_previous) {
-            recipe_options_[id] = previous;
-        } else {
-            recipe_options_.erase(id);
-        }
-        cache_valid_ = false;
-        throw;
-    }
+    save_user_json(get_recipe_options_file(), snapshot);
 }
 
 json ModelManager::get_saved_model_options(const std::string& model_name) {
@@ -1685,14 +1668,11 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
 
     json saved;
     json snapshot;
-    json previous;
-    bool had_previous = false;
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        had_previous = recipe_options_.contains(id);
-        if (had_previous) previous = recipe_options_[id];
-
-        saved = merge && had_previous && previous.is_object() ? previous : json::object();
+        saved = merge && recipe_options_.contains(id) && recipe_options_[id].is_object()
+                    ? recipe_options_[id]
+                    : json::object();
         if (merge) {
             for (const auto& [key, value] : options.items()) {
                 if (value.is_null()) {
@@ -1722,23 +1702,7 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
 
     if (!have_info) invalidate_models_cache();
 
-    try {
-        save_user_json(get_recipe_options_file(), snapshot);
-    } catch (...) {
-        // Leave memory matching disk, otherwise the options stay live for the
-        // rest of this process and silently vanish on restart.
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        if (had_previous) {
-            recipe_options_[id] = previous;
-        } else {
-            recipe_options_.erase(id);
-        }
-        // Set directly rather than calling invalidate_models_cache(), which
-        // takes this same non-recursive mutex.
-        cache_valid_ = false;
-        throw;
-    }
-
+    save_user_json(get_recipe_options_file(), snapshot);
     return saved;
 }
 
