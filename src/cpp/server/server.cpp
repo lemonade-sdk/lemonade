@@ -2645,8 +2645,7 @@ void Server::validate_and_canonicalize_collection_registration(
         return;
     }
 
-    const bool has_embedded_models = request_json.contains("models");
-    if (has_embedded_models && !allow_embedded_models) {
+    if (request_json.contains("models") && !allow_embedded_models) {
         throw std::invalid_argument(
             "`models` embeds additional model definitions and is not accepted by "
             "the single-model registration endpoint; register components first");
@@ -2668,10 +2667,9 @@ void Server::validate_and_canonicalize_collection_registration(
         throw std::invalid_argument(*err);
     }
 
-    // An exported collection file carries inline component definitions in `models`.
-    // Those components may not exist yet; ModelManager::download_model owns their
-    // registration and rollback. A normal single-definition collection can safely
-    // canonicalize its already-registered component references here.
+    // Single-definition collections reference models already present in the
+    // registry. Exported bundles keep their raw component names because their
+    // embedded definitions are resolved by the collection import/download path.
     if (request_json.contains("components") && request_json["components"].is_array() &&
         (!request_json.contains("models") || !request_json["models"].is_array())) {
         for (auto& component : request_json["components"]) {
@@ -2682,26 +2680,20 @@ void Server::validate_and_canonicalize_collection_registration(
 
 std::string Server::register_model_definition_internal(
         const std::string& model_name,
-        nlohmann::json& request_json) {
+        nlohmann::json& request_json,
+        bool require_definition,
+        bool allow_embedded_models,
+        bool local_import) {
     if (!request_json.is_object()) {
         throw std::invalid_argument("Request body must be a JSON object");
     }
 
-    validate_model_registration_name(model_name, true);
-
-    if (!request_json.contains("recipe") || !request_json["recipe"].is_string() ||
-        request_json["recipe"].get<std::string>().empty()) {
-        throw std::invalid_argument("A non-empty string `recipe` is required");
+    if (request_json.contains("recipe") && !request_json["recipe"].is_string()) {
+        throw std::invalid_argument("`recipe` must be a string when provided");
     }
-    const std::string recipe = request_json["recipe"].get<std::string>();
-
-    // This method owns exactly one registry definition. Multi-definition exported
-    // collection files stay on /pull where download_model owns component registration
-    // and rollback.
-    if (request_json.contains("models")) {
-        throw std::invalid_argument(
-            "`models` embeds additional model definitions and is not accepted by "
-            "the single-model registration endpoint; register components first");
+    const std::string recipe = request_json.value("recipe", std::string());
+    if (require_definition && recipe.empty()) {
+        throw std::invalid_argument("A non-empty string `recipe` is required");
     }
 
     if (request_json.contains("checkpoint") && !request_json["checkpoint"].is_string()) {
@@ -2709,8 +2701,9 @@ std::string Server::register_model_definition_internal(
     }
     if (request_json.contains("checkpoints")) {
         const auto& checkpoints = request_json["checkpoints"];
-        if (!checkpoints.is_object()) {
-            throw std::invalid_argument("`checkpoints` must be an object when provided");
+        if (!checkpoints.is_object() || !checkpoints.contains("main")) {
+            throw std::invalid_argument(
+                "If present, `checkpoints` must be an object containing `main`");
         }
         for (const auto& [role, checkpoint] : checkpoints.items()) {
             if (!checkpoint.is_string()) {
@@ -2720,27 +2713,39 @@ std::string Server::register_model_definition_internal(
         }
     }
 
-    std::string primary_checkpoint;
-    if (request_json.contains("checkpoint")) {
-        primary_checkpoint = request_json["checkpoint"].get<std::string>();
-    } else if (request_json.contains("checkpoints")) {
-        primary_checkpoint = request_json["checkpoints"].value("main", std::string());
+    const bool has_definition =
+        require_definition || !recipe.empty() || request_json.contains("checkpoint") ||
+        request_json.contains("checkpoints") || request_json.contains("components") ||
+        request_json.contains("models");
+    validate_model_registration_name(model_name, has_definition);
+
+    if (request_json.contains("models") && !allow_embedded_models) {
+        throw std::invalid_argument(
+            "`models` embeds additional model definitions and is not accepted by "
+            "the single-model registration endpoint; register components first");
     }
 
-    // Registration itself does not universally require weights. When a checkpoint
-    // is supplied, still apply the backend's registration-level validation.
-    if (!is_model_collection_recipe(recipe) && !primary_checkpoint.empty()) {
-        const std::string validation_error =
-            backends::ops_for(recipe)->validate_registration_checkpoint(primary_checkpoint);
-        if (!validation_error.empty()) {
-            throw std::invalid_argument(validation_error);
-        }
+    normalize_model_registration_source(request_json, local_import);
+    validate_and_canonicalize_collection_registration(
+        model_name, request_json, allow_embedded_models);
+
+    if (local_import) {
+        std::string hf_cache = model_manager_->get_hf_cache_dir();
+        std::string model_name_clean = model_name.substr(5);
+        std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
+        std::string dest_path = hf_cache + "/models--" + model_name_clean;
+
+        LOG(INFO, "Server") << "Local import mode - resolving files in: "
+                            << dest_path << std::endl;
+        resolve_and_register_local_model(dest_path, model_name, request_json, hf_cache);
+    } else {
+        model_manager_->register_model(
+            model_name,
+            request_json,
+            /*allow_missing_checkpoint=*/require_definition,
+            /*replace_existing=*/require_definition);
     }
 
-    normalize_model_registration_source(request_json, false);
-    validate_and_canonicalize_collection_registration(model_name, request_json, false);
-
-    model_manager_->register_user_model(model_name, request_json);
     return model_manager_->get_public_model_name(model_name);
 }
 
@@ -2764,8 +2769,12 @@ void Server::handle_model_register(const httplib::Request& req, httplib::Respons
         }
 
         const std::string model_name = request_json["model_name"].get<std::string>();
-        const std::string public_name =
-            register_model_definition_internal(model_name, request_json);
+        const std::string public_name = register_model_definition_internal(
+            model_name,
+            request_json,
+            /*require_definition=*/true,
+            /*allow_embedded_models=*/false,
+            /*local_import=*/false);
 
         nlohmann::json response = {
             {"status", "success"},
@@ -5317,60 +5326,24 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             LOG(INFO, "Server") << "   recipe: " << recipe << std::endl;
         }
 
-        // Registration and installation are separate API operations, but a new
-        // single model definition must go through exactly the same internal
-        // registration path as POST /models/register before /pull downloads it.
-        // Existing registrations keep the legacy download_model path so its
-        // conflict checks remain unchanged. Exported collection files with an
-        // embedded `models` array are multi-definition imports and also stay on
-        // download_model, which owns component registration and rollback.
-        bool registered_via_shared_definition = false;
+        // Both API operations always enter the same registration path.
+        // /pull continues with installation after this; /models/register returns.
         const bool collection_file_import =
             request_json.contains("models") && request_json["models"].is_array();
-        const bool already_registered = model_manager_->model_exists_unfiltered(model_name);
-        const bool explicit_registration = !checkpoint.empty() || !recipe.empty();
 
         try {
-            const bool can_register_before_pull =
-                !local_import &&
-                !collection_file_import &&
-                !already_registered &&
-                !recipe.empty() &&
-                (!checkpoint.empty() || request_json.contains("checkpoints") ||
-                 is_model_collection_recipe(recipe));
-
-            if (can_register_before_pull) {
-                register_model_definition_internal(model_name, request_json);
-                registered_via_shared_definition = true;
-            } else {
-                // These helpers are also used by register_model_definition_internal;
-                // keeping the fallback path composed from them prevents /pull and
-                // /models/register from growing separate validation implementations.
-                validate_model_registration_name(model_name, explicit_registration);
-                normalize_model_registration_source(request_json, local_import);
-                if (is_model_collection_recipe(recipe)) {
-                    validate_and_canonicalize_collection_registration(
-                        model_name, request_json, true);
-                }
-            }
+            register_model_definition_internal(
+                model_name,
+                request_json,
+                /*require_definition=*/false,
+                /*allow_embedded_models=*/true,
+                local_import);
         } catch (const std::invalid_argument& e) {
             bad_request(e.what());
             return;
         }
 
-        // Local import mode: CLI has already copied files to HF cache, just resolve and register
         if (local_import) {
-            std::string hf_cache = model_manager_->get_hf_cache_dir();
-            std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
-            std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
-            std::string dest_path = hf_cache + "/models--" + model_name_clean;
-
-            LOG(INFO, "Server") << "Local import mode - resolving files in: " << dest_path << std::endl;
-
-            resolve_and_register_local_model(
-                dest_path, model_name, request_json, hf_cache
-            );
-
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
@@ -5387,9 +5360,9 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             return;
         }
 
-        nlohmann::json download_request = registered_via_shared_definition
-            ? nlohmann::json::object()
-            : request_json;
+        nlohmann::json download_request = collection_file_import
+            ? request_json
+            : nlohmann::json::object();
 
         if (stream) {
             auto operation = [this, model_name, download_request, do_not_upgrade](DownloadProgressCallback progress_cb) {

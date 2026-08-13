@@ -228,8 +228,8 @@ When `include_paths=true` is supplied, each file entry also includes `path`:
 
 Register or update a `user.*` model definition without downloading model files.
 Use this endpoint when registration and installation are separate actions.
-`POST /v1/pull` remains the install/download path and keeps its existing
-register-then-install behavior through the same internal registration path.
+`POST /v1/pull` remains the install/download path and performs the same internal
+registration step before downloading.
 
 The endpoint is available at:
 
@@ -250,11 +250,13 @@ The endpoint is available at:
 | `labels` | No | Additional model labels. |
 | `components` | No | Already-registered component model names for collection recipes. |
 
-The endpoint accepts the persisted user-model metadata understood by the current
-server build. It intentionally does not accept an embedded `models` array because
-that represents multiple definitions; register those component definitions first.
-A checkpoint is validated when supplied, but is not universally required by this
-endpoint because not every present or future recipe needs downloadable weights.
+A checkpoint is intentionally not universally required: registration is a model
+metadata operation and some present or future model types may not have local
+weights. `/pull` remains the operation that attempts installation/download.
+
+The endpoint accepts one model definition. An embedded `models` array represents
+multiple definitions and remains a collection-import concern; register those
+component definitions first when using this endpoint.
 
 Example request:
 
@@ -283,10 +285,9 @@ Example response:
 }
 ```
 
-`model_name` is the public ID exposed by `/v1/models` for the current alias
-winner; `canonical_model_name` is the stable `user.*` registration ID.
-Registration updates `user_models.json` and invalidates the server model cache,
-but does not start a model download.
+`model_name` is the public ID exposed by `/v1/models`; `canonical_model_name` is
+the stable `user.*` registration ID. Registration updates `user_models.json` and
+invalidates the model cache, but does not start a model download.
 
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

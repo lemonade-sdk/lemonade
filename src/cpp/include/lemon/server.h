@@ -116,8 +116,12 @@ private:
         const std::string& model_name,
         nlohmann::json& request_json,
         bool allow_embedded_models);
-    std::string register_model_definition_internal(const std::string& model_name,
-                                                   nlohmann::json& request_json);
+    std::string register_model_definition_internal(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool require_definition,
+        bool allow_embedded_models,
+        bool local_import);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
