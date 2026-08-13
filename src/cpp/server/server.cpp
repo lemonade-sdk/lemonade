@@ -2806,8 +2806,8 @@ static std::string validate_option_value(const std::string& recipe,
     }
 
     // A fractional value for a whole-number option is silently ignored by the
-    // consumers that read it (the eviction timeouts, for example), and a
-    // negative one is read as "already expired", so refuse both.
+    // consumers that read it, and a negative one is meaningless for all of
+    // them, so refuse both.
     if (expected.is_number_integer()) {
         if (!value.is_number_integer()) {
             return "'" + key + "' must be a whole number";
@@ -2870,10 +2870,11 @@ void Server::respond_with_model_options(
         RecipeOptions effective = router_->resolve_effective_options(info, no_request_options);
 
         // A live process keeps its own pin state across loads, so a saved value
-        // that is not pushed down would be reported but never take effect.
-        if (touched_pinned && router_->is_model_loaded(model_key)) {
+        // that is not pushed down would be reported but never take effect. An
+        // eviction racing this leaves nothing to pin, which is not an error.
+        if (touched_pinned) {
             const auto pinned = effective.get_option("pinned");
-            router_->set_model_pinned(model_key, pinned.is_boolean() && pinned.get<bool>());
+            router_->try_set_model_pinned(model_key, pinned.is_boolean() && pinned.get<bool>());
         }
 
         ModelInfo without_saved = info;
@@ -2892,9 +2893,10 @@ void Server::respond_with_model_options(
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Failed to handle options for '" << model_id
                              << "': " << e.what() << std::endl;
-        // Matches handle_model_files: the model disappearing between the
-        // existence check and the read reads as "not found", not a server fault.
-        auto error_response = create_model_error(model_id, e.what());
+        // Keyed on the resolved name: an alias is deliberately absent from the
+        // registry, so reporting against the requested name would turn every
+        // server-side failure into "model not found".
+        auto error_response = create_model_error(model_key, e.what());
         res.status = get_http_status_from_error(error_response["error"]["code"].get<std::string>());
         res.set_content(error_response.dump(), "application/json");
     }
@@ -2935,9 +2937,11 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                 // Which values mean "remove this option". For ctx_size the
                 // storage filter drops every non-number, but the request layer
                 // has to be stricter than that so a malformed size is reported
-                // rather than silently clearing the option.
+                // rather than silently clearing the option. The spellings every
+                // other option accepts as "not set" still clear it.
                 const bool clears = key == "ctx_size"
-                    ? (value.is_null() || (value.is_string() && value.get<std::string>().empty()))
+                    ? (value.is_null() || (value.is_string() &&
+                       (value.get<std::string>().empty() || value == "auto")))
                     : RecipeOptions::is_default_sentinel(key, value);
                 if (clears) {
                     changes[key] = nullptr;

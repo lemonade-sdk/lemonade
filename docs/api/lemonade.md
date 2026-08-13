@@ -300,7 +300,7 @@ Options are merged into whatever is already saved, so keys you don't mention are
 
 `ctx_size` is the exception: `-1` is a value there, not an absence, and saving it pins the model to automatic context sizing. That matters when the server-wide `ctx_size` is a specific number, because removing the option would make the model inherit that number instead. Only `null` and `""` clear it.
 
-Options are validated against the model's recipe, and nothing is saved unless every option in the request passes. A `400` reports an unrecognized option name, an option belonging to a different recipe, a value of the wrong type, a `ctx_size` that isn't a whole number of `-1` or more, or a backend this host doesn't support.
+Options are validated against the model's recipe, and nothing is saved unless every option in the request passes. A `400` reports an unrecognized option name, an option belonging to a different recipe, a value of the wrong type, a negative or fractional value where a whole number is expected, or a backend this host doesn't support.
 
 Saving never loads or reloads the model, with one exception: `pinned` is applied to a running process immediately, because a live model keeps its own pin state across loads. The `reload_required` field reports whether a running model needs a reload to pick up the rest.
 
@@ -864,7 +864,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
 | `pinned` | No | All | Boolean. If true, pins the loaded model to prevent LRU eviction. Defaults to `false`. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. To save options without loading, or to change one option without resending the rest, use [`POST /v1/models/{id}/options`](#post-v1modelsidoptions) instead. |
-| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. Pass `-1` to size it automatically for this load, which overrides a saved value; omit it to use the saved value. |
+| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. Pass `-1` to size it automatically instead of using a saved value; omit it to use the saved value. A process that is already running satisfies `-1` with whatever size it resolved to, so this takes effect on the next cold load. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux. Default is `npu` if supported. |

@@ -1009,6 +1009,7 @@ class EndpointTests(ServerTestBase):
             json={"model_name": ENDPOINT_TEST_MODEL},
             timeout=TIMEOUT_DEFAULT,
         )
+        self.addCleanup(self._reset_options)
         self.assertEqual(self._reset_options().status_code, 200)
 
         before = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT)
@@ -1045,6 +1046,7 @@ class EndpointTests(ServerTestBase):
 
     def test_012n_model_options_reset_to_default(self):
         """null clears an option so it falls back through the priority chain."""
+        self.addCleanup(self._reset_options)
         self._reset_options()
         defaults = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
             "defaults"
@@ -1069,6 +1071,7 @@ class EndpointTests(ServerTestBase):
 
     def test_012o_model_options_merge_and_delete(self):
         """POST merges into the saved entry; DELETE erases the whole entry."""
+        self.addCleanup(self._reset_options)
         self._reset_options()
 
         requests.post(
@@ -1097,6 +1100,7 @@ class EndpointTests(ServerTestBase):
 
     def test_012p_model_options_rejects_invalid_input(self):
         """Unknown, wrong-recipe, and wrong-typed options are refused."""
+        self.addCleanup(self._reset_options)
         self._reset_options()
 
         for body in (
