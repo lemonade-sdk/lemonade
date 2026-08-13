@@ -331,10 +331,7 @@ void SDServer::load(const std::string& model_name,
                 std::vector<std::string> therock_dirs = BackendUtils::get_therock_lib_paths(rocm_arch);
                 std::string therock_bin = therock_dirs.empty() ? std::string() : therock_dirs.front();
                 if (!therock_bin.empty()) {
-                    // Prepend ALL runtime dirs so both the HIP DLLs
-                    // (_rocm_sdk_core/bin) and the BLAS DLLs
-                    // (_rocm_sdk_libraries/bin) resolve; a single-dir PATH makes
-                    // sd-server fail at load with STATUS_DLL_NOT_FOUND.
+                    // Prepend all runtime dirs so both HIP and BLAS DLLs resolve.
                     for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
                         new_path = *it + ";" + new_path;
                     }

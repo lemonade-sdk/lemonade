@@ -166,17 +166,12 @@ namespace lemon::backends {
         /** Clean up stale TheRock versions, keeping only the pinned ones */
         static void cleanup_old_therock_versions();
 
-        /** Get TheRock lib directory path if available, or empty string if not needed.
-         *  Returns only the FIRST runtime dir (_rocm_sdk_core/bin). Use
-         *  get_therock_lib_paths() when building a loader path so the BLAS
-         *  libraries dir (_rocm_sdk_libraries/bin) is included too. */
+        /** First TheRock runtime dir (_rocm_sdk_core/bin), or empty. Use
+         *  get_therock_lib_paths() for loader paths so the BLAS dir is included. */
         static std::string get_therock_lib_path(const std::string& rocm_arch);
 
-        /** Get all TheRock runtime library directories (in loader-path order) if
-         *  available, or an empty vector if not needed. The pip-wheel runtime is
-         *  split across several dirs (recorded in runtime_paths.txt); all must be
-         *  on the loader path for a ROCm consumer to resolve both HIP and BLAS
-         *  DLLs. */
+        /** All TheRock runtime dirs (loader-path order) from runtime_paths.txt, or
+         *  empty. All are needed to resolve both HIP and BLAS DLLs. */
         static std::vector<std::string> get_therock_lib_paths(const std::string& rocm_arch);
 
         /** Join runtime library directories into a single loader-path string

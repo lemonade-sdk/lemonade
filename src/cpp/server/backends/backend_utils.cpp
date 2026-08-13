@@ -1567,14 +1567,8 @@ namespace lemon::backends {
 
         std::string version = config["therock"]["version"].get<std::string>();
 
-        // Prefer the lemonade-managed pip-wheel install when present. Its ROCm
-        // runtime is split across multiple directories (_rocm_sdk_core/bin,
-        // _rocm_sdk_core/lib, _rocm_sdk_libraries/bin), recorded in
-        // runtime_paths.txt at install time. ALL of them must be on the loader
-        // path: amdhip64/amd_comgr/rocm_kpack live in _rocm_sdk_core/bin while
-        // rocblas/hipblas/hipblaslt live in _rocm_sdk_libraries/bin, and a
-        // consumer that loads only the first directory fails to resolve the
-        // BLAS DLLs (STATUS_DLL_NOT_FOUND).
+        // Prefer the lemonade-managed pip-wheel install when present; its ROCm
+        // runtime dirs are recorded in runtime_paths.txt at install time.
         {
             fs::path paths_file =
                 fs::path(get_therock_wheel_dir(rocm_arch, version)) / "runtime_paths.txt";
