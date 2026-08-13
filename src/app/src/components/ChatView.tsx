@@ -1958,10 +1958,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, []);
 
   const handleDeleteConversation = useCallback((id: string) => {
+    streaming.stop(id);
+    delete streamModelsRef.current[id];
     setConversations(prev => prev.filter(c => c.id !== id));
     if (activeId === id) setActiveId(null);
-  }, [activeId]);
-
+  }, [activeId, streaming.stop]);
 
 
   const handleRailToggle = useCallback(() => {
