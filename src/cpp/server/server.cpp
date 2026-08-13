@@ -5789,10 +5789,11 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
 // message whenever the name is absent from the registry, which is always true for a
 // new alias, so routing these through it would report "model not found" instead of
 // the actual reason.
-static nlohmann::json create_alias_error(const std::string& message, const std::string& code) {
+static nlohmann::json create_alias_error(const std::string& message, const std::string& code,
+                                         const std::string& type = "invalid_request_error") {
     return nlohmann::json{{"error", {
         {"message", message},
-        {"type", "invalid_request_error"},
+        {"type", type},
         {"param", "alias"},
         {"code", code}
     }}};
@@ -5824,7 +5825,7 @@ void Server::handle_aliases_get(const httplib::Request& req, httplib::Response& 
         res.set_content(nlohmann::json{{"aliases", alias_list}}.dump(), "application/json");
     } catch (const std::exception& e) {
         res.status = 500;
-        res.set_content(create_alias_error(e.what(), "internal_error").dump(), "application/json");
+        res.set_content(create_alias_error(e.what(), "internal_error", "server_error").dump(), "application/json");
     }
 }
 
@@ -5863,7 +5864,7 @@ void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& 
 
         if (!alias_manager_) {
             res.status = 500;
-            res.set_content(create_alias_error("AliasManager uninitialized", "internal_error").dump(), "application/json");
+            res.set_content(create_alias_error("AliasManager uninitialized", "internal_error", "server_error").dump(), "application/json");
             return;
         }
 
@@ -5901,7 +5902,7 @@ void Server::handle_aliases_remove(const httplib::Request& req, httplib::Respons
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
         res.status = 500;
-        res.set_content(create_alias_error(e.what(), "internal_error").dump(), "application/json");
+        res.set_content(create_alias_error(e.what(), "internal_error", "server_error").dump(), "application/json");
     }
 }
 
