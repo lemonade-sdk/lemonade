@@ -5785,6 +5785,20 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
     }
 }
 
+// Alias failures are not model-lookup failures. create_model_error() rewrites its
+// message whenever the name is absent from the registry, which is always true for a
+// new alias, so routing these through it would report "model not found" instead of
+// the actual reason.
+static nlohmann::json create_alias_error(const std::string& message, const std::string& code,
+                                         const std::string& type = "invalid_request_error") {
+    return nlohmann::json{{"error", {
+        {"message", message},
+        {"type", type},
+        {"param", "alias"},
+        {"code", code}
+    }}};
+}
+
 void Server::handle_aliases_get(const httplib::Request& req, httplib::Response& res) {
     try {
         nlohmann::json alias_list = nlohmann::json::array();
@@ -5811,7 +5825,7 @@ void Server::handle_aliases_get(const httplib::Request& req, httplib::Response& 
         res.set_content(nlohmann::json{{"aliases", alias_list}}.dump(), "application/json");
     } catch (const std::exception& e) {
         res.status = 500;
-        res.set_content(create_model_error("", e.what()).dump(), "application/json");
+        res.set_content(create_alias_error(e.what(), "internal_error", "server_error").dump(), "application/json");
     }
 }
 
@@ -5823,19 +5837,19 @@ void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& 
 
         if (alias.empty() || target.empty()) {
             res.status = 400;
-            res.set_content(create_model_error("", "Alias and target fields are required").dump(), "application/json");
+            res.set_content(create_alias_error("Alias and target fields are required", "invalid_request").dump(), "application/json");
             return;
         }
 
         if (alias == target) {
             res.status = 400;
-            res.set_content(create_model_error(alias, "Alias cannot point to itself").dump(), "application/json");
+            res.set_content(create_alias_error("Alias cannot point to itself", "invalid_alias").dump(), "application/json");
             return;
         }
 
         if (alias.rfind("user.", 0) == 0 || alias.rfind("extra.", 0) == 0 || alias.rfind("builtin.", 0) == 0) {
             res.status = 400;
-            res.set_content(create_model_error(alias, "Alias name cannot use reserved prefixes (user., extra., builtin.)").dump(), "application/json");
+            res.set_content(create_alias_error("Alias name cannot use reserved prefixes (user., extra., builtin.)", "invalid_alias").dump(), "application/json");
             return;
         }
 
@@ -5843,21 +5857,21 @@ void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& 
             std::string canonical = model_manager_->resolve_model_name(alias);
             if (canonical == alias || canonical == "user." + alias || canonical == "builtin." + alias) {
                 res.status = 409;
-                res.set_content(create_model_error(alias, "Cannot create alias '" + alias + "': Name conflicts with an existing canonical model").dump(), "application/json");
+                res.set_content(create_alias_error("Cannot create alias '" + alias + "': Name conflicts with an existing canonical model", "alias_conflict").dump(), "application/json");
                 return;
             }
         }
 
         if (!alias_manager_) {
             res.status = 500;
-            res.set_content(create_model_error(alias, "AliasManager uninitialized").dump(), "application/json");
+            res.set_content(create_alias_error("AliasManager uninitialized", "internal_error", "server_error").dump(), "application/json");
             return;
         }
 
         std::string err_msg;
         if (!alias_manager_->set_alias(alias, target, err_msg)) {
             res.status = 409;
-            res.set_content(create_model_error(alias, err_msg).dump(), "application/json");
+            res.set_content(create_alias_error(err_msg, "alias_conflict").dump(), "application/json");
             return;
         }
 
@@ -5869,7 +5883,7 @@ void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& 
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
         res.status = 400;
-        res.set_content(create_model_error("", e.what()).dump(), "application/json");
+        res.set_content(create_alias_error(e.what(), "invalid_request").dump(), "application/json");
     }
 }
 
@@ -5878,7 +5892,7 @@ void Server::handle_aliases_remove(const httplib::Request& req, httplib::Respons
     try {
         if (!alias_manager_ || !alias_manager_->remove_alias(alias)) {
             res.status = 404;
-            res.set_content(create_model_error(alias, "Alias not found: " + alias).dump(), "application/json");
+            res.set_content(create_alias_error("Alias not found: " + alias, "alias_not_found").dump(), "application/json");
             return;
         }
         nlohmann::json response = {
@@ -5888,7 +5902,7 @@ void Server::handle_aliases_remove(const httplib::Request& req, httplib::Respons
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
         res.status = 500;
-        res.set_content(create_model_error(alias, e.what()).dump(), "application/json");
+        res.set_content(create_alias_error(e.what(), "internal_error", "server_error").dump(), "application/json");
     }
 }
 
