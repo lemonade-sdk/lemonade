@@ -439,8 +439,11 @@ jobs:
           fi
 
           curl -sf -X POST "http://127.0.0.1:$PORT/internal/shutdown" || true
-          sleep 2
-          kill "$LEMOND_PID" 2>/dev/null || true
+          for i in $(seq 1 15); do
+            kill -0 "$LEMOND_PID" 2>/dev/null || break
+            sleep 1
+          done
+          kill -9 "$LEMOND_PID" 2>/dev/null || true
 
           # ---------------------------------------------------------------
           # VERIFY the fork binary actually SERVED the bench — but per-model,
