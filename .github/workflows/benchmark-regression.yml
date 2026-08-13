@@ -513,6 +513,11 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
+      - name: Cleanup fork binaries processes
+        if: always()
+        run: |
+          pkill -9 -f "bench-binaries/${{ matrix.fork_id }}" 2>/dev/null || true
+
   # =========================================================================
   # Report — merges results into the benchmark-data branch, regenerates the
   # leaderboard from full history, files/updates an issue on critical
