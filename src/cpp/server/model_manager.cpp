@@ -15,6 +15,7 @@
 #include <lemon/backends/fastflowlm/fastflowlm_models.h>
 #include <lemon/cloud_provider_registry.h>
 #include <lemon/gguf_shard_utils.h>
+#include <lemon/hf_snapshot.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -1607,6 +1608,15 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return public_models;
 }
 
+// Defined next to the Hugging Face snapshot-reuse helpers it wraps.
+static bool hf_selected_artifacts_unchanged(
+    const std::string& repo_id,
+    const std::string& previous_ref,
+    const std::string& current_ref,
+    const fs::path& cache_path,
+    const std::map<std::string, std::string>& resolved_paths,
+    const std::map<std::string, std::string>& headers);
+
 std::vector<std::string> ModelManager::check_for_model_updates() {
     std::lock_guard<std::mutex> update_check_lock(update_check_mutex_);
 
@@ -1619,6 +1629,7 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
     struct RepoEntry {
         std::vector<std::string> model_names;
         std::unordered_map<std::string, std::string> cached_snapshots;
+        std::unordered_map<std::string, std::map<std::string, std::string>> resolved_paths;
         std::string repo_id;
         std::string registry_source;
     };
@@ -1679,6 +1690,7 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
                 cached_snapshot = read_hf_ref_main(cache_path);
             }
             entry.cached_snapshots[name] = std::move(cached_snapshot);
+            entry.resolved_paths[name] = info.resolved_paths;
         }
     }
 
@@ -1705,6 +1717,19 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
                 continue;
             }
 
+            // Only Hugging Face pins refs/main to a previous snapshot when the
+            // selected artifacts are unchanged, so only it can distinguish a
+            // commit that touches this model from one that does not. ModelScope
+            // snapshots are tree fingerprints with no commit pin, so they keep
+            // the snapshot-id comparison.
+            const bool artifact_aware = source == RemoteRegistrySource::HuggingFace;
+            const fs::path cache_path =
+                path_from_utf8(get_hf_cache_dir()) /
+                repo_id_to_cache_dir_name(entry.repo_id, entry.registry_source);
+            const auto headers =
+                artifact_aware ? registry.auth_headers()
+                               : std::map<std::string, std::string>{};
+
             size_t updated_variants = 0;
             for (const auto& model_name : entry.model_names) {
                 auto cached_it = entry.cached_snapshots.find(model_name);
@@ -1715,10 +1740,35 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
                 // Only a successful registry response with a usable local
                 // baseline may clear an update flag discovered earlier.
                 verified_models.insert(model_name);
-                if (latest.snapshot_id != cached_it->second) {
-                    updated_models.insert(model_name);
-                    ++updated_variants;
+                if (latest.snapshot_id == cached_it->second) {
+                    continue;
                 }
+
+                // A new commit on a shared multi-artifact repository does not
+                // imply this model changed: it may only touch a README or an
+                // unrelated variant. Compare the artifacts this model actually
+                // uses before advertising a re-download, mirroring what the
+                // subsequent pull would decide.
+                if (artifact_aware) {
+                    auto resolved_it = entry.resolved_paths.find(model_name);
+                    const std::map<std::string, std::string> resolved =
+                        resolved_it != entry.resolved_paths.end()
+                            ? resolved_it->second
+                            : std::map<std::string, std::string>{};
+
+                    if (hf_selected_artifacts_unchanged(entry.repo_id, cached_it->second,
+                                                        latest.snapshot_id, cache_path,
+                                                        resolved, headers)) {
+                        LOG(DEBUG, "ModelManager")
+                            << "Skipping update for " << model_name << ": artifacts unchanged in "
+                            << latest.snapshot_id.substr(0, 18) << ", keeping "
+                            << cached_it->second.substr(0, 18) << std::endl;
+                        continue;
+                    }
+                }
+
+                updated_models.insert(model_name);
+                ++updated_variants;
             }
 
             if (updated_variants > 0) {
@@ -3879,6 +3929,120 @@ static bool can_reuse_previous_hf_snapshot(
     }
 
     return true;
+}
+
+namespace hf_snapshot {
+
+std::vector<std::string> model_artifacts(
+    const std::map<std::string, std::string>& resolved_paths,
+    const fs::path& previous_snapshot) {
+    if (resolved_paths.empty() || previous_snapshot.empty() || !safe_exists(previous_snapshot)) {
+        return {};
+    }
+
+    std::set<std::string> selected;
+
+    // Auxiliary checkpoints can live in another repository; those are verified
+    // under their own repository entry, so anything outside this snapshot is
+    // skipped rather than treated as a failure.
+    auto add_file = [&](const fs::path& file) {
+        const fs::path relative = file.lexically_relative(previous_snapshot);
+        auto first = relative.begin();
+        if (first == relative.end() || *first == "." || *first == "..") {
+            return;
+        }
+
+        std::string text = path_to_utf8(relative);
+        std::replace(text.begin(), text.end(), '\\', '/');
+        if (!text.empty()) {
+            selected.insert(std::move(text));
+        }
+    };
+
+    for (const auto& [role, resolved] : resolved_paths) {
+        (void)role;
+        if (resolved.empty()) {
+            continue;
+        }
+
+        const fs::path path = path_from_utf8(resolved);
+        if (!safe_exists(path)) {
+            return {};
+        }
+
+        if (safe_is_directory(path)) {
+            std::error_code ec;
+            for (const auto& entry :
+                 fs::recursive_directory_iterator(path, safe_dir_options, ec)) {
+                if (ec) {
+                    return {};
+                }
+                if (entry.is_regular_file(ec)) {
+                    add_file(entry.path());
+                }
+                ec.clear();
+            }
+            continue;
+        }
+
+        add_file(path);
+
+        // A sharded GGUF resolves to a single shard, so the remaining shards
+        // must be added explicitly or a change confined to them would be missed.
+        std::string base;
+        int total = 0;
+        if (!is_gguf_shard_filename(path.filename().string(), &base, &total)) {
+            continue;
+        }
+
+        std::error_code ec;
+        for (const auto& entry :
+             fs::directory_iterator(path.parent_path(), safe_dir_options, ec)) {
+            if (ec) {
+                return {};
+            }
+            if (entry.is_regular_file(ec) &&
+                same_shard_family(entry.path().filename().string(), base, total)) {
+                add_file(entry.path());
+            }
+            ec.clear();
+        }
+    }
+
+    return {selected.begin(), selected.end()};
+}
+
+} // namespace hf_snapshot
+
+static bool hf_selected_artifacts_unchanged(
+    const std::string& repo_id,
+    const std::string& previous_ref,
+    const std::string& current_ref,
+    const fs::path& cache_path,
+    const std::map<std::string, std::string>& resolved_paths,
+    const std::map<std::string, std::string>& headers) {
+    if (repo_id.empty() || previous_ref.empty() || current_ref.empty() ||
+        previous_ref == current_ref || cache_path.empty()) {
+        return false;
+    }
+
+    const fs::path previous_snapshot = cache_path / "snapshots" / previous_ref;
+    const std::vector<std::string> selected =
+        hf_snapshot::model_artifacts(resolved_paths, previous_snapshot);
+    if (selected.empty()) {
+        return false;
+    }
+
+    try {
+        const auto current_metadata =
+            fetch_hf_file_metadata_for_ref(repo_id, current_ref, selected, headers);
+        const auto previous_metadata =
+            fetch_hf_file_metadata_for_ref(repo_id, previous_ref, selected, headers);
+        return can_reuse_previous_hf_snapshot(repo_id, selected, previous_snapshot,
+                                             current_metadata, previous_metadata);
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 static void remove_unused_hf_snapshot(const fs::path& cache_path,
