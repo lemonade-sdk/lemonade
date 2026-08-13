@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
 #include <optional>
 #include "lemon/collection_orchestrator.h"
@@ -2823,7 +2824,7 @@ static std::string validate_option_value(const std::string& key,
 
 void Server::respond_with_model_options(
     const httplib::Request& req, httplib::Response& res,
-    const std::function<bool(const std::string&, const ModelInfo&, httplib::Response&)>& mutation) {
+    const std::function<bool(const std::string&, ModelInfo&, httplib::Response&)>& mutation) {
     const std::string model_id = utils::normalize_model_name(req.matches[1]);
     std::string model_key = model_id;
 
@@ -2850,11 +2851,7 @@ void Server::respond_with_model_options(
 
     try {
         ModelInfo info = model_manager_->get_model_info(model_key);
-        if (mutation) {
-            if (!mutation(model_key, info, res)) return;
-            // Re-read so the response reflects the merged stack after the write.
-            info = model_manager_->get_model_info(model_key);
-        }
+        if (mutation && !mutation(model_key, info, res)) return;
 
         const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
         RecipeOptions effective = router_->resolve_effective_options(info, no_request_options);
@@ -2868,12 +2865,26 @@ void Server::respond_with_model_options(
         nlohmann::json defaults_json = resolve_all_recipe_options(defaults);
         effective_json["model_name"] = model_id;
         defaults_json["model_name"] = model_id;
+
+        // The `lemonade load` rendering of the effective options, with an auto
+        // ctx_size concretized to the size a load right now would pick.
+        const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
+        nlohmann::json args_source = effective.to_json();
+        if (auto_ctx != -2) {
+            args_source["ctx_size"] = auto_ctx;
+        }
+        const nlohmann::json effective_ctx = effective.get_option("ctx_size");
+        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
+            : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+
         nlohmann::json response = {
             {"model_name", model_id},
             {"recipe", info.recipe},
             {"saved", model_manager_->get_saved_model_options(model_key)},
             {"effective", effective_json},
-            {"defaults", defaults_json}
+            {"defaults", defaults_json},
+            {"args", RecipeOptions::to_cli_options(args_source)},
+            {"resolved_ctx_size", resolved_ctx}
         };
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
@@ -2904,7 +2915,7 @@ void Server::handle_model_options_get(const httplib::Request& req, httplib::Resp
 
 void Server::handle_model_options_post(const httplib::Request& req, httplib::Response& res) {
     respond_with_model_options(req, res,
-        [this, &req](const std::string& model_key, const ModelInfo& info, httplib::Response& r) {
+        [this, &req](const std::string& model_key, ModelInfo& info, httplib::Response& r) {
             nlohmann::json body;
             if (!parse_required_json_body(req, r, body)) return false;
             if (!body.is_object()) {
@@ -2912,6 +2923,18 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                 r.set_content(nlohmann::json{{"error", "Request body must be a JSON object of recipe options"}}
                                   .dump(), "application/json");
                 return false;
+            }
+
+            bool dry_run = false;
+            if (body.contains("dry_run")) {
+                if (!body["dry_run"].is_boolean()) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "'dry_run' must be a boolean"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                dry_run = body["dry_run"].get<bool>();
+                body.erase("dry_run");
             }
 
             const auto keys = RecipeOptions::keys_for_recipe(info.recipe);
@@ -2964,19 +2987,25 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                 changes[key] = value;
             }
 
+            if (dry_run) {
+                info.recipe_options = model_manager_->preview_saved_model_options(info, changes);
+                return true;
+            }
             if (!changes.empty()) {
                 model_manager_->update_saved_model_options(model_key, changes);
             }
+            info = model_manager_->get_model_info(model_key);
             return true;
         });
 }
 
 void Server::handle_model_options_delete(const httplib::Request& req, httplib::Response& res) {
     respond_with_model_options(req, res,
-        [this](const std::string& model_key, const ModelInfo&, httplib::Response&) {
+        [this](const std::string& model_key, ModelInfo& info, httplib::Response&) {
             if (!model_manager_->get_saved_model_options(model_key).empty()) {
                 model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
             }
+            info = model_manager_->get_model_info(model_key);
             return true;
         });
 }

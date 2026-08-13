@@ -1234,6 +1234,41 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] `effective` replays verbatim as a /v1/load command")
 
+    def test_012u_options_report_args_and_dry_run(self):
+        """The response renders CLI args, and dry_run resolves without saving."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+
+        preview = requests.post(
+            self._options_url(),
+            json={"ctx_size": 4096, "dry_run": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(preview.status_code, 200, preview.text)
+        data = preview.json()
+        self.assertEqual(data["effective"]["ctx_size"], 4096)
+        self.assertEqual(data["resolved_ctx_size"], 4096)
+        self.assertIn("--ctx-size", data["args"])
+        self.assertIn("4096", data["args"])
+        self.assertEqual(data["saved"], {}, "dry_run must not persist anything")
+
+        after = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertEqual(after["saved"], {}, "dry_run must not persist anything")
+        self.assertGreater(
+            after["resolved_ctx_size"],
+            0,
+            "An automatic ctx_size resolves to a concrete positive size",
+        )
+
+        rejected = requests.post(
+            self._options_url(),
+            json={"ctx_size": 0, "dry_run": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(rejected.status_code, 400, "dry_run still validates")
+
+        print("[OK] Options response renders args and dry_run persists nothing")
+
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
         into recipe_options on auto-load.

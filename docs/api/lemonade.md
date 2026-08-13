@@ -238,7 +238,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 
 ### Response format
 
-`effective` is the model's current load command: the exact body [`POST /v1/load`](#post-v1load) uses for it right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is the load command a reset model would get. For `llamacpp`:
+`effective` is the exact request body a [`POST /v1/load`](#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain; `args` renders the same options as the CLI load command. `defaults` is what a reset model would get. For `llamacpp`:
 
 ```json
 {
@@ -270,12 +270,12 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "llamacpp_device": "",
     "merge_args": true,
     "model_name": "Qwen3-0.6B-GGUF"
-  }
+  },
+  "args": ["--ctx-size", "8192"],
+  "resolved_ctx_size": 8192
 }
 ```
 
-| Field | Description |
-|-------|-------------|
 To reproduce the load exactly, replay `effective` unchanged:
 
 ```bash
@@ -285,11 +285,13 @@ curl -s http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options | jq .effective
 
 | Field | Description |
 |-------|-------------|
-| `model_name` | The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete load command. |
+| `model_name` | The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body. |
 | `recipe` | The recipe the option names belong to. |
 | `saved` | The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`. |
-| `effective` | The load command shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. |
+| `effective` | The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. |
 | `defaults` | What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically. |
+| `args` | The effective options rendered as CLI flags: `lemonade load <model_name> <args...>` is the equivalent CLI load. An automatic `ctx_size` appears here as the concrete size a load right now would pick. |
+| `resolved_ctx_size` | The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. |
 
 > Note: per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
 
@@ -299,6 +301,8 @@ curl -s http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options | jq .effective
 Save recipe options for a model without loading it. The request body is a flat object of the same recipe options [`/v1/load`](#post-v1load) accepts. The URL identifies the model; a `model_name` in the body is ignored.
 
 The request merges into the model's saved entry, so keys you don't mention are left alone. `null` removes an option, and the model falls back to the next layer of the [priority chain](#post-v1load). [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
+
+`dry_run: true` validates and resolves the request identically but persists nothing: `effective`, `args`, and `resolved_ctx_size` describe the state the save would produce, while `saved` keeps reporting the entry on disk. Use it to preview a change before committing it.
 
 `ctx_size` takes a positive whole number, or `-1` to pin the model to automatic sizing even when the server-wide `ctx_size` is a specific number.
 

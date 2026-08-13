@@ -1613,6 +1613,23 @@ RecipeOptions ModelManager::get_model_default_options(const ModelInfo& info) {
                                 "", json::object());
 }
 
+RecipeOptions ModelManager::preview_saved_model_options(const ModelInfo& info, const json& changes) {
+    const std::string cache_key = resolve_model_name(info.model_name);
+    const std::string id = cache_key_to_canonical_id(cache_key);
+
+    json saved = get_saved_model_options(cache_key);
+    for (const auto& [key, value] : changes.items()) {
+        if (value.is_null()) {
+            saved.erase(key);
+        } else {
+            saved[key] = value;
+        }
+    }
+    // Same layering as write_saved_model_options, so a preview cannot differ
+    // from the state the real write would produce.
+    return build_recipe_options(info, registry_recipe_options(cache_key), id, json{{id, saved}});
+}
+
 // The model's own `recipe_options` block from user_models.json/server_models.json,
 // i.e. the layer between image_defaults and what the user saved.
 json ModelManager::registry_recipe_options(const std::string& cache_key) {
