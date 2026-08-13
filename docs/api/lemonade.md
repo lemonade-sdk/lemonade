@@ -238,22 +238,22 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 
 ### Response format
 
-`effective` is the exact request body a [`POST /v1/load`](#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get. For `llamacpp`:
+`effective` is the exact request body a [`POST /v1/load`](#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get. For `llamacpp`, with `--no-mmap` saved and the context size left automatic:
 
 ```json
 {
   "model_name": "Qwen3-0.6B-GGUF",
   "recipe": "llamacpp",
   "saved": {
-    "ctx_size": 8192
+    "llamacpp_args": "--no-mmap"
   },
   "effective": {
     "auto_evict": null,
-    "ctx_size": 8192,
+    "ctx_size": -1,
     "downsize_idle_timeout": 60,
     "evict_idle_timeout": 300,
     "evict_weight_factor": 1.0,
-    "llamacpp_args": "",
+    "llamacpp_args": "--no-mmap",
     "llamacpp_backend": "vulkan",
     "llamacpp_device": "",
     "merge_args": true,
@@ -271,8 +271,8 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "merge_args": true,
     "model_name": "Qwen3-0.6B-GGUF"
   },
-  "resolved_ctx_size": 8192,
-  "load_command": "curl -X POST http://localhost:13305/v1/load -H \"Content-Type: application/json\" -d '{\"ctx_size\":8192, ...}'"
+  "resolved_ctx_size": 32768,
+  "load_command": "curl -X POST http://localhost:13305/v1/load -H \"Content-Type: application/json\" -d '{\"ctx_size\":-1, ...}'"
 }
 ```
 
