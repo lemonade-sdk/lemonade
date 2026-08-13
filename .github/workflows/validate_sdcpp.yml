@@ -231,19 +231,29 @@ jobs:
             --release "${{ needs.discover-release.outputs.cuda_release }}" `
             --backends "${{ needs.discover-release.outputs.cuda_update_backends }}"
 
-      - name: Cache FetchContent dependencies
-        uses: actions/cache@v5
+      - name: Restore FetchContent dependencies
+        # Restore-only, sharing validate_llamacpp's namespace: that job
+        # configures the same preset with the same options, so its _deps are
+        # interchangeable with this job's, and its weekly run lands first.
+        # Cache keys are immutable, so saving from here too would only lose the
+        # race and log a reservation failure.
+        uses: actions/cache/restore@v5
         with:
           path: build/_deps
-          key: fetchcontent-validate-sdcpp-vs2026-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-validate-sdcpp-vs2026-
+          key: fetchcontent-validate-vs2026-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake') }}
+          restore-keys: fetchcontent-validate-vs2026-
 
       - name: Build lemond and the CLI
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
+          # BUILD_WEB_APP=OFF skips the configure-time CONFIGURE_DEPENDS glob
+          # over src/app; the web-app target is not in this build graph anyway.
           cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # /m:2 goes straight to MSBuild rather than through --parallel, which
+          # makes CMake set CL_MPCount=1 and cancel the /MP in CMakeLists.txt.
+          # Capped at 2 because /MP already spawns one cl.exe per core.
           cmake --build build --config Release --target lemond lemonade -- /m:2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path "build\Release\lemond.exe")) {

@@ -889,7 +889,7 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
@@ -927,7 +927,7 @@ jobs:
           Get-ChildItem $archive
 
       - name: Upload embeddable archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lemonade-embeddable-windows
           path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip

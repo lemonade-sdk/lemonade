@@ -377,11 +377,18 @@ jobs:
           $script | python -
 
       - name: Cache FetchContent dependencies
+        # Shared with validate_sdcpp, which restores this key read-only: both
+        # configure the same preset with the same options, so their _deps are
+        # interchangeable and one entry serves both instead of two.
+        # vs2026 marker: VS 2022-built _deps are generator-incompatible with the
+        # VS 2026 configure. Bump it to abandon an entry CMake accepts but
+        # cannot build from — cache keys are immutable, so this is the only
+        # in-repo way to invalidate one.
         uses: actions/cache@v5
         with:
           path: build/_deps
-          key: fetchcontent-validate-llamacpp-vs2026-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-validate-llamacpp-vs2026-
+          key: fetchcontent-validate-vs2026-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake') }}
+          restore-keys: fetchcontent-validate-vs2026-
 
       - name: Build lemond
         shell: PowerShell
@@ -391,6 +398,9 @@ jobs:
           # so lemond is the only target it needs.
           cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # /m:2 goes straight to MSBuild rather than through --parallel, which
+          # makes CMake set CL_MPCount=1 and cancel the /MP in CMakeLists.txt.
+          # Capped at 2 because /MP already spawns one cl.exe per core.
           cmake --build build --config Release --target lemond -- /m:2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path "build\Release\lemond.exe")) {

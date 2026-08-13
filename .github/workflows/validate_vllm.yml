@@ -86,21 +86,49 @@ jobs:
           print(f"vllm.rocm: {old} -> {release}")
           PY
 
+      - name: Install build dependencies
+        # Installed directly rather than via setup.sh, whose "Preparing build
+        # directory" step runs `rm -rf build` and would delete the cache
+        # restored below. libdrm is required (lemonade-server-core links
+        # drm_amdgpu unconditionally on Linux); libsystemd and libcap are
+        # optional but gate HAVE_SYSTEMD / HAVE_LIBCAP, so they stay in to keep
+        # the binary's feature set identical to a setup.sh build. cmake is
+        # deliberately absent: 22.04 ships 3.22, too old for CMakePresets v5,
+        # and the runner image already provides a current one.
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ninja-build \
+            pkg-config \
+            libssl-dev \
+            libcurl4-openssl-dev \
+            libdrm-dev \
+            libsystemd-dev \
+            libcap-dev
+
       - name: Cache FetchContent dependencies
+        # ubuntu2204 marker: these _deps are compiled against the runner image's
+        # glibc/libstdc++, and which dependencies get fetched at all depends on
+        # the image's library versions, so they must not be restored onto a
+        # different image. Bump it to abandon an entry CMake accepts but cannot
+        # build from — cache keys are immutable, so this is the only in-repo way
+        # to invalidate one.
         uses: actions/cache@v5
         with:
           path: build/_deps
-          key: fetchcontent-validate-vllm-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-validate-vllm-
+          key: fetchcontent-validate-vllm-ubuntu2204-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake') }}
+          restore-keys: fetchcontent-validate-vllm-ubuntu2204-
 
       - name: Build lemond and the CLI
         run: |
           set -e
-          ./setup.sh
           # Skip the web app; CI only exercises the backend.
           cmake --preset default -DBUILD_WEB_APP=OFF
           cmake --build --preset default --target lemond lemonade
           test -f build/lemond || { echo "lemond not found!"; exit 1; }
+          test -f build/lemonade || { echo "lemonade not found!"; exit 1; }
           echo "Build successful!"
 
       - name: Upload build artifacts
