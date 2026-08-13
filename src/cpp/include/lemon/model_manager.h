@@ -305,6 +305,18 @@ public:
 
     void save_model_options(const ModelInfo& info);
 
+    // The model's own entry in recipe_options.json, i.e. only what the user
+    // explicitly saved. Empty object when the model has no entry.
+    json get_saved_model_options(const std::string& model_name);
+
+    // What the model would resolve to with its recipe_options.json entry
+    // removed: image_defaults plus the registry JSON's own recipe_options.
+    RecipeOptions get_model_default_options(const std::string& model_name);
+
+    // Replace the model's recipe_options.json entry. An empty object erases the
+    // entry rather than persisting `{}`.
+    void set_saved_model_options(const std::string& model_name, const json& saved);
+
     void start_directory_watcher();
 
 private:

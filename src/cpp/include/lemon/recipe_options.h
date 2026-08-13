@@ -27,6 +27,14 @@ public:
 #endif
     static std::vector<std::string> to_cli_options(const json& raw_options);
     static std::vector<std::string> known_keys();
+
+    /// Option names this recipe accepts, in declaration order.
+    static std::vector<std::string> keys_for_recipe(const std::string& recipe);
+
+    /// True for values the constructor drops as "not set". Generally null, -1,
+    /// "" and "auto"; for ctx_size only null and "", since -1 is the storable
+    /// value that means "size the context automatically".
+    static bool is_default_sentinel(const std::string& key, const json& value);
 private:
     json options_ = json::object();
     std::string recipe_ = "";

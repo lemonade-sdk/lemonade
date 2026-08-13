@@ -151,6 +151,13 @@ public:
         LoadPurpose load_purpose = LoadPurpose::UserInference,
         std::atomic<bool>* cancel_flag = nullptr);
 
+    // Collapse the option precedence chain — request > model > per-architecture
+    // > global config > built-in defaults — into the set a load would use.
+    // ctx_size may still be the -1 auto sentinel; the concrete value is only
+    // resolved inside load_model, once eviction has freed memory.
+    RecipeOptions resolve_effective_options(const ModelInfo& model_info,
+                                            const RecipeOptions& request_options) const;
+
     // Apply request intent to an already-live process without reloading it.
     // Returns false when the requested model is not currently live.
     bool ensure_loaded_model_residency(

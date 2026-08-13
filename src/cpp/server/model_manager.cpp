@@ -1590,6 +1590,61 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     save_user_json(get_recipe_options_file(), recipe_options_);
 }
 
+json ModelManager::get_saved_model_options(const std::string& model_name) {
+    const std::string id = cache_key_to_canonical_id(resolve_model_name(model_name));
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    if (recipe_options_.contains(id) && recipe_options_[id].is_object()) {
+        return recipe_options_[id];
+    }
+    return json::object();
+}
+
+RecipeOptions ModelManager::get_model_default_options(const std::string& model_name) {
+    const std::string cache_key = resolve_model_name(model_name);
+    ModelInfo info = get_model_info(cache_key);
+
+    json json_recipe_options = json(nullptr);
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        const bool is_user_model = is_user_model_name(cache_key);
+        const std::string json_key = strip_user_model_prefix(cache_key);
+        const json* model_json = nullptr;
+        if (is_user_model && user_models_.contains(json_key)) {
+            model_json = &user_models_[json_key];
+        } else if (!is_user_model && server_models_.contains(json_key)) {
+            model_json = &server_models_[json_key];
+        }
+        if (model_json && model_json->contains("recipe_options") &&
+            (*model_json)["recipe_options"].is_object()) {
+            json_recipe_options = (*model_json)["recipe_options"];
+        }
+    }
+
+    return build_recipe_options(info, json_recipe_options, "", json::object());
+}
+
+void ModelManager::set_saved_model_options(const std::string& model_name, const json& saved) {
+    const std::string id = cache_key_to_canonical_id(resolve_model_name(model_name));
+    LOG(INFO, "ModelManager") << "Saving options for model: " << model_name << std::endl;
+
+    json snapshot;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        if (saved.is_object() && !saved.empty()) {
+            recipe_options_[id] = saved;
+        } else {
+            recipe_options_.erase(id);
+        }
+        snapshot = recipe_options_;
+    }
+    save_user_json(get_recipe_options_file(), snapshot);
+
+    // The cached ModelInfo carries the merged image_defaults/registry/saved
+    // stack, which cannot be recomputed from the saved layer alone.
+    invalidate_models_cache();
+}
+
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     // Build cache if needed (lazy initialization)
     build_cache();

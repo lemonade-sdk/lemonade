@@ -985,6 +985,220 @@ class EndpointTests(ServerTestBase):
             f"{loaded_after['pid']}"
         )
 
+    def _options_url(self, model=ENDPOINT_TEST_MODEL, prefix=None):
+        base = prefix or self.base_url
+        return f"{base}/models/{model}/options"
+
+    def _reset_options(self, model=ENDPOINT_TEST_MODEL):
+        """Erase the model's recipe_options.json entry and return the response."""
+        return requests.delete(self._options_url(model), timeout=TIMEOUT_DEFAULT)
+
+    def _set_global_ctx_size(self, ctx_size):
+        """Set the server-wide default context size."""
+        response = requests.post(
+            f"{self.internal_url}/set",
+            json={"ctx_size": ctx_size},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def test_012m_model_options_save_without_loading(self):
+        """POST /models/{id}/options persists options without loading the model."""
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(self._reset_options().status_code, 200)
+
+        before = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(before.status_code, 200)
+        self.assertEqual(before.json()["saved"], {})
+
+        response = requests.post(
+            self._options_url(),
+            json={"ctx_size": 8192},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["saved"], {"ctx_size": 8192})
+        self.assertEqual(data["effective"]["ctx_size"], 8192)
+        self.assertFalse(data["reload_required"])
+
+        # The save must be visible to /models/{id} without a load having happened
+        model_info = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}", timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(model_info["recipe_options"].get("ctx_size"), 8192)
+
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        loaded = [m["model_name"] for m in health.get("all_models_loaded", [])]
+        self.assertNotIn(
+            ENDPOINT_TEST_MODEL,
+            loaded,
+            "Saving options must not load the model",
+        )
+
+        self._reset_options()
+        print("[OK] Saved recipe options without loading the model")
+
+    def test_012n_model_options_reset_to_default(self):
+        """null clears an option so it falls back through the priority chain."""
+        self._reset_options()
+        defaults = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "defaults"
+        ]
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
+        )
+        response = requests.post(
+            self._options_url(), json={"ctx_size": None}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertNotIn("ctx_size", data["saved"], "null should clear the saved value")
+        self.assertEqual(
+            data["effective"]["ctx_size"],
+            defaults["ctx_size"],
+            "Clearing an option should fall back to the default chain",
+        )
+
+        print("[OK] null resets ctx_size to automatic selection")
+
+    def test_012r_model_options_explicit_auto_beats_global(self):
+        """ctx_size=-1 is saved as automatic and overrides a global ctx_size.
+
+        Clearing the option is not enough on its own: the model then inherits
+        whatever the server-wide ctx_size is. Saving -1 is what says "size this
+        one model from available memory regardless".
+        """
+        original_ctx_size = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()["ctx_size"]
+        self.addCleanup(self._reset_options)
+        self.addCleanup(self._set_global_ctx_size, original_ctx_size)
+        self._reset_options()
+
+        self._set_global_ctx_size(8192)
+
+        inherited = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertEqual(
+            inherited["effective"]["ctx_size"],
+            8192,
+            "With nothing saved, the model should inherit the global ctx_size",
+        )
+
+        data = requests.post(
+            self._options_url(), json={"ctx_size": -1}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(
+            data["saved"].get("ctx_size"),
+            -1,
+            "ctx_size=-1 should persist the auto sentinel",
+        )
+        self.assertEqual(
+            data["effective"]["ctx_size"],
+            -1,
+            "ctx_size=-1 should override the global ctx_size",
+        )
+        self.assertEqual(
+            data["defaults"]["ctx_size"],
+            8192,
+            "Defaults should still show what clearing the option gives",
+        )
+
+        cleared = requests.post(
+            self._options_url(), json={"ctx_size": None}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(cleared["saved"], {})
+        self.assertEqual(
+            cleared["effective"]["ctx_size"],
+            8192,
+            "Clearing the option should fall back to the global ctx_size",
+        )
+
+        print("[OK] Saved ctx_size=-1 overrides an explicit global ctx_size")
+
+    def test_012o_model_options_merge_and_delete(self):
+        """POST merges into the saved entry; DELETE erases the whole entry."""
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
+        )
+        merged = requests.post(
+            self._options_url(),
+            json={"llamacpp_args": "--no-mmap"},
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        self.assertEqual(merged["saved"].get("ctx_size"), 4096)
+        self.assertEqual(merged["saved"].get("llamacpp_args"), "--no-mmap")
+
+        # Clearing one key leaves the other alone
+        partial = requests.post(
+            self._options_url(), json={"llamacpp_args": ""}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(partial["saved"], {"ctx_size": 4096})
+
+        cleared = self._reset_options()
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(cleared.json()["saved"], {})
+        self.assertEqual(cleared.json()["effective"], cleared.json()["defaults"])
+
+        print("[OK] Options merge on POST and are erased by DELETE")
+
+    def test_012p_model_options_rejects_invalid_input(self):
+        """Unknown, wrong-recipe, and wrong-typed options are refused."""
+        self._reset_options()
+
+        for body in (
+            {"nonsense": 1},  # not an option at all
+            {"steps": 30},  # sd-cpp option on an llamacpp model
+            {"ctx_size": "big"},  # wrong type
+        ):
+            response = requests.post(
+                self._options_url(), json=body, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(response.status_code, 400, f"Expected 400 for body {body}")
+            self.assertIn("error", response.json())
+
+        # Nothing was persisted by any of the rejected requests
+        self.assertEqual(
+            requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["saved"],
+            {},
+        )
+
+        not_found = requests.get(
+            self._options_url(model="ThisModelDoesNotExist"), timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(not_found.status_code, 404)
+
+        print("[OK] Model options endpoint rejects invalid input")
+
+    def test_012q_model_options_registered_on_all_prefixes(self):
+        """The options sub-resource honors the quad-prefix invariant."""
+        for prefix in ("/api/v0", "/api/v1", "/v0", "/v1"):
+            url = self._options_url(prefix=f"http://localhost:{PORT}{prefix}")
+            self.assertEqual(
+                requests.get(url, timeout=TIMEOUT_DEFAULT).status_code,
+                200,
+                f"GET not registered on {prefix}",
+            )
+            self.assertEqual(
+                requests.post(url, json={}, timeout=TIMEOUT_DEFAULT).status_code,
+                200,
+                f"POST not registered on {prefix}",
+            )
+            self.assertEqual(
+                requests.delete(url, timeout=TIMEOUT_DEFAULT).status_code,
+                200,
+                f"DELETE not registered on {prefix}",
+            )
+
+        print("[OK] Model options registered on all four path prefixes")
+
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
         into recipe_options on auto-load.

@@ -1077,6 +1077,21 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_model_files(req, res);
     });
 
+    // Per-model recipe options. Same ordering constraint as /files above: must
+    // precede the generic /models/(.+) route.
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        const std::string route = std::string(prefix) + R"(/models/(.+)/options)";
+        web_server.Get(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_get(req, res);
+        });
+        web_server.Post(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_post(req, res);
+        });
+        web_server.Delete(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_delete(req, res);
+        });
+    }
+
     // Model by ID (need to register for both versions with regex, with and without /api prefix)
     web_server.Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
@@ -2757,6 +2772,151 @@ void Server::handle_model_files(const httplib::Request& req, httplib::Response& 
         auto error_response = create_model_error(model_id, "Model not found");
         res.set_content(error_response.dump(), "application/json");
     }
+}
+
+// Fill in every option the recipe accepts, resolving unset keys through the
+// default chain, so a client can render a complete form from one response.
+static nlohmann::json resolve_all_recipe_options(const RecipeOptions& options) {
+    nlohmann::json resolved = nlohmann::json::object();
+    for (const auto& key : RecipeOptions::keys_for_recipe(options.get_recipe())) {
+        resolved[key] = options.get_option(key);
+    }
+    return resolved;
+}
+
+static bool option_type_matches(const nlohmann::json& expected, const nlohmann::json& value) {
+    if (expected.is_boolean()) return value.is_boolean();
+    if (expected.is_number()) return value.is_number();
+    if (expected.is_string()) return value.is_string();
+    return true;
+}
+
+void Server::respond_with_model_options(
+    const httplib::Request& req, httplib::Response& res,
+    const std::function<bool(const std::string&, const ModelInfo&, httplib::Response&)>& mutation) {
+    const std::string model_id = utils::normalize_model_name(req.matches[1]);
+    std::string model_key = model_id;
+
+    if (!model_manager_->model_exists(model_key)) {
+        std::optional<std::string> target;
+        if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+            target = alias_manager_->resolve_alias(model_id);
+        }
+        std::string canonical_target = target ? model_manager_->resolve_model_name(*target) : "";
+        if (target && model_manager_->model_exists(canonical_target)) {
+            model_key = canonical_target;
+        } else if (target && model_manager_->model_exists(*target)) {
+            model_key = *target;
+        } else {
+            res.status = 404;
+            res.set_content(create_model_error(model_id, "Model not found").dump(), "application/json");
+            return;
+        }
+    }
+
+    try {
+        ModelInfo info = model_manager_->get_model_info(model_key);
+        if (mutation) {
+            if (!mutation(model_key, info, res)) return;
+            // The write invalidated the model cache; re-read so the response
+            // reflects the merged stack rather than the pre-write one.
+            info = model_manager_->get_model_info(model_key);
+        }
+
+        const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
+        RecipeOptions effective = router_->resolve_effective_options(info, no_request_options);
+
+        ModelInfo without_saved = info;
+        without_saved.recipe_options = model_manager_->get_model_default_options(model_key);
+        RecipeOptions defaults = router_->resolve_effective_options(without_saved, no_request_options);
+
+        bool reload_required = false;
+        if (router_->is_model_loaded(model_key)) {
+            nlohmann::json live = router_->get_model_recipe_options(model_key).to_json();
+            nlohmann::json desired = effective.to_json();
+            live.erase("pinned");
+            desired.erase("pinned");
+            // A live process carries the concrete ctx_size auto-resolution picked
+            // at load time; an unset or auto ctx_size would be resolved the same
+            // way again, so that is not a difference.
+            const auto desired_ctx = desired.find("ctx_size");
+            if (desired_ctx == desired.end() || *desired_ctx == -1) {
+                live.erase("ctx_size");
+                desired.erase("ctx_size");
+            }
+            reload_required = live != desired;
+        }
+
+        nlohmann::json response = {
+            {"model_name", model_id},
+            {"recipe", info.recipe},
+            {"saved", model_manager_->get_saved_model_options(model_key)},
+            {"effective", resolve_all_recipe_options(effective)},
+            {"defaults", resolve_all_recipe_options(defaults)},
+            {"reload_required", reload_required}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Failed to handle options for '" << model_id
+                             << "': " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(create_model_error(model_id, e.what()).dump(), "application/json");
+    }
+}
+
+void Server::handle_model_options_get(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res, nullptr);
+}
+
+void Server::handle_model_options_post(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res,
+        [this, &req](const std::string& model_key, const ModelInfo& info, httplib::Response& r) {
+            nlohmann::json body;
+            if (!parse_required_json_body(req, r, body)) return false;
+            if (!body.is_object()) {
+                r.status = 400;
+                r.set_content(nlohmann::json{{"error", "Request body must be a JSON object of recipe options"}}
+                                  .dump(), "application/json");
+                return false;
+            }
+
+            const auto keys = RecipeOptions::keys_for_recipe(info.recipe);
+            const std::set<std::string> allowed(keys.begin(), keys.end());
+            const RecipeOptions unset(info.recipe, nlohmann::json::object());
+
+            nlohmann::json saved = model_manager_->get_saved_model_options(model_key);
+            for (const auto& [key, value] : body.items()) {
+                if (!allowed.count(key)) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "Unknown option '" + key +
+                                                           "' for recipe '" + info.recipe + "'"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                if (RecipeOptions::is_default_sentinel(key, value)) {
+                    saved.erase(key);
+                    continue;
+                }
+                if (!option_type_matches(unset.get_option(key), value)) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "Invalid type for option '" + key + "'"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                saved[key] = value;
+            }
+
+            model_manager_->set_saved_model_options(model_key, saved);
+            return true;
+        });
+}
+
+void Server::handle_model_options_delete(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res,
+        [this](const std::string& model_key, const ModelInfo&, httplib::Response&) {
+            model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
+            return true;
+        });
 }
 
 void Server::handle_collection_chat_completions(const nlohmann::json& request_json,
@@ -5501,10 +5661,12 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
-        // Persist request options to model info if requested
+        // Persist request options to model info if requested. Re-read so this
+        // load still sees the model's own registry-level options rather than
+        // just the request's.
         if (save_options) {
-            info.recipe_options = options;
-            model_manager_->save_model_options(info);
+            model_manager_->set_saved_model_options(model_name, options.to_json());
+            info = model_manager_->get_model_info(model_name);
         }
 
         // Download model if needed (first-time use or missing files). Collections have no

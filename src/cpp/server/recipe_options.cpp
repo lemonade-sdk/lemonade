@@ -93,6 +93,24 @@ static bool is_empty_option(json option) {
            (option.is_string() && (option == "" || option == "auto"));
 }
 
+// ctx_size is the one option whose "auto" state is itself a value: -1 means
+// "size the context from available memory". Storing it has to be possible so a
+// model can be pinned to auto even when a lower layer sets an explicit size.
+static bool is_empty_option(const std::string& key, const json& option) {
+    if (key == "ctx_size") {
+        return option.is_null() || (option.is_string() && option == "");
+    }
+    return is_empty_option(option);
+}
+
+std::vector<std::string> RecipeOptions::keys_for_recipe(const std::string& recipe) {
+    return get_keys_for_recipe(recipe);
+}
+
+bool RecipeOptions::is_default_sentinel(const std::string& key, const json& value) {
+    return is_empty_option(key, value);
+}
+
 
 #ifndef LEMONADE_CLI
 static bool try_get_backend_options(const std::string& opt_name, SystemInfo::SupportedBackendsResult& result) {
@@ -148,7 +166,7 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     std::vector<std::string> to_copy = get_keys_for_recipe(recipe_);
 
     for (auto key : to_copy) {
-        if (options.contains(key) && !is_empty_option(options[key])) {
+        if (options.contains(key) && !is_empty_option(key, options[key])) {
             options_[key] = options[key];
         }
     }
@@ -209,7 +227,7 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
                 auto merged_map = lemon::utils::merge_args_maps(target_map, incoming_map);
                 merged[it.key()] = lemon::utils::map_to_args_string(merged_map);
             }
-        } else if (!merged.contains(it.key()) && !is_empty_option(it.value())) {
+        } else if (!merged.contains(it.key()) && !is_empty_option(it.key(), it.value())) {
             merged[it.key()] = it.value();
         }
     }
