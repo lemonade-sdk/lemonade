@@ -158,15 +158,6 @@ public:
     RecipeOptions resolve_effective_options(const ModelInfo& model_info,
                                             const RecipeOptions& request_options) const;
 
-    // Whether a live process running `live` would have to be restarted to serve
-    // `desired`. The single source of truth for both the reload decision inside
-    // load_model and what callers are told about a model they have not loaded.
-    static bool options_require_reload(const RecipeOptions& live, const RecipeOptions& desired);
-
-    // options_require_reload against the live process for this model, or false
-    // when it is not loaded.
-    bool would_reload(const std::string& model_name, const RecipeOptions& desired) const;
-
     // Apply request intent to an already-live process without reloading it.
     // Returns false when the requested model is not currently live.
     bool ensure_loaded_model_residency(

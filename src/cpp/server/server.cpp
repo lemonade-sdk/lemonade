@@ -2774,9 +2774,10 @@ void Server::handle_model_files(const httplib::Request& req, httplib::Response& 
     }
 }
 
-// `pinned` is live-process state that a load takes from the running server
-// rather than from the saved options (see Router::load_model), so this endpoint
-// neither reports nor writes it. /v1/load and /internal/pin own it.
+// `pinned` is live-process state: Router::load_model keeps a running server's
+// own pin rather than the resolved one, so a value saved here would not reach a
+// model that is already up. /v1/load and /internal/pin own it, and this endpoint
+// neither reports it in effective/defaults nor accepts it.
 static bool is_live_process_option(const std::string& key) {
     return key == "pinned";
 }
@@ -2914,8 +2915,7 @@ void Server::respond_with_model_options(
             {"recipe", info.recipe},
             {"saved", model_manager_->get_saved_model_options(model_key)},
             {"effective", resolve_all_recipe_options(effective)},
-            {"defaults", resolve_all_recipe_options(defaults)},
-            {"reload_required", router_->would_reload(model_key, effective)}
+            {"defaults", resolve_all_recipe_options(defaults)}
         };
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {

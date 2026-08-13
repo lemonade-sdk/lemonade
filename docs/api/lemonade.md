@@ -275,17 +275,15 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "llamacpp_backend": "vulkan",
     "llamacpp_device": "",
     "merge_args": true
-  },
-  "reload_required": false
+  }
 }
 ```
 
 | Field | Description |
 |-------|-------------|
-| `saved` | The model's own entry in `recipe_options.json`, containing only what was explicitly saved. `{}` when nothing is saved. |
+| `saved` | The model's own entry in `recipe_options.json`, containing only what was explicitly saved. `{}` when nothing is saved. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so post `effective` back rather than `saved`. |
 | `effective` | Every option the recipe accepts, resolved through the full priority chain. This is what a load right now would use. Its keys are the names `POST` accepts, but posting it back whole saves every resolved value as an override — send only the options the user changed. |
 | `defaults` | What `effective` would become if `saved` were erased. A `ctx_size` of `-1` here means the server picks the context size automatically. |
-| `reload_required` | `true` when the model is loaded and a `/v1/load` would restart its backend to apply the saved options. Always `false` when the model is not loaded. |
 
 > Note: per-architecture defaults are read from the model's GGUF metadata. Every key is still present for a model that has not been downloaded yet, but carries the value it would have before those defaults are applied.
 
@@ -300,7 +298,7 @@ Options are merged into whatever is already saved, so keys you don't mention are
 
 Options are validated against the model's recipe, and nothing is saved unless every option in the request passes. A `400` reports an unrecognized option name, an option belonging to a different recipe, a value of the wrong type, a negative or fractional value where a whole number is expected, or a backend this host doesn't support.
 
-Saving never loads or reloads the model. The `reload_required` field reports whether a running model needs a reload to pick the change up.
+Saving never loads or reloads the model, so a model that is already running keeps its current options until it is next loaded.
 
 > Note: `pinned` is not settable here. A load takes it from the running process rather than from saved options, so it belongs to [`/v1/load`](#post-v1load) and `/internal/pin`. It is omitted from `effective` and `defaults`, and a `POST` that includes it returns `400`.
 

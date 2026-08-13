@@ -1025,7 +1025,6 @@ class EndpointTests(ServerTestBase):
         data = response.json()
         self.assertEqual(data["saved"], {"ctx_size": 8192})
         self.assertEqual(data["effective"]["ctx_size"], 8192)
-        self.assertFalse(data["reload_required"])
 
         # The save must be visible to /models/{id} without a load having happened
         model_info = requests.get(
@@ -1150,6 +1149,7 @@ class EndpointTests(ServerTestBase):
 
     def test_012q_model_options_registered_on_all_prefixes(self):
         """The options sub-resource honors the quad-prefix invariant."""
+        self.addCleanup(self._reset_options)
         for prefix in ("/api/v0", "/api/v1", "/v0", "/v1"):
             url = self._options_url(prefix=f"http://localhost:{PORT}{prefix}")
             self.assertEqual(
@@ -1267,143 +1267,6 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] A non-numeric ctx_size is not persisted by /load")
 
-    def test_012t_reload_required_matches_load_behavior(self):
-        """reload_required agrees with whether /load actually restarts the backend."""
-        self.addCleanup(self._reset_options)
-        self._reset_options()
-        requests.post(
-            self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
-        )
-
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
-        self._assert_loaded_model_pid(loaded)
-
-        options = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
-        self.assertFalse(
-            options["reload_required"],
-            "Saved options match the live process, so no reload is needed",
-        )
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(
-            self._get_loaded_model_info(ENDPOINT_TEST_MODEL)["pid"],
-            loaded["pid"],
-            "reload_required was false, so /load must not have restarted the backend",
-        )
-
-        changed = requests.post(
-            self._options_url(), json={"ctx_size": 2048}, timeout=TIMEOUT_DEFAULT
-        ).json()
-        self.assertTrue(
-            changed["reload_required"],
-            "Saving a different ctx_size leaves the live process stale",
-        )
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertNotEqual(
-            self._get_loaded_model_info(ENDPOINT_TEST_MODEL)["pid"],
-            loaded["pid"],
-            "reload_required was true, so /load must have restarted the backend",
-        )
-
-        print("[OK] reload_required agrees with what /load does")
-
-    def test_012x_every_effective_option_can_be_saved_back(self):
-        """Posting the reported `effective` object back whole is accepted.
-
-        The response advertises `effective` as the set of names POST accepts, so
-        any key the endpoint reports but refuses is a contradiction. This caught
-        `merge_args`, whose name collides with the global config's `*_args` rule.
-        """
-        self.addCleanup(self._reset_options)
-        self._reset_options()
-
-        # Both recipes, so the round trip covers options with a global-config
-        # counterpart (steps, cfg_scale) and options without one (flow_shift,
-        # sampling_method, merge_args, the eviction settings).
-        models = [ENDPOINT_TEST_MODEL]
-        if requests.get(f"{self.base_url}/models/SD-Turbo", timeout=TIMEOUT_DEFAULT).ok:
-            models.append("SD-Turbo")
-            self.addCleanup(self._reset_options, "SD-Turbo")
-
-        for model in models:
-            effective = requests.get(
-                self._options_url(model=model), timeout=TIMEOUT_DEFAULT
-            ).json()["effective"]
-            response = requests.post(
-                self._options_url(model=model), json=effective, timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(
-                response.status_code,
-                200,
-                f"Every option reported for {model} must be settable, got {response.text}",
-            )
-
-        # merge_args specifically: a boolean, and both values have to round-trip.
-        for value in (True, False):
-            saved = requests.post(
-                self._options_url(), json={"merge_args": value}, timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(saved.status_code, 200, saved.text)
-            self.assertEqual(saved.json()["saved"]["merge_args"], value)
-
-        print("[OK] Every option reported in `effective` can be saved back")
-
-    def test_012w_options_reject_values_the_global_config_rejects(self):
-        """Per-model options are held to the same value rules as global config.
-
-        Otherwise a value refused by POST /params is accepted here and then
-        silently dropped by the backend that reads it.
-        """
-        image_model = "SD-Turbo"
-        if not requests.get(
-            f"{self.base_url}/models/{image_model}", timeout=TIMEOUT_DEFAULT
-        ).ok:
-            self.skipTest(f"{image_model} is not in the registry")
-
-        self.addCleanup(self._reset_options, image_model)
-
-        for body in ({"steps": 0}, {"cfg_scale": -3}, {"width": 0}):
-            key = next(iter(body))
-            config = requests.post(
-                f"{self.base_url}/params",
-                json={"sdcpp": body},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            options = requests.post(
-                self._options_url(model=image_model), json=body, timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(
-                config.status_code,
-                400,
-                f"Precondition: /params should reject {key}={body[key]}",
-            )
-            self.assertEqual(
-                options.status_code,
-                400,
-                f"/options must reject {key}={body[key]} too, got {options.text}",
-            )
-
-        accepted = requests.post(
-            self._options_url(model=image_model),
-            json={"steps": 20},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(accepted.status_code, 200, accepted.text)
-
-        print("[OK] Option values are validated like the global config")
-
     def test_012v_options_accept_a_user_model_public_name(self):
         """A user model addressed by its bare public name is handled correctly.
 
@@ -1421,11 +1284,9 @@ class EndpointTests(ServerTestBase):
             # Options first: deleting the model leaves its recipe_options.json
             # entry behind otherwise.
             self._reset_options(model_name)
-            requests.post(
-                f"{self.base_url}/unload",
-                json={"model_name": model_name},
-                timeout=TIMEOUT_DEFAULT,
-            )
+            # Unload both: the delete below removes a checkpoint file shared with
+            # ENDPOINT_TEST_MODEL, and Windows refuses to unlink an open file.
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
             requests.post(
                 f"{self.base_url}/delete",
                 json={"model_name": model_name},
@@ -1471,6 +1332,91 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(cleared.json()["saved"], {})
 
         print("[OK] Options endpoint resolves user-model public names")
+
+    def test_012w_options_reject_values_the_global_config_rejects(self):
+        """Per-model options are held to the same value rules as global config.
+
+        Otherwise a value refused by POST /params is accepted here and then
+        silently dropped by the backend that reads it.
+        """
+        image_model = "SD-Turbo"
+        if not requests.get(
+            f"{self.base_url}/models/{image_model}", timeout=TIMEOUT_DEFAULT
+        ).ok:
+            self.skipTest(f"{image_model} is not in the registry")
+
+        self.addCleanup(self._reset_options, image_model)
+
+        for body in ({"steps": 0}, {"cfg_scale": -3}, {"width": 0}):
+            key = next(iter(body))
+            config = requests.post(
+                f"{self.base_url}/params",
+                json={"sdcpp": body},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            options = requests.post(
+                self._options_url(model=image_model), json=body, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                config.status_code,
+                400,
+                f"Precondition: /params should reject {key}={body[key]}",
+            )
+            self.assertEqual(
+                options.status_code,
+                400,
+                f"/options must reject {key}={body[key]} too, got {options.text}",
+            )
+
+        accepted = requests.post(
+            self._options_url(model=image_model),
+            json={"steps": 20},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+
+        print("[OK] Option values are validated like the global config")
+
+    def test_012x_every_effective_option_can_be_saved_back(self):
+        """Posting the reported `effective` object back whole is accepted.
+
+        The response advertises `effective` as the set of names POST accepts, so
+        any key the endpoint reports but refuses is a contradiction. This caught
+        `merge_args`, whose name collides with the global config's `*_args` rule.
+        """
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+
+        # Both recipes, so the round trip covers options with a global-config
+        # counterpart (steps, cfg_scale) and options without one (flow_shift,
+        # sampling_method, merge_args, the eviction settings).
+        models = [ENDPOINT_TEST_MODEL]
+        if requests.get(f"{self.base_url}/models/SD-Turbo", timeout=TIMEOUT_DEFAULT).ok:
+            models.append("SD-Turbo")
+            self.addCleanup(self._reset_options, "SD-Turbo")
+
+        for model in models:
+            effective = requests.get(
+                self._options_url(model=model), timeout=TIMEOUT_DEFAULT
+            ).json()["effective"]
+            response = requests.post(
+                self._options_url(model=model), json=effective, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Every option reported for {model} must be settable, got {response.text}",
+            )
+
+        # merge_args specifically: a boolean, and both values have to round-trip.
+        for value in (True, False):
+            saved = requests.post(
+                self._options_url(), json={"merge_args": value}, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(saved.status_code, 200, saved.text)
+            self.assertEqual(saved.json()["saved"]["merge_args"], value)
+
+        print("[OK] Every option reported in `effective` can be saved back")
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
