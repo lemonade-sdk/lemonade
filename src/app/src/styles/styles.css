@@ -1290,6 +1290,12 @@ input[type="checkbox"]:disabled {
   animation: blink-cursor 0.8s infinite;
 }
 
+.streaming-cursor--leading {
+  height: 1em;
+  margin-left: 0;
+  margin-right: var(--space-1);
+}
+
 /* ---------- Composer ---------- */
 .composer {
   grid-area: composer;

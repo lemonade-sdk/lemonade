@@ -3297,7 +3297,7 @@ ${finalText}`
                       <div className="message__author">Lemonade</div>
                     </div>
                     <div className="message__content message__content--pending">
-                      <span className="streaming-cursor" aria-hidden="true" />
+                      <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
                       {modelPreparation.phase === 'loading'
                         ? `Loading ${modelPreparation.modelName} for chat…`
                         : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`}
@@ -3314,7 +3314,7 @@ ${finalText}`
                       <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
                     </div>
                     <div className="message__content message__content--pending">
-                      <span className="streaming-cursor" aria-hidden="true" />
+                      <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
                       Working in {capabilityLabel(currentCapability)} mode…
                     </div>
                   </div>
