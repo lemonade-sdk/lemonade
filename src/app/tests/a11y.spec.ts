@@ -2974,7 +2974,7 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
 // Add menu, tools entry, and Logs toggle must remain accessible. Range: A185–A187.
 
 test.describe('Chat toolbar accessibility', () => {
-  async function goToChatWithLoadedModel(page: Page): Promise<void> {
+  async function goToChatWithLoadedModel(page: Page, inputModalities: string[] = []): Promise<void> {
     await page.route('**/api/v1/health**', async route =>
       route.fulfill({
         contentType: 'application/json',
@@ -2993,6 +2993,7 @@ test.describe('Chat toolbar accessibility', () => {
               last_use: Date.now(),
               labels: ['llm'],
               capabilities: ['chat'],
+              input_modalities: inputModalities,
             },
           ],
         }),
@@ -3003,7 +3004,14 @@ test.describe('Chat toolbar accessibility', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B-Instruct', name: 'Llama-3.1-8B-Instruct', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+            {
+              id: 'Llama-3.1-8B-Instruct',
+              name: 'Llama-3.1-8B-Instruct',
+              labels: ['llm'],
+              recipe: 'llamacpp',
+              downloaded: true,
+              input_modalities: inputModalities,
+            },
           ],
         }),
       }),
@@ -3058,6 +3066,18 @@ test.describe('Chat toolbar accessibility', () => {
     await expect(menu).toBeVisible();
     await expect(toolsEntry).toBeVisible();
     await expect(toolsEntry).toBeFocused();
+  });
+
+  test('A187a — Add files describes the attachment types supported by the selected model', async ({ page }) => {
+    await goToChatWithLoadedModel(page, ['text', 'image', 'audio']);
+    await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
+
+    const addFilesEntry = page.getByRole('menu', { name: 'Add to chat' })
+      .locator('.composer__add-row')
+      .filter({ hasText: 'Add files' });
+    await expect(addFilesEntry.locator('strong')).toHaveText('Add files');
+    await expect(addFilesEntry.locator('small')).toHaveText('Images and audio files');
+    await expect(addFilesEntry).not.toContainText(/Upload images|Add photos & files/i);
   });
 
   test('A187b — external MCP remains selectable inside the unified tools flow', async ({ page }) => {

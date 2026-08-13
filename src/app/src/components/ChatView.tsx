@@ -3873,7 +3873,7 @@ ${finalText}`
               aria-haspopup={mcpPickerOpen ? 'dialog' : 'menu'}
               aria-expanded={addMenuOpen}
             >
-              <Icon name="plus" size={18} />
+              <Icon name="plus" size={20} />
             </button>
             {addMenuOpen && !mcpPickerOpen && (
               <div className="composer__add-menu" role="menu" aria-label="Add to chat">
@@ -3889,17 +3889,17 @@ ${finalText}`
                 >
                   <span className="composer__add-icon"><Icon name="paperclip" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Add photos & files</strong>
+                    <strong>Add files</strong>
                     <small>{isOpenMossCloneMode
-                      ? 'Upload a WAV voice sample'
+                      ? 'WAV audio file'
                       : currentCapability === 'model3d'
-                        ? 'Upload a reference image'
+                        ? 'PNG, JPEG, BMP, or GIF image'
                         : acceptsImageAttachments && acceptsAudioAttachments
-                          ? 'Upload images or audio'
+                          ? 'Images and audio files'
                           : acceptsImageAttachments
-                            ? 'Upload images'
+                            ? 'Images'
                             : acceptsAudioAttachments
-                              ? 'Upload audio'
+                              ? 'Audio files'
                               : 'Not available for this model'}</small>
                   </span>
                 </button>
