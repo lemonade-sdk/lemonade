@@ -2872,6 +2872,15 @@ if(BUILD_TESTING AND EXISTS "${_HF_VARIANTS_TEST_SRC}")
     add_cpp_ci_test(HfVariantsTest CI ON COMMAND test_hf_variants)
 endif()
 
+# Auxiliary checkpoint resolution must ignore snapshots that still carry the
+# downloader's live manifest, just like the GGUF resolver does.
+set(_BACKEND_OPS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_ops.cpp")
+if(BUILD_TESTING AND EXISTS "${_BACKEND_OPS_TEST_SRC}")
+    add_executable(test_backend_ops test/cpp/test_backend_ops.cpp)
+    target_link_libraries(test_backend_ops PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendOpsTest CI ON COMMAND test_backend_ops)
+endif()
+
 # vLLM CDNA gating: the vllm descriptor support row + asset-family resolution for
 # AMD Instinct (gfx942), alongside the existing RDNA families.
 set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gating.cpp")
