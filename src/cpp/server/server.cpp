@@ -2729,6 +2729,11 @@ std::string Server::register_model_definition_internal(
     validate_and_canonicalize_collection_registration(
         model_name, request_json, allow_embedded_models);
 
+
+    if (!has_definition && !local_import) {
+        return model_name;
+    }
+
     if (local_import) {
         std::string hf_cache = model_manager_->get_hf_cache_dir();
         std::string model_name_clean = model_name.substr(5);
