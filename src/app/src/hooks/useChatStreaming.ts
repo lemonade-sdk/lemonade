@@ -41,21 +41,21 @@ function summarizeResult(toolName: string, data: Record<string, unknown>): strin
       if (counts.registry) return `${counts.registry} registry model(s)`;
       return 'Model inventory retrieved';
     }
-    case 'get_model_info': return `${(data as any).display_name || (data as any).name || (data as any).id || 'model'} — ${((data as any).recipes || []).length} recipe(s)`;
+    case 'get_model_info': return `${(data as any).display_name || (data as any).name || (data as any).id || 'model'}: ${((data as any).recipes || []).length} recipe(s)`;
     case 'load_model': return 'Model loaded';
     case 'unload_model': return 'Model unloaded';
     case 'get_loaded_models': {
       const loaded = (data as any).loaded;
       return Array.isArray(loaded) ? `${loaded.length} model(s) loaded` : JSON.stringify(data).slice(0, 80);
     }
-    case 'get_server_health': return `${data.status} — ${data.loaded_models} model(s)`;
+    case 'get_server_health': return `${data.status}: ${data.loaded_models} model(s)`;
     case 'pull_model': {
       const anyData = data as any;
       if (anyData.status === 'needs_choice') {
         const items = anyData.choices || anyData.candidates || anyData.variants || [];
         return Array.isArray(items) ? `Needs choice: ${items.slice(0, 4).map((item: any) => item.id || item.name || item).join(', ')}` : 'Needs choice';
       }
-      return `${anyData.status || 'download complete'}${anyData.model ? ` — ${anyData.model}` : ''}`;
+      return `${anyData.status || 'download complete'}${anyData.model ? `: ${anyData.model}` : ''}`;
     }
     case 'delete_model': return 'Model deleted';
     case 'get_system_info': {
@@ -201,7 +201,7 @@ export function useChatStreaming(
             try {
               toolRound++;
               if (toolRound > MAX_TOOL_ROUNDS) {
-                onError(convoId, 'Too many tool call rounds — stopping to prevent loops.');
+                onError(convoId, 'Too many tool call rounds. Stopping to prevent loops.');
                 cleanup(convoId);
                 resolve();
                 return;

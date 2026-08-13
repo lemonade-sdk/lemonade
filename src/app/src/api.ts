@@ -1115,7 +1115,7 @@ class LemonadeAPI {
           : 'The server requires an API key or rejected the current one. Enter the matching key in Settings, then reconnect.'
         : resp.status === 403 && serverMessage.toLowerCase() === 'origin not allowed'
           ? originNotAllowedMessage(this.baseUrl)
-          : `${url} returned ${resp.status} ${statusText}${serverMessage ? ` — ${serverMessage}` : ''}`;
+          : `${url} returned ${resp.status} ${statusText}${serverMessage ? `: ${serverMessage}` : ''}`;
       throw err;
     }
     return resp;

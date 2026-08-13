@@ -129,7 +129,7 @@ export default function TraceList({
         <div className="inspect-rail__capture-group-row">
           <div className="inspect-rail__capture-label-group">
             <span className="inspect-rail__capture-label">Auto-capture inferences</span>
-            <span className="inspect-rail__capture-sublabel">Enables OTel on demand — no server-side storage</span>
+            <span className="inspect-rail__capture-sublabel">Enables OTel on demand, with no server-side storage</span>
             <span className={`capture-badge ${getBadgeClass()}`}>
               <span className="capture-badge__dot"></span>
               {getBadgeLabel()}
