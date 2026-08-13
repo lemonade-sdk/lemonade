@@ -1352,27 +1352,7 @@ bool Router::options_require_reload(const RecipeOptions& live, const RecipeOptio
     live_opts.erase("pinned");
     desired_opts.erase("pinned");
 
-    // A live process stores the concrete size auto-resolution picked at load
-    // time, while an auto request is still the -1 sentinel. Re-resolving would
-    // only pick a size again, so treat any live size as satisfying auto.
-    const auto desired_ctx = desired_opts.find("ctx_size");
-    if (desired_ctx == desired_opts.end() || *desired_ctx == -1) {
-        live_opts.erase("ctx_size");
-        desired_opts.erase("ctx_size");
-    }
-
     return live_opts != desired_opts;
-}
-
-bool Router::try_set_model_pinned(const std::string& model_name, bool pinned) {
-    // Deliberately does not wait for slot clearance: this only flips a flag on
-    // an already-running process, and its caller has documented that saving
-    // options never blocks on model work.
-    std::lock_guard<std::mutex> lock(load_mutex_);
-    WrappedServer* server = find_server_by_model_name(resolve_model_name(model_name));
-    if (!server) return false;
-    server->set_pinned(pinned);
-    return true;
 }
 
 bool Router::would_reload(const std::string& model_name, const RecipeOptions& desired) const {

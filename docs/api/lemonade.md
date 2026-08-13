@@ -263,8 +263,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "llamacpp_args": "",
     "llamacpp_backend": "vulkan",
     "llamacpp_device": "",
-    "merge_args": true,
-    "pinned": false
+    "merge_args": true
   },
   "defaults": {
     "auto_evict": null,
@@ -275,8 +274,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "llamacpp_args": "",
     "llamacpp_backend": "vulkan",
     "llamacpp_device": "",
-    "merge_args": true,
-    "pinned": false
+    "merge_args": true
   },
   "reload_required": false
 }
@@ -287,7 +285,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 | `saved` | The model's own entry in `recipe_options.json`, containing only what was explicitly saved. `{}` when nothing is saved. |
 | `effective` | Every option the recipe accepts, resolved through the full priority chain. This is what a load right now would use. Its keys are the names `POST` accepts, but posting it back whole saves every resolved value as an override — send only the options the user changed. |
 | `defaults` | What `effective` would become if `saved` were erased. A `ctx_size` of `-1` here means the server picks the context size automatically. |
-| `reload_required` | `true` when the model is loaded and a `/v1/load` would restart its backend to apply the saved options. Always `false` when the model is not loaded. An auto `ctx_size` is satisfied by whatever size the running process already resolved to, so switching an explicit size back to auto does not on its own require a reload. |
+| `reload_required` | `true` when the model is loaded and a `/v1/load` would restart its backend to apply the saved options. Always `false` when the model is not loaded. |
 
 > Note: per-architecture defaults are read from the model's GGUF metadata. Every key is still present for a model that has not been downloaded yet, but carries the value it would have before those defaults are applied.
 
@@ -302,7 +300,9 @@ Options are merged into whatever is already saved, so keys you don't mention are
 
 Options are validated against the model's recipe, and nothing is saved unless every option in the request passes. A `400` reports an unrecognized option name, an option belonging to a different recipe, a value of the wrong type, a negative or fractional value where a whole number is expected, or a backend this host doesn't support.
 
-Saving never loads or reloads the model, with one exception: `pinned` is applied to a running process immediately, because a live model keeps its own pin state across loads. The `reload_required` field reports whether a running model needs a reload to pick up the rest.
+Saving never loads or reloads the model. The `reload_required` field reports whether a running model needs a reload to pick the change up.
+
+> Note: `pinned` is not settable here. A load takes it from the running process rather than from saved options, so it belongs to [`/v1/load`](#post-v1load) and `/internal/pin`. It is omitted from `effective` and `defaults`, and a `POST` that includes it returns `400`.
 
 ### Example requests
 
@@ -864,7 +864,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
 | `pinned` | No | All | Boolean. If true, pins the loaded model to prevent LRU eviction. Defaults to `false`. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. To save options without loading, or to change one option without resending the rest, use [`POST /v1/models/{id}/options`](#post-v1modelsidoptions) instead. |
-| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. Pass `-1` to size it automatically instead of using a saved value; omit it to use the saved value. A process that is already running satisfies `-1` with whatever size it resolved to, so this takes effect on the next cold load. |
+| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. Pass `-1` to size it automatically instead of using a saved value; omit it to use the saved value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux. Default is `npu` if supported. |

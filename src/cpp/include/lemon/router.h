@@ -210,11 +210,6 @@ public:
     // Pin or unpin a model
     void set_model_pinned(const std::string& model_name, bool pinned);
 
-    // set_model_pinned for callers that treat "not loaded" as an ordinary
-    // outcome rather than an error. Resolves the name and checks liveness under
-    // the same lock, so an eviction can't race between the two.
-    bool try_set_model_pinned(const std::string& model_name, bool pinned);
-
     bool is_model_loaded() const;
 
     bool is_model_loaded(const std::string& model_name) const;

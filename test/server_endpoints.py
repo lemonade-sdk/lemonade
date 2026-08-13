@@ -1099,9 +1099,16 @@ class EndpointTests(ServerTestBase):
         print("[OK] Options merge on POST and are erased by DELETE")
 
     def test_012p_model_options_rejects_invalid_input(self):
-        """Unknown, wrong-recipe, and wrong-typed options are refused."""
+        """Unknown, wrong-recipe, wrong-typed, and unsettable options are refused."""
         self.addCleanup(self._reset_options)
         self._reset_options()
+
+        reported = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertNotIn(
+            "pinned",
+            reported["effective"],
+            "pinned is live-process state, so this endpoint must not report it",
+        )
 
         for body in (
             {"nonsense": 1},  # not an option at all
@@ -1119,6 +1126,8 @@ class EndpointTests(ServerTestBase):
             {"evict_idle_timeout": 0},
             {"downsize_idle_timeout": 0},
             {"evict_weight_factor": 0},
+            # Live-process state, owned by /load and /internal/pin
+            {"pinned": True},
         ):
             response = requests.post(
                 self._options_url(), json=body, timeout=TIMEOUT_DEFAULT
@@ -1310,89 +1319,6 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] reload_required agrees with what /load does")
 
-    def test_012u_pinned_changes_reach_the_running_model(self):
-        """Saving or clearing `pinned` applies to a live process, both ways.
-
-        A loaded backend keeps its own pin state across loads, so a saved value
-        that is not pushed down would be reported by the endpoint but never take
-        effect, leaving the model permanently exempt from eviction.
-        """
-        self.addCleanup(self._reset_options)
-        self._reset_options()
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-
-        def live_pinned():
-            return self._get_loaded_model_info(ENDPOINT_TEST_MODEL)["pinned"]
-
-        requests.post(
-            self._options_url(), json={"pinned": True}, timeout=TIMEOUT_DEFAULT
-        )
-        self.assertTrue(live_pinned(), "Saving pinned=true should pin the live model")
-
-        # Clearing the option falls back to the default of false, so the live
-        # process has to be unpinned too.
-        cleared = requests.post(
-            self._options_url(), json={"pinned": None}, timeout=TIMEOUT_DEFAULT
-        ).json()
-        self.assertNotIn("pinned", cleared["saved"])
-        self.assertFalse(cleared["effective"]["pinned"])
-        self.assertFalse(live_pinned(), "Clearing pinned should unpin the live model")
-
-        # And the same through DELETE, which erases the whole entry.
-        requests.post(
-            self._options_url(), json={"pinned": True}, timeout=TIMEOUT_DEFAULT
-        )
-        self.assertTrue(live_pinned())
-        self._reset_options()
-        self.assertFalse(live_pinned(), "DELETE should unpin the live model")
-
-        # A pin applied by a /load request is not saved anywhere, but a load
-        # would keep it, so `effective` has to report it rather than the saved
-        # value, and DELETE must not reset something it never owned.
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "pinned": True},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        reported = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
-        self.assertEqual(reported["saved"], {})
-        self.assertTrue(
-            reported["effective"]["pinned"],
-            "effective must report the live pin, which is what a load would keep",
-        )
-        self._reset_options()
-        self.assertTrue(
-            live_pinned(), "DELETE must not reset a pin that was never saved"
-        )
-
-        # A saved `pinned: false` is not an active pin, so erasing it must not
-        # turn off a pin that a /load request applied to the live process.
-        requests.post(
-            self._options_url(), json={"pinned": False}, timeout=TIMEOUT_DEFAULT
-        )
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "pinned": True},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertTrue(live_pinned())
-        self._reset_options()
-        self.assertTrue(
-            live_pinned(), "Erasing a saved `pinned: false` must not unpin anything"
-        )
-
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "pinned": False},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-
-        print("[OK] pinned changes are applied to the running model")
-
     def test_012x_every_effective_option_can_be_saved_back(self):
         """Posting the reported `effective` object back whole is accepted.
 
@@ -1481,9 +1407,9 @@ class EndpointTests(ServerTestBase):
     def test_012v_options_accept_a_user_model_public_name(self):
         """A user model addressed by its bare public name is handled correctly.
 
-        User models are keyed `user.NAME` internally but are addressable by the
-        bare NAME. Router calls that match on the canonical name, such as pinning
-        a live process, need the resolved key rather than the requested one.
+        User models are keyed `user.NAME` in recipe_options.json but are
+        addressable by the bare NAME, so a save through the public name has to
+        land under the canonical ID rather than creating a second entry.
         """
         model_name = f"user.Options-Canon-{uuid.uuid4().hex[:8]}"
         public_name = model_name.split(".", 1)[1]
@@ -1522,25 +1448,27 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(pull.status_code, 200, pull.text)
 
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": public_name},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-
         response = requests.post(
             self._options_url(model=public_name),
-            json={"pinned": True},
+            json={"ctx_size": 4096},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertTrue(response.json()["saved"]["pinned"])
+        self.assertEqual(response.json()["saved"]["ctx_size"], 4096)
 
-        loaded = self._get_loaded_model_info(public_name)
-        self.assertIsNotNone(loaded, "The user model should be loaded")
-        self.assertTrue(
-            loaded["pinned"], "Pinning through the public name must reach the process"
+        # The same entry has to be visible through the canonical name, which is
+        # only true if the save was keyed by it.
+        canonical = requests.get(
+            self._options_url(model=model_name), timeout=TIMEOUT_DEFAULT
         )
+        self.assertEqual(canonical.status_code, 200, canonical.text)
+        self.assertEqual(canonical.json()["saved"].get("ctx_size"), 4096)
+
+        cleared = requests.delete(
+            self._options_url(model=public_name), timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertEqual(cleared.json()["saved"], {})
 
         print("[OK] Options endpoint resolves user-model public names")
 
