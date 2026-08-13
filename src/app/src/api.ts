@@ -2189,34 +2189,17 @@ class LemonadeAPI {
   // ── Model registration / pull ───────────────────────────────────
 
   /**
-   * Persist a user model or collection definition before returning. Unlike the
-   * streaming pull path, this mirrors GUI2's registration flow and guarantees
-   * that a successful save is immediately visible through /api/v1/models and
-   * survives a lemond/UI restart.
+   * Persist a user model or collection definition without downloading weights.
    */
   async registerModelDefinition(modelName: string, opts?: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const resp = await this._fetch('/api/v1/pull', {
+    const result = await this._json<Record<string, unknown>>('/api/v1/models/register', {
       method: 'POST',
       body: {
         ...(opts || {}),
         model_name: modelName,
-        stream: false,
-        subscribe: false,
-        do_not_upgrade: true,
       },
       cache: 'no-store',
     });
-    const text = await resp.text();
-    let result: Record<string, unknown> = {};
-    if (text.trim()) {
-      try {
-        const parsed = JSON.parse(text);
-        if (isObject(parsed)) result = parsed;
-      } catch {
-        // Some lemond builds return an empty/plain acknowledgement for a
-        // non-streaming registration. HTTP success is sufficient here.
-      }
-    }
     this._notifyModelsChanged();
     return result;
   }

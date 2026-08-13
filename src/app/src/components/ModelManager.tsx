@@ -4,7 +4,7 @@ import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo, modelCapabilityTags, modelSupportsChatImageInput } from '../modelCapabilities';
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomModelRecord, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import {
   detectHuggingFaceBackend,
@@ -63,6 +63,11 @@ function canonicalCustomModelName(m: ModelInfo | null | undefined): string {
   const name = modelName(m);
   if (!name || !m || !modelIsCustom(m) || name.toLowerCase().startsWith('user.')) return name;
   return `user.${name}`;
+}
+
+function customModelNameKey(name: string): string {
+  const normalized = name.trim().toLowerCase();
+  return normalized.startsWith('user.') ? normalized.slice('user.'.length) : normalized;
 }
 
 function objectRecord(value: unknown): Record<string, unknown> {
@@ -1109,7 +1114,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [remoteVariantsLoading, setRemoteVariantsLoading] = useState<Record<string, boolean>>({});
   const [hfDetectedRecipes, setHfDetectedRecipes] = useState<Record<string, string | null>>({});
 
-  const [customModels, setCustomModels] = useState<ModelInfo[]>(() => loadCustomModels().map(customModelToModelInfo));
   const [routerModels, setRouterModels] = useState<ModelInfo[]>(() => loadRouterRecords().map(routerRecordToModelInfo));
   const [showRouterEditor, setShowRouterEditor] = useState(false);
   const [routerEditorModel, setRouterEditorModel] = useState<ModelInfo | null>(null);
@@ -1156,12 +1160,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   useEffect(() => {
     if (fullModelStateReady && fastLocalModels.length > 0) setFastLocalModels(EMPTY_MODELS);
   }, [fastLocalModels.length, fullModelStateReady]);
-
-  const reloadCustomModels = useCallback(() => {
-    setCustomModels(loadCustomModels().map(customModelToModelInfo));
-  }, []);
-
-  useEffect(() => { reloadCustomModels(); }, [reloadCustomModels]);
 
   const reloadRouterModels = useCallback(() => {
     setRouterModels(loadRouterRecords().map(routerRecordToModelInfo));
@@ -1464,21 +1462,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const findCurrentModel = (name: string): ModelInfo | null => {
     const target = name.trim().toLowerCase();
     if (!target) return null;
-    const targetBare = target.startsWith('user.') ? target.slice('user.'.length) : target;
+    const targetCustomKey = customModelNameKey(target);
     const matchesName = (candidateName: string, custom: boolean): boolean => {
       const candidate = candidateName.toLowerCase();
       if (candidate === target) return true;
-      if (!custom) return false;
-      const candidateBare = candidate.startsWith('user.') ? candidate.slice('user.'.length) : candidate;
-      return candidateBare === targetBare;
+      return custom && customModelNameKey(candidate) === targetCustomKey;
     };
-    const current = allModels.find(mi => matchesName(modelName(mi), modelIsCustom(mi)));
-    if (current) return current;
-
-    // Legacy custom records may still carry a bare name in localStorage even
-    // though lemond requires user.* for any definition with checkpoint/recipe.
-    const local = loadCustomModels().find(record => matchesName(record.name, true));
-    return local ? customModelToModelInfo(local) : null;
+    return allModels.find(mi => matchesName(modelName(mi), modelIsCustom(mi))) || null;
   };
 
   const canonicalComponentName = (name: string): string => {
@@ -1564,25 +1554,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     return null;
   };
 
-  const ensureCustomRegistration = async (model: ModelInfo | null) => {
-    if (!model || !(model as any).custom) return;
-    await api.pullModel(modelName(model), {}, customRegistrationOptions(model));
-  };
-
-  const ensureCustomCollectionComponentsRegistered = async (model: ModelInfo) => {
-    if (!isCollectionModel(model)) return;
-    for (const componentName of getCollectionComponents(model)) {
-      const componentInfo = findCurrentModel(componentName);
-      if (componentInfo && (componentInfo as any).custom) {
-        await ensureCustomRegistration(componentInfo);
-      }
-    }
-  };
 
   const loadModelRuntime = async (
     target: ModelInfo | string,
     visited = new Set<string>(),
-    registered = new Set<string>(),
     overrideOptions?: Record<string, unknown>,
   ) => {
     const name = typeof target === 'string' ? target : modelName(target);
@@ -1598,22 +1573,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       // Mirror Lemonade main: collection models are registered as collection.omni
       // entries, but loading them means loading their concrete component models.
       // The collection itself stays the selected virtual model in the UI.
-      if (!registered.has(key)) {
-        await ensureCustomRegistration(info);
-        registered.add(key);
-      }
       for (const componentName of components) {
         const componentInfo = findCurrentModel(componentName);
-        await loadModelRuntime(componentInfo || componentName, visited, registered);
+        await loadModelRuntime(componentInfo || componentName, visited);
       }
       visited.delete(key);
       return;
     }
 
-    if (!registered.has(key)) {
-      await ensureCustomRegistration(info);
-      registered.add(key);
-    }
     // overrideOptions (direct configuration) wins over stored custom options for ordinary models.
     await api.loadModel(name, overrideOptions ?? (info ? customLoadOptions(info) : undefined), info);
     visited.delete(key);
@@ -1627,7 +1594,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       pinnedNames: pinnedModels,
       settings: globalModelSettings,
       unload: name => api.unloadModel(name),
-      load: () => loadModelRuntime(model, new Set<string>(), new Set<string>(), overrideOptions),
+      load: () => loadModelRuntime(model, new Set<string>(), overrideOptions),
     });
   };
 
@@ -1736,9 +1703,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         : `Delete custom model "${displayName}"? This removes the model definition and downloaded model files, if present.`;
       if (!confirm(message)) return;
       try {
-        if (api.isConnected) await api.deleteModel(name);
-        deleteCustomModel(String((model as any).id || name));
-        reloadCustomModels();
+        if (!api.isConnected) throw new Error('Connect to the Lemonade server before deleting a custom model.');
+        await api.deleteModel(name);
         await refresh();
       } catch (err) {
         console.error('Custom model delete failed:', err);
@@ -1764,8 +1730,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setPulling(p => ({ ...p, [name]: 0 }));
     downloadStore.markLocal(name, 'downloading', 'model');
 
-    await ensureCustomCollectionComponentsRegistered(model);
-
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
         const item = downloadStore.upsertFromPull(name, data, 'model');
@@ -1786,7 +1750,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     };
 
     try {
-      await api.pullModel(name, callbacks, customRegistrationOptions(model));
+      await api.pullModel(name, callbacks);
     } finally {
       delete pullAbortRef.current[name];
       setPulling(p => {
@@ -1814,8 +1778,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setPulling(p => ({ ...p, [name]: 0 }));
     downloadStore.markLocal(name, 'downloading', 'model');
 
-    await ensureCustomCollectionComponentsRegistered(model);
-
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
         const item = downloadStore.upsertFromPull(name, data, 'model');
@@ -1828,7 +1790,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         await refresh();
         setLoadingModel(name);
         try {
-          await loadModelRuntime(model, new Set<string>(), new Set<string>([name.toLowerCase()]));
+          await loadModelRuntime(model, new Set<string>());
           await refresh();
           onModelSelect(name);
         } catch (err) {
@@ -1848,7 +1810,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     };
 
     try {
-      await api.pullModel(name, callbacks, customRegistrationOptions(model));
+      await api.pullModel(name, callbacks);
     } finally {
       delete pullAbortRef.current[name];
       setPulling(p => {
@@ -2071,7 +2033,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
   const handleExportCustomModels = () => {
-    exportJsonFile('lemonade-custom-models', exportCustomModelsPayload());
+    const customServerModels = visibleServerModels.filter(model =>
+      modelIsCustom(model) && String((model as any).recipe || '').toLowerCase() !== ROUTER_RECIPE
+    );
+    exportJsonFile('lemonade-custom-models', exportCustomModelsPayload(customServerModels));
     setCustomJsonNotice('Exported custom model JSON.');
     window.setTimeout(() => setCustomJsonNotice(null), 2200);
   };
@@ -2080,11 +2045,27 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (!file) return;
     setCustomError(null);
     try {
+      if (!api.isConnected) throw new Error('Connect to the Lemonade server before importing custom models.');
       const payload = JSON.parse(await file.text());
-      const result = importCustomModels(payload);
-      reloadCustomModels();
-      setCustomJsonNotice(`Imported ${result.imported} custom model${result.imported === 1 ? '' : 's'}${result.skipped ? `, skipped ${result.skipped}` : ''}.`);
-      if (result.errors.length) setCustomError(result.errors.slice(0, 3).join(' '));
+      const parsed = parseCustomModelsImport(payload);
+      const records = parsed.drafts.map(draft => buildCustomModelRecord(draft));
+      records.sort((a, b) => Number(Boolean(a.components?.length)) - Number(Boolean(b.components?.length)));
+
+      let imported = 0;
+      const errors = [...parsed.errors];
+      for (const record of records) {
+        try {
+          const info = customModelToModelInfo(record);
+          await api.registerModelDefinition(record.name, customRegistrationOptions(info));
+          imported += 1;
+        } catch (err) {
+          errors.push(`${record.name}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      await refresh();
+      const skipped = parsed.skipped + (records.length - imported);
+      setCustomJsonNotice(`Imported ${imported} custom model${imported === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}.`);
+      if (errors.length) setCustomError(errors.slice(0, 3).join(' '));
       window.setTimeout(() => setCustomJsonNotice(null), 3200);
     } catch (err) {
       setCustomError(`Could not import JSON: ${err instanceof Error ? err.message : String(err)}`);
@@ -2114,7 +2095,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const handleSaveCustomModel = async (e: React.FormEvent) => {
     e.preventDefault();
     setCustomError(null);
-    let pendingCollectionSave: { saved: ReturnType<typeof upsertCustomModel>; previous: CustomModelRecord | null } | null = null;
     try {
       if (!customDraft.displayName.trim()) {
         throw new Error('Enter a model name.');
@@ -2197,10 +2177,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         ? { main: checkpoint, ...extraCheckpoints }
         : undefined;
       const saveName = editingCustomModelName || implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model');
-      const previousCustomModel = isOmniCollection
-        ? loadCustomModels().find(record => record.name.toLowerCase() === saveName.toLowerCase()) || null
-        : null;
-      const saved = upsertCustomModel({
+      const saved = buildCustomModelRecord({
         name: saveName,
         displayName: customDraft.displayName,
         checkpoint,
@@ -2218,75 +2195,36 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         componentRoles,
         customTools,
       });
-      if (isOmniCollection) {
-        pendingCollectionSave = { saved, previous: previousCustomModel };
-      } else {
-        reloadCustomModels();
-      }
+      if (!api.isConnected) throw new Error('Connect to the Lemonade server before saving a custom model.');
+      const savedInfo = customModelToModelInfo(saved);
 
-      // A custom collection is a server model definition, not merely UI state.
-      // Register custom component definitions first, then synchronously persist
-      // the collection itself so /models exposes it immediately and restart does
-      // not depend on this WebView's localStorage.
+      // Custom model persistence is server-owned. Collections register custom
+      // component definitions first, then every custom model is synchronously
+      // persisted through lemond before the editor reports success.
       if (isOmniCollection) {
-        const savedInfo = customModelToModelInfo(saved);
         for (const componentName of getCollectionComponents(savedInfo)) {
           const componentInfo = findCurrentModel(componentName);
           if (componentInfo && modelIsCustom(componentInfo)) {
             await api.registerModelDefinition(canonicalCustomModelName(componentInfo), customRegistrationOptions(componentInfo));
           }
         }
-        await api.registerModelDefinition(saved.name, customRegistrationOptions(savedInfo));
-        const persistedModels = await api.models(true);
-        const persisted = persistedModels.data.some(model => modelName(model).toLowerCase() === saved.name.toLowerCase());
-        if (!persisted) {
-          throw new Error(`Lemond acknowledged the collection but did not expose ${saved.name} through /api/v1/models.`);
-        }
-        // Only expose the local collection after lemond confirms persistence.
-        // Until this point a failed /pull is rolled back below and never becomes
-        // a ghost entry in the model list.
-        pendingCollectionSave = null;
-        reloadCustomModels();
-        await refresh();
       }
+      const registration = await api.registerModelDefinition(saved.name, customRegistrationOptions(savedInfo));
+      const persistedName = typeof registration.model_name === 'string' && registration.model_name.trim()
+        ? registration.model_name.trim()
+        : saved.name;
+      await refresh();
 
       setShowCustomForm(false);
       setEditingCustomModelName(null);
       setPrimaryFilter('my-models');
       setSearchQuery('');
-      setSelectedDetailModelId(saved.name);
+      setSelectedDetailModelId(persistedName);
       setMobileDetailOpen(true);
       setCustomDraft(createEmptyCustomDraft());
+      setCustomJsonNotice(`Saved ${persistedName} to lemond.`);
+      window.setTimeout(() => setCustomJsonNotice(null), 2600);
     } catch (err) {
-      if (pendingCollectionSave) {
-        const { saved, previous } = pendingCollectionSave;
-        try {
-          if (previous) {
-            upsertCustomModel({
-              name: previous.name,
-              displayName: previous.display_name,
-              checkpoint: previous.checkpoint,
-              checkpoints: previous.checkpoints,
-              mmproj: previous.mmproj,
-              recipe: previous.recipe,
-              capability: previous.type,
-              maxContextWindow: previous.max_context_window,
-              labels: previous.labels,
-              components: previous.components,
-              componentRoles: previous.component_roles,
-              recipeOptions: previous.recipe_options,
-              system_prompt: previous.system_prompt,
-              customTools: previous.custom_tools,
-            });
-          } else {
-            deleteCustomModel(saved.id || saved.name);
-          }
-          reloadCustomModels();
-          if (selectedDetailModelId === saved.name) setSelectedDetailModelId(null);
-        } catch (rollbackError) {
-          console.error('Failed to roll back local custom collection after server registration failed:', rollbackError);
-        }
-      }
       setCustomError(err instanceof Error ? err.message : 'Could not save custom model.');
     }
   };
@@ -2302,12 +2240,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       seen.add(name);
       merged.push(m);
     }
-    for (const m of customModels) {
-      const name = modelName(m).toLowerCase();
-      if (!name || seen.has(name)) continue;
-      seen.add(name);
-      merged.push(m);
-    }
     const loadedNames = new Set(loadedModels.map(lm => lm.model_name.toLowerCase()));
     for (const m of visibleServerModels) {
       const name = modelName(m).toLowerCase();
@@ -2318,7 +2250,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       merged.push(m);
     }
     return merged;
-  }, [routerModels, customModels, visibleServerModels, loadedModels]);
+  }, [routerModels, visibleServerModels, loadedModels]);
 
   const omniComponentOptions = useMemo(() => {
     const roles: Record<OmniComponentRole, OmniComponentOption[]> = {
@@ -2777,6 +2709,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       style={panelResize.style}
     >
       {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
+      {customJsonNotice && <div className="manager__toast" role="status" aria-live="polite">{customJsonNotice}</div>}
       <WorkspaceMobileMenuButton
         menuLabel="Open model filters"
         panelId="model-nav-rail"
@@ -3197,7 +3130,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             accept="application/json,.json"
             onChange={e => { void handleImportCustomModels(e.target.files?.[0]); }}
           />
-          {customJsonNotice && <div className="manager__inline-notice">{customJsonNotice}</div>}
           </WorkspaceDetailPanel>
         </div>
       ) : (!selectedDetailModel && !selectedRemoteModel) ? (

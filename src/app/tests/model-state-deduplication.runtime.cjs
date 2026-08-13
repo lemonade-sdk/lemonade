@@ -84,7 +84,7 @@ const originalFetch = global.fetch;
 let healthRequests = 0;
 let modelRequests = 0;
 let deleteRequests = 0;
-let pullRequests = 0;
+let registerRequests = 0;
 let modelRows = [
   { id: 'test-model', model_name: 'test-model', downloaded: true },
 ];
@@ -119,7 +119,7 @@ global.fetch = async (url, init = {}) => {
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
 
-  if (target.includes('/api/v1/models')) {
+  if (target.includes('/api/v1/models') && method === 'GET') {
     modelRequests += 1;
     const snapshot = modelRows.map(model => ({ ...model }));
     const gate = nextModelReadGate;
@@ -136,9 +136,9 @@ global.fetch = async (url, init = {}) => {
     });
   }
 
-  if (target.endsWith('/api/v1/pull') && method === 'POST') {
+  if (target.endsWith('/api/v1/models/register') && method === 'POST') {
     await new Promise(resolve => setTimeout(resolve, 15));
-    pullRequests += 1;
+    registerRequests += 1;
     const body = typeof init.body === 'string'
       ? JSON.parse(init.body)
       : (init.body || {});
@@ -149,7 +149,12 @@ global.fetch = async (url, init = {}) => {
         { id: name, model_name: name, custom: true },
       ];
     }
-    return new Response(JSON.stringify({ ok: true }), {
+    const publicName = name.startsWith('user.') ? name.slice('user.'.length) : name;
+    return new Response(JSON.stringify({
+      status: 'success',
+      model_name: publicName,
+      canonical_model_name: name,
+    }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -227,7 +232,7 @@ async function waitFor(predicate, timeoutMs = 1500) {
     await staleReadGate.started;
 
     await api.registerModelDefinition('user.collection', { recipe: 'omni' });
-    assert.equal(pullRequests, 1, 'the collection registration must complete before verification');
+    assert.equal(registerRequests, 1, 'the collection registration must complete before verification');
 
     const verifiedModels = await Promise.race([
       api.models(true),

@@ -381,11 +381,11 @@ const App: React.FC = () => {
   const serverModelState = useServerModelState();
   const status = serverModelState.status;
   const serverModels = serverModelState.models?.data ?? EMPTY_MODELS;
+  const customModelInfos = useMemo(() => serverModels.filter(model => (model as any).custom === true), [serverModels]);
   const rawLoadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [clientDataResetNonce, setClientDataResetNonce] = useState(0);
-  const [customModelInfos, setCustomModelInfos] = useState<ModelInfo[]>(EMPTY_MODELS);
   const [modelHelpers, setModelHelpers] = useState<ModelHelpers | null>(null);
   const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
   const downloadManagerMountedRef = useRef(false);
@@ -657,24 +657,9 @@ const App: React.FC = () => {
     return () => { cancelled = true; };
   }, [customModelInfos.length, modelHelpers, rawLoadedModels.length, serverModels.length]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const cancelSchedule = scheduleIdleWork(() => {
-      void import(/* webpackChunkName: "custom-model-store" */ './features/customModels/customModelStore')
-        .then(({ loadCustomModels, customModelToModelInfo }) => {
-          if (!cancelled) setCustomModelInfos(loadCustomModels().map(customModelToModelInfo));
-        })
-        .catch(error => console.warn('Failed to hydrate custom models:', error));
-    }, 700);
-    return () => {
-      cancelled = true;
-      cancelSchedule();
-    };
-  }, [clientDataResetNonce]);
-
   const loadedModelViewState = useMemo(() => {
     const customInfos = customModelInfos;
-    const knownInfos = [...customInfos, ...serverModels];
+    const knownInfos = serverModels;
     if (!modelHelpers) return { models: rawLoadedModels, customInfos, knownInfos };
     const models = modelHelpers.withVirtualLoadedCollections(rawLoadedModels, knownInfos).map(model => {
       const info = modelHelpers.findModelInfoByName(knownInfos, model.model_name);

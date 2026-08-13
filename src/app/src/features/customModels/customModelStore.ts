@@ -1,7 +1,6 @@
 import type { ModelInfo } from '../../api';
 import type { ModelCapability } from '../../modelCapabilities';
 import { DEPLOYMENT_LABEL_KIND, IMAGE_INPUT_LABELS, deploymentKindFromLabels } from '../../modelCapabilities';
-import { storageKey } from '../../storage';
 import { COLLECTION_OMNI_RECIPE } from '../collections/collectionModels';
 import { routerRegistrationOptions } from '../router/routerStore';
 
@@ -79,7 +78,6 @@ export interface CustomModelDraft {
   customTools?: CustomOmniToolDefinition[];
 }
 
-const CUSTOM_MODELS_KEY = 'custom_models';
 
 function normalizeModelName(name: string): string {
   const cleaned = name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9._\-/]/g, '-').replace(/-+/g, '-');
@@ -189,32 +187,7 @@ export function recordLabels(record: CustomModelRecord): string[] {
   return labelsFor(record.type, stored);
 }
 
-function isRecord(value: unknown): value is CustomModelRecord {
-  if (!value || typeof value !== 'object') return false;
-  const obj = value as Record<string, unknown>;
-  return typeof obj.id === 'string'
-    && typeof obj.name === 'string'
-    && typeof obj.checkpoint === 'string'
-    && typeof obj.recipe === 'string'
-    && typeof obj.type === 'string'
-    && obj.custom === true;
-}
-
-export function loadCustomModels(): CustomModelRecord[] {
-  try {
-    const raw = localStorage.getItem(storageKey(CUSTOM_MODELS_KEY));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    const items = Array.isArray(parsed?.models) ? parsed.models : [];
-    return items.filter(isRecord);
-  } catch { return []; }
-}
-
-function saveCustomModels(models: CustomModelRecord[]): void {
-  localStorage.setItem(storageKey(CUSTOM_MODELS_KEY), JSON.stringify({ version: 2, models }));
-}
-
-export function upsertCustomModel(draft: CustomModelDraft): CustomModelRecord {
+export function buildCustomModelRecord(draft: CustomModelDraft, existing?: CustomModelRecord | null): CustomModelRecord {
   const now = Date.now();
   const customTools = normalizeCustomTools(draft.customTools);
   const normalizedComponents = Array.from(new Set((draft.components || []).map(normalizeComponentName).filter(Boolean)));
@@ -242,8 +215,6 @@ export function upsertCustomModel(draft: CustomModelDraft): CustomModelRecord {
   const isCollectionOmni = capability === 'omni' && components.length > 0;
   if (!hasCheckpoint && !isCollectionOmni) throw new Error('Checkpoint, repo id, or local model path is required. Omni collections can instead reference existing component model names.');
 
-  const current = loadCustomModels();
-  const existing = current.find(m => m.name.toLowerCase() === name.toLowerCase());
   const record: CustomModelRecord = {
     id: existing?.id || `custom.${now.toString(36)}.${Math.random().toString(36).slice(2, 8)}`,
     name,
@@ -271,13 +242,7 @@ export function upsertCustomModel(draft: CustomModelDraft): CustomModelRecord {
     record.recipe = COLLECTION_OMNI_RECIPE;
     record.checkpoint = '';
   }
-  saveCustomModels([record, ...current.filter(m => m.id !== record.id && m.name.toLowerCase() !== name.toLowerCase())]);
   return record;
-}
-
-export function deleteCustomModel(idOrName: string): void {
-  const current = loadCustomModels();
-  saveCustomModels(current.filter(m => m.id !== idOrName && m.name !== idOrName));
 }
 
 export function customModelToModelInfo(record: CustomModelRecord): ModelInfo {
@@ -333,20 +298,26 @@ export function customRegistrationOptions(model: ModelInfo): Record<string, unkn
   if (displayName) opts.display_name = displayName;
   if (serverLabels.length) opts.labels = serverLabels;
   const checkpoints = isPlainObject((model as any).checkpoints) ? (model as any).checkpoints as Record<string, unknown> : null;
-  if (checkpoints && Object.keys(checkpoints).length > 0) {
-    opts.checkpoints = Object.fromEntries(Object.entries(checkpoints).filter(([, value]) => typeof value === 'string' && value.trim()).map(([key, value]) => [key, String(value).trim()]));
+  const normalizedCheckpoints: Record<string, string> = checkpoints
+    ? Object.fromEntries(Object.entries(checkpoints)
+      .filter(([, value]) => typeof value === 'string' && value.trim())
+      .map(([key, value]) => [key, String(value).trim()]))
+    : {};
+  if (Object.keys(normalizedCheckpoints).length > 0) {
+    if (!normalizedCheckpoints.main && checkpoint) normalizedCheckpoints.main = checkpoint;
+    if (normalizedCheckpoints.main) opts.checkpoints = normalizedCheckpoints;
   } else if (checkpoint) {
     opts.checkpoint = checkpoint;
   }
   if (recipe) opts.recipe = recipe;
   if (isPlainObject((model as any).recipe_options)) opts.recipe_options = { ...(model as any).recipe_options };
-  // Current /v1/pull registration uses capability booleans rather than a generic type/labels payload.
+  // The registration API accepts the legacy capability booleans used by model definitions.
   if (labels.includes('reasoning')) opts.reasoning = true;
   if (labels.some(label => ['vision', 'omni', 'multimodal', 'vision-language', 'image-input'].includes(label))) opts.vision = true;
   if (type === 'embedding' || labels.some(label => label === 'embedding' || label === 'embeddings')) opts.embedding = true;
   if (type === 'reranking' || labels.some(label => label === 'reranking' || label === 'reranker')) opts.reranking = true;
   const mmproj = String((model as any).mmproj || '').trim();
-  if (mmproj && !(checkpoints && Object.prototype.hasOwnProperty.call(checkpoints, 'mmproj'))) opts.mmproj = mmproj;
+  if (mmproj && !Object.prototype.hasOwnProperty.call(normalizedCheckpoints, 'mmproj')) opts.mmproj = mmproj;
   if (type !== 'omni' && (model as any).max_context_window) opts.ctx_size = (model as any).max_context_window;
   return opts;
 }
@@ -372,8 +343,8 @@ export const CUSTOM_CAPABILITIES: Array<{ value: CustomModelCapability; label: s
   { value: 'reranking', label: 'Reranking', hint: 'Utility model; not selectable in composer' },
 ];
 
-export interface CustomModelImportResult {
-  imported: number;
+export interface CustomModelImportParseResult {
+  drafts: CustomModelDraft[];
   skipped: number;
   errors: string[];
 }
@@ -457,7 +428,8 @@ function normalizeImportedRecord(raw: unknown, index: number): CustomModelDraft 
     ? Object.fromEntries(Object.entries(rawCheckpoints).filter(([, value]) => typeof value === 'string' && value.trim()).map(([key, value]) => [key, String(value).trim()]))
     : undefined;
   const checkpoint = valueString(source, ['checkpoint', 'path', 'repo', 'model_path', 'modelPath'])
-    || (checkpoints?.main ?? Object.values(checkpoints || {})[0] ?? '');
+    || checkpoints?.main
+    || '';
   const mmproj = valueString(source, ['mmproj']) || checkpoints?.mmproj;
   const name = valueString(source, ['name', 'model_name', 'id']) || displayName;
   const recipe = valueString(source, ['recipe', 'backend']) || defaultRecipe(capability, components);
@@ -483,14 +455,6 @@ function normalizeImportedRecord(raw: unknown, index: number): CustomModelDraft 
   };
 }
 
-export function exportCustomModelsPayload(): Record<string, unknown> {
-  return {
-    version: 2,
-    exportedAt: new Date().toISOString(),
-    models: loadCustomModels(),
-  };
-}
-
 function looksLikeModelPayload(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   return ['model_name', 'name', 'id', 'display_name', 'checkpoint', 'checkpoints', 'components', 'recipe'].some(key => key in value);
@@ -503,9 +467,26 @@ function importItemsFromPayload(payload: unknown): unknown[] {
   return looksLikeModelPayload(payload) ? [payload, ...embedded] : embedded;
 }
 
-export function importCustomModels(payload: unknown): CustomModelImportResult {
+export function exportCustomModelsPayload(models: ModelInfo[]): Record<string, unknown> {
+  const records = models.flatMap((model, index) => {
+    const draft = normalizeImportedRecord(model, index);
+    if (!draft) return [];
+    try {
+      return [buildCustomModelRecord(draft)];
+    } catch {
+      return [];
+    }
+  });
+  return {
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    models: records,
+  };
+}
+
+export function parseCustomModelsImport(payload: unknown): CustomModelImportParseResult {
   const rawItems = importItemsFromPayload(payload);
-  const result: CustomModelImportResult = { imported: 0, skipped: 0, errors: [] };
+  const result: CustomModelImportParseResult = { drafts: [], skipped: 0, errors: [] };
   rawItems.forEach((item, index) => {
     const draft = normalizeImportedRecord(item, index);
     if (!draft) {
@@ -514,8 +495,9 @@ export function importCustomModels(payload: unknown): CustomModelImportResult {
       return;
     }
     try {
-      upsertCustomModel(draft);
-      result.imported += 1;
+      // Validate and normalize without persisting anything in the browser.
+      buildCustomModelRecord(draft);
+      result.drafts.push(draft);
     } catch (err) {
       result.skipped += 1;
       result.errors.push(`Entry ${index + 1}: ${err instanceof Error ? err.message : String(err)}`);
