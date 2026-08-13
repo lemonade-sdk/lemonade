@@ -185,6 +185,75 @@ int main() {
         check("a direct file missing from either side throws like pull", threw);
     }
 
+    // --- merge_reuse_comparison_files: pull keeps same-repository auxiliary
+    // checkpoints in the reuse comparison instead of replacing the set ---
+    {
+        // files already carries the current main selection plus an mmproj that
+        // lives in the same repository (pull appends it to files_to_download).
+        const std::vector<std::string> base_files = {
+            "model-Q4_K_M.gguf", "config.json", "mmproj-F16.gguf",
+        };
+        const std::vector<std::string> old_files = {
+            "model-Q4_K_M.gguf", "config.json", "mmproj-F16.gguf",
+        };
+        const std::vector<std::string> new_files = {"model-Q4_K_M.gguf", "config.json"};
+        const auto merged = rf::merge_reuse_comparison_files(
+            base_files, "vendor/repo", "llamacpp", "model-Q4_K_M.gguf", old_files, new_files);
+        check("a same-repository auxiliary checkpoint is kept in the comparison",
+              has(merged, "mmproj-F16.gguf"));
+        check("a main artifact is not dropped", has(merged, "model-Q4_K_M.gguf"));
+        check("an auto-selected config is kept", has(merged, "config.json"));
+    }
+    {
+        // Overlap between base_files and the main union isn't duplicated.
+        const std::vector<std::string> base_files = {"model-Q4_K_M.gguf", "mmproj-F16.gguf"};
+        const std::vector<std::string> old_files = {"model-Q4_K_M.gguf", "config.json"};
+        const std::vector<std::string> new_files = {"model-Q4_K_M.gguf", "config.json"};
+        const auto merged = rf::merge_reuse_comparison_files(
+            base_files, "vendor/repo", "llamacpp", "model-Q4_K_M.gguf", old_files, new_files);
+        std::size_t model_count = 0;
+        for (const auto& f : merged) {
+            if (f == "model-Q4_K_M.gguf") ++model_count;
+        }
+        check("overlap with the main union is not duplicated", model_count == 1);
+        check("the config file is still merged in", has(merged, "config.json"));
+    }
+
+    // --- pull reuse: a same-repository auxiliary checkpoint that changed must
+    // prevent snapshot reuse even when the main artifact is unchanged ---
+    {
+        const fs::path snapshot = base_dir / "reuse_aux" / "snapshots" / "aaaa1111";
+        make_file(snapshot / "model-Q4_K_M.gguf", "11111");
+        make_file(snapshot / "config.json", "x");
+        make_file(snapshot / "mmproj-F16.gguf", "old");
+
+        auto key = [](const std::string& f) { return rf::hf_file_metadata_key("vendor/repo", f); };
+        std::map<std::string, rf::HfFileMetadata> current, previous;
+        current[key("model-Q4_K_M.gguf")] = metadata(5, "lfs:aaa");
+        previous[key("model-Q4_K_M.gguf")] = metadata(5, "lfs:aaa");
+        current[key("config.json")] = metadata(1, "git:bbb");
+        previous[key("config.json")] = metadata(1, "git:bbb");
+        current[key("mmproj-F16.gguf")] = metadata(3, "lfs:new");
+        previous[key("mmproj-F16.gguf")] = metadata(3, "lfs:old");
+
+        // Main artifact unchanged, same-repo mmproj changed: reuse must fail so
+        // the pull does not silently keep the stale snapshot.
+        check("a changed same-repo auxiliary checkpoint blocks snapshot reuse",
+              !rf::can_reuse_previous_hf_snapshot(
+                  "vendor/repo",
+                  {"model-Q4_K_M.gguf", "config.json", "mmproj-F16.gguf"},
+                  snapshot, current, previous));
+
+        // Control: identical mmproj reuses.
+        auto same_mmproj = previous;
+        same_mmproj[key("mmproj-F16.gguf")] = metadata(3, "lfs:new");
+        check("an unchanged same-repo auxiliary checkpoint reuses",
+              rf::can_reuse_previous_hf_snapshot(
+                  "vendor/repo",
+                  {"model-Q4_K_M.gguf", "config.json", "mmproj-F16.gguf"},
+                  snapshot, current, same_mmproj));
+    }
+
     // --- group_aux_checkpoint_variants: auxiliary checkpoints get their own
     // repository entries in the update check ---
     {

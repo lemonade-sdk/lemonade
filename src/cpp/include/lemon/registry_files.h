@@ -28,6 +28,15 @@ std::vector<std::string> select_main_repo_files_union(
     const std::vector<std::string>& repo_files_a,
     const std::vector<std::string>& repo_files_b);
 
+// Keeps same-repository auxiliary checkpoints in the reuse comparison.
+std::vector<std::string> merge_reuse_comparison_files(
+    const std::vector<std::string>& base_files,
+    const std::string& repo_id,
+    const std::string& recipe,
+    const std::string& variant,
+    const std::vector<std::string>& repo_files_a,
+    const std::vector<std::string>& repo_files_b);
+
 // Checkpoints without a "repo:variant" shape are skipped.
 std::map<std::string, std::vector<std::string>> group_aux_checkpoint_variants(
     const std::map<std::string, std::string>& checkpoints);

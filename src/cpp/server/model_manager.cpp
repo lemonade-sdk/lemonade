@@ -3996,6 +3996,24 @@ std::vector<std::string> select_main_repo_files_union(
     return selected;
 }
 
+std::vector<std::string> merge_reuse_comparison_files(
+    const std::vector<std::string>& base_files,
+    const std::string& repo_id,
+    const std::string& recipe,
+    const std::string& variant,
+    const std::vector<std::string>& repo_files_a,
+    const std::vector<std::string>& repo_files_b) {
+    std::vector<std::string> merged = base_files;
+    std::unordered_set<std::string> seen(merged.begin(), merged.end());
+    for (auto& filename :
+         select_main_repo_files_union(repo_id, recipe, variant, repo_files_a, repo_files_b)) {
+        if (seen.insert(filename).second) {
+            merged.push_back(std::move(filename));
+        }
+    }
+    return merged;
+}
+
 std::string hf_file_metadata_key(const std::string& repo_id, const std::string& filename) {
     return repo_id + ':' + filename;
 }
@@ -4639,6 +4657,7 @@ void ModelManager::download_from_registry(const ModelInfo& info,
 
             // Union with the previous revision's listing so a file it dropped
             // isn't missed; files_to_download itself stays current-revision-only.
+            // Merge, not replace: files also carries same-repo aux checkpoints.
             std::vector<std::string> comparison_files = files;
             if (repo_id == main_repo_id) {
                 try {
@@ -4648,8 +4667,9 @@ void ModelManager::download_from_registry(const ModelInfo& info,
                     for (const auto& file : previous_repo.files) {
                         if (!file.directory) previous_repo_files.push_back(file.path);
                     }
-                    comparison_files = registry_files::select_main_repo_files_union(
-                        repo_id, info.recipe, main_variant, previous_repo_files, main_repo_files);
+                    comparison_files = registry_files::merge_reuse_comparison_files(
+                        files, repo_id, info.recipe, main_variant, previous_repo_files,
+                        main_repo_files);
                 } catch (const std::exception& e) {
                     LOG(DEBUG, "ModelManager")
                         << "Could not confirm no files were removed from " << repo_id
