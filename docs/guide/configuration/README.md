@@ -45,6 +45,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "cloud_providers": [],
   "config_version": 2,
   "ctx_size": -1,
+  "default_model_source": "huggingface",
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
@@ -134,6 +135,10 @@ Values set in the user's `config.json` always take precedence over these seeded 
     },
     "trust_incoming_trace_context": false
   },
+  "thenoise": {
+    "backend": "auto",
+    "lora_dir": ""
+  },
   "thinksound": {
     "backend": "auto",
     "cuda_bin": "builtin",
@@ -141,6 +146,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_bin": "builtin"
   },
   "trellis": {
+    "args": "",
     "backend": "auto",
     "cuda_bin": "builtin",
     "rocm_bin": "builtin",
@@ -176,6 +182,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `extra_models_dir` | string | "" | Secondary directory to scan for GGUF model files |
 | `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
+| `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
 | `offline` | bool | false | Skip model downloads |
 | `auto_check_model_updates` | bool | true | Check downloaded Hugging Face-backed models for updates during server startup. Set to `false` to check only with `lemonade check-updates` or `POST /v1/models/check-updates`. Manual downloads and updates remain enabled. |
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |

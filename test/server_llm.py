@@ -566,6 +566,34 @@ class LLMTests(ServerTestBase):
         self.assertGreater(len(response.data[0].embedding), 0)
         print(f"Embedding dimension: {len(response.data[0].embedding)}")
 
+    @skip_if_unsupported("embeddings")
+    def test_015b_embeddings_missing_model_returns_400(self):
+        """Test embeddings request without model returns a helpful 400 error."""
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        response = requests.post(
+            f"{self.base_url}/embeddings",
+            json={
+                "input": "Hello, how are you today?",
+                "encoding_format": "float",
+            },
+            headers=headers,
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        self.assertEqual(response.status_code, 400, response.text)
+
+        error = response.json().get("error")
+        self.assertIsInstance(error, dict, response.text)
+        self.assertEqual(error.get("type"), "invalid_request")
+        self.assertIn(
+            "no model specified",
+            error.get("message", "").lower(),
+        )
+
     @skip_if_unsupported("embeddings_batch")
     def test_016_embeddings_array_of_strings(self):
         """Test embeddings with array of strings."""
@@ -743,6 +771,30 @@ class LLMTests(ServerTestBase):
             expected_top_3,
             f"Expected food-related documents {expected_top_3} in top 3, got {actual_top_3}",
         )
+
+    @skip_if_unsupported("reranking")
+    def test_018d_reranking_error_is_not_reported_as_success(self):
+        """Test reranking a model that cannot rerank returns an error status."""
+        model = self.get_test_model("llm")
+
+        payload = {
+            "query": "A man is eating pasta.",
+            "documents": ["A man is eating food.", "A man is riding a horse."],
+            "model": model,
+        }
+
+        response = requests.post(
+            f"{self.base_url}/rerank", json=payload, timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+        print(
+            f"/rerank with {model}: HTTP {response.status_code} {response.text[:200]}"
+        )
+        self.assertGreaterEqual(response.status_code, 400, response.text)
+
+        error = response.json().get("error")
+        self.assertIsInstance(error, dict, response.text)
+        self.assertTrue(error.get("message"), response.text)
 
     # =========================================================================
     # MULTI-MODEL TESTS
@@ -955,17 +1007,21 @@ class LLMTests(ServerTestBase):
                     print(f"Slots erase response: {erase_data}")
                     if "id_slot" in erase_data:
                         self.assertEqual(erase_data["id_slot"], slot_id_to_erase)
-                    elif "error" in erase_data:
-                        # Received an error response from the erase endpoint, this may be because the server
-                        # was not started with the --slot-save-path argument
-                        print(
-                            f"Slots erase backend error response: {erase_data['error']}"
-                        )
-                        pass
                     else:
                         self.fail(
                             f"Unexpected response from slots erase endpoint: {erase_data}"
                         )
+                elif erase_response.status_code == 501:
+                    error_data = erase_response.json()
+                    print(f"Slots erase backend error response: {error_data}")
+                    self.assertIn("error", error_data)
+                    self.assertEqual(
+                        error_data["error"].get("type"), "not_supported_error"
+                    )
+                    self.assertIn(
+                        "--slot-save-path",
+                        error_data["error"].get("message", ""),
+                    )
                 else:
                     error_data = erase_response.json()
                     print(f"Slots erase error response: {error_data}")
@@ -973,7 +1029,6 @@ class LLMTests(ServerTestBase):
                         f"Failed to erase slot with id {slot_id_to_erase}, "
                         f"status code: {erase_response.status_code}"
                     )
-
             else:
                 self.fail("No slot id found to erase in /api/v1/slots response")
         else:

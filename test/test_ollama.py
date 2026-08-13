@@ -935,6 +935,74 @@ class OllamaTests(ServerTestBase):
             except Exception as exc:  # noqa: BLE001 - best-effort cleanup
                 print(f"Warning: cleanup unload_all_models failed: {exc}")
 
+    def _anthropic_overflow_payload(self, stream):
+        """Build a /v1/messages payload whose prompt exceeds the model context."""
+        # ~6 000 tokens, well above the 4096-token context of Tiny-Test-Model-GGUF,
+        # so llama.cpp rejects the request with a 400 the bridge has to relay.
+        overflow_prompt = "The quick brown fox jumps over the lazy dog. " * 600
+
+        return {
+            "model": ENDPOINT_TEST_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": overflow_prompt}],
+                }
+            ],
+            "max_tokens": 16,
+            "stream": stream,
+        }
+
+    def test_027_anthropic_messages_backend_error(self):
+        """Test Anthropic-compatible backend errors are reported, not returned empty."""
+        self.ensure_model_pulled()
+
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
+            json=self._anthropic_overflow_payload(stream=False),
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 400, response.text[:500])
+
+        data = response.json()
+        self.assertEqual(data.get("type"), "error")
+        self.assertEqual(data.get("error", {}).get("type"), "invalid_request_error")
+        self.assertIn("context", data.get("error", {}).get("message", ""))
+
+    def test_028_anthropic_messages_streaming_backend_error(self):
+        """Test Anthropic-compatible streaming backend errors are framed as an error event."""
+        self.ensure_model_pulled()
+
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
+            json=self._anthropic_overflow_payload(stream=True),
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        event_types = []
+        error_payloads = []
+        for raw_line in response.iter_lines():
+            if not raw_line:
+                continue
+
+            line = raw_line.decode("utf-8")
+            if line.startswith("event: "):
+                event_types.append(line[len("event: ") :])
+            elif line.startswith("data: "):
+                payload_json = json.loads(line[len("data: ") :])
+                if payload_json.get("type") == "error":
+                    error_payloads.append(payload_json)
+
+        self.assertIn("error", event_types)
+        self.assertNotIn("message_stop", event_types)
+        self.assertEqual(len(error_payloads), 1)
+        self.assertEqual(
+            error_payloads[0].get("error", {}).get("type"), "invalid_request_error"
+        )
+        self.assertIn("context", error_payloads[0].get("error", {}).get("message", ""))
+
 
 if __name__ == "__main__":
     run_server_tests(OllamaTests, "OLLAMA API TESTS")

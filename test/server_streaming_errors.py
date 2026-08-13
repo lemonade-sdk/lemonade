@@ -9,6 +9,7 @@ Usage:
     python server_streaming_errors.py --cli-binary /path/to/lemonade
 """
 
+import json
 import time
 
 import requests
@@ -208,6 +209,50 @@ class StreamingErrorTests(ServerTestBase):
         )
         lines = self._consume_stream(response)
         print(f"[OK] Context overflow: stream closed cleanly ({len(lines)} line(s))")
+
+    def test_004a_context_overflow_error_is_sse_framed(self):
+        """Backend non-200 during a stream reaches the client as an SSE event.
+
+        An SSE parser drops any line that is not a recognized field, so an
+        error body written without framing is invisible to every OpenAI-style
+        client even though its bytes are on the wire.
+        """
+        self._ensure_test_model_loaded()
+
+        overflow_prompt = "The quick brown fox jumps over the lazy dog. " * 600
+
+        response = self._post_streaming(
+            ENDPOINT_TEST_MODEL,
+            messages=[{"role": "user", "content": overflow_prompt}],
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        lines = self._consume_stream(response)
+
+        sse_fields = ("data:", "event:", "id:", "retry:", ":")
+        unframed = [line for line in lines if not line.startswith(sse_fields)]
+        self.assertEqual(unframed, [], f"Lines no SSE parser will read: {unframed[:5]}")
+
+        errors = []
+        for line in lines:
+            if not line.startswith("data:"):
+                continue
+            payload = line.split(":", 1)[1].strip()
+            if payload == "[DONE]":
+                continue
+            try:
+                parsed = json.loads(payload)
+            except ValueError:
+                continue
+            if isinstance(parsed, dict) and isinstance(parsed.get("error"), dict):
+                errors.append(parsed["error"])
+
+        self.assertTrue(errors, f"No error event in stream. Lines: {lines[:10]}")
+
+        self.assertNotEqual(errors[0].get("type"), "backend_error", errors[0])
+        self.assertIn("context", errors[0].get("message", "").lower(), errors[0])
+        print(
+            f"[OK] Context overflow: error event framed ({errors[0]['message'][:80]})"
+        )
 
     def test_005_streaming_with_many_tools_terminates_cleanly(self):
         """Streaming with 15 tools terminates cleanly (original bug report scenario)."""

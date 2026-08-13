@@ -39,11 +39,12 @@ from utils.server_base import (
     run_server_tests,
     OpenAI,
     pull_model_with_retry,
+    _auth_headers,
 )
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
-    SECOND_TEST_MODEL_EVICTION,
+    MULTI_MODEL_QUATERNARY,
     MULTI_MODEL_TERTIARY,
     get_default_lemond_binary,
     SHARED_REPO_MODEL_A_NAME,
@@ -205,7 +206,66 @@ class EndpointTests(ServerTestBase):
                     f"Endpoint {endpoint} is not registered on {version}",
                 )
 
+        # POST-only routes should be probed with their actual method. httplib does
+        # not synthesize HEAD responses for POST handlers.
+        for endpoint in ["models/register"]:
+            for version in ["v0", "v1"]:
+                url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
+                response = session.post(url, json={}, timeout=TIMEOUT_DEFAULT)
+                self.assertNotEqual(
+                    response.status_code,
+                    404,
+                    f"POST endpoint {endpoint} is not registered on {version}",
+                )
+
         session.close()
+
+    def test_000a_register_model_definition_without_pull(self):
+        """Register a user model definition without downloading its checkpoint."""
+        canonical_name = f"user.RegisterEndpoint-{uuid.uuid4().hex[:8]}"
+        checkpoint = "example/register-endpoint-test:Q4_K_M"
+        try:
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "llamacpp",
+                    "checkpoint": checkpoint,
+                    "labels": ["test-register-endpoint"],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            body = response.json()
+            self.assertEqual(body.get("status"), "success")
+            self.assertEqual(body.get("canonical_model_name"), canonical_name)
+            public_name = body.get("model_name")
+            self.assertIsInstance(public_name, str)
+            self.assertTrue(public_name)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200, models_response.text)
+            entry = next(
+                model
+                for model in models_response.json()["data"]
+                if model["id"] == public_name
+            )
+            self.assertEqual(entry.get("checkpoint"), checkpoint)
+            self.assertEqual(entry.get("recipe"), "llamacpp")
+            self.assertFalse(entry.get("downloaded"))
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
@@ -2451,6 +2511,86 @@ class EndpointTests(ServerTestBase):
         )
         print(f"[OK] builtin.{ENDPOINT_TEST_MODEL} alias resolves to bare id")
 
+    def test_021aa_internal_aliases_endpoints(self):
+        """Test administrative REST endpoints: POST/GET/DELETE /internal/aliases."""
+        alias_name = "test-endpoint-alias"
+        target_model = ENDPOINT_TEST_MODEL
+
+        get_res = requests.get(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(get_res.status_code, 200)
+        self.assertIn("aliases", get_res.json())
+
+        try:
+            add_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": alias_name, "target": target_model},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_res.status_code, 200)
+            self.assertEqual(add_res.json()["alias"], alias_name)
+            self.assertEqual(add_res.json()["target"], target_model)
+
+            model_res = requests.get(
+                f"{self.base_url}/models/{alias_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(model_res.status_code, 200)
+            self.assertEqual(model_res.json()["id"], alias_name)
+
+            # Test multi-hop chained alias resolution (alias_hop -> test-endpoint-alias -> ENDPOINT_TEST_MODEL)
+            hop_alias = "test-hop-alias"
+            add_hop_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": hop_alias, "target": alias_name},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_hop_res.status_code, 200)
+
+            hop_model_res = requests.get(
+                f"{self.base_url}/models/{hop_alias}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(hop_model_res.status_code, 200)
+            self.assertEqual(hop_model_res.json()["id"], hop_alias)
+
+            del_hop_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(hop_alias)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(del_hop_res.status_code, 200)
+
+            get_res2 = requests.get(
+                f"{self.internal_url}/aliases",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(get_res2.status_code, 200)
+            aliases = get_res2.json()["aliases"]
+            found = any(a["alias"] == alias_name for a in aliases)
+            self.assertTrue(found)
+
+        finally:
+            del_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(del_res.status_code, (200, 404))
+
+        model_res_del = requests.get(
+            f"{self.base_url}/models/{alias_name}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(model_res_del.status_code, 404)
+        print(f"[OK] /internal/aliases POST/GET/DELETE verified")
+
     def test_021e_naming_spec_user_shadows_builtin(self):
         """Naming spec: a user.X registration shadows a built-in X.
 
@@ -4199,7 +4339,7 @@ class EndpointTests(ServerTestBase):
         """
         router_model = MULTI_MODEL_TERTIARY
         candidate_model = ENDPOINT_TEST_MODEL
-        third_model = SECOND_TEST_MODEL_EVICTION
+        third_model = MULTI_MODEL_QUATERNARY
         for model in (router_model, candidate_model, third_model):
             pull_model_with_retry(model)
 
@@ -5330,6 +5470,17 @@ class EndpointTests(ServerTestBase):
             f.write(struct.pack("<Q", 0))  # tensor_count
             f.write(struct.pack("<Q", 0))  # kv_count
 
+    def _write_stub_gguf_file(self, path):
+        """Write a tiny valid-enough GGUF file at an exact path."""
+        import struct
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(b"GGUF")
+            f.write(struct.pack("<I", 3))  # version
+            f.write(struct.pack("<Q", 0))  # tensor_count
+            f.write(struct.pack("<Q", 0))  # kv_count
+
     def test_021g_naming_spec_three_way_collision(self):
         """Naming spec: built-in + user.* + extra.* all sharing a bare name.
 
@@ -5474,6 +5625,378 @@ class EndpointTests(ServerTestBase):
             )
 
             print(f"[OK] root GGUF emits stem: {bare}")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021t_extra_subdir_multiple_quantization_variants_emit_separate_models(
+        self,
+    ):
+        """A split extra folder lists variants and still accepts the folder name."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_variants_")
+        folder_name = "Qwen3.6-35B-A3B-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        # Q4 comes alphabetically before Q8
+        q4_file = os.path.join(model_dir, "Qwen3.6-35B-A3B-Q4_K_M.gguf")
+        q8_file = os.path.join(model_dir, "Qwen3.6-35B-A3B-Q8_0.gguf")
+        mmproj_file = os.path.join(model_dir, "mmproj-Qwen3.6-35B-A3B-BF16.gguf")
+        self._write_stub_gguf_file(q4_file)
+        self._write_stub_gguf_file(q8_file)
+        self._write_stub_gguf_file(mmproj_file)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            # The model list shows the real choices in the folder.
+            self.assertIn("Qwen3.6-35B-A3B-Q4_K_M", models_by_id)
+            self.assertIn("Qwen3.6-35B-A3B-Q8_0", models_by_id)
+
+            # The old folder name still works in requests, but is not listed as
+            # another model.
+            self.assertNotIn(folder_name, models_by_id)
+            legacy_response = requests.get(
+                f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy_response.status_code, 200)
+            self.assertEqual(legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M")
+            self.assertEqual(legacy_response.json()["checkpoint"], q4_file)
+
+            canonical_legacy_response = requests.get(
+                f"{self.base_url}/models/extra.{folder_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(canonical_legacy_response.status_code, 200)
+            self.assertEqual(
+                canonical_legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M"
+            )
+            self.assertEqual(canonical_legacy_response.json()["checkpoint"], q4_file)
+
+            self.assertNotIn("mmproj-Qwen3.6-35B-A3B-BF16", models_by_id)
+
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoint"], q4_file
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoint"], q8_file
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoints"]["mmproj"],
+                os.path.basename(mmproj_file),
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoints"]["mmproj"],
+                os.path.basename(mmproj_file),
+            )
+
+            print("[OK] split extra folder lists variants and accepts folder name")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021x_extra_split_folder_alias_shadows_builtin_without_visible_duplicate(
+        self,
+    ):
+        """A split extra folder name is chosen over a built-in with the same name."""
+        bare = ENDPOINT_TEST_MODEL
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_alias_shadow_")
+        model_dir = os.path.join(extra_dir, bare)
+        q4_file = os.path.join(model_dir, "Local-Compat-Q4_K_M.gguf")
+        q8_file = os.path.join(model_dir, "Local-Compat-Q8_0.gguf")
+        self._write_stub_gguf_file(q4_file)
+        self._write_stub_gguf_file(q8_file)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {model["id"] for model in models_response.json()["data"]}
+
+            self.assertIn("Local-Compat-Q4_K_M", ids)
+            self.assertIn("Local-Compat-Q8_0", ids)
+            self.assertIn(f"builtin.{bare}", ids)
+            self.assertNotIn(
+                bare,
+                ids,
+                "bare folder alias should not be emitted as a duplicate model",
+            )
+
+            alias_response = requests.get(
+                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(alias_response.status_code, 200)
+            self.assertEqual(alias_response.json()["id"], "Local-Compat-Q4_K_M")
+            self.assertEqual(alias_response.json()["checkpoint"], q4_file)
+
+            builtin_response = requests.get(
+                f"{self.base_url}/models/builtin.{bare}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(builtin_response.status_code, 200)
+            self.assertEqual(builtin_response.json()["id"], f"builtin.{bare}")
+            self.assertNotEqual(builtin_response.json()["checkpoint"], q4_file)
+            self.assertNotEqual(builtin_response.json()["checkpoint"], q8_file)
+
+            print(
+                "[OK] split extra folder name is chosen over builtin without duplicate model"
+            )
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021u_extra_subdir_sharded_models_remain_grouped(self):
+        """extra_models_dir folders with sharded GGUFs remain grouped as one model."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shards_")
+        folder_name = "Llama-3-70B-Instruct-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        shard1 = os.path.join(model_dir, "Llama-3-70B-Instruct-00001-of-00002.gguf")
+        shard2 = os.path.join(model_dir, "Llama-3-70B-Instruct-00002-of-00002.gguf")
+        self._write_stub_gguf_file(shard1)
+        self._write_stub_gguf_file(shard2)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            # Shards should not be listed as standalone models.
+            self.assertNotIn("Llama-3-70B-Instruct-00001-of-00002", models_by_id)
+            self.assertNotIn("Llama-3-70B-Instruct-00002-of-00002", models_by_id)
+
+            self.assertIn(folder_name, models_by_id)
+            # One sharded model stays grouped under the folder name.
+            self.assertEqual(models_by_id[folder_name]["checkpoint"], model_dir)
+
+            print("[OK] extra subdir sharded models remain grouped")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021ub_extra_subdir_sharded_size_sums_shards_but_files_stay_per_file(self):
+        """Issue #2972: a sharded model reports the whole family's size, while
+        /models/{id}/files keeps reporting each file's own size."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shard_size_")
+        folder_name = "Sharded-Size-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        shard1 = os.path.join(model_dir, "Sharded-Size-00001-of-00002.gguf")
+        shard2 = os.path.join(model_dir, "Sharded-Size-00002-of-00002.gguf")
+        self._write_stub_gguf_file(shard1)
+        self._write_stub_gguf_file(shard2)
+
+        # The resolved path is the first shard, which in unsloth-style layouts
+        # is a small stub; the bulk of the weights live in the later shards.
+        shard2_bytes = 200 * 1024 * 1024
+        with open(shard2, "r+b") as f:
+            f.truncate(shard2_bytes)
+        shard1_bytes = os.path.getsize(shard1)
+        expected_gb = (shard1_bytes + shard2_bytes) / (1024**3)
+        shard1_only_gb = shard1_bytes / (1024**3)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+            self.assertIn(folder_name, models_by_id)
+            self.assertAlmostEqual(
+                models_by_id[folder_name]["size"],
+                expected_gb,
+                places=2,
+                msg="model size must cover every shard, not just the resolved one",
+            )
+            self.assertGreater(models_by_id[folder_name]["size"], shard1_only_gb)
+
+            files_response = requests.get(
+                f"{self.base_url}/models/{folder_name}/files",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(files_response.status_code, 200)
+            files = files_response.json()["files"]
+            main_files = [f for f in files if f["role"] == "main"]
+            self.assertEqual(len(main_files), 1)
+            self.assertEqual(main_files[0]["name"], os.path.basename(shard1))
+            self.assertEqual(
+                main_files[0]["size_bytes"],
+                shard1_bytes,
+                "/files must report the individual file size, not the shard total",
+            )
+
+            print("[OK] sharded size sums shards while /files stays per-file")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021v_extra_subdir_multiple_sharded_quantizations_split_by_variant(self):
+        """A folder with multiple sharded variants lists one model per variant."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_sharded_variants_")
+        folder_name = "Mixtral-8x7B-Instruct-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        q4_shard1 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002.gguf"
+        )
+        q4_shard2 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q4_K_M-00002-of-00002.gguf"
+        )
+        q8_shard1 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q8_0-00001-of-00002.gguf"
+        )
+        q8_shard2 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q8_0-00002-of-00002.gguf"
+        )
+        for shard in [q4_shard1, q4_shard2, q8_shard1, q8_shard2]:
+            self._write_stub_gguf_file(shard)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            self.assertIn("Mixtral-8x7B-Instruct-Q4_K_M", models_by_id)
+            self.assertIn("Mixtral-8x7B-Instruct-Q8_0", models_by_id)
+            self.assertNotIn(folder_name, models_by_id)
+            self.assertNotIn(
+                "Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002", models_by_id
+            )
+
+            self.assertEqual(
+                models_by_id["Mixtral-8x7B-Instruct-Q4_K_M"]["checkpoint"],
+                q4_shard1,
+            )
+            self.assertEqual(
+                models_by_id["Mixtral-8x7B-Instruct-Q8_0"]["checkpoint"],
+                q8_shard1,
+            )
+
+            legacy_response = requests.get(
+                f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy_response.status_code, 200)
+            self.assertEqual(
+                legacy_response.json()["id"], "Mixtral-8x7B-Instruct-Q4_K_M"
+            )
+            self.assertEqual(legacy_response.json()["checkpoint"], q4_shard1)
+
+            print("[OK] extra folder with multiple sharded variants lists variants")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021w_extra_subdir_multiple_mmproj_files_choose_first_alphabetically(self):
+        """A folder with multiple mmproj files chooses the first name alphabetically."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_mmproj_")
+        folder_name = "Vision-Model-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        model_file = os.path.join(model_dir, "Vision-Model-Q4_K_M.gguf")
+        first_mmproj = os.path.join(model_dir, "mmproj-a-Vision-Model.gguf")
+        second_mmproj = os.path.join(model_dir, "mmproj-z-Vision-Model.gguf")
+        self._write_stub_gguf_file(model_file)
+        self._write_stub_gguf_file(second_mmproj)
+        self._write_stub_gguf_file(first_mmproj)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            self.assertIn(folder_name, models_by_id)
+            self.assertEqual(
+                models_by_id[folder_name]["checkpoints"]["mmproj"],
+                os.path.basename(first_mmproj),
+            )
+
+            print("[OK] extra folder with multiple mmproj files chooses first name")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021y_extra_identical_filenames_in_two_folders_stay_distinct(self):
+        """Two folders holding the same variant filenames keep every model."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_collision_")
+        expected = []
+        for folder in ("Llama-Local-GGUF", "Mistral-Local-GGUF"):
+            for name in ("model-Q4_K_M.gguf", "model-Q8_0.gguf"):
+                path = os.path.join(extra_dir, folder, name)
+                self._write_stub_gguf_file(path)
+                expected.append(path)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            found = {
+                model["id"]: model["checkpoint"]
+                for model in models_response.json()["data"]
+                if model.get("checkpoint") in expected
+            }
+
+            # Four files, four models: no folder may overwrite another's entry.
+            self.assertEqual(
+                len(found), len(expected), f"expected 4 models, got {found}"
+            )
+            self.assertEqual(sorted(found.values()), sorted(expected))
+
+            print("[OK] identical filenames in two extra folders stay distinct")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021ya_extra_same_quant_non_shard_files_remain_separate(self):
+        """An -imatrix file beside the plain one is a second model, not a shard."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_imatrix_")
+        model_dir = os.path.join(extra_dir, "Local-Imatrix-GGUF")
+        plain = os.path.join(model_dir, "Model-Q4_K_M.gguf")
+        imatrix = os.path.join(model_dir, "Model-Q4_K_M-imatrix.gguf")
+        self._write_stub_gguf_file(plain)
+        self._write_stub_gguf_file(imatrix)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            # Sharing a quant token is not enough to make them one sharded model.
+            self.assertIn("Model-Q4_K_M", models_by_id)
+            self.assertIn("Model-Q4_K_M-imatrix", models_by_id)
+            self.assertEqual(models_by_id["Model-Q4_K_M"]["checkpoint"], plain)
+            self.assertEqual(
+                models_by_id["Model-Q4_K_M-imatrix"]["checkpoint"], imatrix
+            )
+
+            print("[OK] same-quant non-shard files remain separate models")
         finally:
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
@@ -6271,6 +6794,272 @@ class EndpointTests(ServerTestBase):
                 json={"telemetry": {"trust_incoming_trace_context": bool(prior)}},
                 timeout=TIMEOUT_DEFAULT,
             )
+
+    def test_051_default_model_source_policy(self):
+        """default_model_source validates and drives source-less variant lookups."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        prior = (
+            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+            .json()
+            .get("default_model_source", "huggingface")
+        )
+        try:
+            # Ships defaulting to Hugging Face.
+            self.assertIn(prior, ("huggingface", "modelscope"))
+
+            # An unsupported registry name is rejected by config validation.
+            bad = requests.post(
+                set_url,
+                json={"default_model_source": "nexus"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(bad.status_code, 400, bad.text)
+
+            # Switching the policy round-trips.
+            resp = requests.post(
+                set_url,
+                json={"default_model_source": "modelscope"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            read_back = (
+                requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+                .json()
+                .get("default_model_source")
+            )
+            self.assertEqual(read_back, "modelscope")
+
+            # A source-less variant lookup now resolves to ModelScope: the 404
+            # message names the registry the server actually contacted, proving
+            # the policy drove the choice without a per-request source.
+            variants = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={"checkpoint": "lemonade/definitely-not-a-real-repo"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(variants.status_code, 404, variants.text)
+            self.assertIn("ModelScope", variants.text)
+
+            # An explicit source always overrides the configured default.
+            override = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={
+                    "checkpoint": "lemonade/definitely-not-a-real-repo",
+                    "source": "huggingface",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(override.status_code, 404, override.text)
+            self.assertIn("Hugging Face", override.text)
+
+            # A provider URL is detected server-side and beats the configured
+            # policy: even with the default set to ModelScope, a Hugging Face URL
+            # is normalized and contacts Hugging Face.
+            url_lookup = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={
+                    "checkpoint": (
+                        "https://huggingface.co/lemonade/definitely-not-a-real-repo"
+                    )
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(url_lookup.status_code, 404, url_lookup.text)
+            self.assertIn("Hugging Face", url_lookup.text)
+        finally:
+            requests.post(
+                set_url,
+                json={"default_model_source": prior},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def test_052_default_source_pull_persistence(self):
+        """A source-less /pull persists the configured default as the model's
+        registry provenance; an explicit source is recorded verbatim."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        prior = (
+            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+            .json()
+            .get("default_model_source", "huggingface")
+        )
+        default_name = f"user.DefaultSource-{uuid.uuid4().hex[:8]}"
+        explicit_name = f"user.ExplicitSource-{uuid.uuid4().hex[:8]}"
+
+        def persisted_source(model_name):
+            info = requests.get(
+                f"{self.base_url}/models/{model_name}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            return info.get("registry_source") or info.get("source")
+
+        try:
+            # Force the shipped default so the source-less pull resolves to a
+            # registry that actually hosts the tiny test checkpoint.
+            requests.post(
+                set_url,
+                json={"default_model_source": "huggingface"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+            # Source-less pull: persisted provenance is the configured default.
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": default_name,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertEqual(persisted_source(default_name), "huggingface")
+
+            # Explicit source is recorded even when it matches the default.
+            resp2 = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": explicit_name,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "source": "huggingface",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp2.status_code, 200, resp2.text)
+            self.assertEqual(persisted_source(explicit_name), "huggingface")
+
+            print("[OK] source-less /pull persists default_model_source provenance")
+        finally:
+            for name in (default_name, explicit_name):
+                try:
+                    requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+            requests.post(
+                set_url,
+                json={"default_model_source": prior},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def test_053_pull_source_url_conflict_returns_400(self):
+        """A provider URL that contradicts an explicit source/registry_source is
+        rejected up front with 400, matching the CLI, before any download."""
+        name = f"user.Conflict-{uuid.uuid4().hex[:8]}"
+        try:
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://huggingface.co/owner/repo",
+                    "recipe": "llamacpp",
+                    "source": "modelscope",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, resp.text)
+
+            resp2 = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://modelscope.cn/models/owner/repo",
+                    "recipe": "llamacpp",
+                    "registry_source": "huggingface",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp2.status_code, 400, resp2.text)
+            print("[OK] conflicting /pull source vs provider URL returns 400")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_054_pull_variants_url_source_conflict_returns_400(self):
+        """GET /pull/variants with a --source param that contradicts the
+        detected URL registry is rejected with 400 (matching /pull and CLI)."""
+        # HF URL with --source modelscope should be rejected
+        resp = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://huggingface.co/fredmagg/Phi-4-mini-instruct-GGUF",
+                "source": "modelscope",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+        self.assertIn("checkpoint URL uses", resp.json()["error"])
+        self.assertIn("but source was set to", resp.json()["error"])
+
+        # MS URL with --source huggingface should also be rejected
+        resp2 = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://modelscope.cn/models/owner/repo",
+                "source": "huggingface",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp2.status_code, 400, resp2.text)
+
+        # An invalid source with a URL should also be rejected
+        resp3 = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://huggingface.co/owner/repo",
+                "source": "nexus",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp3.status_code, 400, resp3.text)
+        print("[OK] /pull/variants rejects URL vs --source mismatches")
+
+    def test_055_pull_invalid_source_rejected(self):
+        """Invalid source values (not huggingface/modelscope/local_*) are
+        rejected before URL normalization, not silently overwritten."""
+        name = f"user.InvalidSrc-{uuid.uuid4().hex[:8]}"
+        try:
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://huggingface.co/owner/repo",
+                    "recipe": "llamacpp",
+                    "source": "nexus",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, resp.text)
+            self.assertIn("Unsupported model source", resp.json()["error"])
+            print("[OK] invalid source rejected before URL normalization")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_037_model_update_check_lifecycle(self):
         """A successful re-pull clears a staged per-model update marker.

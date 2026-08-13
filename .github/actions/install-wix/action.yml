@@ -1,0 +1,81 @@
+name: 'Install WiX Toolset'
+description: 'Installs the WiX Toolset CLI and puts wix.exe on PATH for later steps'
+
+inputs:
+  version:
+    description: 'WiX Toolset version to install'
+    required: false
+    default: '5.0.2'
+
+runs:
+  using: composite
+  steps:
+    - name: Install WiX Toolset ${{ inputs.version }} (CLI)
+      shell: PowerShell
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        $version = "${{ inputs.version }}"
+        Write-Host "Downloading WiX Toolset $version CLI..." -ForegroundColor Cyan
+        $wixUri = "https://github.com/wixtoolset/wix/releases/download/v$version/wix-cli-x64.msi"
+        $msiPath = "$env:RUNNER_TEMP\wix-cli-x64.msi"
+
+        Invoke-WebRequest -UseBasicParsing -Uri $wixUri -OutFile $msiPath
+
+        Write-Host "Installing WiX Toolset $version CLI..." -ForegroundColor Cyan
+        $p = Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$msiPath`"", "/qn", "/norestart") -PassThru -Wait
+        if ($p.ExitCode -ne 0) {
+          Write-Host "WiX installer exited with code $($p.ExitCode)" -ForegroundColor Red
+          exit $p.ExitCode
+        }
+
+    - name: Verify WiX installation
+      shell: PowerShell
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        # The CLI MSI does not always add itself to PATH in non-interactive
+        # installs, so locate it explicitly and then update PATH for later steps.
+        $majorMinor = "${{ inputs.version }}".Split('.')[0..1] -join '.'
+        $wixDirs = @(
+          "C:\Program Files\WiX Toolset v$majorMinor\bin",
+          "C:\Program Files (x86)\WiX Toolset v$majorMinor\bin"
+        )
+
+        $wixExe = $null
+        foreach ($dir in $wixDirs) {
+          if (Test-Path (Join-Path $dir "wix.exe")) {
+            $wixExe = Join-Path $dir "wix.exe"
+            break
+          }
+        }
+
+        if (-not $wixExe) {
+          Write-Host "ERROR: wix.exe not found after installation." -ForegroundColor Red
+          Get-ChildItem -Recurse "C:\Program Files" -Filter wix.exe -ErrorAction SilentlyContinue | Select-Object -First 20 | Format-List FullName
+          exit 1
+        }
+
+        $wixDir = Split-Path $wixExe -Parent
+
+        # Persist wix.exe directory to PATH for all subsequent steps
+        "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+        Write-Host "Using WiX from: $wixExe" -ForegroundColor Green
+        & $wixExe --version
+
+    - name: Pre-install WiX extensions
+      shell: PowerShell
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        # `wix build -ext` extracts the package into a shared per-user cache on
+        # first use. Two installer targets built in parallel would otherwise
+        # race to populate it, so seed it once here while nothing else runs.
+        #
+        # Pinned to the CLI version: unversioned, `wix extension add` resolves
+        # the newest package on NuGet, which a pinned older CLI then refuses to
+        # load — a break with no change on our side.
+        wix extension add -g "WixToolset.UI.wixext/${{ inputs.version }}"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        wix extension list -g

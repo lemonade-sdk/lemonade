@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
+#include "lemon/utils/github_api.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
@@ -179,17 +180,13 @@ namespace lemon::backends {
 
         const std::string url = "https://api.github.com/repos/" + repo +
                                 "/releases/tags/" + tag;
-        const std::map<std::string, std::string> headers = {
-            {"User-Agent", "lemonade"},
-            {"Accept", "application/vnd.github+json"},
-        };
 
         LOG(DEBUG, spec.log_name()) << "Resolving asset wildcard '" << pattern
             << "' for " << repo << "@" << tag << " via " << url << std::endl;
 
         utils::HttpResponse resp;
         try {
-            resp = utils::HttpClient::get(url, headers);
+            resp = utils::github_api::get(url);
         } catch (const std::exception& e) {
             throw std::runtime_error(
                 "Failed to query GitHub for release '" + tag + "' of " + repo +
@@ -323,12 +320,9 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {
-        auto* cfg = lemon::RuntimeConfig::global();
-        if (!cfg) return "";
-
         std::string section, bin_key;
         build_bin_config_key(recipe, backend, section, bin_key);
-        std::string bin_value = cfg->backend_string(section, bin_key);
+        std::string bin_value = get_bin_config_value(recipe, backend);
 
         // Reserved keywords and bare version tags are handled by the install flow.
         if (bin_value.empty() || bin_value == "builtin" || bin_value == "latest") {
@@ -343,10 +337,18 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_bin_config_value(const std::string& recipe, const std::string& backend) {
-        auto* cfg = lemon::RuntimeConfig::global();
-        if (!cfg) return "";
         std::string section, bin_key;
         build_bin_config_key(recipe, backend, section, bin_key);
+
+        std::string env_name = "LEMONADE_" + section + "_" + bin_key;
+        std::transform(env_name.begin(), env_name.end(), env_name.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+
+        std::string bin_value = utils::get_environment_variable_utf8(env_name);
+        if (!bin_value.empty()) return bin_value;
+
+        auto* cfg = lemon::RuntimeConfig::global();
+        if (!cfg) return "";
         return cfg->backend_string(section, bin_key);
     }
 

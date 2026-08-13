@@ -1,8 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <stdexcept>
 #include <cstdint>
 #include <string>
+#include <filesystem>
 #include <map>
 #include <optional>
 #include <set>
@@ -80,6 +82,7 @@ struct ModelInfo {
     std::string recipe;
     std::vector<std::string> labels;
     std::vector<std::string> components;
+    std::vector<std::string> input_aliases;  // Names accepted in requests but hidden from /models
     bool suggested = false;
     std::string source;  // Local origin: local_upload/local_path/extra_models_dir
     std::string registry_source = "huggingface";  // Remote registry: huggingface/modelscope
@@ -109,7 +112,9 @@ struct ModelInfo {
     std::string cloud_provider;
     // Per-token price in USD per 1,000,000 tokens, when the provider reports it
     // (OpenRouter, Together). <0 means unknown (e.g. Fireworks doesn't publish
-    // pricing in /v1/models). Used for display only — never affects routing.
+    // pricing in /v1/models). Surfaced on /v1/models for display, and (when a
+    // collection.router policy is evaluated) attached to the decision as
+    // illustrative outputs.estimated_cost — not a billing figure.
     double cost_input_per_million = -1.0;
     double cost_output_per_million = -1.0;
 
@@ -176,6 +181,20 @@ public:
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
 
+    // Register a callback fired after a router collection's policy changes (it
+    // is added, edited, or removed — via the API or an on-disk edit picked up by
+    // the directory watcher). Used to reconcile router-collection policy state,
+    // e.g. evicting routing helpers no active policy still references. Invoked
+    // outside all ModelManager locks. Set once during startup. The callback
+    // receives a monotonic generation number identifying this change; consumers
+    // use it to discard notifications that arrive out of order.
+    void set_models_changed_callback(std::function<void(uint64_t)> cb);
+
+    // Reserve the next monotonic registry-change generation. Callers that
+    // reconcile registry state outside notify_models_changed() (e.g. the startup
+    // seed) use this so their publication participates in the same ordering.
+    uint64_t next_notify_generation();
+
     // Get all supported models from server_models.json
     std::map<std::string, ModelInfo> get_supported_models();
 
@@ -190,6 +209,13 @@ public:
     void register_user_model(const std::string& model_name,
                             const json& model_data,
                             const std::string& source = "");
+
+    // Register or validate a model definition without downloading its files.
+    // Uses the same registration path as download_model.
+    void register_model(const std::string& model_name,
+                       const json& model_data,
+                       bool allow_missing_checkpoint = false,
+                       bool replace_existing = false);
 
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,
@@ -296,7 +322,10 @@ private:
                        const json& model_data,
                        bool do_not_upgrade,
                        DownloadProgressCallback progress_callback,
-                       std::set<std::string>& visited);
+                       std::set<std::string>& visited,
+                       bool register_only,
+                       bool allow_missing_checkpoint,
+                       bool replace_existing);
 
     json load_server_models();
     json load_architecture_defaults();
@@ -339,6 +368,11 @@ private:
     // Caller must hold models_cache_mutex_ (reads server_models_/user_models_).
     void populate_collection_components_from_cache_locked(ModelInfo& info);
 
+    // Fire the models-changed callback (if set) outside all locks. Guarded
+    // against same-thread reentrancy so a callback that reads the registry
+    // cannot recursively re-fire.
+    void notify_models_changed();
+
     // Cache management
     void build_cache();
     void add_model_to_cache(const std::string& model_name);
@@ -360,6 +394,14 @@ private:
     // Discover GGUF models from extra_models_dir
     std::map<std::string, ModelInfo> discover_extra_models() const;
 
+    ModelInfo init_extra_model_info(const std::string& name) const;
+
+    // Scan one extra_models_dir subfolder and add either one folder model or one model per variant.
+    void discover_extra_models_in_directory(
+        const std::filesystem::path& dir_path,
+        const std::vector<std::filesystem::path>& gguf_files,
+        std::map<std::string, ModelInfo>& discovered) const;
+
     json server_models_;
     json user_models_;
     json recipe_options_;
@@ -367,6 +409,16 @@ private:
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
     std::unique_ptr<DirectoryWatcher> directory_watcher_;
+
+    // Fired after the model registry changes (add/edit/remove). Guarded by its
+    // own mutex; invoked outside all other ModelManager locks.
+    std::mutex models_changed_callback_mutex_;
+    std::function<void(uint64_t)> models_changed_callback_;
+    // Monotonic counter identifying each registry change. The callback may read
+    // the live registry to compute a snapshot and publish it downstream;
+    // concurrent runs can publish an older snapshot after a newer one, so the
+    // generation lets the consumer keep only the newest.
+    std::atomic<uint64_t> notify_generation_{0};
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;

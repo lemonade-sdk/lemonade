@@ -35,6 +35,14 @@ bool contains_ci(const std::string& s, const std::string& needle) {
     return to_lower(s).find(to_lower(needle)) != std::string::npos;
 }
 
+bool is_draft_companion(const std::string& path) {
+    std::string filename = to_lower(path);
+    size_t slash = filename.find_last_of('/');
+    if (slash != std::string::npos) filename = filename.substr(slash + 1);
+    return filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf" ||
+           filename.rfind("mtp-", 0) == 0;
+}
+
 // Quant token extractor. Recognizes the variants we actually see in
 // production GGUF repos (see src/cpp/resources/server_models.json), including
 // the `UD-` Unsloth Dynamic prefix and the `_XL` "extra-large" suffix that
@@ -101,19 +109,23 @@ GgufVariantSet enumerate_gguf_variants(
         return it == size_by_file.end() ? 0 : it->second;
     };
 
-    // Partition into mmproj vs regular gguf files.
+    // Companion GGUFs must not become selectable main-model variants.
     std::vector<std::string> gguf_files;
     for (const auto& f : repo_files) {
         std::string f_lower = to_lower(f);
         if (!ends_with(f_lower, ".gguf")) continue;
+        size_t slash = f.find_last_of('/');
+        std::string bare = slash == std::string::npos ? f : f.substr(slash + 1);
         if (f_lower.find("mmproj") != std::string::npos) {
-            size_t slash = f.find_last_of('/');
-            result.mmproj_files.push_back(slash == std::string::npos ? f : f.substr(slash + 1));
+            result.mmproj_files.push_back(bare);
+        } else if (is_draft_companion(f)) {
+            result.draft_files.push_back(bare);
         } else {
             gguf_files.push_back(f);
         }
     }
     std::sort(result.mmproj_files.begin(), result.mmproj_files.end());
+    std::sort(result.draft_files.begin(), result.draft_files.end());
 
     // Group by top-level folder vs root files.
     std::map<std::string, std::vector<std::string>> folder_groups;
@@ -137,7 +149,9 @@ GgufVariantSet enumerate_gguf_variants(
 
         GgufVariant v;
         std::string q;
-        v.name = extract_quant(folder, q) ? q : folder;
+        bool has_quant = extract_quant(folder, q);
+        v.name = has_quant ? q : folder;
+        v.quant = has_quant ? q : "";
         v.files = files;
         v.primary_file = files.front();
         v.sharded = true;
@@ -145,23 +159,40 @@ GgufVariantSet enumerate_gguf_variants(
         result.variants.push_back(std::move(v));
     }
 
-    // Root-file variants, grouped by extracted quant token. Files that share
-    // the same token (typically multi-shard root files like
-    // `model-Q4_K_M-00001-of-00003.gguf`) are merged into one sharded variant.
+    // Root-file variants. Files are merged into one sharded variant only when
+    // their names declare the same shard series, like
+    // `model-Q4_K_M-00001-of-00003.gguf`. Sharing a quant token is not enough:
+    // `Model-Q4_K_M.gguf` and `Model-Q4_K_M-imatrix.gguf` are separate models.
+    static const std::regex shard_re(R"(^(.+)[-._]\d{5}-of-\d{5}\.gguf$)", std::regex::icase);
     std::sort(root_files.begin(), root_files.end());
-    std::map<std::string, std::vector<std::string>> root_by_quant;
+    std::map<std::string, std::vector<std::string>> root_by_series;
+    std::map<std::string, std::string> quant_of_series;
+    std::map<std::string, int> series_per_quant;
     std::vector<std::string> root_unmatched;
     for (const auto& f : root_files) {
         std::string q;
-        if (extract_quant(f, q)) {
-            root_by_quant[q].push_back(f);
-        } else {
+        if (!extract_quant(f, q)) {
             root_unmatched.push_back(f);
+            continue;
         }
+        std::smatch m;
+        std::string key = std::regex_match(f, m, shard_re) ? m[1].str() : f;
+        if (root_by_series.find(key) == root_by_series.end()) {
+            quant_of_series[key] = q;
+            series_per_quant[q]++;
+        }
+        root_by_series[key].push_back(f);
     }
-    for (auto& kv : root_by_quant) {
+    for (auto& kv : root_by_series) {
+        const std::string& quant = quant_of_series[kv.first];
         GgufVariant v;
-        v.name = kv.first;
+        // Two variants can now share a quant token, so fall back to the primary
+        // file's stem to keep every name in the list distinct. The quant is kept
+        // separately: widening the name must not change where this variant sorts.
+        v.name = series_per_quant[quant] == 1
+                     ? quant
+                     : kv.second.front().substr(0, kv.second.front().find_last_of('.'));
+        v.quant = quant;
         v.files = kv.second;
         v.primary_file = kv.second.front();
         v.sharded = kv.second.size() > 1;
@@ -183,11 +214,15 @@ GgufVariantSet enumerate_gguf_variants(
         }
     }
 
-    // Sort by quant priority then name.
+    // Sort by quant priority then name. Ordering reads `quant`, never `name`:
+    // `name` widens to a file stem when two variants share a quant, and a stem
+    // is not a key in the priority table, so sorting on it silently demoted
+    // every disambiguated variant into the "everything else" bucket — putting
+    // Q8_0 ahead of Q4_K_M and making `pull --yes` take the wrong default.
     std::sort(result.variants.begin(), result.variants.end(),
               [](const GgufVariant& a, const GgufVariant& b) {
-                  int pa = quant_priority(a.name);
-                  int pb = quant_priority(b.name);
+                  int pa = a.quant.empty() ? 100 : quant_priority(a.quant);
+                  int pb = b.quant.empty() ? 100 : quant_priority(b.quant);
                   if (pa != pb) return pa < pb;
                   return a.name < b.name;
               });
@@ -266,6 +301,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         out["suggested_name"] = suggested_name;
         out["suggested_labels"] = nlohmann::json::array();
         out["mmproj_files"] = nlohmann::json::array();
+        out["draft_files"] = nlohmann::json::array();
         out["variants"] = nlohmann::json::array({vj});
         return out;
     }
@@ -331,6 +367,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         out["suggested_name"] = suggested_name;
         out["suggested_labels"] = nlohmann::json::array();
         out["mmproj_files"] = nlohmann::json::array();
+        out["draft_files"] = nlohmann::json::array();
         out["variants"] = nlohmann::json::array();
         if (manifest.contains("size") && manifest["size"].is_number()) {
             out["size"] = manifest["size"];
@@ -365,6 +402,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     out["suggested_name"] = suggested_name;
     out["suggested_labels"] = labels;
     out["mmproj_files"] = vset.mmproj_files;
+    out["draft_files"] = vset.draft_files;
 
     nlohmann::json variants_json = nlohmann::json::array();
     for (const auto& v : vset.variants) {

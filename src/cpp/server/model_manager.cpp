@@ -14,6 +14,7 @@
 #include <lemon/backends/cloud/cloud_server.h>
 #include <lemon/backends/fastflowlm/fastflowlm_models.h>
 #include <lemon/cloud_provider_registry.h>
+#include <lemon/gguf_shard_utils.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -21,6 +22,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <sstream>
 #include <thread>
 #include <chrono>
@@ -113,9 +115,31 @@ namespace lemon {
 // Properties which are defined by the user for model registration.
 static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source"};
 
+static std::string visible_extra_variant_name(const lemon::GgufVariant& variant) {
+    std::string stem = fs::path(variant.primary_file).stem().string();
+    if (!variant.sharded) {
+        return stem;
+    }
+
+    const std::vector<std::string> shard_markers = {
+        "-00001-of-",
+        ".00001-of-",
+        "_00001-of-",
+    };
+    for (const auto& marker : shard_markers) {
+        size_t pos = stem.find(marker);
+        if (pos != std::string::npos) {
+            return stem.substr(0, pos);
+        }
+    }
+    return stem;
+}
+
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
+static constexpr const char EXTRA_MODEL_RECIPE[] = "llamacpp";
+static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
 
 // The deployment ModelType a model actually serves, honoring backend capability.
 // get_model_type_from_labels() gives chat-indicator labels (reasoning / vision /
@@ -526,9 +550,10 @@ static void cleanup_empty_parents(const fs::path& file_path, const fs::path& sto
     }
 }
 
-// Return the on-disk size of a resolved model path. Some recipes (for
-// example Moonshine streaming) resolve to a directory of artifacts rather than
-// to a single model file. std::filesystem::file_size() fails on directories
+// Size of one resolved path. Deliberately per-path: list_model_files() reports
+// this as an individual file's size, so shard aggregation must not happen here.
+// Directories (e.g. Moonshine artifacts) are summed recursively because
+// std::filesystem::file_size() fails on them.
 static uintmax_t resolved_path_size_bytes(const fs::path& path) {
     std::error_code ec;
     if (!safe_exists(path)) {
@@ -562,14 +587,52 @@ static uintmax_t resolved_path_size_bytes(const fs::path& path) {
 }
 
 
+std::uintmax_t sharded_gguf_size_bytes(const fs::path& shard_path) {
+    std::string base;
+    int total = 0;
+    if (!is_gguf_shard_filename(shard_path.filename().string(), &base, &total)) {
+        return 0;
+    }
+
+    const fs::path dir = shard_path.parent_path();
+    if (!safe_is_directory(dir)) {
+        return 0;
+    }
+
+    uintmax_t sum = 0;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(dir, safe_dir_options, ec)) {
+        if (!entry.is_regular_file(ec)) {
+            if (ec) ec.clear();
+            continue;
+        }
+        if (!same_shard_family(entry.path().filename().string(), base, total)) {
+            continue;
+        }
+
+        auto size = fs::file_size(entry.path(), ec);
+        if (!ec) {
+            sum += size;
+        } else {
+            ec.clear();
+        }
+    }
+    return sum;
+}
+
+
 // Replace the static registry size with the aggregate on-disk size once the
 // files exist, so directory-checkpoint models (whose repos can carry more than
-// the registry estimate) report what was actually downloaded.
+// the registry estimate) report what was actually downloaded. A sharded GGUF
+// resolves to a single shard, which for unsloth-style layouts is a small stub,
+// so the whole family is summed instead.
 static void refresh_on_disk_size(ModelInfo& info) {
     uintmax_t total_size = 0;
     for (auto& [type, path] : info.resolved_paths) {
         (void)type;
-        total_size += resolved_path_size_bytes(path_from_utf8(path));
+        fs::path resolved = path_from_utf8(path);
+        uintmax_t shard_total = sharded_gguf_size_bytes(resolved);
+        total_size += (shard_total > 0) ? shard_total : resolved_path_size_bytes(resolved);
     }
     if (total_size == 0) {
         return;
@@ -1029,6 +1092,52 @@ void ModelManager::invalidate_models_cache() {
     cache_valid_ = false;
 }
 
+void ModelManager::set_models_changed_callback(std::function<void(uint64_t)> cb) {
+    std::lock_guard<std::mutex> lock(models_changed_callback_mutex_);
+    models_changed_callback_ = std::move(cb);
+}
+
+uint64_t ModelManager::next_notify_generation() {
+    return ++notify_generation_;
+}
+
+void ModelManager::notify_models_changed() {
+    // A callback that reads the registry can trigger a cache rebuild; block any
+    // same-thread re-entry so that can never recursively re-fire this.
+    static thread_local bool in_notify = false;
+    if (in_notify) {
+        return;
+    }
+    std::function<void(uint64_t)> cb;
+    {
+        std::lock_guard<std::mutex> lock(models_changed_callback_mutex_);
+        cb = models_changed_callback_;
+    }
+    if (!cb) {
+        return;
+    }
+    in_notify = true;
+    struct ResetGuard {
+        ~ResetGuard() { in_notify = false; }
+    } reset_guard;
+    // Tag this notification with a monotonic generation. Two concurrent registry
+    // updates may run their callbacks in parallel and publish out of order; the
+    // consumer keeps only the highest generation instead of us serializing the
+    // whole (potentially blocking) callback here, which would stall a newer
+    // update behind an older one.
+    const uint64_t generation = ++notify_generation_;
+    // Best-effort: a notification must never abort the registry mutation that
+    // triggered it. delete_model fires this from a scope-guard destructor, where
+    // a propagating exception would call std::terminate.
+    try {
+        cb(generation);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "ModelManager") << "models-changed callback threw: " << e.what() << std::endl;
+    } catch (...) {
+        LOG(WARNING, "ModelManager") << "models-changed callback threw a non-standard exception" << std::endl;
+    }
+}
+
 bool ModelManager::refresh_user_models_from_disk_for_lookup(const std::string& model_name) {
     std::vector<std::string> candidate_keys;
 
@@ -1081,8 +1190,12 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
         start_directory_watcher();
     }
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    cache_valid_ = false;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        cache_valid_ = false;
+    }
+
+    notify_models_changed();
 }
 
 void ModelManager::start_directory_watcher() {
@@ -1093,8 +1206,41 @@ void ModelManager::start_directory_watcher() {
             std::lock_guard<std::mutex> lock(models_cache_mutex_);
             cache_valid_ = false;
         }
+        notify_models_changed();
     });
     directory_watcher_->start();
+}
+
+ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
+    ModelInfo info;
+    info.model_name = name;
+    info.recipe = EXTRA_MODEL_RECIPE;
+    info.suggested = true;
+    info.downloaded = true;
+    info.source = EXTRA_MODEL_SOURCE;
+    info.labels.push_back("custom");
+    info.device = device_type_for_recipe(EXTRA_MODEL_RECIPE);
+    return info;
+}
+
+// Record a discovered model without ever overwriting one already found. Two
+// extra_models_dir folders can hold identically named files; qualifying the
+// newcomer with its folder keeps both and leaves the first model's id alone.
+static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
+                            const std::string& base_name,
+                            const fs::path& folder,
+                            ModelInfo info) {
+    const std::string prefix(EXTRA_MODEL_PREFIX);
+    std::string id = prefix + base_name;
+    if (discovered.count(id)) {
+        const std::string qualified = folder.filename().string() + "-" + base_name;
+        id = prefix + qualified;
+        for (int n = 2; discovered.count(id); ++n) {
+            id = prefix + qualified + "-" + std::to_string(n);
+        }
+    }
+    info.model_name = id;
+    discovered.emplace(id, std::move(info));
 }
 
 std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
@@ -1113,24 +1259,6 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     std::string search_dir = extra_models_dir_;
 
     LOG(INFO, "ModelManager") << "Scanning for GGUF models in: " << search_dir << std::endl;
-
-    // Configuration for discovered models (single source of truth)
-    static constexpr const char* EXTRA_MODEL_PREFIX = "extra.";
-    static constexpr const char* EXTRA_MODEL_RECIPE = "llamacpp";
-    static constexpr const char* EXTRA_MODEL_SOURCE = "extra_models_dir";
-
-    // Helper to initialize common ModelInfo fields for discovered models
-    auto init_extra_model_info = [](const std::string& name) -> ModelInfo {
-        ModelInfo info;
-        info.model_name = name;
-        info.recipe = EXTRA_MODEL_RECIPE;
-        info.suggested = true;
-        info.downloaded = true;
-        info.source = EXTRA_MODEL_SOURCE;
-        info.labels.push_back("custom");
-        info.device = device_type_for_recipe(EXTRA_MODEL_RECIPE);
-        return info;
-    };
 
     // Track which directories we've processed (for multimodal/multi-shard detection)
     std::map<std::string, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
@@ -1182,67 +1310,130 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.size = 0.0;
         }
 
-        discovered[model_name] = info;
+        add_extra_model(discovered, gguf_path.stem().string(), gguf_path.parent_path(), std::move(info));
     }
 
     // Process directories (multimodal and multi-shard models)
     for (const auto& [dir_path, gguf_files] : dirs_with_gguf) {
         if (gguf_files.empty()) continue;
-
-        fs::path dir = fs::path(dir_path);
-        std::string dir_name = dir.filename().string();
-
-        // Find the main model file and mmproj file
-        fs::path main_model_path;
-        fs::path mmproj_file;
-        double total_size = 0.0;
-
-        for (const auto& gguf_path : gguf_files) {
-            // Calculate total size
-            try {
-                uintmax_t file_size = fs::file_size(gguf_path);
-                total_size += static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
-            } catch (...) {}
-
-            // Check if this is an mmproj file (can be anywhere in filename)
-            if (gguf_reader_detail::contains_ignore_case(gguf_path.filename().string(), "mmproj")) {
-                mmproj_file = gguf_path;
-                continue;
-            }
-
-            // This is a model file - for sharded models, we want the first shard
-            // For non-sharded, this is the only model file
-            if (main_model_path.empty() || gguf_path < main_model_path) {
-                main_model_path = gguf_path;
-            }
-        }
-
-        if (main_model_path.empty()) {
-            // No main model file found (only mmproj?), skip
-            continue;
-        }
-
-        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + dir_name;
-        ModelInfo info = init_extra_model_info(model_name);
-        info.checkpoints["main"] = dir_path;
-        info.resolved_paths["main"] = main_model_path.string();
-        info.size = total_size;
-
-        // If mmproj found, set it and add vision label
-        if (!mmproj_file.empty()) {
-            info.checkpoints["mmproj"] = mmproj_file.filename().string();
-            info.resolved_paths["mmproj"] = mmproj_file.string();
-            info.labels.push_back("vision");
-        }
-
-        info.type = get_deployment_model_type(info.recipe, info.labels);
-
-        discovered[model_name] = info;
+        discover_extra_models_in_directory(fs::path(dir_path), gguf_files, discovered);
     }
 
     LOG(INFO, "ModelManager") << "Discovered " << discovered.size() << " models from extra directory" << std::endl;
 
     return discovered;
+}
+
+void ModelManager::discover_extra_models_in_directory(
+    const fs::path& dir_path,
+    const std::vector<fs::path>& gguf_files,
+    std::map<std::string, ModelInfo>& discovered) const {
+
+    std::string dir_name = dir_path.filename().string();
+    fs::path main_model_path; // File the old folder-based discovery would have selected.
+    std::vector<fs::path> mmproj_files;
+    double total_size = 0.0;
+
+    std::vector<std::string> model_filenames;
+    std::vector<std::pair<std::string, uint64_t>> model_file_sizes;
+    std::map<std::string, fs::path> model_file_by_name;
+
+    for (const auto& gguf_path : gguf_files) {
+        uint64_t file_size = 0;
+        try {
+            file_size = static_cast<uint64_t>(fs::file_size(gguf_path));
+            total_size += static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
+        } catch (...) {}
+
+        if (gguf_reader_detail::contains_ignore_case(gguf_path.filename().string(), "mmproj")) {
+            mmproj_files.push_back(gguf_path);
+            continue;
+        }
+
+        std::string filename = gguf_path.filename().string();
+        model_filenames.push_back(filename);
+        model_file_sizes.emplace_back(filename, file_size);
+        model_file_by_name[filename] = gguf_path;
+
+        // Match the old folder behavior: choose the first model file alphabetically.
+        if (main_model_path.empty() || gguf_path < main_model_path) {
+            main_model_path = gguf_path;
+        }
+    }
+
+    if (main_model_path.empty()) return;
+
+    std::sort(mmproj_files.begin(), mmproj_files.end());
+    fs::path mmproj_file = mmproj_files.empty() ? fs::path() : mmproj_files.front();
+
+    auto vset = lemon::enumerate_gguf_variants(model_filenames, model_file_sizes);
+
+    // Split the folder only when every model file belongs to a named variant.
+    // One sharded model stays as the folder model; multiple sharded variants
+    // become separate model choices.
+    bool should_split = vset.variants.size() > 1;
+    for (const auto& v : vset.variants) {
+        if (v.name == v.primary_file ||
+            model_file_by_name.find(v.primary_file) == model_file_by_name.end()) {
+            should_split = false;
+            break;
+        }
+    }
+
+    if (should_split) {
+        std::set<std::string> represented_files;
+        for (const auto& v : vset.variants) {
+            represented_files.insert(v.files.begin(), v.files.end());
+        }
+        if (represented_files.size() != model_filenames.size()) {
+            should_split = false;
+        }
+    }
+
+    if (should_split) {
+        for (const auto& v : vset.variants) {
+            auto it = model_file_by_name.find(v.primary_file);
+            if (it == model_file_by_name.end()) continue;
+
+            const fs::path& path = it->second;
+            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + visible_extra_variant_name(v);
+
+            ModelInfo info = init_extra_model_info(variant_id);
+            info.checkpoints["main"] = path.string();
+            info.resolved_paths["main"] = path.string();
+            info.size = static_cast<double>(v.size_bytes) / (1024.0 * 1024.0 * 1024.0);
+
+            if (!mmproj_file.empty()) {
+                info.checkpoints["mmproj"] = mmproj_file.filename().string();
+                info.resolved_paths["mmproj"] = mmproj_file.string();
+                info.labels.push_back("vision");
+            }
+            info.type = get_deployment_model_type(info.recipe, info.labels);
+
+            // Keep the old folder name working in requests without listing it.
+            if (path == main_model_path) {
+                info.input_aliases.push_back(dir_name);
+                info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + dir_name);
+            }
+
+            add_extra_model(discovered, visible_extra_variant_name(v), dir_path, std::move(info));
+        }
+    } else {
+        // Keep the folder as one model when splitting would be ambiguous.
+        std::string model_id = std::string(EXTRA_MODEL_PREFIX) + dir_name;
+        ModelInfo info = init_extra_model_info(model_id);
+        info.checkpoints["main"] = dir_path.string();
+        info.resolved_paths["main"] = main_model_path.string();
+        info.size = total_size;
+
+        if (!mmproj_file.empty()) {
+            info.checkpoints["mmproj"] = mmproj_file.filename().string();
+            info.resolved_paths["mmproj"] = mmproj_file.string();
+            info.labels.push_back("vision");
+        }
+        info.type = get_deployment_model_type(info.recipe, info.labels);
+        add_extra_model(discovered, dir_name, dir_path, std::move(info));
+    }
 }
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
@@ -2673,6 +2864,19 @@ static std::set<std::string> normalized_definition_labels(const json& model_data
     return labels;
 }
 
+// Whether the persisted user-model entry under `key` is a router collection.
+// Both register (checking the entry being overwritten) and unregister (checking
+// the entry being removed) must decide whether a routing policy is disappearing,
+// so the recipe lookup lives in one place.
+static bool user_entry_is_router_collection(const json& user_models,
+                                            const std::string& key) {
+    if (!user_models.is_object() || !user_models.contains(key)) {
+        return false;
+    }
+    return is_router_collection_recipe(
+        user_models.at(key).value("recipe", std::string()));
+}
+
 void ModelManager::register_user_model(const std::string& model_name,
                                       const json& model_data,
                                       const std::string& source) {
@@ -2723,16 +2927,29 @@ void ModelManager::register_user_model(const std::string& model_name,
     // save can drop the first model, producing a hard "Model not found" on the
     // next auto-load. Read the latest disk copy under the same process mutex so
     // stale in-memory state cannot overwrite another registration.
+    bool overwrote_router_collection = false;
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
         json updated_user_models = load_optional_json(get_user_models_file());
         if (!updated_user_models.is_object()) {
             updated_user_models = json::object();
         }
+        overwrote_router_collection =
+            user_entry_is_router_collection(updated_user_models, clean_name);
         updated_user_models[clean_name] = model_entry;
         save_user_models(updated_user_models);
         user_models_ = std::move(updated_user_models);
         cache_valid_ = false;
+    }
+
+    // A router collection carries a routing policy, so its lifecycle affects the
+    // routing-helper working set. Notify when the new entry is a router
+    // collection, but also when a router collection is being *replaced* by a
+    // non-router recipe — otherwise the old policy silently disappears without a
+    // reconcile. Registering ordinary models (e.g. a collection's helper
+    // components) still must not trigger one.
+    if (is_router_collection_recipe(recipe) || overwrote_router_collection) {
+        notify_models_changed();
     }
 }
 
@@ -2742,15 +2959,24 @@ void ModelManager::unregister_user_model(const std::string& model_name) {
         clean_name = strip_user_model_prefix(clean_name);
     }
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    json updated_user_models = load_optional_json(get_user_models_file());
-    if (!updated_user_models.is_object() || !updated_user_models.contains(clean_name)) {
-        return;
+    bool was_router_collection = false;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        json updated_user_models = load_optional_json(get_user_models_file());
+        if (!updated_user_models.is_object() || !updated_user_models.contains(clean_name)) {
+            return;
+        }
+        was_router_collection =
+            user_entry_is_router_collection(updated_user_models, clean_name);
+        updated_user_models.erase(clean_name);
+        save_user_models(updated_user_models);
+        user_models_ = std::move(updated_user_models);
+        cache_valid_ = false;
     }
-    updated_user_models.erase(clean_name);
-    save_user_models(updated_user_models);
-    user_models_ = std::move(updated_user_models);
-    cache_valid_ = false;
+
+    if (was_router_collection) {
+        notify_models_changed();
+    }
 }
 
 
@@ -3145,19 +3371,32 @@ void ModelManager::populate_collection_components_from_cache_locked(ModelInfo& i
     }
 }
 
+void ModelManager::register_model(const std::string& model_name,
+                                 const json& model_data,
+                                 bool allow_missing_checkpoint,
+                                 bool replace_existing) {
+    std::set<std::string> visited;
+    download_model(model_name, model_data, true, nullptr, visited,
+                   true, allow_missing_checkpoint, replace_existing);
+}
+
 void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
     std::set<std::string> visited;
-    download_model(model_name, model_data, do_not_upgrade, progress_callback, visited);
+    download_model(model_name, model_data, do_not_upgrade, progress_callback, visited,
+                   false, false, false);
 }
 
 void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback,
-                                 std::set<std::string>& visited) {
+                                 std::set<std::string>& visited,
+                                 bool register_only,
+                                 bool allow_missing_checkpoint,
+                                 bool replace_existing) {
     // Keep a mutable registration payload so legacy re-pulls that omit the
     // registry retain the source recorded on the existing model. The original
     // request remains untouched for validation and download semantics.
@@ -3220,8 +3459,13 @@ void ModelManager::download_model(const std::string& model_name,
             }
             LOG(INFO, "ModelManager") << "Registering new collection: " << model_name << std::endl;
         } else {
-            // Check that required arguments are provided
-            if (actual_checkpoint.empty() || actual_recipe.empty()) {
+            if (actual_recipe.empty()) {
+                throw std::runtime_error(
+                    "Model " + model_name + " is not registered with Lemonade Server. "
+                    "To register it, provide the `recipe` argument."
+                );
+            }
+            if (actual_checkpoint.empty() && !allow_missing_checkpoint) {
                 throw std::runtime_error(
                     "Model " + model_name + " is not registered with Lemonade Server. "
                     "To register and install it, provide the `checkpoint` and `recipe` "
@@ -3230,10 +3474,12 @@ void ModelManager::download_model(const std::string& model_name,
             }
 
             // Backend-specific checkpoint validation (llamacpp: GGUF needs :variant).
-            if (auto err = backends::ops_for(actual_recipe)->validate_registration_checkpoint(
-                    actual_checkpoint);
-                !err.empty()) {
-                throw std::runtime_error(err);
+            if (!actual_checkpoint.empty()) {
+                if (auto err = backends::ops_for(actual_recipe)->validate_registration_checkpoint(
+                        actual_checkpoint);
+                    !err.empty()) {
+                    throw std::runtime_error(err);
+                }
             }
 
             LOG(INFO, "ModelManager") << "Registering new user model: " << model_name << std::endl;
@@ -3251,34 +3497,49 @@ void ModelManager::download_model(const std::string& model_name,
             registration_data["source"] = effective_registry_source(info);
         }
 
-        bool is_collection_overwrite = is_model_collection_recipe(actual_recipe) &&
-                                        model_data.contains("components");
-        if (is_collection_overwrite) {
-            // Validate the original user-authored request, not registration_data:
-            // the latter is enriched with the persisted registry source, which is
-            // not part of the public routing-policy document the parser accepts.
-            if (auto err = validate_collection_request(model_name, model_data)) {
-                throw std::runtime_error(*err);
+        const bool explicit_definition =
+            !actual_recipe.empty() || !actual_checkpoint.empty() ||
+            model_data.contains("checkpoints") || model_data.contains("components");
+        if (register_only && replace_existing &&
+            is_user_model_name(model_name) && explicit_definition) {
+            if (is_model_collection_recipe(actual_recipe)) {
+                if (auto err = validate_collection_request(model_name, model_data)) {
+                    throw std::runtime_error(*err);
+                }
             }
             model_registered = false;
-            LOG(INFO, "ModelManager") << "Overwriting collection: "
+            LOG(INFO, "ModelManager") << "Replacing user model definition: "
                                       << model_name << std::endl;
-        } else if (actual_checkpoint.empty()) {
-            actual_checkpoint = info.checkpoint();
-            actual_recipe = info.recipe;
         } else {
-            std::string conflict = describe_registration_conflict(info, registration_data);
-            if (!conflict.empty()) {
-                throw std::runtime_error(
-                    "Model '" + model_name + "' is already registered with different "
-                    "model metadata: " + conflict + ". Choose a different model name "
-                    "for this registry checkpoint."
-                );
-            }
-            if (actual_recipe.empty()) {
+            bool is_collection_overwrite = is_model_collection_recipe(actual_recipe) &&
+                                            model_data.contains("components");
+            if (is_collection_overwrite) {
+                // Validate the original user-authored request, not registration_data:
+                // the latter is enriched with the persisted registry source, which is
+                // not part of the public routing-policy document the parser accepts.
+                if (auto err = validate_collection_request(model_name, model_data)) {
+                    throw std::runtime_error(*err);
+                }
+                model_registered = false;
+                LOG(INFO, "ModelManager") << "Overwriting collection: "
+                                          << model_name << std::endl;
+            } else if (actual_checkpoint.empty()) {
+                actual_checkpoint = info.checkpoint();
                 actual_recipe = info.recipe;
             } else {
-                model_registered = false;
+                std::string conflict = describe_registration_conflict(info, registration_data);
+                if (!conflict.empty()) {
+                    throw std::runtime_error(
+                        "Model '" + model_name + "' is already registered with different "
+                        "model metadata: " + conflict + ". Choose a different model name "
+                        "for this registry checkpoint."
+                    );
+                }
+                if (actual_recipe.empty()) {
+                    actual_recipe = info.recipe;
+                } else {
+                    model_registered = false;
+                }
             }
         }
     }
@@ -3301,6 +3562,10 @@ void ModelManager::download_model(const std::string& model_name,
         register_user_model(model_name, registration_data);
         model_registered = true;
         collection_registered_this_call = true;
+    }
+
+    if (register_only && is_model_collection_recipe(actual_recipe)) {
+        return;
     }
 
     // Collections don't have their own backend - download each component instead.
@@ -3409,7 +3674,7 @@ void ModelManager::download_model(const std::string& model_name,
             }
             LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
             json comp_data = json::object();
-            download_model(component, comp_data, do_not_upgrade, forward, visited);
+            download_model(component, comp_data, do_not_upgrade, forward, visited, false, false, false);
         }
 
         // A registry-backed collection's in-memory components were empty until the
@@ -3450,20 +3715,6 @@ void ModelManager::download_model(const std::string& model_name,
         );
     }
 
-    LOG(INFO, "ModelManager") << "Downloading model: " << repo_id;
-    if (!variant.empty()) {
-        LOG(INFO, "ModelManager") << " (variant: " << variant << ")";
-    }
-    LOG(INFO, "ModelManager") << std::endl;
-
-    // Check if offline mode
-    if (auto* cfg = RuntimeConfig::global()) {
-        if (cfg->offline()) {
-            LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
-            return;
-        }
-    }
-
     // Persist registration and recipe options BEFORE the cache-first shortcut
     // below. A registration/import/overwrite that targets an already-downloaded
     // model must still update user_models.json and recipe_options.json. The
@@ -3488,6 +3739,24 @@ void ModelManager::download_model(const std::string& model_name,
         }
         model_info.recipe_options = RecipeOptions(model_info.recipe, merged);
         save_model_options(model_info);
+    }
+
+    if (register_only) {
+        return;
+    }
+
+    LOG(INFO, "ModelManager") << "Downloading model: " << repo_id;
+    if (!variant.empty()) {
+        LOG(INFO, "ModelManager") << " (variant: " << variant << ")";
+    }
+    LOG(INFO, "ModelManager") << std::endl;
+
+    // Check if offline mode
+    if (auto* cfg = RuntimeConfig::global()) {
+        if (cfg->offline()) {
+            LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
+            return;
+        }
     }
 
     // CRITICAL: If do_not_upgrade=true AND model is already downloaded, skip the
@@ -4273,6 +4542,23 @@ void ModelManager::delete_model(const std::string& model_name) {
     LOG(INFO, "ModelManager") << "Checkpoint: " << info.checkpoint() << std::endl;
     LOG(INFO, "ModelManager") << "Recipe: " << info.recipe << std::endl;
 
+    // Removing a router collection drops its policy: reconcile helpers once the
+    // delete actually completes (fires on normal return, not on an exception, so
+    // a retryable file-lock failure doesn't reconcile against a still-present
+    // policy). Ordinary models carry no policy and are skipped.
+    const bool notify_on_delete = is_router_collection_recipe(info.recipe);
+    const int uncaught_on_entry = std::uncaught_exceptions();
+    struct DeleteNotifier {
+        ModelManager* manager;
+        bool enabled;
+        int uncaught_on_entry;
+        ~DeleteNotifier() {
+            if (enabled && std::uncaught_exceptions() == uncaught_on_entry) {
+                manager->notify_models_changed();
+            }
+        }
+    } delete_notifier{this, notify_on_delete, uncaught_on_entry};
+
     // Handle extra models (from --extra-models-dir) - these are user-managed external files
     if (canonical_model_name.substr(0, 6) == "extra.") {
         throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
@@ -4879,6 +5165,7 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 //   public_model_aliases_ - input alias → cache key (canonical name in cache):
 //     - <bare> → cache key of the precedence-winner for that bare name
 //     - builtin.<X> → bare cache key X (built-ins are keyed bare in the cache)
+//     - ModelInfo::input_aliases entries → cache key, without changing API output
 //     - user.<X>, extra.<X> resolve directly via cache lookup fallback in the
 //       callers, so no identity entries are required here
 //
@@ -4951,6 +5238,40 @@ void ModelManager::rebuild_public_model_aliases_locked() {
         if (parse_canonical_id(cache_key)) continue;
         std::string canonical = canonical_id(ModelSource::Builtin, cache_key);
         public_model_aliases_.try_emplace(canonical, cache_key);
+    }
+
+    // A split extra_models_dir folder should show only its variant models in
+    // /models. Keep the old folder name working for existing scripts, but only
+    // as an input alias. Do not let that alias replace a user model or another
+    // real extra model with the same name.
+    auto source_for_cache_key = [](const std::string& cache_key) {
+        if (auto canon = parse_canonical_id(cache_key)) {
+            return canon->source;
+        }
+        return ModelSource::Builtin;
+    };
+
+    for (const auto& [cache_key, info] : models_cache_) {
+        for (const auto& alias : info.input_aliases) {
+            if (parse_canonical_id(alias)) {
+                if (models_cache_.find(alias) == models_cache_.end()) {
+                    public_model_aliases_[alias] = cache_key;
+                }
+            } else {
+                auto existing = public_model_aliases_.find(alias);
+                if (existing == public_model_aliases_.end()) {
+                    public_model_aliases_[alias] = cache_key;
+                    continue;
+                }
+
+                if (source_for_cache_key(existing->second) == ModelSource::Builtin) {
+                    std::string builtin_canonical = canonical_id(ModelSource::Builtin, alias);
+                    canonical_public_names_[existing->second] = builtin_canonical;
+                    public_model_aliases_[builtin_canonical] = existing->second;
+                    public_model_aliases_[alias] = cache_key;
+                }
+            }
+        }
     }
 }
 

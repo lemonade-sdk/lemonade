@@ -137,6 +137,20 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
     }
 
     std::string recipe = config_section_to_recipe(config_section);
+
+    if (value == "system") {
+        const auto* desc = lemon::backends::descriptor_for(recipe);
+        const std::string current_os = get_current_os();
+        if (desc) {
+            auto supported = std::find_if(
+                desc->support.begin(), desc->support.end(),
+                [&](const BackendSupport& row) {
+                    return row.backend == value && row.supported_os.count(current_os) > 0;
+                });
+            if (supported != desc->support.end()) return;
+        }
+    }
+
     auto result = SystemInfo::get_supported_backends(recipe);
 
     if (std::find(result.backends.begin(), result.backends.end(), value)
@@ -147,6 +161,21 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
         }
         throw std::invalid_argument(
             "'" + config_section + ".backend' must be one of: " + allowed);
+    }
+}
+
+static void validate_path(const std::string& config_section,
+                            const std::string& key,
+                            const std::string& value,
+                            bool is_bin=false) {
+    if (utils::looks_like_path(value)) {
+        if (!fs::exists(value)) {
+            throw std::invalid_argument(
+                "'" + config_section + "." + key + "' path does not exist: " + value
+                + (is_bin ? (". Use \"builtin\", \"latest\", a version tag (e.g. \"b8664\"),"
+                  " or a path to a pre-downloaded binary.") : ""));
+        }
+        return;
     }
 }
 
@@ -163,16 +192,7 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
     // must exist. Relative-looking values intentionally fall through to the
     // version-tag branch so backend pins are not interpreted relative to
     // lemond's launch directory.
-    if (utils::looks_like_path(value)) {
-        if (!fs::exists(value)) {
-            throw std::invalid_argument(
-                "'" + config_section + "." + key + "' path does not exist: " + value
-                + ". Use \"builtin\", \"latest\", a version tag (e.g. \"b8664\"),"
-                  " or a path to a pre-downloaded binary.");
-        }
-        return;
-    }
-
+    validate_path(config_section, key, value, true);
     // Anything else is treated as an upstream release tag (e.g. "b8664",
     // "v1.8.2") and accepted verbatim. The download step surfaces a clear
     // error if the tag does not exist on GitHub.
@@ -294,6 +314,11 @@ bool RuntimeConfig::disable_model_filtering() const {
 bool RuntimeConfig::enable_dgpu_gtt() const {
     std::shared_lock lock(mutex_);
     return config_["enable_dgpu_gtt"].get<bool>();
+}
+
+std::string RuntimeConfig::default_model_source() const {
+    std::shared_lock lock(mutex_);
+    return config_.value("default_model_source", std::string("huggingface"));
 }
 
 std::string RuntimeConfig::rocm_channel() const {
@@ -541,6 +566,15 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + key + "' must be a string");
         }
+    } else if (key == "default_model_source") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'default_model_source' must be a string");
+        }
+        const std::string source = value.get<std::string>();
+        if (source != "huggingface" && source != "modelscope") {
+            throw std::invalid_argument(
+                "'default_model_source' must be either 'huggingface', or 'modelscope'");
+        }
     } else if (key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||
                key == "no_fetch_executables" ||
@@ -780,6 +814,12 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         if (value.get<double>() <= 0.0) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be positive");
         }
+    }
+    else if (key == "lora_dir") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
+        }
+        validate_path(backend, key, value.get<std::string>());
     }
     else {
         throw std::invalid_argument("Unknown key: '" + backend + "." + key + "'");

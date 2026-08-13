@@ -232,10 +232,9 @@ public:
     ModelClassifier(std::string id, std::string type, std::string model, OnError on_error,
                     std::vector<std::string> labels,
                     std::optional<std::string> default_label)
-        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
-                     std::move(default_label)),
-          model_(std::move(model)) {
-        if (model_.empty()) {
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)) {
+        if (model_name_.empty()) {
             throw std::invalid_argument("classifier requires model");
         }
     }
@@ -247,16 +246,13 @@ public:
         }
 
         try {
-            score.labels = ctx.services.run_classifier(model_, ctx.request.input);
+            score.labels = ctx.services.run_classifier(model_name_, ctx.request.input);
             score.ok = true;
         } catch (...) {
             score = failed_score();
         }
         return score;
     }
-
-private:
-    std::string model_;
 };
 
 // The `llm` router / L0(a) on-ramp. Runs a small chat model with the author's
@@ -274,10 +270,10 @@ public:
     LlmClassifier(std::string id, std::string type, std::string model, std::string prompt,
                   OnError on_error, std::vector<std::string> labels,
                   std::optional<std::string> default_label)
-        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
-                     std::move(default_label)),
-          model_(std::move(model)), prompt_(std::move(prompt)) {
-        if (model_.empty()) {
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
+          prompt_(std::move(prompt)) {
+        if (model_name_.empty()) {
             throw std::invalid_argument("llm classifier requires model");
         }
         if (prompt_.empty()) {
@@ -294,7 +290,7 @@ public:
         }
         std::string reply;
         try {
-            reply = ctx.services.chat(model_, effective_prompt(),
+            reply = ctx.services.chat(model_name_, effective_prompt(),
                                       build_context_payload(ctx.request));
         } catch (const RouterResidencyConflictException&) {
             // A hardware coexistence conflict is not a classifier-quality
@@ -414,7 +410,7 @@ private:
         return nullptr;
     }
 
-    std::string model_;
+private:
     std::string prompt_;
 };
 
@@ -435,11 +431,10 @@ public:
                                  std::vector<Concept> concepts, OnError on_error,
                                  std::vector<std::string> labels,
                                  std::optional<std::string> default_label)
-        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
-                     std::move(default_label)),
-          model_(std::move(model)),
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
           concepts_(std::move(concepts)) {
-        if (model_.empty()) {
+        if (model_name_.empty()) {
             throw std::invalid_argument("semantic_similarity classifier requires model");
         }
         if (concepts_.empty()) {
@@ -466,7 +461,7 @@ public:
 
         Embedding input_embedding;
         try {
-            input_embedding = ctx.services.embed(model_, ctx.request.input);
+            input_embedding = ctx.services.embed(model_name_, ctx.request.input);
         } catch (...) {
             return failed_score();
         }
@@ -510,7 +505,7 @@ private:
                 ConceptEmbeddings phrase_embeddings;
                 phrase_embeddings.reserve(concept.second.size());
                 for (const auto& phrase : concept.second) {
-                    phrase_embeddings.push_back(services.embed(model_, phrase));
+                    phrase_embeddings.push_back(services.embed(model_name_, phrase));
                 }
                 embeddings.push_back(std::move(phrase_embeddings));
             }
@@ -520,7 +515,6 @@ private:
         return reference_embeddings_;
     }
 
-    std::string model_;
     std::vector<Concept> concepts_;
 
     mutable std::mutex cache_mutex_;
@@ -1151,6 +1145,21 @@ std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_js
     return classifiers;
 }
 
+std::vector<std::string> collect_policy_helper_models(const RoutePolicy& policy) {
+    std::set<std::string> unique;
+    for (const auto& [id, classifier] : policy.classifiers) {
+        if (!classifier) {
+            continue;
+        }
+        for (auto& model : classifier->referenced_models()) {
+            if (!model.empty()) {
+                unique.insert(std::move(model));
+            }
+        }
+    }
+    return {unique.begin(), unique.end()};
+}
+
 LeafFactory make_leaf_factory(const std::map<std::string, ClassifierPtr>& classifiers,
                               NamedLeafFactories deterministic_factories) {
     return [classifiers, deterministic_factories = std::move(deterministic_factories)](
@@ -1284,8 +1293,57 @@ NamedLeafFactories make_deterministic_leaf_factories() {
     return factories;
 }
 
-RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services)
-    : policy_(std::move(policy)), services_(std::move(services)) {
+namespace {
+
+void log_cost_of_failure_once(const std::string& candidate, const char* detail) {
+    static std::mutex logged_mu;
+    static std::set<std::string> logged_candidates;
+    bool should_log = false;
+    {
+        std::lock_guard<std::mutex> lock(logged_mu);
+        should_log = logged_candidates.insert(candidate).second;
+    }
+    if (!should_log) {
+        return;
+    }
+    LOG(WARNING, "Routing") << "CostServices::cost_of threw for candidate '"
+                            << candidate << "': " << detail
+                            << " (further throws for this candidate suppressed)"
+                            << std::endl;
+}
+
+// Best-effort: cost_of is caller-injected and must never make route() throw,
+// so any exception here is logged and swallowed rather than propagated. Also
+// leaves an author-set outputs["estimated_cost"] alone rather than clobbering it.
+// WARNING for a throwing candidate is emitted at most once per process to avoid
+// hot-path log spam when one model persistently fails cost lookup.
+void attach_estimated_cost(Decision& decision, const CostServices& cost_services) {
+    if (!cost_services.cost_of || decision.outputs.contains("estimated_cost")) {
+        return;
+    }
+    CostInfo info;
+    try {
+        info = cost_services.cost_of(decision.route_to);
+    } catch (const std::exception& e) {
+        log_cost_of_failure_once(decision.route_to, e.what());
+        return;
+    } catch (...) {
+        log_cost_of_failure_once(decision.route_to, "unknown exception");
+        return;
+    }
+    json estimated = info.to_json();
+    if (!estimated.empty()) {
+        decision.outputs["estimated_cost"] = std::move(estimated);
+    }
+}
+
+} // namespace
+
+RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services,
+                                         CostServices cost_services)
+    : policy_(std::move(policy)),
+      services_(std::move(services)),
+      cost_services_(std::move(cost_services)) {
     // Compile every rule's match expression once, at construction, so route()
     // does pure tree-walking on immutable state. Classifier leaves resolve
     // against policy_.classifiers; deterministic leaf types (keywords/regex/
@@ -1309,7 +1367,9 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
     try {
         for (std::size_t i = 0; i < compiled_rules_.size(); ++i) {
             if (compiled_rules_[i]->evaluate(eval)) {
-                return Decision(policy_.rules[i], want_trace, std::move(eval.trace));
+                Decision decision(policy_.rules[i], want_trace, std::move(eval.trace));
+                attach_estimated_cost(decision, cost_services_);
+                return decision;
             }
         }
     } catch (const std::exception& e) {
@@ -1321,7 +1381,9 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
                                 << std::endl;
     }
 
-    return Decision(policy_.default_model, want_trace, std::move(eval.trace));
+    Decision decision(policy_.default_model, want_trace, std::move(eval.trace));
+    attach_estimated_cost(decision, cost_services_);
+    return decision;
 }
 
 } // namespace lemon
