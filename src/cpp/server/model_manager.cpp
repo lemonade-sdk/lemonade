@@ -2478,11 +2478,6 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
 }
 
-void ModelManager::update_model_options_in_cache(const ModelInfo& info) {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    update_model_options_in_cache_locked(info);
-}
-
 void ModelManager::update_model_options_in_cache_locked(const ModelInfo& info) {
     if (!cache_valid_) {
         return; // Will rebuild on next access

@@ -1346,6 +1346,50 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] pinned changes are applied to the running model")
 
+    def test_012w_options_reject_values_the_global_config_rejects(self):
+        """Per-model options are held to the same value rules as global config.
+
+        Otherwise a value refused by POST /params is accepted here and then
+        silently dropped by the backend that reads it.
+        """
+        image_model = "SD-Turbo"
+        if not requests.get(
+            f"{self.base_url}/models/{image_model}", timeout=TIMEOUT_DEFAULT
+        ).ok:
+            self.skipTest(f"{image_model} is not in the registry")
+
+        self.addCleanup(self._reset_options, image_model)
+
+        for body in ({"steps": 0}, {"cfg_scale": -3}, {"width": 0}):
+            key = next(iter(body))
+            config = requests.post(
+                f"{self.base_url}/params",
+                json={"sdcpp": body},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            options = requests.post(
+                self._options_url(model=image_model), json=body, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                config.status_code,
+                400,
+                f"Precondition: /params should reject {key}={body[key]}",
+            )
+            self.assertEqual(
+                options.status_code,
+                400,
+                f"/options must reject {key}={body[key]} too, got {options.text}",
+            )
+
+        accepted = requests.post(
+            self._options_url(model=image_model),
+            json={"steps": 20},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+
+        print("[OK] Option values are validated like the global config")
+
     def test_012v_options_accept_a_user_model_public_name(self):
         """A user model addressed by its bare public name is handled correctly.
 

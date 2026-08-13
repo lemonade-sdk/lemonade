@@ -386,7 +386,6 @@ private:
     // Cache management
     void build_cache();
     void add_model_to_cache(const std::string& model_name);
-    void update_model_options_in_cache(const ModelInfo& info);
     // Caller must hold models_cache_mutex_.
     void update_model_options_in_cache_locked(const ModelInfo& info);
     void update_model_in_cache(const std::string& model_name, bool downloaded);

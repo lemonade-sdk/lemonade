@@ -121,13 +121,16 @@ public:
                                   const std::string& key,
                                   const std::string& value);
 
+    /// Validate a nested backend key/value pair (e.g. "sdcpp", "steps", 20).
+    /// Throws std::invalid_argument on failure, including "Unknown key: ..."
+    /// for a key this section does not define. Public so per-model recipe
+    /// options are held to the same value rules as the global config.
+    void validate_backend(const std::string& backend, const std::string& key,
+                          const json& value) const;
+
 private:
     // Validate a single key/value pair. Throws std::invalid_argument on failure.
     void validate(const std::string& key, const json& value) const;
-
-    // Validate a nested backend key/value pair.
-    void validate_backend(const std::string& backend, const std::string& key,
-                          const json& value) const;
 
     // Apply changes and emit the subset that actually differed from the previous
     // state into `applied_diff`. Mirrors the shape of `changes` (nested for

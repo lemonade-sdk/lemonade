@@ -298,7 +298,7 @@ Save recipe options for a model **without loading it**. The request body is a fl
 
 Options are merged into whatever is already saved, so keys you don't mention are left alone. Sending `null` removes an option, and the model falls back to the next layer of the [priority chain](#post-v1load); `""`, `-1`, and `"auto"` remove it too, since those are the values Lemonade reads as "not set". To remove every saved option at once, use [`DELETE`](#delete-v1modelsidoptions).
 
-`ctx_size` is the exception: `-1` is a value there, not an absence, and saving it pins the model to automatic context sizing. That matters when the server-wide `ctx_size` is a specific number, because removing the option would make the model inherit that number instead. Only `null` and `""` clear it.
+`ctx_size` is the exception: `-1` is a value there, not an absence, and saving it pins the model to automatic context sizing. That matters when the server-wide `ctx_size` is a specific number, because removing the option would make the model inherit that number instead. It is cleared by `null`, `""`, and `"auto"`, but not by `-1`.
 
 Options are validated against the model's recipe, and nothing is saved unless every option in the request passes. A `400` reports an unrecognized option name, an option belonging to a different recipe, a value of the wrong type, a negative or fractional value where a whole number is expected, or a backend this host doesn't support.
 

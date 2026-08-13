@@ -2794,7 +2794,8 @@ static bool option_type_matches(const nlohmann::json& expected, const nlohmann::
 
 // Reject values that pass the type check but would break the load they are
 // saved for. Returns an error message, or empty when the value is usable.
-static std::string validate_option_value(const std::string& recipe,
+static std::string validate_option_value(const RuntimeConfig& config,
+                                         const std::string& recipe,
                                          const std::string& key,
                                          const nlohmann::json& expected,
                                          const nlohmann::json& value) {
@@ -2817,15 +2818,19 @@ static std::string validate_option_value(const std::string& recipe,
         }
     }
 
-    static const std::string backend_suffix = "_backend";
-    if (key.size() > backend_suffix.size() &&
-        key.compare(key.size() - backend_suffix.size(), backend_suffix.size(), backend_suffix) == 0) {
-        try {
-            RuntimeConfig::validate_backend_choice(
-                RuntimeConfig::recipe_to_config_section(recipe), value.get<std::string>());
-        } catch (const std::exception& e) {
-            return e.what();
-        }
+    // Defer to the validator the global config already uses for these same
+    // option names, so the two surfaces cannot disagree about a value. Keys it
+    // does not know about (the eviction options, *_args) fall through.
+    std::string config_key = key;
+    const std::string recipe_prefix = recipe + "_";
+    if (config_key.rfind(recipe_prefix, 0) == 0) {
+        config_key = config_key.substr(recipe_prefix.size());
+    }
+    try {
+        config.validate_backend(RuntimeConfig::recipe_to_config_section(recipe), config_key, value);
+    } catch (const std::exception& e) {
+        const std::string message = e.what();
+        if (message.rfind("Unknown key:", 0) != 0) return message;
     }
     return "";
 }
@@ -2853,8 +2858,8 @@ void Server::respond_with_model_options(
         }
     }
 
-    // Router::set_model_pinned matches on the canonical name, unlike the
-    // ModelManager calls below, which resolve whatever they are given.
+    // Work in canonical names from here on: a user model's requested id is its
+    // bare public name, which not every downstream lookup resolves for itself.
     model_key = model_manager_->resolve_model_name(model_key);
 
     try {
@@ -2954,7 +2959,8 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                                       .dump(), "application/json");
                     return false;
                 }
-                const std::string invalid = validate_option_value(info.recipe, key, expected, value);
+                const std::string invalid =
+                    validate_option_value(*config_, info.recipe, key, expected, value);
                 if (!invalid.empty()) {
                     r.status = 400;
                     r.set_content(nlohmann::json{{"error", invalid}}.dump(), "application/json");
