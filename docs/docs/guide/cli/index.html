@@ -756,6 +756,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#options-for-alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Options for alias
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Options for alias">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#subcommands" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Subcommands
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#options-for-import" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3052,6 +3080,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#options-for-alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Options for alias
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Options for alias">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#subcommands" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Subcommands
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#options-for-import" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3597,6 +3653,7 @@
 <li><a href="#global-options">Global Options</a></li>
 <li><a href="#options-for-list">Options for list</a></li>
 <li><a href="#options-for-pull">Options for pull</a></li>
+<li><a href="#options-for-alias">Options for alias</a></li>
 <li><a href="#options-for-import">Options for import</a></li>
 <li><a href="#options-for-load">Options for load</a></li>
 <li><a href="#options-for-run">Options for run</a></li>
@@ -3683,6 +3740,18 @@
 <tr>
 <td><code>pull MODEL_OR_CHECKPOINT</code></td>
 <td>Download a registered model, pull a Hugging Face or ModelScope checkpoint, or manually register a <code>user.*</code> model with <code>--checkpoint</code>/<code>--recipe</code>. See command options <a href="#options-for-pull">below</a>.</td>
+</tr>
+<tr>
+<td><code>alias add ALIAS TARGET_MODEL</code></td>
+<td>Bind an alias to a target model. See command options <a href="#options-for-alias">below</a>.</td>
+</tr>
+<tr>
+<td><code>alias remove ALIAS</code></td>
+<td>Remove an existing model alias binding.</td>
+</tr>
+<tr>
+<td><code>alias list</code></td>
+<td>List all active model alias bindings.</td>
 </tr>
 <tr>
 <td><code>import JSON_FILE</code></td>
@@ -3858,7 +3927,7 @@ lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> <
 <h2 id="options-for-pull">Options for pull</h2>
 <p>The <code>pull</code> command downloads and installs models. It can also register a custom <code>user.*</code> model when paired with manual configuration flags. For the full end-to-end custom model workflow, including checkpoint formats, omni collections, and <code>user_models.json</code>, see <a href=".././configuration/custom-models/">Custom Model Configuration</a>.</p>
 <p>Common forms:</p>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>MODEL_OR_CHECKPOINT<span class="w"> </span><span class="o">[</span>--checkpoint<span class="w"> </span>TYPE<span class="w"> </span>CHECKPOINT<span class="o">]</span><span class="w"> </span><span class="o">[</span>--recipe<span class="w"> </span>RECIPE<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>LABEL<span class="o">]</span><span class="w"> </span><span class="o">[</span>--components<span class="w"> </span>MODEL<span class="w"> </span>...<span class="o">]</span>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>MODEL_OR_CHECKPOINT<span class="w"> </span><span class="o">[</span>--alias<span class="w"> </span>ALIAS<span class="o">]</span><span class="w"> </span><span class="o">[</span>--checkpoint<span class="w"> </span>TYPE<span class="w"> </span>CHECKPOINT<span class="o">]</span><span class="w"> </span><span class="o">[</span>--recipe<span class="w"> </span>RECIPE<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>LABEL<span class="o">]</span><span class="w"> </span><span class="o">[</span>--components<span class="w"> </span>MODEL<span class="w"> </span>...<span class="o">]</span>
 </code></pre></div>
 <div class="highlight"><pre><span></span><code><span class="c1"># Pull a registered model</span>
 lemonade<span class="w"> </span>pull<span class="w"> </span>Qwen3-0.6B-GGUF
@@ -3869,8 +3938,8 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-8B-GGU
 <span class="c1"># Pull a specific Hugging Face variant</span>
 lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-8B-GGUF:Q4_K_M
 
-<span class="c1"># Register and pull a custom model</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyModel<span class="w"> </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>org/model:Q4_0<span class="w"> </span>--recipe<span class="w"> </span>llamacpp
+<span class="c1"># Register and pull a custom model with an alias</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyModel<span class="w"> </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>org/model:Q4_0<span class="w"> </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span>--alias<span class="w"> </span>my-alias
 </code></pre></div>
 <table>
 <thead>
@@ -3888,7 +3957,12 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyModel<span cl
 </tr>
 <tr>
 <td><code>--source</code></td>
-<td>Remote registry for checkpoint pulls: <code>huggingface</code> (default) or <code>modelscope</code>; direct hub URLs are auto-detected</td>
+<td>Remote registry for checkpoint pulls: <code>huggingface</code> or <code>modelscope</code>; when omitted, the server's configured <code>default_model_source</code> applies. Direct hub URLs are auto-detected</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>--alias ALIAS</code></td>
+<td>Add an alias for the model being registered or pulled.</td>
 <td>No</td>
 </tr>
 <tr>
@@ -3913,6 +3987,51 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyModel<span cl
 </tr>
 </tbody>
 </table>
+<h2 id="options-for-alias">Options for alias</h2>
+<p>The <code>alias</code> command family allows you to view, add, and remove model aliases. Aliases provide a Symbolic Routing Layer, letting application code write against a stable identifier while the underlying target model can be updated dynamically.</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>list
+lemonade<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>add<span class="w"> </span>ALIAS<span class="w"> </span>TARGET_MODEL
+lemonade<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>remove<span class="w"> </span>ALIAS
+</code></pre></div>
+<h3 id="subcommands">Subcommands</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>alias list</code></td>
+<td>List all registered model aliases with their target models and recipes.</td>
+</tr>
+<tr>
+<td><code>alias add ALIAS TARGET_MODEL</code></td>
+<td>Bind <code>ALIAS</code> to <code>TARGET_MODEL</code>. Requests for <code>ALIAS</code> will resolve to <code>TARGET_MODEL</code>.</td>
+</tr>
+<tr>
+<td><code>alias remove ALIAS</code></td>
+<td>Remove the alias binding for <code>ALIAS</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Bind an alias to a model</span>
+lemonade<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>add<span class="w"> </span>llama<span class="w"> </span>Qwen3-0.6B-GGUF
+
+<span class="c1"># Environment-independent naming: map a generic application identifier to a specific model</span>
+lemonade<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>add<span class="w"> </span>production-llm<span class="w"> </span>Qwen2.5-Coder-1.5B-Instruct
+
+<span class="c1"># Active-standby failover: instantly swap the alias target to a fallback model without restarting clients</span>
+lemonade<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>add<span class="w"> </span>production-llm<span class="w"> </span>Tiny-Test-Model-GGUF
+
+<span class="c1"># List all active aliases</span>
+lemonade<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>list
+
+<span class="c1"># Remove an alias binding</span>
+lemonade<span class="w"> </span><span class="nb">alias</span><span class="w"> </span>remove<span class="w"> </span>llama
+</code></pre></div>
 <h2 id="options-for-import">Options for import</h2>
 <p>The <code>import</code> command supports two flows:
 - Import from a local JSON file.

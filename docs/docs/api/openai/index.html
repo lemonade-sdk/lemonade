@@ -5346,10 +5346,10 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <hr />
 <h2 id="post-v1audiospeech"><code>POST /v1/audio/speech</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
-<p>Speech Generation API. You provide a text input and receive an audio file. This API uses <a href="https://github.com/lucasjinreal/Kokoros">Kokoros</a> as the backend.</p>
+<p>Speech Generation API. You provide a text input and receive an audio file. Which engine serves the request depends on the model.</p>
 <blockquote>
 <p><strong>Note:</strong> Supported models are <code>kokoro-v1</code> (fixed voices, <a href="https://github.com/lucasjinreal/Kokoros">Kokoros</a> backend) and the OpenMOSS family — <code>OpenMOSS-TTS</code> (voice cloning from a reference WAV) and <code>MOSS-VoiceGen</code> (voice design from a text description).</p>
-<p><strong>Limitations:</strong> <code>kokoro-v1</code> supports <code>mp3</code>, <code>wav</code>, <code>opus</code>, and <code>pcm</code>; OpenMOSS models natively produce <code>wav</code> only, and other formats are rejected with <code>400 Bad Request</code>. Streaming is supported in <code>audio</code> (<code>pcm</code>) mode on <code>kokoro-v1</code>.</p>
+<p><strong>Limitations:</strong> Which <code>response_format</code> values are accepted depends on the model's backend: <code>kokoro-v1</code> encodes <code>mp3</code>, <code>wav</code>, <code>opus</code>, and <code>pcm</code>, while OpenMOSS models natively produce <code>wav</code> only. A format the backend cannot encode is rejected with <code>400 Bad Request</code> listing the ones it does support. Streaming works for any TTS backend, but a backend's streamable set can be narrower than its buffered set — <code>kokoro-v1</code> streams <code>pcm</code> only, so an explicit <code>response_format</code> of <code>mp3</code> alongside <code>stream_format</code> is rejected rather than silently answered with PCM.</p>
 </blockquote>
 <h3 id="parameters_9">Parameters</h3>
 <table>
@@ -5401,13 +5401,13 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <tr>
 <td><code>response_format</code></td>
 <td>No</td>
-<td>Format of the response. <code>mp3</code>, <code>wav</code>, <code>opus</code>, and <code>pcm</code> are supported. Default: <code>mp3</code></td>
+<td>Container for the returned audio. Which values are accepted depends on the model's backend (see Limitations above). Default: <code>mp3</code> when buffered and <code>pcm</code> when streaming, falling back to the backend's first supported format when it cannot encode that default.</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
 </tr>
 <tr>
 <td><code>stream_format</code></td>
 <td>No</td>
-<td>If set, the response will be streamed. Only <code>audio</code> is supported, which will output <code>pcm</code> audio. Default: not set</td>
+<td>If set, the response is streamed. Only <code>audio</code> is supported. This selects the transport only — the container still comes from <code>response_format</code>, and an explicit one is honored on both transports. Default: not set</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
 </tr>
 </tbody>

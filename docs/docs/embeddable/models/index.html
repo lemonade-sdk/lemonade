@@ -2714,7 +2714,7 @@ lemonade.exe list
 }
 </code></pre></div>
 <p>You can learn more in the <a href="../../guide/configuration/custom-models/">Custom Models</a> guide, including how to enable your users to register their own custom models at runtime.</p>
-<p>Set <code>"source": "modelscope"</code> for curated entries hosted on ModelScope. Lemonade preserves that field in its model metadata and uses it for every subsequent download and update check. The default is <code>huggingface</code>, so existing registry files require no migration.</p>
+<p>Set <code>"source": "modelscope"</code> for curated entries hosted on ModelScope. Lemonade preserves that field in its model metadata and uses it for every subsequent download and update check. When <code>source</code> is omitted the shipped default is <code>huggingface</code>, so existing registry files require no migration.</p>
 <h3 id="per-model-load-options">Per-Model Load Options</h3>
 <p>You may want to customize how specific models will load on your user's system. You can do this with the <code>recipe_options.json</code> file. Learn more in the <a href="../../guide/configuration/custom-models/">Custom Models</a> guide.</p>
 <h2 id="bundling-models">Bundling Models</h2>

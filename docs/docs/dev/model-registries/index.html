@@ -2279,6 +2279,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#default-source-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Default source policy
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#registry-interface" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2349,7 +2360,10 @@
 <li><code>ModelInfo::registry_source</code> identifies the remote registry: <code>huggingface</code> or <code>modelscope</code>.</li>
 <li>The public registration field is <code>source</code>. For a remote model it is canonicalized and persisted as the registry name. <code>registry_source</code> is also accepted in exported/internal records.</li>
 </ul>
-<p>Hugging Face is the default for backward compatibility. A model and all of its checkpoints have one registry source. Collection components inherit the collection source unless an inline component definition explicitly declares another source.</p>
+<p>Hugging Face is the shipped default for backward compatibility, but the effective default for source-less pulls is the <code>default_model_source</code> config key (see <a href="#default-source-policy">Default source policy</a> below). A model and all of its checkpoints have one registry source. Collection components inherit the collection source unless an inline component definition explicitly declares another source.</p>
+<h2 id="default-source-policy">Default source policy</h2>
+<p>When a pull request names no registry — no <code>--source</code>, no <code>source</code>/<code>registry_source</code> field, and no provider URL — lemond falls back to the <code>default_model_source</code> config key (<code>huggingface</code> or <code>modelscope</code>, default <code>huggingface</code>). Resolution is server-side and authoritative so every client (CLI, desktop, web, Ollama-compatible endpoints) inherits the same policy, per the many-clients-one-server contract. The resolution happens once, up front in the <code>/pull</code> handler, so the chosen registry is persisted with the model and stays consistent across download, cache layout, and later refresh. A bare <code>pull &lt;registered-name&gt;</code> refresh carries no checkpoint and keeps its recorded provenance rather than re-applying the default. <code>GET /pull/variants</code> echoes the resolved <code>source</code> so the CLI's interactive flow records the same registry the weights came from.</p>
+<p>Provider URL detection is shared code (<code>detect_registry_url</code>) applied server-side in <code>apply_default_pull_source</code>, not only in the CLI. A provider URL is authoritative for its registry: every registry-backed checkpoint in the body (primary and secondary entries such as <code>mmproj</code>, <code>vae</code>, or <code>text_encoder</code>) is normalized to <code>owner/repo</code>, and the whole model must resolve to a single registry. The primary checkpoint follows the same precedence as model registration — <code>checkpoints.main</code> when a <code>checkpoints</code> object is present, otherwise <code>checkpoint</code>. A <code>source</code>/<code>registry_source</code> that conflicts with a checkpoint's provider URL, or checkpoints that disagree on the registry, are rejected with <code>400</code>, matching the CLI.</p>
 <h2 id="registry-interface">Registry interface</h2>
 <p><code>ModelRegistry</code> normalizes provider behavior into:</p>
 <ul>

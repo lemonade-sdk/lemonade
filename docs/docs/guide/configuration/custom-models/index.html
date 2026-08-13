@@ -951,6 +951,67 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#model-aliases-aliasesjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model Aliases (<code>aliases.json</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conceptual-definition-layer-vs-symbolic-routing-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Conceptual: Definition Layer vs. Symbolic Routing Layer
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Conceptual: Definition Layer vs. Symbolic Routing Layer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#openai-sdk-litellm-integration-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        OpenAI SDK &amp; LiteLLM Integration Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alias-resolution-target-model-independence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Alias Resolution &amp; Target Model Independence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#independent-listing-in-v1models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Independent Listing in <code>/v1/models</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#five-reference-cases" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2868,6 +2929,67 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#model-aliases-aliasesjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model Aliases (<code>aliases.json</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conceptual-definition-layer-vs-symbolic-routing-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Conceptual: Definition Layer vs. Symbolic Routing Layer
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Conceptual: Definition Layer vs. Symbolic Routing Layer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#openai-sdk-litellm-integration-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        OpenAI SDK &amp; LiteLLM Integration Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alias-resolution-target-model-independence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Alias Resolution &amp; Target Model Independence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#independent-listing-in-v1models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Independent Listing in <code>/v1/models</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#five-reference-cases" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3099,7 +3221,7 @@
 <p>This guide explains every supported way to add a custom model to Lemonade Server. Start with the CLI workflows below unless you specifically need to hand-edit <code>user_models.json</code> or <code>recipe_options.json</code>.</p>
 <h2 id="choose-a-workflow">Choose a Workflow</h2>
 <h3 id="pull-from-hugging-face-or-modelscope">Pull from Hugging Face or ModelScope</h3>
-<p>Hugging Face remains the default registry, so existing commands keep working unchanged:</p>
+<p>A source-less pull uses the server's configured <code>default_model_source</code> (shipped default: Hugging Face), so existing commands keep working unchanged:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>org/repo
 lemonade<span class="w"> </span>pull<span class="w"> </span>org/repo:Q4_K_M
 </code></pre></div>
@@ -3113,7 +3235,7 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>https://modelscope.c
 </code></pre></div>
 <p>For supported repository layouts, Lemonade lists GGUF quantizations and sharded variants, auto-detects <code>mmproj-*.gguf</code> files, infers common labels, and presents the same interactive variant menu for either registry.</p>
 <p>Examples:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Hugging Face (default)</span>
+<div class="highlight"><pre><span></span><code><span class="c1"># Hugging Face (shipped default source)</span>
 lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-8B-GGUF:Q4_K_M
 
 <span class="c1"># ModelScope</span>
@@ -3159,7 +3281,7 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<s
 <tbody>
 <tr>
 <td><code>--source SOURCE</code></td>
-<td>Remote registry for every checkpoint in this model: <code>huggingface</code> (default) or <code>modelscope</code>.</td>
+<td>Remote registry for every checkpoint in this model: <code>huggingface</code> or <code>modelscope</code>. When omitted, the server's configured <code>default_model_source</code> applies.</td>
 </tr>
 <tr>
 <td><code>--checkpoint TYPE CHECKPOINT</code></td>
@@ -3171,7 +3293,7 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<s
 </tr>
 <tr>
 <td><code>--label LABEL</code></td>
-<td>Add a label to the new model. Repeatable. Valid labels include <code>coding</code>, <code>embeddings</code>, <code>hot</code>, <code>mtp</code>, <code>reasoning</code>, <code>reranking</code>, <code>tool-calling</code>, <code>vision</code>.</td>
+<td>Add a label to the new model. Repeatable. Valid labels include <code>coding</code>, <code>dflash</code>, <code>embeddings</code>, <code>hot</code>, <code>mtp</code>, <code>reasoning</code>, <code>reranking</code>, <code>tool-calling</code>, <code>vision</code>.</td>
 </tr>
 <tr>
 <td><code>--components MODEL [MODEL ...]</code></td>
@@ -3297,7 +3419,7 @@ from the embedded definitions.</p>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="register-via-api">Register via API</h3>
-<p>The <code>/v1/pull</code> endpoint accepts the same model registration fields as the CLI. Set <code>source</code> to <code>huggingface</code> (the default) or <code>modelscope</code>; the server canonicalizes and persists it for later update checks. Use this when integrating Lemonade into another app or script:</p>
+<p>The <code>/v1/pull</code> endpoint accepts the same model registration fields as the CLI. Set <code>source</code> to <code>huggingface</code> or <code>modelscope</code>; when omitted, the server's configured <code>default_model_source</code> applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
@@ -3419,6 +3541,46 @@ from the embedded definitions.</p>
 <h3 id="cli-vs-gui-display">CLI vs. GUI display</h3>
 <p>The CLI (<code>lemonade list</code>) prints the API <code>id</code> verbatim. That means the Name column is always copy-paste-safe — every cell is a valid input to <code>lemonade load</code>, <code>lemonade delete</code>, <code>lemonade run</code>, etc.</p>
 <p>The Tauri desktop app and the web app apply a display transformation on top of the API id: bare ids render as <code>NAME</code>, and canonical-prefixed ids render as <code>NAME (registered)</code> / <code>NAME (imported)</code> / <code>NAME (builtin)</code>. The suffix appears only for shadowed sources.</p>
+<h3 id="model-aliases-aliasesjson">Model Aliases (<code>aliases.json</code>)</h3>
+<p>You can define custom <strong>aliases for model names</strong> in <code>aliases.json</code> — alternative high-level names that resolve to any target model name. The target model does not define or need to be aware of being aliased:</p>
+<ol>
+<li><strong>Standalone Alias Management</strong>: Model aliases live in a dedicated <code>aliases.json</code> file in the Lemonade cache directory (<code>&lt;cache_dir&gt;/aliases.json</code>). They are managed via the CLI (<code>lemonade alias add ALIAS TARGET_MODEL</code>) or administrative REST API (<code>POST /internal/aliases</code>).</li>
+<li><strong>Persistence</strong>: <code>aliases.json</code> is automatically loaded on server startup and saved on every alias mutation.</li>
+<li><strong>Decoupled Architecture</strong>: Aliases function purely at the symbolic routing layer. They do not pollute model definition files (<code>user_models.json</code> or <code>server_models.json</code>).</li>
+</ol>
+<h3 id="conceptual-definition-layer-vs-symbolic-routing-layer">Conceptual: Definition Layer vs. Symbolic Routing Layer</h3>
+<p>Lemonade separates model definition from model routing to provide stable API endpoints for client applications.</p>
+<ul>
+<li><strong>Definition Layer (User Models and Recipes)</strong>: Defines concrete models and execution parameters (checkpoints, hardware targets, context sizes, and backend engines). Use this layer to introduce new models, adjust inference parameters, or support new hardware.</li>
+<li><strong>Symbolic Routing Layer (Model Aliases)</strong>: Defines client addressing. Aliases function as symbolic links, decoupling client SDKs from underlying model definitions.</li>
+</ul>
+<p>Use Model Aliases to abstract model identity from application code. This enables:</p>
+<ol>
+<li><strong>Environment-independent naming</strong>: An application can request an alias like <code>default-llm</code>. Developers can map <code>default-llm</code> to a lightweight local model, while production servers map it to a larger model. The application code remains unchanged.</li>
+<li><strong>Active-standby failover</strong>: Administrators can redirect an alias to a fallback model if a local hardware model degrades.</li>
+<li><strong>Capability preservation</strong>: Aliases inherit all capabilities of their target models. You can alias a speech-to-text model to <code>system-stt</code> or an image generator to <code>system-image-gen</code> without losing functionality or LRU pool classification.</li>
+</ol>
+<h4 id="openai-sdk-litellm-integration-example">OpenAI SDK &amp; LiteLLM Integration Example</h4>
+<p>When using the OpenAI SDK or LiteLLM, target the alias instead of the concrete model:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+
+<span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/v1&quot;</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;dummy&quot;</span><span class="p">)</span>
+
+<span class="c1"># The client requests the alias &quot;production-llm&quot;</span>
+<span class="n">response</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;production-llm&quot;</span><span class="p">,</span>
+    <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;Hello&quot;</span><span class="p">}]</span>
+<span class="p">)</span>
+</code></pre></div>
+<p>If the underlying target model changes, update the alias on the server using <code>lemonade alias add production-llm new-target</code> or <code>POST /internal/aliases</code>. Client application code requires no updates.</p>
+<h4 id="alias-resolution-target-model-independence">Alias Resolution &amp; Target Model Independence</h4>
+<p>When an alias is specified in any API request (e.g., <code>/v1/chat/completions</code>, <code>/v1/embeddings</code>, <code>/v1/load</code>) or CLI command, Lemonade resolves the alias to its underlying target model ID (e.g., <code>user.MyCustomModel</code> or <code>Qwen3-0.6B-GGUF</code>).</p>
+<ul>
+<li><strong>Primary Model Precedence</strong>: Concrete model names (<code>user.*</code>, <code>extra.*</code>, <code>builtin.*</code>) always take precedence over aliases. Creation of an alias that collides with an existing primary model ID is rejected.</li>
+<li><strong>Target Independence</strong>: Aliases function as symbolic links and can target any model ID or Hugging Face repository, even before the target model is pulled or registered locally.</li>
+</ul>
+<h4 id="independent-listing-in-v1models">Independent Listing in <code>/v1/models</code></h4>
+<p>Every registered alias is exposed as an independent model entry in <code>/v1/models</code>, <code>/v1/models/{id}</code>, and <code>lemonade list</code>. Alias entries set <code>id</code> to the alias name while sharing the target model's recipe, downloaded status, and backend configuration.</p>
 <h3 id="five-reference-cases">Five reference cases</h3>
 <table>
 <thead>
@@ -3483,7 +3645,7 @@ from the embedded definitions.</p>
 <td><code>source</code></td>
 <td>No</td>
 <td>String</td>
-<td>Remote registry: <code>huggingface</code> (default) or <code>modelscope</code>. Persisted and used for variants, downloads, cache paths, links, and update checks.</td>
+<td>Remote registry: <code>huggingface</code> or <code>modelscope</code>. When omitted, the server's configured <code>default_model_source</code> applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A <code>source</code>/<code>registry_source</code> that conflicts with a provider URL in the checkpoint is rejected with 400.</td>
 </tr>
 <tr>
 <td><code>checkpoint</code></td>

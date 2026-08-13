@@ -2590,7 +2590,7 @@ lemonade<span class="w"> </span>run<span class="w"> </span>fireworks.kimi-k2p5
 <li><strong>Public name</strong> — <code>&lt;provider&gt;.&lt;cleaned_upstream_id&gt;</code> after stripping <code>accounts/&lt;x&gt;/models/</code> wrappers and deduplicating leading provider segments.</li>
 <li><strong>Capability labels</strong> — <code>vision</code>, <code>tool-calling</code>, <code>reasoning</code>, normalized from each provider's divergent metadata into Lemonade's shared vocabulary.</li>
 <li><strong>Context window</strong> — from <code>context_length</code>, when reported.</li>
-<li><strong>Per-million-token cost</strong> — USD per 1M input/output tokens, from OpenRouter (per-token × 1e6) or Together (per-1M), when reported. Used for display only — never affects routing.</li>
+<li><strong>Per-million-token cost</strong> — USD per 1M input/output tokens, from OpenRouter (per-token × 1e6) or Together (per-1M), when reported. Surfaced on <code>/v1/models</code> for display, and attached to <code>collection.router</code> decisions as illustrative <code>outputs.estimated_cost</code> (not a billing figure).</li>
 </ul>
 <p>Discovery runs at every cache build (server startup, install, auth) and is best-effort: an unreachable provider logs a warning and is skipped without blocking the rest of the catalog.</p>
 <h2 id="admin-multi-client-deployments">Admin / multi-client deployments</h2>
