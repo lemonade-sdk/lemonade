@@ -199,9 +199,10 @@ lemonade pull ./my-router.json --dry-run
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face/ModelScope checkpoint | Yes |
+| `MODEL_OR_CHECKPOINT_OR_FILE` | Registered model name, `owner/repo[:variant]` Hugging Face/ModelScope checkpoint, or path to a local `.json` model/policy file (e.g. a `collection.router` policy) | Yes |
 | `--source` | Remote registry for checkpoint pulls: `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. Direct hub URLs are auto-detected | No |
 | `--alias ALIAS` | Add an alias for the model being registered or pulled. | No |
+| `--dry-run` | With a `.json` file argument: validate without registering — structural checks plus the server-side policy parse for `collection.router` files. | No |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
 | `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`) | No |
 | `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |

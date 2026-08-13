@@ -9,9 +9,11 @@
 
 namespace lemon_cli {
 
-// True when `path` names an existing local .json file. `pull` uses this to
-// accept a model/policy document in place of a registry name.
-bool is_local_json_file(const std::string& path);
+// True when `path` is shaped like a local .json file argument (suffix check
+// only — existence is NOT verified). `pull` uses this to route the argument to
+// the file path, so a typo'd filename gets a clear file-not-found error
+// instead of falling through to the model/registry flow.
+bool looks_like_json_file_argument(const std::string& path);
 
 // Validate a model/policy JSON file without registering anything: the local
 // structural checks import runs, plus the server-side routing-policy parse
@@ -24,9 +26,12 @@ int validate_model_json_file(lemonade::LemonadeClient& client,
 bool validate_and_transform_model_json(nlohmann::json& model_data);
 
 // Import a local JSON recipe/model file.
+// `upgrade` mirrors pull_model's flag: explicit `pull <file>` opts into the
+// registry update check like any explicit pull; `import` keeps it off.
 int import_model_from_json_file(lemonade::LemonadeClient& client,
                                 const std::string& json_path,
-                                std::string* imported_model_out = nullptr);
+                                std::string* imported_model_out = nullptr,
+                                bool upgrade = false);
 
 // Import a remote recipe from lemonade-sdk/recipes on GitHub.
 int import_remote_recipe(lemonade::LemonadeClient& client,

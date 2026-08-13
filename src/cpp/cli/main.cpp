@@ -19,6 +19,7 @@
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <string>
+#include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -401,17 +402,28 @@ static bool has_manual_pull_options(const CliConfig& config) {
 }
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
-    if (lemon_cli::is_local_json_file(config.model)) {
+    if (lemon_cli::looks_like_json_file_argument(config.model)) {
         if (has_manual_pull_options(config)) {
             std::cerr << "Error: manual configuration options (--checkpoint, --recipe, "
                          "--label, --components) cannot be combined with a JSON file argument."
                       << std::endl;
             return 1;
         }
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(config.model, ec)) {
+            std::cerr << "Error: JSON file not found: '" << config.model << "'" << std::endl;
+            return 1;
+        }
         if (config.dry_run) {
             return lemon_cli::validate_model_json_file(client, config.model);
         }
-        return lemon_cli::import_model_from_json_file(client, config.model);
+        std::string imported_model;
+        const int res = lemon_cli::import_model_from_json_file(
+            client, config.model, &imported_model, /*upgrade=*/true);
+        if (res == 0 && !config.alias_name.empty() && !imported_model.empty()) {
+            client.alias_add(config.alias_name, imported_model);
+        }
+        return res;
     }
     if (config.dry_run) {
         std::cerr << "Error: --dry-run requires a local .json file argument." << std::endl;

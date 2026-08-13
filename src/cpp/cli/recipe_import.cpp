@@ -321,7 +321,7 @@ bool validate_and_transform_model_json(nlohmann::json& model_data) {
     return true;
 }
 
-bool is_local_json_file(const std::string& path) {
+bool looks_like_json_file_argument(const std::string& path) {
     const std::string suffix = ".json";
     if (path.size() <= suffix.size()) {
         return false;
@@ -329,11 +329,7 @@ bool is_local_json_file(const std::string& path) {
     std::string lower = path;
     std::transform(lower.begin(), lower.end(), lower.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (lower.compare(lower.size() - suffix.size(), suffix.size(), suffix) != 0) {
-        return false;
-    }
-    std::error_code ec;
-    return std::filesystem::is_regular_file(path, ec);
+    return lower.compare(lower.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
 int validate_model_json_file(lemonade::LemonadeClient& client,
@@ -371,9 +367,15 @@ int validate_model_json_file(lemonade::LemonadeClient& client,
         response = client.make_request("/api/v1/routing/validate", "POST",
                                        request.dump(), "application/json");
     } catch (const lemonade::HttpError& e) {
-        // A 400 is the validation verdict, not a transport failure.
-        std::cerr << "Invalid policy: " << lemonade::extract_server_error_message(e)
-                  << std::endl;
+        // Only a 400 is the validation verdict; anything else is a
+        // request/server failure and must not masquerade as one.
+        if (e.status_code() == 400) {
+            std::cerr << "Invalid policy: " << lemonade::extract_server_error_message(e)
+                      << std::endl;
+        } else {
+            std::cerr << "Error: routing/validate request failed (HTTP " << e.status_code()
+                      << "): " << lemonade::extract_server_error_message(e) << std::endl;
+        }
         return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error: routing/validate request failed: " << e.what() << std::endl;
@@ -406,7 +408,8 @@ int validate_model_json_file(lemonade::LemonadeClient& client,
 
 int import_model_from_json_file(lemonade::LemonadeClient& client,
                                 const std::string& json_path,
-                                std::string* imported_model_out) {
+                                std::string* imported_model_out,
+                                bool upgrade) {
     nlohmann::json model_data;
 
     std::ifstream file(json_path);
@@ -431,7 +434,7 @@ int import_model_from_json_file(lemonade::LemonadeClient& client,
         return 1;
     }
 
-    return client.pull_model(model_data);
+    return client.pull_model(model_data, "", upgrade);
 }
 
 bool list_remote_recipe_files(const std::string& repo_dir,

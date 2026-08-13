@@ -926,10 +926,11 @@ sys.exit(0)
         """`pull <policy.json>` registers a collection.router policy from a
         local file (#3088), equivalent to POSTing the document to /pull."""
         collection_name = f"user.CliPullFile-{uuid.uuid4().hex[:8]}"
+        alias_name = f"cli-pull-alias-{uuid.uuid4().hex[:8]}"
         json_file = self._write_router_policy_file(collection_name)
         try:
             result = run_cli_command(
-                ["pull", json_file],
+                ["pull", json_file, "--alias", alias_name],
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
             self.assertEqual(
@@ -952,6 +953,31 @@ sys.exit(0)
                 entry, f"{collection_name} should be registered from the file"
             )
             self.assertEqual(entry.get("recipe"), "collection.router")
+
+            # --alias applies to the normalized name from the file. Alias
+            # lookups echo the alias as `id` but return the target's object —
+            # the recipe and components prove it resolved to our collection.
+            aliased = requests.get(
+                f"http://localhost:{PORT}/api/v1/models/{alias_name}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                aliased.status_code, 200, f"alias should resolve: {aliased.text}"
+            )
+            self.assertEqual(aliased.json().get("recipe"), "collection.router")
+            self.assertEqual(
+                aliased.json().get("components"), [ENDPOINT_TEST_MODEL]
+            )
+
+            # A typo'd .json path is a clear file error, not a registry lookup.
+            missing = self.assertCommandFails(
+                ["pull", f"./no-such-{uuid.uuid4().hex[:8]}.json"],
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(
+                "JSON file not found", missing.stdout + missing.stderr
+            )
         finally:
             os.unlink(json_file)
             try:
