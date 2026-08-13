@@ -107,6 +107,17 @@ private:
     void handle_health(const httplib::Request& req, httplib::Response& res);
     void handle_live(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
+    void handle_model_register(const httplib::Request& req, httplib::Response& res);
+    void validate_model_registration_name(const std::string& model_name,
+                                         bool require_user_namespace);
+    void normalize_model_registration_source(nlohmann::json& request_json,
+                                             bool local_import);
+    void validate_and_canonicalize_collection_registration(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool allow_embedded_models);
+    std::string register_model_definition_internal(const std::string& model_name,
+                                                   nlohmann::json& request_json);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
