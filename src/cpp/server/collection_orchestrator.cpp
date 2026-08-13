@@ -367,8 +367,7 @@ CollectionOrchestrator::ToolSet CollectionOrchestrator::build_tools(const ModelI
     // Pick the chat/planner component: the first one labeled "chat", else the
     // first component.
     for (const auto& c : components) {
-        const auto& cl = labels[c];
-        if (std::find(cl.begin(), cl.end(), "chat") != cl.end()) {
+        if (has_label(labels[c], "chat")) {
             result.chat_model = c;
             break;
         }
@@ -381,9 +380,7 @@ CollectionOrchestrator::ToolSet CollectionOrchestrator::build_tools(const ModelI
     // forwards user `image_url` parts to it instead of stripping them to a
     // placeholder (see run_loop's message pre-processing).
     if (!result.chat_model.empty()) {
-        const auto& cm_labels = labels[result.chat_model];
-        result.chat_supports_vision =
-            std::find(cm_labels.begin(), cm_labels.end(), "vision") != cm_labels.end();
+        result.chat_supports_vision = has_label(labels[result.chat_model], "vision");
     }
 
     const json& defs = tool_definitions();

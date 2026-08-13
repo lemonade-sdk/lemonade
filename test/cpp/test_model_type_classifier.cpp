@@ -1,5 +1,5 @@
 // Standalone test for lemon::get_model_type_from_labels() and
-// lemon::ensure_chat_label().
+// lemon::find_deployment_mode().
 // Compile with: cl /std:c++17 /EHsc /I src/cpp/include test/cpp/test_model_type_classifier.cpp
 // or:          g++ -std=c++17 -I src/cpp/include test/cpp/test_model_type_classifier.cpp -o classifier_test
 
@@ -11,7 +11,7 @@
 #include <vector>
 
 using lemon::ModelType;
-using lemon::ensure_chat_label;
+using lemon::find_deployment_mode;
 using lemon::get_model_type_from_labels;
 using lemon::model_type_to_string;
 
@@ -21,10 +21,10 @@ struct Case {
     ModelType expected;
 };
 
-struct StampCase {
+struct DeclaredCase {
     const char* name;
     std::vector<std::string> labels;
-    bool expect_chat;
+    bool expect_declared;
 };
 
 int main() {
@@ -65,7 +65,7 @@ int main() {
         {"reasoning + tool-calling", {"reasoning", "tool-calling"}, ModelType::LLM},
 
         // Multimodal any-to-text chat with transcription label (e.g. Gemma 4 on
-        // FLM), as it looks after ensure_chat_label() stamps it at ingest.
+        // FLM), as it looks once the FLM discovery path has classified it.
         {"Gemma-4-style any-to-text",
          {"chat", "vision", "reasoning", "tool-calling", "transcription"},
          ModelType::LLM},
@@ -75,28 +75,25 @@ int main() {
         {"unknown label → LLM", {"some-future-label"}, ModelType::LLM},
     };
 
-    // ensure_chat_label() stamps the label on models from sources that cannot
-    // declare it. Inputs below are real `flm list --json` label sets.
-    const std::vector<StampCase> stamp_cases = {
-        {"FLM null labels", {}, true},
-        {"FLM reasoning-only (deepseek-r1:8b)", {"reasoning"}, true},
-        {"FLM vision-only (gemma3:4b)", {"vision"}, true},
+    // find_deployment_mode() is what tells ensure_deployment_label() whether a
+    // model already declares a mode or needs its recipe's default stamped on.
+    // The FLM inputs below are real `flm list --json` label sets.
+    const std::vector<DeclaredCase> declared_cases = {
+        {"FLM null labels", {}, false},
+        {"FLM reasoning-only (deepseek-r1:8b)", {"reasoning"}, false},
+        {"FLM vision-only (gemma3:4b)", {"vision"}, false},
         {"FLM gemma4-it any-to-text",
          {"audio", "vision", "reasoning", "tool-calling", "chat-transcription"},
          true},
-        {"FLM whisper-v3:turbo stays ASR",
-         {"audio", "realtime-transcription", "transcription"},
-         false},
-        {"FLM embed-gemma:300m stays embedding", {"embeddings"}, false},
+        {"FLM whisper-v3:turbo", {"audio", "realtime-transcription", "transcription"}, true},
+        {"FLM embed-gemma:300m", {"embeddings"}, true},
 
-        // Descriptor-supplied deployment labels must survive the stamper.
-        {"sd-cpp registration", {"custom", "image"}, false},
-        {"kokoro registration", {"custom", "tts"}, false},
-        {"onnxruntime registration", {"custom", "classification"}, false},
+        // Descriptor default labels declare the mode at registration.
+        {"sd-cpp registration", {"custom", "image"}, true},
+        {"kokoro registration", {"custom", "tts"}, true},
+        {"onnxruntime registration", {"custom", "classification"}, true},
 
-        // chat-transcription declares chat even alongside bare transcription.
-        {"chat-transcription + transcription", {"chat-transcription", "transcription"}, true},
-
+        {"custom only", {"custom"}, false},
         {"already labeled", {"chat"}, true},
     };
 
@@ -112,21 +109,19 @@ int main() {
         if (!ok) ++failures;
     }
 
-    for (const auto& c : stamp_cases) {
-        std::vector<std::string> labels = c.labels;
-        ensure_chat_label(labels);
-        const size_t chat_count =
-            static_cast<size_t>(std::count(labels.begin(), labels.end(), "chat"));
-        const bool ok = (chat_count == (c.expect_chat ? 1u : 0u));
-        std::printf("[%s] stamp: %s  (chat x%zu, want x%d)\n",
+    for (const auto& c : declared_cases) {
+        ModelType mode = ModelType::LLM;
+        const bool declared = find_deployment_mode(c.labels, mode);
+        const bool ok = (declared == c.expect_declared);
+        std::printf("[%s] declares mode: %s  (got=%s, want=%s)\n",
                     ok ? "PASS" : "FAIL",
                     c.name,
-                    chat_count,
-                    c.expect_chat ? 1 : 0);
+                    declared ? "yes" : "no",
+                    c.expect_declared ? "yes" : "no");
         if (!ok) ++failures;
     }
 
-    const size_t total = cases.size() + stamp_cases.size();
+    const size_t total = cases.size() + declared_cases.size();
     std::printf("\n%d/%zu cases passed\n", static_cast<int>(total - failures), total);
     return failures == 0 ? 0 : 1;
 }

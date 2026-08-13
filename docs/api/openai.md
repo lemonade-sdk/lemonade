@@ -1062,24 +1062,32 @@ curl http://localhost:13305/v1/models?show_all=true
 Labels describe what a model can do. A model may carry multiple labels.
 
 **Deployment labels** — determine which backend endpoint the model is routed to.
-Every model carries exactly one of these:
+Every model names exactly one deployment mode, and a model is never given two
+labels that name different modes:
 
 | Label | Endpoint | Description |
 |-------|----------|-------------|
-| `chat` | `/chat/completions`, `/completions`, `/responses` | Text-generating LLM. This label is what makes a model an LLM — it is not inferred from `reasoning`/`vision`/`tool-calling`, which are characteristics rather than deployment modes. |
-| `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). A model carrying both `chat` and `transcription` deploys as an LLM. |
-| `embeddings` | `/embeddings` | Produces text embedding vectors. |
+| `chat` | `/chat/completions`, `/completions`, `/responses` | Text-generating LLM. This label is what makes a model an LLM — it is not inferred from `reasoning`/`vision`/`tool-calling`, which are characteristics rather than deployment modes. `chat-transcription` also names this mode. |
+| `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). A model carrying both `chat` and `transcription` is an omni LLM that also accepts audio, and deploys as an LLM. |
+| `embeddings` | `/embeddings` | Produces text embedding vectors. Also accepted as `embedding`. |
 | `reranking` | `/rerank` | Scores and reranks a list of passages given a query. Also reachable at the aliases `/reranking` and `/reranker`. |
-| `image` | `/images/generations` | Text-to-image generation model. |
-| `edit` | Image editing model; supports the `/images/edits` endpoint. |
+| `image` | `/images/generations`, `/images/edits`, `/images/variations` | Text-to-image generation model. |
 | `tts` | `/audio/speech` | Text-to-speech synthesis model. |
+| `audio-generation` | `/audio/generations` | Text-to-audio generation model (e.g. music, sound effects). |
+| `classification` | `/classify` | Text classification model. Also accepted as `classifier`. |
+| `3d` | `/3d/generations` | Text- or image-to-3D mesh generation model. |
 
-**Input-modality labels** — the model is deployed as an LLM but accepts additional input types in `/chat/completions`:
+A model whose recipe can only serve one mode (`whispercpp`, `sd-cpp`, `kokoro`,
+`onnxruntime`, …) is deployed in that mode regardless of the labels it carries.
+When a model declares no deployment label at all, it inherits its recipe's
+default — `chat` for `llamacpp`, `flm`, `ryzenai-llm`, `vllm`, and `cloud`.
+
+**Input-modality labels** — the model accepts additional input types in `/chat/completions`:
 
 | Label | Description |
 |-------|-------------|
 | `vision` | Accepts image attachments in chat messages. |
-| `chat-transcription` | Accepts audio attachments in chat messages (e.g. Qwen2.5-Omni). |
+| `chat-transcription` | Accepts audio attachments in chat messages (e.g. Qwen2.5-Omni). Unlike `vision`, this label also names the `chat` deployment mode, so a model carrying it is deployed as an LLM even alongside `transcription`. |
 
 **Streaming labels** — capability flags for real-time features:
 
@@ -1093,6 +1101,13 @@ Every model carries exactly one of these:
 |-------|-------------|
 | `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`); users can override these with `llamacpp_args`. |
 
+**Image capability labels** — carried alongside `image`; they refine what the model is offered for without changing its deployment mode:
+
+| Label | Description |
+|-------|-------------|
+| `edit` | Tuned for editing an input image (`/images/edits`). Also selects the model for the `edit_image` role in an omni collection. |
+| `upscaling` | Image upscaling model (e.g. Real-ESRGAN, `/images/upscale`). Used as a component in image pipelines rather than offered on its own. |
+
 **Characteristic labels** — informational, do not affect routing:
 
 | Label | Description |
@@ -1101,7 +1116,6 @@ Every model carries exactly one of these:
 | `reasoning` | Uses extended chain-of-thought reasoning (e.g. DeepSeek, Qwen3). |
 | `tool-calling` | Supports function/tool calling in chat completions. |
 | `coding` | Tuned for code generation and software tasks. |
-| `upscaling` | Image upscaling model (e.g. Real-ESRGAN). Used as a component in image pipelines. |
 | `experimental` | Not yet validated for production use. |
 
 

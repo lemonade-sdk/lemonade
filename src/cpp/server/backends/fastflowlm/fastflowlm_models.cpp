@@ -1,5 +1,7 @@
 #include "lemon/backends/fastflowlm/fastflowlm_models.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -31,6 +33,12 @@ using lemon::utils::path_to_utf8;
 bool safe_exists(const fs::path& p) {
     std::error_code ec;
     return fs::exists(p, ec);
+}
+
+std::string to_lower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
 }
 
 // Candidate roots that FLM may use to store models. FLM resolves its model
@@ -288,7 +296,21 @@ std::vector<ModelInfo> flm_discover_models() {
                         }
                     }
 
-                    ensure_chat_label(info.labels);
+                    // `flm list --json` reports input modalities, not a
+                    // deployment mode: an any-to-text chat model that accepts
+                    // audio reports "transcription" and would otherwise deploy
+                    // as ASR. Classify from the checkpoint name instead.
+                    // https://github.com/ROCm/FastFlowLM/issues/668 would let
+                    // FLM report the mode and remove this workaround.
+                    const std::string id = to_lower(checkpoint);
+                    if (id.find("whisper") != std::string::npos) {
+                        add_label_once(info.labels, "transcription");
+                    } else if (id.find("embed") != std::string::npos) {
+                        add_label_once(info.labels, "embeddings");
+                    } else {
+                        add_label_once(info.labels, "chat");
+                    }
+
                     info.type = get_model_type_from_labels(info.labels);
                     const BackendDescriptor* flm_desc = descriptor_for("flm");
                     info.device = flm_desc ? flm_desc->default_device : DEVICE_NPU;

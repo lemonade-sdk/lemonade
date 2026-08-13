@@ -38,6 +38,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*default_labels*/  {"transcription", "realtime-transcription"},
     /*required_checkpoints*/ {"main"},  // npu_cache validated in load() (npu variant only)
+    /*default_classification*/ "transcription",
     /*modality*/        "Speech-to-text",
     /*experimental*/    false,
     /*web_display_name*/ "whisper.cpp",

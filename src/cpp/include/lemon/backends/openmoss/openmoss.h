@@ -27,6 +27,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*default_labels*/  {"tts"},
     /*required_checkpoints*/ {"main"},
+    /*default_classification*/ "tts",
     /*modality*/        "Text-to-speech",
     /*experimental*/    true,
     /*web_display_name*/ "",

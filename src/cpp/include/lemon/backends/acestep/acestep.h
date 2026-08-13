@@ -29,6 +29,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*default_labels*/  {"audio-generation"},
     /*required_checkpoints*/ {"main"},
+    /*default_classification*/ "audio-generation",
     /*modality*/        "Audio generation",
     /*experimental*/    true,
     /*web_display_name*/ "",

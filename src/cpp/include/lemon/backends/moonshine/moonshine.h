@@ -29,6 +29,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*default_labels*/  {"transcription", "realtime-transcription"},
     /*required_checkpoints*/ {"main"},
+    /*default_classification*/ "transcription",
     /*modality*/        "Speech-to-text",
     /*experimental*/    false,
     /*web_display_name*/ "",

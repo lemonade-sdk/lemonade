@@ -30,5 +30,19 @@ bool recipe_has_rocm_channels(const std::string& recipe) {
     return d != nullptr && !d->rocm_channels.empty();
 }
 
+std::string default_classification_for(const std::string& recipe) {
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d != nullptr && !d->default_classification.empty()) {
+        return d->default_classification;
+    }
+    return "chat";
+}
+
+void ensure_deployment_label(std::vector<std::string>& labels, const std::string& recipe) {
+    ModelType mode = ModelType::LLM;
+    if (find_deployment_mode(labels, mode)) return;
+    labels.push_back(default_classification_for(recipe));
+}
+
 } // namespace backends
 } // namespace lemon

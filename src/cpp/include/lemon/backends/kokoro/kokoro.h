@@ -27,10 +27,9 @@ inline const BackendDescriptor descriptor = {
         {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
     },
-    /*default_labels*/  {"tts"},  // kokoro only does TTS; declare it so a label-less
-                                   // user model is typed TTS, not LLM (catalog models
-                                   // also carry "tts" explicitly in server_models.json)
+    /*default_labels*/  {"tts"},
     /*required_checkpoints*/ {"main"},
+    /*default_classification*/ "tts",
     /*modality*/        "Text-to-speech",
     /*experimental*/    false,
     /*web_display_name*/ "",

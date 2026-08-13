@@ -64,6 +64,11 @@ struct BackendDescriptor {
     std::vector<std::string>      default_labels;                // labels injected when a model omits them
     std::vector<std::string>      required_checkpoints{"main"};  // unconditional files; conditional ones checked in load()
 
+    // The deployment mode a model of this recipe runs in when its own labels
+    // name none. Backends that serve several modes (llamacpp and flm also do
+    // embeddings and reranking) still have one a bare model falls back to.
+    std::string default_classification = "chat";
+
     // Editorial metadata for the generated docs (README support matrix, website).
     std::string modality;           // "Text generation" | "Speech-to-text" | "Text-to-speech" | "Image generation"
     bool        experimental = false; // true renders "(experimental)" next to the recipe in generated docs

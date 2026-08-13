@@ -1,6 +1,7 @@
 #include "lemon_cli/model_selection.h"
 #include "lemon_cli/recipe_import.h"
 
+#include "lemon/model_types.h"
 #include "lemon/utils/aixlog.hpp"
 
 #include <algorithm>
@@ -579,7 +580,7 @@ bool prompt_model_selection(lemonade::LemonadeClient& client,
 } // namespace
 
 bool has_label(const lemonade::ModelInfo& model, const std::string& label) {
-    return std::find(model.labels.begin(), model.labels.end(), label) != model.labels.end();
+    return lemon::has_label(model.labels, label);
 }
 
 bool resolve_model_if_missing(lemonade::LemonadeClient& client,

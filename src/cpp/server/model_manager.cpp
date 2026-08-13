@@ -142,30 +142,23 @@ static constexpr const char EXTRA_MODEL_RECIPE[] = "llamacpp";
 static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
 
 // The deployment ModelType a model actually serves, honoring backend capability.
-// get_model_type_from_labels() gives chat-indicator labels (reasoning / vision /
-// tools / chat-transcription) priority — correct for LLM backends, but wrong for
-// a backend that cannot chat: its descriptor declares a definitive non-LLM
-// deployment (onnxruntime -> classification, sd-cpp -> image, whispercpp ->
-// transcription), and a stray chat-indicator label must not promote it to LLM
-// and slip past classifier-capability validation or send run_classifier down the
-// unsupported chat_completion path at runtime.
+// A backend that cannot chat outranks the model's own labels: a stray "chat" on
+// an sd-cpp or whispercpp model must not promote it to LLM and slip past
+// capability validation or reach chat_completion() at runtime.
 static ModelType get_deployment_model_type(const std::string& recipe,
                                            const std::vector<std::string>& labels) {
-    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
-        ModelType backend_type = get_model_type_from_labels(desc->default_labels);
-        if (backend_type != ModelType::LLM) {
-            return backend_type;
-        }
+    ModelType backend_type =
+        get_model_type_from_labels({lemon::backends::default_classification_for(recipe)});
+    if (backend_type != ModelType::LLM) {
+        return backend_type;
     }
     ModelType type = get_model_type_from_labels(labels);
 
-    // Reaching here means the backend declares no definitive non-LLM deployment,
-    // i.e. it is a chat/general backend (llamacpp/flm/ryzenai/vllm/cloud) — none
-    // of which implement IClassificationServer (only onnxruntime does, and it
-    // returned CLASSIFICATION above via its default label). So a `classification`
-    // label here is spurious: typing it CLASSIFICATION would send run_classifier
-    // to Router::classify() and hit an unsupported-capability error. Drop the
-    // claim so the model stays an LLM, usable as an LLM-as-classifier via chat.
+    // Only onnxruntime implements IClassificationServer, and it returned above
+    // on its own classification. So a `classification` label on any backend
+    // reaching here is spurious: typing it CLASSIFICATION would send
+    // run_classifier to Router::classify() and hit an unsupported-capability
+    // error. Drop the claim so the model stays usable as an LLM-as-classifier.
     if (type == ModelType::CLASSIFICATION) {
         std::vector<std::string> non_classification;
         for (const auto& label : labels) {
@@ -1216,7 +1209,8 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     info.suggested = true;
     info.downloaded = true;
     info.source = EXTRA_MODEL_SOURCE;
-    info.labels = {"custom", "chat"};
+    info.labels = {"custom"};
+    lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
     info.device = device_type_for_recipe(EXTRA_MODEL_RECIPE);
     return info;
 }
@@ -2088,10 +2082,9 @@ void ModelManager::build_cache() {
                 info.labels.push_back(label.get<std::string>());
             }
         }
-        // Entries persisted before "chat" existed carry no deployment label, and
-        // registration is not re-run on load; stamp here so an upgrade doesn't
-        // hide them from every consumer that tests for the label.
-        ensure_chat_label(info.labels);
+        // Registration is not re-run on load, so entries persisted before the
+        // deployment labels existed are stamped here instead.
+        lemon::backends::ensure_deployment_label(info.labels, info.recipe);
 
         parse_image_defaults(info, value);
         parse_extras(info, value);
@@ -2315,6 +2308,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
             info.labels.push_back(label.get<std::string>());
         }
     }
+    lemon::backends::ensure_deployment_label(info.labels, info.recipe);
 
     // Populate type and device fields (multi-model support)
     info.type = get_deployment_model_type(info.recipe, info.labels);
@@ -2852,6 +2846,7 @@ size_t ModelManager::count_cloud_models(const std::string& provider) const {
 // the same definition: explicit labels + legacy capability flags + the backend
 // descriptor's default labels (e.g. sd-cpp -> "image", whispercpp -> "transcription").
 static std::set<std::string> normalized_definition_labels(const json& model_data) {
+    const std::string recipe = model_data.value("recipe", std::string());
     std::set<std::string> labels = {"custom"};
     std::vector<std::string> extra = model_data.value("labels", std::vector<std::string>{});
     labels.insert(extra.begin(), extra.end());
@@ -2859,17 +2854,14 @@ static std::set<std::string> normalized_definition_labels(const json& model_data
     if (model_data.value("vision", false)) labels.insert("vision");
     if (model_data.value("embedding", false)) labels.insert("embeddings");
     if (model_data.value("reranking", false)) labels.insert("reranking");
-    if (const auto* desc =
-            lemon::backends::descriptor_for(model_data.value("recipe", std::string()))) {
+    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
         for (const auto& label : desc->default_labels) labels.insert(label);
     }
-    // Must run last: a definition that names no labels of its own gets its
-    // deployment mode from the descriptor above (sd-cpp -> "image",
-    // whispercpp -> "transcription"), and stamping "chat" before that lands
-    // would deploy an image or ASR model as an LLM.
-    std::vector<std::string> ordered(labels.begin(), labels.end());
-    ensure_chat_label(ordered);
-    return {ordered.begin(), ordered.end()};
+    ModelType mode = ModelType::LLM;
+    if (!find_deployment_mode(labels, mode)) {
+        labels.insert(lemon::backends::default_classification_for(recipe));
+    }
+    return labels;
 }
 
 // Whether the persisted user-model entry under `key` is a router collection.
@@ -5091,6 +5083,7 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
             }
         }
     }
+    lemon::backends::ensure_deployment_label(info.labels, info.recipe);
 
     // Parse size
     if (model_json->contains("size")) {

@@ -833,6 +833,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "hot",
             "tool-calling",
             "vision",

@@ -46,6 +46,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*default_labels*/  {"image"},
     /*required_checkpoints*/ {"main"},  // flux text_encoder+vae validated together in load()
+    /*default_classification*/ "image",
     /*modality*/        "Image generation",
     /*experimental*/    false,
     /*web_display_name*/ "stable-diffusion.cpp",

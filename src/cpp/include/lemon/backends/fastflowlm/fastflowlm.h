@@ -33,6 +33,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*default_labels*/  {},
     /*required_checkpoints*/ {"main"},
+    /*default_classification*/ "chat",
     /*modality*/        "Text generation",
     /*experimental*/    false,
     /*web_display_name*/ "FastFlowLM NPU",

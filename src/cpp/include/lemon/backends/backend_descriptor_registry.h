@@ -26,5 +26,15 @@ bool has_backend(const std::string& recipe);
 // rocm build is a single artifact (or that have no rocm build at all).
 bool recipe_has_rocm_channels(const std::string& recipe);
 
+// The deployment label a model of this recipe carries when its own labels name
+// no deployment mode. Recipes with no registered descriptor (omni collections,
+// unknown recipes) route through /chat/completions.
+std::string default_classification_for(const std::string& recipe);
+
+// Stamp the recipe's default classification when `labels` names no deployment
+// mode. Every model in the registry carries one, so consumers can test for a
+// label instead of inferring the mode from which labels happen to be absent.
+void ensure_deployment_label(std::vector<std::string>& labels, const std::string& recipe);
+
 } // namespace backends
 } // namespace lemon

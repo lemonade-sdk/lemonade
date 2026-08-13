@@ -40,6 +40,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*default_labels*/  {"image"},
     /*required_checkpoints*/ {"main"},  // text_encoder+vae validated together in load()
+    /*default_classification*/ "image",
     /*modality*/        "Image generation",
     /*experimental*/    true,
     /*web_display_name*/ "thenoise",

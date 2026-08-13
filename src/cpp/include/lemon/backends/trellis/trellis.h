@@ -29,6 +29,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*default_labels*/  {"3d"},
     /*required_checkpoints*/ {"main"},
+    /*default_classification*/ "3d",
     /*modality*/        "3D generation",
     /*experimental*/    true,
     /*web_display_name*/ "",

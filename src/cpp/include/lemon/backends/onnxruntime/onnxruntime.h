@@ -31,6 +31,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*default_labels*/  {"classification"},
     /*required_checkpoints*/ {"main"},
+    /*default_classification*/ "classification",
     /*modality*/        "Text classification",
     /*experimental*/    true,
     /*web_display_name*/ "",
