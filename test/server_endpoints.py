@@ -1344,6 +1344,30 @@ class EndpointTests(ServerTestBase):
         self._reset_options()
         self.assertFalse(live_pinned(), "DELETE should unpin the live model")
 
+        # A pin applied by a /load request is not saved anywhere, but a load
+        # would keep it, so `effective` has to report it rather than the saved
+        # value, and DELETE must not reset something it never owned.
+        requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "pinned": True},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        reported = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertEqual(reported["saved"], {})
+        self.assertTrue(
+            reported["effective"]["pinned"],
+            "effective must report the live pin, which is what a load would keep",
+        )
+        self._reset_options()
+        self.assertTrue(
+            live_pinned(), "DELETE must not reset a pin that was never saved"
+        )
+        requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "pinned": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
         print("[OK] pinned changes are applied to the running model")
 
     def test_012x_every_effective_option_can_be_saved_back(self):
@@ -1356,17 +1380,26 @@ class EndpointTests(ServerTestBase):
         self.addCleanup(self._reset_options)
         self._reset_options()
 
-        effective = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
-            "effective"
-        ]
-        response = requests.post(
-            self._options_url(), json=effective, timeout=TIMEOUT_DEFAULT
-        )
-        self.assertEqual(
-            response.status_code,
-            200,
-            f"Every reported option must be settable, got {response.text}",
-        )
+        # Both recipes, so the round trip covers options with a global-config
+        # counterpart (steps, cfg_scale) and options without one (flow_shift,
+        # sampling_method, merge_args, the eviction settings).
+        models = [ENDPOINT_TEST_MODEL]
+        if requests.get(f"{self.base_url}/models/SD-Turbo", timeout=TIMEOUT_DEFAULT).ok:
+            models.append("SD-Turbo")
+            self.addCleanup(self._reset_options, "SD-Turbo")
+
+        for model in models:
+            effective = requests.get(
+                self._options_url(model=model), timeout=TIMEOUT_DEFAULT
+            ).json()["effective"]
+            response = requests.post(
+                self._options_url(model=model), json=effective, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Every option reported for {model} must be settable, got {response.text}",
+            )
 
         # merge_args specifically: a boolean, and both values have to round-trip.
         for value in (True, False):
@@ -1436,6 +1469,9 @@ class EndpointTests(ServerTestBase):
         ).json()["checkpoint"]
 
         def cleanup():
+            # Options first: deleting the model leaves its recipe_options.json
+            # entry behind otherwise.
+            self._reset_options(model_name)
             requests.post(
                 f"{self.base_url}/unload",
                 json={"model_name": model_name},

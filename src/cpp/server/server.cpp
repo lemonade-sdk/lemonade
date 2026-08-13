@@ -2828,11 +2828,20 @@ static std::string validate_option_value(const RuntimeConfig& config,
     if (config_key.rfind(recipe_prefix, 0) == 0) {
         config_key = config_key.substr(recipe_prefix.size());
     }
+    const std::string section = RuntimeConfig::recipe_to_config_section(recipe);
     try {
-        config.validate_backend(RuntimeConfig::recipe_to_config_section(recipe), config_key, value);
+        config.validate_backend(section, config_key, value);
     } catch (const std::exception& e) {
-        const std::string message = e.what();
-        if (message.rfind("Unknown key:", 0) != 0) return message;
+        std::string message = e.what();
+        if (message.rfind("Unknown key:", 0) == 0) return "";
+        // The validator names keys as they appear in config.json; this endpoint
+        // speaks recipe option names, so drop the section qualifier.
+        const std::string qualifier = "'" + section + ".";
+        const auto at = message.find(qualifier);
+        if (at != std::string::npos) {
+            message.replace(at, qualifier.size(), "'" + key.substr(0, key.size() - config_key.size()));
+        }
+        return message;
     }
     return "";
 }
@@ -2888,11 +2897,21 @@ void Server::respond_with_model_options(
         without_saved.recipe_options = model_manager_->get_model_default_options(info);
         RecipeOptions defaults = router_->resolve_effective_options(without_saved, no_request_options);
 
+        nlohmann::json effective_json = resolve_all_recipe_options(effective);
+        if (router_->is_model_loaded(model_key)) {
+            // A load keeps a live process's own pin rather than the saved one
+            // (see Router::load_model), so reporting the saved value here would
+            // contradict what "what a load would use" means for every other key.
+            const auto live_pinned = router_->get_model_recipe_options(model_key)
+                                         .get_option("pinned");
+            effective_json["pinned"] = live_pinned.is_boolean() && live_pinned.get<bool>();
+        }
+
         nlohmann::json response = {
             {"model_name", model_id},
             {"recipe", info.recipe},
             {"saved", model_manager_->get_saved_model_options(model_key)},
-            {"effective", resolve_all_recipe_options(effective)},
+            {"effective", std::move(effective_json)},
             {"defaults", resolve_all_recipe_options(defaults)},
             {"reload_required", router_->would_reload(model_key, effective)}
         };
@@ -2985,9 +3004,10 @@ void Server::handle_model_options_delete(const httplib::Request& req, httplib::R
     respond_with_model_options(req, res,
         [this](const std::string& model_key, const ModelInfo&, httplib::Response&,
                bool& touched_pinned) {
-            // Resetting to defaults covers the pin whether or not one was saved:
-            // a request-scoped /load may have pinned the live process instead.
-            touched_pinned = true;
+            // Only a saved pin is this endpoint's to reset. A pin a /load
+            // request applied to the live process is not part of the entry
+            // being erased, and `effective` reports it either way.
+            touched_pinned = model_manager_->get_saved_model_options(model_key).contains("pinned");
             if (!model_manager_->get_saved_model_options(model_key).empty()) {
                 model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
             }
