@@ -707,7 +707,9 @@ interface WorkspaceDetailPanelProps {
   leading?: React.ReactNode;
   metadata?: React.ReactNode;
   description?: React.ReactNode;
+  descriptionPlacement?: 'body' | 'identity';
   actions?: React.ReactNode;
+  titleExtras?: React.ReactNode;
   headerExtras?: React.ReactNode;
   onBack?: () => void;
   backLabel?: string;
@@ -726,7 +728,9 @@ export const WorkspaceDetailPanel = React.forwardRef<HTMLElement, WorkspaceDetai
   leading,
   metadata,
   description,
+  descriptionPlacement = 'body',
   actions,
+  titleExtras,
   headerExtras,
   onBack,
   backLabel = 'Back to list',
@@ -744,14 +748,18 @@ export const WorkspaceDetailPanel = React.forwardRef<HTMLElement, WorkspaceDetai
         <Icon name="chevron-right" size={14} className="workspace-detail-panel__back-icon" aria-hidden="true" /> {backLabel}
       </button>
     )}
-    {(title !== undefined || actions || headerExtras) && <header className="workspace-detail-panel__header">
+    {(title !== undefined || actions || titleExtras || headerExtras) && <header className="workspace-detail-panel__header">
       {title !== undefined && (
         <div className="workspace-detail-panel__title-row">
           {leading && <div className="workspace-detail-panel__leading">{leading}</div>}
           <div className="workspace-detail-panel__identity">
             {title}
             {metadata && <WorkspaceMetadataGroup>{metadata}</WorkspaceMetadataGroup>}
+            {descriptionPlacement === 'identity' && description && (
+              <div className="workspace-detail-panel__description workspace-detail-panel__description--identity">{description}</div>
+            )}
           </div>
+          {titleExtras}
           {onClose && (
             <button type="button" className={closeClassName} onClick={onClose} aria-label={closeLabel}>
               <Icon name={closeIcon} size={16} aria-hidden="true" />
@@ -762,7 +770,7 @@ export const WorkspaceDetailPanel = React.forwardRef<HTMLElement, WorkspaceDetai
       {actions && <div className="workspace-detail-panel__action-bar">{actions}</div>}
       {headerExtras}
     </header>}
-    {description && <div className="workspace-detail-panel__description">{description}</div>}
+    {descriptionPlacement === 'body' && description && <div className="workspace-detail-panel__description">{description}</div>}
     {children}
   </section>
 ));

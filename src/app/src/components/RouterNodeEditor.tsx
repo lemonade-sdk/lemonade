@@ -7,6 +7,7 @@ import {
   createRouterLeaf,
   createRouterNodeId,
   normalizeRouterNode,
+  routerConditionIdentity,
   type RouterClassifier,
   type RouterGroupNode,
   type RouterLeafNode,
@@ -19,8 +20,8 @@ const LEAF_TYPES: Array<{ value: RouterLeafType; label: string }> = [
   { value: 'keywords_any', label: 'Keywords · any' },
   { value: 'keywords_all', label: 'Keywords · all' },
   { value: 'regex', label: 'Regex' },
-  { value: 'min_chars', label: 'Minimum characters' },
-  { value: 'max_chars', label: 'Maximum characters' },
+  { value: 'min_chars', label: 'Minimum UTF-8 bytes' },
+  { value: 'max_chars', label: 'Maximum UTF-8 bytes' },
   { value: 'has_tools', label: 'Has tools' },
   { value: 'has_images', label: 'Has images' },
   { value: 'classifier', label: 'Classifier score' },
@@ -54,6 +55,19 @@ function moveChild(group: RouterGroupNode, index: number, delta: number): Router
   const children = [...group.children];
   [children[index], children[target]] = [children[target], children[index]];
   return { ...group, children };
+}
+
+function unusedGroupLeafType(group: RouterGroupNode): RouterLeafType | null {
+  const identities = new Set(group.children.map(routerConditionIdentity).filter((identity): identity is string => Boolean(identity)));
+  for (const item of LEAF_TYPES) {
+    const identity = item.value === 'classifier'
+      ? 'classifier:'
+      : item.value === 'metadata'
+        ? 'metadata:'
+        : item.value;
+    if (!identities.has(identity)) return item.value;
+  }
+  return null;
 }
 
 const ScoreInput: React.FC<{
@@ -101,10 +115,11 @@ const RouterLeafEditor: React.FC<{
         </label>
 
         {(node.type === 'keywords_any' || node.type === 'keywords_all') && (
-          <input
-            className="input router-node__grow"
+          <textarea
+            className="textarea router-node__grow"
+            rows={3}
             value={node.textValue ?? ''}
-            placeholder="Comma-separated keywords"
+            placeholder="One keyword per line"
             onChange={event => update({ textValue: event.target.value })}
           />
         )}
@@ -142,11 +157,12 @@ const RouterLeafEditor: React.FC<{
               className="select"
               value={node.classifierId ?? ''}
               onChange={event => {
-                const classifier = classifiers.find(item => item.id === event.target.value);
-                const nextLabels = classifierLabels(classifier);
+                // Keep label omitted when choosing a classifier so the condition
+                // continues to follow that classifier's default_label. Copying the
+                // current default into the rule would silently freeze the old value.
                 update({
                   classifierId: event.target.value,
-                  label: classifier?.defaultLabel || nextLabels[0] || undefined,
+                  label: undefined,
                 });
               }}
             >
@@ -157,7 +173,11 @@ const RouterLeafEditor: React.FC<{
           <label>
             <span>Label</span>
             <select className="select" value={node.label ?? ''} onChange={event => update({ label: event.target.value || undefined })}>
-              <option value="">Use classifier default</option>
+              <option value="" disabled={labels.length > 0 && !selectedClassifier?.defaultLabel}>
+                {selectedClassifier?.defaultLabel
+                  ? `Use classifier default (${selectedClassifier.defaultLabel})`
+                  : labels.length > 0 ? 'Select label' : 'Use classifier output'}
+              </option>
               {labels.map(label => <option key={label} value={label}>{label}</option>)}
             </select>
           </label>
@@ -192,9 +212,14 @@ const RouterLeafEditor: React.FC<{
                 <option value="false">missing</option>
               </select>
             </label>
+          ) : node.metadataComparator === 'any' ? (
+            <label className="router-node__grow-field">
+              <span>Values <small>one per line</small></span>
+              <textarea className="textarea" rows={3} value={node.metadataValues ?? ''} onChange={event => update({ metadataValues: event.target.value })} />
+            </label>
           ) : (
             <label className="router-node__grow-field">
-              <span>{node.metadataComparator === 'any' ? 'Comma-separated values' : 'Value'}</span>
+              <span>Value</span>
               <input className="input" value={node.metadataValues ?? ''} onChange={event => update({ metadataValues: event.target.value })} />
             </label>
           )}
@@ -202,8 +227,8 @@ const RouterLeafEditor: React.FC<{
       )}
       <div className="router-node__wrap-actions" aria-label="Combine condition">
         <span>Combine:</span>
-        <button type="button" onClick={() => onChange({ id: createRouterNodeId('group'), kind: 'group', operator: 'all', children: [node, createRouterLeaf()] })}>AND</button>
-        <button type="button" onClick={() => onChange({ id: createRouterNodeId('group'), kind: 'group', operator: 'any', children: [node, createRouterLeaf()] })}>OR</button>
+        <button type="button" onClick={() => onChange({ id: createRouterNodeId('group'), kind: 'group', operator: 'all', children: [node, createRouterLeaf(node.type === 'keywords_any' ? 'keywords_all' : 'keywords_any')] })}>AND</button>
+        <button type="button" onClick={() => onChange({ id: createRouterNodeId('group'), kind: 'group', operator: 'any', children: [node, createRouterLeaf(node.type === 'keywords_any' ? 'keywords_all' : 'keywords_any')] })}>OR</button>
         <button type="button" onClick={() => onChange({ id: createRouterNodeId('group'), kind: 'group', operator: 'not', children: [node] })}>NOT</button>
       </div>
     </div>
@@ -215,15 +240,21 @@ export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classi
     return <RouterLeafEditor node={node} classifiers={classifiers} onChange={onChange} />;
   }
 
-  const addCondition = () => onChange({ ...node, children: [...node.children, createRouterLeaf()] });
+  const unusedConditionType = unusedGroupLeafType(node);
+  const addCondition = () => {
+    if (unusedConditionType) onChange({ ...node, children: [...node.children, createRouterLeaf(unusedConditionType)] });
+  };
   const addGroup = () => onChange({ ...node, children: [...node.children, createRouterGroup('all')] });
   const changeOperator = (operator: RouterGroupNode['operator']) => {
-    const children = operator === 'not'
-      ? [node.children[0] || createRouterLeaf()]
-      : node.children.length >= 2
-        ? node.children
-        : [node.children[0] || createRouterLeaf(), createRouterLeaf('has_tools')];
-    onChange({ ...node, operator, children });
+    if (operator === node.operator) return;
+    if (operator === 'not' && node.children.length > 1) {
+      // Negate the complete existing expression. Truncating to children[0]
+      // would silently delete conditions when AND/OR is changed to NOT.
+      const inner: RouterGroupNode = { ...node, id: createRouterNodeId('group') };
+      onChange({ ...node, operator: 'not', children: [inner] });
+      return;
+    }
+    onChange({ ...node, operator, children: node.children.length ? node.children : [createRouterLeaf()] });
   };
 
   return (
@@ -239,7 +270,7 @@ export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classi
         </div>
         {node.operator !== 'not' && (
           <div className="router-node__group-actions">
-            <WorkspaceActionButton size="small" icon="plus" onClick={addCondition}>Condition</WorkspaceActionButton>
+            <WorkspaceActionButton size="small" icon="plus" disabled={!unusedConditionType} title={unusedConditionType ? "Add condition" : "Every available condition identity is already used in this gate"} onClick={addCondition}>Condition</WorkspaceActionButton>
             <WorkspaceActionButton size="small" icon="plus" onClick={addGroup}>Group</WorkspaceActionButton>
           </div>
         )}

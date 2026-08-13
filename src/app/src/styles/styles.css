@@ -12533,18 +12533,32 @@ a.backend-card__version:focus-visible {
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-1);
 }
-.router-editor__toolbar-spacer { flex: 1; }
-.router-editor__saved-select { min-width: 0; }
-.router-editor__saved-select select { width: min(230px, 32vw); }
+.router-editor .workspace-detail-panel__title-row > .router-editor__toolbar {
+  flex: 0 1 360px;
+  align-self: flex-start;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.router-editor__toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.router-editor__toolbar-row--files { justify-content: flex-end; }
+.router-editor__saved-select { min-width: 0; flex: 1 1 180px; }
+.router-editor__saved-select select { width: 100%; }
 .router-editor__tabs { display: flex; padding: 0 var(--space-5); border-bottom: 1px solid var(--border-subtle); background: var(--surface-1); }
 .router-editor__tabs button { height: 38px; padding: 0 var(--space-3); border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-tertiary); font-size: var(--text-sm); cursor: pointer; }
 .router-editor__tabs button:hover { color: var(--text-primary); }
 .router-editor__tabs button.is-active { color: var(--text-primary); border-bottom-color: var(--accent-fg); }
 .router-editor__body { min-height: 0; overflow-y: auto; padding: var(--space-4) var(--space-5) var(--space-6); scrollbar-gutter: stable; }
-.router-editor__backend-note,
 .router-editor__message,
 .router-editor__validation { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-3); margin-bottom: var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); font-size: var(--text-xs); line-height: var(--leading-relaxed); }
-.router-editor__backend-note { color: var(--text-secondary); background: color-mix(in srgb, var(--accent-fg) 5%, var(--surface-1)); }
 .router-editor__section,
 .router-editor__json-panel { margin-bottom: var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-xl); background: var(--surface-1); overflow: hidden; }
 .router-editor__section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-subtle); }
@@ -12615,21 +12629,24 @@ a.backend-card__version:focus-visible {
 .router-editor__rule-list { max-height: 326px; align-content: start; padding: var(--space-2); background: var(--surface-1); }
 .router-editor__rules-workspace {
   display: grid;
-  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
+  /* Keep the rule rail intentionally compact so the graph remains the primary workspace. */
+  grid-template-columns: minmax(200px, 220px) minmax(0, 1fr);
   min-height: 430px;
   border-top: 1px solid var(--border-subtle);
 }
 .router-editor__rule-list { border-right: 1px solid var(--border-subtle); }
 .router-editor__rule-summary {
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-1);
+  gap: 2px;
   min-height: 58px;
-  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  padding: var(--space-1);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--surface-base);
+  overflow: hidden;
   transition: border-color 120ms ease, background 120ms ease, opacity 120ms ease;
 }
 .router-editor__rule-summary:hover { border-color: color-mix(in srgb, var(--accent-fg) 28%, var(--border-subtle)); }
@@ -12640,7 +12657,7 @@ a.backend-card__version:focus-visible {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   padding: var(--space-1);
   border: 0;
   border-radius: var(--radius-sm);
@@ -12693,17 +12710,84 @@ a.backend-card__version:focus-visible {
 .router-editor__card-head { display: flex; align-items: center; gap: var(--space-2); min-height: 40px; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-subtle); background: var(--surface-2); }
 .router-editor__card-head > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); }
 .router-editor__card-head > .workspace-action-button { margin-left: auto; }
-.router-editor__drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: var(--radius-sm); color: var(--text-tertiary); cursor: grab; user-select: none; }
+.router-editor__drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 24px; border-radius: var(--radius-sm); color: var(--text-tertiary); cursor: grab; user-select: none; }
 .router-editor__drag-handle:hover { color: var(--text-primary); background: var(--surface-3); }
 .router-editor__drag-handle:active { cursor: grabbing; }
-.router-editor__rule-order { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; color: var(--accent-fg); background: color-mix(in srgb, var(--accent-fg) 12%, transparent); font-size: var(--type-overline-size); font-weight: var(--weight-bold); }
-.router-editor__rule-actions { display: inline-flex; gap: var(--space-0-5); margin-left: auto; }
-.router-editor__rule-actions button { width: 26px; height: 26px; border-radius: var(--radius-sm); }
+.router-editor__rule-order { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: var(--accent-fg); background: color-mix(in srgb, var(--accent-fg) 12%, transparent); font-size: var(--type-overline-size); font-weight: var(--weight-bold); }
+.router-editor__rule-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  /* Match WorkspaceListRow: keep the right edge reserved for the hover action
+     so revealing Delete never reflows the row. */
+  padding-inline-end: 28px;
+}
+.router-editor__rule-actions button { width: 24px; height: 26px; border-radius: var(--radius-sm); }
+.router-editor__rule-stepper {
+  display: grid;
+  grid-template-rows: repeat(2, 13px);
+  width: 18px;
+  height: 26px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.router-editor__rule-actions .router-editor__rule-stepper-button {
+  width: 18px;
+  height: 13px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+}
+.router-editor__rule-actions .router-editor__rule-stepper-button:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+/* Same right-edge hover action used by WorkspaceListRow: the delete target is
+   an overlay, not a permanently occupied icon slot inside the action cluster. */
+.router-editor__rule-actions .router-editor__rule-remove {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: 28px;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-start-end-radius: var(--radius-md);
+  border-end-end-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  visibility: hidden;
+  transition: color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+}
+.router-editor__rule-summary:hover .router-editor__rule-remove,
+.router-editor__rule-summary:focus-within .router-editor__rule-remove,
+.router-editor__rule-remove:focus { visibility: visible; }
+.router-editor__rule-actions .router-editor__rule-remove:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+@media (hover: none), (pointer: coarse) {
+  .router-editor__rule-actions .router-editor__rule-remove { visibility: visible; }
+}
 .router-editor__rule-actions button:disabled,
 .router-node__child-actions button:disabled { opacity: .28; cursor: default; }
 .router-editor__rule-meta { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: var(--space-3); padding: var(--space-3); }
 .router-editor__rule-meta label { display: grid; gap: 5px; color: var(--text-secondary); font-size: var(--text-xs); }
 .router-editor__concepts { display: grid; gap: var(--space-2); }
+.router-editor__concept-list {
+  display: grid;
+  gap: var(--space-2);
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: var(--space-1);
+  scrollbar-gutter: stable;
+}
 .router-editor__mini-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .router-editor__concept { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(180px, 1.5fr) var(--control-height-sm); gap: var(--space-2); }
 .router-editor__outputs { margin: 0 var(--space-3) var(--space-3); border-top: 1px solid var(--border-subtle); }
@@ -12715,6 +12799,11 @@ a.backend-card__version:focus-visible {
 .router-editor__validation ul { margin: var(--space-2) 0 0 20px; padding: 0; }
 .router-editor__message--error { color: var(--danger); background: var(--danger-soft); }
 .router-editor__message--success { color: var(--success); background: var(--success-soft); }
+.router-editor__copy-button.is-copied {
+  border-color: color-mix(in srgb, var(--success) 42%, var(--border-subtle));
+  color: var(--success);
+  background: var(--success-soft);
+}
 /* Recursive condition tree. */
 .router-node { min-width: 0; }
 .router-node--leaf { padding: var(--space-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-1); }
@@ -12741,8 +12830,9 @@ a.backend-card__version:focus-visible {
   .router-editor__toolbar,
   .router-editor__tabs,
   .router-editor__body { padding-left: var(--space-3); padding-right: var(--space-3); }
+  .router-editor .workspace-detail-panel__title-row { flex-wrap: wrap; }
+  .router-editor .workspace-detail-panel__title-row > .router-editor__toolbar { flex: 1 1 100%; }
   .router-editor__toolbar { flex-wrap: wrap; }
-  .router-editor__toolbar-spacer { display: none; }
   .router-editor__saved-select { flex: 1 1 180px; }
   .router-editor__saved-select select { width: 100%; }
   .router-editor__form-grid,
@@ -12921,7 +13011,10 @@ a.backend-card__version:focus-visible {
 .router-graph__tool:hover { border-color: color-mix(in srgb, var(--accent-fg) 38%, var(--border-subtle)); background: var(--surface-1); color: var(--text-primary); }
 .router-graph__tool:active { cursor: grabbing; }
 .router-graph__tool--gate { display: grid; justify-items: center; gap: 2px; padding: var(--space-2) var(--space-1); text-align: center; color: var(--accent-fg); }
-.router-graph__tool--gate strong { color: var(--accent-fg); font-size: var(--text-xs); }
+.router-graph__tool--all { color: var(--accent-fg); }
+.router-graph__tool--any { color: var(--success); }
+.router-graph__tool--not { color: var(--danger); }
+.router-graph__tool--gate strong { color: currentColor; font-size: var(--text-xs); }
 .router-graph__tool--gate small { color: var(--text-tertiary); font-size: 9px; }
 .router-graph__gate-shape { display: block; overflow: visible; }
 .router-graph__gate-shape path,
@@ -12955,6 +13048,24 @@ a.backend-card__version:focus-visible {
 .router-graph__inspector-head button:hover { background: var(--surface-3); color: var(--text-primary); }
 .router-graph__toolbar button:disabled { opacity: .35; cursor: default; }
 .router-graph__toolbar button.is-danger:hover { color: var(--danger); background: var(--danger-soft); }
+.router-graph__toolbar button.router-graph__expand {
+  min-width: 30px;
+  padding-inline: 7px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--primary-yellow);
+  box-shadow: none;
+}
+.router-graph__toolbar button.router-graph__expand .app-icon { stroke-width: 2; }
+.router-graph__toolbar button.router-graph__expand:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--surface-3);
+  color: var(--primary-yellow);
+}
+.router-graph__toolbar button.router-graph__expand:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 2px;
+}
 .router-graph__toolbar-spacer { flex: 1; }
 .router-graph__toolbar-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-tertiary); font-size: var(--type-overline-size); }
 .router-graph__zoom-label { min-width: 44px; }
@@ -12977,17 +13088,19 @@ a.backend-card__version:focus-visible {
 .router-graph__empty > span:not(.router-graph__empty-icon) { max-width: 380px; font-size: var(--text-xs); line-height: var(--leading-relaxed); }
 .router-graph__empty-icon { display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 46px; border: 1px solid color-mix(in srgb, var(--accent-fg) 28%, var(--border-subtle)); border-radius: 50%; background: color-mix(in srgb, var(--accent-fg) 8%, var(--surface-1)); color: var(--accent-fg); }
 
-.router-graph__group { min-width: 260px; padding: var(--space-2); border: 1px solid color-mix(in srgb, var(--accent-fg) 25%, var(--border-subtle)); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--surface-1) 94%, transparent); box-shadow: var(--shadow-sm); }
-.router-graph__group.is-selected { border-color: color-mix(in srgb, var(--accent-fg) 70%, var(--border-subtle)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-fg) 10%, transparent); }
-.router-graph__group-head { display: flex; align-items: center; gap: var(--space-2); min-height: 34px; padding: 0 var(--space-1) var(--space-2); cursor: pointer; }
-.router-graph__gate { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 70px; height: 30px; padding: 0 8px 0 5px; border: 1px solid color-mix(in srgb, var(--accent-fg) 35%, var(--border-subtle)); border-radius: var(--radius-pill); color: var(--accent-fg); background: color-mix(in srgb, var(--accent-fg) 8%, var(--surface-1)); font-size: var(--type-overline-size); font-weight: var(--weight-bold); }
-.router-graph__gate--not { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border-subtle)); background: color-mix(in srgb, var(--danger) 7%, var(--surface-1)); }
+.router-graph__group { --router-gate-color: var(--accent-fg); min-width: 260px; padding: var(--space-2); border: 1px solid color-mix(in srgb, var(--router-gate-color) 28%, var(--border-subtle)); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--router-gate-color) 3%, var(--surface-1)); box-shadow: var(--shadow-sm); }
+.router-graph__group--all { --router-gate-color: var(--accent-fg); }
+.router-graph__group--any { --router-gate-color: var(--success); }
+.router-graph__group--not { --router-gate-color: var(--danger); }
+.router-graph__group.is-selected { border-color: color-mix(in srgb, var(--router-gate-color) 72%, var(--border-subtle)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--router-gate-color) 11%, transparent); }
+.router-graph__group-head { display: flex; align-items: center; gap: var(--space-2); min-height: 34px; padding: 0 var(--space-1) var(--space-2); }
+.router-graph__gate { appearance: none; font: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 70px; height: 30px; padding: 0 8px 0 5px; border: 1px solid color-mix(in srgb, var(--router-gate-color) 38%, var(--border-subtle)); border-radius: var(--radius-pill); color: var(--router-gate-color); background: color-mix(in srgb, var(--router-gate-color) 9%, var(--surface-1)); font-size: var(--type-overline-size); font-weight: var(--weight-bold); }
 .router-graph__group-copy { flex: 1; color: var(--text-tertiary); font-size: var(--type-overline-size); }
 .router-graph__operator-actions { display: inline-flex; gap: 2px; }
-.router-graph__operator-actions button.is-active { color: var(--accent-fg); background: color-mix(in srgb, var(--accent-fg) 10%, var(--surface-2)); }
-.router-graph__children { position: relative; display: grid; gap: var(--space-2); padding: var(--space-2) 0 0 var(--space-4); border-left: 1px solid color-mix(in srgb, var(--accent-fg) 22%, var(--border-subtle)); }
+.router-graph__operator-actions button.is-active { color: var(--router-gate-color); background: color-mix(in srgb, var(--router-gate-color) 10%, var(--surface-2)); }
+.router-graph__children { position: relative; display: grid; gap: var(--space-2); padding: var(--space-2) 0 0 var(--space-4); border-left: 1px solid color-mix(in srgb, var(--router-gate-color) 25%, var(--border-subtle)); }
 .router-graph__branch { position: relative; display: grid; grid-template-columns: minmax(190px, 1fr) 24px; align-items: center; gap: var(--space-1); }
-.router-graph__branch::before { content: ''; position: absolute; left: calc(var(--space-4) * -1); top: 50%; width: var(--space-4); border-top: 1px solid color-mix(in srgb, var(--accent-fg) 22%, var(--border-subtle)); }
+.router-graph__branch::before { content: ''; position: absolute; left: calc(var(--space-4) * -1); top: 50%; width: var(--space-4); border-top: 1px solid color-mix(in srgb, var(--router-gate-color) 25%, var(--border-subtle)); }
 .router-graph__leaf { min-width: 0; display: grid; gap: 2px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent-fg); border-radius: var(--radius-md); background: var(--surface-base); color: var(--text-secondary); text-align: left; cursor: pointer; }
 .router-graph__leaf:hover { border-color: color-mix(in srgb, var(--accent-fg) 42%, var(--border-subtle)); background: var(--surface-1); }
 .router-graph__leaf.is-selected { border-color: color-mix(in srgb, var(--accent-fg) 70%, var(--border-subtle)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-fg) 10%, transparent); }
@@ -13010,7 +13123,7 @@ a.backend-card__version:focus-visible {
 .router-graph__inspector-body .router-node--group { margin: 0; }
 
 @media (max-width: 980px) {
-  .router-editor__rules-workspace { grid-template-columns: minmax(220px, 260px) minmax(0, 1fr); }
+  .router-editor__rules-workspace { grid-template-columns: minmax(200px, 220px) minmax(0, 1fr); }
   .router-graph__workspace { grid-template-columns: minmax(0, 1fr) 180px; }
   .router-graph__toolbar-hint { display: none; }
 }
@@ -13722,6 +13835,13 @@ a.backend-card__version:focus-visible {
   line-height: var(--leading-relaxed);
 }
 
+.workspace-detail-panel__description--identity {
+  max-width: 70ch;
+  padding: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
 .workspace-detail-panel__description > :first-child { margin-top: 0; }
 .workspace-detail-panel__description > :last-child { margin-bottom: 0; }
 
@@ -14366,29 +14486,37 @@ button.workspace-metadata-chip:hover {
   border-top: 1px solid var(--border-subtle);
 }
 .router-editor__connections > .router-editor__mini-head {
-  align-items: flex-start;
+  align-items: center;
 }
 .router-editor__connections > .router-editor__mini-head > span {
   color: var(--text-secondary);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
 }
-.router-editor__connections > .router-editor__mini-head > small {
-  max-width: 52ch;
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  text-align: right;
+.router-editor__connection-list {
+  display: grid;
+  gap: var(--space-2);
+  max-height: 258px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: var(--space-1);
+  scrollbar-gutter: stable;
 }
 .router-editor__connection {
   display: grid;
-  grid-template-columns: minmax(180px, 1.15fr) minmax(130px, .65fr) minmax(220px, 1.35fr);
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1.25fr) minmax(150px, auto);
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  padding: var(--space-3);
+  min-height: 58px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--surface-base);
+}
+.router-editor__connection--internal,
+.router-editor__connection--unresolved {
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, auto);
 }
 .router-editor__connection-main,
 .router-editor__connection-source,
@@ -14413,7 +14541,6 @@ button.workspace-metadata-chip:hover {
   color: var(--text-primary);
   font-size: var(--text-sm);
 }
-.router-editor__connection-main small,
 .router-editor__connection-source small,
 .router-editor__connection-endpoint small {
   overflow: hidden;
@@ -14430,6 +14557,17 @@ button.workspace-metadata-chip:hover {
 .router-editor__connection-endpoint > .workspace-action-button {
   justify-self: start;
   margin-top: var(--space-1);
+}
+.router-editor__connection-trailing {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.router-editor__connection-source {
+  justify-items: end;
+  text-align: right;
 }
 .router-editor__default-badge {
   display: inline-flex;
@@ -14519,9 +14657,18 @@ button.workspace-metadata-chip:hover {
   .router-collection-settings__connection {
     grid-template-columns: minmax(0, 1fr) minmax(130px, .7fr);
   }
+  .router-editor__connection--internal,
+  .router-editor__connection--unresolved {
+    grid-template-columns: minmax(0, 1fr) minmax(130px, .7fr);
+  }
   .router-editor__connection-endpoint,
   .router-collection-settings__endpoint {
-    grid-column: 1 / -1;
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .router-editor__connection-trailing {
+    grid-column: 2;
+    grid-row: 1 / span 2;
   }
 }
 
@@ -14533,19 +14680,27 @@ button.workspace-metadata-chip:hover {
     grid-column: 2;
     justify-self: start;
   }
-  .router-editor__connections > .router-editor__mini-head {
-    display: grid;
-  }
-  .router-editor__connections > .router-editor__mini-head > small {
-    text-align: left;
-  }
   .router-editor__connection,
   .router-collection-settings__connection {
     grid-template-columns: 1fr;
   }
+  .router-editor__connection--internal,
+  .router-editor__connection--unresolved {
+    grid-template-columns: 1fr;
+  }
   .router-editor__connection-endpoint,
   .router-collection-settings__endpoint {
-    grid-column: auto;
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .router-editor__connection-trailing {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: space-between;
+  }
+  .router-editor__connection-source {
+    justify-items: start;
+    text-align: left;
   }
   .router-editor__endpoint-editor {
     grid-template-columns: 1fr 1fr;
@@ -14573,4 +14728,22 @@ button.workspace-metadata-chip:hover {
 }
 .router-editor__insecure-opt-in input {
   margin: 0;
+}
+
+/* Router graph expanded view mirrors GUI2's full-canvas editing mode. */
+.router-editor__graph-modal {
+  width: min(1500px, 100%);
+  max-height: calc(90vh - 66px);
+  padding: var(--space-3);
+  overflow: auto;
+}
+.router-editor__graph-modal .router-graph {
+  min-height: min(680px, calc(90vh - 110px));
+}
+.router-editor__graph-modal .router-graph__workspace {
+  min-height: min(560px, calc(90vh - 220px));
+}
+.router-editor__graph-modal .router-graph__canvas,
+.router-editor__graph-modal .router-graph__empty {
+  min-height: min(520px, calc(90vh - 260px));
 }
