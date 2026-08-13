@@ -34,6 +34,44 @@ for (const [key, filename] of Object.entries(files)) {
   assert.equal(errors.length, 0, errors.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n'));
 }
 
+// JSX text and JSX attribute strings are not JavaScript string literals: a `\uXXXX`
+// sequence there reaches the user verbatim instead of the character it names.
+const jsxEscape = /\\(?:u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2})/;
+const collectTsx = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+  const full = path.join(dir, entry.name);
+  if (entry.isDirectory()) return collectTsx(full);
+  return entry.isFile() && full.endsWith('.tsx') ? [full] : [];
+});
+
+for (const filename of collectTsx(path.join(root, 'src'))) {
+  const sourceFile = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'), ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
+  const visit = node => {
+    if (ts.isJsxText(node) || (ts.isStringLiteral(node) && node.parent && ts.isJsxAttribute(node.parent))) {
+      const found = node.getText(sourceFile).match(jsxEscape);
+      if (found) {
+        const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        assert.fail(`${path.relative(root, filename)}:${line + 1} renders "${found[0]}" literally; write the character itself`);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+}
+
+// The accent stays yellow in both themes but every --bg-* token flips from
+// near-black to near-white, so accent-background text must come from --accent-on.
+const accentBackground = /background(?:-color)?:\s*var\(--accent(?:-hover|-strong)?\)/;
+const themeFlippedText = /color:\s*var\(--bg-[\w-]+\)/;
+
+for (const stylesheet of ['src/styles/styles.css', 'src/styles/critical.generated.css']) {
+  const css = fs.readFileSync(path.join(root, stylesheet), 'utf8');
+  for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (accentBackground.test(body) && themeFlippedText.test(body)) {
+      assert.fail(`${stylesheet}: ${selector.trim().split('\n').pop().trim()} puts theme-flipped text on an accent background; use var(--accent-on)`);
+    }
+  }
+}
+
 assert.match(sources.app, /<span className="titlebar__brand-name">lemonade<\/span>/);
 assert.match(sources.app, /type="search"[\s\S]*?role="combobox"[\s\S]*?aria-expanded=\{navigationSearchOpen\}/);
 assert.match(sources.app, /aria-activedescendant=/);
