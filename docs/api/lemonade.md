@@ -238,7 +238,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 
 ### Response format
 
-`effective` and `defaults` carry every option the recipe accepts, which for `llamacpp` is:
+`effective` is the model's current load command: the exact body [`POST /v1/load`](#post-v1load) uses for it right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is the load command a reset model would get. For `llamacpp`:
 
 ```json
 {
@@ -276,10 +276,19 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 
 | Field | Description |
 |-------|-------------|
-| `model_name` | The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete [`POST /v1/load`](#post-v1load) body. |
+To reproduce the load exactly, replay `effective` unchanged:
+
+```bash
+curl -s http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options | jq .effective \
+  | curl -s -X POST http://localhost:13305/v1/load -H "Content-Type: application/json" -d @-
+```
+
+| Field | Description |
+|-------|-------------|
+| `model_name` | The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete load command. |
 | `recipe` | The recipe the option names belong to. |
 | `saved` | The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`. |
-| `effective` | Every option the recipe accepts, resolved through the full priority chain, plus `model_name`. This is the exact request body [`POST /v1/load`](#post-v1load) uses for the model right now, and it replays there verbatim. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. |
+| `effective` | The load command shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. |
 | `defaults` | What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically. |
 
 > Note: per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
