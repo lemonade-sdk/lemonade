@@ -206,7 +206,66 @@ class EndpointTests(ServerTestBase):
                     f"Endpoint {endpoint} is not registered on {version}",
                 )
 
+        # POST-only routes should be probed with their actual method. httplib does
+        # not synthesize HEAD responses for POST handlers.
+        for endpoint in ["models/register"]:
+            for version in ["v0", "v1"]:
+                url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
+                response = session.post(url, json={}, timeout=TIMEOUT_DEFAULT)
+                self.assertNotEqual(
+                    response.status_code,
+                    404,
+                    f"POST endpoint {endpoint} is not registered on {version}",
+                )
+
         session.close()
+
+    def test_000a_register_model_definition_without_pull(self):
+        """Register a user model definition without downloading its checkpoint."""
+        canonical_name = f"user.RegisterEndpoint-{uuid.uuid4().hex[:8]}"
+        checkpoint = "example/register-endpoint-test:Q4_K_M"
+        try:
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "llamacpp",
+                    "checkpoint": checkpoint,
+                    "labels": ["test-register-endpoint"],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            body = response.json()
+            self.assertEqual(body.get("status"), "success")
+            self.assertEqual(body.get("canonical_model_name"), canonical_name)
+            public_name = body.get("model_name")
+            self.assertIsInstance(public_name, str)
+            self.assertTrue(public_name)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200, models_response.text)
+            entry = next(
+                model
+                for model in models_response.json()["data"]
+                if model["id"] == public_name
+            )
+            self.assertEqual(entry.get("checkpoint"), checkpoint)
+            self.assertEqual(entry.get("recipe"), "llamacpp")
+            self.assertFalse(entry.get("downloaded"))
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""

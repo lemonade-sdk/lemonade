@@ -3371,19 +3371,32 @@ void ModelManager::populate_collection_components_from_cache_locked(ModelInfo& i
     }
 }
 
+void ModelManager::register_model(const std::string& model_name,
+                                 const json& model_data,
+                                 bool allow_missing_checkpoint,
+                                 bool replace_existing) {
+    std::set<std::string> visited;
+    download_model(model_name, model_data, true, nullptr, visited,
+                   true, allow_missing_checkpoint, replace_existing);
+}
+
 void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
     std::set<std::string> visited;
-    download_model(model_name, model_data, do_not_upgrade, progress_callback, visited);
+    download_model(model_name, model_data, do_not_upgrade, progress_callback, visited,
+                   false, false, false);
 }
 
 void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback,
-                                 std::set<std::string>& visited) {
+                                 std::set<std::string>& visited,
+                                 bool register_only,
+                                 bool allow_missing_checkpoint,
+                                 bool replace_existing) {
     // Keep a mutable registration payload so legacy re-pulls that omit the
     // registry retain the source recorded on the existing model. The original
     // request remains untouched for validation and download semantics.
@@ -3446,8 +3459,13 @@ void ModelManager::download_model(const std::string& model_name,
             }
             LOG(INFO, "ModelManager") << "Registering new collection: " << model_name << std::endl;
         } else {
-            // Check that required arguments are provided
-            if (actual_checkpoint.empty() || actual_recipe.empty()) {
+            if (actual_recipe.empty()) {
+                throw std::runtime_error(
+                    "Model " + model_name + " is not registered with Lemonade Server. "
+                    "To register it, provide the `recipe` argument."
+                );
+            }
+            if (actual_checkpoint.empty() && !allow_missing_checkpoint) {
                 throw std::runtime_error(
                     "Model " + model_name + " is not registered with Lemonade Server. "
                     "To register and install it, provide the `checkpoint` and `recipe` "
@@ -3456,10 +3474,12 @@ void ModelManager::download_model(const std::string& model_name,
             }
 
             // Backend-specific checkpoint validation (llamacpp: GGUF needs :variant).
-            if (auto err = backends::ops_for(actual_recipe)->validate_registration_checkpoint(
-                    actual_checkpoint);
-                !err.empty()) {
-                throw std::runtime_error(err);
+            if (!actual_checkpoint.empty()) {
+                if (auto err = backends::ops_for(actual_recipe)->validate_registration_checkpoint(
+                        actual_checkpoint);
+                    !err.empty()) {
+                    throw std::runtime_error(err);
+                }
             }
 
             LOG(INFO, "ModelManager") << "Registering new user model: " << model_name << std::endl;
@@ -3477,34 +3497,49 @@ void ModelManager::download_model(const std::string& model_name,
             registration_data["source"] = effective_registry_source(info);
         }
 
-        bool is_collection_overwrite = is_model_collection_recipe(actual_recipe) &&
-                                        model_data.contains("components");
-        if (is_collection_overwrite) {
-            // Validate the original user-authored request, not registration_data:
-            // the latter is enriched with the persisted registry source, which is
-            // not part of the public routing-policy document the parser accepts.
-            if (auto err = validate_collection_request(model_name, model_data)) {
-                throw std::runtime_error(*err);
+        const bool explicit_definition =
+            !actual_recipe.empty() || !actual_checkpoint.empty() ||
+            model_data.contains("checkpoints") || model_data.contains("components");
+        if (register_only && replace_existing &&
+            is_user_model_name(model_name) && explicit_definition) {
+            if (is_model_collection_recipe(actual_recipe)) {
+                if (auto err = validate_collection_request(model_name, model_data)) {
+                    throw std::runtime_error(*err);
+                }
             }
             model_registered = false;
-            LOG(INFO, "ModelManager") << "Overwriting collection: "
+            LOG(INFO, "ModelManager") << "Replacing user model definition: "
                                       << model_name << std::endl;
-        } else if (actual_checkpoint.empty()) {
-            actual_checkpoint = info.checkpoint();
-            actual_recipe = info.recipe;
         } else {
-            std::string conflict = describe_registration_conflict(info, registration_data);
-            if (!conflict.empty()) {
-                throw std::runtime_error(
-                    "Model '" + model_name + "' is already registered with different "
-                    "model metadata: " + conflict + ". Choose a different model name "
-                    "for this registry checkpoint."
-                );
-            }
-            if (actual_recipe.empty()) {
+            bool is_collection_overwrite = is_model_collection_recipe(actual_recipe) &&
+                                            model_data.contains("components");
+            if (is_collection_overwrite) {
+                // Validate the original user-authored request, not registration_data:
+                // the latter is enriched with the persisted registry source, which is
+                // not part of the public routing-policy document the parser accepts.
+                if (auto err = validate_collection_request(model_name, model_data)) {
+                    throw std::runtime_error(*err);
+                }
+                model_registered = false;
+                LOG(INFO, "ModelManager") << "Overwriting collection: "
+                                          << model_name << std::endl;
+            } else if (actual_checkpoint.empty()) {
+                actual_checkpoint = info.checkpoint();
                 actual_recipe = info.recipe;
             } else {
-                model_registered = false;
+                std::string conflict = describe_registration_conflict(info, registration_data);
+                if (!conflict.empty()) {
+                    throw std::runtime_error(
+                        "Model '" + model_name + "' is already registered with different "
+                        "model metadata: " + conflict + ". Choose a different model name "
+                        "for this registry checkpoint."
+                    );
+                }
+                if (actual_recipe.empty()) {
+                    actual_recipe = info.recipe;
+                } else {
+                    model_registered = false;
+                }
             }
         }
     }
@@ -3527,6 +3562,10 @@ void ModelManager::download_model(const std::string& model_name,
         register_user_model(model_name, registration_data);
         model_registered = true;
         collection_registered_this_call = true;
+    }
+
+    if (register_only && is_model_collection_recipe(actual_recipe)) {
+        return;
     }
 
     // Collections don't have their own backend - download each component instead.
@@ -3635,7 +3674,7 @@ void ModelManager::download_model(const std::string& model_name,
             }
             LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
             json comp_data = json::object();
-            download_model(component, comp_data, do_not_upgrade, forward, visited);
+            download_model(component, comp_data, do_not_upgrade, forward, visited, false, false, false);
         }
 
         // A registry-backed collection's in-memory components were empty until the
@@ -3676,20 +3715,6 @@ void ModelManager::download_model(const std::string& model_name,
         );
     }
 
-    LOG(INFO, "ModelManager") << "Downloading model: " << repo_id;
-    if (!variant.empty()) {
-        LOG(INFO, "ModelManager") << " (variant: " << variant << ")";
-    }
-    LOG(INFO, "ModelManager") << std::endl;
-
-    // Check if offline mode
-    if (auto* cfg = RuntimeConfig::global()) {
-        if (cfg->offline()) {
-            LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
-            return;
-        }
-    }
-
     // Persist registration and recipe options BEFORE the cache-first shortcut
     // below. A registration/import/overwrite that targets an already-downloaded
     // model must still update user_models.json and recipe_options.json. The
@@ -3714,6 +3739,24 @@ void ModelManager::download_model(const std::string& model_name,
         }
         model_info.recipe_options = RecipeOptions(model_info.recipe, merged);
         save_model_options(model_info);
+    }
+
+    if (register_only) {
+        return;
+    }
+
+    LOG(INFO, "ModelManager") << "Downloading model: " << repo_id;
+    if (!variant.empty()) {
+        LOG(INFO, "ModelManager") << " (variant: " << variant << ")";
+    }
+    LOG(INFO, "ModelManager") << std::endl;
+
+    // Check if offline mode
+    if (auto* cfg = RuntimeConfig::global()) {
+        if (cfg->offline()) {
+            LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
+            return;
+        }
     }
 
     // CRITICAL: If do_not_upgrade=true AND model is already downloaded, skip the

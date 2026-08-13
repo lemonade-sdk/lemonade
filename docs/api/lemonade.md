@@ -10,6 +10,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
+| `POST` | [`/v1/models/register`](#post-v1modelsregister) | Register or update a user model definition without downloading it |
 | `GET` | [`/v1/downloads`](#get-v1downloads) | List server-owned model download jobs |
 | `POST` | [`/v1/downloads/control`](#post-v1downloadscontrol) | Pause, cancel, or remove server-owned model download jobs |
 | `GET` | [`/v1/registry/search`](#get-v1registrysearch) | Search Hugging Face or ModelScope for model repositories |
@@ -221,6 +222,72 @@ When `include_paths=true` is supplied, each file entry also includes `path`:
 | `files[].role` | Checkpoint role, for example `main`, `mmproj`, or another recipe-specific role. |
 | `files[].size_bytes` | File size in bytes. Directories are summed recursively. Missing files report `0`. |
 | `files[].exists` | Whether the resolved path currently exists on disk. |
+
+## `POST /v1/models/register`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Register or update a `user.*` model definition without downloading model files.
+Use this endpoint when registration and installation are separate actions.
+`POST /v1/pull` remains the install/download path and performs the same internal
+registration step before downloading.
+
+The endpoint is available at:
+
+- `/v1/models/register`
+- `/api/v1/models/register`
+- `/v0/models/register`
+- `/api/v0/models/register`
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_name` | Yes | Non-empty namespaced model name under `user.*`. |
+| `recipe` | Yes | Lemonade recipe associated with the model definition. |
+| `checkpoint` | No | Main checkpoint, when the recipe uses one. |
+| `checkpoints` | No | Named checkpoints for multi-checkpoint models. |
+| `source` | No | Registry or local source. Remote values are `huggingface` or `modelscope`. |
+| `labels` | No | Additional model labels. |
+| `components` | No | Already-registered component model names for collection recipes. |
+
+A checkpoint is intentionally not universally required: registration is a model
+metadata operation and some present or future model types may not have local
+weights. `/pull` remains the operation that attempts installation/download.
+
+The endpoint accepts one model definition. An embedded `models` array represents
+multiple definitions and remains a collection-import concern; register those
+component definitions first when using this endpoint.
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/v1/models/register \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model_name": "user.Phi-4-Mini-GGUF",
+    "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M",
+    "recipe": "llamacpp"
+  }'
+```
+
+Example response:
+
+```json
+{
+  "status": "success",
+  "model_name": "Phi-4-Mini-GGUF",
+  "canonical_model_name": "user.Phi-4-Mini-GGUF",
+  "model": {
+    "id": "Phi-4-Mini-GGUF",
+    "recipe": "llamacpp",
+    "downloaded": false
+  }
+}
+```
+
+`model_name` is the public ID exposed by `/v1/models`; `canonical_model_name` is
+the stable `user.*` registration ID. Registration updates `user_models.json` and
+invalidates the model cache, but does not start a model download.
 
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
