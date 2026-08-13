@@ -23,7 +23,6 @@ MODEL_TYPES_H = REPO_ROOT / "src" / "cpp" / "include" / "lemon" / "model_types.h
 # that map to the same mode are interchangeable there and here.
 DEPLOYMENT_LABELS = {
     "chat": "LLM",
-    "chat-transcription": "LLM",
     "embeddings": "EMBEDDING",
     "embedding": "EMBEDDING",
     "reranking": "RERANKING",

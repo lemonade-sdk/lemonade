@@ -31,6 +31,7 @@ int main() {
     const std::vector<Case> cases = {
         // "chat" is the sole chat marker and outranks every other deployment
         // label, so an omni model that also serves ASR still deploys as an LLM.
+        // "chat-transcription" is a capability of such a model, not a marker.
         {"chat alone", {"chat"}, ModelType::LLM},
         {"chat + transcription", {"chat", "transcription"}, ModelType::LLM},
         {"chat + embeddings", {"chat", "embeddings"}, ModelType::LLM},
@@ -43,12 +44,13 @@ int main() {
         {"transcription alone", {"transcription"}, ModelType::TRANSCRIPTION},
         {"transcription + realtime", {"transcription", "realtime-transcription"}, ModelType::TRANSCRIPTION},
 
-        // chat-transcription means chat with audio input, so it declares a chat
-        // model even next to the "transcription" label that selects ASR alone.
+        // chat-transcription is an input modality, not a mode: it reaches the
+        // fallback on its own and does not override a mode that is declared.
         {"chat-transcription alone → LLM", {"chat-transcription"}, ModelType::LLM},
         {"chat-transcription + vision → LLM", {"chat-transcription", "vision"}, ModelType::LLM},
-        {"chat-transcription + transcription → LLM",
-         {"chat-transcription", "transcription"}, ModelType::LLM},
+        {"chat + chat-transcription → LLM", {"chat", "chat-transcription"}, ModelType::LLM},
+        {"chat-transcription + transcription → TRANSCRIPTION",
+         {"chat-transcription", "transcription"}, ModelType::TRANSCRIPTION},
 
         // Embedding / reranking / image / tts models keep their existing mapping.
         {"embedding (plural)", {"embeddings"}, ModelType::EMBEDDING},
@@ -84,7 +86,7 @@ int main() {
         {"FLM vision-only (gemma3:4b)", {"vision"}, false},
         {"FLM gemma4-it any-to-text",
          {"audio", "vision", "reasoning", "tool-calling", "chat-transcription"},
-         true},
+         false},
         {"FLM whisper-v3:turbo", {"audio", "realtime-transcription", "transcription"}, true},
         {"FLM embed-gemma:300m", {"embeddings"}, true},
 

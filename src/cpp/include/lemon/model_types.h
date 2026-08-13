@@ -116,21 +116,22 @@ inline std::string device_type_to_string(DeviceType device) {
 // Labels describe *capabilities* (what the model accepts or produces). ModelType
 // describes the *deployment mode* we spawn the backend subprocess in (LLM chat,
 // ASR, embedding, etc.) and the LRU bucket the router uses. These are different
-// concepts, and only the labels below name a deployment mode — "vision",
-// "reasoning", "tool-calling" and friends describe a chat model without making
-// one.
+// concepts, and only the labels below name a deployment mode. "vision",
+// "reasoning", "tool-calling", "chat-transcription" and friends describe what a
+// chat model accepts or how it behaves; they never make one. In particular
+// "chat-transcription" is an input modality — the model takes audio in a chat
+// turn and transcribes it as part of its answer — so a model carrying it is a
+// chat model and says so with "chat", exactly as a vision model does.
 //
-// The chat markers are checked first so that input-modality labels on a chat
-// model cannot deploy it as something else: "chat-transcription" means chat with
-// audio input, so an omni model carrying both it and "transcription" still
-// deploys as an LLM.
+// "chat" is checked first so an omni model that also declares a mode it could
+// serve standalone ("transcription") still deploys as an LLM rather than as ASR.
 //
 // Templated on the container so a label set already held as a std::set can be
 // tested without copying it into a vector.
 template <typename Labels>
 inline bool find_deployment_mode(const Labels& labels, ModelType& out) {
     for (const auto& label : labels) {
-        if (label == "chat" || label == "chat-transcription") {
+        if (label == "chat") {
             out = ModelType::LLM;
             return true;
         }

@@ -622,7 +622,17 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
                 continue;
             }
 
-            if (!lemon::has_label(model.value("labels", std::vector<std::string>{}), "chat")) {
+            bool is_chat = false;
+            const auto labels = model.find("labels");
+            if (labels != model.end() && labels->is_array()) {
+                for (const auto& label : *labels) {
+                    if (label.is_string() && label.get<std::string>() == "chat") {
+                        is_chat = true;
+                        break;
+                    }
+                }
+            }
+            if (!is_chat) {
                 continue;
             }
 

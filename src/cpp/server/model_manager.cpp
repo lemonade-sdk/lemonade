@@ -2148,6 +2148,19 @@ void ModelManager::build_cache() {
         }
     }
 
+    // Clients are not guaranteed to handle a model that declares no deployment
+    // label. Every ingest path above stamps one; name any model that reached
+    // here without.
+    for (const auto& [name, info] : all_models) {
+        ModelType mode = ModelType::LLM;
+        if (!find_deployment_mode(info.labels, mode)) {
+            LOG(WARNING, "ModelManager")
+                << "Model '" << name << "' (recipe " << info.recipe
+                << ") has no deployment label; add one (chat, transcription, embeddings, ...)"
+                << std::endl;
+        }
+    }
+
     // Populate recipe options. recipe_options.json is keyed by canonical ID
     // (user.*, extra.*, builtin.*) - built-ins are keyed bare in the cache, so
     // we translate before lookup.

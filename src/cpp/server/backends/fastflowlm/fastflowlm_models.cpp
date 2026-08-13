@@ -296,10 +296,17 @@ std::vector<ModelInfo> flm_discover_models() {
                         }
                     }
 
-                    // `flm list --json` reports input modalities, not a
-                    // deployment mode: an any-to-text chat model that accepts
-                    // audio reports "transcription" and would otherwise deploy
-                    // as ASR. Classify from the checkpoint name instead.
+                    // `flm list --json` reports characteristics and input
+                    // modalities, never a deployment mode: FLM's chat models
+                    // report no label at all (llama3.2:3b, lfm2:1.2b, ...) or
+                    // only "reasoning"/"vision"/"tool-calling", and the
+                    // any-to-text ones add "audio"/"chat-transcription". The
+                    // catalog's only two non-chat models name their mode
+                    // ("embeddings" on embed-gemma:300m, "transcription" on
+                    // whisper-v3:turbo) and both are identifiable from the
+                    // checkpoint name, so classify from the name and treat the
+                    // rest as chat. FLM's own /v1/rerank is served by a chat
+                    // model, so there is no reranking mode to detect here.
                     // https://github.com/ROCm/FastFlowLM/issues/668 would let
                     // FLM report the mode and remove this workaround.
                     const std::string id = to_lower(checkpoint);

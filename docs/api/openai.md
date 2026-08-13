@@ -1067,7 +1067,7 @@ labels that name different modes:
 
 | Label | Endpoint | Description |
 |-------|----------|-------------|
-| `chat` | `/chat/completions`, `/completions`, `/responses` | Text-generating LLM. This label is what makes a model an LLM — it is not inferred from `reasoning`/`vision`/`tool-calling`, which are characteristics rather than deployment modes. `chat-transcription` also names this mode. |
+| `chat` | `/chat/completions`, `/completions`, `/responses` | Text-generating LLM. This label is what makes a model an LLM — it is not inferred from `reasoning`/`vision`/`tool-calling`/`chat-transcription`, which are characteristics rather than deployment modes. |
 | `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). A model carrying both `chat` and `transcription` is an omni LLM that also accepts audio, and deploys as an LLM. |
 | `embeddings` | `/embeddings` | Produces text embedding vectors. Also accepted as `embedding`. |
 | `reranking` | `/rerank` | Scores and reranks a list of passages given a query. Also reachable at the aliases `/reranking` and `/reranker`. |
@@ -1077,17 +1077,19 @@ labels that name different modes:
 | `classification` | `/classify` | Text classification model. Also accepted as `classifier`. |
 | `3d` | `/3d/generations` | Text- or image-to-3D mesh generation model. |
 
-A model whose recipe can only serve one mode (`whispercpp`, `sd-cpp`, `kokoro`,
-`onnxruntime`, …) is deployed in that mode regardless of the labels it carries.
 When a model declares no deployment label at all, it inherits its recipe's
-default — `chat` for `llamacpp`, `flm`, `ryzenai-llm`, `vllm`, and `cloud`.
+default — `chat` for `llamacpp`, `flm`, `ryzenai-llm`, `vllm` and `cloud`,
+`transcription` for `whispercpp`, `image` for `sd-cpp`, `tts` for `kokoro`, and
+so on. `classification` is the one label a recipe can override: `/classify` is
+served only by `onnxruntime`, so on any other recipe the label is dropped and the
+model stays whatever its remaining labels make it.
 
 **Input-modality labels** — the model accepts additional input types in `/chat/completions`:
 
 | Label | Description |
 |-------|-------------|
 | `vision` | Accepts image attachments in chat messages. |
-| `chat-transcription` | Accepts audio attachments in chat messages (e.g. Qwen2.5-Omni). Unlike `vision`, this label also names the `chat` deployment mode, so a model carrying it is deployed as an LLM even alongside `transcription`. |
+| `chat-transcription` | Accepts audio attachments in chat messages and transcribes them as part of its answer (e.g. Qwen2.5-Omni). Like `vision`, this is something a chat model can do, not a deployment mode of its own — a model carrying it also carries `chat`. It is distinct from `transcription`, which deploys a dedicated ASR model on `/audio/transcriptions`. |
 
 **Streaming labels** — capability flags for real-time features:
 
