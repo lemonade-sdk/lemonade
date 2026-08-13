@@ -513,12 +513,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: |
-          # Scope kills to THIS workflow's processes on the shared runner, and
-          # also reap orphaned backend servers (llama-server etc.) that lemond
-          # spawned — they otherwise keep holding GPU memory.
-          pkill -9 -f "${{ github.workspace }}/build/lemond" 2>/dev/null || true
-          pkill -9 -f "bench-binaries/${{ matrix.fork_id }}" 2>/dev/null || true
+        uses: ./.github/actions/cleanup-processes-linux
 
   # =========================================================================
   # Report — merges results into the benchmark-data branch, regenerates the
