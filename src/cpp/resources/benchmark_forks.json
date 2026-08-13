@@ -15,7 +15,7 @@
       "binary_url_linux": "https://github.com/lemonade-sdk/llamacpp-rocm/releases/download/{version}/llama-{version}-ubuntu-rocm-{arch}-x64.zip",
       "binary_exe_windows": "llama-server.exe",
       "binary_exe_linux": "llama-server",
-      "hardware": ["gfx1151", "gfx1150", "gfx1100", "gfx1101", "gfx120X", "gfx110X"],
+      "arch": "gfx1151",
       "tracked": true,
       "notes": "Lemonade nightly ROCm channel. Built via TheRock SDK. Not upstreamed."
     },
@@ -32,7 +32,7 @@
       "binary_url_linux": "https://github.com/lemonade-sdk/llama.cpp/releases/download/{version}/llama-{version}-bin-ubuntu-rocm-{therock_ver}-x64.tar.gz",
       "binary_exe_windows": "llama-server.exe",
       "binary_exe_linux": "llama-server",
-      "hardware": ["gfx1100", "gfx1101", "gfx1102", "gfx1151", "gfx1150"],
+      "arch": "gfx1151",
       "tracked": true,
       "notes": "Lemonade stable ROCm channel. Not upstreamed."
     },
@@ -52,7 +52,7 @@
       "binary_exe_windows": "",
       "binary_exe_linux": "llama-server",
       "runner_os": "linux",
-      "hardware": ["gfx1100", "gfx1101", "gfx1102", "gfx1103", "gfx1150", "gfx1151", "gfx1152", "gfx1153"],
+      "arch": "gfx1151",
       "tracked": true,
       "notes": "Nightly dated builds. Tag format: gfx11-rocm-nightly-YYYYMMDD. Single multiarch binary — covers all RDNA3/3.5 targets. Linux only, no Windows binary. Runs on Linux ROCm self-hosted runner."
     },
@@ -67,7 +67,7 @@
       "binary_url_linux": "https://github.com/ggml-org/llama.cpp/releases/download/{version}/llama-{version}-bin-ubuntu-vulkan-x64.tar.gz",
       "binary_exe_windows": "llama-server.exe",
       "binary_exe_linux": "llama-server",
-      "hardware": ["gfx1100", "gfx1101", "gfx1102", "gfx1151", "gfx1150"],
+      "arch": "gfx1151",
       "tracked": true,
       "notes": "Upstream ggml-org baseline. Used as performance reference for fork comparisons."
     }

@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '0 2 * * *'
 
+  # TEMPORARY: branch push trigger for validating this PR before merge.
+  # REMOVE before merging to main.
+  push:
+    branches:
+      - iswarya/issue-2858-backend-perf-tracker
+
   release:
     types: [published]
 
@@ -93,11 +99,27 @@ jobs:
   # Get lemonade — download embeddable release package, no build needed.
   # Uses curl + GitHub API only (no gh CLI, no sudo, no cmake).
   # =========================================================================
-  get-lemonade:
-    name: Get lemonade (embeddable)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  # Bench — one job per fork.
+  # Runner: [self-hosted, stx-halo, Linux, lemon-prod]
+  # max-parallel: 1 is load-bearing: benches must run one at a time on the
+  # shared box or the perf numbers are meaningless.
+  # =========================================================================
+  bench:
+    name: Bench ${{ matrix.fork_id }}
+    needs: [setup]
+    runs-on: [self-hosted, stx-halo, Linux, lemon-prod]
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        fork_id: ${{ fromJSON(needs.setup.outputs.forks) }}
+
     steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+
       - name: Download lemonade embeddable
         run: |
           set -euo pipefail
@@ -122,52 +144,7 @@ jobs:
           chmod +x build/lemond build/lemonade
           build/lemond --version
           echo "Lemonade $VERSION ready"
-
-      - name: Upload lemonade artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: bench-build
-          path: |
-            build/lemond
-            build/lemonade
-            build/resources/
-          retention-days: 3
-
-  # =========================================================================
-  # Bench — one job per fork.
-  # Runner: [self-hosted, stx-halo, Linux, lemon-prod]
-  # max-parallel: 1 is load-bearing: benches must run one at a time on the
-  # shared box or the perf numbers are meaningless.
-  # =========================================================================
-  bench:
-    name: Bench ${{ matrix.fork_id }}
-    needs: [setup, get-lemonade]
-    runs-on: [self-hosted, stx-halo, Linux, lemon-prod]
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        fork_id: ${{ fromJSON(needs.setup.outputs.forks) }}
-
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          clean: true
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v7
-        with:
-          name: bench-build
-          path: build
-
-      - name: Verify binaries
-        run: |
-          set -e
-          chmod +x build/lemond build/lemonade
-          build/lemond --version
-          build/lemonade --version
-          echo "Binaries verified!"
+          echo "LEMONADE_VERSION=$VERSION" >> "$GITHUB_ENV"
 
       # validate_backend_bench.py is pure stdlib (no pip deps), so plain
       # setup-python + system python3 is enough — no venv/requirements needed.
@@ -609,6 +586,7 @@ jobs:
           # per-fork replacement means the newest run per fork wins.
           results_dir = Path("bench-history/results")
           leaderboard = {}
+          lemonade_version = None
           for run_file in sorted(results_dir.rglob("run-*.json")):
             if "regression" in run_file.name:
               continue
@@ -618,6 +596,8 @@ jobs:
               continue
             fork_id = data.get("fork_id", "unknown")
             version = data.get("fork_version", "unknown")
+            if lemonade_version is None and data.get("lemonade_version"):
+              lemonade_version = data["lemonade_version"]
             # The bench writes a top-level "models" array (one entry per model),
             # each with its own model name + results[]. Fall back to the flat
             # top-level shape for any legacy files.
@@ -641,6 +621,7 @@ jobs:
                     "tps_mean": round(tps, 2),
                     "tps_p95": round(sc.get("tps", {}).get("p95", 0), 2),
                     "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
+                    "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "timestamp": me.get("timestamp", data.get("timestamp")),
                     # provenance: which CI run produced this number
@@ -680,6 +661,7 @@ jobs:
                     "version": ver, "timestamp": me.get("timestamp", data.get("timestamp")),
                     "tps_mean": round(tps, 2),
                     "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
+                    "input_tokens": sc.get("input_tokens"),
                     "run_id": data.get("run_id"), "run_url": data.get("run_url"),
                   })
           # sort each series chronologically and keep the last 30 points
@@ -699,6 +681,7 @@ jobs:
             "repo_url": f"{server}/{repo}" if repo else None,
             "actions_url": f"{server}/{repo}/actions/workflows/benchmark-regression.yml" if repo else None,
             "commit": os.environ.get("GITHUB_SHA"),
+            "lemonade_version": lemonade_version,
             "by_model_scenario": leaderboard,
             "history": history,
           }

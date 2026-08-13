@@ -23,9 +23,9 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import urllib.request
 import urllib.error
 import urllib.parse
+import urllib.request
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -175,7 +175,9 @@ def resolve_binary_url(fork: dict, version: str) -> str:
     url = fork.get(key, "")
     if not url:
         return ""
-    arch = fork.get("hardware", ["gfx1100"])[0]
+    arch = fork.get("arch")
+    if not arch:
+        raise RuntimeError(f"Fork {fork.get('fork_id')} is missing required 'arch' field in benchmark_forks.json")
     therock_ver = ""
     if "{therock_ver}" in url and BACKEND_VERSIONS_PATH.exists():
         therock_ver = get_therock_ver()
@@ -339,6 +341,8 @@ def run_bench(fork: dict, version: str, binary_path: Path, model: str,
             data["run_url"] = f"{server}/{repo}/actions/runs/{run_id}"
     if os.environ.get("GITHUB_SHA"):
         data["commit"] = os.environ["GITHUB_SHA"]
+    if os.environ.get("LEMONADE_VERSION"):
+        data["lemonade_version"] = os.environ["LEMONADE_VERSION"]
     with open(output_file, "w") as f:
         json.dump(data, f, indent=2)
     return data
