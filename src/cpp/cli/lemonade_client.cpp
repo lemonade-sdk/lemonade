@@ -140,8 +140,15 @@ std::string extract_server_error_message(const HttpError& error) {
     if (!error.response_body().empty()) {
         try {
             auto parsed = json::parse(error.response_body());
-            if (parsed.contains("error") && parsed["error"].is_string()) {
-                return parsed["error"].get<std::string>();
+            if (parsed.contains("error")) {
+                const auto& err = parsed["error"];
+                if (err.is_string()) {
+                    return err.get<std::string>();
+                }
+                // OpenAI-style bodies nest the text under error.message.
+                if (err.is_object() && err.contains("message") && err["message"].is_string()) {
+                    return err["message"].get<std::string>();
+                }
             }
         } catch (const json::exception&) {
         }
