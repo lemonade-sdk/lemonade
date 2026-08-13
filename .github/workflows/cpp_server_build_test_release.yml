@@ -889,7 +889,7 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           clean: true
           fetch-depth: 0
@@ -902,7 +902,7 @@ jobs:
         uses: ./.github/actions/get-version
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: build/_deps
           # vs2026 marker: see installer job — VS 2022-built _deps cannot be
@@ -927,7 +927,7 @@ jobs:
           Get-ChildItem $archive
 
       - name: Upload embeddable archive
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: lemonade-embeddable-windows
           path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
