@@ -17,15 +17,18 @@ import {
   createEmptyRouterDraft,
   createRouterClassifier,
   createRouterRule,
+  normalizeRouterModelName,
   parseRouterPayload,
   renameClassifierReference,
   renameClassifierLabelReference,
   routerNodeReferencesClassifier,
   routerDraftFromModelInfo,
+  routerDraftFingerprint,
   routerDraftHasLlmProgress,
   routerDraftHasRulesProgress,
   routerDisplayName,
   switchRouterDraftMode,
+  toggleRouterDraftCandidate,
   validateRouterDraft,
   type RouterClassifier,
   type RouterDraft,
@@ -52,6 +55,23 @@ function modelLabel(model: ModelInfo): string {
   return String(model.display_name || modelName(model));
 }
 
+function routerRequestToModelInfo(request: RouterPullRequest, draft: RouterDraft): ModelInfo {
+  return {
+    id: request.model_name,
+    name: request.model_name,
+    model_name: request.model_name,
+    display_name: draft.name.trim() || routerDisplayName(request.model_name),
+    recipe: request.recipe,
+    type: 'chat',
+    labels: ['custom', 'router', 'chat'],
+    downloaded: true,
+    custom: true,
+    version: request.version,
+    components: request.components,
+    routing: request.routing,
+  } as ModelInfo;
+}
+
 function downloadJson(name: string, payload: unknown): void {
   const safeName = name.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'router';
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
@@ -74,9 +94,13 @@ async function copyText(text: string): Promise<void> {
   textarea.style.position = 'fixed';
   textarea.style.opacity = '0';
   document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
+  try {
+    textarea.select();
+    const copied = document.execCommand('copy');
+    if (!copied) throw new Error('Clipboard copy was not accepted.');
+  } finally {
+    textarea.remove();
+  }
 }
 
 function moveItem<T>(items: T[], index: number, delta: number): T[] {
@@ -98,17 +122,63 @@ function nextConceptName(existing: Record<string, string[]>): string {
   return nextSafeId('concept', Object.keys(existing));
 }
 
+const CommittedTextInput: React.FC<{
+  value: string;
+  ariaLabel?: string;
+  className?: string;
+  onCommit: (next: string) => boolean;
+  normalize?: (value: string) => string;
+}> = ({ value, ariaLabel, className = 'input', onCommit, normalize = input => input.trim() }) => {
+  const [editingValue, setEditingValue] = useState(value);
+  const cancelCommitRef = useRef(false);
+  useEffect(() => setEditingValue(value), [value]);
+
+  const commit = () => {
+    if (cancelCommitRef.current) {
+      cancelCommitRef.current = false;
+      setEditingValue(value);
+      return;
+    }
+    const next = normalize(editingValue);
+    if (next === value) {
+      if (editingValue !== value) setEditingValue(value);
+      return;
+    }
+    if (!onCommit(next)) setEditingValue(value);
+  };
+
+  return (
+    <input
+      className={className}
+      value={editingValue}
+      aria-label={ariaLabel}
+      onChange={event => setEditingValue(event.target.value)}
+      onBlur={commit}
+      onKeyDown={event => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.currentTarget.blur();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          cancelCommitRef.current = true;
+          setEditingValue(value);
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+};
 
 interface RouterEditorPanelProps {
   models: ModelInfo[];
   initialModel?: ModelInfo | null;
   onRegister: (request: RouterPullRequest) => Promise<void>;
   onSaved?: (model: ModelInfo) => void;
-  onDeleted?: (modelName: string) => Promise<void> | void;
+  onDeleted?: (modelName: string) => Promise<string | void> | string | void;
   onClose: () => void;
 }
 
-type RouterConfirmationKind = 'switch-rules' | 'switch-llm' | 'reset' | 'delete';
+type RouterConfirmationKind = 'switch-rules' | 'switch-llm' | 'reset' | 'delete' | 'discard';
 
 interface RouterConfirmation {
   kind: RouterConfirmationKind;
@@ -139,11 +209,14 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   const [candidateSearch, setCandidateSearch] = useState('');
   const [tab, setTab] = useState<'builder' | 'json'>('builder');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [jsonCopied, setJsonCopied] = useState(false);
   const [confirmation, setConfirmation] = useState<RouterConfirmation | null>(null);
   const [dragRuleIndex, setDragRuleIndex] = useState<number | null>(null);
   const [selectedRuleIndex, setSelectedRuleIndex] = useState(0);
+  const [expandedRuleIndex, setExpandedRuleIndex] = useState<number | null>(null);
   const [cloudProviders, setCloudProviders] = useState<CloudProviderRow[]>([]);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
@@ -152,6 +225,23 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   const [providerAllowInsecureDraft, setProviderAllowInsecureDraft] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+  const jsonCopyTimeoutRef = useRef<number | null>(null);
+  const baselineFingerprintRef = useRef(routerDraftFingerprint(createEmptyRouterDraft()));
+  const draftFingerprint = useMemo(() => routerDraftFingerprint(draft), [draft]);
+  const draftFingerprintRef = useRef(draftFingerprint);
+  const pendingDiscardActionRef = useRef<(() => void) | null>(null);
+  const initialModelKeyRef = useRef<string | null>(null);
+  draftFingerprintRef.current = draftFingerprint;
+  const isDirty = draftFingerprint !== baselineFingerprintRef.current;
+
+  const markBaseline = (nextDraft: RouterDraft) => {
+    baselineFingerprintRef.current = routerDraftFingerprint(nextDraft);
+  };
+
+  const requestDiscard = (title: string, message: string, confirmLabel: string, action: () => void) => {
+    pendingDiscardActionRef.current = action;
+    setConfirmation({ kind: 'discard', title, message, confirmLabel, tone: 'danger' });
+  };
 
   const refreshSaved = () => setSavedRecords(loadRouterRecords());
   const refreshCloudProviders = useCallback(async () => {
@@ -174,6 +264,10 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
+  useEffect(() => () => {
+    if (jsonCopyTimeoutRef.current != null) window.clearTimeout(jsonCopyTimeoutRef.current);
+  }, []);
+
   useEffect(() => {
     if (draft.rules.length === 0) {
       if (selectedRuleIndex !== 0) setSelectedRuleIndex(0);
@@ -183,41 +277,89 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   }, [draft.rules.length, selectedRuleIndex]);
 
   useEffect(() => {
+    if (expandedRuleIndex == null) return;
+    if (draft.mode !== 'rules' || expandedRuleIndex < 0 || expandedRuleIndex >= draft.rules.length) {
+      setExpandedRuleIndex(null);
+    }
+  }, [draft.mode, draft.rules.length, expandedRuleIndex]);
+
+  useEffect(() => {
     if (!initialModel || !isRouterRecipe((initialModel as any).recipe)) return;
 
-    const applyModel = (sourceModel: ModelInfo) => {
-      try {
-        setDraft(routerDraftFromModelInfo(sourceModel));
-        setSelectedRuleIndex(0);
-        setError(null);
-        setNotice(null);
-      } catch (initialError) {
-        setError(initialError instanceof Error ? initialError.message : 'Could not open this router.');
-      }
+    const modelNameValue = modelName(initialModel);
+    const modelKey = modelNameValue || '__inline-router__';
+    if (initialModelKeyRef.current === modelKey) return;
+    initialModelKeyRef.current = modelKey;
+
+    const applyLoadedDraft = (nextDraft: RouterDraft) => {
+      markBaseline(nextDraft);
+      setDraft(nextDraft);
+      setSelectedRuleIndex(0);
+      setExpandedRuleIndex(null);
+      setError(null);
+      setNotice(null);
     };
 
-    const modelNameValue = modelName(initialModel);
     if (!modelNameValue) {
-      applyModel(initialModel);
+      try { applyLoadedDraft(routerDraftFromModelInfo(initialModel)); }
+      catch (initialError) {
+        initialModelKeyRef.current = null;
+        setError(initialError instanceof Error ? initialError.message : 'Could not open this router.');
+      }
       return;
     }
 
-    // The /models list can contain only summary fields. Always prefer the
-    // authoritative detail record when editing an existing server router, just
-    // like the current main RouterCollectionPanel. A locally persisted request
-    // is used only as a fallback if the detail request itself fails.
+    // The list endpoint may expose summary-only router fields. Fetch the
+    // authoritative detail before using any cached/list routing payload. A late
+    // response is guarded by the dirty baseline so it can never clobber edits.
+    const baselineAtDetailStart = baselineFingerprintRef.current;
     let cancelled = false;
     void api.modelDetail(modelNameValue)
       .then(detailedModel => {
         if (cancelled) return;
-        applyModel(detailedModel);
+        let detailedDraft: RouterDraft;
+        try {
+          detailedDraft = routerDraftFromModelInfo(detailedModel);
+        } catch (detailParseError) {
+          initialModelKeyRef.current = null;
+          setError(detailParseError instanceof Error ? detailParseError.message : 'Could not open this router.');
+          return;
+        }
+        if (draftFingerprintRef.current === baselineAtDetailStart) {
+          applyLoadedDraft(detailedDraft);
+          return;
+        }
+        requestDiscard(
+          'Load router policy?',
+          'The full router policy finished loading after you started editing. Loading it now will discard the changes currently in the editor.',
+          'Load and discard changes',
+          () => applyLoadedDraft(detailedDraft),
+        );
       })
       .catch(detailError => {
         if (cancelled) return;
         if ((initialModel as any).routing) {
-          applyModel(initialModel);
+          let fallbackDraft: RouterDraft;
+          try {
+            fallbackDraft = routerDraftFromModelInfo(initialModel);
+          } catch (fallbackError) {
+            initialModelKeyRef.current = null;
+            setError(fallbackError instanceof Error ? fallbackError.message : 'Could not load this router policy.');
+            return;
+          }
+          if (draftFingerprintRef.current === baselineAtDetailStart) {
+            applyLoadedDraft(fallbackDraft);
+          } else {
+            requestDiscard(
+              'Load cached router policy?',
+              'The server detail request failed, but cached router data is available. Loading it will discard the changes currently in the editor.',
+              'Load cached data',
+              () => applyLoadedDraft(fallbackDraft),
+            );
+          }
           return;
         }
+        initialModelKeyRef.current = null;
         setError(detailError instanceof Error ? detailError.message : 'Could not load this router policy.');
       });
     return () => { cancelled = true; };
@@ -252,24 +394,26 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     .filter(model => (model.labels || []).some(label => label.toLowerCase() === 'classification'))
     .sort((a, b) => modelLabel(a).localeCompare(modelLabel(b))), [models]);
 
-  const connectedModelRoles = useMemo(() => {
-    const roles = new Map<string, string[]>();
-    const add = (name: string, role: string) => {
-      const normalized = name.trim();
-      if (!normalized) return;
-      const current = roles.get(normalized) || [];
-      if (!current.includes(role)) current.push(role);
-      roles.set(normalized, current);
+  const connectedModelNames = useMemo(() => {
+    const names = new Set<string>();
+    const add = (name: string) => {
+      // Model/component identifiers are exact server identities. Do not trim
+      // them here or the connection row can stop matching the draft/payload.
+      if (!name.length) return;
+      names.add(name);
     };
-    draft.candidates.forEach(candidate => add(candidate, 'Routing target'));
-    if (draft.mode === 'llm') add(draft.llmRouter.model, 'Natural-language router');
-    if (draft.mode === 'rules') draft.classifiers.forEach(classifier => add(classifier.model, `Classifier · ${classifier.id || classifier.type}`));
-    return roles;
+    draft.candidates.forEach(add);
+    if (draft.mode === 'llm') add(draft.llmRouter.model);
+    if (draft.mode === 'rules') draft.classifiers.forEach(classifier => add(classifier.model));
+    return names;
   }, [draft.candidates, draft.mode, draft.llmRouter.model, draft.classifiers]);
 
-  const selectedConnections = useMemo(() => [...connectedModelRoles.keys()].map(candidate =>
-    describeRouterModelConnection(candidate, models, cloudProviders)
-  ), [connectedModelRoles, models, cloudProviders]);
+  const selectedConnections = useMemo(() => [...connectedModelNames].map(candidate => ({
+    ...describeRouterModelConnection(candidate, models, cloudProviders),
+    // The connection helper normalizes for catalog lookup/display. Keep the
+    // draft's exact component identity for default badges and candidate removal.
+    modelName: candidate,
+  })), [connectedModelNames, models, cloudProviders]);
 
   const validationErrors = useMemo(() => validateRouterDraft(draft), [draft]);
   const request = useMemo(() => {
@@ -277,15 +421,38 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   }, [draft]);
   const jsonPreview = useMemo(() => request ? JSON.stringify(request, null, 2) : '', [request]);
 
+  useEffect(() => {
+    // A successful copy only describes the exact payload that was copied. As
+    // soon as the draft changes, return the button to its normal state rather
+    // than showing a stale "Copied" confirmation for a different payload.
+    setJsonCopied(false);
+  }, [jsonPreview]);
+
   const setPatch = (patch: Partial<RouterDraft>) => {
     setDraft(current => ({ ...current, ...patch }));
     setError(null);
     setNotice(null);
   };
 
+  const copyJsonPreview = async () => {
+    if (!jsonPreview) return;
+    try {
+      await copyText(jsonPreview);
+      setJsonCopied(true);
+      if (jsonCopyTimeoutRef.current != null) window.clearTimeout(jsonCopyTimeoutRef.current);
+      jsonCopyTimeoutRef.current = window.setTimeout(() => {
+        setJsonCopied(false);
+        jsonCopyTimeoutRef.current = null;
+      }, 2200);
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : 'Could not copy router JSON.');
+    }
+  };
+
   const applyRoutingMode = (mode: RouterDraft['mode']) => {
     setDraft(current => switchRouterDraftMode(current, mode));
     setSelectedRuleIndex(0);
+    setExpandedRuleIndex(null);
     setError(null);
     setNotice(null);
   };
@@ -316,21 +483,29 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   };
 
   const resetDraft = () => {
-    setDraft(createEmptyRouterDraft());
+    const nextDraft = createEmptyRouterDraft();
+    markBaseline(nextDraft);
+    // Keep the last processed initial-model key. `initialModel` is an opener
+    // prop, not the current draft identity; clearing it here would let a later
+    // same-router list refresh silently rehydrate the router we just replaced
+    // with a blank draft.
+    setDraft(nextDraft);
     setSelectedRuleIndex(0);
     setError(null);
     setNotice(null);
     setTab('builder');
     setCandidateSearch('');
     setDragRuleIndex(null);
+    setExpandedRuleIndex(null);
+    setJsonCopied(false);
   };
 
   const requestResetDraft = () => {
-    if (routerDraftHasRulesProgress(draft) || routerDraftHasLlmProgress(draft)) {
+    if (isDirty) {
       setConfirmation({
         kind: 'reset',
         title: 'Start a new router?',
-        message: 'This will discard the routing work currently in the editor. Saved routers are not affected.',
+        message: 'This will discard the unsaved routing work currently in the editor. Saved routers are not affected.',
         confirmLabel: 'Discard draft',
         tone: 'danger',
       });
@@ -339,16 +514,16 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     resetDraft();
   };
 
-  const loadSaved = (modelNameValue: string) => {
-    if (!modelNameValue) {
-      requestResetDraft();
-      return;
-    }
-    const record = savedRecords.find(item => item.model_name === modelNameValue);
-    if (!record) return;
+  const applySavedRecord = (record: (typeof savedRecords)[number]) => {
     try {
-      setDraft(routerRecordToDraft(record));
+      const nextDraft = routerRecordToDraft(record);
+      markBaseline(nextDraft);
+      // Loading a saved record is a user action and does not mean the parent
+      // `initialModel` prop changed. Preserve the processed prop key so an
+      // unrelated refresh of the opener cannot re-apply itself.
+      setDraft(nextDraft);
       setSelectedRuleIndex(0);
+      setExpandedRuleIndex(null);
       setError(null);
       setNotice(`Loaded ${record.display_name}.`);
     } catch (loadError) {
@@ -356,19 +531,42 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     }
   };
 
+  const loadSaved = (modelNameValue: string) => {
+    if (!modelNameValue) {
+      requestResetDraft();
+      return;
+    }
+    if (modelNameValue === draft.modelName) return;
+    const record = savedRecords.find(item => item.model_name === modelNameValue);
+    if (!record) return;
+    if (isDirty) {
+      requestDiscard(
+        'Load another router?',
+        'Loading a saved router will discard the unsaved changes currently in the editor.',
+        'Load and discard changes',
+        () => applySavedRecord(record),
+      );
+      return;
+    }
+    applySavedRecord(record);
+  };
+
   const toggleCandidate = (name: string) => {
-    setDraft(current => {
-      const exists = current.candidates.includes(name);
-      const candidates = exists ? current.candidates.filter(item => item !== name) : [...current.candidates, name];
-      const defaultModel = candidates.includes(current.defaultModel) ? current.defaultModel : (candidates[0] || '');
-      const rules = current.rules.map(rule => ({
-        ...rule,
-        routeTo: candidates.includes(rule.routeTo) ? rule.routeTo : defaultModel,
-      }));
-      return { ...current, candidates, defaultModel, rules };
-    });
+    const removing = draft.candidates.includes(name);
+    const wasDefault = removing && draft.defaultModel === name;
+    const affectedRules = removing ? draft.rules.filter(rule => rule.routeTo === name).length : 0;
+    const remainingCandidates = removing ? draft.candidates.filter(candidate => candidate !== name) : draft.candidates;
+    const replacement = remainingCandidates[0] || '';
+    setDraft(current => toggleRouterDraftCandidate(current, name));
     setError(null);
-    setNotice(null);
+    if (removing && (wasDefault || affectedRules > 0)) {
+      const updates: string[] = [];
+      if (wasDefault) updates.push(replacement ? `default changed to ${replacement}` : 'default cleared');
+      if (affectedRules > 0) updates.push(`${affectedRules} rule target${affectedRules === 1 ? '' : 's'} ${replacement ? `changed to ${replacement}` : 'cleared'}`);
+      setNotice(`Removed ${name}; ${updates.join('; ')}.`);
+    } else {
+      setNotice(null);
+    }
   };
 
   const addClassifier = (type: RouterClassifier['type']) => {
@@ -378,17 +576,36 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   };
 
   const updateClassifier = (index: number, patch: Partial<RouterClassifier>) => {
-    setDraft(current => {
-      const previous = current.classifiers[index];
-      const nextClassifier = { ...previous, ...patch };
-      const classifiers = current.classifiers.map((item, itemIndex) => itemIndex === index ? nextClassifier : item);
-      const rules = previous.id !== nextClassifier.id
-        ? current.rules.map(rule => ({ ...rule, condition: renameClassifierReference(rule.condition, previous.id, nextClassifier.id) }))
-        : current.rules;
-      return { ...current, classifiers, rules };
-    });
+    setDraft(current => ({
+      ...current,
+      classifiers: current.classifiers.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item),
+    }));
     setError(null);
     setNotice(null);
+  };
+
+  const commitClassifierId = (index: number, nextId: string): boolean => {
+    const previous = draft.classifiers[index];
+    if (!previous) return false;
+    if (!nextId) {
+      setError('Classifier ID cannot be empty.');
+      return false;
+    }
+    if (draft.classifiers.some((item, itemIndex) => itemIndex !== index && item.id === nextId)) {
+      setError(`Classifier ID "${nextId}" is already in use.`);
+      return false;
+    }
+    setDraft(current => ({
+      ...current,
+      classifiers: current.classifiers.map((item, itemIndex) => itemIndex === index ? { ...item, id: nextId } : item),
+      rules: current.rules.map(rule => ({
+        ...rule,
+        condition: renameClassifierReference(rule.condition, previous.id, nextId),
+      })),
+    }));
+    setError(null);
+    setNotice(null);
+    return true;
   };
 
   const removeClassifier = (index: number) => {
@@ -400,30 +617,40 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     setPatch({ classifiers: draft.classifiers.filter((_, itemIndex) => itemIndex !== index) });
   };
 
-  const renameSemanticConcept = (classifierIndex: number, previousName: string, nextName: string): void => {
+  const commitSemanticConceptName = (classifierIndex: number, previousName: string, nextName: string): boolean => {
+    const classifier = draft.classifiers[classifierIndex];
+    if (!classifier || classifier.type !== 'semantic_similarity') return false;
+    if (!nextName) {
+      setError('Semantic concept name cannot be empty.');
+      return false;
+    }
+    if (nextName !== previousName && Object.keys(classifier.referencePhrases).some(name => name === nextName)) {
+      setError(`Semantic concept "${nextName}" already exists.`);
+      return false;
+    }
     setDraft(current => {
-      const classifier = current.classifiers[classifierIndex];
-      if (!classifier || classifier.type !== 'semantic_similarity') return current;
-      if (nextName !== previousName && Object.prototype.hasOwnProperty.call(classifier.referencePhrases, nextName)) return current;
-      const entries = Object.entries(classifier.referencePhrases).map(([name, phrases]) =>
+      const currentClassifier = current.classifiers[classifierIndex];
+      if (!currentClassifier || currentClassifier.type !== 'semantic_similarity') return current;
+      const entries = Object.entries(currentClassifier.referencePhrases).map(([name, phrases]) =>
         name === previousName ? [nextName, phrases] as const : [name, phrases] as const,
       );
       const nextClassifier = {
-        ...classifier,
+        ...currentClassifier,
         referencePhrases: Object.fromEntries(entries),
-        defaultLabel: classifier.defaultLabel === previousName ? nextName : classifier.defaultLabel,
+        defaultLabel: currentClassifier.defaultLabel === previousName ? nextName : currentClassifier.defaultLabel,
       };
       return {
         ...current,
         classifiers: current.classifiers.map((item, index) => index === classifierIndex ? nextClassifier : item),
         rules: current.rules.map(rule => ({
           ...rule,
-          condition: renameClassifierLabelReference(rule.condition, classifier.id, previousName, nextName),
+          condition: renameClassifierLabelReference(rule.condition, currentClassifier.id, previousName, nextName),
         })),
       };
     });
     setError(null);
     setNotice(null);
+    return true;
   };
 
   const addRule = () => {
@@ -456,12 +683,31 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   const importFile = async (file: File | undefined) => {
     if (!file) return;
     try {
-      const parsed = JSON.parse(await file.text());
-      setDraft(parseRouterPayload(parsed));
-      setSelectedRuleIndex(0);
-      setError(null);
-      setNotice(`Imported ${file.name}. Save & register to persist it.`);
-      setTab('builder');
+      const parsedPayload = JSON.parse(await file.text());
+      const importedDraft = parseRouterPayload(parsedPayload);
+      const applyImport = () => {
+        // Imported JSON is editable but not yet registered in this session, so
+        // closing it should still count as discarding unsaved work.
+        baselineFingerprintRef.current = '__imported-router__';
+        // Preserve the processed initial-model key for the same reason as New:
+        // a background refresh of the opener must not replace this import.
+        setDraft(importedDraft);
+        setSelectedRuleIndex(0);
+        setExpandedRuleIndex(null);
+        setError(null);
+        setNotice(`Imported ${file.name}. Save & register to persist it.`);
+        setTab('builder');
+      };
+      if (isDirty) {
+        requestDiscard(
+          'Import router JSON?',
+          'Importing this file will replace the unsaved changes currently in the editor.',
+          'Import and discard changes',
+          applyImport,
+        );
+      } else {
+        applyImport();
+      }
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : 'Could not import router JSON.');
     } finally {
@@ -502,11 +748,14 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   };
 
   const save = async () => {
+    if (saving || deleting || savingProvider) return;
     setError(null);
     setNotice(null);
+    const submittedDraft = draft;
+    const submittedFingerprint = routerDraftFingerprint(submittedDraft);
     let nextRequest: RouterPullRequest;
     try {
-      nextRequest = buildRouterPullRequest(draft);
+      nextRequest = buildRouterPullRequest(submittedDraft);
     } catch (buildError) {
       setError(buildError instanceof Error ? buildError.message : 'Router validation failed.');
       return;
@@ -514,11 +763,34 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     setSaving(true);
     try {
       await onRegister(nextRequest);
-      const record = upsertRouterRecord({ ...draft, modelName: nextRequest.model_name });
-      refreshSaved();
-      setDraft(routerRecordToDraft(record));
-      setNotice(`Registered ${record.model_name}.`);
-      onSaved?.(routerRecordToModelInfo(record));
+
+      const savedDraft: RouterDraft = { ...submittedDraft, modelName: nextRequest.model_name };
+      markBaseline(savedDraft);
+      initialModelKeyRef.current = nextRequest.model_name;
+
+      let savedModel = routerRequestToModelInfo(nextRequest, savedDraft);
+      let cacheWarning = '';
+      try {
+        const record = upsertRouterRecord(savedDraft);
+        refreshSaved();
+        savedModel = routerRecordToModelInfo(record);
+      } catch (cacheError) {
+        // The server registration already succeeded. A local cache failure must
+        // not be reported as a failed registration or cause a duplicate retry.
+        cacheWarning = cacheError instanceof Error ? cacheError.message : String(cacheError);
+      }
+
+      setDraft(current => {
+        // If the user edited while /pull was in flight, preserve those newer
+        // edits. Only attach the now-authoritative model ID. If nothing changed,
+        // commit the exact submitted snapshot as the clean baseline.
+        if (routerDraftFingerprint(current) === submittedFingerprint) return savedDraft;
+        return { ...current, modelName: current.modelName || nextRequest.model_name };
+      });
+      setNotice(cacheWarning
+        ? `Registered ${nextRequest.model_name}. Local recent-router cache could not be updated.`
+        : `Registered ${nextRequest.model_name}.`);
+      onSaved?.(savedModel);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not register router.');
     } finally {
@@ -528,31 +800,78 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
 
   const deleteCurrent = async () => {
     const modelNameValue = draft.modelName;
-    if (!modelNameValue) return;
+    if (!modelNameValue || deleting) return;
+    if (!onDeleted) {
+      setConfirmation(null);
+      setError('Router deletion is unavailable in this context.');
+      return;
+    }
+    setDeleting(true);
+    setError(null);
     try {
-      await onDeleted?.(modelNameValue);
-      refreshSaved();
+      const deletionWarning = await onDeleted?.(modelNameValue);
+      if (typeof deletionWarning === 'string' && deletionWarning) {
+        // The server delete succeeded but persistent cache cleanup did not. Do
+        // not immediately re-read that stale cache and resurrect the deleted
+        // router in this editor session.
+        setSavedRecords(current => current.filter(record => record.model_name !== modelNameValue));
+      } else {
+        refreshSaved();
+      }
+      setConfirmation(null);
       resetDraft();
-      setNotice(`Deleted ${modelNameValue}.`);
+      setNotice(typeof deletionWarning === 'string' && deletionWarning
+        ? deletionWarning
+        : `Deleted ${modelNameValue}.`);
     } catch (deleteError) {
+      // Close the modal so the persistent editor error is immediately visible;
+      // the router remains loaded and the user can retry intentionally.
+      setConfirmation(null);
       setError(deleteError instanceof Error ? deleteError.message : 'Could not delete router.');
+    } finally {
+      setDeleting(false);
     }
   };
 
   const requestDeleteCurrent = () => {
-    if (!draft.modelName) return;
+    if (!draft.modelName || saving || deleting) return;
     setConfirmation({
       kind: 'delete',
       title: 'Delete router?',
-      message: `Delete ${draft.modelName}? This removes the saved router definition from Lemonade.`,
+      message: `Delete ${draft.modelName}? This removes the saved router definition from Lemonade.${isDirty ? ' Unsaved edits in this editor will also be discarded.' : ''}`,
       confirmLabel: 'Delete router',
       tone: 'danger',
     });
   };
 
+  const requestClose = () => {
+    if (!isDirty) {
+      onClose();
+      return;
+    }
+    requestDiscard(
+      'Close router editor?',
+      'Closing now will discard the unsaved changes currently in the editor.',
+      'Close and discard changes',
+      onClose,
+    );
+  };
+
+  const dismissConfirmation = () => {
+    if (deleting) return;
+    if (confirmation?.kind === 'discard') pendingDiscardActionRef.current = null;
+    setConfirmation(null);
+  };
+
   const confirmPendingAction = () => {
     const pending = confirmation;
-    if (!pending) return;
+    if (!pending || deleting) return;
+    if (pending.kind === 'delete') {
+      // Keep the modal/focus trap mounted for the entire server mutation so the
+      // underlying draft cannot be edited and deleted concurrently.
+      void deleteCurrent();
+      return;
+    }
     setConfirmation(null);
     if (pending.kind === 'switch-llm') {
       applyRoutingMode('llm');
@@ -566,10 +885,16 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       resetDraft();
       return;
     }
-    void deleteCurrent();
+    if (pending.kind === 'discard') {
+      const action = pendingDiscardActionRef.current;
+      pendingDiscardActionRef.current = null;
+      action?.();
+      return;
+    }
   };
 
   const selectedRule = draft.rules[selectedRuleIndex] || null;
+  const expandedRule = expandedRuleIndex == null ? null : (draft.rules[expandedRuleIndex] || null);
 
   return (
     <WorkspaceDetailPanel
@@ -579,53 +904,59 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       title={<h2 className="workspace-detail-panel__title">Router</h2>}
       metadata={<WorkspaceMetadataChip emphasis="high" tone="accent">collection.router</WorkspaceMetadataChip>}
       description={<p>Build and register a virtual model that routes requests across compatible candidates.</p>}
+      descriptionPlacement="identity"
       actions={(
         <WorkspaceActionGroup label="Router editor actions">
-          <WorkspaceActionButton appearance="primary" icon="check" disabled={saving || validationErrors.length > 0} onClick={() => { void save(); }}>
+          <WorkspaceActionButton appearance="primary" icon="check" disabled={saving || deleting || savingProvider || validationErrors.length > 0} onClick={() => { void save(); }}>
             {saving ? 'Registering…' : 'Save & register'}
           </WorkspaceActionButton>
           {draft.modelName && (
-            <WorkspaceActionButton appearance="danger" icon="trash" onClick={requestDeleteCurrent}>Delete</WorkspaceActionButton>
+            <WorkspaceActionButton appearance="danger" icon="trash" disabled={saving || deleting || savingProvider} onClick={requestDeleteCurrent}>Delete</WorkspaceActionButton>
           )}
           <span className="workspace-action-group__spacer" />
-          <WorkspaceActionButton appearance="secondary" icon="x" onClick={onClose}>Close</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="secondary" icon="x" disabled={saving || deleting || savingProvider} onClick={requestClose}>Close</WorkspaceActionButton>
         </WorkspaceActionGroup>
       )}
-      onClose={onClose}
-      closeLabel="Close router editor"
+      titleExtras={(
+        <div className="router-editor__toolbar" aria-label="Router file actions">
+          <div className="router-editor__toolbar-row">
+            <WorkspaceActionButton size="small" icon="compose" disabled={saving || deleting || savingProvider} onClick={requestResetDraft}>New</WorkspaceActionButton>
+            <label className="router-editor__saved-select">
+              <span className="sr-only">Saved routers</span>
+              <select className="select" value={draft.modelName || ''} disabled={saving || deleting || savingProvider} onChange={event => loadSaved(event.target.value)}>
+                <option value="">Unsaved router</option>
+                {savedRecords.map(record => <option key={record.model_name} value={record.model_name}>{record.display_name}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="router-editor__toolbar-row router-editor__toolbar-row--files">
+            <WorkspaceActionButton size="small" icon="file-up" disabled={saving} onClick={() => importRef.current?.click()}>Import</WorkspaceActionButton>
+            <WorkspaceActionButton size="small" icon="file" disabled={!request} onClick={() => request && downloadJson(routerDisplayName(request.model_name), request)}>Export</WorkspaceActionButton>
+          </div>
+          <input ref={importRef} className="hidden-file-input" type="file" accept="application/json,.json" onChange={event => { void importFile(event.target.files?.[0]); }} />
+        </div>
+      )}
     >
-
-      <div className="router-editor__toolbar">
-        <WorkspaceActionButton size="small" icon="compose" onClick={requestResetDraft}>New</WorkspaceActionButton>
-        <label className="router-editor__saved-select">
-          <span className="sr-only">Saved routers</span>
-          <select className="select" value={draft.modelName || ''} onChange={event => loadSaved(event.target.value)}>
-            <option value="">Unsaved router</option>
-            {savedRecords.map(record => <option key={record.model_name} value={record.model_name}>{record.display_name}</option>)}
-          </select>
-        </label>
-        <span className="router-editor__toolbar-spacer" />
-        <WorkspaceActionButton size="small" icon="file-up" onClick={() => importRef.current?.click()}>Import</WorkspaceActionButton>
-        <WorkspaceActionButton size="small" icon="file" disabled={!request} onClick={() => request && downloadJson(routerDisplayName(request.model_name), request)}>Export</WorkspaceActionButton>
-        <input ref={importRef} className="hidden-file-input" type="file" accept="application/json,.json" onChange={event => { void importFile(event.target.files?.[0]); }} />
-      </div>
-
       <div className="router-editor__tabs" role="tablist" aria-label="Router editor view">
         <button type="button" className={tab === 'builder' ? 'is-active' : ''} role="tab" aria-selected={tab === 'builder'} onClick={() => setTab('builder')}>Builder</button>
-        <button type="button" className={tab === 'json' ? 'is-active' : ''} role="tab" aria-selected={tab === 'json'} onClick={() => setTab('json')}>JSON preview</button>
+        <button type="button" className={tab === 'json' ? 'is-active' : ''} role="tab" aria-selected={tab === 'json'} onClick={() => setTab('json')}>JSON Preview</button>
       </div>
 
       <div className="router-editor__body">
-        <div className="router-editor__backend-note">
-          <Icon name="info" size={15} />
-          <span>Router v1 supports ordered rules, model-backed signals, and natural-language routing. The default model remains the fail-open fallback.</span>
-        </div>
-
         {tab === 'json' ? (
           <section className="router-editor__json-panel">
             <div className="router-editor__section-head">
-              <div><h3>Registration payload</h3><p>Exact body sent to <code>/api/v1/pull</code>.</p></div>
-              <WorkspaceActionButton size="small" icon="copy" disabled={!jsonPreview} onClick={() => { void copyText(jsonPreview).then(() => setNotice('JSON copied.')); }}>Copy</WorkspaceActionButton>
+              <div><h3>Registration Payload</h3><p>Exact body sent to <code>/api/v1/pull</code>.</p></div>
+              <WorkspaceActionButton
+                className={`router-editor__copy-button${jsonCopied ? ' is-copied' : ''}`}
+                size="small"
+                icon={jsonCopied ? 'check' : 'copy'}
+                disabled={!jsonPreview}
+                onClick={() => { void copyJsonPreview(); }}
+                aria-live="polite"
+              >
+                {jsonCopied ? 'Copied' : 'Copy'}
+              </WorkspaceActionButton>
             </div>
             {jsonPreview ? <pre>{jsonPreview}</pre> : <div className="router-editor__empty">Fix validation errors to generate the payload.</div>}
           </section>
@@ -636,14 +967,14 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                 <div><h3>Identity</h3><p>Saved as a virtual model.</p></div>
               </div>
               <div className="router-editor__form-grid">
-                <label><span>Router name</span><input className="input" value={draft.name} placeholder="Fast-or-smart" onChange={event => setPatch({ name: event.target.value })} /></label>
-                <label><span>Model ID</span><input className="input" value={draft.modelName || (draft.name ? `user.${draft.name.replace(/[^A-Za-z0-9._-]+/g, '-')}` : '')} readOnly /></label>
+                <label><span>Router Name</span><input className="input" value={draft.name} placeholder="Fast-or-smart" onChange={event => setPatch({ name: event.target.value })} /></label>
+                <label><span>Model ID</span><input className="input" value={draft.modelName || (draft.name ? normalizeRouterModelName(draft.name) : '')} readOnly /></label>
               </div>
             </section>
 
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Candidate models</h3><p>The router may select only from these registered models.</p></div>
+                <div><h3>Candidate Models</h3><p>The router may select only from these registered models.</p></div>
                 <span className="router-editor__count">{draft.candidates.length} selected</span>
               </div>
               <div className="router-editor__candidate-search"><Icon name="search" size={14} /><input value={candidateSearch} placeholder="Search registered models" onChange={event => setCandidateSearch(event.target.value)} /></div>
@@ -669,7 +1000,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                 {filteredCandidateModels.length === 0 && <div className="router-editor__empty">No compatible models match this search.</div>}
               </div>
               <label className="router-editor__default-model">
-                <span>Default model <small>Used when no rule matches or evaluation fails.</small></span>
+                <span>Default Model <small>Used when no rule matches or evaluation fails.</small></span>
                 <select className="select" value={draft.defaultModel} onChange={event => setPatch({ defaultModel: event.target.value })}>
                   <option value="">Select default</option>
                   {draft.candidates.map(candidate => <option key={candidate} value={candidate}>{candidate}</option>)}
@@ -678,73 +1009,85 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
 
               <div className="router-editor__connections" aria-label="Connected model topology">
                 <div className="router-editor__mini-head">
-                  <span>Connected model topology</span>
-                  <small>External endpoints are provider-wide and affect every model from that provider.</small>
+                  <span>Connected Model Topology</span>
                 </div>
                 {selectedConnections.length === 0 ? (
                   <div className="router-editor__empty">Select candidate models to review their connections.</div>
-                ) : selectedConnections.map(connection => (
-                  <div className="router-editor__connection" key={connection.modelName}>
-                    <div className="router-editor__connection-main">
-                      <div>
-                        <strong>{connection.displayName}</strong>
-                        {connection.modelName === draft.defaultModel && <span className="router-editor__default-badge">Default</span>}
-                      </div>
-                      <small>{connection.modelName}</small>
-                      <small>{(connectedModelRoles.get(connection.modelName) || []).join(' · ')}</small>
-                    </div>
-                    <div className="router-editor__connection-source">
-                      <span className={`router-editor__source-badge router-editor__source-badge--${connection.kind}`}>
-                        {connection.kind === 'external' ? 'External' : connection.kind === 'internal' ? 'Internal' : 'Unresolved'}
-                      </span>
-                      <small>{connection.kind === 'external' ? (connection.provider || 'Unknown provider') : (connection.backend || connection.recipe || 'Local model')}</small>
-                    </div>
-                    {connection.kind === 'external' ? (
-                      <div className="router-editor__connection-endpoint">
-                        {editingProvider === connection.provider && editingConnectionModel === connection.modelName ? (
-                          <div className="router-editor__endpoint-editor">
-                            <input
-                              className="input"
-                              value={providerEndpointDraft}
-                              aria-label={`${connection.provider} endpoint`}
-                              placeholder="https://api.example.com/v1"
-                              onChange={event => setProviderEndpointDraft(event.target.value)}
-                            />
-                            {providerEndpointNeedsInsecureOptIn(providerEndpointDraft) && (
-                              <label className="router-editor__insecure-opt-in">
-                                <input type="checkbox" checked={providerAllowInsecureDraft} onChange={event => setProviderAllowInsecureDraft(event.target.checked)} />
-                                <span>Allow insecure HTTP</span>
-                              </label>
-                            )}
-                            <WorkspaceActionButton size="small" appearance="primary" disabled={savingProvider} onClick={() => { void saveProviderEndpoint(); }}>
-                              {savingProvider ? 'Saving…' : 'Save'}
-                            </WorkspaceActionButton>
-                            <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setProviderAllowInsecureDraft(false); setConnectionsError(null); }}>Cancel</WorkspaceActionButton>
+                ) : (
+                  <div className="router-editor__connection-list">
+                    {selectedConnections.map(connection => (
+                      <div className={`router-editor__connection router-editor__connection--${connection.kind}`} key={connection.modelName}>
+                        <div className="router-editor__connection-main">
+                          <div>
+                            <strong>{connection.displayName}</strong>
+                            {connection.modelName === draft.defaultModel && <span className="router-editor__default-badge">Default</span>}
                           </div>
-                        ) : (
-                          <>
-                            <span title={connection.endpoint || 'Endpoint unavailable'}>{connection.endpoint || 'Endpoint not configured'}</span>
-                            <small>{connection.authConfigured ? 'Authentication configured' : 'Authentication required'}</small>
-                            {connection.provider && (
-                              <WorkspaceActionButton size="small" icon="edit" onClick={() => startEditingProvider(connection.provider, connection.endpoint, connection.modelName, connection.allowInsecureHttp)}>
-                                Edit endpoint
-                              </WorkspaceActionButton>
+                        </div>
+                        {connection.kind === 'external' && (
+                          <div className="router-editor__connection-endpoint">
+                            {editingProvider === connection.provider && editingConnectionModel === connection.modelName ? (
+                              <div className="router-editor__endpoint-editor">
+                                <input
+                                  className="input"
+                                  value={providerEndpointDraft}
+                                  aria-label={`${connection.provider} endpoint`}
+                                  placeholder="https://api.example.com/v1"
+                                  onChange={event => setProviderEndpointDraft(event.target.value)}
+                                />
+                                {providerEndpointNeedsInsecureOptIn(providerEndpointDraft) && (
+                                  <label className="router-editor__insecure-opt-in">
+                                    <input type="checkbox" checked={providerAllowInsecureDraft} onChange={event => setProviderAllowInsecureDraft(event.target.checked)} />
+                                    <span>Allow insecure HTTP</span>
+                                  </label>
+                                )}
+                                <WorkspaceActionButton size="small" appearance="primary" disabled={savingProvider} onClick={() => { void saveProviderEndpoint(); }}>
+                                  {savingProvider ? 'Saving…' : 'Save'}
+                                </WorkspaceActionButton>
+                                <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setProviderAllowInsecureDraft(false); setConnectionsError(null); }}>Cancel</WorkspaceActionButton>
+                              </div>
+                            ) : (
+                              <>
+                                <span title={connection.endpoint || 'Endpoint unavailable'}>{connection.endpoint || 'Endpoint not configured'}</span>
+                                <small>{connection.authConfigured ? 'Authentication configured' : 'Authentication required'}</small>
+                                {connection.provider && (
+                                  <WorkspaceActionButton size="small" icon="edit" onClick={() => startEditingProvider(connection.provider, connection.endpoint, connection.modelName, connection.allowInsecureHttp)}>
+                                    Edit Endpoint
+                                  </WorkspaceActionButton>
+                                )}
+                              </>
                             )}
-                          </>
+                          </div>
                         )}
+                        <div className="router-editor__connection-trailing">
+                          <div className="router-editor__connection-source">
+                            <span className={`router-editor__source-badge router-editor__source-badge--${connection.kind}`}>
+                              {connection.kind === 'external' ? 'External' : connection.kind === 'internal' ? 'Internal' : 'Unresolved'}
+                            </span>
+                            <small>{connection.kind === 'external' ? (connection.provider || 'Unknown provider') : (connection.backend || connection.recipe || 'Unknown source')}</small>
+                          </div>
+                          {draft.candidates.includes(connection.modelName) && (
+                            <WorkspaceActionButton
+                              appearance="danger"
+                              size="small"
+                              icon="trash"
+                              iconOnly
+                              onClick={() => toggleCandidate(connection.modelName)}
+                              aria-label={`Remove ${connection.displayName} from candidate models`}
+                              title="Remove candidate"
+                            />
+                          )}
+                        </div>
                       </div>
-                    ) : (
-                      <div className="router-editor__connection-endpoint"><span>Managed by Lemonade</span><small>Local registered model</small></div>
-                    )}
+                    ))}
                   </div>
-                ))}
+                )}
                 {connectionsError && selectedConnections.some(connection => connection.kind === 'external') && <div className="router-editor__message router-editor__message--error"><Icon name="alert" size={14} /> {connectionsError}</div>}
               </div>
             </section>
 
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Routing strategy</h3><p>Choose how the router selects a candidate. Switching modes clears incompatible configuration after confirmation.</p></div>
+                <div><h3>Routing Strategy</h3><p>Choose how the router selects a candidate. Switching modes clears incompatible configuration after confirmation.</p></div>
               </div>
               <div className="router-editor__strategy" role="radiogroup" aria-label="Routing strategy">
                 <button
@@ -755,7 +1098,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                   onClick={() => setRoutingMode('rules')}
                 >
                   <Icon name="layers" size={18} />
-                  <span><strong>Ordered rules</strong><small>Deterministic conditions and optional model-backed signals. First match wins.</small></span>
+                  <span><strong>Ordered Rules</strong><small>Deterministic conditions and optional model-backed signals. First match wins.</small></span>
                 </button>
                 <button
                   type="button"
@@ -765,20 +1108,16 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                   onClick={() => setRoutingMode('llm')}
                 >
                   <Icon name="brain-circuit" size={18} />
-                  <span><strong>Natural-language router</strong><small>A routing model reads your instruction and chooses one candidate directly.</small></span>
+                  <span><strong>Natural-Language Router</strong><small>A routing model reads your instruction and chooses one candidate directly.</small></span>
                 </button>
               </div>
             </section>
 
             {draft.mode === 'llm' ? (
-              <section className="router-editor__section">
-                <div className="router-editor__section-head">
-                  <div><h3>Natural-language router</h3><p>The selected model must return exactly one candidate. Invalid output falls back to the default model.</p></div>
-                  <WorkspaceMetadataChip emphasis="high" tone="accent">routing.router</WorkspaceMetadataChip>
-                </div>
+              <section className="router-editor__section" aria-label="Natural-Language Router settings">
                 <div className="router-editor__form-grid">
                   <div className="router-editor__wide router-editor__field">
-                    <span>Routing model <small>Usually a small, fast chat model.</small></span>
+                    <span>Routing Model <small>Usually a small, fast chat model.</small></span>
                     <RouterModelPicker
                       models={candidateModels}
                       value={draft.llmRouter.model}
@@ -789,7 +1128,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                     />
                   </div>
                   <label className="router-editor__wide">
-                    <span>Routing instruction <small>Describe clearly when each candidate should be selected.</small></span>
+                    <span>Routing Instruction <small>Describe clearly when each candidate should be selected.</small></span>
                     <textarea
                       className="textarea router-editor__prompt"
                       value={draft.llmRouter.prompt}
@@ -816,13 +1155,13 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                   {draft.classifiers.map((classifier, index) => {
                     const labels = classifierLabels(classifier);
                     return (
-                      <article className="router-editor__classifier" key={`${classifier.id}-${index}`}>
+                      <article className="router-editor__classifier" key={index}>
                         <div className="router-editor__card-head">
-                          <strong>{classifier.type === 'semantic_similarity' ? 'Semantic similarity' : classifier.type === 'llm' ? 'LLM classifier' : 'Text classifier'}</strong>
+                          <strong>{classifier.type === 'semantic_similarity' ? 'Semantic Similarity' : classifier.type === 'llm' ? 'LLM Classifier' : 'Text Classifier'}</strong>
                           <WorkspaceActionButton appearance="danger" size="small" icon="trash" iconOnly onClick={() => removeClassifier(index)} aria-label="Remove classifier" title="Remove classifier" />
                         </div>
                         <div className="router-editor__form-grid router-editor__form-grid--classifier">
-                          <label><span>ID</span><input className="input" value={classifier.id} onChange={event => updateClassifier(index, { id: event.target.value })} /></label>
+                          <label><span>ID</span><CommittedTextInput value={classifier.id} ariaLabel={`Classifier ${index + 1} ID`} normalize={input => input} onCommit={nextId => commitClassifierId(index, nextId)} /></label>
                           <label><span>Type</span><select className="select" value={classifier.type} onChange={event => updateClassifier(index, { ...createRouterClassifier(index, event.target.value as RouterClassifier['type']), id: classifier.id })}><option value="classifier">classifier</option><option value="semantic_similarity">semantic_similarity</option><option value="llm">llm</option></select></label>
                           <div className="router-editor__wide router-editor__field">
                             <span>Model</span>
@@ -837,28 +1176,51 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                           </div>
                           {classifier.type === 'semantic_similarity' ? (
                             <div className="router-editor__wide router-editor__concepts">
-                              <div className="router-editor__mini-head"><span>Concepts and reference phrases</span><WorkspaceActionButton size="small" icon="plus" onClick={() => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [nextConceptName(classifier.referencePhrases)]: ['example phrase'] } })}>Concept</WorkspaceActionButton></div>
-                              {Object.entries(classifier.referencePhrases).map(([concept, phrases], conceptIndex) => (
-                                <div className="router-editor__concept" key={`${concept}-${conceptIndex}`}>
-                                  <input className="input" value={concept} aria-label="Concept name" onChange={event => renameSemanticConcept(index, concept, event.target.value)} />
-                                  <input className="input" value={phrases.join(', ')} aria-label="Reference phrases" placeholder="Comma-separated phrases" onChange={event => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [concept]: event.target.value.split(',').map(phrase => phrase.trimStart()) } })} />
-                                  <WorkspaceActionButton appearance="danger" size="small" icon="trash" iconOnly title="Remove concept" aria-label="Remove concept" onClick={() => { const next = { ...classifier.referencePhrases }; delete next[concept]; updateClassifier(index, { referencePhrases: next, defaultLabel: undefined }); }} />
-                                </div>
-                              ))}
+                              <div className="router-editor__mini-head"><span>Concepts and Reference Phrases</span><WorkspaceActionButton size="small" icon="plus" onClick={() => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [nextConceptName(classifier.referencePhrases)]: ['example phrase'] } })}>Concept</WorkspaceActionButton></div>
+                              <div className="router-editor__concept-list">
+                                {Object.entries(classifier.referencePhrases).map(([concept, phrases], conceptIndex) => (
+                                  <div className="router-editor__concept" key={conceptIndex}>
+                                    <CommittedTextInput value={concept} ariaLabel="Concept name" onCommit={nextName => commitSemanticConceptName(index, concept, nextName)} />
+                                    <textarea className="textarea" rows={3} value={phrases.join('\n')} aria-label="Reference phrases" placeholder="One reference phrase per line" onChange={event => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [concept]: event.target.value.split(/\r?\n/) } })} />
+                                    <WorkspaceActionButton appearance="danger" size="small" icon="trash" iconOnly title="Remove concept" aria-label="Remove concept" onClick={() => {
+                                      const next = { ...classifier.referencePhrases };
+                                      delete next[concept];
+                                      updateClassifier(index, {
+                                        referencePhrases: next,
+                                        defaultLabel: classifier.defaultLabel === concept ? undefined : classifier.defaultLabel,
+                                      });
+                                    }} />
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           ) : (
                             <>
                               {classifier.type === 'llm' && (
                                 <label className="router-editor__wide">
-                                  <span>Classification prompt <small>Explain when each label applies.</small></span>
+                                  <span>Classification Prompt <small>Explain when each label applies.</small></span>
                                   <textarea className="textarea router-editor__prompt" value={classifier.prompt} placeholder="Choose SAFE for routine requests and RISKY for requests that could cause external side effects." spellCheck={false} onChange={event => updateClassifier(index, { prompt: event.target.value })} />
                                 </label>
                               )}
-                              <label className="router-editor__wide"><span>Output labels <small>Comma-separated</small></span><input className="input" value={classifier.labels.join(', ')} onChange={event => updateClassifier(index, { labels: event.target.value.split(',').map(label => label.trimStart()), defaultLabel: undefined })} /></label>
+                              <label className="router-editor__wide"><span>Output Labels <small>one per line</small></span><textarea
+                                className="textarea"
+                                rows={3}
+                                value={classifier.labels.join('\n')}
+                                onChange={event => {
+                                  const labels = event.target.value.split(/\r?\n/);
+                                  const normalized = labels.map(label => label.trim()).filter(Boolean);
+                                  updateClassifier(index, {
+                                    labels,
+                                    defaultLabel: classifier.defaultLabel && normalized.includes(classifier.defaultLabel)
+                                      ? classifier.defaultLabel
+                                      : undefined,
+                                  });
+                                }}
+                              /></label>
                             </>
                           )}
-                          <label><span>Default label</span><select className="select" value={classifier.defaultLabel || ''} onChange={event => updateClassifier(index, { defaultLabel: event.target.value || undefined })}><option value="">None</option>{labels.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
-                          <label><span>On error</span><select className="select" value={classifier.onError} onChange={event => updateClassifier(index, { onError: event.target.value as RouterClassifier['onError'] })}><option value="match_false">Do not match</option><option value="match_true">Match rule</option></select></label>
+                          <label><span>Default Label</span><select className="select" value={classifier.defaultLabel || ''} onChange={event => updateClassifier(index, { defaultLabel: event.target.value || undefined })}><option value="">None</option>{labels.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
+                          <label><span>On Error</span><select className="select" value={classifier.onError} onChange={event => updateClassifier(index, { onError: event.target.value as RouterClassifier['onError'] })}><option value="match_false">Do not match</option><option value="match_true">Match rule</option></select></label>
                         </div>
                       </article>
                     );
@@ -869,7 +1231,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
 
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Ordered rules</h3><p>First matching rule wins. The default model handles the remainder.</p></div>
+                <div><h3>Ordered Rules</h3><p>First matching rule wins. The default model handles the remainder.</p></div>
                 <WorkspaceActionButton size="small" icon="plus" onClick={addRule}>Rule</WorkspaceActionButton>
               </div>
               <div className="router-editor__rules-workspace">
@@ -877,7 +1239,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                   {draft.rules.map((rule, index) => (
                     <div
                       className={`router-editor__rule-summary ${selectedRuleIndex === index ? 'is-selected' : ''} ${dragRuleIndex === index ? 'is-dragging' : ''}`}
-                      key={`${rule.id}-${index}`}
+                      key={index}
                       onDragOver={event => {
                         if (dragRuleIndex == null || dragRuleIndex === index) return;
                         event.preventDefault();
@@ -917,9 +1279,11 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                         </span>
                       </button>
                       <div className="router-editor__rule-actions">
-                        <button type="button" disabled={index === 0} onClick={() => moveRuleTo(index, index - 1)} title="Move rule up"><Icon name="chevron-up" size={14} /></button>
-                        <button type="button" disabled={index === draft.rules.length - 1} onClick={() => moveRuleTo(index, index + 1)} title="Move rule down"><Icon name="chevron-down" size={14} /></button>
-                        <button type="button" onClick={() => removeRuleAt(index)} title="Remove rule"><Icon name="trash" size={14} /></button>
+                        <div className="router-editor__rule-stepper">
+                          <button className="router-editor__rule-stepper-button router-editor__rule-stepper-button--up" type="button" disabled={index === 0} onClick={() => moveRuleTo(index, index - 1)} title="Move rule up"><Icon name="chevron-up" size={10} /></button>
+                          <button className="router-editor__rule-stepper-button router-editor__rule-stepper-button--down" type="button" disabled={index === draft.rules.length - 1} onClick={() => moveRuleTo(index, index + 1)} title="Move rule down"><Icon name="chevron-down" size={10} /></button>
+                        </div>
+                        <button className="router-editor__rule-remove" type="button" onClick={() => removeRuleAt(index)} title="Remove rule"><Icon name="trash" size={14} /></button>
                       </div>
                     </div>
                   ))}
@@ -943,16 +1307,17 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                       </div>
                       <div className="router-editor__rule-meta">
                         <label><span>Rule ID</span><input className="input" value={selectedRule.id} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, id: event.target.value } : item) })} /></label>
-                        <label><span>Route to</span><select className="select" value={selectedRule.routeTo} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, routeTo: event.target.value } : item) })}><option value="">Select candidate</option>{draft.candidates.map(candidate => <option key={candidate} value={candidate}>{candidate}</option>)}</select></label>
+                        <label><span>Route To</span><select className="select" value={selectedRule.routeTo} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, routeTo: event.target.value } : item) })}><option value="">Select candidate</option>{draft.candidates.map(candidate => <option key={candidate} value={candidate}>{candidate}</option>)}</select></label>
                       </div>
                       <RouterRuleGraph
-                        key={`${selectedRuleIndex}-${selectedRule.id}`}
+                        key={`rule-${selectedRuleIndex}`}
                         node={selectedRule.condition}
                         classifiers={draft.classifiers}
                         onChange={condition => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, condition } : item) })}
+                        onExpand={() => setExpandedRuleIndex(selectedRuleIndex)}
                       />
                       <details className="router-editor__outputs">
-                        <summary>Optional decision outputs</summary>
+                        <summary>Optional Decision Outputs</summary>
                         <textarea className="textarea" value={selectedRule.outputsText || ''} placeholder={'{\n  "tier": "fast"\n}'} spellCheck={false} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, outputsText: event.target.value } : item) })} />
                       </details>
                     </>
@@ -989,8 +1354,29 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       )}
 
       <Modal
+        isOpen={expandedRule != null && expandedRuleIndex != null}
+        onClose={() => setExpandedRuleIndex(null)}
+        title={expandedRule && expandedRuleIndex != null ? `Rule ${expandedRuleIndex + 1}: ${expandedRule.id || 'Untitled Rule'}` : 'Graph Builder'}
+        maxWidth="calc(100vw - 48px)"
+        ariaLabelledBy="router-graph-expanded-title"
+      >
+        {expandedRule && expandedRuleIndex != null && (
+          <div className="inspect-modal-body router-editor__graph-modal">
+            <RouterRuleGraph
+              key={`expanded-${expandedRuleIndex}`}
+              node={expandedRule.condition}
+              classifiers={draft.classifiers}
+              onChange={condition => setPatch({
+                rules: draft.rules.map((item, itemIndex) => itemIndex === expandedRuleIndex ? { ...item, condition } : item),
+              })}
+            />
+          </div>
+        )}
+      </Modal>
+
+      <Modal
         isOpen={confirmation != null}
-        onClose={() => setConfirmation(null)}
+        onClose={dismissConfirmation}
         title={confirmation?.title || 'Confirm action'}
         maxWidth="480px"
         ariaLabelledBy="router-confirm-dialog-title"
@@ -1000,8 +1386,10 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
           <p>{confirmation?.message}</p>
         </div>
         <div className="inspect-modal-footer">
-          <WorkspaceActionButton appearance="secondary" onClick={() => setConfirmation(null)}>Cancel</WorkspaceActionButton>
-          <WorkspaceActionButton appearance={confirmation?.tone || 'primary'} onClick={confirmPendingAction}>{confirmation?.confirmLabel || 'Continue'}</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="secondary" disabled={deleting} onClick={dismissConfirmation}>Cancel</WorkspaceActionButton>
+          <WorkspaceActionButton appearance={confirmation?.tone || 'primary'} disabled={deleting} onClick={confirmPendingAction}>
+            {deleting && confirmation?.kind === 'delete' ? 'Deleting…' : (confirmation?.confirmLabel || 'Continue')}
+          </WorkspaceActionButton>
         </div>
       </Modal>
 

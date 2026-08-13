@@ -116,15 +116,20 @@ export const RouterModelPicker: React.FC<RouterModelPickerProps> = ({
     if (activeIndex >= filtered.length) setActiveIndex(filtered.length ? filtered.length - 1 : -1);
   }, [activeIndex, filtered.length]);
 
+  const closeAndRestoreFocus = () => {
+    setOpen(false);
+    window.requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+
   const choose = (name: string) => {
     onChange(name);
-    setOpen(false);
+    closeAndRestoreFocus();
   };
 
   const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault();
-      setOpen(false);
+      closeAndRestoreFocus();
       return;
     }
     if (event.key === 'ArrowDown') {

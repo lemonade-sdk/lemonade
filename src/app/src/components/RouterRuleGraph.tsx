@@ -16,7 +16,9 @@ import {
   isBlankRouterGraphNode,
   removeRouterNodeAtPath,
   replaceRouterNodeAtPath,
+  routerDuplicateConditionConflict,
   routerNodeAtPath,
+  routerReplacementConflictAtPath,
   wrapRouterNode,
   type RouterNodePath,
 } from '../features/router/routerGraph';
@@ -34,8 +36,8 @@ const LEAF_LABELS: Record<RouterLeafType, string> = {
   keywords_any: 'Keywords · any',
   keywords_all: 'Keywords · all',
   regex: 'Regex',
-  min_chars: 'Min characters',
-  max_chars: 'Max characters',
+  min_chars: 'Min UTF-8 bytes',
+  max_chars: 'Max UTF-8 bytes',
   has_tools: 'Has tools',
   has_images: 'Has images',
   classifier: 'Classifier',
@@ -58,6 +60,13 @@ const OPERATOR_LABELS: Record<RouterGroupOperator, string> = {
   any: 'OR',
   not: 'NOT',
 };
+
+
+function exactSummary(value: unknown, fallback: string): string {
+  const raw = String(value ?? '');
+  if (!raw.length) return fallback;
+  return raw === raw.trim() ? raw : JSON.stringify(raw);
+}
 
 const GraphGateShape: React.FC<{ operator: RouterGroupOperator; compact?: boolean }> = ({ operator, compact = false }) => {
   const size = compact ? 24 : 30;
@@ -87,19 +96,22 @@ function leafSummary(node: RouterLeafNode, classifiers: RouterClassifier[]): str
   if (node.type === 'keywords_any' || node.type === 'keywords_all') {
     return String(node.textValue || '').trim() || 'Add keywords';
   }
-  if (node.type === 'regex') return String(node.textValue || '').trim() || 'Add regex';
+  if (node.type === 'regex') return exactSummary(node.textValue, 'Add regex');
   if (node.type === 'min_chars') return `≥ ${node.numberValue ?? 0}`;
   if (node.type === 'max_chars') return `≤ ${node.numberValue ?? 0}`;
   if (node.type === 'has_tools') return node.booleanValue === false ? 'is false' : 'is true';
   if (node.type === 'has_images') return node.booleanValue === false ? 'is false' : 'is true';
   if (node.type === 'metadata') {
-    const key = String(node.metadataKey || '').trim() || 'metadata key';
+    const key = exactSummary(node.metadataKey, 'metadata key');
     const comparator = node.metadataComparator || 'equals';
     if (comparator === 'exists') return `${key} ${node.booleanValue === false ? 'missing' : 'present'}`;
-    return `${key} ${comparator === 'any' ? 'contains' : '='} ${String(node.metadataValues || '').trim() || '…'}`;
+    return `${key} ${comparator === 'any' ? 'contains' : '='} ${exactSummary(node.metadataValues, '…')}`;
   }
   const classifier = classifiers.find(item => item.id === node.classifierId);
-  const label = node.label || classifier?.defaultLabel || classifierLabels(classifier)[0] || 'label';
+  const labels = classifierLabels(classifier);
+  const label = node.label
+    || classifier?.defaultLabel
+    || (labels.length > 0 ? 'Select label' : 'classifier output');
   return `${node.classifierId || 'Select classifier'} · ${label}${node.minScore !== undefined ? ` · ≥ ${node.minScore}` : ''}`;
 }
 
@@ -198,12 +210,18 @@ const GraphNode: React.FC<GraphNodeProps> = ({
   }
 
   return (
-    <div className={`router-graph__group ${selected ? 'is-selected' : ''}`}>
-      <div className="router-graph__group-head" onClick={() => onSelect(path)}>
-        <span className={`router-graph__gate router-graph__gate--${node.operator}`}>
+    <div className={`router-graph__group router-graph__group--${node.operator} ${selected ? 'is-selected' : ''}`}>
+      <div className="router-graph__group-head">
+        <button
+          type="button"
+          className={`router-graph__gate router-graph__gate--${node.operator}`}
+          onClick={() => onSelect(path)}
+          aria-pressed={selected}
+          title={`Select ${OPERATOR_LABELS[node.operator]} gate`}
+        >
           <GraphGateShape operator={node.operator} />
           {OPERATOR_LABELS[node.operator]}
-        </span>
+        </button>
         <span className="router-graph__group-copy">
           {node.operator === 'all' ? 'All child conditions must match' : node.operator === 'any' ? 'Any child condition may match' : 'Negate the child condition'}
         </span>
@@ -245,9 +263,10 @@ interface RouterRuleGraphProps {
   node: RouterNode;
   classifiers: RouterClassifier[];
   onChange: (node: RouterNode) => void;
+  onExpand?: () => void;
 }
 
-export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifiers, onChange }) => {
+export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifiers, onChange, onExpand }) => {
   const [toolboxCollapsed, setToolboxCollapsed] = useState(false);
   const [toolboxSearch, setToolboxSearch] = useState('');
   const [selectedPath, setSelectedPath] = useState<RouterNodePath | null>(null);
@@ -259,6 +278,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   const panStateRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const historyRef = useRef<RouterNode[]>([]);
   const futureRef = useRef<RouterNode[]>([]);
+  const lastEmittedNodeRef = useRef<RouterNode | null>(null);
 
   const selectedNode = selectedPath ? routerNodeAtPath(node, selectedPath) : null;
   const blank = isBlankRouterGraphNode(node);
@@ -267,11 +287,29 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
     if (selectedPath && !routerNodeAtPath(node, selectedPath)) setSelectedPath(null);
   }, [node, selectedPath]);
 
+  useEffect(() => {
+    // Inline and expanded builders may edit the same rule. If this instance
+    // receives a node it did not emit itself, its undo/redo snapshots belong to
+    // an older tree and must not be allowed to overwrite the external change.
+    if (lastEmittedNodeRef.current === node) {
+      lastEmittedNodeRef.current = null;
+      return;
+    }
+    historyRef.current = [];
+    futureRef.current = [];
+    setSelectedPath(null);
+  }, [node]);
+
+  const emitChange = useCallback((next: RouterNode) => {
+    lastEmittedNodeRef.current = next;
+    onChange(next);
+  }, [onChange]);
+
   const commit = useCallback((next: RouterNode) => {
     historyRef.current = [...historyRef.current.slice(-29), node];
     futureRef.current = [];
-    onChange(next);
-  }, [node, onChange]);
+    emitChange(next);
+  }, [emitChange, node]);
 
   const reject = useCallback((message: string) => {
     setRejection(message);
@@ -300,15 +338,27 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   }, [blank, commit, node, reject]);
 
   const removeAtPath = useCallback((path: RouterNodePath) => {
-    commit(removeRouterNodeAtPath(node, path));
+    const next = removeRouterNodeAtPath(node, path);
+    const currentConflict = routerDuplicateConditionConflict(node);
+    const nextConflict = routerDuplicateConditionConflict(next);
+    if (!currentConflict && nextConflict) {
+      reject(nextConflict);
+      return;
+    }
+    commit(next);
     setSelectedPath(null);
-  }, [commit, node]);
+  }, [commit, node, reject]);
 
   const changeOperator = useCallback((path: RouterNodePath, operator: RouterGroupOperator) => {
     const current = routerNodeAtPath(node, path);
-    if (!current || current.kind !== 'group') return;
-    const children = operator === 'not' ? current.children.slice(0, 1) : current.children;
-    commit(replaceRouterNodeAtPath(node, path, { ...current, operator, children }));
+    if (!current || current.kind !== 'group' || current.operator === operator) return;
+    if (operator === 'not' && current.children.length > 1) {
+      // Negate the complete gate rather than dropping every child except the
+      // first. The wrapper preserves the exact AND/OR subtree and all leaves.
+      commit(replaceRouterNodeAtPath(node, path, wrapRouterNode(current, 'not')));
+      return;
+    }
+    commit(replaceRouterNodeAtPath(node, path, { ...current, operator }));
   }, [commit, node]);
 
   const undo = () => {
@@ -317,7 +367,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
     historyRef.current = historyRef.current.slice(0, -1);
     futureRef.current = [node, ...futureRef.current.slice(0, 29)];
     setSelectedPath(null);
-    onChange(previous);
+    emitChange(previous);
   };
 
   const redo = () => {
@@ -326,7 +376,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
     futureRef.current = futureRef.current.slice(1);
     historyRef.current = [...historyRef.current.slice(-29), node];
     setSelectedPath(null);
-    onChange(next);
+    emitChange(next);
   };
 
   const normalizedSearch = toolboxSearch.trim().toLowerCase();
@@ -336,6 +386,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   const filteredClassifiers = useMemo(() => classifiers.filter(classifier =>
     !normalizedSearch || `${classifier.id} classifier ${classifier.type}`.toLowerCase().includes(normalizedSearch)
   ), [classifiers, normalizedSearch]);
+  const toolboxTargetPath = selectedNode?.kind === 'group' && selectedPath ? selectedPath : [];
 
   const beginDrag = (event: React.DragEvent, data: RouterGraphDragData) => {
     event.dataTransfer.setData(ROUTER_GRAPH_DRAG_MIME, encodeDrag(data));
@@ -400,7 +451,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
           </button>
           {!toolboxCollapsed && (
             <div className="router-graph__toolbox-content">
-              <div className="router-graph__toolbox-title">Logic gates</div>
+              <div className="router-graph__toolbox-title">Logic Gates</div>
               <div className="router-graph__gates">
                 {(['all', 'any', 'not'] as RouterGroupOperator[]).map(operator => {
                   const data: RouterGraphDragData = { kind: 'operator', operator };
@@ -410,7 +461,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
                       draggable
                       key={operator}
                       className={`router-graph__tool router-graph__tool--gate router-graph__tool--${operator}`}
-                      onClick={() => addDataAtPath([], data)}
+                      onClick={() => addDataAtPath(toolboxTargetPath, data)}
                       onDragStart={event => beginDrag(event, data)}
                       title={`Drag ${OPERATOR_LABELS[operator]} onto the graph`}
                     >
@@ -436,7 +487,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
                       draggable
                       key={type}
                       className={`router-graph__tool router-graph__tool--condition router-graph__tool--${type}`}
-                      onClick={() => addDataAtPath([], data)}
+                      onClick={() => addDataAtPath(toolboxTargetPath, data)}
                       onDragStart={event => beginDrag(event, data)}
                       title={`Drag or click to add ${LEAF_LABELS[type]}`}
                     >
@@ -458,7 +509,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
                           draggable
                           key={classifier.id}
                           className="router-graph__tool router-graph__tool--condition router-graph__tool--classifier"
-                          onClick={() => addDataAtPath([], data)}
+                          onClick={() => addDataAtPath(toolboxTargetPath, data)}
                           onDragStart={event => beginDrag(event, data)}
                           title={`Drag or click to add classifier ${classifier.id}`}
                         >
@@ -480,8 +531,13 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
             <button type="button" disabled={futureRef.current.length === 0} onClick={redo}>Redo</button>
             {!blank && <button type="button" className="is-danger" onClick={() => { commit(createRouterLeaf()); setSelectedPath(null); }}>Clear</button>}
             {rejection && <span className="router-graph__rejection" role="status"><Icon name="alert" size={12} /> {rejection}</span>}
-            <span className="router-graph__toolbar-hint">Drag items from the toolbox. Click a node to edit it. Ctrl/⌘ + wheel zooms.</span>
+            <span className="router-graph__toolbar-hint">Drag items from the toolbox. Select a gate and click a toolbox item to add there. Ctrl/⌘ + wheel zooms.</span>
             <span className="router-graph__toolbar-spacer" />
+            {onExpand && (
+              <button type="button" className="router-graph__expand" onClick={onExpand} title="Expand graph builder" aria-label="Expand graph builder">
+                <Icon name="maximize-2" size={12} />
+              </button>
+            )}
             <button type="button" disabled={zoom <= ZOOM_MIN} onClick={() => setZoom(current => clampZoom(current - ZOOM_STEP))}>−</button>
             <button type="button" className="router-graph__zoom-label" onClick={() => { setZoom(1); setPan({ x: 18, y: 18 }); }}>{Math.round(zoom * 100)}%</button>
             <button type="button" disabled={zoom >= ZOOM_MAX} onClick={() => setZoom(current => clampZoom(current + ZOOM_STEP))}>+</button>
@@ -531,7 +587,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
         <div className="router-graph__inspector">
           <div className="router-graph__inspector-head">
             <div>
-              <strong>Node inspector</strong>
+              <strong>Node Inspector</strong>
               <small>Edit the selected condition or gate without leaving the graph.</small>
             </div>
             <button type="button" onClick={() => setSelectedPath(null)} aria-label="Close node inspector"><Icon name="x" size={13} /></button>
@@ -540,7 +596,15 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
             <RouterNodeEditor
               node={selectedNode}
               classifiers={classifiers}
-              onChange={next => selectedPath && commit(replaceRouterNodeAtPath(node, selectedPath, next))}
+              onChange={next => {
+                if (!selectedPath) return;
+                const conflict = routerReplacementConflictAtPath(node, selectedPath, next);
+                if (conflict) {
+                  reject(conflict);
+                  return;
+                }
+                commit(replaceRouterNodeAtPath(node, selectedPath, next));
+              }}
             />
           </div>
         </div>

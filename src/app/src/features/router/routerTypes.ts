@@ -149,6 +149,27 @@ export function createRouterLeaf(type: RouterLeafType = 'keywords_any'): RouterL
   return base;
 }
 
+const SINGLETON_ROUTER_LEAF_TYPES = new Set<RouterLeafType>([
+  'keywords_any',
+  'keywords_all',
+  'min_chars',
+  'max_chars',
+  'has_tools',
+  'has_images',
+]);
+
+/**
+ * Identity for direct-child conditions that are semantically redundant when
+ * repeated inside one gate. Regex, classifier, and metadata leaves are
+ * intentionally not singletons: two regexes, two different classifier bands,
+ * or multiple metadata predicates can express distinct constraints that cannot
+ * be merged losslessly into one leaf.
+ */
+export function routerConditionIdentity(node: RouterNode): string | null {
+  if (node.kind !== 'leaf' || !SINGLETON_ROUTER_LEAF_TYPES.has(node.type)) return null;
+  return node.type;
+}
+
 export function createRouterGroup(operator: RouterGroupOperator = 'all'): RouterGroupNode {
   return {
     id: createRouterNodeId('group'),
@@ -196,7 +217,9 @@ export function createEmptyRouterDraft(): RouterDraft {
 
 function splitList(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(item => String(item).trim()).filter(Boolean);
-  return String(value ?? '').split(',').map(item => item.trim()).filter(Boolean);
+  // A comma is valid data in server-side keywords/metadata values, so list-valued
+  // rule fields use one item per line in the editor.
+  return String(value ?? '').split(/\r?\n/).map(item => item.trim()).filter(Boolean);
 }
 
 function routerNodeHasMeaningfulProgress(node: RouterNode): boolean {
@@ -221,6 +244,27 @@ export function routerDraftHasLlmProgress(draft: RouterDraft): boolean {
   return Boolean(draft.llmRouter.model.trim() || draft.llmRouter.prompt.trim());
 }
 
+/**
+ * Add or remove a routing candidate while keeping the dependent default/rule
+ * destinations valid. UI affordances (checkboxes, connection-row trash
+ * buttons, future pickers) should all use this transition rather than editing
+ * the candidate array independently.
+ */
+export function toggleRouterDraftCandidate(draft: RouterDraft, modelName: string): RouterDraft {
+  const exists = draft.candidates.includes(modelName);
+  const candidates = exists
+    ? draft.candidates.filter(candidate => candidate !== modelName)
+    : [...draft.candidates, modelName];
+  const defaultModel = candidates.includes(draft.defaultModel)
+    ? draft.defaultModel
+    : (candidates[0] || '');
+  const rules = draft.rules.map(rule => ({
+    ...rule,
+    routeTo: candidates.includes(rule.routeTo) ? rule.routeTo : defaultModel,
+  }));
+  return { ...draft, candidates, defaultModel, rules };
+}
+
 export function switchRouterDraftMode(draft: RouterDraft, mode: RouterRoutingMode): RouterDraft {
   if (mode === draft.mode) return draft;
   if (mode === 'llm') {
@@ -241,9 +285,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function classifierLabels(classifier: RouterClassifier | undefined): string[] {
   if (!classifier) return [];
-  return classifier.type === 'semantic_similarity'
-    ? Object.keys(classifier.referencePhrases).filter(Boolean)
-    : classifier.labels.filter(Boolean);
+  const labels = classifier.type === 'semantic_similarity'
+    ? Object.keys(classifier.referencePhrases)
+    : classifier.labels;
+  return labels.map(label => label.trim()).filter(Boolean);
 }
 
 export function renameClassifierReference(node: RouterNode, previousId: string, nextId: string): RouterNode {
@@ -277,6 +322,37 @@ export function routerNodeReferencesClassifier(node: RouterNode, classifierId: s
   return node.children.some(child => routerNodeReferencesClassifier(child, classifierId));
 }
 
+function routerNodeComparable(node: RouterNode): unknown {
+  if (node.kind === 'leaf') {
+    const { id: _id, ...rest } = node;
+    return rest;
+  }
+  return {
+    kind: node.kind,
+    operator: node.operator,
+    children: node.children.map(routerNodeComparable),
+  };
+}
+
+/** Stable dirty-state fingerprint that intentionally ignores generated graph IDs. */
+export function routerDraftFingerprint(draft: RouterDraft): string {
+  return JSON.stringify({
+    modelName: draft.modelName || '',
+    name: draft.name,
+    candidates: draft.candidates,
+    defaultModel: draft.defaultModel,
+    mode: draft.mode,
+    llmRouter: draft.llmRouter,
+    classifiers: draft.classifiers,
+    rules: draft.rules.map(rule => ({
+      id: rule.id,
+      routeTo: rule.routeTo,
+      outputsText: rule.outputsText || '',
+      condition: routerNodeComparable(rule.condition),
+    })),
+  });
+}
+
 export function normalizeRouterNode(node: RouterNode): RouterNode {
   if (node.kind === 'leaf') return node;
   const children = node.children.map(normalizeRouterNode).filter(Boolean);
@@ -290,24 +366,27 @@ export function normalizeRouterNode(node: RouterNode): RouterNode {
 
 function nodeToMatchExpression(node: RouterNode): Record<string, unknown> {
   if (node.kind === 'group') {
-    const normalized = normalizeRouterNode(node);
-    if (normalized.kind === 'leaf') return nodeToMatchExpression(normalized);
-    if (normalized.operator === 'not') {
-      return { not: nodeToMatchExpression(normalized.children[0]) };
+    // Preserve valid singleton ALL/ANY groups during serialization. Collapsing a
+    // singleton here can promote its child into the parent gate and create a
+    // duplicate singleton condition that the editor/server correctly rejects on
+    // the next import. The draft has already been validated, so groups are safe
+    // to serialize exactly as authored.
+    if (node.operator === 'not') {
+      return { not: nodeToMatchExpression(node.children[0]) };
     }
-    return { [normalized.operator]: normalized.children.map(nodeToMatchExpression) };
+    return { [node.operator]: node.children.map(nodeToMatchExpression) };
   }
 
   switch (node.type) {
     case 'keywords_any': return { keywords_any: splitList(node.textValue) };
     case 'keywords_all': return { keywords_all: splitList(node.textValue) };
-    case 'regex': return { regex: String(node.textValue || '').trim() };
+    case 'regex': return { regex: String(node.textValue ?? '') };
     case 'min_chars': return { min_chars: Number(node.numberValue) };
     case 'max_chars': return { max_chars: Number(node.numberValue) };
     case 'has_tools': return { has_tools: node.booleanValue !== false };
     case 'has_images': return { has_images: node.booleanValue !== false };
     case 'classifier': {
-      const result: Record<string, unknown> = { classifier: String(node.classifierId || '').trim() };
+      const result: Record<string, unknown> = { classifier: String(node.classifierId || '') };
       if (node.label) result.label = node.label;
       if (node.minScore !== undefined) result.min_score = node.minScore;
       if (node.maxScore !== undefined) result.max_score = node.maxScore;
@@ -315,7 +394,7 @@ function nodeToMatchExpression(node: RouterNode): Record<string, unknown> {
     }
     case 'metadata': {
       const comparator = node.metadataComparator || 'equals';
-      const metadata: Record<string, unknown> = { key: String(node.metadataKey || '').trim() };
+      const metadata: Record<string, unknown> = { key: String(node.metadataKey || '') };
       if (comparator === 'exists') metadata.exists = node.booleanValue !== false;
       else if (comparator === 'any') metadata.any = splitList(node.metadataValues);
       else metadata.equals = String(node.metadataValues ?? '');
@@ -325,7 +404,65 @@ function nodeToMatchExpression(node: RouterNode): Record<string, unknown> {
 }
 
 function nestedUnboundedQuantifier(pattern: string): boolean {
-  return /\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)[+*]/.test(pattern);
+  // Mirror the server's load-time ReDoS safeguard: reject an unbounded
+  // quantifier applied to a group that already contains an unbounded
+  // quantifier. This includes wrapper groups and {m,} forms while ignoring
+  // escaped metacharacters and character classes.
+  const stack: Array<{ hasUnbounded: boolean }> = [];
+  let previousClosedGroup = false;
+  let closedGroupUnbounded = false;
+
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === '\\') {
+      index += 1;
+      previousClosedGroup = false;
+      continue;
+    }
+    if (char === '[') {
+      index += 1;
+      if (index < pattern.length && pattern[index] === '^') index += 1;
+      if (index < pattern.length && pattern[index] === ']') index += 1;
+      while (index < pattern.length && pattern[index] !== ']') {
+        if (pattern[index] === '\\') index += 1;
+        index += 1;
+      }
+      previousClosedGroup = false;
+      continue;
+    }
+    if (char === '(') {
+      stack.push({ hasUnbounded: false });
+      previousClosedGroup = false;
+      continue;
+    }
+    if (char === ')') {
+      closedGroupUnbounded = stack.length > 0 && stack[stack.length - 1].hasUnbounded;
+      if (stack.length > 0) stack.pop();
+      if (closedGroupUnbounded && stack.length > 0) stack[stack.length - 1].hasUnbounded = true;
+      previousClosedGroup = true;
+      continue;
+    }
+
+    let unbounded = char === '*' || char === '+';
+    if (char === '{') {
+      let cursor = index + 1;
+      let inner = '';
+      while (cursor < pattern.length && pattern[cursor] !== '}') {
+        inner += pattern[cursor];
+        cursor += 1;
+      }
+      const comma = inner.indexOf(',');
+      if (comma >= 0 && comma + 1 >= inner.length) unbounded = true;
+      index = cursor;
+    }
+
+    if (unbounded) {
+      if (previousClosedGroup && closedGroupUnbounded) return true;
+      if (stack.length > 0) stack[stack.length - 1].hasUnbounded = true;
+    }
+    previousClosedGroup = false;
+  }
+  return false;
 }
 
 function validateNode(
@@ -342,11 +479,20 @@ function validateNode(
   if (node.kind === 'group') {
     if (node.operator === 'not' && node.children.length !== 1) errors.push(`${path}: NOT requires exactly one condition.`);
     if ((node.operator === 'all' || node.operator === 'any') && node.children.length === 0) errors.push(`${path}: ${node.operator.toUpperCase()} requires at least one condition.`);
-    node.children.forEach((child, index) => validateNode(child, classifiers, `${path}.${node.operator}[${index}]`, depth + 1, errors));
+
+    const directConditions = new Set<string>();
+    node.children.forEach((child, index) => {
+      const identity = routerConditionIdentity(child);
+      if (identity && directConditions.has(identity)) {
+        errors.push(`${path}: duplicate ${identity.replace(':', ' ')} conditions are not allowed in the same gate.`);
+      }
+      if (identity) directConditions.add(identity);
+      validateNode(child, classifiers, `${path}.${node.operator}[${index}]`, depth + 1, errors);
+    });
     return;
   }
 
-  const text = String(node.textValue ?? '').trim();
+  const text = String(node.textValue ?? '');
   if ((node.type === 'keywords_any' || node.type === 'keywords_all') && splitList(node.textValue).length === 0) {
     errors.push(`${path}: add at least one keyword.`);
   }
@@ -359,7 +505,7 @@ function validateNode(
   }
   if (node.type === 'min_chars' || node.type === 'max_chars') {
     const value = Number(node.numberValue);
-    if (!Number.isInteger(value) || value < 0) errors.push(`${path}: character bound must be a non-negative integer.`);
+    if (!Number.isInteger(value) || value < 0) errors.push(`${path}: UTF-8 byte bound must be a non-negative integer.`);
   }
   if (node.type === 'classifier') {
     const classifier = classifiers.find(item => item.id === node.classifierId);
@@ -368,7 +514,7 @@ function validateNode(
       return;
     }
     const labels = classifierLabels(classifier);
-    if (node.label && labels.length > 0 && !labels.includes(node.label)) {
+    if (node.label && (labels.length === 0 || !labels.includes(node.label))) {
       errors.push(`${path}: label "${node.label}" is not declared by classifier "${classifier.id}".`);
     }
     if (!node.label && labels.length > 0 && !classifier.defaultLabel) {
@@ -385,7 +531,7 @@ function validateNode(
     }
   }
   if (node.type === 'metadata') {
-    if (!String(node.metadataKey || '').trim()) errors.push(`${path}: metadata key is required.`);
+    if (!String(node.metadataKey ?? '').length) errors.push(`${path}: metadata key is required.`);
     if ((node.metadataComparator || 'equals') === 'any' && splitList(node.metadataValues).length === 0) {
       errors.push(`${path}: metadata "any" requires at least one value.`);
     }
@@ -399,8 +545,8 @@ export function validateRouterDraft(draft: RouterDraft): string[] {
   if (draft.candidates.length === 0) errors.push('Select at least one candidate model.');
   const candidateSet = new Set<string>();
   draft.candidates.forEach((candidate, index) => {
-    const value = candidate.trim();
-    if (!value) errors.push(`Candidate ${index + 1} is empty.`);
+    const value = candidate;
+    if (!value.length) errors.push(`Candidate ${index + 1} is empty.`);
     if (candidateSet.has(value)) errors.push(`Candidate "${value}" is duplicated.`);
     candidateSet.add(value);
   });
@@ -415,26 +561,30 @@ export function validateRouterDraft(draft: RouterDraft): string[] {
   const classifierIds = new Set<string>();
   draft.classifiers.forEach((classifier, index) => {
     const prefix = `Classifier ${index + 1}`;
-    if (!classifier.id.trim()) errors.push(`${prefix}: ID is required.`);
-    if (!SAFE_ROUTER_ID.test(classifier.id)) errors.push(`${prefix}: ID may contain only letters, numbers, dot, underscore, and hyphen.`);
+    if (!classifier.id.length) errors.push(`${prefix}: ID is required.`);
     if (classifierIds.has(classifier.id)) errors.push(`${prefix}: duplicate ID "${classifier.id}".`);
     classifierIds.add(classifier.id);
     if (!classifier.model.trim()) errors.push(`${prefix}: model is required.`);
     if (classifier.type === 'classifier' || classifier.type === 'llm') {
       const labels = classifier.labels.map(label => label.trim()).filter(Boolean);
       if (classifier.type === 'llm' && labels.length === 0) errors.push(`${prefix}: add at least one output label.`);
-      if (new Set(labels).size !== labels.length) errors.push(`${prefix}: labels must be unique.`);
-      if (classifier.defaultLabel && !labels.includes(classifier.defaultLabel)) errors.push(`${prefix}: default label must be declared in labels.`);
+      if (new Set(labels).size !== labels.length) errors.push(`${prefix}: labels must be unique after trimming whitespace.`);
+      const defaultLabel = classifier.defaultLabel?.trim();
+      if (defaultLabel && !labels.includes(defaultLabel)) errors.push(`${prefix}: default label must be declared in labels.`);
       if (classifier.type === 'llm' && !classifier.prompt.trim()) errors.push(`${prefix}: prompt is required for an LLM classifier.`);
     } else {
       const concepts = Object.entries(classifier.referencePhrases);
       if (concepts.length === 0) errors.push(`${prefix}: add at least one semantic concept.`);
+      const normalizedConcepts: string[] = [];
       for (const [concept, phrases] of concepts) {
-        if (!concept.trim()) errors.push(`${prefix}: concept names cannot be empty.`);
+        const normalizedConcept = concept.trim();
+        if (!normalizedConcept) errors.push(`${prefix}: concept names cannot be empty.`);
+        else normalizedConcepts.push(normalizedConcept);
         if (!phrases.map(item => item.trim()).filter(Boolean).length) errors.push(`${prefix}: concept "${concept}" needs at least one phrase.`);
       }
-      const conceptLabels = concepts.map(([concept]) => concept);
-      if (classifier.defaultLabel && !conceptLabels.includes(classifier.defaultLabel)) errors.push(`${prefix}: default label must be one of the concept names.`);
+      if (new Set(normalizedConcepts).size !== normalizedConcepts.length) errors.push(`${prefix}: concept names must be unique after trimming whitespace.`);
+      const defaultLabel = classifier.defaultLabel?.trim();
+      if (defaultLabel && !normalizedConcepts.includes(defaultLabel)) errors.push(`${prefix}: default label must be one of the concept names.`);
     }
   });
 
@@ -465,11 +615,11 @@ export function buildRouterPullRequest(draft: RouterDraft): RouterPullRequest {
   const components = new Set(draft.candidates);
   const mode: RouterRoutingMode = draft.mode === 'llm' ? 'llm' : 'rules';
   if (mode === 'llm') {
-    const routerModel = draft.llmRouter.model.trim();
+    const routerModel = draft.llmRouter.model;
     components.add(routerModel);
     return {
       version: ROUTER_SCHEMA_VERSION,
-      model_name: draft.modelName?.trim() || normalizeRouterModelName(draft.name),
+      model_name: draft.modelName || normalizeRouterModelName(draft.name),
       recipe: ROUTER_RECIPE,
       components: [...components].filter(Boolean),
       routing: {
@@ -478,7 +628,7 @@ export function buildRouterPullRequest(draft: RouterDraft): RouterPullRequest {
         router: {
           type: 'llm',
           model: routerModel,
-          prompt: draft.llmRouter.prompt.trim(),
+          prompt: draft.llmRouter.prompt,
         },
       },
     };
@@ -495,7 +645,7 @@ export function buildRouterPullRequest(draft: RouterDraft): RouterPullRequest {
     if (classifier.type === 'classifier' || classifier.type === 'llm') {
       const labels = [...new Set(classifier.labels.map(label => label.trim()).filter(Boolean))];
       if (labels.length) result.labels = labels;
-      if (classifier.type === 'llm') result.prompt = classifier.prompt.trim();
+      if (classifier.type === 'llm') result.prompt = classifier.prompt;
     } else {
       result.reference_phrases = Object.fromEntries(
         Object.entries(classifier.referencePhrases)
@@ -503,13 +653,14 @@ export function buildRouterPullRequest(draft: RouterDraft): RouterPullRequest {
           .filter(([concept, phrases]) => Boolean(concept) && (phrases as string[]).length > 0),
       );
     }
-    if (classifier.defaultLabel) result.default_label = classifier.defaultLabel;
+    const defaultLabel = classifier.defaultLabel?.trim();
+    if (defaultLabel) result.default_label = defaultLabel;
     return result;
   });
   const rules = draft.rules.map(rule => {
     const result: Record<string, unknown> = {
       id: rule.id,
-      match: nodeToMatchExpression(normalizeRouterNode(rule.condition)),
+      match: nodeToMatchExpression(rule.condition),
       route_to: rule.routeTo,
     };
     if (rule.outputsText?.trim()) result.outputs = JSON.parse(rule.outputsText);
@@ -523,14 +674,15 @@ export function buildRouterPullRequest(draft: RouterDraft): RouterPullRequest {
   if (classifiers.length) routing.classifiers = classifiers;
   return {
     version: ROUTER_SCHEMA_VERSION,
-    model_name: draft.modelName?.trim() || normalizeRouterModelName(draft.name),
+    model_name: draft.modelName || normalizeRouterModelName(draft.name),
     recipe: ROUTER_RECIPE,
     components: [...components].filter(Boolean),
     routing,
   };
 }
 
-function parseMatchExpression(expr: unknown): RouterNode {
+function parseMatchExpression(expr: unknown, depth = 0): RouterNode {
+  if (depth > MAX_ROUTER_TREE_DEPTH) throw new Error(`Rule match nesting exceeds ${MAX_ROUTER_TREE_DEPTH} levels.`);
   if (!isRecord(expr)) throw new Error('Rule match must be an object.');
 
   const logicalKeys = (['all', 'any', 'not'] as const).filter(key => key in expr);
@@ -544,7 +696,7 @@ function parseMatchExpression(expr: unknown): RouterNode {
     const logicalKey = logicalKeys[0];
     if (logicalKey === 'not') {
       if (!isRecord(expr.not)) throw new Error('Rule match "not" must be an object.');
-      return { id: createRouterNodeId('group'), kind: 'group', operator: 'not', children: [parseMatchExpression(expr.not)] };
+      return { id: createRouterNodeId('group'), kind: 'group', operator: 'not', children: [parseMatchExpression(expr.not, depth + 1)] };
     }
     const rawChildren = expr[logicalKey];
     if (!Array.isArray(rawChildren) || rawChildren.length === 0) {
@@ -554,7 +706,7 @@ function parseMatchExpression(expr: unknown): RouterNode {
       id: createRouterNodeId('group'),
       kind: 'group',
       operator: logicalKey,
-      children: rawChildren.map(parseMatchExpression),
+      children: rawChildren.map(child => parseMatchExpression(child, depth + 1)),
     };
   }
 
@@ -569,15 +721,18 @@ function parseMatchExpression(expr: unknown): RouterNode {
     if (value.some(item => typeof item !== 'string' || item.length === 0)) {
       throw new Error(`Rule match "${key}" items must be non-empty strings.`);
     }
+    if ((value as string[]).some(item => item !== item.trim())) {
+      throw new Error(`Rule match "${key}" items cannot have leading or trailing whitespace in GUI3.`);
+    }
     return value as string[];
   };
 
   if ('keywords_any' in expr) {
-    children.push({ ...createRouterLeaf('keywords_any'), textValue: parseStringArray('keywords_any').join(', ') });
+    children.push({ ...createRouterLeaf('keywords_any'), textValue: parseStringArray('keywords_any').join('\n') });
     consumed.add('keywords_any');
   }
   if ('keywords_all' in expr) {
-    children.push({ ...createRouterLeaf('keywords_all'), textValue: parseStringArray('keywords_all').join(', ') });
+    children.push({ ...createRouterLeaf('keywords_all'), textValue: parseStringArray('keywords_all').join('\n') });
     consumed.add('keywords_all');
   }
   if ('regex' in expr) {
@@ -650,6 +805,9 @@ function parseMatchExpression(expr: unknown): RouterNode {
       if (metadata.any.some(item => typeof item !== 'string' || item.length === 0)) {
         throw new Error('Rule match metadata "any" items must be non-empty strings.');
       }
+      if ((metadata.any as string[]).some(item => item !== item.trim())) {
+        throw new Error('Rule match metadata "any" items cannot have leading or trailing whitespace in GUI3.');
+      }
     }
     if (comparator === 'exists' && typeof metadata.exists !== 'boolean') {
       throw new Error('Rule match metadata "exists" must be a boolean.');
@@ -659,7 +817,7 @@ function parseMatchExpression(expr: unknown): RouterNode {
       metadataKey: metadata.key,
       metadataComparator: comparator,
       metadataValues: comparator === 'any'
-        ? (metadata.any as string[]).join(', ')
+        ? (metadata.any as string[]).join('\n')
         : comparator === 'equals' ? metadata.equals as string : '',
       booleanValue: comparator === 'exists' ? metadata.exists as boolean : undefined,
     });
@@ -675,23 +833,84 @@ function parseMatchExpression(expr: unknown): RouterNode {
   return { id: createRouterNodeId('group'), kind: 'group', operator: 'all', children };
 }
 
+function rejectUnknownKeys(value: Record<string, unknown>, allowed: readonly string[], context: string): void {
+  const allowedSet = new Set(allowed);
+  const unknown = Object.keys(value).filter(key => !allowedSet.has(key));
+  if (unknown.length) {
+    throw new Error(`${context} contains unsupported field${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}.`);
+  }
+}
+
+function requireString(value: unknown, context: string): string {
+  if (typeof value !== 'string' || value.length === 0) throw new Error(`${context} must be a non-empty string.`);
+  return value;
+}
+
+function requireStringArray(value: unknown, context: string, allowEmpty = false): string[] {
+  if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) {
+    throw new Error(`${context} must be ${allowEmpty ? 'an array' : 'a non-empty array'}.`);
+  }
+  if (value.some(item => typeof item !== 'string' || item.length === 0)) {
+    throw new Error(`${context} items must be non-empty strings.`);
+  }
+  return value as string[];
+}
+
 function parseClassifier(value: unknown, index: number): RouterClassifier {
   if (!isRecord(value)) throw new Error(`Classifier ${index + 1} must be an object.`);
-  const type = String(value.type || '');
+  rejectUnknownKeys(value, ['id', 'type', 'model', 'prompt', 'labels', 'default_label', 'reference_phrases', 'on_error'], `Classifier ${index + 1}`);
+  const id = requireString(value.id, `Classifier ${index + 1} ID`);
+  const type = requireString(value.type, `Classifier ${index + 1} type`);
   if (type !== 'classifier' && type !== 'semantic_similarity' && type !== 'llm') {
-    throw new Error(`Unsupported classifier type "${type}".`);
+    throw new Error(`Unsupported classifier type "${type}". GUI3 can safely edit classifier, semantic_similarity, and llm classifiers only.`);
   }
+  const model = requireString(value.model, `Classifier ${index + 1} model`);
+  if ('on_error' in value && value.on_error !== 'match_true' && value.on_error !== 'match_false') {
+    throw new Error(`Classifier ${index + 1} on_error must be "match_true" or "match_false".`);
+  }
+
   const referencePhrases: Record<string, string[]> = {};
-  if (isRecord(value.reference_phrases)) {
-    for (const [label, phrases] of Object.entries(value.reference_phrases)) referencePhrases[label] = splitList(phrases);
+  if (type === 'semantic_similarity') {
+    if ('labels' in value) throw new Error(`Classifier ${index + 1}: semantic_similarity cannot contain labels.`);
+    if ('prompt' in value) throw new Error(`Classifier ${index + 1}: semantic_similarity prompt is not editable in GUI3.`);
+    if (!isRecord(value.reference_phrases) || Object.keys(value.reference_phrases).length === 0) {
+      throw new Error(`Classifier ${index + 1}: semantic_similarity requires non-empty reference_phrases.`);
+    }
+    for (const [label, phrases] of Object.entries(value.reference_phrases)) {
+      if (!label.length) throw new Error(`Classifier ${index + 1}: semantic concept names cannot be empty.`);
+      if (label !== label.trim()) throw new Error(`Classifier ${index + 1}: semantic concept names cannot have leading or trailing whitespace in GUI3.`);
+      const parsedPhrases = requireStringArray(phrases, `Classifier ${index + 1} concept "${label}"`);
+      if (parsedPhrases.some(phrase => phrase !== phrase.trim())) {
+        throw new Error(`Classifier ${index + 1} concept "${label}" phrases cannot have leading or trailing whitespace in GUI3.`);
+      }
+      referencePhrases[label] = parsedPhrases;
+    }
+  } else {
+    if ('reference_phrases' in value) throw new Error(`Classifier ${index + 1}: ${type} reference_phrases are not editable in GUI3.`);
+    if (type === 'classifier' && 'prompt' in value) {
+      throw new Error(`Classifier ${index + 1}: prompt on a classifier would be lost by GUI3; import is rejected to avoid a lossy save.`);
+    }
   }
+
+  const labels = 'labels' in value ? requireStringArray(value.labels, `Classifier ${index + 1} labels`, type === 'classifier') : [];
+  if (labels.some(label => label !== label.trim())) {
+    throw new Error(`Classifier ${index + 1} labels cannot have leading or trailing whitespace in GUI3.`);
+  }
+  if (type === 'llm' && labels.length === 0) throw new Error(`Classifier ${index + 1}: LLM classifiers require at least one label.`);
+  const prompt = type === 'llm' ? requireString(value.prompt, `Classifier ${index + 1} prompt`) : '';
+  const defaultLabel = typeof value.default_label === 'string' ? value.default_label : undefined;
+  if ('default_label' in value && !defaultLabel) throw new Error(`Classifier ${index + 1} default_label must be a non-empty string.`);
+  if (defaultLabel && defaultLabel !== defaultLabel.trim()) {
+    throw new Error(`Classifier ${index + 1} default_label cannot have leading or trailing whitespace in GUI3.`);
+  }
+
   return {
-    id: String(value.id || `classifier-${index + 1}`),
+    id,
     type,
-    model: String(value.model || ''),
-    prompt: typeof value.prompt === 'string' ? value.prompt : '',
-    labels: splitList(value.labels),
-    defaultLabel: typeof value.default_label === 'string' ? value.default_label : undefined,
+    model,
+    prompt,
+    labels,
+    defaultLabel,
     referencePhrases,
     onError: value.on_error === 'match_true' ? 'match_true' : 'match_false',
   };
@@ -700,58 +919,102 @@ function parseClassifier(value: unknown, index: number): RouterClassifier {
 export function parseRouterPayload(payload: unknown): RouterDraft {
   const root = isRecord(payload) ? payload : null;
   if (!root) throw new Error('Router JSON must be an object.');
+  rejectUnknownKeys(root, ['version', 'model_name', 'recipe', 'components', 'models', 'routing'], 'Router JSON');
   if (root.recipe !== ROUTER_RECIPE) throw new Error(`Expected recipe "${ROUTER_RECIPE}".`);
-  if (String(root.version || '') !== ROUTER_SCHEMA_VERSION) throw new Error(`Only router schema version ${ROUTER_SCHEMA_VERSION} is supported.`);
+  if (root.version !== ROUTER_SCHEMA_VERSION) throw new Error(`Only router schema version ${ROUTER_SCHEMA_VERSION} as a string is supported.`);
+  if ('model_name' in root && typeof root.model_name !== 'string') throw new Error('Router model_name must be a string.');
+  if ('models' in root) {
+    if (!Array.isArray(root.models)) throw new Error('Router models must be an array when present.');
+    if (root.models.length > 0) throw new Error('Embedded models are not editable in GUI3; import is rejected to avoid a lossy save.');
+  }
+  const declaredComponents = 'components' in root
+    ? requireStringArray(root.components, 'Router components')
+    : [];
+
   const routing = isRecord(root.routing) ? root.routing : null;
   if (!routing) throw new Error('Router JSON is missing routing.');
-  const candidates = splitList(routing.candidates);
+  rejectUnknownKeys(routing, ['candidates', 'default_model', 'router', 'classifiers', 'rules'], 'Routing block');
+  const candidates = requireStringArray(routing.candidates, 'routing.candidates');
+  const defaultModel = requireString(routing.default_model, 'routing.default_model');
+
   if ('router' in routing && !isRecord(routing.router)) {
     throw new Error('Natural-language router must be an object.');
   }
   const routerSpec = isRecord(routing.router) ? routing.router : null;
-  if (routerSpec && ('rules' in routing || 'classifiers' in routing)) {
-    throw new Error('Natural-language routing cannot be combined with rules or classifiers.');
+  if (routerSpec) {
+    rejectUnknownKeys(routerSpec, ['type', 'model', 'prompt'], 'Natural-language router');
+    if ('rules' in routing || 'classifiers' in routing) {
+      throw new Error('Natural-language routing cannot be combined with rules or classifiers.');
+    }
+    if (routerSpec.type !== 'llm') throw new Error('Natural-language router type must be "llm".');
   }
-  if (routerSpec && routerSpec.type !== 'llm') throw new Error('Natural-language router type must be "llm".');
 
-  const rulesRaw = routerSpec ? [] : Array.isArray(routing.rules) ? routing.rules : [];
+  if (!routerSpec && !Array.isArray(routing.rules)) throw new Error('routing.rules must be an array.');
+  if (!routerSpec && 'classifiers' in routing && !Array.isArray(routing.classifiers)) throw new Error('routing.classifiers must be an array.');
   const classifiers = routerSpec
     ? []
     : (Array.isArray(routing.classifiers) ? routing.classifiers : []).map(parseClassifier);
+  const rulesRaw = routerSpec ? [] : routing.rules as unknown[];
   const rules = rulesRaw.map((item, index): RouterRule => {
     if (!isRecord(item)) throw new Error(`Rule ${index + 1} must be an object.`);
+    rejectUnknownKeys(item, ['id', 'match', 'route_to', 'outputs'], `Rule ${index + 1}`);
+    const id = requireString(item.id, `Rule ${index + 1} ID`);
+    const routeTo = requireString(item.route_to, `Rule ${index + 1} route_to`);
+    if (!('match' in item)) throw new Error(`Rule ${index + 1} is missing match.`);
+    if ('outputs' in item && !isRecord(item.outputs)) throw new Error(`Rule ${index + 1} outputs must be an object.`);
     return {
-      id: String(item.id || `rule-${index + 1}`),
-      routeTo: String(item.route_to || ''),
+      id,
+      routeTo,
       condition: parseMatchExpression(item.match),
       outputsText: isRecord(item.outputs) ? JSON.stringify(item.outputs, null, 2) : '',
     };
   });
+
   const modelName = typeof root.model_name === 'string' ? root.model_name : undefined;
+  const llmRouter = routerSpec
+    ? {
+        model: requireString(routerSpec.model, 'Natural-language router model'),
+        prompt: requireString(routerSpec.prompt, 'Natural-language router prompt'),
+      }
+    : { model: '', prompt: '' };
   const draft: RouterDraft = {
     modelName,
     name: routerDisplayName(modelName || 'router'),
     candidates,
-    defaultModel: typeof routing.default_model === 'string' ? routing.default_model : '',
+    defaultModel,
     mode: routerSpec ? 'llm' : 'rules',
-    llmRouter: {
-      model: routerSpec && typeof routerSpec.model === 'string' ? routerSpec.model : '',
-      prompt: routerSpec && typeof routerSpec.prompt === 'string' ? routerSpec.prompt : '',
-    },
+    llmRouter,
     classifiers,
-    rules: routerSpec ? [createRouterRule(0, typeof routing.default_model === 'string' ? routing.default_model : '')] : rules,
+    rules: routerSpec ? [createRouterRule(0, defaultModel)] : rules,
   };
   const errors = validateRouterDraft(draft);
   if (errors.length) throw new Error(errors.slice(0, 6).join(' '));
+
+  if (declaredComponents.length > 0) {
+    const expected = new Set<string>(draft.candidates);
+    if (draft.mode === 'llm') expected.add(draft.llmRouter.model);
+    else draft.classifiers.forEach(classifier => expected.add(classifier.model));
+    const declared = new Set(declaredComponents);
+    const extra = [...declared].filter(component => !expected.has(component));
+    const missing = [...expected].filter(component => !declared.has(component));
+    if (extra.length || missing.length) {
+      throw new Error(`Router components do not match editable routing dependencies${extra.length ? `; extra: ${extra.join(', ')}` : ''}${missing.length ? `; missing: ${missing.join(', ')}` : ''}.`);
+    }
+  }
   return draft;
 }
 
 export function routerDraftFromModelInfo(model: ModelInfo): RouterDraft {
-  return parseRouterPayload({
-    version: String((model as any).version || ROUTER_SCHEMA_VERSION),
+  const payload: Record<string, unknown> = {
+    version: (model as any).version ?? ROUTER_SCHEMA_VERSION,
     model_name: String((model as any).model_name || model.name || model.id || ''),
     recipe: String((model as any).recipe || ''),
     components: Array.isArray((model as any).components) ? (model as any).components : [],
     routing: (model as any).routing,
-  });
+  };
+  // Preserve embedded component manifests for the strict round-trip guard. GUI3
+  // cannot safely author them, so silently omitting this field here would let a
+  // server-loaded HF redistribution policy lose data on its next save.
+  if ('models' in (model as any)) payload.models = (model as any).models;
+  return parseRouterPayload(payload);
 }

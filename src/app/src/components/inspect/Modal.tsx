@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { Icon } from '../Icon';
 
 interface ModalProps {
@@ -20,11 +20,19 @@ export default function Modal({
 }: ModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const generatedTitleId = useId();
+  const titleId = ariaLabelledBy || `inspect-modal-title-${generatedTitleId.replace(/:/g, '')}`;
 
   useEffect(() => {
-    if (isOpen) {
-      titleRef.current?.focus();
-    }
+    if (!isOpen) return;
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    titleRef.current?.focus();
+    return () => {
+      const previous = previousFocusRef.current;
+      previousFocusRef.current = null;
+      if (previous?.isConnected) previous.focus();
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -40,12 +48,18 @@ export default function Modal({
           const first = focusable[0];
           const last = focusable[focusable.length - 1];
           if (e.shiftKey) {
-            if (document.activeElement === first) {
+            // The dialog title receives initial focus but is deliberately not
+            // in the normal tab order. Shift+Tab from that title must still
+            // stay inside the modal rather than escaping to the page behind it.
+            if (document.activeElement === first || document.activeElement === titleRef.current) {
               last.focus();
               e.preventDefault();
             }
           } else {
             if (document.activeElement === last) {
+              first.focus();
+              e.preventDefault();
+            } else if (document.activeElement === titleRef.current) {
               first.focus();
               e.preventDefault();
             }
@@ -66,7 +80,7 @@ export default function Modal({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-labelledby={ariaLabelledBy}
+      aria-labelledby={titleId}
     >
       <div
         className="inspect-modal-content flex-col"
@@ -74,7 +88,7 @@ export default function Modal({
         style={{ maxWidth }}
       >
         <div className="inspect-modal-header">
-          <h4 id={ariaLabelledBy} ref={titleRef} tabIndex={-1}>
+          <h4 id={titleId} ref={titleRef} tabIndex={-1}>
             {title}
           </h4>
           <button
