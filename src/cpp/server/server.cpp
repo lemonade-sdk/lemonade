@@ -2785,10 +2785,11 @@ static nlohmann::json resolve_all_recipe_options(const RecipeOptions& options) {
 }
 
 static bool option_type_matches(const nlohmann::json& expected, const nlohmann::json& value) {
-    if (expected.is_boolean()) return value.is_boolean();
     if (expected.is_number()) return value.is_number();
     if (expected.is_string()) return value.is_string();
-    return true;
+    // Booleans, and the tri-state options whose default is null to mean "follow
+    // the global setting", both only ever hold a boolean once set.
+    return value.is_boolean();
 }
 
 void Server::respond_with_model_options(
@@ -2818,8 +2819,7 @@ void Server::respond_with_model_options(
         ModelInfo info = model_manager_->get_model_info(model_key);
         if (mutation) {
             if (!mutation(model_key, info, res)) return;
-            // The write invalidated the model cache; re-read so the response
-            // reflects the merged stack rather than the pre-write one.
+            // Re-read so the response reflects the merged stack after the write.
             info = model_manager_->get_model_info(model_key);
         }
 
@@ -2827,25 +2827,8 @@ void Server::respond_with_model_options(
         RecipeOptions effective = router_->resolve_effective_options(info, no_request_options);
 
         ModelInfo without_saved = info;
-        without_saved.recipe_options = model_manager_->get_model_default_options(model_key);
+        without_saved.recipe_options = model_manager_->get_model_default_options(info);
         RecipeOptions defaults = router_->resolve_effective_options(without_saved, no_request_options);
-
-        bool reload_required = false;
-        if (router_->is_model_loaded(model_key)) {
-            nlohmann::json live = router_->get_model_recipe_options(model_key).to_json();
-            nlohmann::json desired = effective.to_json();
-            live.erase("pinned");
-            desired.erase("pinned");
-            // A live process carries the concrete ctx_size auto-resolution picked
-            // at load time; an unset or auto ctx_size would be resolved the same
-            // way again, so that is not a difference.
-            const auto desired_ctx = desired.find("ctx_size");
-            if (desired_ctx == desired.end() || *desired_ctx == -1) {
-                live.erase("ctx_size");
-                desired.erase("ctx_size");
-            }
-            reload_required = live != desired;
-        }
 
         nlohmann::json response = {
             {"model_name", model_id},
@@ -2853,7 +2836,7 @@ void Server::respond_with_model_options(
             {"saved", model_manager_->get_saved_model_options(model_key)},
             {"effective", resolve_all_recipe_options(effective)},
             {"defaults", resolve_all_recipe_options(defaults)},
-            {"reload_required", reload_required}
+            {"reload_required", router_->would_reload(model_key, effective)}
         };
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
@@ -2884,7 +2867,9 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
             const std::set<std::string> allowed(keys.begin(), keys.end());
             const RecipeOptions unset(info.recipe, nlohmann::json::object());
 
-            nlohmann::json saved = model_manager_->get_saved_model_options(model_key);
+            // Validate everything before writing anything, and express each
+            // change as set-or-erase so the merge can happen atomically.
+            nlohmann::json changes = nlohmann::json::object();
             for (const auto& [key, value] : body.items()) {
                 if (!allowed.count(key)) {
                     r.status = 400;
@@ -2894,7 +2879,7 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                     return false;
                 }
                 if (RecipeOptions::is_default_sentinel(key, value)) {
-                    saved.erase(key);
+                    changes[key] = nullptr;
                     continue;
                 }
                 if (!option_type_matches(unset.get_option(key), value)) {
@@ -2903,10 +2888,12 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                                       .dump(), "application/json");
                     return false;
                 }
-                saved[key] = value;
+                changes[key] = value;
             }
 
-            model_manager_->set_saved_model_options(model_key, saved);
+            if (!changes.empty()) {
+                model_manager_->update_saved_model_options(model_key, changes);
+            }
             return true;
         });
 }
@@ -2914,7 +2901,9 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
 void Server::handle_model_options_delete(const httplib::Request& req, httplib::Response& res) {
     respond_with_model_options(req, res,
         [this](const std::string& model_key, const ModelInfo&, httplib::Response&) {
-            model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
+            if (!model_manager_->get_saved_model_options(model_key).empty()) {
+                model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
+            }
             return true;
         });
 }
@@ -5649,7 +5638,9 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
         auto info = model_manager_->get_model_info(model_name);
 
-        // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
+        // Extract optional per-model settings. An omitted or empty option falls
+        // through to the Router defaults; an explicit ctx_size of -1 requests
+        // automatic sizing for this load.
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         bool save_options = request_json.value("save_options", false);
         std::optional<bool> pinned_opt = std::nullopt;

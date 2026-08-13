@@ -850,11 +850,8 @@ void Router::load_model(const std::string& model_name,
             existing = nullptr;
         }
         if (existing) {
-            json existing_opts = existing->get_recipe_options().to_json();
-            json requested_opts = effective_options.to_json();
-            existing_opts.erase("pinned");
-            requested_opts.erase("pinned");
-            if (allow_reload_on_option_change && existing_opts != requested_opts) {
+            if (allow_reload_on_option_change &&
+                options_require_reload(existing->get_recipe_options(), effective_options)) {
                 LOG(INFO, "Router") << "Options changed, reloading model: " << canonical_model_name << std::endl;
                 evict_server(existing);
                 // Fall through to create and load with new options
@@ -1345,6 +1342,33 @@ bool Router::is_model_loaded(const std::string& model_name) const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     auto* server = find_server_by_model_name(resolve_model_name(model_name));
     return server != nullptr && server->is_backend_alive();
+}
+
+bool Router::options_require_reload(const RecipeOptions& live, const RecipeOptions& desired) {
+    json live_opts = live.to_json();
+    json desired_opts = desired.to_json();
+
+    // Pinning is applied to the live process, never a reason to restart it.
+    live_opts.erase("pinned");
+    desired_opts.erase("pinned");
+
+    // A live process stores the concrete size auto-resolution picked at load
+    // time, while an auto request is still the -1 sentinel. Re-resolving would
+    // only pick a size again, so treat any live size as satisfying auto.
+    const auto desired_ctx = desired_opts.find("ctx_size");
+    if (desired_ctx == desired_opts.end() || *desired_ctx == -1) {
+        live_opts.erase("ctx_size");
+        desired_opts.erase("ctx_size");
+    }
+
+    return live_opts != desired_opts;
+}
+
+bool Router::would_reload(const std::string& model_name, const RecipeOptions& desired) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto* server = find_server_by_model_name(resolve_model_name(model_name));
+    if (!server || !server->is_backend_alive()) return false;
+    return options_require_reload(server->get_recipe_options(), desired);
 }
 
 RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,

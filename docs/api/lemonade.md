@@ -245,6 +245,8 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 
 ### Response format
 
+`effective` and `defaults` carry every option the recipe accepts, which for `llamacpp` is:
+
 ```json
 {
   "model_name": "Qwen3-0.6B-GGUF",
@@ -253,16 +255,26 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "ctx_size": 8192
   },
   "effective": {
+    "auto_evict": null,
     "ctx_size": 8192,
-    "llamacpp_backend": "vulkan",
+    "downsize_idle_timeout": 60,
+    "evict_idle_timeout": 300,
+    "evict_weight_factor": 1.0,
     "llamacpp_args": "",
+    "llamacpp_backend": "vulkan",
+    "llamacpp_device": "",
     "merge_args": true,
     "pinned": false
   },
   "defaults": {
+    "auto_evict": null,
     "ctx_size": -1,
-    "llamacpp_backend": "vulkan",
+    "downsize_idle_timeout": 60,
+    "evict_idle_timeout": 300,
+    "evict_weight_factor": 1.0,
     "llamacpp_args": "",
+    "llamacpp_backend": "vulkan",
+    "llamacpp_device": "",
     "merge_args": true,
     "pinned": false
   },
@@ -273,16 +285,20 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 | Field | Description |
 |-------|-------------|
 | `saved` | The model's own entry in `recipe_options.json`, containing only what was explicitly saved. `{}` when nothing is saved. |
-| `effective` | Every option the recipe accepts, resolved through the full priority chain. This is what a load right now would use. |
+| `effective` | Every option the recipe accepts, resolved through the full priority chain. This is what a load right now would use, and the set of names `POST` accepts. |
 | `defaults` | What `effective` would become if `saved` were erased. A `ctx_size` of `-1` here means the server picks the context size automatically. |
-| `reload_required` | `true` when the model is currently loaded and its live options differ from `effective`, i.e. a reload is needed for the saved options to take effect. Always `false` when the model is not loaded. |
+| `reload_required` | `true` when the model is loaded and a `/v1/load` would restart its backend to apply the saved options. Always `false` when the model is not loaded. An auto `ctx_size` is satisfied by whatever size the running process already resolved to, so switching an explicit size back to auto does not on its own require a reload. |
+
+> Note: per-architecture defaults are read from the model's GGUF metadata, so for a model that has not been downloaded yet, `effective` and `defaults` omit them.
 
 ## `POST /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Save recipe options for a model **without loading it**. The request body is a flat object of the same recipe options [`/v1/load`](#post-v1load) accepts, and nothing else. The model is identified by the URL, not the body.
 
-Options are merged into whatever is already saved, so keys you don't mention are left alone. `"ctx_size": -1` saves automatic context sizing, the same sentinel `config.json` uses. Sending `null` (or `""`) instead removes an option, so the model falls back to the next layer of the [priority chain](#post-v1load). To remove every saved option at once, use [`DELETE`](#delete-v1modelsidoptions).
+Options are merged into whatever is already saved, so keys you don't mention are left alone. Sending `null` removes an option, and the model falls back to the next layer of the [priority chain](#post-v1load); `""`, `-1`, and `"auto"` remove it too, since those are the values Lemonade reads as "not set". To remove every saved option at once, use [`DELETE`](#delete-v1modelsidoptions).
+
+`ctx_size` is the exception: `-1` is a value there, not an absence, and saving it pins the model to automatic context sizing. That matters when the server-wide `ctx_size` is a specific number, because removing the option would make the model inherit that number instead.
 
 Options are validated against the model's recipe. An unrecognized option name, an option belonging to a different recipe, or a value of the wrong type is rejected with `400`, and nothing is saved.
 

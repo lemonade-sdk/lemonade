@@ -312,10 +312,16 @@ public:
     // What the model would resolve to with its recipe_options.json entry
     // removed: image_defaults plus the registry JSON's own recipe_options.
     RecipeOptions get_model_default_options(const std::string& model_name);
+    RecipeOptions get_model_default_options(const ModelInfo& info);
 
-    // Replace the model's recipe_options.json entry. An empty object erases the
-    // entry rather than persisting `{}`.
-    void set_saved_model_options(const std::string& model_name, const json& saved);
+    // Replace the model's recipe_options.json entry, returning the new entry.
+    // An empty object erases the entry rather than persisting `{}`.
+    json set_saved_model_options(const std::string& model_name, const json& saved);
+
+    // Merge changes into the model's recipe_options.json entry and return the
+    // new entry. A null value erases that key. Atomic with respect to other
+    // writers of the same entry.
+    json update_saved_model_options(const std::string& model_name, const json& changes);
 
     void start_directory_watcher();
 
@@ -374,6 +380,9 @@ private:
     // against same-thread reentrancy so a callback that reads the registry
     // cannot recursively re-fire.
     void notify_models_changed();
+
+    json write_saved_model_options(const std::string& model_name, const json& options, bool merge);
+    void refresh_cached_recipe_options(const std::string& cache_key, const json& saved);
 
     // Cache management
     void build_cache();

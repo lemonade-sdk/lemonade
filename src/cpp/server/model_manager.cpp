@@ -1585,9 +1585,14 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     LOG(INFO, "ModelManager") << "Saving options for model: " << info.model_name << std::endl;
     // Persist under canonical ID (built-ins are keyed bare in cache but
     // recipe_options.json stores them as builtin.<name>).
-    recipe_options_[cache_key_to_canonical_id(info.model_name)] = info.recipe_options.to_json();
+    json snapshot;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        recipe_options_[cache_key_to_canonical_id(info.model_name)] = info.recipe_options.to_json();
+        snapshot = recipe_options_;
+    }
     update_model_options_in_cache(info);
-    save_user_json(get_recipe_options_file(), recipe_options_);
+    save_user_json(get_recipe_options_file(), snapshot);
 }
 
 json ModelManager::get_saved_model_options(const std::string& model_name) {
@@ -1601,8 +1606,11 @@ json ModelManager::get_saved_model_options(const std::string& model_name) {
 }
 
 RecipeOptions ModelManager::get_model_default_options(const std::string& model_name) {
-    const std::string cache_key = resolve_model_name(model_name);
-    ModelInfo info = get_model_info(cache_key);
+    return get_model_default_options(get_model_info(resolve_model_name(model_name)));
+}
+
+RecipeOptions ModelManager::get_model_default_options(const ModelInfo& info) {
+    const std::string cache_key = resolve_model_name(info.model_name);
 
     json json_recipe_options = json(nullptr);
     {
@@ -1624,25 +1632,71 @@ RecipeOptions ModelManager::get_model_default_options(const std::string& model_n
     return build_recipe_options(info, json_recipe_options, "", json::object());
 }
 
-void ModelManager::set_saved_model_options(const std::string& model_name, const json& saved) {
-    const std::string id = cache_key_to_canonical_id(resolve_model_name(model_name));
+json ModelManager::set_saved_model_options(const std::string& model_name, const json& saved) {
+    return write_saved_model_options(model_name, saved, /*merge=*/false);
+}
+
+json ModelManager::update_saved_model_options(const std::string& model_name, const json& changes) {
+    return write_saved_model_options(model_name, changes, /*merge=*/true);
+}
+
+// Read-modify-write of one model's recipe_options.json entry. The merge happens
+// under the lock so two clients editing different options of the same model
+// can't drop each other's key.
+json ModelManager::write_saved_model_options(const std::string& model_name,
+                                             const json& options, bool merge) {
+    const std::string cache_key = resolve_model_name(model_name);
+    const std::string id = cache_key_to_canonical_id(cache_key);
     LOG(INFO, "ModelManager") << "Saving options for model: " << model_name << std::endl;
 
+    json saved;
     json snapshot;
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        if (saved.is_object() && !saved.empty()) {
-            recipe_options_[id] = saved;
-        } else {
+        saved = merge && recipe_options_.contains(id) && recipe_options_[id].is_object()
+            ? recipe_options_[id] : json::object();
+        if (merge) {
+            for (const auto& [key, value] : options.items()) {
+                if (value.is_null()) {
+                    saved.erase(key);
+                } else {
+                    saved[key] = value;
+                }
+            }
+        } else if (options.is_object()) {
+            saved = options;
+        }
+
+        if (saved.empty()) {
             recipe_options_.erase(id);
+        } else {
+            recipe_options_[id] = saved;
         }
         snapshot = recipe_options_;
     }
     save_user_json(get_recipe_options_file(), snapshot);
+    refresh_cached_recipe_options(cache_key, saved);
+    return saved;
+}
 
-    // The cached ModelInfo carries the merged image_defaults/registry/saved
-    // stack, which cannot be recomputed from the saved layer alone.
-    invalidate_models_cache();
+// Rebuild just this model's merged recipe options in the cache. Invalidating the
+// whole cache instead would put a full build_cache() — including live cloud
+// provider queries — on the request path.
+void ModelManager::refresh_cached_recipe_options(const std::string& cache_key, const json& saved) {
+    ModelInfo info;
+    try {
+        info = get_model_info(cache_key);
+    } catch (const std::exception&) {
+        invalidate_models_cache();
+        return;
+    }
+
+    json merged = get_model_default_options(info).to_json();
+    for (const auto& [key, value] : saved.items()) {
+        merged[key] = value;
+    }
+    info.recipe_options = RecipeOptions(info.recipe, merged);
+    update_model_options_in_cache(info);
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {

@@ -1067,6 +1067,85 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] null resets ctx_size to automatic selection")
 
+    def test_012o_model_options_merge_and_delete(self):
+        """POST merges into the saved entry; DELETE erases the whole entry."""
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
+        )
+        merged = requests.post(
+            self._options_url(),
+            json={"llamacpp_args": "--no-mmap"},
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        self.assertEqual(merged["saved"].get("ctx_size"), 4096)
+        self.assertEqual(merged["saved"].get("llamacpp_args"), "--no-mmap")
+
+        # Clearing one key leaves the other alone
+        partial = requests.post(
+            self._options_url(), json={"llamacpp_args": ""}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(partial["saved"], {"ctx_size": 4096})
+
+        cleared = self._reset_options()
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(cleared.json()["saved"], {})
+        self.assertEqual(cleared.json()["effective"], cleared.json()["defaults"])
+
+        print("[OK] Options merge on POST and are erased by DELETE")
+
+    def test_012p_model_options_rejects_invalid_input(self):
+        """Unknown, wrong-recipe, and wrong-typed options are refused."""
+        self._reset_options()
+
+        for body in (
+            {"nonsense": 1},  # not an option at all
+            {"steps": 30},  # sd-cpp option on an llamacpp model
+            {"ctx_size": "big"},  # wrong type
+            {"auto_evict": "sometimes"},  # wrong type for a null-default option
+        ):
+            response = requests.post(
+                self._options_url(), json=body, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(response.status_code, 400, f"Expected 400 for body {body}")
+            self.assertIn("error", response.json())
+
+        # Nothing was persisted by any of the rejected requests
+        self.assertEqual(
+            requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["saved"],
+            {},
+        )
+
+        not_found = requests.get(
+            self._options_url(model="ThisModelDoesNotExist"), timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(not_found.status_code, 404)
+
+        print("[OK] Model options endpoint rejects invalid input")
+
+    def test_012q_model_options_registered_on_all_prefixes(self):
+        """The options sub-resource honors the quad-prefix invariant."""
+        for prefix in ("/api/v0", "/api/v1", "/v0", "/v1"):
+            url = self._options_url(prefix=f"http://localhost:{PORT}{prefix}")
+            self.assertEqual(
+                requests.get(url, timeout=TIMEOUT_DEFAULT).status_code,
+                200,
+                f"GET not registered on {prefix}",
+            )
+            self.assertEqual(
+                requests.post(url, json={}, timeout=TIMEOUT_DEFAULT).status_code,
+                200,
+                f"POST not registered on {prefix}",
+            )
+            self.assertEqual(
+                requests.delete(url, timeout=TIMEOUT_DEFAULT).status_code,
+                200,
+                f"DELETE not registered on {prefix}",
+            )
+
+        print("[OK] Model options registered on all four path prefixes")
+
     def test_012r_model_options_explicit_auto_beats_global(self):
         """ctx_size=-1 is saved as automatic and overrides a global ctx_size.
 
@@ -1121,83 +1200,95 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] Saved ctx_size=-1 overrides an explicit global ctx_size")
 
-    def test_012o_model_options_merge_and_delete(self):
-        """POST merges into the saved entry; DELETE erases the whole entry."""
+    def test_012s_load_does_not_persist_non_numeric_ctx_size(self):
+        """A string ctx_size must never reach recipe_options.json.
+
+        ctx_size is read as an integer by consumers such as /api/show, so a
+        persisted string would make later reads throw. /load does not type-check
+        its body, so the filter has to hold at the RecipeOptions layer.
+        """
+        self.addCleanup(self._reset_options)
         self._reset_options()
 
         requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "ctx_size": "auto",
+                "save_options": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
+        self.assertNotIn(
+            "ctx_size", saved, "A non-numeric ctx_size must be dropped, not saved"
+        )
+
+        show = requests.post(
+            f"http://localhost:{PORT}/api/show",
+            json={"model": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            show.status_code, 200, "/api/show must still read ctx_size as an integer"
+        )
+
+        print("[OK] A string ctx_size is not persisted by /load")
+
+    def test_012t_reload_required_matches_load_behavior(self):
+        """reload_required agrees with whether /load actually restarts the backend."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+        requests.post(
             self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
         )
-        merged = requests.post(
-            self._options_url(),
-            json={"llamacpp_args": "--no-mmap"},
-            timeout=TIMEOUT_DEFAULT,
-        ).json()
-        self.assertEqual(merged["saved"].get("ctx_size"), 4096)
-        self.assertEqual(merged["saved"].get("llamacpp_args"), "--no-mmap")
 
-        # Clearing one key leaves the other alone
-        partial = requests.post(
-            self._options_url(), json={"llamacpp_args": ""}, timeout=TIMEOUT_DEFAULT
-        ).json()
-        self.assertEqual(partial["saved"], {"ctx_size": 4096})
+        requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self._assert_loaded_model_pid(loaded)
 
-        cleared = self._reset_options()
-        self.assertEqual(cleared.status_code, 200)
-        self.assertEqual(cleared.json()["saved"], {})
-        self.assertEqual(cleared.json()["effective"], cleared.json()["defaults"])
-
-        print("[OK] Options merge on POST and are erased by DELETE")
-
-    def test_012p_model_options_rejects_invalid_input(self):
-        """Unknown, wrong-recipe, and wrong-typed options are refused."""
-        self._reset_options()
-
-        for body in (
-            {"nonsense": 1},  # not an option at all
-            {"steps": 30},  # sd-cpp option on an llamacpp model
-            {"ctx_size": "big"},  # wrong type
-        ):
-            response = requests.post(
-                self._options_url(), json=body, timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(response.status_code, 400, f"Expected 400 for body {body}")
-            self.assertIn("error", response.json())
-
-        # Nothing was persisted by any of the rejected requests
+        options = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertFalse(
+            options["reload_required"],
+            "Saved options match the live process, so no reload is needed",
+        )
+        requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
         self.assertEqual(
-            requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["saved"],
-            {},
+            self._get_loaded_model_info(ENDPOINT_TEST_MODEL)["pid"],
+            loaded["pid"],
+            "reload_required was false, so /load must not have restarted the backend",
         )
 
-        not_found = requests.get(
-            self._options_url(model="ThisModelDoesNotExist"), timeout=TIMEOUT_DEFAULT
+        changed = requests.post(
+            self._options_url(), json={"ctx_size": 2048}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertTrue(
+            changed["reload_required"],
+            "Saving a different ctx_size leaves the live process stale",
         )
-        self.assertEqual(not_found.status_code, 404)
+        requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertNotEqual(
+            self._get_loaded_model_info(ENDPOINT_TEST_MODEL)["pid"],
+            loaded["pid"],
+            "reload_required was true, so /load must have restarted the backend",
+        )
 
-        print("[OK] Model options endpoint rejects invalid input")
-
-    def test_012q_model_options_registered_on_all_prefixes(self):
-        """The options sub-resource honors the quad-prefix invariant."""
-        for prefix in ("/api/v0", "/api/v1", "/v0", "/v1"):
-            url = self._options_url(prefix=f"http://localhost:{PORT}{prefix}")
-            self.assertEqual(
-                requests.get(url, timeout=TIMEOUT_DEFAULT).status_code,
-                200,
-                f"GET not registered on {prefix}",
-            )
-            self.assertEqual(
-                requests.post(url, json={}, timeout=TIMEOUT_DEFAULT).status_code,
-                200,
-                f"POST not registered on {prefix}",
-            )
-            self.assertEqual(
-                requests.delete(url, timeout=TIMEOUT_DEFAULT).status_code,
-                200,
-                f"DELETE not registered on {prefix}",
-            )
-
-        print("[OK] Model options registered on all four path prefixes")
+        print("[OK] reload_required agrees with what /load does")
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
