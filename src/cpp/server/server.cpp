@@ -2783,6 +2783,18 @@ static bool is_live_process_option(const std::string& key) {
     return key == "pinned";
 }
 
+static std::string shell_single_quote(const std::string& s) {
+    std::string quoted = "'";
+    for (char c : s) {
+        if (c == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted += c;
+        }
+    }
+    return quoted + "'";
+}
+
 // Fill in every option the recipe accepts, resolving unset keys through the
 // default chain, so a client can render a complete form from one response.
 static nlohmann::json resolve_all_recipe_options(const RecipeOptions& options) {
@@ -2871,13 +2883,22 @@ void Server::respond_with_model_options(
         const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
             : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
 
+        // The load command, rendered against the base URL this request used.
+        const std::string host = req.get_header_value("Host");
+        const std::string base =
+            "http://" + (host.empty() ? "localhost:" + std::to_string(port_.load()) : host);
+        const std::string load_command =
+            "curl -X POST " + base + "/v1/load -H \"Content-Type: application/json\" -d " +
+            shell_single_quote(effective_json.dump());
+
         nlohmann::json response = {
             {"model_name", model_id},
             {"recipe", info.recipe},
             {"saved", model_manager_->get_saved_model_options(model_key)},
             {"effective", effective_json},
             {"defaults", defaults_json},
-            {"resolved_ctx_size", resolved_ctx}
+            {"resolved_ctx_size", resolved_ctx},
+            {"load_command", load_command}
         };
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {

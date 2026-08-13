@@ -1250,6 +1250,14 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["resolved_ctx_size"], 4096)
         self.assertEqual(data["saved"], {}, "dry_run must not persist anything")
 
+        # load_command is effective posted to /v1/load at the base URL this
+        # request used, so the client can run or display it verbatim.
+        command = data["load_command"]
+        self.assertTrue(command.startswith("curl -X POST http://"), command)
+        self.assertIn(f"localhost:{PORT}/v1/load", command)
+        self.assertIn('"ctx_size":4096', command)
+        self.assertIn(f'"model_name":"{ENDPOINT_TEST_MODEL}"', command)
+
         after = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
         self.assertEqual(after["saved"], {}, "dry_run must not persist anything")
         self.assertGreater(
