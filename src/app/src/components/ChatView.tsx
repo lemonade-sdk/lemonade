@@ -1311,7 +1311,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     detail: string;
     defaultTier?: 'tiny' | 'quality';
     defaultLabel?: string;
-    defaultIcon?: 'minimize-2' | 'gem';
     deferredUntilSend?: boolean;
   };
 
@@ -1328,7 +1327,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         ...option,
         defaultTier: configuredDefault.tier,
         defaultLabel: configuredDefault.label,
-        defaultIcon: configuredDefault.icon,
       } : option);
     };
 
@@ -3377,13 +3375,11 @@ ${finalText}`
                 )}
                 {!currentLoadedModel && currentDefaultModel && (
                   <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
-                    <Icon name={currentDefaultModel.icon} size={13} />
                   </span>
                 )}
                 <span className="composer__model-button-name">{currentModel}</span>
                 {currentLoadedModel && currentDefaultModel && (
                   <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
-                    <Icon name={currentDefaultModel.icon} size={13} />
                   </span>
                 )}
                 {selectableModels.length > 0 && (
