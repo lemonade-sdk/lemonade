@@ -115,6 +115,78 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
   });
 
+  test('01b1 — Model storage save feedback is scoped and directory errors surface', async ({ page }) => {
+    let runtimeConfig = { models_dir: 'auto', extra_models_dir: '' };
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: {
+        object: 'list',
+        data: [{
+          id: 'existing-model',
+          name: 'Existing Model',
+          type: 'llm',
+          labels: ['llm'],
+          recipe: 'llamacpp',
+          suggested: true,
+          downloaded: true,
+        }],
+      },
+    }));
+    await page.route('**/internal/config**', route => route.fulfill({ json: runtimeConfig }));
+    await page.route('**/internal/set**', async route => {
+      const body = route.request().postDataJSON() as { models_dir?: string; extra_models_dir?: string };
+      if (body.extra_models_dir === '/restricted/models') {
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: "'extra_models_dir' is not readable by the Lemonade server: /restricted/models (Permission denied)",
+          }),
+        });
+        return;
+      }
+      runtimeConfig = {
+        models_dir: body.models_dir ?? runtimeConfig.models_dir,
+        extra_models_dir: body.extra_models_dir ?? runtimeConfig.extra_models_dir,
+      };
+      await route.fulfill({ json: { status: 'success', updated: body } });
+    });
+
+    await page.goto('/#/connect/model-storage');
+    await page.waitForSelector('[data-view="connect"]');
+
+    const externalDirectory = page.getByLabel('External custom models directory');
+    await externalDirectory.fill('/tmp/models');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveText('Directory settings saved.');
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Models', exact: true }).click();
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+
+    const connectSections = page.getByRole('navigation', { name: 'Connect sections' });
+    await externalDirectory.fill('/tmp/models-2');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveText('Directory settings saved.');
+    await connectSections.getByRole('button', { name: 'Server', exact: true }).click();
+    await connectSections.getByRole('button', { name: 'Model storage', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+
+    await externalDirectory.fill('/tmp/models-3');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveText('Directory settings saved.');
+    await externalDirectory.fill('/tmp/models-4');
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+
+    await externalDirectory.fill('/restricted/models');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__error')).toContainText('not readable by the Lemonade server');
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+  });
+
   test('01c — Apps is a standalone workspace with category rail navigation', async ({ page }) => {
     await page.route('**/api/v1/health**', route => route.fulfill({
       json: { status: 'ok', version: 'test', all_models_loaded: [] },

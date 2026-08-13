@@ -4498,7 +4498,7 @@ optgroup {
 
 .options-block__btn:hover {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border-color: var(--accent-fg);
 }
 
@@ -4508,14 +4508,14 @@ optgroup {
 
 .options-block__btn--selected {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border-color: var(--accent-fg);
   cursor: default;
 }
 
 .options-block__btn--selected:hover {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border-color: var(--accent-fg);
 }
 
@@ -4553,7 +4553,7 @@ optgroup {
 
 .options-block__submit {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border: none;
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-3);
@@ -4890,6 +4890,10 @@ optgroup {
   border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
   background: var(--success-soft);
   color: var(--success);
+}
+
+.connect__section--directories .connect__notice {
+  margin-top: var(--space-1);
 }
 
 .dash2-card--notice {

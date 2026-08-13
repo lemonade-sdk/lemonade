@@ -4275,11 +4275,11 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
                   ))}
                 </div>
                 {selectedChoice && (
-                  <div className="options-block__confirmation">\u2713 You chose: {selectedChoice}</div>
+                  <div className="options-block__confirmation">✓ You chose: {selectedChoice}</div>
                 )}
                 {!selectedChoice && allowCustom && (
                   <div className="options-block__custom">
-                    <input className="options-block__input" placeholder="Or type your own\u2026"
+                    <input className="options-block__input" placeholder="Or type your own…"
                       onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) { handleSelect((e.target as HTMLInputElement).value.trim()); } }} />
                     <button className="options-block__submit" onClick={e => {
                       const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement;
