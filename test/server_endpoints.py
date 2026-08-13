@@ -1108,6 +1108,8 @@ class EndpointTests(ServerTestBase):
             {"steps": 30},  # sd-cpp option on an llamacpp model
             {"ctx_size": "big"},  # wrong type
             {"ctx_size": "8192"},  # numeric, but still a string
+            {"ctx_size": ""},  # strings never clear ctx_size; only null does
+            {"ctx_size": "auto"},  # -1 is the one spelling of automatic
             {"ctx_size": -5},  # out of range: only -1 is a valid negative
             {"ctx_size": 0},  # only -1 auto-resolves; 0 reaches the backend
             {"ctx_size": 4096.5},  # not a whole number

@@ -289,9 +289,9 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 
 Save recipe options for a model without loading it. The request body is a flat object of the same recipe options [`/v1/load`](#post-v1load) accepts. The URL identifies the model; a `model_name` in the body is ignored.
 
-The request merges into the model's saved entry, so keys you don't mention are left alone. `null` removes an option, and the model falls back to the next layer of the [priority chain](#post-v1load); `""`, `-1`, and `"auto"` remove it too, since those are the values Lemonade reads as "not set". [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
+The request merges into the model's saved entry, so keys you don't mention are left alone. `null` removes an option, and the model falls back to the next layer of the [priority chain](#post-v1load). [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
 
-`ctx_size` is the exception: `-1` is a value there, not an absence, and saving it pins the model to automatic context sizing even when the server-wide `ctx_size` is a specific number. `null`, `""`, and `"auto"` clear it; `-1` does not.
+`ctx_size` takes a positive whole number, or `-1` to pin the model to automatic sizing even when the server-wide `ctx_size` is a specific number.
 
 A `400` reports an unrecognized option name, an option from a different recipe, a value of the wrong type, or an invalid `ctx_size`, and nothing from that request is saved.
 

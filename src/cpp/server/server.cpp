@@ -2938,15 +2938,12 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                         "model; use /v1/load or /internal/pin"}}.dump(), "application/json");
                     return false;
                 }
-                // Which values mean "remove this option". For ctx_size the
-                // storage filter drops every non-number, but the request layer
-                // has to be stricter than that so a malformed size is reported
-                // rather than silently clearing the option. The spellings every
-                // other option accepts as "not set" still clear it.
-                const bool clears = key == "ctx_size"
-                    ? (value.is_null() || (value.is_string() &&
-                       (value.get<std::string>().empty() || value == "auto")))
-                    : RecipeOptions::is_default_sentinel(key, value);
+                // null removes the key. The other values the option system
+                // reads as "not set" ("", -1, "auto") still clear every option
+                // except ctx_size, where -1 is a value and a malformed size is
+                // an error rather than an absence.
+                const bool clears = value.is_null() ||
+                    (key != "ctx_size" && RecipeOptions::is_default_sentinel(key, value));
                 if (clears) {
                     changes[key] = nullptr;
                     continue;
