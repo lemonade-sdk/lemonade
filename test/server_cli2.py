@@ -897,6 +897,137 @@ sys.exit(0)
     # Import Tests
     # =============================================================================
 
+    def _write_router_policy_file(self, model_name, route_to=None):
+        """Write a minimal collection.router policy JSON to a temp file."""
+        policy = {
+            "model_name": model_name,
+            "version": "1",
+            "recipe": "collection.router",
+            "components": [ENDPOINT_TEST_MODEL],
+            "routing": {
+                "candidates": [ENDPOINT_TEST_MODEL],
+                "default_model": ENDPOINT_TEST_MODEL,
+                "rules": [
+                    {
+                        "id": "code-rule",
+                        "match": {"keywords_any": ["code"]},
+                        "route_to": route_to or ENDPOINT_TEST_MODEL,
+                    }
+                ],
+            },
+        }
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as f:
+            json.dump(policy, f)
+            return f.name
+
+    def test_057_pull_json_policy_file(self):
+        """`pull <policy.json>` registers a collection.router policy from a
+        local file (#3088), equivalent to POSTing the document to /pull."""
+        collection_name = f"user.CliPullFile-{uuid.uuid4().hex[:8]}"
+        json_file = self._write_router_policy_file(collection_name)
+        try:
+            result = run_cli_command(
+                ["pull", json_file],
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                f"Command failed with exit code {result.returncode}: {result.stderr}",
+            )
+
+            response = requests.get(
+                f"http://localhost:{PORT}/api/v1/models?show_all=true",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200)
+            entry = next(
+                (m for m in response.json()["data"] if m["id"] == collection_name),
+                None,
+            )
+            self.assertIsNotNone(
+                entry, f"{collection_name} should be registered from the file"
+            )
+            self.assertEqual(entry.get("recipe"), "collection.router")
+        finally:
+            os.unlink(json_file)
+            try:
+                requests.post(
+                    f"http://localhost:{PORT}/api/v1/delete",
+                    json={"model_name": collection_name},
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_058_pull_json_dry_run(self):
+        """`pull <policy.json> --dry-run` validates without registering: a valid
+        policy reports OK and does not land in /models; a policy whose rule
+        routes to a non-candidate is rejected by the server-side parse."""
+        collection_name = f"user.CliDryRun-{uuid.uuid4().hex[:8]}"
+        valid_file = self._write_router_policy_file(collection_name)
+        invalid_file = self._write_router_policy_file(
+            f"user.CliDryRunBad-{uuid.uuid4().hex[:8]}",
+            route_to="Not-A-Candidate",
+        )
+        try:
+            result = run_cli_command(
+                ["pull", valid_file, "--dry-run"],
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                result.returncode, 0, f"dry-run failed: {result.stderr}"
+            )
+            self.assertIn("Nothing was registered", result.stdout)
+
+            response = requests.get(
+                f"http://localhost:{PORT}/api/v1/models?show_all=true",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            ids = [m["id"] for m in response.json()["data"]]
+            self.assertNotIn(
+                collection_name, ids, "--dry-run must not register the policy"
+            )
+
+            bad = self.assertCommandFails(
+                ["pull", invalid_file, "--dry-run"],
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn("Invalid policy", bad.stdout + bad.stderr)
+
+            no_file = self.assertCommandFails(
+                ["pull", ENDPOINT_TEST_MODEL, "--dry-run"],
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(
+                "--dry-run requires", no_file.stdout + no_file.stderr
+            )
+        finally:
+            os.unlink(valid_file)
+            os.unlink(invalid_file)
+
+    def test_059_pull_json_conflicts_with_manual_options(self):
+        """A JSON file argument cannot be combined with manual configuration
+        flags — the file is the complete definition."""
+        json_file = self._write_router_policy_file(
+            f"user.CliConflict-{uuid.uuid4().hex[:8]}"
+        )
+        try:
+            result = self.assertCommandFails(
+                ["pull", json_file, "--recipe", "llamacpp"],
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(
+                "cannot be combined", result.stdout + result.stderr
+            )
+        finally:
+            os.unlink(json_file)
+
     def test_060_import_json_file(self):
         """Test import command with JSON configuration file."""
         json_data = {

@@ -2,11 +2,13 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/model_registry.h"
+#include "lemon/model_types.h"
 #include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -317,6 +319,89 @@ bool validate_and_transform_model_json(nlohmann::json& model_data) {
     }
 
     return true;
+}
+
+bool is_local_json_file(const std::string& path) {
+    const std::string suffix = ".json";
+    if (path.size() <= suffix.size()) {
+        return false;
+    }
+    std::string lower = path;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (lower.compare(lower.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        return false;
+    }
+    std::error_code ec;
+    return std::filesystem::is_regular_file(path, ec);
+}
+
+int validate_model_json_file(lemonade::LemonadeClient& client,
+                             const std::string& json_path) {
+    nlohmann::json model_data;
+    std::ifstream file(json_path);
+    if (!file.good()) {
+        std::cerr << "Error: Failed to open JSON file '" << json_path << "'" << std::endl;
+        return 1;
+    }
+    try {
+        model_data = nlohmann::json::parse(file);
+    } catch (const nlohmann::json::exception& e) {
+        std::cerr << "Error: Failed to parse JSON file '" << json_path << "': " << e.what() << std::endl;
+        return 1;
+    }
+    if (!validate_and_transform_model_json(model_data)) {
+        return 1;
+    }
+
+    const std::string model_name = model_data["model_name"].get<std::string>();
+    const std::string recipe = model_data.value("recipe", std::string());
+    if (!lemon::is_router_collection_recipe(recipe)) {
+        std::cout << "Dry run OK (local checks): '" << model_name << "' (" << recipe
+                  << "). Nothing was registered." << std::endl;
+        return 0;
+    }
+
+    // Router policies additionally get the deep server-side parse the real
+    // registration would run (rule/candidate cross-checks, classifier refs,
+    // version) via the ad-hoc validation endpoint.
+    std::string response;
+    try {
+        nlohmann::json request = {{"policy", model_data}};
+        response = client.make_request("/api/v1/routing/validate", "POST",
+                                       request.dump(), "application/json");
+    } catch (const lemonade::HttpError& e) {
+        // A 400 is the validation verdict, not a transport failure.
+        std::cerr << "Invalid policy: " << lemonade::extract_server_error_message(e)
+                  << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: routing/validate request failed: " << e.what() << std::endl;
+        return 1;
+    }
+    try {
+        nlohmann::json response_json = nlohmann::json::parse(response);
+        if (response_json.contains("error")) {
+            const auto& error = response_json["error"];
+            std::cerr << "Invalid policy: "
+                      << (error.is_string() ? error.get<std::string>() : error.dump())
+                      << std::endl;
+            return 1;
+        }
+        const nlohmann::json routing =
+            response_json.value("normalized_policy", nlohmann::json::object())
+                .value("routing", nlohmann::json::object());
+        std::cout << "Dry run OK: '" << model_name << "' (collection.router) — "
+                  << routing.value("candidates", nlohmann::json::array()).size()
+                  << " candidates, default '"
+                  << routing.value("default_model", std::string()) << "', "
+                  << routing.value("rules", nlohmann::json::array()).size()
+                  << " rules. Nothing was registered." << std::endl;
+        return 0;
+    } catch (const nlohmann::json::exception&) {
+        std::cerr << "Error: unexpected response from routing/validate: " << response << std::endl;
+        return 1;
+    }
 }
 
 int import_model_from_json_file(lemonade::LemonadeClient& client,

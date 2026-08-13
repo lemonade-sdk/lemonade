@@ -175,7 +175,7 @@ The `pull` command downloads and installs models. It can also register a custom 
 Common forms:
 
 ```bash
-lemonade pull MODEL_OR_CHECKPOINT [--alias ALIAS] [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL] [--components MODEL ...]
+lemonade pull MODEL_OR_CHECKPOINT_OR_FILE [--alias ALIAS] [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL] [--components MODEL ...] [--dry-run]
 ```
 
 ```bash
@@ -190,6 +190,11 @@ lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
 # Register and pull a custom model with an alias
 lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp --alias my-alias
+
+# Register a model or router policy from a local JSON file (idempotent —
+# re-pull the file to update; --dry-run validates without registering)
+lemonade pull ./my-router.json
+lemonade pull ./my-router.json --dry-run
 ```
 
 | Option | Description | Required |

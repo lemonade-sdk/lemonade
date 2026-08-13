@@ -401,6 +401,22 @@ static bool has_manual_pull_options(const CliConfig& config) {
 }
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    if (lemon_cli::is_local_json_file(config.model)) {
+        if (has_manual_pull_options(config)) {
+            std::cerr << "Error: manual configuration options (--checkpoint, --recipe, "
+                         "--label, --components) cannot be combined with a JSON file argument."
+                      << std::endl;
+            return 1;
+        }
+        if (config.dry_run) {
+            return lemon_cli::validate_model_json_file(client, config.model);
+        }
+        return lemon_cli::import_model_from_json_file(client, config.model);
+    }
+    if (config.dry_run) {
+        std::cerr << "Error: --dry-run requires a local .json file argument." << std::endl;
+        return 1;
+    }
     if (has_manual_pull_options(config)) {
         if (lemon::is_omni_collection_recipe(config.recipe)) {
             if (config.components.empty()) {
@@ -1333,9 +1349,13 @@ int main(int argc, char* argv[]) {
 
     // Pull options
     pull_cmd->add_option("model", config.model,
-        "Registered model name, registry checkpoint (owner/repo[:variant]), or model URL")
+        "Registered model name, registry checkpoint (owner/repo[:variant]), model URL, "
+        "or path to a local .json model/policy file (e.g. a collection.router policy)")
         ->required()
-        ->type_name("MODEL_OR_CHECKPOINT");
+        ->type_name("MODEL_OR_CHECKPOINT_OR_FILE");
+    pull_cmd->add_flag("--dry-run", config.dry_run,
+        "With a .json file argument: validate without registering (structural checks, "
+        "plus the server-side policy parse for collection.router files)");
     CLI::Option* pull_source_opt =
         pull_cmd->add_option("--source", config.model_source,
             "Remote registry for checkpoint pulls: huggingface or modelscope "

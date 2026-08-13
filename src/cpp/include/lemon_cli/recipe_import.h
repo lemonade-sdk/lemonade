@@ -9,6 +9,17 @@
 
 namespace lemon_cli {
 
+// True when `path` names an existing local .json file. `pull` uses this to
+// accept a model/policy document in place of a registry name.
+bool is_local_json_file(const std::string& path);
+
+// Validate a model/policy JSON file without registering anything: the local
+// structural checks import runs, plus the server-side routing-policy parse
+// (POST /routing/validate) for collection.router documents. Returns 0 when
+// valid. Component existence is not checked — that happens at registration.
+int validate_model_json_file(lemonade::LemonadeClient& client,
+                             const std::string& json_path);
+
 // Validate and normalize imported model JSON payload.
 bool validate_and_transform_model_json(nlohmann::json& model_data);
 
