@@ -109,6 +109,15 @@ std::vector<std::string> RecipeOptions::keys_for_recipe(const std::string& recip
     return get_keys_for_recipe(recipe);
 }
 
+bool RecipeOptions::is_backend_option(const std::string& recipe, const std::string& key) {
+    const auto* desc = lemon::backends::descriptor_for(recipe);
+    if (!desc) return false;
+    for (const auto& opt : desc->options) {
+        if (opt.name == key) return true;
+    }
+    return false;
+}
+
 bool RecipeOptions::is_default_sentinel(const std::string& key, const json& value) {
     return is_empty_option(key, value);
 }
@@ -202,7 +211,11 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
 
 RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
     json merged = options_;
-    bool merge_args = options_.contains("merge_args") ? options_["merge_args"].get<bool>() : options.get_option("merge_args").get<bool>();
+    // Read defensively: a hand-edited recipe_options.json can hold any type
+    // here, and throwing would take down every read of the model.
+    const json own_merge_args = options_.contains("merge_args") ? options_["merge_args"]
+                                                                : options.get_option("merge_args");
+    bool merge_args = own_merge_args.is_boolean() ? own_merge_args.get<bool>() : true;
 
     for (auto it = options.options_.begin(); it != options.options_.end(); ++it) {
         if (merge_args && it.key().size() >= 5 && it.key().substr(it.key().size() - 5) == "_args") {

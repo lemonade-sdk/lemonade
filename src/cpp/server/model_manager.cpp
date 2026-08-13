@@ -1585,15 +1585,34 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     LOG(INFO, "ModelManager") << "Saving options for model: " << info.model_name << std::endl;
     // Persist under canonical ID (built-ins are keyed bare in cache but
     // recipe_options.json stores them as builtin.<name>).
+    const std::string id = cache_key_to_canonical_id(info.model_name);
     std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
+
     json snapshot;
+    json previous;
+    bool had_previous = false;
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        recipe_options_[cache_key_to_canonical_id(info.model_name)] = info.recipe_options.to_json();
+        had_previous = recipe_options_.contains(id);
+        if (had_previous) previous = recipe_options_[id];
+        recipe_options_[id] = info.recipe_options.to_json();
         snapshot = recipe_options_;
         update_model_options_in_cache_locked(info);
     }
-    save_user_json(get_recipe_options_file(), snapshot);
+
+    try {
+        save_user_json(get_recipe_options_file(), snapshot);
+    } catch (...) {
+        // Keep memory matching disk, as write_saved_model_options does.
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        if (had_previous) {
+            recipe_options_[id] = previous;
+        } else {
+            recipe_options_.erase(id);
+        }
+        cache_valid_ = false;
+        throw;
+    }
 }
 
 json ModelManager::get_saved_model_options(const std::string& model_name) {

@@ -2809,18 +2809,20 @@ static std::string validate_option_value(const RuntimeConfig& config,
     // A fractional value for a whole-number option is silently ignored by the
     // consumers that read it, and a negative one is meaningless for all of
     // them, so refuse both.
-    if (expected.is_number_integer()) {
-        if (!value.is_number_integer()) {
-            return "'" + key + "' must be a whole number";
-        }
-        if (value.get<int64_t>() < 0) {
-            return "'" + key + "' cannot be negative";
-        }
+    if (expected.is_number_integer() && !value.is_number_integer()) {
+        return "'" + key + "' must be a whole number";
+    }
+    if (expected.is_number() && value.is_number() && value.get<double>() < 0) {
+        return "'" + key + "' cannot be negative";
     }
 
     // Defer to the validator the global config already uses for these same
-    // option names, so the two surfaces cannot disagree about a value. Keys it
-    // does not know about (the eviction options, *_args) fall through.
+    // option names, so the two surfaces cannot disagree about a value. Only
+    // descriptor options have a global-config counterpart; the universal kit
+    // must not be routed through it, since key names like merge_args collide
+    // with the config's own rules.
+    if (!RecipeOptions::is_backend_option(recipe, key)) return "";
+
     std::string config_key = key;
     const std::string recipe_prefix = recipe + "_";
     if (config_key.rfind(recipe_prefix, 0) == 0) {
@@ -2983,9 +2985,10 @@ void Server::handle_model_options_delete(const httplib::Request& req, httplib::R
     respond_with_model_options(req, res,
         [this](const std::string& model_key, const ModelInfo&, httplib::Response&,
                bool& touched_pinned) {
-            const nlohmann::json saved = model_manager_->get_saved_model_options(model_key);
-            touched_pinned = saved.contains("pinned");
-            if (!saved.empty()) {
+            // Resetting to defaults covers the pin whether or not one was saved:
+            // a request-scoped /load may have pinned the live process instead.
+            touched_pinned = true;
+            if (!model_manager_->get_saved_model_options(model_key).empty()) {
                 model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
             }
             return true;

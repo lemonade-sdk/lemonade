@@ -1346,6 +1346,38 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] pinned changes are applied to the running model")
 
+    def test_012x_every_effective_option_can_be_saved_back(self):
+        """Posting the reported `effective` object back whole is accepted.
+
+        The response advertises `effective` as the set of names POST accepts, so
+        any key the endpoint reports but refuses is a contradiction. This caught
+        `merge_args`, whose name collides with the global config's `*_args` rule.
+        """
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+
+        effective = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "effective"
+        ]
+        response = requests.post(
+            self._options_url(), json=effective, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Every reported option must be settable, got {response.text}",
+        )
+
+        # merge_args specifically: a boolean, and both values have to round-trip.
+        for value in (True, False):
+            saved = requests.post(
+                self._options_url(), json={"merge_args": value}, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(saved.status_code, 200, saved.text)
+            self.assertEqual(saved.json()["saved"]["merge_args"], value)
+
+        print("[OK] Every option reported in `effective` can be saved back")
+
     def test_012w_options_reject_values_the_global_config_rejects(self):
         """Per-model options are held to the same value rules as global config.
 
