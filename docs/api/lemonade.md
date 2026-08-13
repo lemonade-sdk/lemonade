@@ -298,11 +298,11 @@ Save recipe options for a model **without loading it**. The request body is a fl
 
 Options are merged into whatever is already saved, so keys you don't mention are left alone. Sending `null` removes an option, and the model falls back to the next layer of the [priority chain](#post-v1load); `""`, `-1`, and `"auto"` remove it too, since those are the values Lemonade reads as "not set". To remove every saved option at once, use [`DELETE`](#delete-v1modelsidoptions).
 
-`ctx_size` is the exception: `-1` is a value there, not an absence, and saving it pins the model to automatic context sizing. That matters when the server-wide `ctx_size` is a specific number, because removing the option would make the model inherit that number instead.
+`ctx_size` is the exception: `-1` is a value there, not an absence, and saving it pins the model to automatic context sizing. That matters when the server-wide `ctx_size` is a specific number, because removing the option would make the model inherit that number instead. Only `null` and `""` clear it.
 
-Options are validated against the model's recipe. An unrecognized option name, an option belonging to a different recipe, or a value of the wrong type is rejected with `400`, and nothing is saved.
+Options are validated against the model's recipe, and nothing is saved unless every option in the request passes. A `400` reports an unrecognized option name, an option belonging to a different recipe, a value of the wrong type, a `ctx_size` that isn't a whole number of `-1` or more, or a backend this host doesn't support.
 
-Saving never loads or reloads the model. The `reload_required` field reports whether a running model needs a reload to pick the change up.
+Saving never loads or reloads the model, with one exception: `pinned` is applied to a running process immediately, because a live model keeps its own pin state across loads. The `reload_required` field reports whether a running model needs a reload to pick up the rest.
 
 ### Example requests
 

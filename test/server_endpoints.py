@@ -1103,7 +1103,11 @@ class EndpointTests(ServerTestBase):
             {"nonsense": 1},  # not an option at all
             {"steps": 30},  # sd-cpp option on an llamacpp model
             {"ctx_size": "big"},  # wrong type
+            {"ctx_size": "8192"},  # numeric, but still a string
+            {"ctx_size": -5},  # out of range: only -1 is a valid negative
+            {"ctx_size": 4096.5},  # not a whole number
             {"auto_evict": "sometimes"},  # wrong type for a null-default option
+            {"llamacpp_backend": "nonsense"},  # not a backend this host supports
         ):
             response = requests.post(
                 self._options_url(), json=body, timeout=TIMEOUT_DEFAULT
@@ -1210,33 +1214,38 @@ class EndpointTests(ServerTestBase):
         self.addCleanup(self._reset_options)
         self._reset_options()
 
-        requests.post(
-            f"{self.base_url}/load",
-            json={
-                "model_name": ENDPOINT_TEST_MODEL,
-                "ctx_size": "auto",
-                "save_options": True,
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
+        for ctx_size in ("auto", "8192", ""):
+            requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": ENDPOINT_TEST_MODEL,
+                    "ctx_size": ctx_size,
+                    "save_options": True,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
 
-        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
-            "saved"
-        ]
-        self.assertNotIn(
-            "ctx_size", saved, "A non-numeric ctx_size must be dropped, not saved"
-        )
+            saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+                "saved"
+            ]
+            self.assertNotIn(
+                "ctx_size",
+                saved,
+                f"ctx_size={ctx_size!r} is not a number and must not be saved",
+            )
 
-        show = requests.post(
-            f"http://localhost:{PORT}/api/show",
-            json={"model": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(
-            show.status_code, 200, "/api/show must still read ctx_size as an integer"
-        )
+            show = requests.post(
+                f"http://localhost:{PORT}/api/show",
+                json={"model": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                show.status_code,
+                200,
+                "/api/show must still read ctx_size as an integer",
+            )
 
-        print("[OK] A string ctx_size is not persisted by /load")
+        print("[OK] A non-numeric ctx_size is not persisted by /load")
 
     def test_012t_reload_required_matches_load_behavior(self):
         """reload_required agrees with whether /load actually restarts the backend."""

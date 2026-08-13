@@ -381,8 +381,10 @@ private:
     // cannot recursively re-fire.
     void notify_models_changed();
 
+    json registry_recipe_options(const std::string& cache_key);
     json write_saved_model_options(const std::string& model_name, const json& options, bool merge);
-    void refresh_cached_recipe_options(const std::string& cache_key, const json& saved);
+    void refresh_cached_recipe_options(const std::string& cache_key,
+                                       const std::string& canonical_id, const json& saved);
 
     // Cache management
     void build_cache();

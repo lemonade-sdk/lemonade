@@ -96,11 +96,11 @@ static bool is_empty_option(json option) {
 // ctx_size is the one option whose "auto" state is itself a value: -1 means
 // "size the context from available memory". Storing it has to be possible so a
 // model can be pinned to auto even when a lower layer sets an explicit size.
-// Only numbers are exempt — a string still has to be filtered out, since every
-// consumer of ctx_size reads it as an integer.
+// Anything that is not a number is discarded, since every consumer of ctx_size
+// reads it as an integer.
 static bool is_empty_option(const std::string& key, const json& option) {
-    if (key == "ctx_size" && option.is_number()) {
-        return false;
+    if (key == "ctx_size") {
+        return !option.is_number();
     }
     return is_empty_option(option);
 }

@@ -2792,6 +2792,31 @@ static bool option_type_matches(const nlohmann::json& expected, const nlohmann::
     return value.is_boolean();
 }
 
+// Reject values that pass the type check but would break the load they are
+// saved for. Returns an error message, or empty when the value is usable.
+static std::string validate_option_value(const std::string& recipe,
+                                         const std::string& key,
+                                         const nlohmann::json& value) {
+    if (key == "ctx_size") {
+        if (!value.is_number_integer() || value.get<int64_t>() < -1) {
+            return "'ctx_size' must be a whole number, or -1 to size it automatically";
+        }
+        return "";
+    }
+
+    static const std::string backend_suffix = "_backend";
+    if (key.size() > backend_suffix.size() &&
+        key.compare(key.size() - backend_suffix.size(), backend_suffix.size(), backend_suffix) == 0) {
+        try {
+            RuntimeConfig::validate_backend_choice(
+                RuntimeConfig::recipe_to_config_section(recipe), value.get<std::string>());
+        } catch (const std::exception& e) {
+            return e.what();
+        }
+    }
+    return "";
+}
+
 void Server::respond_with_model_options(
     const httplib::Request& req, httplib::Response& res,
     const std::function<bool(const std::string&, const ModelInfo&, httplib::Response&)>& mutation) {
@@ -2842,8 +2867,11 @@ void Server::respond_with_model_options(
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Failed to handle options for '" << model_id
                              << "': " << e.what() << std::endl;
-        res.status = 500;
-        res.set_content(create_model_error(model_id, e.what()).dump(), "application/json");
+        // Matches handle_model_files: the model disappearing between the
+        // existence check and the read reads as "not found", not a server fault.
+        auto error_response = create_model_error(model_id, e.what());
+        res.status = get_http_status_from_error(error_response["error"]["code"].get<std::string>());
+        res.set_content(error_response.dump(), "application/json");
     }
 }
 
@@ -2878,7 +2906,14 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                                       .dump(), "application/json");
                     return false;
                 }
-                if (RecipeOptions::is_default_sentinel(key, value)) {
+                // Which values mean "remove this option". For ctx_size the
+                // storage filter drops every non-number, but the request layer
+                // has to be stricter than that so a malformed size is reported
+                // rather than silently clearing the option.
+                const bool clears = key == "ctx_size"
+                    ? (value.is_null() || (value.is_string() && value.get<std::string>().empty()))
+                    : RecipeOptions::is_default_sentinel(key, value);
+                if (clears) {
                     changes[key] = nullptr;
                     continue;
                 }
@@ -2888,11 +2923,23 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                                       .dump(), "application/json");
                     return false;
                 }
+                const std::string invalid = validate_option_value(info.recipe, key, value);
+                if (!invalid.empty()) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", invalid}}.dump(), "application/json");
+                    return false;
+                }
                 changes[key] = value;
             }
 
-            if (!changes.empty()) {
-                model_manager_->update_saved_model_options(model_key, changes);
+            if (changes.empty()) return true;
+            model_manager_->update_saved_model_options(model_key, changes);
+
+            // A live process keeps its own pin state across loads, so saving
+            // this without applying it would report a pin that never happens.
+            if (changes.contains("pinned") && changes["pinned"].is_boolean() &&
+                router_->is_model_loaded(model_key)) {
+                router_->set_model_pinned(model_key, changes["pinned"].get<bool>());
             }
             return true;
         });
