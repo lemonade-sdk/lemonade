@@ -31,4 +31,24 @@ void parse_target_url(std::string_view input_host, std::string& out_clean_host, 
  */
 std::string bracket_host_if_ipv6(std::string_view host);
 
+/**
+ * @brief Percent-encodes a string according to RFC 3986.
+ *
+ * @param s The string view to encode.
+ * @return An RFC 3986 URL-encoded string.
+ */
+inline std::string url_encode(std::string_view s) {
+    std::string encoded;
+    for (char c : s) {
+        if (isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded += c;
+        } else {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%%%02X", static_cast<unsigned char>(c));
+            encoded += buf;
+        }
+    }
+    return encoded;
+}
+
 } // namespace lemon::utils

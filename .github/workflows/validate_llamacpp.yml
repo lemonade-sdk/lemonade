@@ -410,7 +410,7 @@ jobs:
     if: always() && needs.build.result == 'success'
     runs-on: ${{ matrix.runner }}
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - backend: vulkan

@@ -205,7 +205,7 @@ For example, if you wanted to add [OmniCoder-9B](https://huggingface.co/Tesslate
 
 You can learn more in the [Custom Models](../guide/configuration/custom-models.md) guide, including how to enable your users to register their own custom models at runtime.
 
-Set `"source": "modelscope"` for curated entries hosted on ModelScope. Lemonade preserves that field in its model metadata and uses it for every subsequent download and update check. The default is `huggingface`, so existing registry files require no migration.
+Set `"source": "modelscope"` for curated entries hosted on ModelScope. Lemonade preserves that field in its model metadata and uses it for every subsequent download and update check. When `source` is omitted the shipped default is `huggingface`, so existing registry files require no migration.
 
 ### Per-Model Load Options
 

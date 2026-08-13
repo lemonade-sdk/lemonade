@@ -40,7 +40,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp` | metal | macos | metal |
 | `llamacpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
-| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx942, gfx950) |
+| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
 | `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
@@ -207,7 +207,7 @@ the generator instead. Prose outside the markers is preserved. -->
 |-------|-----------|--------|
 | `kokoro-v1` | 0.354 | tts |
 
-#### `llamacpp` — Llama.cpp GPU (87 models)
+#### `llamacpp` — Llama.cpp GPU (88 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
@@ -249,6 +249,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `MiniCPM4.1-8B-GGUF` | 4.97 | reasoning |
 | `MiniCPM5-1B-GGUF` | 0.69 | hot, reasoning |
 | `Ministral-3-3B-Instruct-2512-GGUF` | 2.99 | vision |
+| `Muse-Glimmer-30B-GGUF` | 19.9 | hot, tool-calling, vision, reasoning, llamacpp, dflash |
 | `Nemotron-3-Nano-30B-A3B-GGUF` | 22.8 | — |
 | `Phi-4-mini-instruct-GGUF` | 2.49 | — |
 | `Playable1-GGUF` | 4.68 | coding |

@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.5.2)
+project(lemon_cpp VERSION 11.6.0)
 
 include(CTest)
 
@@ -955,6 +955,7 @@ set(SOURCES_CORE
     src/cpp/server/cloud_provider_registry.cpp
     src/cpp/server/config_file.cpp
     src/cpp/server/directory_watcher.cpp
+    src/cpp/server/alias_manager.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/model_registry.cpp
     src/cpp/server/hf_variants.cpp
@@ -2308,6 +2309,24 @@ if(BUILD_TESTING AND EXISTS "${_GGUF_CAPS_TEST_SRC}")
     add_cpp_ci_test(GgufCapabilitiesTest CI OFF COMMAND test_gguf_capabilities)
 endif()
 
+set(_GGUF_SHARD_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_shard_utils.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_GGUF_SHARD_TEST_SRC}")
+    add_executable(test_gguf_shard_utils
+        test/cpp/test_gguf_shard_utils.cpp
+    )
+    target_include_directories(test_gguf_shard_utils PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_gguf_shard_utils PRIVATE lemonade-server-core)
+    add_dependencies(test_gguf_shard_utils copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(GgufShardUtilsTest CI ON COMMAND test_gguf_shard_utils)
+endif()
+
 # Model residency role/pool contract for router dependencies
 set(_MODEL_RESIDENCY_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_residency.cpp"
@@ -2707,6 +2726,18 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_REGISTRY_TEST_SRC}")
     add_cpp_ci_test(ModelRegistryTest CI OFF COMMAND test_model_registry)
 endif()
 
+set(_MODEL_ALIAS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_alias.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_ALIAS_TEST_SRC}")
+    add_executable(test_model_alias test/cpp/test_model_alias.cpp)
+    target_link_libraries(test_model_alias PRIVATE lemonade-server-core)
+    add_dependencies(test_model_alias copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelAliasTest CI ON COMMAND test_model_alias)
+endif()
+
 # Router-backed ClassifierServices wiring (issue #2384): binds the pure engine's
 # embed/run_classifier/chat lambdas to Router-style JSON calls.
 set(_ROUTING_CLASSIFIER_SERVICES_TEST_SRC
@@ -2776,6 +2807,26 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_cpp_ci_test(ConfigTelemetryTest CI OFF COMMAND test_config_telemetry)
 endif()
 
+set(_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_runtime_config_backend_validation.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC}")
+    add_executable(test_runtime_config_backend_validation
+        test/cpp/test_runtime_config_backend_validation.cpp
+    )
+    target_link_libraries(test_runtime_config_backend_validation PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RuntimeConfigBackendValidationTest CI ON
+        COMMAND test_runtime_config_backend_validation
+    )
+endif()
+
+set(_CONFIG_DEFAULT_SOURCE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_default_source.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONFIG_DEFAULT_SOURCE_TEST_SRC}")
+    add_executable(test_config_default_source test/cpp/test_config_default_source.cpp)
+    target_link_libraries(test_config_default_source PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigDefaultSourceTest CI ON COMMAND test_config_default_source)
+endif()
+
 # ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
 # external-ROCm detection that lets Lemonade skip the bundled TheRock download.
 set(_ROCM_ROOT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_root_resolution.cpp")
@@ -2789,7 +2840,7 @@ set(_GPU_ENV_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_g
 if(BUILD_TESTING AND EXISTS "${_GPU_ENV_TEST_SRC}")
     add_executable(test_backend_utils_gpu_env test/cpp/test_backend_utils_gpu_env.cpp)
     target_link_libraries(test_backend_utils_gpu_env PRIVATE lemonade-server-core)
-    add_cpp_ci_test(BackendUtilsGpuEnvTest CI OFF COMMAND test_backend_utils_gpu_env)
+    add_cpp_ci_test(BackendUtilsGpuEnvTest CI ON COMMAND test_backend_utils_gpu_env)
 endif()
 
 set(_NETWORK_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_network_utils.cpp")
@@ -2804,6 +2855,13 @@ if(BUILD_TESTING AND EXISTS "${_URL_UTILS_TEST_SRC}")
     add_executable(test_url_utils test/cpp/test_url_utils.cpp)
     target_link_libraries(test_url_utils PRIVATE lemonade-server-core)
     add_cpp_ci_test(UrlUtilsTest CI OFF COMMAND test_url_utils)
+endif()
+
+set(_GITHUB_API_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_github_api.cpp")
+if(BUILD_TESTING AND EXISTS "${_GITHUB_API_TEST_SRC}")
+    add_executable(test_github_api test/cpp/test_github_api.cpp)
+    target_link_libraries(test_github_api PRIVATE lemonade-server-core)
+    add_cpp_ci_test(GithubApiTest CI ON COMMAND test_github_api)
 endif()
 
 # GGUF variant enumeration: grouping, name disambiguation, and quant ordering.

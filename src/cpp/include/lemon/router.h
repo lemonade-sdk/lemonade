@@ -222,6 +222,7 @@ public:
     json audio_transcriptions(const json& request);
     void audio_speech(const json& request, httplib::DataSink& sink);
     std::vector<std::string> audio_speech_supported_formats(const std::string& model_name);
+    std::vector<std::string> audio_speech_supported_streaming_formats(const std::string& model_name);
 
     json image_generations(const json& request);
     json image_edits(const json& request);
@@ -254,6 +255,10 @@ public:
                                                   const std::map<std::string, bool>& snapshot_pins);
     int loaded_model_pid(const std::string& model_name) const;
     std::string canonical_model_name(const std::string& model_name) const;
+
+    // Registry lookup for seams that need ModelInfo without owning ModelManager
+    // (e.g. routing CostServices). Returns nullopt when the name is unknown.
+    std::optional<ModelInfo> try_get_model_info(const std::string& model_name) const;
 
     // Test hooks
     void simulate_vram_pressure(double pct);

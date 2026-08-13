@@ -19,6 +19,7 @@
 #include <cstring>
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/model_name_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
@@ -376,6 +377,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         }
     }
 
+    alias_manager_ = std::make_unique<AliasManager>(cache_dir_);
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
     model_manager_->set_cloud_registry(cloud_registry_.get());
 
@@ -1319,6 +1321,16 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
         handle_simulate_vram_pressure(req, res);
+    });
+
+    web_server.Get("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_get(req, res);
+    });
+    web_server.Post("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_add(req, res);
+    });
+    web_server.Delete(R"(/internal/aliases/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_remove(req, res);
     });
 
     // Server-side MCP client host foundation (admin-gated through the existing
@@ -2534,6 +2546,25 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
         response["data"].push_back(model_info_to_json(model_id, model_info));
     }
 
+    if (alias_manager_) {
+        auto all_aliases = alias_manager_->get_all_aliases();
+        for (const auto& [alias_id, target_name] : all_aliases) {
+            if (models.count(alias_id) > 0) {
+                continue;
+            }
+            std::string ultimate_target = target_name;
+            if (auto resolved = alias_manager_->resolve_alias(alias_id)) {
+                ultimate_target = *resolved;
+            }
+            std::string canonical_target = model_manager_->resolve_model_name(ultimate_target);
+            if (models.count(canonical_target) > 0) {
+                response["data"].push_back(model_info_to_json(alias_id, models.at(canonical_target)));
+            } else if (models.count(ultimate_target) > 0) {
+                response["data"].push_back(model_info_to_json(alias_id, models.at(ultimate_target)));
+            }
+        }
+    }
+
     res.set_content(response.dump(), "application/json");
 }
 
@@ -2650,15 +2681,33 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 }
 
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
-    std::string model_id = req.matches[1];
+    std::string model_id = utils::normalize_model_name(req.matches[1]);
 
     if (model_manager_->model_exists(model_id)) {
         auto info = model_manager_->get_model_info(model_id);
-        // Emit the wire-format id (bare for the precedence-winner, canonical-prefixed
-        // for shadowed sources), regardless of which form the client requested.
         std::string canonical_cache_key = model_manager_->resolve_model_name(model_id);
         std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
+        if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+            wire_id = model_id;
+        }
         res.set_content(model_info_to_json(wire_id, info).dump(), "application/json");
+    } else if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+        auto resolved_target = alias_manager_->resolve_alias(model_id);
+        if (resolved_target) {
+            std::string canonical_target = model_manager_->resolve_model_name(*resolved_target);
+            if (model_manager_->model_exists(canonical_target)) {
+                auto info = model_manager_->get_model_info(canonical_target);
+                res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
+                return;
+            } else if (model_manager_->model_exists(*resolved_target)) {
+                auto info = model_manager_->get_model_info(*resolved_target);
+                res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
+                return;
+            }
+        }
+        res.status = 404;
+        auto error_response = create_model_error(model_id, "Model not found");
+        res.set_content(error_response.dump(), "application/json");
     } else {
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
@@ -2789,7 +2838,9 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
             auto_load_model_if_needed(m, json::object(),
                                       LoadPurpose::RoutingDependency);
         });
-    RoutingPolicyEngine engine(std::move(policy), std::move(services));
+    CostServices cost_services = make_router_cost_services(*router_);
+    RoutingPolicyEngine engine(std::move(policy), std::move(services),
+                               std::move(cost_services));
 
     RouteContext ctx = build_route_context(request_json, collection_info.model_name);
     const bool want_trace = request_json.value("route_trace", false);
@@ -2968,6 +3019,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
@@ -3245,6 +3297,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
@@ -3460,6 +3513,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 void Server::handle_embeddings(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -3590,6 +3645,9 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
             res.set_content(error.dump(), "application/json");
             return;
         }
+
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Reject malformed requests before any model gets loaded.
         std::string validation_error;
@@ -3896,6 +3954,8 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         if (req.form.has_field("model")) {
             request_json["model"] = req.form.get_field("model");
         }
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
         if (req.form.has_field("language")) {
             request_json["language"] = req.form.get_field("language");
         }
@@ -3982,6 +4042,8 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
 void Server::handle_audio_speech(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Handle model loading
         if (request_json.contains("model")) {
@@ -4023,7 +4085,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             if (request_json["stream_format"] != "audio") {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
-                    {"message", "Only pcm audio streaming format is supported"},
+                    {"message", "Only 'audio' is supported for stream_format"},
                     {"type", "invalid_request_error"}
                 }}};
                 res.set_content(error.dump(), "application/json");
@@ -4031,15 +4093,32 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
-        const auto supported_formats =
-            router_->audio_speech_supported_formats(request_json["model"].get<std::string>());
-        std::string response_format = "mp3";
+        const std::string speech_model = request_json["model"].get<std::string>();
+        // A backend's streaming encoder is often narrower than its buffered one, so
+        // which constraint applies depends on the transport in play.
+        auto supported_formats = router_->audio_speech_supported_formats(speech_model);
         if (is_streaming) {
-            response_format = "pcm";
-        } else if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            auto streaming_formats = router_->audio_speech_supported_streaming_formats(speech_model);
+            if (!streaming_formats.empty()) {
+                supported_formats = std::move(streaming_formats);
+            }
+        }
+        // Streaming and encoding are orthogonal: stream_format picks the transport,
+        // response_format the container. An explicit response_format therefore wins
+        // even when streaming, and is rejected below rather than silently swapped if
+        // the backend can't emit it. Only the implicit default differs by transport,
+        // and it yields to whatever the backend declares.
+        std::string response_format;
+        if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
             response_format = request_json["response_format"].get<std::string>();
-        } else if (!supported_formats.empty()) {
-            response_format = supported_formats.front();
+        } else {
+            response_format = is_streaming ? "pcm" : "mp3";
+            const bool default_supported = supported_formats.empty() ||
+                std::find(supported_formats.begin(), supported_formats.end(),
+                          response_format) != supported_formats.end();
+            if (!default_supported) {
+                response_format = supported_formats.front();
+            }
         }
         if (!MIME_TYPES.contains(response_format)) {
             res.status = 400;
@@ -4069,6 +4148,10 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             return;
         }
         std::string mime_type = MIME_TYPES[response_format];
+        // The backend has to encode what the Content-Type above promises. Without
+        // this it would receive whatever the client sent -- nothing, when the
+        // format came from a default -- and fall back to its own choice.
+        request_json["response_format"] = response_format;
 
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
@@ -4347,6 +4430,8 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         LOG(INFO, "Server") << "POST /api/v1/images/generations" << std::endl;
 
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Validate required fields
         if (!request_json.contains("prompt")) {
@@ -4864,6 +4949,8 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
@@ -4983,6 +5070,21 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         bool stream = request_json.value("stream", false);
         bool subscribe = request_json.value("subscribe", true);
         bool local_import = request_json.value("local_import", false);
+
+        // Resolve the pull's registry provenance once, up front, so download,
+        // cache layout, and later refresh stay consistent. A registry-backed
+        // checkpoint that names no source inherits the configured default; a
+        // provider URL is normalized to owner/repo and its registry adopted.
+        // Self-managed backends (flm/cloud), non-registry checkpoints, explicit
+        // sources, and bare `pull <registered-name>` refreshes are left as-is.
+        try {
+            lemon::apply_default_pull_source(request_json, config_->default_model_source());
+        } catch (const std::invalid_argument& e) {
+            bad_request(e.what());
+            return;
+        }
+        // The helper may have rewritten a provider URL into an owner/repo id.
+        checkpoint = request_json.value("checkpoint", "");
 
         // Validate and canonicalize remote-registry provenance before anything is
         // persisted. `source` remains backward-compatible with local origins, while
@@ -5264,6 +5366,11 @@ void Server::handle_registry_search(const httplib::Request& req, httplib::Respon
 }
 
 void Server::handle_pull_variants(const httplib::Request& req, httplib::Response& res) {
+    auto bad_request = [&res](const std::string& message) {
+        res.status = 400;
+        nlohmann::json error = {{"error", message}};
+        res.set_content(error.dump(), "application/json");
+    };
     try {
         std::string checkpoint = req.get_param_value("checkpoint");
         if (checkpoint.empty()) {
@@ -5272,6 +5379,44 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
+        // Detect the URL provider upfront so we can reject mismatches with
+        // an explicit `--source` param (just like /pull and the CLI do).
+        lemon::RemoteRegistrySource url_source;
+        std::string url_repo_id;
+        bool has_url = lemon::detect_registry_url(checkpoint, url_source, url_repo_id);
+
+        // Explicit `--source` was provided (or not).  Capture the raw param
+        // now while checkpoint still holds the URL for error messages.
+        std::string raw_source;
+        if (req.has_param("source")) {
+            raw_source = req.get_param_value("source");
+        }
+
+        // Reject mismatches between explicit source and detected URL source.
+        // Canonicalize the raw param first so accepted aliases (e.g. `hf`) are
+        // not rejected against the URL's canonical registry name.
+        if (has_url && !raw_source.empty()) {
+            if (parse_remote_registry_source(raw_source) != url_source) {
+                bad_request(
+                    "checkpoint URL uses " + remote_registry_source_name(url_source) +
+                    " but source was set to '" + raw_source + "'");
+                return;
+            }
+        }
+
+        // A provider URL is authoritative: normalize it to owner/repo and adopt
+        // its registry. Otherwise honor an explicit source param, falling back
+        // to the server's configured default when none is given.
+        if (has_url) {
+            checkpoint = url_repo_id;
+        }
+        std::string source;
+        if (has_url) {
+            source = remote_registry_source_name(url_source);
+        } else {
+            source = req.has_param("source")
+                ? req.get_param_value("source") : config_->default_model_source();
+        }
         if (checkpoint.find('/') == std::string::npos) {
             res.status = 400;
             nlohmann::json error = {{"error",
@@ -5279,8 +5424,6 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
-        const std::string source = req.has_param("source")
-            ? req.get_param_value("source") : "huggingface";
         const auto parsed_source = parse_remote_registry_source(source);
         if (config_->offline()) {
             res.status = 400;
@@ -5289,14 +5432,18 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             return;
         }
         bool not_found = false;
+        const std::string resolved_source = remote_registry_source_name(parsed_source);
         nlohmann::json body = lemon::fetch_pull_variants(
-            checkpoint, remote_registry_source_name(parsed_source), not_found);
+            checkpoint, resolved_source, not_found);
         if (not_found) {
             res.status = 404;
             nlohmann::json error = {{"error", "Checkpoint '" + checkpoint + "' not found on " +
                 remote_registry_display_name(parsed_source)}};
             res.set_content(error.dump(), "application/json");
             return;
+        }
+        if (body.is_object()) {
+            body["source"] = resolved_source;
         }
         res.set_content(body.dump(), "application/json");
     } catch (const std::invalid_argument& e) {
@@ -5320,6 +5467,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
+    normalize_and_resolve_request_model(request_json);
 
     try {
         model_name = request_json["model_name"];
@@ -5440,6 +5588,8 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
         if (!req.body.empty()) {
             try {
                 auto request_json = nlohmann::json::parse(req.body);
+                normalize_client_model_name(request_json);
+                normalize_and_resolve_request_model(request_json);
                 if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
                     model_name = request_json["model_name"].get<std::string>();
                 } else if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -5632,6 +5782,154 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
         res.status = 500;
         auto error_response = create_model_error("", e.what());
         res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+// Alias failures are not model-lookup failures. create_model_error() rewrites its
+// message whenever the name is absent from the registry, which is always true for a
+// new alias, so routing these through it would report "model not found" instead of
+// the actual reason.
+static nlohmann::json create_alias_error(const std::string& message, const std::string& code,
+                                         const std::string& type = "invalid_request_error") {
+    return nlohmann::json{{"error", {
+        {"message", message},
+        {"type", type},
+        {"param", "alias"},
+        {"code", code}
+    }}};
+}
+
+void Server::handle_aliases_get(const httplib::Request& req, httplib::Response& res) {
+    try {
+        nlohmann::json alias_list = nlohmann::json::array();
+        if (alias_manager_) {
+            for (const auto& [alias, target] : alias_manager_->get_all_aliases()) {
+                bool downloaded = false;
+                std::string recipe = "llamacpp";
+                try {
+                    if (model_manager_->model_exists(target)) {
+                        std::string canonical = model_manager_->resolve_model_name(target);
+                        downloaded = model_manager_->is_model_downloaded(canonical);
+                        ModelInfo info = model_manager_->get_model_info(canonical);
+                        recipe = info.recipe;
+                    }
+                } catch (...) {}
+                alias_list.push_back({
+                    {"alias", alias},
+                    {"target", target},
+                    {"downloaded", downloaded},
+                    {"recipe", recipe}
+                });
+            }
+        }
+        res.set_content(nlohmann::json{{"aliases", alias_list}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(create_alias_error(e.what(), "internal_error", "server_error").dump(), "application/json");
+    }
+}
+
+void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto req_json = nlohmann::json::parse(req.body);
+        std::string alias = utils::normalize_model_name(req_json.value("alias", ""));
+        std::string target = utils::normalize_model_name(req_json.value("target", req_json.value("model", "")));
+
+        if (alias.empty() || target.empty()) {
+            res.status = 400;
+            res.set_content(create_alias_error("Alias and target fields are required", "invalid_request").dump(), "application/json");
+            return;
+        }
+
+        if (alias == target) {
+            res.status = 400;
+            res.set_content(create_alias_error("Alias cannot point to itself", "invalid_alias").dump(), "application/json");
+            return;
+        }
+
+        if (alias.rfind("user.", 0) == 0 || alias.rfind("extra.", 0) == 0 || alias.rfind("builtin.", 0) == 0) {
+            res.status = 400;
+            res.set_content(create_alias_error("Alias name cannot use reserved prefixes (user., extra., builtin.)", "invalid_alias").dump(), "application/json");
+            return;
+        }
+
+        if (model_manager_->model_exists(alias)) {
+            std::string canonical = model_manager_->resolve_model_name(alias);
+            if (canonical == alias || canonical == "user." + alias || canonical == "builtin." + alias) {
+                res.status = 409;
+                res.set_content(create_alias_error("Cannot create alias '" + alias + "': Name conflicts with an existing canonical model", "alias_conflict").dump(), "application/json");
+                return;
+            }
+        }
+
+        if (!alias_manager_) {
+            res.status = 500;
+            res.set_content(create_alias_error("AliasManager uninitialized", "internal_error", "server_error").dump(), "application/json");
+            return;
+        }
+
+        std::string err_msg;
+        if (!alias_manager_->set_alias(alias, target, err_msg)) {
+            res.status = 409;
+            res.set_content(create_alias_error(err_msg, "alias_conflict").dump(), "application/json");
+            return;
+        }
+
+        nlohmann::json response = {
+            {"status", "ok"},
+            {"alias", alias},
+            {"target", target}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(create_alias_error(e.what(), "invalid_request").dump(), "application/json");
+    }
+}
+
+void Server::handle_aliases_remove(const httplib::Request& req, httplib::Response& res) {
+    std::string alias = utils::normalize_model_name(req.matches[1]);
+    try {
+        if (!alias_manager_ || !alias_manager_->remove_alias(alias)) {
+            res.status = 404;
+            res.set_content(create_alias_error("Alias not found: " + alias, "alias_not_found").dump(), "application/json");
+            return;
+        }
+        nlohmann::json response = {
+            {"status", "deleted"},
+            {"alias", alias}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(create_alias_error(e.what(), "internal_error", "server_error").dump(), "application/json");
+    }
+}
+
+std::string Server::resolve_alias_target(const std::string& model_name) const {
+    if (alias_manager_) {
+        auto resolved = alias_manager_->resolve_alias(model_name);
+        if (resolved.has_value()) {
+            return resolved.value();
+        }
+    }
+    return model_name;
+}
+
+void Server::normalize_and_resolve_request_model(nlohmann::json& request_json) const {
+    if (request_json.contains("model") && request_json["model"].is_string()) {
+        std::string raw_name = request_json["model"].get<std::string>();
+        std::string resolved = resolve_alias_target(raw_name);
+        if (resolved != raw_name) {
+            request_json["model"] = resolved;
+        }
+    }
+    if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
+        std::string raw_name = request_json["model_name"].get<std::string>();
+        std::string resolved = resolve_alias_target(raw_name);
+        if (resolved != raw_name) {
+            request_json["model_name"] = resolved;
+        }
     }
 }
 
