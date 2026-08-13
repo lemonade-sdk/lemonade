@@ -7003,12 +7003,14 @@ class EndpointTests(ServerTestBase):
                 pass
 
     def test_037_model_update_check_lifecycle(self):
-        """A successful re-pull clears a staged per-model update marker.
+        """A staged stale provenance snapshot must not flag a false update.
 
-        The production fix stores the processed upstream snapshot per model
-        selection in .lemonade_registry.json. Staging only that value as stale
-        exercises the regression without moving refs/main or model files that
-        may be shared by sibling variants in the same repository.
+        The processed-at-pull snapshot recorded in .lemonade_registry.json can
+        name a commit whose snapshot was never materialized locally (pull keeps
+        refs/main on an older snapshot when the selected artifacts are
+        unchanged). The update check compares against the on-disk snapshot,
+        never that recorded sha, so staging only it as stale must not report an
+        "Update available". Regression for the false-positive cycle on restart.
         """
         pull_response = requests.post(
             f"{self.base_url}/pull",
@@ -7074,7 +7076,12 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(stale_response.status_code, 200, stale_response.text)
             stale_result = stale_response.json()
             self.assertEqual(stale_result.get("status"), "success")
-            self.assertIn(ENDPOINT_TEST_MODEL, stale_result.get("models", []))
+            self.assertNotIn(
+                ENDPOINT_TEST_MODEL,
+                stale_result.get("models", []),
+                "A stale provenance snapshot must not raise a false update flag "
+                "while the on-disk snapshot is unchanged",
+            )
 
             repull_response = requests.post(
                 f"{self.base_url}/pull",
@@ -7101,7 +7108,7 @@ class EndpointTests(ServerTestBase):
             with open(provenance_path, "w", encoding="utf-8") as provenance_file:
                 provenance_file.write(original_provenance)
 
-        print("[OK] /models/check-updates lifecycle clears after re-pull")
+        print("[OK] /models/check-updates ignores stale provenance snapshots")
 
 
 if __name__ == "__main__":
