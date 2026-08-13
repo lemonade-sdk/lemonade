@@ -1114,6 +1114,11 @@ class EndpointTests(ServerTestBase):
             {"auto_evict": "sometimes"},  # wrong type for a null-default option
             {"llamacpp_backend": "nonsense"},  # not a backend this host supports
             {"evict_idle_timeout": 600.5},  # fractional value for a whole-number option
+            # Zero breaks the eviction engine: the timeouts evict on the first
+            # sweep, and a zero weight divides by zero into +inf.
+            {"evict_idle_timeout": 0},
+            {"downsize_idle_timeout": 0},
+            {"evict_weight_factor": 0},
         ):
             response = requests.post(
                 self._options_url(), json=body, timeout=TIMEOUT_DEFAULT

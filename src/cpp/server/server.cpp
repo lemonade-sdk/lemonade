@@ -2810,21 +2810,31 @@ static std::string validate_option_value(const RuntimeConfig& config,
     }
 
     // A fractional value for a whole-number option is silently ignored by the
-    // consumers that read it, and a negative one is meaningless for all of
-    // them, so refuse both.
+    // consumers that read it, so refuse it.
     if (expected.is_number_integer() && !value.is_number_integer()) {
         return "'" + key + "' must be a whole number";
     }
+
+    // Only descriptor options have a global-config counterpart; the universal
+    // kit must not be routed through that validator, since key names like
+    // merge_args collide with the config's own rules. What is left of the kit
+    // once ctx_size is handled above is the eviction settings: two timeouts and
+    // a protection weight, all of which the eviction engine mishandles at zero
+    // (evicted on the first sweep, or a divide by zero that makes the model the
+    // first candidate rather than the last).
+    if (!RecipeOptions::is_backend_option(recipe, key)) {
+        if (expected.is_number() && value.is_number() && value.get<double>() <= 0) {
+            return "'" + key + "' must be positive";
+        }
+        return "";
+    }
+
     if (expected.is_number() && value.is_number() && value.get<double>() < 0) {
         return "'" + key + "' cannot be negative";
     }
 
     // Defer to the validator the global config already uses for these same
-    // option names, so the two surfaces cannot disagree about a value. Only
-    // descriptor options have a global-config counterpart; the universal kit
-    // must not be routed through it, since key names like merge_args collide
-    // with the config's own rules.
-    if (!RecipeOptions::is_backend_option(recipe, key)) return "";
+    // option names, so the two surfaces cannot disagree about a value.
 
     std::string config_key = key;
     const std::string recipe_prefix = recipe + "_";
@@ -2901,13 +2911,18 @@ void Server::respond_with_model_options(
         RecipeOptions defaults = router_->resolve_effective_options(without_saved, no_request_options);
 
         nlohmann::json effective_json = resolve_all_recipe_options(effective);
+        nlohmann::json defaults_json = resolve_all_recipe_options(defaults);
         if (router_->is_model_loaded(model_key)) {
             // A load keeps a live process's own pin rather than the saved one
             // (see Router::load_model), so reporting the saved value here would
             // contradict what "what a load would use" means for every other key.
+            // `defaults` gets the same treatment: erasing the saved entry does
+            // not unpin a running process, so this is what it would become.
             const auto live_pinned = router_->get_model_recipe_options(model_key)
                                          .get_option("pinned");
-            effective_json["pinned"] = live_pinned.is_boolean() && live_pinned.get<bool>();
+            const bool pinned = live_pinned.is_boolean() && live_pinned.get<bool>();
+            effective_json["pinned"] = pinned;
+            defaults_json["pinned"] = pinned;
         }
 
         nlohmann::json response = {
@@ -2915,7 +2930,7 @@ void Server::respond_with_model_options(
             {"recipe", info.recipe},
             {"saved", model_manager_->get_saved_model_options(model_key)},
             {"effective", std::move(effective_json)},
-            {"defaults", resolve_all_recipe_options(defaults)},
+            {"defaults", std::move(defaults_json)},
             {"reload_required", router_->would_reload(model_key, effective)}
         };
         res.set_content(response.dump(), "application/json");
@@ -3021,7 +3036,11 @@ void Server::handle_model_options_delete(const httplib::Request& req, httplib::R
             // Only an active saved pin needs undoing. A saved `false`, or a pin
             // a /load request applied to the live process, is not something this
             // erase turned off, and `effective` reports the live pin either way.
-            touched_pinned = saved.value("pinned", false) == true;
+            // Read defensively: a hand-edited entry can hold any type, and this
+            // is the endpoint that clears such an entry.
+            const auto saved_pin = saved.find("pinned");
+            touched_pinned = saved_pin != saved.end() && saved_pin->is_boolean() &&
+                             saved_pin->get<bool>();
             if (!saved.empty()) {
                 model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
             }
