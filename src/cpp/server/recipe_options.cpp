@@ -113,7 +113,6 @@ bool RecipeOptions::is_default_sentinel(const std::string& key, const json& valu
     return is_empty_option(key, value);
 }
 
-
 #ifndef LEMONADE_CLI
 static bool try_get_backend_options(const std::string& opt_name, SystemInfo::SupportedBackendsResult& result) {
     // Generic handling for any *_backend option

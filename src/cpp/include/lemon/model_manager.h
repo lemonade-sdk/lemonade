@@ -311,7 +311,6 @@ public:
 
     // What the model would resolve to with its recipe_options.json entry
     // removed: image_defaults plus the registry JSON's own recipe_options.
-    RecipeOptions get_model_default_options(const std::string& model_name);
     RecipeOptions get_model_default_options(const ModelInfo& info);
 
     // Replace the model's recipe_options.json entry, returning the new entry.
@@ -383,13 +382,13 @@ private:
 
     json registry_recipe_options(const std::string& cache_key);
     json write_saved_model_options(const std::string& model_name, const json& options, bool merge);
-    void refresh_cached_recipe_options(const std::string& cache_key,
-                                       const std::string& canonical_id, const json& saved);
 
     // Cache management
     void build_cache();
     void add_model_to_cache(const std::string& model_name);
     void update_model_options_in_cache(const ModelInfo& info);
+    // Caller must hold models_cache_mutex_.
+    void update_model_options_in_cache_locked(const ModelInfo& info);
     void update_model_in_cache(const std::string& model_name, bool downloaded);
     void remove_model_from_cache(const std::string& model_name);
 
@@ -435,6 +434,9 @@ private:
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
+    // Orders recipe_options.json rewrites without holding models_cache_mutex_
+    // (which every request thread contends on) across disk I/O.
+    std::mutex recipe_options_write_mutex_;
 
     // Serializes concurrent downloads that write into the same snapshot
     // (keyed by checkpoint repo). See download_registered_model.

@@ -1108,6 +1108,7 @@ class EndpointTests(ServerTestBase):
             {"ctx_size": 4096.5},  # not a whole number
             {"auto_evict": "sometimes"},  # wrong type for a null-default option
             {"llamacpp_backend": "nonsense"},  # not a backend this host supports
+            {"evict_idle_timeout": 600.5},  # fractional value for a whole-number option
         ):
             response = requests.post(
                 self._options_url(), json=body, timeout=TIMEOUT_DEFAULT
@@ -1298,6 +1299,48 @@ class EndpointTests(ServerTestBase):
         )
 
         print("[OK] reload_required agrees with what /load does")
+
+    def test_012u_pinned_changes_reach_the_running_model(self):
+        """Saving or clearing `pinned` applies to a live process, both ways.
+
+        A loaded backend keeps its own pin state across loads, so a saved value
+        that is not pushed down would be reported by the endpoint but never take
+        effect, leaving the model permanently exempt from eviction.
+        """
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+        requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        def live_pinned():
+            return self._get_loaded_model_info(ENDPOINT_TEST_MODEL)["pinned"]
+
+        requests.post(
+            self._options_url(), json={"pinned": True}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertTrue(live_pinned(), "Saving pinned=true should pin the live model")
+
+        # Clearing the option falls back to the default of false, so the live
+        # process has to be unpinned too.
+        cleared = requests.post(
+            self._options_url(), json={"pinned": None}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertNotIn("pinned", cleared["saved"])
+        self.assertFalse(cleared["effective"]["pinned"])
+        self.assertFalse(live_pinned(), "Clearing pinned should unpin the live model")
+
+        # And the same through DELETE, which erases the whole entry.
+        requests.post(
+            self._options_url(), json={"pinned": True}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertTrue(live_pinned())
+        self._reset_options()
+        self.assertFalse(live_pinned(), "DELETE should unpin the live model")
+
+        print("[OK] pinned changes are applied to the running model")
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak

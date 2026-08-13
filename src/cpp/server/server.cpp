@@ -2796,12 +2796,19 @@ static bool option_type_matches(const nlohmann::json& expected, const nlohmann::
 // saved for. Returns an error message, or empty when the value is usable.
 static std::string validate_option_value(const std::string& recipe,
                                          const std::string& key,
+                                         const nlohmann::json& expected,
                                          const nlohmann::json& value) {
     if (key == "ctx_size") {
         if (!value.is_number_integer() || value.get<int64_t>() < -1) {
             return "'ctx_size' must be a whole number, or -1 to size it automatically";
         }
         return "";
+    }
+
+    // A fractional value for a whole-number option is silently ignored by the
+    // consumers that read it (the eviction timeouts, for example), so refuse it.
+    if (expected.is_number_integer() && !value.is_number_integer()) {
+        return "'" + key + "' must be a whole number";
     }
 
     static const std::string backend_suffix = "_backend";
@@ -2842,7 +2849,10 @@ void Server::respond_with_model_options(
 
     try {
         ModelInfo info = model_manager_->get_model_info(model_key);
+        nlohmann::json pinned_before;
         if (mutation) {
+            pinned_before = model_manager_->get_saved_model_options(model_key).value(
+                "pinned", nlohmann::json());
             if (!mutation(model_key, info, res)) return;
             // Re-read so the response reflects the merged stack after the write.
             info = model_manager_->get_model_info(model_key);
@@ -2850,6 +2860,17 @@ void Server::respond_with_model_options(
 
         const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
         RecipeOptions effective = router_->resolve_effective_options(info, no_request_options);
+
+        // A live process keeps its own pin state across loads, so a saved change
+        // that is not pushed down would be reported but never take effect.
+        if (mutation && router_->is_model_loaded(model_key)) {
+            nlohmann::json pinned_after = model_manager_->get_saved_model_options(model_key).value(
+                "pinned", nlohmann::json());
+            if (pinned_before != pinned_after) {
+                const auto pinned = effective.get_option("pinned");
+                router_->set_model_pinned(model_key, pinned.is_boolean() && pinned.get<bool>());
+            }
+        }
 
         ModelInfo without_saved = info;
         without_saved.recipe_options = model_manager_->get_model_default_options(info);
@@ -2917,13 +2938,14 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                     changes[key] = nullptr;
                     continue;
                 }
-                if (!option_type_matches(unset.get_option(key), value)) {
+                const nlohmann::json expected = unset.get_option(key);
+                if (!option_type_matches(expected, value)) {
                     r.status = 400;
                     r.set_content(nlohmann::json{{"error", "Invalid type for option '" + key + "'"}}
                                       .dump(), "application/json");
                     return false;
                 }
-                const std::string invalid = validate_option_value(info.recipe, key, value);
+                const std::string invalid = validate_option_value(info.recipe, key, expected, value);
                 if (!invalid.empty()) {
                     r.status = 400;
                     r.set_content(nlohmann::json{{"error", invalid}}.dump(), "application/json");
@@ -2932,14 +2954,8 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                 changes[key] = value;
             }
 
-            if (changes.empty()) return true;
-            model_manager_->update_saved_model_options(model_key, changes);
-
-            // A live process keeps its own pin state across loads, so saving
-            // this without applying it would report a pin that never happens.
-            if (changes.contains("pinned") && changes["pinned"].is_boolean() &&
-                router_->is_model_loaded(model_key)) {
-                router_->set_model_pinned(model_key, changes["pinned"].get<bool>());
+            if (!changes.empty()) {
+                model_manager_->update_saved_model_options(model_key, changes);
             }
             return true;
         });

@@ -1585,14 +1585,15 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     LOG(INFO, "ModelManager") << "Saving options for model: " << info.model_name << std::endl;
     // Persist under canonical ID (built-ins are keyed bare in cache but
     // recipe_options.json stores them as builtin.<name>).
+    std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
+    json snapshot;
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
         recipe_options_[cache_key_to_canonical_id(info.model_name)] = info.recipe_options.to_json();
-        // Written under the lock: two writers that only serialize their in-memory
-        // merge can still land their whole-file rewrites out of order.
-        save_user_json(get_recipe_options_file(), recipe_options_);
+        snapshot = recipe_options_;
+        update_model_options_in_cache_locked(info);
     }
-    update_model_options_in_cache(info);
+    save_user_json(get_recipe_options_file(), snapshot);
 }
 
 json ModelManager::get_saved_model_options(const std::string& model_name) {
@@ -1603,10 +1604,6 @@ json ModelManager::get_saved_model_options(const std::string& model_name) {
         return recipe_options_[id];
     }
     return json::object();
-}
-
-RecipeOptions ModelManager::get_model_default_options(const std::string& model_name) {
-    return get_model_default_options(get_model_info(resolve_model_name(model_name)));
 }
 
 RecipeOptions ModelManager::get_model_default_options(const ModelInfo& info) {
@@ -1641,20 +1638,42 @@ json ModelManager::update_saved_model_options(const std::string& model_name, con
     return write_saved_model_options(model_name, changes, /*merge=*/true);
 }
 
-// Read-modify-write of one model's recipe_options.json entry. The merge happens
-// under the lock so two clients editing different options of the same model
-// can't drop each other's key.
+// Read-modify-write of one model's recipe_options.json entry.
+//
+// recipe_options_write_mutex_ orders the whole-file rewrites, so two writers
+// can't land their snapshots out of order; models_cache_mutex_ covers the merge
+// and the matching cache update together, so the cache can never end up holding
+// an older option set than the file. Only the first is held across disk I/O —
+// every request thread contends on the cache mutex.
 json ModelManager::write_saved_model_options(const std::string& model_name,
                                              const json& options, bool merge) {
     const std::string cache_key = resolve_model_name(model_name);
     const std::string id = cache_key_to_canonical_id(cache_key);
     LOG(INFO, "ModelManager") << "Updating saved options for model: " << model_name << std::endl;
 
+    // Both of these take models_cache_mutex_ themselves, so gather the layers
+    // the merged options are rebuilt from before locking.
+    ModelInfo info;
+    bool have_info = true;
+    try {
+        info = get_model_info(cache_key);
+    } catch (const std::exception&) {
+        have_info = false;
+    }
+    const json registry_options = have_info ? registry_recipe_options(cache_key) : json(nullptr);
+
+    std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
+
     json saved;
+    json snapshot;
+    json previous;
+    bool had_previous = false;
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        saved = merge && recipe_options_.contains(id) && recipe_options_[id].is_object()
-            ? recipe_options_[id] : json::object();
+        had_previous = recipe_options_.contains(id);
+        if (had_previous) previous = recipe_options_[id];
+
+        saved = merge && had_previous && previous.is_object() ? previous : json::object();
         if (merge) {
             for (const auto& [key, value] : options.items()) {
                 if (value.is_null()) {
@@ -1672,33 +1691,34 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
         } else {
             recipe_options_[id] = saved;
         }
-        // Written under the lock: serializing only the in-memory merge would
-        // still let two writers land their whole-file rewrites out of order.
-        save_user_json(get_recipe_options_file(), recipe_options_);
+        snapshot = recipe_options_;
+
+        if (have_info) {
+            // Same layering as build_cache(), so the two can't drift.
+            info.recipe_options = build_recipe_options(info, registry_options, id,
+                                                       json{{id, saved}});
+            update_model_options_in_cache_locked(info);
+        }
     }
 
-    refresh_cached_recipe_options(cache_key, id, saved);
-    return saved;
-}
+    if (!have_info) invalidate_models_cache();
 
-// Rebuild just this model's merged recipe options in the cache. Invalidating the
-// whole cache instead would put a full build_cache() — including live cloud
-// provider queries — on the request path.
-void ModelManager::refresh_cached_recipe_options(const std::string& cache_key,
-                                                 const std::string& canonical_id,
-                                                 const json& saved) {
-    ModelInfo info;
     try {
-        info = get_model_info(cache_key);
-    } catch (const std::exception&) {
+        save_user_json(get_recipe_options_file(), snapshot);
+    } catch (...) {
+        // Leave memory matching disk, otherwise the options stay live for the
+        // rest of this process and silently vanish on restart.
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        if (had_previous) {
+            recipe_options_[id] = previous;
+        } else {
+            recipe_options_.erase(id);
+        }
         invalidate_models_cache();
-        return;
+        throw;
     }
 
-    // Same layering as build_cache(), so the two can't drift.
-    info.recipe_options = build_recipe_options(info, registry_recipe_options(cache_key),
-                                               canonical_id, json{{canonical_id, saved}});
-    update_model_options_in_cache(info);
+    return saved;
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
@@ -2458,7 +2478,10 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
 
 void ModelManager::update_model_options_in_cache(const ModelInfo& info) {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    update_model_options_in_cache_locked(info);
+}
 
+void ModelManager::update_model_options_in_cache_locked(const ModelInfo& info) {
     if (!cache_valid_) {
         return; // Will rebuild on next access
     }

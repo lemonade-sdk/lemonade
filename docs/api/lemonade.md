@@ -289,7 +289,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 | `defaults` | What `effective` would become if `saved` were erased. A `ctx_size` of `-1` here means the server picks the context size automatically. |
 | `reload_required` | `true` when the model is loaded and a `/v1/load` would restart its backend to apply the saved options. Always `false` when the model is not loaded. An auto `ctx_size` is satisfied by whatever size the running process already resolved to, so switching an explicit size back to auto does not on its own require a reload. |
 
-> Note: per-architecture defaults are read from the model's GGUF metadata, so for a model that has not been downloaded yet, `effective` and `defaults` omit them.
+> Note: per-architecture defaults are read from the model's GGUF metadata. Every key is still present for a model that has not been downloaded yet, but carries the value it would have before those defaults are applied.
 
 ## `POST /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -864,7 +864,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
 | `pinned` | No | All | Boolean. If true, pins the loaded model to prevent LRU eviction. Defaults to `false`. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. To save options without loading, or to change one option without resending the rest, use [`POST /v1/models/{id}/options`](#post-v1modelsidoptions) instead. |
-| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
+| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. Pass `-1` to size it automatically for this load, which overrides a saved value; omit it to use the saved value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux. Default is `npu` if supported. |
