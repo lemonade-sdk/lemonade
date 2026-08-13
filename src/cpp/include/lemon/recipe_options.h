@@ -31,6 +31,11 @@ public:
     /// Option names this recipe accepts, in declaration order.
     static std::vector<std::string> keys_for_recipe(const std::string& recipe);
 
+    /// Every option the recipe accepts, with unset keys resolved to their
+    /// defaults. Two option sets that resolve equal describe the same load,
+    /// however sparsely each one was spelled.
+    json to_resolved_json() const;
+
     /// True for values the constructor drops as "not set": null, -1, "" and
     /// "auto". ctx_size is the exception — every non-number is dropped there,
     /// since -1 is the storable value meaning "size the context automatically".

@@ -1015,15 +1015,18 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(before.status_code, 200)
         self.assertEqual(before.json()["saved"], {})
 
+        # model_name mirrors what `effective` reports, so the whole object can
+        # be replayed against /load or back here; it must not be persisted.
         response = requests.post(
             self._options_url(),
-            json={"ctx_size": 8192},
+            json={"ctx_size": 8192, "model_name": ENDPOINT_TEST_MODEL},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["saved"], {"ctx_size": 8192})
         self.assertEqual(data["effective"]["ctx_size"], 8192)
+        self.assertEqual(data["effective"]["model_name"], ENDPOINT_TEST_MODEL)
 
         # The save must be visible to /models/{id} without a load having happened
         model_info = requests.get(
@@ -1185,6 +1188,49 @@ class EndpointTests(ServerTestBase):
         )
 
         print("[OK] Saved ctx_size=-1 overrides an explicit global ctx_size")
+
+    def test_012t_effective_replays_as_a_load_command(self):
+        """`effective` is the exact /v1/load body that reproduces the load.
+
+        Load with saved options, erase them, then replay `effective` verbatim:
+        if it fully captures the load command, the router resolves identical
+        options and keeps the backend process; any gap forces a reload."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+        # An auto-sized model restarts on every /load, so pin an explicit size.
+        requests.post(
+            self._options_url(),
+            json={"ctx_size": 3072, "llamacpp_args": "--no-mmap"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        effective = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "effective"
+        ]
+        self.assertEqual(effective["model_name"], ENDPOINT_TEST_MODEL)
+
+        load = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load.status_code, 200, load.text)
+        loaded_before = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self._assert_loaded_model_pid(loaded_before)
+
+        self._reset_options()
+        replay = requests.post(
+            f"{self.base_url}/load", json=effective, timeout=TIMEOUT_MODEL_OPERATION
+        )
+        self.assertEqual(replay.status_code, 200, replay.text)
+        loaded_after = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self._assert_loaded_model_pid(loaded_after)
+        self.assertEqual(
+            loaded_after["pid"],
+            loaded_before["pid"],
+            "Replaying `effective` must resolve to the same load",
+        )
+
+        print("[OK] `effective` replays verbatim as a /v1/load command")
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak

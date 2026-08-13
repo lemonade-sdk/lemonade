@@ -256,7 +256,8 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "llamacpp_args": "",
     "llamacpp_backend": "vulkan",
     "llamacpp_device": "",
-    "merge_args": true
+    "merge_args": true,
+    "model_name": "Qwen3-0.6B-GGUF"
   },
   "defaults": {
     "auto_evict": null,
@@ -267,33 +268,34 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "llamacpp_args": "",
     "llamacpp_backend": "vulkan",
     "llamacpp_device": "",
-    "merge_args": true
+    "merge_args": true,
+    "model_name": "Qwen3-0.6B-GGUF"
   }
 }
 ```
 
 | Field | Description |
 |-------|-------------|
-| `saved` | The model's own entry in `recipe_options.json`, containing only what was explicitly saved. `{}` when nothing is saved. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so post `effective` back rather than `saved`. |
-| `effective` | Every option the recipe accepts, resolved through the full priority chain. This is what a load right now would use. Its keys are the names `POST` accepts, but posting it back whole saves every resolved value as an override — send only the options the user changed. |
-| `defaults` | What `effective` would become if `saved` were erased. A `ctx_size` of `-1` here means the server picks the context size automatically. |
+| `saved` | The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`. |
+| `effective` | Every option the recipe accepts, resolved through the full priority chain, plus `model_name`. This is the exact request body [`POST /v1/load`](#post-v1load) uses for the model right now, and it replays there verbatim. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. |
+| `defaults` | What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically. |
 
-> Note: per-architecture defaults are read from the model's GGUF metadata. Every key is still present for a model that has not been downloaded yet, but carries the value it would have before those defaults are applied.
+> Note: per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
 
 ## `POST /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Save recipe options for a model **without loading it**. The request body is a flat object of the same recipe options [`/v1/load`](#post-v1load) accepts, and nothing else. The model is identified by the URL, not the body.
+Save recipe options for a model without loading it. The request body is a flat object of the same recipe options [`/v1/load`](#post-v1load) accepts. The URL identifies the model; a `model_name` in the body is ignored.
 
-Options are merged into whatever is already saved, so keys you don't mention are left alone. Sending `null` removes an option, and the model falls back to the next layer of the [priority chain](#post-v1load); `""`, `-1`, and `"auto"` remove it too, since those are the values Lemonade reads as "not set". To remove every saved option at once, use [`DELETE`](#delete-v1modelsidoptions).
+The request merges into the model's saved entry, so keys you don't mention are left alone. `null` removes an option, and the model falls back to the next layer of the [priority chain](#post-v1load); `""`, `-1`, and `"auto"` remove it too, since those are the values Lemonade reads as "not set". [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
 
-`ctx_size` is the exception: `-1` is a value there, not an absence, and saving it pins the model to automatic context sizing. That matters when the server-wide `ctx_size` is a specific number, because removing the option would make the model inherit that number instead. It is cleared by `null`, `""`, and `"auto"`, but not by `-1`.
+`ctx_size` is the exception: `-1` is a value there, not an absence, and saving it pins the model to automatic context sizing even when the server-wide `ctx_size` is a specific number. `null`, `""`, and `"auto"` clear it; `-1` does not.
 
-Options are validated against the model's recipe, and nothing is saved unless every option in the request passes. A `400` reports an unrecognized option name, an option belonging to a different recipe, a value of the wrong type, or an invalid `ctx_size`.
+A `400` reports an unrecognized option name, an option from a different recipe, a value of the wrong type, or an invalid `ctx_size`, and nothing from that request is saved.
 
 Saving never loads or reloads the model, so a model that is already running keeps its current options until it is next loaded.
 
-> Note: `pinned` is not settable here — it belongs to [`/v1/load`](#post-v1load) and `/internal/pin`, and is omitted from `effective` and `defaults`.
+> Note: `pinned` is not settable here and is omitted from `effective` and `defaults`. It belongs to [`/v1/load`](#post-v1load) and `/internal/pin`.
 
 ### Example requests
 

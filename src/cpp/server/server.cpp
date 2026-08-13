@@ -2785,11 +2785,8 @@ static bool is_live_process_option(const std::string& key) {
 // Fill in every option the recipe accepts, resolving unset keys through the
 // default chain, so a client can render a complete form from one response.
 static nlohmann::json resolve_all_recipe_options(const RecipeOptions& options) {
-    nlohmann::json resolved = nlohmann::json::object();
-    for (const auto& key : RecipeOptions::keys_for_recipe(options.get_recipe())) {
-        if (is_live_process_option(key)) continue;
-        resolved[key] = options.get_option(key);
-    }
+    nlohmann::json resolved = options.to_resolved_json();
+    resolved.erase("pinned");
     return resolved;
 }
 
@@ -2866,12 +2863,17 @@ void Server::respond_with_model_options(
         without_saved.recipe_options = model_manager_->get_model_default_options(info);
         RecipeOptions defaults = router_->resolve_effective_options(without_saved, no_request_options);
 
+        // `effective` and `defaults` double as replayable /v1/load bodies.
+        nlohmann::json effective_json = resolve_all_recipe_options(effective);
+        nlohmann::json defaults_json = resolve_all_recipe_options(defaults);
+        effective_json["model_name"] = model_id;
+        defaults_json["model_name"] = model_id;
         nlohmann::json response = {
             {"model_name", model_id},
             {"recipe", info.recipe},
             {"saved", model_manager_->get_saved_model_options(model_key)},
-            {"effective", resolve_all_recipe_options(effective)},
-            {"defaults", resolve_all_recipe_options(defaults)}
+            {"effective", effective_json},
+            {"defaults", defaults_json}
         };
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
@@ -2920,6 +2922,9 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
             // change as set-or-erase so the merge can happen atomically.
             nlohmann::json changes = nlohmann::json::object();
             for (const auto& [key, value] : body.items()) {
+                // The URL names the model; tolerate the body's copy so the
+                // `effective` object (a /v1/load body) can be posted back here.
+                if (key == "model_name") continue;
                 if (!allowed.count(key)) {
                     r.status = 400;
                     r.set_content(nlohmann::json{{"error", "Unknown option '" + key +

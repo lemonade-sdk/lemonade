@@ -850,8 +850,12 @@ void Router::load_model(const std::string& model_name,
             existing = nullptr;
         }
         if (existing) {
-            json existing_opts = existing->get_recipe_options().to_json();
-            json requested_opts = effective_options.to_json();
+            // Compare resolved rather than stored sets: a request that spells
+            // out an option the running process left to its default (e.g. a
+            // replayed `effective` from /v1/models/{id}/options) is the same
+            // load, not an option change.
+            json existing_opts = existing->get_recipe_options().to_resolved_json();
+            json requested_opts = effective_options.to_resolved_json();
             existing_opts.erase("pinned");
             requested_opts.erase("pinned");
             if (allow_reload_on_option_change && existing_opts != requested_opts) {

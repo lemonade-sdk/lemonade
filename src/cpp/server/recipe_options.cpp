@@ -109,6 +109,14 @@ std::vector<std::string> RecipeOptions::keys_for_recipe(const std::string& recip
     return get_keys_for_recipe(recipe);
 }
 
+json RecipeOptions::to_resolved_json() const {
+    json resolved = json::object();
+    for (const auto& key : get_keys_for_recipe(recipe_)) {
+        resolved[key] = get_option(key);
+    }
+    return resolved;
+}
+
 bool RecipeOptions::is_default_sentinel(const std::string& key, const json& value) {
     return is_empty_option(key, value);
 }
