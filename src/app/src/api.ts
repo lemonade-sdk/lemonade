@@ -1055,6 +1055,9 @@ class LemonadeAPI {
     try {
       resp = await fetch(url, { ...processedOpts, headers } as RequestInit);
     } catch (cause) {
+      if (processedOpts.signal?.aborted) {
+        throw cause;
+      }
       if (includeSessionHeaders && this.sessionHeadersEnabled) {
         this.sessionHeadersEnabled = false;
         this.onSessionHeadersFailed?.();
