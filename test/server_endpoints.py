@@ -1342,6 +1342,66 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] pinned changes are applied to the running model")
 
+    def test_012v_options_accept_a_user_model_public_name(self):
+        """A user model addressed by its bare public name is handled correctly.
+
+        User models are keyed `user.NAME` internally but are addressable by the
+        bare NAME. Router calls that match on the canonical name, such as pinning
+        a live process, need the resolved key rather than the requested one.
+        """
+        model_name = f"user.Options-Canon-{uuid.uuid4().hex[:8]}"
+        public_name = model_name.split(".", 1)[1]
+        checkpoint = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}", timeout=TIMEOUT_DEFAULT
+        ).json()["checkpoint"]
+
+        def cleanup():
+            requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": model_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": model_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+
+        self.addCleanup(cleanup)
+        # Reuses the endpoint test model's checkpoint, so nothing new downloads.
+        pull = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": model_name,
+                "checkpoint": checkpoint,
+                "recipe": "llamacpp",
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(pull.status_code, 200, pull.text)
+
+        requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": public_name},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        response = requests.post(
+            self._options_url(model=public_name),
+            json={"pinned": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["saved"]["pinned"])
+
+        loaded = self._get_loaded_model_info(public_name)
+        self.assertIsNotNone(loaded, "The user model should be loaded")
+        self.assertTrue(
+            loaded["pinned"], "Pinning through the public name must reach the process"
+        )
+
+        print("[OK] Options endpoint resolves user-model public names")
+
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
         into recipe_options on auto-load.

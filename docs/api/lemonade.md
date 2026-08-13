@@ -285,7 +285,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 | Field | Description |
 |-------|-------------|
 | `saved` | The model's own entry in `recipe_options.json`, containing only what was explicitly saved. `{}` when nothing is saved. |
-| `effective` | Every option the recipe accepts, resolved through the full priority chain. This is what a load right now would use, and the set of names `POST` accepts. |
+| `effective` | Every option the recipe accepts, resolved through the full priority chain. This is what a load right now would use. Its keys are the names `POST` accepts, but posting it back whole saves every resolved value as an override — send only the options the user changed. |
 | `defaults` | What `effective` would become if `saved` were erased. A `ctx_size` of `-1` here means the server picks the context size automatically. |
 | `reload_required` | `true` when the model is loaded and a `/v1/load` would restart its backend to apply the saved options. Always `false` when the model is not loaded. An auto `ctx_size` is satisfied by whatever size the running process already resolved to, so switching an explicit size back to auto does not on its own require a reload. |
 

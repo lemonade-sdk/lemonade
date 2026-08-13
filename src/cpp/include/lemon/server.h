@@ -116,11 +116,13 @@ private:
     // Shared body of the three model-options handlers: resolves the model from
     // the path, applies `mutation` to its saved options (skipped when null),
     // and writes the saved/effective/defaults response. A mutation that returns
-    // false has already written its own error response.
+    // false has already written its own error response. It sets `touched_pinned`
+    // when the request covered `pinned`, so the resolved value can be pushed to
+    // a running process.
     void respond_with_model_options(
         const httplib::Request& req, httplib::Response& res,
         const std::function<bool(const std::string& model_key, const ModelInfo& info,
-                                 httplib::Response& res)>& mutation);
+                                 httplib::Response& res, bool& touched_pinned)>& mutation);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
     // Server-side tool-calling orchestration for Omni "collection" models.
     void handle_collection_chat_completions(const nlohmann::json& request_json,

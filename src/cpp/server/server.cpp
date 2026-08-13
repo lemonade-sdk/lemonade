@@ -2806,9 +2806,15 @@ static std::string validate_option_value(const std::string& recipe,
     }
 
     // A fractional value for a whole-number option is silently ignored by the
-    // consumers that read it (the eviction timeouts, for example), so refuse it.
-    if (expected.is_number_integer() && !value.is_number_integer()) {
-        return "'" + key + "' must be a whole number";
+    // consumers that read it (the eviction timeouts, for example), and a
+    // negative one is read as "already expired", so refuse both.
+    if (expected.is_number_integer()) {
+        if (!value.is_number_integer()) {
+            return "'" + key + "' must be a whole number";
+        }
+        if (value.get<int64_t>() < 0) {
+            return "'" + key + "' cannot be negative";
+        }
     }
 
     static const std::string backend_suffix = "_backend";
@@ -2826,7 +2832,7 @@ static std::string validate_option_value(const std::string& recipe,
 
 void Server::respond_with_model_options(
     const httplib::Request& req, httplib::Response& res,
-    const std::function<bool(const std::string&, const ModelInfo&, httplib::Response&)>& mutation) {
+    const std::function<bool(const std::string&, const ModelInfo&, httplib::Response&, bool&)>& mutation) {
     const std::string model_id = utils::normalize_model_name(req.matches[1]);
     std::string model_key = model_id;
 
@@ -2847,13 +2853,15 @@ void Server::respond_with_model_options(
         }
     }
 
+    // Router::set_model_pinned matches on the canonical name, unlike the
+    // ModelManager calls below, which resolve whatever they are given.
+    model_key = model_manager_->resolve_model_name(model_key);
+
     try {
         ModelInfo info = model_manager_->get_model_info(model_key);
-        nlohmann::json pinned_before;
+        bool touched_pinned = false;
         if (mutation) {
-            pinned_before = model_manager_->get_saved_model_options(model_key).value(
-                "pinned", nlohmann::json());
-            if (!mutation(model_key, info, res)) return;
+            if (!mutation(model_key, info, res, touched_pinned)) return;
             // Re-read so the response reflects the merged stack after the write.
             info = model_manager_->get_model_info(model_key);
         }
@@ -2861,15 +2869,11 @@ void Server::respond_with_model_options(
         const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
         RecipeOptions effective = router_->resolve_effective_options(info, no_request_options);
 
-        // A live process keeps its own pin state across loads, so a saved change
+        // A live process keeps its own pin state across loads, so a saved value
         // that is not pushed down would be reported but never take effect.
-        if (mutation && router_->is_model_loaded(model_key)) {
-            nlohmann::json pinned_after = model_manager_->get_saved_model_options(model_key).value(
-                "pinned", nlohmann::json());
-            if (pinned_before != pinned_after) {
-                const auto pinned = effective.get_option("pinned");
-                router_->set_model_pinned(model_key, pinned.is_boolean() && pinned.get<bool>());
-            }
+        if (touched_pinned && router_->is_model_loaded(model_key)) {
+            const auto pinned = effective.get_option("pinned");
+            router_->set_model_pinned(model_key, pinned.is_boolean() && pinned.get<bool>());
         }
 
         ModelInfo without_saved = info;
@@ -2902,7 +2906,8 @@ void Server::handle_model_options_get(const httplib::Request& req, httplib::Resp
 
 void Server::handle_model_options_post(const httplib::Request& req, httplib::Response& res) {
     respond_with_model_options(req, res,
-        [this, &req](const std::string& model_key, const ModelInfo& info, httplib::Response& r) {
+        [this, &req](const std::string& model_key, const ModelInfo& info, httplib::Response& r,
+                     bool& touched_pinned) {
             nlohmann::json body;
             if (!parse_required_json_body(req, r, body)) return false;
             if (!body.is_object()) {
@@ -2954,6 +2959,9 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                 changes[key] = value;
             }
 
+            // Push a requested pin down even when the saved value is unchanged:
+            // a prior /load may have left the live process out of step with it.
+            touched_pinned = changes.contains("pinned");
             if (!changes.empty()) {
                 model_manager_->update_saved_model_options(model_key, changes);
             }
@@ -2963,8 +2971,11 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
 
 void Server::handle_model_options_delete(const httplib::Request& req, httplib::Response& res) {
     respond_with_model_options(req, res,
-        [this](const std::string& model_key, const ModelInfo&, httplib::Response&) {
-            if (!model_manager_->get_saved_model_options(model_key).empty()) {
+        [this](const std::string& model_key, const ModelInfo&, httplib::Response&,
+               bool& touched_pinned) {
+            const nlohmann::json saved = model_manager_->get_saved_model_options(model_key);
+            touched_pinned = saved.contains("pinned");
+            if (!saved.empty()) {
                 model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
             }
             return true;

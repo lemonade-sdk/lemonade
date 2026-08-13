@@ -1714,7 +1714,9 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
         } else {
             recipe_options_.erase(id);
         }
-        invalidate_models_cache();
+        // Set directly rather than calling invalidate_models_cache(), which
+        // takes this same non-recursive mutex.
+        cache_valid_ = false;
         throw;
     }
 
