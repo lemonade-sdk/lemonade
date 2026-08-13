@@ -141,34 +141,28 @@ static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 static constexpr const char EXTRA_MODEL_RECIPE[] = "llamacpp";
 static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
 
-// The deployment ModelType a model actually serves, honoring backend capability.
-// A backend that cannot chat outranks the model's own labels: a stray "chat" on
-// an sd-cpp or whispercpp model must not promote it to LLM and slip past
-// capability validation or reach chat_completion() at runtime.
+// The deployment ModelType a model actually serves.
+//
+// `classification` is the one label that does not mean what it says on most
+// backends: /v1/classify is served only by onnxruntime, so typing any other
+// backend CLASSIFICATION would send run_classifier to Router::classify() and hit
+// an unsupported-capability error. Drop the claim there so the model stays an
+// LLM, usable as an LLM-as-classifier over chat.
 static ModelType get_deployment_model_type(const std::string& recipe,
                                            const std::vector<std::string>& labels) {
-    ModelType backend_type =
-        get_model_type_from_labels({lemon::backends::default_classification_for(recipe)});
-    if (backend_type != ModelType::LLM) {
-        return backend_type;
-    }
     ModelType type = get_model_type_from_labels(labels);
-
-    // Only onnxruntime implements IClassificationServer, and it returned above
-    // on its own classification. So a `classification` label on any backend
-    // reaching here is spurious: typing it CLASSIFICATION would send
-    // run_classifier to Router::classify() and hit an unsupported-capability
-    // error. Drop the claim so the model stays usable as an LLM-as-classifier.
-    if (type == ModelType::CLASSIFICATION) {
-        std::vector<std::string> non_classification;
-        for (const auto& label : labels) {
-            if (label != "classification" && label != "classifier") {
-                non_classification.push_back(label);
-            }
-        }
-        return get_model_type_from_labels(non_classification);
+    if (type != ModelType::CLASSIFICATION ||
+        lemon::backends::default_classification_for(recipe) == "classification") {
+        return type;
     }
-    return type;
+
+    std::vector<std::string> non_classification;
+    for (const auto& label : labels) {
+        if (label != "classification" && label != "classifier") {
+            non_classification.push_back(label);
+        }
+    }
+    return get_model_type_from_labels(non_classification);
 }
 
 // Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
@@ -4937,11 +4931,8 @@ std::optional<std::string> ModelManager::validate_collection_request(
                 }
                 // Derive the type exactly as register_user_model() +
                 // get_deployment_model_type() would once this inline definition
-                // is registered — explicit labels, legacy capability flags, and
-                // the backend's default labels, with the backend's deployment
-                // capability winning over chat-indicator labels — so validation
-                // and runtime cannot disagree (e.g. a label-less sd-cpp model is
-                // IMAGE, and onnxruntime + reasoning:true is CLASSIFICATION, not LLM).
+                // is registered, so validation and runtime cannot disagree (e.g.
+                // a label-less sd-cpp model is IMAGE, not LLM).
                 std::set<std::string> label_set = normalized_definition_labels(*def);
                 return get_deployment_model_type(
                     def->value("recipe", std::string()),
