@@ -1316,7 +1316,7 @@ namespace lemon::backends {
             progress_cb(p);
         }
 
-        auto log_line = [&progress_cb, &downloads_seen, &g_therock_wheels_cancelled,
+        auto log_line = [&progress_cb, &downloads_seen,
                          &bytes_total, &bytes_downloaded, &install_phase_started](const std::string& line) {
             LOG(INFO, "BackendUtils") << "(pip) " << line << std::endl;
             if (!progress_cb) {
