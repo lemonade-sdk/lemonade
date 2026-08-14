@@ -294,7 +294,19 @@ jobs:
     # Label a PR `ci:upgrades` to opt it back in.
     if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
     runs-on: windows-latest
+    outputs:
+      lite: ${{ steps.lite.outputs.lite }}
     steps:
+      - name: Resolve lite mode
+        # The env context is unavailable in a job's `strategy` block, so the
+        # validate matrix reads LITE_MODE through this output to size its
+        # runners from the same source of truth the validation itself uses.
+        id: lite
+        shell: PowerShell
+        run: |
+          "lite=$env:LITE_MODE" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       - name: Prepare Windows runner for long paths and stale workspace caches
         if: runner.os == 'Windows'
         shell: PowerShell
@@ -412,15 +424,30 @@ jobs:
     strategy:
       fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
+        # Full runs walk every hot model, topping out at gpt-oss-120b (59 GiB),
+        # which only fits the 128gb runner. Lite runs test just the smallest hot
+        # model (0.6 GiB), so they stay off that single contended machine.
+        # The lite rocm legs omit the `rocm` label because no Windows runner is
+        # known to carry it alongside `stx-halo`; ROCm backends already run on a
+        # bare [Windows, stx-halo] selector elsewhere in CI.
         include:
           - backend: vulkan
-            runner: [self-hosted, Windows, 128gb, vulkan, lemon-prod]
+            runner: >-
+              ${{ fromJSON(needs.build.outputs.lite == 'true'
+              && '["self-hosted","Windows","stx-halo","vulkan","lemon-prod"]'
+              || '["self-hosted","Windows","128gb","vulkan","lemon-prod"]') }}
           - backend: rocm
             channel: stable
-            runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
+            runner: >-
+              ${{ fromJSON(needs.build.outputs.lite == 'true'
+              && '["self-hosted","Windows","stx-halo","lemon-prod"]'
+              || '["self-hosted","Windows","128gb","rocm","lemon-prod"]') }}
           - backend: rocm
             channel: nightly
-            runner: [self-hosted, Windows, 128gb, rocm, lemon-prod]
+            runner: >-
+              ${{ fromJSON(needs.build.outputs.lite == 'true'
+              && '["self-hosted","Windows","stx-halo","lemon-prod"]'
+              || '["self-hosted","Windows","128gb","rocm","lemon-prod"]') }}
           # CUDA validation is prepared but intentionally disabled until an
           # NVIDIA self-hosted runner is available. To enable it, uncomment this
           # matrix entry.
@@ -628,7 +655,7 @@ jobs:
                 )
               }
           )
-  
+
           foreach ($process in $staleProcesses) {
             Write-Host "Stopping stale $($process.Name) PID $($process.ProcessId)." `
               -ForegroundColor Yellow
@@ -642,7 +669,7 @@ jobs:
               }
             }
           }
-  
+
       - uses: actions/checkout@v5
         with:
           clean: true
@@ -831,7 +858,7 @@ jobs:
           if ($validationExitCode -ne 0) {
             exit $validationExitCode
           }
-  
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v7
