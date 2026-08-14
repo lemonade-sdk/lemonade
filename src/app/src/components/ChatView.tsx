@@ -119,15 +119,24 @@ function getDownloadStoreModule(): Promise<typeof import('../features/downloadMa
   return downloadStoreModulePromise;
 }
 
-const CHAT_LOGS_WIDTH_KEY = 'chat_logs_panel_width';
-const CHAT_LOGS_DEFAULT_WIDTH = 520;
+const CHAT_LOGS_WIDTH_KEY = 'chat_logs_overlay_width_v2';
+const CHAT_LOGS_DEFAULT_WIDTH = 640;
+const CHAT_LOGS_DEFAULT_VIEWPORT_RATIO = 0.60;
 const CHAT_LOGS_MIN_WIDTH = 340;
 const CHAT_LOGS_MAX_WIDTH = 920;
+const CHAT_LOGS_MIN_REVEALED_CHAT_WIDTH = 160;
+const CHAT_RAIL_COLLAPSED_WIDTH = 56;
+const CHAT_RAIL_EXPANDED_WIDTH = 248;
+
+function chatRailWidth(railExpanded = true): number {
+  if (typeof window !== 'undefined' && window.innerWidth <= 768) return 0;
+  return railExpanded ? CHAT_RAIL_EXPANDED_WIDTH : CHAT_RAIL_COLLAPSED_WIDTH;
+}
 
 function maxChatLogsWidthForViewport(railExpanded = true): number {
   if (typeof window === 'undefined') return CHAT_LOGS_MAX_WIDTH;
-  const railWidth = railExpanded ? 280 : 56;
-  const viewportMax = window.innerWidth - railWidth - 380;
+  const availableChatWidth = Math.max(0, window.innerWidth - chatRailWidth(railExpanded));
+  const viewportMax = availableChatWidth - CHAT_LOGS_MIN_REVEALED_CHAT_WIDTH;
   return Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(CHAT_LOGS_MAX_WIDTH, viewportMax));
 }
 
@@ -135,14 +144,31 @@ function clampChatLogsWidth(width: number, railExpanded = true): number {
   return Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(maxChatLogsWidthForViewport(railExpanded), Math.round(width)));
 }
 
+function defaultChatLogsWidth(railExpanded = true): number {
+  if (typeof window === 'undefined') return CHAT_LOGS_DEFAULT_WIDTH;
+  const availableChatWidth = Math.max(0, window.innerWidth - chatRailWidth(railExpanded));
+  const viewportTarget = Math.round(availableChatWidth * CHAT_LOGS_DEFAULT_VIEWPORT_RATIO);
+  return clampChatLogsWidth(Math.max(CHAT_LOGS_DEFAULT_WIDTH, viewportTarget), railExpanded);
+}
+
 function loadChatLogsWidth(): number {
   if (typeof window === 'undefined') return CHAT_LOGS_DEFAULT_WIDTH;
   try {
-    const stored = Number(window.localStorage.getItem(scopedKey(CHAT_LOGS_WIDTH_KEY)));
-    const width = Number.isFinite(stored) ? stored : CHAT_LOGS_DEFAULT_WIDTH;
-    return clampChatLogsWidth(width, true);
+    const raw = window.localStorage.getItem(scopedKey(CHAT_LOGS_WIDTH_KEY));
+    const stored = raw === null ? Number.NaN : Number(raw);
+    return Number.isFinite(stored)
+      ? Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(CHAT_LOGS_MAX_WIDTH, Math.round(stored)))
+      : defaultChatLogsWidth(true);
   } catch {
-    return clampChatLogsWidth(CHAT_LOGS_DEFAULT_WIDTH, true);
+    return defaultChatLogsWidth(true);
+  }
+}
+
+function persistChatLogsWidth(width: number): void {
+  try {
+    window.localStorage.setItem(scopedKey(CHAT_LOGS_WIDTH_KEY), String(Math.round(width)));
+  } catch {
+    // Non-critical: log overlay width persistence is best-effort only.
   }
 }
 
@@ -901,32 +927,26 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return () => { cancelled = true; };
   }, [connectionStatus]);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(scopedKey(CHAT_LOGS_WIDTH_KEY), String(chatLogsWidth));
-    } catch {
-      // Non-critical: inline log width persistence is best-effort only.
-    }
-  }, [chatLogsWidth]);
-
+  const effectiveChatLogsWidth = clampChatLogsWidth(chatLogsWidth, railExpanded);
   const chatLayoutStyle = useMemo(() => ({
-    '--chat-logs-width': `${chatLogsWidth}px`,
-  } as React.CSSProperties), [chatLogsWidth]);
+    '--chat-logs-width': `${effectiveChatLogsWidth}px`,
+  } as React.CSSProperties), [effectiveChatLogsWidth]);
 
   const handleChatLogsResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (window.innerWidth <= 980) return;
     event.preventDefault();
 
     const startX = event.clientX;
-    const startWidth = chatLogsWidth;
+    const startWidth = clampChatLogsWidth(chatLogsWidth, railExpanded);
+    let latestWidth = startWidth;
     const handle = event.currentTarget;
     try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       // The handle sits on the left edge of the logs panel: dragging left makes
       // the panel wider, dragging right makes it narrower.
-      const nextWidth = clampChatLogsWidth(startWidth - (moveEvent.clientX - startX), railExpanded);
-      setChatLogsWidth(nextWidth);
+      latestWidth = clampChatLogsWidth(startWidth - (moveEvent.clientX - startX), railExpanded);
+      setChatLogsWidth(latestWidth);
     };
 
     const stopResize = () => {
@@ -934,6 +954,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       window.removeEventListener('pointerup', stopResize);
       window.removeEventListener('pointercancel', stopResize);
       document.body.classList.remove('is-resizing-chat-logs');
+      persistChatLogsWidth(latestWidth);
       try { handle.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
     };
 
@@ -945,20 +966,27 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   const handleChatLogsResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 48 : 20;
+    const currentWidth = clampChatLogsWidth(chatLogsWidth, railExpanded);
+    let nextWidth: number | null = null;
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      setChatLogsWidth(width => clampChatLogsWidth(width + step, railExpanded));
+      nextWidth = clampChatLogsWidth(currentWidth + step, railExpanded);
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
-      setChatLogsWidth(width => clampChatLogsWidth(width - step, railExpanded));
+      nextWidth = clampChatLogsWidth(currentWidth - step, railExpanded);
     } else if (event.key === 'Home') {
       event.preventDefault();
-      setChatLogsWidth(CHAT_LOGS_MIN_WIDTH);
+      nextWidth = CHAT_LOGS_MIN_WIDTH;
     } else if (event.key === 'End') {
       event.preventDefault();
-      setChatLogsWidth(clampChatLogsWidth(CHAT_LOGS_MAX_WIDTH, railExpanded));
+      nextWidth = maxChatLogsWidthForViewport(railExpanded);
     }
-  }, [railExpanded]);
+
+    if (nextWidth !== null) {
+      setChatLogsWidth(nextWidth);
+      persistChatLogsWidth(nextWidth);
+    }
+  }, [chatLogsWidth, railExpanded]);
 
   const [customModelInfos, setCustomModelInfos] = useState<ModelInfo[]>([]);
   useEffect(() => {
@@ -3334,19 +3362,28 @@ ${finalText}`
       </div>
 
       {showInlineLogs && (
-        <aside className="chat__logs" aria-label="Lemonade logs next to chat">
+        <aside className="chat__logs" aria-label="Lemonade logs">
           <div
             className="chat__logs-resizer"
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize logs panel"
             aria-valuemin={CHAT_LOGS_MIN_WIDTH}
-            aria-valuemax={CHAT_LOGS_MAX_WIDTH}
-            aria-valuenow={chatLogsWidth}
+            aria-valuemax={maxChatLogsWidthForViewport(railExpanded)}
+            aria-valuenow={effectiveChatLogsWidth}
             tabIndex={0}
             onPointerDown={handleChatLogsResizeStart}
             onKeyDown={handleChatLogsResizeKeyDown}
           />
+          <button
+            type="button"
+            className="chat__logs-close"
+            onClick={() => setShowInlineLogs(false)}
+            aria-label="Close logs"
+            title="Close logs"
+          >
+            <Icon name="x" size={14} aria-hidden="true" />
+          </button>
           <Suspense fallback={<div className="view-loading view-loading--compact"><span className="spinner" aria-hidden="true" /></div>}>
             <LogViewer />
           </Suspense>
@@ -3493,7 +3530,7 @@ ${finalText}`
             className={`composer__tools-toggle ${showInlineLogs ? 'composer__tools-toggle--active' : ''}`}
             onClick={() => setShowInlineLogs(v => !v)}
             aria-pressed={showInlineLogs}
-            title="Show logs next to the chat"
+            title="Show logs"
           >
             <Icon name="logs" size={13} /> Logs
           </button>
