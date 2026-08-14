@@ -12561,7 +12561,8 @@ a.backend-card__version:focus-visible {
 }
 .router-editor__toolbar-row--files { justify-content: flex-end; }
 .router-editor__saved-select { min-width: 0; flex: 1 1 180px; }
-.router-editor__saved-select select { width: 100%; }
+.router-editor__saved-select .router-select,
+.router-editor__saved-select .router-select__trigger { width: 100%; }
 .router-editor__tabs { display: flex; padding: 0 var(--space-5); border-bottom: 1px solid var(--border-subtle); background: var(--surface-1); }
 .router-editor__tabs button { height: 38px; padding: 0 var(--space-3); border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-tertiary); font-size: var(--text-sm); cursor: pointer; }
 .router-editor__tabs button:hover { color: var(--text-primary); }
@@ -12911,7 +12912,8 @@ a.backend-card__version:focus-visible {
   .router-editor .workspace-detail-panel__title-row > .router-editor__toolbar { flex: 1 1 100%; }
   .router-editor__toolbar { flex-wrap: wrap; }
   .router-editor__saved-select { flex: 1 1 180px; }
-  .router-editor__saved-select select { width: 100%; }
+  .router-editor__saved-select .router-select,
+  .router-editor__saved-select .router-select__trigger { width: 100%; }
   .router-editor__form-grid,
   .router-editor__rule-meta,
   .router-editor__strategy { grid-template-columns: 1fr; }

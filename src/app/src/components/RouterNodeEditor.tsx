@@ -15,9 +15,10 @@ interface RouterSelectProps {
   onChange: (value: string) => void;
   ariaLabel?: string;
   className?: string;
+  disabled?: boolean;
 }
 
-export const RouterSelect: React.FC<RouterSelectProps> = ({ value, options, onChange, ariaLabel, className }) => {
+export const RouterSelect: React.FC<RouterSelectProps> = ({ value, options, onChange, ariaLabel, className, disabled }) => {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -55,6 +56,7 @@ export const RouterSelect: React.FC<RouterSelectProps> = ({ value, options, onCh
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
+        disabled={disabled}
         onClick={() => setOpen(v => !v)}
       >
         <span className={selected ? undefined : 'is-placeholder'}>{selected?.label ?? value}</span>

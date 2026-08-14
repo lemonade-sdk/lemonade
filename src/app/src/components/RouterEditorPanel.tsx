@@ -926,10 +926,13 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
             <WorkspaceActionButton size="small" icon="compose" disabled={saving || deleting || savingProvider} onClick={requestResetDraft}>New</WorkspaceActionButton>
             <label className="router-editor__saved-select">
               <span className="sr-only">Saved routers</span>
-              <select className="select" value={draft.modelName || ''} disabled={saving || deleting || savingProvider} onChange={event => loadSaved(event.target.value)}>
-                <option value="">Unsaved router</option>
-                {savedRecords.map(record => <option key={record.model_name} value={record.model_name}>{record.display_name}</option>)}
-              </select>
+              <RouterSelect
+                value={draft.modelName || ''}
+                options={[{ value: '', label: 'Unsaved router' }, ...savedRecords.map(r => ({ value: r.model_name, label: r.display_name }))]}
+                onChange={(val: string) => loadSaved(val)}
+                ariaLabel="Saved routers"
+                disabled={saving || deleting || savingProvider}
+              />
             </label>
           </div>
           <input ref={importRef} className="hidden-file-input" type="file" accept="application/json,.json" onChange={event => { void importFile(event.target.files?.[0]); }} />
