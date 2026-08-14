@@ -18,7 +18,7 @@ const MarkdownMessage: React.FC<React.ComponentProps<typeof LazyMarkdownMessage>
     <LazyMarkdownMessage {...props} />
   </Suspense>
 );
-import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
+import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact, type ChatThinkingMode } from '../hooks/useChatStreaming';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
@@ -120,6 +120,7 @@ function getDownloadStoreModule(): Promise<typeof import('../features/downloadMa
 }
 
 const CHAT_LOGS_WIDTH_KEY = 'chat_logs_panel_width';
+const CHAT_THINKING_MODE_KEY = 'chat_thinking_mode';
 const CHAT_LOGS_DEFAULT_WIDTH = 520;
 const CHAT_LOGS_MIN_WIDTH = 340;
 const CHAT_LOGS_MAX_WIDTH = 920;
@@ -169,6 +170,22 @@ function saveScopedStringArray(key: string, values: string[] | null): void {
   try {
     if (values === null) localStorage.removeItem(scopedKey(key));
     else localStorage.setItem(scopedKey(key), JSON.stringify([...new Set(values.filter(Boolean))]));
+  } catch {
+    // Non-critical UI preference persistence.
+  }
+}
+
+function loadChatThinkingMode(): ChatThinkingMode {
+  try {
+    return localStorage.getItem(scopedKey(CHAT_THINKING_MODE_KEY)) === 'off' ? 'off' : 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
+function saveChatThinkingMode(mode: ChatThinkingMode): void {
+  try {
+    localStorage.setItem(scopedKey(CHAT_THINKING_MODE_KEY), mode);
   } catch {
     // Non-critical UI preference persistence.
   }
@@ -812,6 +829,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
   const [mcpPickerTab, setMcpPickerTab] = useState<'lemonade' | 'external'>('lemonade');
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [thinkingMode, setThinkingMode] = useState<ChatThinkingMode>(() => loadChatThinkingMode());
+  const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
   const [mcpOptions, setMcpOptions] = useState<McpServerToolOption[]>([]);
   const [mcpPickerLoading, setMcpPickerLoading] = useState(false);
   const [mcpPickerError, setMcpPickerError] = useState('');
@@ -834,6 +853,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const thinkingMenuRef = useRef<HTMLDivElement>(null);
+  const thinkingTriggerRef = useRef<HTMLButtonElement>(null);
   const mcpReturnFocusEntryRef = useRef<'tools'>('tools');
   const mcpBackButtonRef = useRef<HTMLButtonElement | null>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
@@ -1452,6 +1473,24 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return () => window.removeEventListener('pointerdown', onPointerDown);
   }, [addMenuOpen]);
 
+  useEffect(() => {
+    if (!thinkingMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const root = thinkingMenuRef.current;
+      if (!root || root.contains(event.target as Node)) return;
+      setThinkingMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [thinkingMenuOpen]);
+
+  const selectThinkingMode = useCallback((mode: ChatThinkingMode) => {
+    setThinkingMode(mode);
+    saveChatThinkingMode(mode);
+    setThinkingMenuOpen(false);
+    requestAnimationFrame(() => thinkingTriggerRef.current?.focus());
+  }, []);
+
   const resetMcpSelection = useCallback(() => {
     const nextIds = DEFAULT_MCP_SERVER_IDS;
     persistMcpSelection(nextIds, null);
@@ -1838,6 +1877,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const modelPreparation = activeId ? modelPreparations[activeId] || null : null;
   const capabilityBusy = activeId ? capabilityBusyConvoIds.has(activeId) : false;
   const isBusy = isStreaming || capabilityBusy || isLiveRecording || modelPreparation !== null;
+
+  useEffect(() => {
+    if (isBusy) setThinkingMenuOpen(false);
+  }, [isBusy]);
+
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
   const streamingToolStatus = currentStream?.toolStatus || '';
@@ -2582,7 +2626,7 @@ ${finalText}`
     }
 
     streamModelsRef.current[convoId] = modelSnapshot;
-    await streaming.send(convoId, requestModelName, chatMessages, toolRuntime);
+    await streaming.send(convoId, requestModelName, chatMessages, toolRuntime, thinkingMode);
   }, [
     appendAssistantMessage,
     currentCapability,
@@ -2598,6 +2642,7 @@ ${finalText}`
     selectedMcpServerIds,
     selectedMcpToolNames,
     supportsChatImageInput,
+    thinkingMode,
     runCapabilityRequest,
     speakWithPinnedTts,
     streaming,
@@ -3863,6 +3908,7 @@ ${finalText}`
             <button
               className="composer__attach composer__add-trigger"
               onClick={() => {
+                setThinkingMenuOpen(false);
                 setAddMenuOpen(open => {
                   const next = !open;
                   if (!next) setMcpPickerOpen(false);
@@ -4055,18 +4101,6 @@ ${finalText}`
             style={{ display: 'none' }}
             onChange={handleFileSelect}
           />
-          {(supportsRealtimeAudio || isLiveRecording) && (
-            <button
-              className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
-              onClick={isLiveRecording ? handleMicStop : handleMicStart}
-              disabled={!currentModel || (!supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
-              title={isLiveRecording ? 'Stop live microphone transcription' : supportsRealtimeAudio ? 'Start live microphone transcription' : 'Live microphone needs HTTPS/localhost and a realtime-capable audio model'}
-              aria-label={isLiveRecording ? 'Stop live microphone transcription' : 'Start live microphone transcription'}
-              aria-pressed={isLiveRecording}
-            >
-              <Icon name="mic" size={16} />
-            </button>
-          )}
           <textarea
             ref={inputRef}
             className="composer__input"
@@ -4079,6 +4113,69 @@ ${finalText}`
             rows={1}
             aria-label="Message"
           />
+          {modeSupportsChatCompletions && (
+            <div
+              className="composer__thinking"
+              ref={thinkingMenuRef}
+              onKeyDown={event => {
+                if (event.key !== 'Escape' || !thinkingMenuOpen) return;
+                event.preventDefault();
+                setThinkingMenuOpen(false);
+                thinkingTriggerRef.current?.focus();
+              }}
+            >
+              <button
+                ref={thinkingTriggerRef}
+                type="button"
+                className="composer__thinking-trigger"
+                onClick={() => {
+                  setAddMenuOpen(false);
+                  setMcpPickerOpen(false);
+                  setThinkingMenuOpen(open => !open);
+                }}
+                disabled={isBusy}
+                title="Thinking"
+                aria-label={`Thinking: ${thinkingMode === 'off' ? 'Off' : 'Normal'}`}
+                aria-haspopup="menu"
+                aria-expanded={thinkingMenuOpen}
+              >
+                <span>{thinkingMode === 'off' ? 'Off' : 'Normal'}</span>
+                <Icon name="chevron-down" size={12} aria-hidden="true" />
+              </button>
+              {thinkingMenuOpen && (
+                <div className="composer__thinking-menu" role="menu" aria-label="Thinking">
+                  {(['normal', 'off'] as const).map(mode => {
+                    const selected = thinkingMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selected}
+                        className={`composer__thinking-option${selected ? ' is-selected' : ''}`}
+                        onClick={() => selectThinkingMode(mode)}
+                      >
+                        <span>{mode === 'off' ? 'Off' : 'Normal'}</span>
+                        {selected && <Icon name="check" size={13} aria-hidden="true" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+          {(supportsRealtimeAudio || isLiveRecording) && (
+            <button
+              className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
+              onClick={isLiveRecording ? handleMicStop : handleMicStart}
+              disabled={!currentModel || (!supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
+              title={isLiveRecording ? 'Stop live microphone transcription' : supportsRealtimeAudio ? 'Start live microphone transcription' : 'Live microphone needs HTTPS/localhost and a realtime-capable audio model'}
+              aria-label={isLiveRecording ? 'Stop live microphone transcription' : 'Start live microphone transcription'}
+              aria-pressed={isLiveRecording}
+            >
+              <Icon name="mic" size={16} />
+            </button>
+          )}
           {isStreaming ? (
             <button className="composer__stop" onClick={handleStop} aria-label="Stop generating" title="Stop"><Icon name="stop" size={16} /></button>
           ) : (
