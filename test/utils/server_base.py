@@ -185,6 +185,34 @@ def unload_all_models(port=PORT):
     return response
 
 
+def load_model(model_name, port=PORT, timeout=TIMEOUT_MODEL_OPERATION, **options):
+    """POST /api/v1/load for one model, forwarding any recipe options."""
+    payload = {"model_name": model_name}
+    payload.update(options)
+    response = requests.post(
+        f"http://localhost:{port}/api/v1/load",
+        json=payload,
+        headers=_auth_headers(),
+        timeout=timeout,
+    )
+    return response
+
+
+def unload_model(model_name, port=PORT):
+    """POST /api/v1/unload for one model, leaving anything else resident."""
+    if not model_name:
+        # The server reads an empty name as "unload everything".
+        raise ValueError("unload_model needs a model name; use unload_all_models()")
+    response = requests.post(
+        f"http://localhost:{port}/api/v1/unload",
+        json={"model_name": model_name},
+        headers=_auth_headers(),
+        timeout=30,
+    )
+    # 200 = unloaded, 404 = not loaded — both OK
+    return response
+
+
 def _is_transient_pull_status(status_code):
     return status_code in {408, 409, 429, 500, 502, 503, 504}
 
@@ -294,6 +322,8 @@ def _build_runtime_config(additional_server_args=None):
         config["llamacpp"] = {"backend": backend}
     elif wrapped_server == "sd-cpp" and backend:
         config["sdcpp"] = {"backend": backend}
+    elif wrapped_server == "thenoise" and backend:
+        config["thenoise"] = {"backend": backend}
     elif wrapped_server == "whispercpp" and backend:
         config["whispercpp"] = {"backend": backend}
     elif wrapped_server == "thinksound" and backend:
@@ -321,6 +351,9 @@ def _build_runtime_config(additional_server_args=None):
             i += 2
         elif arg == "--sdcpp" and i + 1 < len(additional):
             config["sdcpp"] = {"backend": additional[i + 1]}
+            i += 2
+        elif arg == "--thenoise" and i + 1 < len(additional):
+            config["thenoise"] = {"backend": additional[i + 1]}
             i += 2
         elif arg == "--whispercpp" and i + 1 < len(additional):
             config["whispercpp"] = {"backend": additional[i + 1]}
@@ -580,6 +613,8 @@ __all__ = [
     "wait_for_server",
     "set_server_config",
     "unload_all_models",
+    "load_model",
+    "unload_model",
     "pull_model_with_retry",
     "run_server_tests",
     "OpenAI",

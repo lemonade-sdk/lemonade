@@ -60,7 +60,7 @@ All core endpoints are registered under **4 path prefixes**:
 
 **WebSocket Realtime API**: OpenAI-compatible Realtime protocol for real-time audio transcription. `/realtime` and `/logs/stream` accept WebSocket upgrades directly on the main HTTP port; a dedicated listener on an OS-assigned port (9000+, exposed via the `websocket_port` field in the `/health` response) also remains for backward compatibility.
 
-**Internal endpoints:** `POST /internal/shutdown`
+**Internal endpoints:** `POST /internal/shutdown`, `GET /internal/aliases`, `POST /internal/aliases`, `DELETE /internal/aliases/{alias}`
 
 Optional API key auth via `LEMONADE_API_KEY` env var (regular API endpoints) or `LEMONADE_ADMIN_API_KEY` env var (full access including internal endpoints). Clients prefer `LEMONADE_ADMIN_API_KEY` if set. CORS enabled on all routes.
 
@@ -143,14 +143,18 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 
 C++ unit tests live in `test/cpp/` and are wired up in the root `CMakeLists.txt`. The packaging workflow builds the `cpp-ci-tests` aggregate target and runs `ctest -L cpp-ci`, so a test only runs in CI if it is both labeled `cpp-ci` **and** a dependency of that aggregate target.
 
-**Direct `add_test()` is disabled** (the built-in is overridden to fail with a fatal error just before the test section). Every test MUST be declared with the `add_cpp_ci_test()` helper, which forces an explicit `CI <ON|OFF>` decision at the call site so a test is never silently omitted from — or accidentally added to — CI:
+**Direct `add_test()` is disabled** (the built-in is overridden to fail with a fatal error just before the test section). Every test MUST be declared with the `add_cpp_ci_test()` helper, which forces an explicit `CI <ON|OFF>` decision at the call site so a test is never silently omitted from — or accidentally added to — CI.
+
+**The enclosing `if()` MUST test `BUILD_TESTING`.** Distro packaging (`contrib/debian/rules`, the RPM job) configures with `BUILD_TESTING=OFF` so it does not build ~45 test binaries it then discards; calling `add_cpp_ci_test()` in that configuration is a fatal error rather than a silent return to the slow build.
 
 ```cmake
-add_executable(test_my_feature test/cpp/test_my_feature.cpp ...)
-# ...target_include_directories / target_link_libraries...
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_my_feature.cpp")
+    add_executable(test_my_feature test/cpp/test_my_feature.cpp ...)
+    # ...target_include_directories / target_link_libraries...
 
-include(CTest)
-add_cpp_ci_test(MyFeatureTest CI ON COMMAND test_my_feature)
+    include(CTest)
+    add_cpp_ci_test(MyFeatureTest CI ON COMMAND test_my_feature)
+endif()
 ```
 
 ```cmake
