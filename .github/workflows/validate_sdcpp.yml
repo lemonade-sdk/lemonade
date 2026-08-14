@@ -271,10 +271,7 @@ jobs:
       matrix:
         # SDCPP_TEST_MODELS peaks at ~18 GB resident, so these legs never needed
         # the 128gb runner; the sd-cpp suite in cpp_server_build_test_release.yml
-        # already runs on hosts with no size label at all. The rocm leg omits the
-        # `rocm` label because no Windows runner is known to carry it alongside
-        # `stx-halo`; ROCm backends already run on a bare [Windows, stx-halo]
-        # selector elsewhere in CI.
+        # already runs on hosts with no size label at all.
         include:
           - label: cpu
             backend: cpu
@@ -287,7 +284,7 @@ jobs:
           - label: rocm-stable
             backend: rocm
             channel: stable
-            runner: [self-hosted, Windows, stx-halo]
+            runner: [self-hosted, Windows, stx-halo, rocm]
           # CUDA is pinned by the updater and its assets are required by the
           # verify-cuda-assets job after this validation matrix completes.
           # Validation stays disabled until a matching runner exists.
