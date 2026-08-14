@@ -708,6 +708,8 @@ sys.exit(0)
             # 1. Set broadcast to false using the CLI config set
             result = self.assertCommandSucceeds(
                 [
+                    "--port",
+                    str(PORT),
                     "config",
                     "set",
                     "broadcast=false",
@@ -727,6 +729,8 @@ sys.exit(0)
             # 2. Set broadcast back to true
             result = self.assertCommandSucceeds(
                 [
+                    "--port",
+                    str(PORT),
                     "config",
                     "set",
                     "broadcast=true",
@@ -743,19 +747,23 @@ sys.exit(0)
             # 3. Test that the client works with --no-discovery and --discovery flags
             self.assertCommandSucceeds(
                 [
+                    "--port",
+                    str(PORT),
                     "--no-discovery",
                     "status",
                 ]
             )
             self.assertCommandSucceeds(
                 [
+                    "--port",
+                    str(PORT),
                     "--discovery",
                     "status",
                 ]
             )
         finally:
             # Restore default
-            run_cli_command(["config", "set", "broadcast=true"])
+            run_cli_command(["--port", str(PORT), "config", "set", "broadcast=true"])
 
     # =============================================================================
     # Pull Tests

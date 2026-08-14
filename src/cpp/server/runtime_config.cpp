@@ -114,14 +114,21 @@ static std::pair<json, std::string> normalize_config_set_changes(const json& cha
         LOG(WARNING) << message << std::endl;
     }
 
+    // Reject conflicting broadcast options
+    if (normalized.contains("broadcast") && normalized.contains("no_broadcast")) {
+        throw std::invalid_argument("Cannot specify both 'broadcast' and 'no_broadcast'");
+    }
+
+    if (normalized.contains("broadcast") && !normalized["broadcast"].is_boolean()) {
+        throw std::invalid_argument("'broadcast' must be a boolean");
+    }
+
     // Migrate legacy no_broadcast to broadcast
     if (normalized.contains("no_broadcast")) {
         if (!normalized["no_broadcast"].is_boolean()) {
             throw std::invalid_argument("'no_broadcast' must be a boolean");
         }
-        if (!normalized.contains("broadcast")) {
-            normalized["broadcast"] = !normalized["no_broadcast"].get<bool>();
-        }
+        normalized["broadcast"] = !normalized["no_broadcast"].get<bool>();
         normalized.erase("no_broadcast");
     }
 
@@ -252,9 +259,15 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
 
 RuntimeConfig::RuntimeConfig(const json& config)
     : config_(config) {
+    if (config_.contains("broadcast") && !config_["broadcast"].is_boolean()) {
+        throw std::invalid_argument("'broadcast' must be a boolean");
+    }
     // Migrate legacy no_broadcast if present
     if (config_.contains("no_broadcast")) {
-        if (!config_.contains("broadcast") && config_["no_broadcast"].is_boolean()) {
+        if (!config_["no_broadcast"].is_boolean()) {
+            throw std::invalid_argument("'no_broadcast' must be a boolean");
+        }
+        if (!config_.contains("broadcast")) {
             config_["broadcast"] = !config_["no_broadcast"].get<bool>();
         }
         config_.erase("no_broadcast");
@@ -950,17 +963,24 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
             }
         } else if (key == "no_broadcast") {
             bool bcast = !value.get<bool>();
-            if (!config_.contains("broadcast") || config_["broadcast"] != bcast) {
-                config_["broadcast"] = bcast;
+            bool prev_effective_bcast = (broadcast_override_.has_value())
+                ? *broadcast_override_
+                : (config_.contains("broadcast") && config_["broadcast"].is_boolean() ? config_["broadcast"].get<bool>() : true);
+            config_["broadcast"] = bcast;
+            broadcast_override_ = std::nullopt;
+            if (prev_effective_bcast != bcast) {
                 applied_diff["broadcast"] = bcast;
             }
-            broadcast_override_ = std::nullopt;
         } else if (key == "broadcast") {
-            if (!config_.contains("broadcast") || config_["broadcast"] != value) {
-                config_["broadcast"] = value;
-                applied_diff["broadcast"] = value;
-            }
+            bool bcast = value.get<bool>();
+            bool prev_effective_bcast = (broadcast_override_.has_value())
+                ? *broadcast_override_
+                : (config_.contains("broadcast") && config_["broadcast"].is_boolean() ? config_["broadcast"].get<bool>() : true);
+            config_["broadcast"] = bcast;
             broadcast_override_ = std::nullopt;
+            if (prev_effective_bcast != bcast) {
+                applied_diff["broadcast"] = bcast;
+            }
         } else {
             if (!config_.contains(key) || config_[key] != value) {
                 config_[key] = value;
