@@ -120,7 +120,7 @@ bool is_chat_model(const json& m) {
 }
 
 std::vector<std::string> chat_labels() {
-    return {"cloud"};
+    return {"cloud", "chat"};
 }
 
 // Detect capability labels (vision / tool-calling / reasoning) from a

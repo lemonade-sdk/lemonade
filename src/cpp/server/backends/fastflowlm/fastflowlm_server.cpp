@@ -323,15 +323,6 @@ json FastFlowLMServer::embeddings(const json& request) {
     return forward_request("/v1/embeddings", request);
 }
 
-json FastFlowLMServer::reranking(const json& request) {
-    if (model_type_ != ModelType::LLM) {
-        return ErrorResponse::from_exception(
-            UnsupportedOperationException("Reranking", "FLM " + model_type_to_string(model_type_) + " model")
-        );
-    }
-    return forward_request("/v1/rerank", request);
-}
-
 json FastFlowLMServer::audio_transcriptions(const json& request) {
     if (model_type_ != ModelType::TRANSCRIPTION) {
         return ErrorResponse::from_exception(
