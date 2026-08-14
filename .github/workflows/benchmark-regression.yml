@@ -103,7 +103,6 @@ jobs:
   # Runner: [self-hosted, stx-halo, Linux, lemon-prod]
   # max-parallel: 1 is load-bearing: benches must run one at a time on the
   # shared box or the perf numbers are meaningless.
-  # TODO: add 128gb label once confirmed for Linux runners (currently only exists on Windows)
   # =========================================================================
   bench:
     name: Bench ${{ matrix.fork_id }}
