@@ -376,15 +376,20 @@ jobs:
 
           $script | python -
 
-      - name: Build C++ Server with CMake
+      - name: Build lemond
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
           Write-Host "Building Lemonade server binaries..." -ForegroundColor Cyan
           if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-          cmake --preset vs18
+          # The validation drives lemond over HTTP and never invokes the CLI,
+          # so lemond is the only target it needs.
+          cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build build --config Release
+          # /m:2 goes straight to MSBuild rather than through --parallel, which
+          # makes CMake set CL_MPCount=1 and cancel the /MP in CMakeLists.txt.
+          # Capped at 2 because /MP already spawns one cl.exe per core.
+          cmake --build build --config Release --target lemond -- /m:2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path "build\Release\lemond.exe")) {
               Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
@@ -628,7 +633,7 @@ jobs:
                 )
               }
           )
-  
+
           foreach ($process in $staleProcesses) {
             Write-Host "Stopping stale $($process.Name) PID $($process.ProcessId)." `
               -ForegroundColor Yellow
@@ -642,7 +647,7 @@ jobs:
               }
             }
           }
-  
+
       - uses: actions/checkout@v5
         with:
           clean: true
@@ -831,7 +836,7 @@ jobs:
           if ($validationExitCode -ne 0) {
             exit $validationExitCode
           }
-  
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v7

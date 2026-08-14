@@ -2347,6 +2347,26 @@ if(BUILD_TESTING AND EXISTS "${_GGUF_SHARD_TEST_SRC}")
     add_cpp_ci_test(GgufShardUtilsTest CI ON COMMAND test_gguf_shard_utils)
 endif()
 
+# Per-model artifact selection and snapshot baselines used to decide whether an
+# upstream commit actually touches a downloaded model.
+set(_HF_UPDATE_CHECK_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hf_update_check.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_HF_UPDATE_CHECK_TEST_SRC}")
+    add_executable(test_hf_update_check
+        test/cpp/test_hf_update_check.cpp
+    )
+    target_include_directories(test_hf_update_check PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_hf_update_check PRIVATE lemonade-server-core)
+    add_dependencies(test_hf_update_check copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(HfUpdateCheckTest CI ON COMMAND test_hf_update_check)
+endif()
+
 # Model residency role/pool contract for router dependencies
 set(_MODEL_RESIDENCY_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_residency.cpp"
@@ -2916,6 +2936,13 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_executable(test_http_client_security test/cpp/test_http_client_security.cpp)
     target_link_libraries(test_http_client_security PRIVATE lemonade-server-core)
     add_cpp_ci_test(HttpClientSecurityTest CI OFF COMMAND test_http_client_security)
+endif()
+
+set(_STREAMING_PROXY_CANCEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_cancel.cpp")
+if(BUILD_TESTING AND EXISTS "${_STREAMING_PROXY_CANCEL_TEST_SRC}")
+    add_executable(test_streaming_proxy_cancel test/cpp/test_streaming_proxy_cancel.cpp)
+    target_link_libraries(test_streaming_proxy_cancel PRIVATE lemonade-server-core)
+    add_cpp_ci_test(StreamingProxyCancelTest CI OFF COMMAND test_streaming_proxy_cancel)
 endif()
 
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")

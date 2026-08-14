@@ -15,6 +15,7 @@
 #include <lemon/backends/fastflowlm/fastflowlm_models.h>
 #include <lemon/cloud_provider_registry.h>
 #include <lemon/gguf_shard_utils.h>
+#include <lemon/registry_files.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -313,28 +314,6 @@ static std::string read_processed_registry_snapshot_id(
     } catch (const std::exception&) {
         return "";
     }
-}
-
-static std::string snapshot_id_from_resolved_path(
-    const ModelInfo& info,
-    const fs::path& model_cache_path) {
-    const std::string resolved_path = info.resolved_path("main");
-    if (resolved_path.empty()) {
-        return "";
-    }
-
-    const fs::path snapshots_path = model_cache_path / "snapshots";
-    const fs::path relative =
-        path_from_utf8(resolved_path).lexically_relative(snapshots_path);
-    if (relative.empty()) {
-        return "";
-    }
-
-    auto first = relative.begin();
-    if (first == relative.end() || *first == "." || *first == "..") {
-        return "";
-    }
-    return path_to_utf8(*first);
 }
 
 static fs::path active_hf_snapshot_path(const fs::path& model_cache_path) {
@@ -1607,6 +1586,20 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return public_models;
 }
 
+// Run-scoped cache of Hugging Face tree pages, keyed by repo/ref/subdir.
+using HfTreePageCache =
+    std::map<std::string, std::map<std::string, registry_files::HfFileMetadata>>;
+
+// Defined next to the Hugging Face snapshot-reuse helpers it wraps.
+static bool hf_selected_artifacts_unchanged(
+    const std::string& repo_id,
+    const std::string& active_ref,
+    const std::string& current_ref,
+    const fs::path& active_snapshot,
+    const std::vector<std::string>& selected_files,
+    const std::map<std::string, std::string>& headers,
+    HfTreePageCache* tree_cache);
+
 std::vector<std::string> ModelManager::check_for_model_updates() {
     std::lock_guard<std::mutex> update_check_lock(update_check_mutex_);
 
@@ -1618,12 +1611,15 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
 
     struct RepoEntry {
         std::vector<std::string> model_names;
-        std::unordered_map<std::string, std::string> cached_snapshots;
         std::string repo_id;
         std::string registry_source;
     };
 
     std::unordered_map<std::string, RepoEntry> repos;
+    std::unordered_map<std::string, ModelInfo> candidate_models;
+    registry_files::DeterminationTracker determination_tracker;
+    // Fast path only — never the comparison baseline (see active_local_snapshot).
+    std::unordered_map<std::string, std::string> processed_snapshots;
 
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
@@ -1653,37 +1649,44 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
                 continue;
             }
 
-            const std::string repo_id = checkpoint_to_repo_id(main_cp);
-            if (repo_id.empty()) {
+            const std::string main_repo_id = checkpoint_to_repo_id(main_cp);
+            if (main_repo_id.empty()) {
                 continue;
             }
 
             const std::string source = effective_registry_source(info);
-            const std::string key = source + ":" + repo_id;
 
-            auto& entry = repos[key];
-            entry.repo_id = repo_id;
-            entry.registry_source = source;
-            entry.model_names.push_back(name);
+            candidate_models.emplace(name, info);
+
+            auto add_repo_entry = [&](const std::string& repo_id) {
+                auto& entry = repos[source + ":" + repo_id];
+                entry.repo_id = repo_id;
+                entry.registry_source = source;
+                entry.model_names.push_back(name);
+                determination_tracker.add_pending(name);
+            };
+            add_repo_entry(main_repo_id);
+
+            // Auxiliary checkpoints can live in other repositories; those are
+            // verified under their own repository entry.
+            for (const auto& [repo_id, variants] :
+                 registry_files::group_aux_checkpoint_variants(info.checkpoints)) {
+                (void)variants;
+                if (repo_id != main_repo_id) {
+                    add_repo_entry(repo_id);
+                }
+            }
 
             const fs::path cache_path =
                 path_from_utf8(get_hf_cache_dir()) /
-                repo_id_to_cache_dir_name(repo_id, source);
-
-            std::string cached_snapshot = read_processed_registry_snapshot_id(
+                repo_id_to_cache_dir_name(main_repo_id, source);
+            processed_snapshots[name] = read_processed_registry_snapshot_id(
                 cache_path, name, registry_model_selection(info));
-            if (cached_snapshot.empty()) {
-                cached_snapshot = snapshot_id_from_resolved_path(info, cache_path);
-            }
-            if (cached_snapshot.empty()) {
-                cached_snapshot = read_hf_ref_main(cache_path);
-            }
-            entry.cached_snapshots[name] = std::move(cached_snapshot);
         }
     }
 
     std::unordered_set<std::string> updated_models;
-    std::unordered_set<std::string> verified_models;
+    HfTreePageCache tree_cache;
 
     for (auto& [key, entry] : repos) {
         (void)key;
@@ -1705,17 +1708,148 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
                 continue;
             }
 
+            // Only Hugging Face pins refs/main to a previous snapshot when the
+            // selected artifacts are unchanged, so only it can distinguish a
+            // commit that touches this model from one that does not. ModelScope
+            // snapshots are tree fingerprints with no commit pin, so they keep
+            // the snapshot-id comparison.
+            const bool artifact_aware = source == RemoteRegistrySource::HuggingFace;
+            const fs::path cache_path =
+                path_from_utf8(get_hf_cache_dir()) /
+                repo_id_to_cache_dir_name(entry.repo_id, entry.registry_source);
+            const auto headers =
+                artifact_aware ? registry.auth_headers()
+                               : std::map<std::string, std::string>{};
+
+            std::vector<std::string> latest_files;
+            if (artifact_aware) {
+                for (const auto& file : latest.files) {
+                    if (!file.directory) latest_files.push_back(file.path);
+                }
+            }
+
+            // Previous revision's file listing, fetched lazily per distinct
+            // active ref. A ref that failed to fetch stays failed, so every
+            // model sharing it consistently assumes changed too.
+            std::map<std::string, std::vector<std::string>> previous_files_by_ref;
+            std::set<std::string> previous_files_unavailable;
+
             size_t updated_variants = 0;
             for (const auto& model_name : entry.model_names) {
-                auto cached_it = entry.cached_snapshots.find(model_name);
-                if (cached_it == entry.cached_snapshots.end() || cached_it->second.empty()) {
+                const ModelInfo& info = candidate_models.at(model_name);
+                const bool is_main_repo =
+                    entry.repo_id == checkpoint_to_repo_id(info.checkpoint("main"));
+
+                // Fast path: pull already processed this exact remote state.
+                if (is_main_repo) {
+                    const auto processed_it = processed_snapshots.find(model_name);
+                    if (processed_it != processed_snapshots.end() &&
+                        !processed_it->second.empty() &&
+                        processed_it->second == latest.snapshot_id) {
+                        determination_tracker.mark_determined(model_name);
+                        continue;
+                    }
+                }
+
+                // The comparison baseline is the snapshot on disk for THIS
+                // repository, never the processed-at-pull sha.
+                std::string resolved;
+                if (is_main_repo) {
+                    resolved = info.resolved_path("main");
+                } else {
+                    for (const auto& [role, checkpoint] : info.checkpoints) {
+                        if (role == "main" || role == "npu_cache") {
+                            continue;
+                        }
+                        if (checkpoint_to_repo_id(checkpoint) == entry.repo_id) {
+                            resolved = info.resolved_path(role);
+                            break;
+                        }
+                    }
+                }
+
+                const std::string active =
+                    registry_files::active_local_snapshot(resolved, cache_path);
+                if (!active.empty() && active == latest.snapshot_id) {
+                    determination_tracker.mark_determined(model_name);
                     continue;
                 }
 
-                // Only a successful registry response with a usable local
-                // baseline may clear an update flag discovered earlier.
-                verified_models.insert(model_name);
-                if (latest.snapshot_id != cached_it->second) {
+                // A new commit on a shared multi-artifact repository doesn't
+                // imply this model changed (could be a README or a sibling
+                // variant) — compare the artifacts pull would actually
+                // download before advertising one. Any indeterminate result,
+                // including a repository with no local baseline, assumes changed.
+                bool changed = true;
+                if (artifact_aware && !active.empty()) {
+                    try {
+                        std::vector<std::string> selected;
+                        if (is_main_repo) {
+                            if (previous_files_unavailable.count(active)) {
+                                throw std::runtime_error(
+                                    "Previous revision listing unavailable for " + entry.repo_id);
+                            }
+                            auto previous_it = previous_files_by_ref.find(active);
+                            if (previous_it == previous_files_by_ref.end()) {
+                                try {
+                                    const RegistryRepository previous_repo =
+                                        registry.fetch_repository(entry.repo_id, active);
+                                    std::vector<std::string> previous_files;
+                                    for (const auto& file : previous_repo.files) {
+                                        if (!file.directory) previous_files.push_back(file.path);
+                                    }
+                                    previous_it = previous_files_by_ref
+                                                      .emplace(active, std::move(previous_files))
+                                                      .first;
+                                } catch (...) {
+                                    previous_files_unavailable.insert(active);
+                                    throw;
+                                }
+                            }
+                            selected = registry_files::select_main_repo_files_union(
+                                entry.repo_id, info.recipe,
+                                checkpoint_to_variant(info.checkpoint("main")),
+                                previous_it->second, latest_files);
+                        }
+                        const auto aux_variants =
+                            registry_files::group_aux_checkpoint_variants(info.checkpoints);
+                        const auto aux_it = aux_variants.find(entry.repo_id);
+                        if (aux_it != aux_variants.end()) {
+                            selected.insert(selected.end(),
+                                            aux_it->second.begin(), aux_it->second.end());
+                        }
+
+                        if (!selected.empty() &&
+                            hf_selected_artifacts_unchanged(
+                                entry.repo_id, active, latest.snapshot_id,
+                                cache_path / "snapshots" / active, selected, headers,
+                                &tree_cache)) {
+                            changed = false;
+                            LOG(DEBUG, "ModelManager")
+                                << "Skipping update for " << model_name
+                                << ": artifacts unchanged in "
+                                << latest.snapshot_id.substr(0, 18) << ", keeping "
+                                << active.substr(0, 18) << std::endl;
+                        }
+                    } catch (const std::exception& e) {
+                        LOG(DEBUG, "ModelManager")
+                            << "Artifact comparison failed for " << model_name
+                            << ", assuming changed: " << e.what() << std::endl;
+                    } catch (...) {
+                        LOG(DEBUG, "ModelManager")
+                            << "Artifact comparison failed for " << model_name
+                            << ", assuming changed" << std::endl;
+                    }
+                } else if (active.empty()) {
+                    LOG(DEBUG, "ModelManager")
+                        << "No local baseline for " << model_name << " in "
+                        << entry.repo_id << ", assuming changed" << std::endl;
+                }
+
+                // Only a completed determination may clear an update flag
+                // discovered earlier.
+                determination_tracker.mark_determined(model_name);
+                if (changed) {
                     updated_models.insert(model_name);
                     ++updated_variants;
                 }
@@ -1731,14 +1865,25 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
 
         } catch (const RegistryNotFoundError& e) {
             LOG(DEBUG, "ModelManager")
-                << e.what() << ", skipping update check" << std::endl;
+                << e.what() << ", assuming updates for "
+                << entry.model_names.size() << " model(s)" << std::endl;
+            for (const auto& model_name : entry.model_names) {
+                updated_models.insert(model_name);
+                determination_tracker.mark_determined(model_name);
+            }
 
         } catch (const std::exception& e) {
             LOG(WARNING, "ModelManager")
                 << "Failed to check updates for "
                 << entry.repo_id
                 << " on " << entry.registry_source
-                << ": " << e.what() << std::endl;
+                << ": " << e.what()
+                << ", assuming updates for "
+                << entry.model_names.size() << " model(s)" << std::endl;
+            for (const auto& model_name : entry.model_names) {
+                updated_models.insert(model_name);
+                determination_tracker.mark_determined(model_name);
+            }
         }
     }
 
@@ -1748,7 +1893,7 @@ std::vector<std::string> ModelManager::check_for_model_updates() {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
         for (auto& [name, info] : models_cache_) {
-            if (verified_models.count(name)) {
+            if (determination_tracker.is_verified(name)) {
                 info.update_available =
                     updated_models.count(name) != 0;
             }
@@ -3371,19 +3516,32 @@ void ModelManager::populate_collection_components_from_cache_locked(ModelInfo& i
     }
 }
 
+void ModelManager::register_model(const std::string& model_name,
+                                 const json& model_data,
+                                 bool allow_missing_checkpoint,
+                                 bool replace_existing) {
+    std::set<std::string> visited;
+    download_model(model_name, model_data, true, nullptr, visited,
+                   true, allow_missing_checkpoint, replace_existing);
+}
+
 void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
     std::set<std::string> visited;
-    download_model(model_name, model_data, do_not_upgrade, progress_callback, visited);
+    download_model(model_name, model_data, do_not_upgrade, progress_callback, visited,
+                   false, false, false);
 }
 
 void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback,
-                                 std::set<std::string>& visited) {
+                                 std::set<std::string>& visited,
+                                 bool register_only,
+                                 bool allow_missing_checkpoint,
+                                 bool replace_existing) {
     // Keep a mutable registration payload so legacy re-pulls that omit the
     // registry retain the source recorded on the existing model. The original
     // request remains untouched for validation and download semantics.
@@ -3446,8 +3604,13 @@ void ModelManager::download_model(const std::string& model_name,
             }
             LOG(INFO, "ModelManager") << "Registering new collection: " << model_name << std::endl;
         } else {
-            // Check that required arguments are provided
-            if (actual_checkpoint.empty() || actual_recipe.empty()) {
+            if (actual_recipe.empty()) {
+                throw std::runtime_error(
+                    "Model " + model_name + " is not registered with Lemonade Server. "
+                    "To register it, provide the `recipe` argument."
+                );
+            }
+            if (actual_checkpoint.empty() && !allow_missing_checkpoint) {
                 throw std::runtime_error(
                     "Model " + model_name + " is not registered with Lemonade Server. "
                     "To register and install it, provide the `checkpoint` and `recipe` "
@@ -3456,10 +3619,12 @@ void ModelManager::download_model(const std::string& model_name,
             }
 
             // Backend-specific checkpoint validation (llamacpp: GGUF needs :variant).
-            if (auto err = backends::ops_for(actual_recipe)->validate_registration_checkpoint(
-                    actual_checkpoint);
-                !err.empty()) {
-                throw std::runtime_error(err);
+            if (!actual_checkpoint.empty()) {
+                if (auto err = backends::ops_for(actual_recipe)->validate_registration_checkpoint(
+                        actual_checkpoint);
+                    !err.empty()) {
+                    throw std::runtime_error(err);
+                }
             }
 
             LOG(INFO, "ModelManager") << "Registering new user model: " << model_name << std::endl;
@@ -3477,34 +3642,49 @@ void ModelManager::download_model(const std::string& model_name,
             registration_data["source"] = effective_registry_source(info);
         }
 
-        bool is_collection_overwrite = is_model_collection_recipe(actual_recipe) &&
-                                        model_data.contains("components");
-        if (is_collection_overwrite) {
-            // Validate the original user-authored request, not registration_data:
-            // the latter is enriched with the persisted registry source, which is
-            // not part of the public routing-policy document the parser accepts.
-            if (auto err = validate_collection_request(model_name, model_data)) {
-                throw std::runtime_error(*err);
+        const bool explicit_definition =
+            !actual_recipe.empty() || !actual_checkpoint.empty() ||
+            model_data.contains("checkpoints") || model_data.contains("components");
+        if (register_only && replace_existing &&
+            is_user_model_name(model_name) && explicit_definition) {
+            if (is_model_collection_recipe(actual_recipe)) {
+                if (auto err = validate_collection_request(model_name, model_data)) {
+                    throw std::runtime_error(*err);
+                }
             }
             model_registered = false;
-            LOG(INFO, "ModelManager") << "Overwriting collection: "
+            LOG(INFO, "ModelManager") << "Replacing user model definition: "
                                       << model_name << std::endl;
-        } else if (actual_checkpoint.empty()) {
-            actual_checkpoint = info.checkpoint();
-            actual_recipe = info.recipe;
         } else {
-            std::string conflict = describe_registration_conflict(info, registration_data);
-            if (!conflict.empty()) {
-                throw std::runtime_error(
-                    "Model '" + model_name + "' is already registered with different "
-                    "model metadata: " + conflict + ". Choose a different model name "
-                    "for this registry checkpoint."
-                );
-            }
-            if (actual_recipe.empty()) {
+            bool is_collection_overwrite = is_model_collection_recipe(actual_recipe) &&
+                                            model_data.contains("components");
+            if (is_collection_overwrite) {
+                // Validate the original user-authored request, not registration_data:
+                // the latter is enriched with the persisted registry source, which is
+                // not part of the public routing-policy document the parser accepts.
+                if (auto err = validate_collection_request(model_name, model_data)) {
+                    throw std::runtime_error(*err);
+                }
+                model_registered = false;
+                LOG(INFO, "ModelManager") << "Overwriting collection: "
+                                          << model_name << std::endl;
+            } else if (actual_checkpoint.empty()) {
+                actual_checkpoint = info.checkpoint();
                 actual_recipe = info.recipe;
             } else {
-                model_registered = false;
+                std::string conflict = describe_registration_conflict(info, registration_data);
+                if (!conflict.empty()) {
+                    throw std::runtime_error(
+                        "Model '" + model_name + "' is already registered with different "
+                        "model metadata: " + conflict + ". Choose a different model name "
+                        "for this registry checkpoint."
+                    );
+                }
+                if (actual_recipe.empty()) {
+                    actual_recipe = info.recipe;
+                } else {
+                    model_registered = false;
+                }
             }
         }
     }
@@ -3527,6 +3707,10 @@ void ModelManager::download_model(const std::string& model_name,
         register_user_model(model_name, registration_data);
         model_registered = true;
         collection_registered_this_call = true;
+    }
+
+    if (register_only && is_model_collection_recipe(actual_recipe)) {
+        return;
     }
 
     // Collections don't have their own backend - download each component instead.
@@ -3635,7 +3819,7 @@ void ModelManager::download_model(const std::string& model_name,
             }
             LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
             json comp_data = json::object();
-            download_model(component, comp_data, do_not_upgrade, forward, visited);
+            download_model(component, comp_data, do_not_upgrade, forward, visited, false, false, false);
         }
 
         // A registry-backed collection's in-memory components were empty until the
@@ -3676,20 +3860,6 @@ void ModelManager::download_model(const std::string& model_name,
         );
     }
 
-    LOG(INFO, "ModelManager") << "Downloading model: " << repo_id;
-    if (!variant.empty()) {
-        LOG(INFO, "ModelManager") << " (variant: " << variant << ")";
-    }
-    LOG(INFO, "ModelManager") << std::endl;
-
-    // Check if offline mode
-    if (auto* cfg = RuntimeConfig::global()) {
-        if (cfg->offline()) {
-            LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
-            return;
-        }
-    }
-
     // Persist registration and recipe options BEFORE the cache-first shortcut
     // below. A registration/import/overwrite that targets an already-downloaded
     // model must still update user_models.json and recipe_options.json. The
@@ -3716,6 +3886,24 @@ void ModelManager::download_model(const std::string& model_name,
         save_model_options(model_info);
     }
 
+    if (register_only) {
+        return;
+    }
+
+    LOG(INFO, "ModelManager") << "Downloading model: " << repo_id;
+    if (!variant.empty()) {
+        LOG(INFO, "ModelManager") << " (variant: " << variant << ")";
+    }
+    LOG(INFO, "ModelManager") << std::endl;
+
+    // Check if offline mode
+    if (auto* cfg = RuntimeConfig::global()) {
+        if (cfg->offline()) {
+            LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
+            return;
+        }
+    }
+
     // CRITICAL: If do_not_upgrade=true AND model is already downloaded, skip the
     // remote-registry update check. Registration and recipe options were already
     // persisted above, so an import/overwrite still takes effect on disk.
@@ -3730,120 +3918,164 @@ void ModelManager::download_model(const std::string& model_name,
     download_registered_model(model_info, do_not_upgrade, progress_callback);
 }
 
-/**
- * Download everything from download manifest.
- */
+namespace registry_files {
 
-struct HfFileMetadata {
-    size_t size = 0;
-    std::string content_id;
-    std::string hash_algorithm;
-    std::string hash_value;
-
-    bool has_content_id() const {
-        return !content_id.empty();
+std::string snapshot_id_from_resolved_path(
+    const std::string& resolved_path,
+    const fs::path& model_cache_path) {
+    if (resolved_path.empty()) {
+        return "";
     }
 
-    bool has_hash() const {
-        return !hash_algorithm.empty() && !hash_value.empty();
+    const fs::path snapshots_path = model_cache_path / "snapshots";
+    const fs::path relative =
+        path_from_utf8(resolved_path).lexically_relative(snapshots_path);
+    if (relative.empty()) {
+        return "";
     }
-};
 
-static std::string hf_file_metadata_key(const std::string& repo_id, const std::string& filename) {
+    auto first = relative.begin();
+    if (first == relative.end() || *first == "." || *first == "..") {
+        return "";
+    }
+    return path_to_utf8(*first);
+}
+
+std::string active_local_snapshot(
+    const std::string& resolved_path,
+    const fs::path& model_cache_path) {
+    std::string snapshot = snapshot_id_from_resolved_path(resolved_path, model_cache_path);
+    if (snapshot.empty()) {
+        snapshot = read_hf_ref_main(model_cache_path);
+    }
+    return snapshot;
+}
+
+std::map<std::string, std::vector<std::string>> group_aux_checkpoint_variants(
+    const std::map<std::string, std::string>& checkpoints) {
+    std::map<std::string, std::vector<std::string>> grouped;
+    for (const auto& [type, checkpoint] : checkpoints) {
+        if (type == "main" || type == "npu_cache") continue;
+        const std::string repo_id = checkpoint_to_repo_id(checkpoint);
+        const std::string variant = checkpoint_to_variant(checkpoint);
+        if (repo_id.empty() || variant.empty()) {
+            continue;
+        }
+        grouped[repo_id].push_back(variant);
+    }
+    return grouped;
+}
+
+std::vector<std::string> select_main_repo_files(
+    const std::string& repo_id,
+    const std::string& recipe,
+    const std::string& variant,
+    const std::vector<std::string>& repo_files) {
+    auto backend_files =
+        backends::ops_for(recipe)->select_checkpoint_files(variant, repo_files);
+
+    std::vector<std::string> selected;
+    if (!variant.empty()) {
+        auto ends_with = [](const std::string& value, const std::string& suffix) {
+            return value.size() >= suffix.size() &&
+                   value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+        };
+        const bool direct_file = ends_with(variant, ".safetensors") ||
+                                 ends_with(variant, ".pth") ||
+                                 ends_with(variant, ".ckpt");
+
+        if (direct_file) {
+            if (std::find(repo_files.begin(), repo_files.end(), variant) ==
+                repo_files.end()) {
+                throw std::runtime_error("Model file not found in repository " + repo_id +
+                                         ": " + variant);
+            }
+            selected.push_back(variant);
+        } else if (backend_files) {
+            selected = std::move(*backend_files);
+        } else {
+            GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, repo_files);
+            std::unordered_set<std::string> added_files;
+            for (const auto& [key, filename] : gguf_files.core_files) {
+                (void)key;
+                selected.push_back(filename);
+                added_files.insert(filename);
+            }
+            for (const auto& filename : gguf_files.sharded_files) {
+                if (!added_files.count(filename)) selected.push_back(filename);
+            }
+        }
+
+        for (const std::string& config_file : {
+                 "config.json", "tokenizer.json", "tokenizer_config.json", "tokenizer.model"}) {
+            if (std::find(repo_files.begin(), repo_files.end(), config_file) !=
+                    repo_files.end() &&
+                std::find(selected.begin(), selected.end(), config_file) == selected.end()) {
+                selected.push_back(config_file);
+            }
+        }
+    } else if (backend_files) {
+        selected = std::move(*backend_files);
+    } else {
+        selected = repo_files;
+    }
+    return selected;
+}
+
+std::vector<std::string> select_main_repo_files_union(
+    const std::string& repo_id,
+    const std::string& recipe,
+    const std::string& variant,
+    const std::vector<std::string>& repo_files_a,
+    const std::vector<std::string>& repo_files_b) {
+    std::vector<std::string> selected =
+        select_main_repo_files(repo_id, recipe, variant, repo_files_a);
+    std::unordered_set<std::string> seen(selected.begin(), selected.end());
+    for (auto& filename : select_main_repo_files(repo_id, recipe, variant, repo_files_b)) {
+        if (seen.insert(filename).second) {
+            selected.push_back(std::move(filename));
+        }
+    }
+    return selected;
+}
+
+std::vector<std::string> merge_reuse_comparison_files(
+    const std::vector<std::string>& base_files,
+    const std::string& repo_id,
+    const std::string& recipe,
+    const std::string& variant,
+    const std::vector<std::string>& repo_files_a,
+    const std::vector<std::string>& repo_files_b) {
+    std::vector<std::string> merged = base_files;
+    std::unordered_set<std::string> seen(merged.begin(), merged.end());
+    for (auto& filename :
+         select_main_repo_files_union(repo_id, recipe, variant, repo_files_a, repo_files_b)) {
+        if (seen.insert(filename).second) {
+            merged.push_back(std::move(filename));
+        }
+    }
+    return merged;
+}
+
+std::string hf_file_metadata_key(const std::string& repo_id, const std::string& filename) {
     return repo_id + ':' + filename;
 }
 
-static HfFileMetadata hf_file_metadata_from_tree_file(const json& file) {
-    HfFileMetadata entry;
-    if (file.contains("size") && file["size"].is_number_unsigned()) {
-        entry.size = file["size"].get<size_t>();
-    }
-
-    if (file.contains("lfs") && file["lfs"].is_object()) {
-        const auto& lfs = file["lfs"];
-        if (lfs.contains("size") && lfs["size"].is_number()) {
-            entry.size = lfs["size"].get<size_t>();
-        }
-        if (lfs.contains("oid") && lfs["oid"].is_string()) {
-            entry.hash_algorithm = "sha256";
-            entry.hash_value = lfs["oid"].get<std::string>();
-            entry.content_id = "lfs:" + entry.hash_value;
-        }
-        return entry;
-    }
-
-    if (file.contains("oid") && file["oid"].is_string()) {
-        entry.hash_algorithm = "git-sha1";
-        entry.hash_value = file["oid"].get<std::string>();
-        entry.content_id = "git:" + entry.hash_value;
-    }
-
-    return entry;
-}
-
-static std::map<std::string, HfFileMetadata> fetch_hf_file_metadata_for_ref(
+std::map<std::string, HfFileMetadata> select_metadata(
     const std::string& repo_id,
-    const std::string& ref,
     const std::vector<std::string>& selected_files,
-    const std::map<std::string, std::string>& headers) {
-    std::map<std::string, HfFileMetadata> metadata;
-    if (repo_id.empty() || ref.empty() || selected_files.empty()) {
-        return metadata;
-    }
-
-    std::set<std::string> selected(selected_files.begin(), selected_files.end());
-    std::set<std::string> subdirs_to_fetch;
-    subdirs_to_fetch.insert("");
-
+    const std::map<std::string, HfFileMetadata>& tree_entries) {
+    std::map<std::string, HfFileMetadata> selected;
     for (const auto& filename : selected_files) {
-        auto last_slash_pos = filename.rfind('/');
-        if (last_slash_pos != std::string::npos) {
-            subdirs_to_fetch.insert(filename.substr(0, last_slash_pos));
+        const auto it = tree_entries.find(filename);
+        if (it != tree_entries.end()) {
+            selected[hf_file_metadata_key(repo_id, filename)] = it->second;
         }
     }
-
-    std::string hf_endpoint = "https://huggingface.co";
-    if (const char* configured = std::getenv("HF_ENDPOINT"); configured && configured[0]) {
-        hf_endpoint = configured;
-        while (!hf_endpoint.empty() && hf_endpoint.back() == '/') hf_endpoint.pop_back();
-    }
-
-    for (const auto& subdir : subdirs_to_fetch) {
-        std::string tree_url = hf_endpoint + "/api/models/" + repo_id + "/tree/" + ref;
-        if (!subdir.empty()) {
-            tree_url += "/" + subdir;
-        }
-
-        auto tree_response = HttpClient::get(tree_url, headers);
-        if (tree_response.status_code != 200) {
-            LOG(DEBUG, "ModelManager") << "Could not fetch Hugging Face tree metadata for "
-                                       << repo_id << " at " << ref << std::endl;
-            continue;
-        }
-
-        auto tree_info = JsonUtils::parse(tree_response.body);
-        if (!tree_info.is_array()) {
-            continue;
-        }
-
-        for (const auto& file : tree_info) {
-            if (!file.contains("path") || !file["path"].is_string()) {
-                continue;
-            }
-
-            const std::string path = file["path"].get<std::string>();
-            if (selected.find(path) == selected.end()) {
-                continue;
-            }
-
-            metadata[hf_file_metadata_key(repo_id, path)] = hf_file_metadata_from_tree_file(file);
-        }
-    }
-
-    return metadata;
+    return selected;
 }
 
-static bool can_reuse_previous_hf_snapshot(
+bool can_reuse_previous_hf_snapshot(
     const std::string& repo_id,
     const std::vector<std::string>& selected_files,
     const fs::path& previous_snapshot,
@@ -3879,6 +4111,138 @@ static bool can_reuse_previous_hf_snapshot(
     }
 
     return true;
+}
+
+} // namespace registry_files
+
+static registry_files::HfFileMetadata hf_file_metadata_from_tree_file(const json& file) {
+    registry_files::HfFileMetadata entry;
+    if (file.contains("size") && file["size"].is_number_unsigned()) {
+        entry.size = file["size"].get<size_t>();
+    }
+
+    if (file.contains("lfs") && file["lfs"].is_object()) {
+        const auto& lfs = file["lfs"];
+        if (lfs.contains("size") && lfs["size"].is_number()) {
+            entry.size = lfs["size"].get<size_t>();
+        }
+        if (lfs.contains("oid") && lfs["oid"].is_string()) {
+            entry.hash_algorithm = "sha256";
+            entry.hash_value = lfs["oid"].get<std::string>();
+            entry.content_id = "lfs:" + entry.hash_value;
+        }
+        return entry;
+    }
+
+    if (file.contains("oid") && file["oid"].is_string()) {
+        entry.hash_algorithm = "git-sha1";
+        entry.hash_value = file["oid"].get<std::string>();
+        entry.content_id = "git:" + entry.hash_value;
+    }
+
+    return entry;
+}
+
+static std::map<std::string, registry_files::HfFileMetadata> fetch_hf_file_metadata_for_ref(
+    const std::string& repo_id,
+    const std::string& ref,
+    const std::vector<std::string>& selected_files,
+    const std::map<std::string, std::string>& headers,
+    HfTreePageCache* tree_cache) {
+    if (repo_id.empty() || ref.empty() || selected_files.empty()) {
+        return {};
+    }
+
+    std::set<std::string> subdirs_to_fetch;
+    subdirs_to_fetch.insert("");
+
+    for (const auto& filename : selected_files) {
+        auto last_slash_pos = filename.rfind('/');
+        if (last_slash_pos != std::string::npos) {
+            subdirs_to_fetch.insert(filename.substr(0, last_slash_pos));
+        }
+    }
+
+    std::string hf_endpoint = "https://huggingface.co";
+    if (const char* configured = std::getenv("HF_ENDPOINT"); configured && configured[0]) {
+        hf_endpoint = configured;
+        while (!hf_endpoint.empty() && hf_endpoint.back() == '/') hf_endpoint.pop_back();
+    }
+
+    // Full page entries, unfiltered, so a cached page serves every model
+    // selecting from it; selection happens once at the end.
+    std::map<std::string, registry_files::HfFileMetadata> tree_entries;
+    for (const auto& subdir : subdirs_to_fetch) {
+        if (tree_cache) {
+            const auto cached = tree_cache->find(repo_id + '\n' + ref + '\n' + subdir);
+            if (cached != tree_cache->end()) {
+                tree_entries.insert(cached->second.begin(), cached->second.end());
+                continue;
+            }
+        }
+
+        std::string tree_url = hf_endpoint + "/api/models/" + repo_id + "/tree/" + ref;
+        if (!subdir.empty()) {
+            tree_url += "/" + subdir;
+        }
+
+        auto tree_response = HttpClient::get(tree_url, headers);
+        if (tree_response.status_code != 200) {
+            LOG(DEBUG, "ModelManager") << "Could not fetch Hugging Face tree metadata for "
+                                       << repo_id << " at " << ref << std::endl;
+            continue;
+        }
+
+        auto tree_info = JsonUtils::parse(tree_response.body);
+        if (!tree_info.is_array()) {
+            continue;
+        }
+
+        std::map<std::string, registry_files::HfFileMetadata> page;
+        for (const auto& file : tree_info) {
+            if (!file.contains("path") || !file["path"].is_string()) {
+                continue;
+            }
+            page[file["path"].get<std::string>()] = hf_file_metadata_from_tree_file(file);
+        }
+        if (tree_cache) {
+            tree_cache->emplace(repo_id + '\n' + ref + '\n' + subdir, page);
+        }
+        tree_entries.insert(page.begin(), page.end());
+    }
+
+    return registry_files::select_metadata(repo_id, selected_files, tree_entries);
+}
+
+// True when the selected artifacts are byte-identical between the active local
+// snapshot and the new upstream revision. Any failure — network, filesystem,
+// missing metadata — returns false ("assume changed"): an indeterminate check
+// must never hide an update.
+static bool hf_selected_artifacts_unchanged(
+    const std::string& repo_id,
+    const std::string& active_ref,
+    const std::string& current_ref,
+    const fs::path& active_snapshot,
+    const std::vector<std::string>& selected_files,
+    const std::map<std::string, std::string>& headers,
+    HfTreePageCache* tree_cache) {
+    if (repo_id.empty() || active_ref.empty() || current_ref.empty() ||
+        active_ref == current_ref || selected_files.empty()) {
+        return false;
+    }
+
+    try {
+        const auto current_metadata =
+            fetch_hf_file_metadata_for_ref(repo_id, current_ref, selected_files, headers,
+                                           tree_cache);
+        const auto previous_metadata =
+            fetch_hf_file_metadata_for_ref(repo_id, active_ref, selected_files, headers,
+                                           tree_cache);
+        return registry_files::can_reuse_previous_hf_snapshot(
+            repo_id, selected_files, active_snapshot, current_metadata, previous_metadata);
+    } catch (...) {
+        return false;
+    }
 }
 
 static void remove_unused_hf_snapshot(const fs::path& cache_path,
@@ -4253,76 +4617,37 @@ void ModelManager::download_from_registry(const ModelInfo& info,
     LOG(INFO, "ModelManager") << "Repository contains " << main_repo_files.size()
                                << " files" << std::endl;
 
-    auto backend_files =
-        backends::ops_for(info.recipe)->select_checkpoint_files(main_variant, main_repo_files);
-
-    if (!main_variant.empty()) {
-        auto ends_with = [](const std::string& value, const std::string& suffix) {
-            return value.size() >= suffix.size() &&
-                   value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
-        };
-        const bool direct_file = ends_with(main_variant, ".safetensors") ||
-                                 ends_with(main_variant, ".pth") ||
-                                 ends_with(main_variant, ".ckpt");
-
-        if (direct_file) {
-            if (std::find(main_repo_files.begin(), main_repo_files.end(), main_variant) ==
-                main_repo_files.end()) {
-                throw std::runtime_error("Model file not found in " + source_display +
-                                         " repository: " + main_variant);
-            }
-            files_to_download[main_repo_id].push_back(main_variant);
-        } else if (backend_files) {
-            files_to_download[main_repo_id] = std::move(*backend_files);
-        } else {
-            GGUFFiles gguf_files = identify_gguf_models(main_repo_id, main_variant, main_repo_files);
-            std::unordered_set<std::string> added_files;
-            for (const auto& [key, filename] : gguf_files.core_files) {
-                (void)key;
-                files_to_download[main_repo_id].push_back(filename);
-                added_files.insert(filename);
-            }
-            for (const auto& filename : gguf_files.sharded_files) {
-                if (!added_files.count(filename)) files_to_download[main_repo_id].push_back(filename);
-            }
-        }
-
-        for (const std::string& config_file : {
-                 "config.json", "tokenizer.json", "tokenizer_config.json", "tokenizer.model"}) {
-            if (std::find(main_repo_files.begin(), main_repo_files.end(), config_file) !=
-                    main_repo_files.end() &&
-                std::find(files_to_download[main_repo_id].begin(),
-                          files_to_download[main_repo_id].end(), config_file) ==
-                    files_to_download[main_repo_id].end()) {
-                files_to_download[main_repo_id].push_back(config_file);
-            }
-        }
-    } else if (backend_files) {
-        files_to_download[main_repo_id] = std::move(*backend_files);
-    } else {
-        files_to_download[main_repo_id] = main_repo_files;
-    }
+    // The update check uses the same selection helper, so a file pull would
+    // download is always a file the check compares.
+    files_to_download[main_repo_id] = registry_files::select_main_repo_files(
+        main_repo_id, info.recipe, main_variant, main_repo_files);
 
     // Auxiliary checkpoints inherit the model-level registry source. This is
     // intentional: a registration has one provenance and update domain.
+    // Pull must reject a malformed auxiliary checkpoint loudly, where the
+    // update check (group_aux_checkpoint_variants) silently skips it.
     for (const auto& [type, checkpoint] : info.checkpoints) {
         if (type == "main" || type == "npu_cache") continue;
-        const std::string repo_id = checkpoint_to_repo_id(checkpoint);
-        const std::string variant = checkpoint_to_variant(checkpoint);
-        if (repo_id.empty() || variant.empty()) {
+        if (checkpoint_to_repo_id(checkpoint).empty() ||
+            checkpoint_to_variant(checkpoint).empty()) {
             throw std::runtime_error("Additional checkpoints must contain an exact repository variant");
         }
+    }
+    for (const auto& [repo_id, variants] :
+         registry_files::group_aux_checkpoint_variants(info.checkpoints)) {
         if (!repositories.count(repo_id)) {
             repositories.emplace(repo_id, registry.fetch_repository(repo_id));
         }
         const auto& repo = repositories.at(repo_id);
-        const bool exists = std::any_of(repo.files.begin(), repo.files.end(),
-            [&](const RegistryFile& file) { return !file.directory && file.path == variant; });
-        if (!exists) {
-            throw std::runtime_error("Additional checkpoint file not found on " +
-                                     source_display + ": " + repo_id + ":" + variant);
+        for (const auto& variant : variants) {
+            const bool exists = std::any_of(repo.files.begin(), repo.files.end(),
+                [&](const RegistryFile& file) { return !file.directory && file.path == variant; });
+            if (!exists) {
+                throw std::runtime_error("Additional checkpoint file not found on " +
+                                         source_display + ": " + repo_id + ":" + variant);
+            }
+            files_to_download[repo_id].push_back(variant);
         }
-        files_to_download[repo_id].push_back(variant);
     }
 
     int total_files = 0;
@@ -4373,14 +4698,44 @@ void ModelManager::download_from_registry(const ModelInfo& info,
             const std::string previous_ref = repo_previous_refs.at(repo_id);
             if (previous_ref.empty() || previous_ref == current_ref) continue;
 
-            const auto current_metadata =
-                fetch_hf_file_metadata_for_ref(repo_id, current_ref, files, headers);
-            const auto previous_metadata =
-                fetch_hf_file_metadata_for_ref(repo_id, previous_ref, files, headers);
+            // Union with the previous revision's listing so a file it dropped
+            // isn't missed; files_to_download itself stays current-revision-only.
+            // Merge, not replace: files also carries same-repo aux checkpoints.
+            std::vector<std::string> comparison_files = files;
+            if (repo_id == main_repo_id) {
+                try {
+                    const RegistryRepository previous_repo =
+                        registry.fetch_repository(repo_id, previous_ref);
+                    std::vector<std::string> previous_repo_files;
+                    for (const auto& file : previous_repo.files) {
+                        if (!file.directory) previous_repo_files.push_back(file.path);
+                    }
+                    comparison_files = registry_files::merge_reuse_comparison_files(
+                        files, repo_id, info.recipe, main_variant, previous_repo_files,
+                        main_repo_files);
+                } catch (const std::exception& e) {
+                    LOG(DEBUG, "ModelManager")
+                        << "Could not confirm no files were removed from " << repo_id
+                        << " since " << previous_ref << ", re-downloading: " << e.what()
+                        << std::endl;
+                    continue;
+                } catch (...) {
+                    LOG(DEBUG, "ModelManager")
+                        << "Could not confirm no files were removed from " << repo_id
+                        << " since " << previous_ref << ", re-downloading" << std::endl;
+                    continue;
+                }
+            }
+
+            const auto current_metadata = fetch_hf_file_metadata_for_ref(
+                repo_id, current_ref, comparison_files, headers, nullptr);
+            const auto previous_metadata = fetch_hf_file_metadata_for_ref(
+                repo_id, previous_ref, comparison_files, headers, nullptr);
             const fs::path previous_snapshot =
                 repo_cache_paths.at(repo_id) / "snapshots" / previous_ref;
-            if (can_reuse_previous_hf_snapshot(repo_id, files, previous_snapshot,
-                                               current_metadata, previous_metadata)) {
+            if (registry_files::can_reuse_previous_hf_snapshot(
+                    repo_id, comparison_files, previous_snapshot, current_metadata,
+                    previous_metadata)) {
                 repo_download_paths[repo_id] = path_to_utf8(previous_snapshot);
                 repos_reusing_previous_snapshot.insert(repo_id);
                 LOG(INFO, "ModelManager") << "Keeping active Hugging Face snapshot for "
