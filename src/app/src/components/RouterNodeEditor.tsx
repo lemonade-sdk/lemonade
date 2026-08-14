@@ -1,6 +1,92 @@
-import React from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
+
+interface RouterSelectOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+}
+
+interface RouterSelectProps {
+  value: string;
+  options: RouterSelectOption[];
+  onChange: (value: string) => void;
+  ariaLabel?: string;
+  className?: string;
+}
+
+export const RouterSelect: React.FC<RouterSelectProps> = ({ value, options, onChange, ariaLabel, className }) => {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const selected = options.find(o => o.value === value);
+
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const r = triggerRef.current.getBoundingClientRect();
+    setCoords({ top: r.bottom + window.scrollY + 4, left: r.left + window.scrollX, width: r.width });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!triggerRef.current?.contains(t) && !popoverRef.current?.contains(t)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const pick = (val: string, disabled?: boolean) => {
+    if (disabled) return;
+    onChange(val);
+    setOpen(false);
+  };
+
+  return (
+    <div className={`router-select${className ? ` ${className}` : ''}`}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className={`router-select__trigger${open ? ' is-open' : ''}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        onClick={() => setOpen(v => !v)}
+      >
+        <span className={selected ? undefined : 'is-placeholder'}>{selected?.label ?? value}</span>
+        <Icon name="chevron-down" size={12} />
+      </button>
+      {open && coords && createPortal(
+        <div
+          ref={popoverRef}
+          className="router-select__popover"
+          role="listbox"
+          aria-label={ariaLabel}
+          style={{ top: coords.top, left: coords.left, minWidth: coords.width }}
+        >
+          {options.map(opt => (
+            <button
+              type="button"
+              key={opt.value}
+              role="option"
+              aria-selected={opt.value === value}
+              aria-disabled={opt.disabled}
+              className={`router-select__option${opt.value === value ? ' is-selected' : ''}${opt.disabled ? ' is-disabled' : ''}`}
+              onClick={() => pick(opt.value, opt.disabled)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+};
 import {
   classifierLabels,
   createRouterGroup,
@@ -32,6 +118,7 @@ interface RouterNodeEditorProps {
   node: RouterNode;
   classifiers: RouterClassifier[];
   onChange: (next: RouterNode) => void;
+  onRemoveSelf?: () => void;
   depth?: number;
 }
 
@@ -109,9 +196,12 @@ const RouterLeafEditor: React.FC<{
       <div className="router-node__leaf-row">
         <label className="router-node__type-field">
           <span className="sr-only">Condition type</span>
-          <select className="select" value={node.type} onChange={event => changeType(event.target.value as RouterLeafType)}>
-            {LEAF_TYPES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
+          <RouterSelect
+            value={node.type}
+            options={LEAF_TYPES}
+            onChange={val => changeType(val as RouterLeafType)}
+            ariaLabel="Condition type"
+          />
         </label>
 
         {(node.type === 'keywords_any' || node.type === 'keywords_all') && (
@@ -142,10 +232,11 @@ const RouterLeafEditor: React.FC<{
           />
         )}
         {(node.type === 'has_tools' || node.type === 'has_images') && (
-          <select className="select" value={node.booleanValue === false ? 'false' : 'true'} onChange={event => update({ booleanValue: event.target.value === 'true' })}>
-            <option value="true">is true</option>
-            <option value="false">is false</option>
-          </select>
+          <RouterSelect
+            value={node.booleanValue === false ? 'false' : 'true'}
+            options={[{ value: 'true', label: 'is true' }, { value: 'false', label: 'is false' }]}
+            onChange={val => update({ booleanValue: val === 'true' })}
+          />
         )}
       </div>
 
@@ -153,33 +244,33 @@ const RouterLeafEditor: React.FC<{
         <div className="router-node__details router-node__details--classifier">
           <label>
             <span>Classifier</span>
-            <select
-              className="select"
+            <RouterSelect
               value={node.classifierId ?? ''}
-              onChange={event => {
-                // Keep label omitted when choosing a classifier so the condition
-                // continues to follow that classifier's default_label. Copying the
-                // current default into the rule would silently freeze the old value.
-                update({
-                  classifierId: event.target.value,
-                  label: undefined,
-                });
-              }}
-            >
-              <option value="">Select classifier</option>
-              {classifiers.map(item => <option key={item.id} value={item.id}>{item.id}</option>)}
-            </select>
+              options={[
+                { value: '', label: 'Select classifier' },
+                ...classifiers.map(item => ({ value: item.id, label: item.id })),
+              ]}
+              onChange={val => update({ classifierId: val, label: undefined })}
+              ariaLabel="Classifier"
+            />
           </label>
           <label>
             <span>Label</span>
-            <select className="select" value={node.label ?? ''} onChange={event => update({ label: event.target.value || undefined })}>
-              <option value="" disabled={labels.length > 0 && !selectedClassifier?.defaultLabel}>
-                {selectedClassifier?.defaultLabel
-                  ? `Use classifier default (${selectedClassifier.defaultLabel})`
-                  : labels.length > 0 ? 'Select label' : 'Use classifier output'}
-              </option>
-              {labels.map(label => <option key={label} value={label}>{label}</option>)}
-            </select>
+            <RouterSelect
+              value={node.label ?? ''}
+              options={[
+                {
+                  value: '',
+                  label: selectedClassifier?.defaultLabel
+                    ? `Use classifier default (${selectedClassifier.defaultLabel})`
+                    : labels.length > 0 ? 'Select label' : 'Use classifier output',
+                  disabled: labels.length > 0 && !selectedClassifier?.defaultLabel,
+                },
+                ...labels.map(label => ({ value: label, label })),
+              ]}
+              onChange={val => update({ label: val || undefined })}
+              ariaLabel="Label"
+            />
           </label>
           <ScoreInput label="Min score" value={node.minScore} onChange={minScore => update({ minScore })} />
           <ScoreInput label="Max score" value={node.maxScore} onChange={maxScore => update({ maxScore })} />
@@ -194,23 +285,26 @@ const RouterLeafEditor: React.FC<{
           </label>
           <label>
             <span>Comparator</span>
-            <select
-              className="select"
+            <RouterSelect
               value={node.metadataComparator ?? 'equals'}
-              onChange={event => update({ metadataComparator: event.target.value as RouterMetadataComparator })}
-            >
-              <option value="equals">equals</option>
-              <option value="any">contains any token</option>
-              <option value="exists">exists</option>
-            </select>
+              options={[
+                { value: 'equals', label: 'equals' },
+                { value: 'any', label: 'contains any token' },
+                { value: 'exists', label: 'exists' },
+              ]}
+              onChange={val => update({ metadataComparator: val as RouterMetadataComparator })}
+              ariaLabel="Comparator"
+            />
           </label>
           {(node.metadataComparator ?? 'equals') === 'exists' ? (
             <label>
               <span>Expected</span>
-              <select className="select" value={node.booleanValue === false ? 'false' : 'true'} onChange={event => update({ booleanValue: event.target.value === 'true' })}>
-                <option value="true">present</option>
-                <option value="false">missing</option>
-              </select>
+              <RouterSelect
+                value={node.booleanValue === false ? 'false' : 'true'}
+                options={[{ value: 'true', label: 'present' }, { value: 'false', label: 'missing' }]}
+                onChange={val => update({ booleanValue: val === 'true' })}
+                ariaLabel="Expected"
+              />
             </label>
           ) : node.metadataComparator === 'any' ? (
             <label className="router-node__grow-field">
@@ -235,7 +329,7 @@ const RouterLeafEditor: React.FC<{
   );
 };
 
-export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classifiers, onChange, depth = 0 }) => {
+export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classifiers, onChange, onRemoveSelf, depth = 0 }) => {
   if (node.kind === 'leaf') {
     return <RouterLeafEditor node={node} classifiers={classifiers} onChange={onChange} />;
   }
@@ -257,16 +351,29 @@ export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classi
     onChange({ ...node, operator, children: node.children.length ? node.children : [createRouterLeaf()] });
   };
 
+  const handleRemoveChild = (index: number) => {
+    if (node.children.length === 1 && onRemoveSelf) {
+      onRemoveSelf();
+    } else {
+      onChange(removeChild(node, index));
+    }
+  };
+
   return (
     <div className="router-node router-node--group" style={{ '--router-depth': depth } as React.CSSProperties}>
       <div className="router-node__group-head">
         <div className="router-node__operator">
           <span>Match</span>
-          <select className="select" value={node.operator} onChange={event => changeOperator(event.target.value as RouterGroupNode['operator'])}>
-            <option value="all">ALL conditions</option>
-            <option value="any">ANY condition</option>
-            <option value="not">NOT condition</option>
-          </select>
+          <RouterSelect
+            value={node.operator}
+            options={[
+              { value: 'all', label: 'ALL conditions' },
+              { value: 'any', label: 'ANY condition' },
+              { value: 'not', label: 'NOT condition' },
+            ]}
+            onChange={val => changeOperator(val as RouterGroupNode['operator'])}
+            ariaLabel="Group operator"
+          />
         </div>
         {node.operator !== 'not' && (
           <div className="router-node__group-actions">
@@ -281,13 +388,14 @@ export const RouterNodeEditor: React.FC<RouterNodeEditorProps> = ({ node, classi
             <div className="router-node__child-actions" aria-label={`Condition ${index + 1} controls`}>
               <button type="button" disabled={index === 0} title="Move up" aria-label="Move condition up" onClick={() => onChange(moveChild(node, index, -1))}><Icon name="chevron-up" size={13} /></button>
               <button type="button" disabled={index === node.children.length - 1} title="Move down" aria-label="Move condition down" onClick={() => onChange(moveChild(node, index, 1))}><Icon name="chevron-down" size={13} /></button>
-              <button type="button" title="Remove condition" aria-label="Remove condition" onClick={() => onChange(removeChild(node, index))}><Icon name="trash" size={13} /></button>
+              <button type="button" title="Remove condition" aria-label="Remove condition" onClick={() => handleRemoveChild(index)}><Icon name="trash" size={13} /></button>
             </div>
             <RouterNodeEditor
               node={child}
               classifiers={classifiers}
               depth={depth + 1}
               onChange={next => onChange(replaceChild(node, index, next))}
+              onRemoveSelf={() => handleRemoveChild(index)}
             />
           </div>
         ))}

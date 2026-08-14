@@ -6512,6 +6512,11 @@ optgroup {
 /* 3–5. Collapsible filter groups */
 .model-nav-rail__section { display: flex; flex-direction: column; gap: var(--space-0-5); }
 
+.model-nav-rail__scroll > .model-nav-rail__section {
+  border-top: 1px solid rgba(255,255,255,0.12);
+  padding-top: var(--space-2);
+}
+
 .model-nav-rail__section-head { margin: 0; }
 
 .model-nav-rail__section-toggle {
@@ -9779,6 +9784,11 @@ optgroup {
   animation: inspectModalSlideUp 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.inspect-modal-content--full-height {
+  height: 90vh;
+  width: calc(100vw - 48px);
+}
+
 @keyframes inspectModalSlideUp {
   from { transform: translateY(16px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
@@ -12592,6 +12602,58 @@ a.backend-card__version:focus-visible {
 .router-editor .select {
   min-width: 0;
 }
+.router-select { position: relative; min-width: 0; }
+.router-select__trigger {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.router-select__trigger:hover,
+.router-select__trigger.is-open { border-color: color-mix(in srgb, var(--accent-fg) 55%, var(--border-subtle)); }
+.router-select__trigger.is-open { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-fg) 12%, transparent); }
+.router-select__trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.router-select__trigger .is-placeholder { color: var(--text-tertiary); }
+.router-select__trigger .app-icon { color: var(--text-tertiary); flex-shrink: 0; }
+.router-select__popover {
+  position: fixed;
+  z-index: 260;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  padding: var(--space-1);
+}
+.router-select__option {
+  width: 100%;
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.router-select__option:hover { background: var(--surface-2); color: var(--text-primary); }
+.router-select__option.is-selected { background: color-mix(in srgb, var(--accent-fg) 7%, var(--surface-1)); color: var(--text-primary); }
+.router-select__option.is-disabled { opacity: 0.45; cursor: default; pointer-events: none; }
 .router-editor .textarea {
   min-height: 90px;
   font-family: var(--font-mono);
@@ -12689,16 +12751,35 @@ a.backend-card__version:focus-visible {
 .router-editor__default-rule small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-overline-size); }
 .router-editor__rule-builder { min-width: 0; background: var(--surface-base); }
 .router-editor__rule-builder-head {
-  min-height: 48px;
+  min-height: 44px;
   display: flex;
   align-items: center;
-  padding: var(--space-2) var(--space-4);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-1);
 }
-.router-editor__rule-builder-head > div { min-width: 0; display: grid; gap: 2px; }
-.router-editor__rule-builder-head strong { color: var(--text-primary); font-size: var(--text-sm); }
-.router-editor__rule-builder-head span { color: var(--text-tertiary); font-size: var(--text-xs); }
+.router-editor__rule-builder-label {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.router-editor__rule-id-input {
+  width: 120px;
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  padding: 3px var(--space-2);
+  height: 28px;
+}
+.router-editor__rule-route-select {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 220px;
+  font-size: var(--text-xs);
+  padding: 3px var(--space-2);
+  height: 28px;
+}
 .router-editor__rule-builder-empty { min-height: 430px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2); color: var(--text-tertiary); text-align: center; }
 .router-editor__rule-builder-empty .app-icon { color: var(--accent-fg); }
 .router-editor__rule-builder-empty strong { color: var(--text-secondary); font-size: var(--text-sm); }
@@ -12760,13 +12841,9 @@ a.backend-card__version:focus-visible {
   border-end-end-radius: var(--radius-md);
   background: transparent;
   color: var(--text-tertiary);
-  visibility: hidden;
   transition: color var(--duration-fast) var(--ease-out),
               background var(--duration-fast) var(--ease-out);
 }
-.router-editor__rule-summary:hover .router-editor__rule-remove,
-.router-editor__rule-summary:focus-within .router-editor__rule-remove,
-.router-editor__rule-remove:focus { visibility: visible; }
 .router-editor__rule-actions .router-editor__rule-remove:hover:not(:disabled) {
   color: var(--text-primary);
   background: color-mix(in srgb, var(--text-primary) 8%, transparent);
@@ -13303,11 +13380,16 @@ a.backend-card__version:focus-visible {
   min-height: 0;
   overflow: hidden;
   position: relative;
+  transition: grid-template-columns 240ms var(--ease-out);
 }
 
 .workspace-three-panel.workspace--rail-collapsed,
 .workspace-three-panel.context-rail-collapsed {
   --workspace-rail-width: var(--rail-collapsed);
+}
+
+.workspace-three-panel.workspace--list-collapsed {
+  --workspace-list-panel-width: var(--workspace-header);
 }
 
 .workspace-two-panel {
@@ -13422,6 +13504,29 @@ a.backend-card__version:focus-visible {
   align-items: center;
   gap: var(--space-1-5);
   flex: 0 0 auto;
+}
+
+.workspace-list-panel {
+  transition: width 240ms var(--ease-out), min-width 240ms var(--ease-out);
+}
+
+.workspace-list-panel.is-collapsed {
+  width: var(--workspace-header);
+  min-width: var(--workspace-header);
+  overflow: hidden;
+}
+.workspace-list-panel.is-collapsed .workspace-list-panel__heading,
+.workspace-list-panel.is-collapsed ~ .workspace-panel-resizer {
+  display: none;
+}
+.workspace-list-panel.is-collapsed .workspace-list-panel__header {
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-2) var(--space-1);
+  gap: var(--space-1);
+}
+.workspace-list-panel.is-collapsed > *:not(.workspace-list-panel__header) {
+  display: none;
 }
 
 .workspace-list-panel__actions .workspace-action-group {
@@ -14151,7 +14256,7 @@ button.workspace-metadata-chip:hover {
   flex-direction: column;
   gap: var(--space-4);
   overflow-y: auto;
-  padding: var(--detail-section-space) var(--detail-gutter);
+  padding: var(--space-3) var(--detail-gutter) var(--detail-section-space);
   scrollbar-gutter: stable;
 }
 
@@ -14519,10 +14624,15 @@ button.workspace-metadata-chip:hover {
   grid-template-columns: minmax(180px, 1fr) minmax(150px, auto);
 }
 .router-editor__connection-main,
-.router-editor__connection-source,
 .router-editor__connection-endpoint {
   display: grid;
   gap: 3px;
+  min-width: 0;
+}
+.router-editor__connection-source {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
   min-width: 0;
 }
 .router-editor__connection-main > div {
@@ -14564,10 +14674,6 @@ button.workspace-metadata-chip:hover {
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-2);
-}
-.router-editor__connection-source {
-  justify-items: end;
-  text-align: right;
 }
 .router-editor__default-badge {
   display: inline-flex;
@@ -14730,20 +14836,144 @@ button.workspace-metadata-chip:hover {
   margin: 0;
 }
 
-/* Router graph expanded view mirrors GUI2's full-canvas editing mode. */
+/* Router graph expanded view: full-modal 3-column layout.
+   toolbox | canvas | inspector
+   Toolbox is reordered to the left via grid-area so the canvas
+   has the full center, and the inspector gets a clean right panel. */
 .router-editor__graph-modal {
-  width: min(1500px, 100%);
-  max-height: calc(90vh - 66px);
-  padding: var(--space-3);
-  overflow: auto;
+  /* Override inspect-modal-body defaults so the graph fills the modal content.
+     The 1500px cap lives on .inspect-modal-content--full-height (the modal
+     content) so the body fills it fully with no empty space on the right. */
+  width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
+
 .router-editor__graph-modal .router-graph {
-  min-height: min(680px, calc(90vh - 110px));
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  border-top: 0;
+  overflow: hidden;
 }
+
+/* Workspace becomes just the canvas shell — toolbox breaks out to its own column */
 .router-editor__graph-modal .router-graph__workspace {
-  min-height: min(560px, calc(90vh - 220px));
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+}
+
+/* Toolbox on the left; order:-1 pulls it before canvas-shell in visual order */
+.router-editor__graph-modal .router-graph__toolbox {
+  flex: 0 0 auto;
+  order: -1;
+  border-left: 0;
+  border-right: 1px solid var(--border-subtle);
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.router-editor__graph-modal .router-graph__toolbox.is-collapsed {
+  width: 42px;
+}
+.router-editor__graph-modal .router-graph__toolbox-content {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+/* Canvas shell expands to fill all remaining horizontal space */
+.router-editor__graph-modal .router-graph__canvas-shell {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 .router-editor__graph-modal .router-graph__canvas,
 .router-editor__graph-modal .router-graph__empty {
-  min-height: min(520px, calc(90vh - 260px));
+  min-height: 0;
+  height: 100%;
+}
+
+/* Inspector slides in from the right — only rendered when a node is selected,
+   so the canvas naturally expands to fill the gap when inspector is absent.
+   It claims the larger share of the modal's extra width (grow 2 vs the
+   workspace's 1) since editing deeply nested nodes is the priority here. */
+.router-editor__graph-modal .router-graph__inspector {
+  flex: 2 1 560px;
+  min-width: 320px;
+  border-top: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-1);
+}
+
+/* Draggable divider between the graph workspace and the node inspector.
+   Only rendered in the expanded modal, so it lives under that scope. */
+.router-editor__graph-modal .router-graph__resizer {
+  flex: 0 0 12px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  border-left: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  touch-action: none;
+  user-select: none;
+}
+.router-editor__graph-modal .router-graph__resizer:hover,
+.router-graph.is-resizing .router-graph__resizer {
+  background: var(--surface-2);
+}
+.router-graph__resizer-grip {
+  display: flex;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+.router-editor__graph-modal .router-graph__resizer:hover .router-graph__resizer-grip,
+.router-graph.is-resizing .router-graph__resizer-grip {
+  color: var(--accent-fg);
+}
+/* Suppress the col-resize→text cursor flip and stray selection during a drag. */
+.router-graph.is-resizing,
+.router-graph.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+.router-editor__graph-modal .router-graph__inspector-head {
+  flex-shrink: 0;
+}
+/* Block scroll container: scrolls vertically for tall trees and horizontally
+   for deep ones. min-content tracks (below) plus a min-content floor on the
+   root node let the tree stretch to fill when it fits and grow past the panel
+   (scrolling) when nesting gets deep. */
+.router-editor__graph-modal .router-graph__inspector-body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4);
+}
+.router-editor__graph-modal .router-graph__inspector-body .router-node {
+  min-width: auto;
+}
+.router-editor__graph-modal .router-graph__inspector-body > .router-node {
+  min-width: min-content;
+}
+.router-editor__graph-modal .router-graph__inspector-body .router-node__child {
+  grid-template-columns: 26px minmax(min-content, 1fr);
 }

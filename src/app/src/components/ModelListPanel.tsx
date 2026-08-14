@@ -465,6 +465,8 @@ export interface ModelListPanelProps {
   onOpenCustomModels?: () => void;
   onOpenRouter?: () => void;
   onUpdateAllModels?: () => void;
+  onToggleListPanel?: () => void;
+  listPanelCollapsed?: boolean;
   /** Lowercased set of pinned model names. Pinned rows float to the top. Client-local. */
   pinnedNames?: Set<string>;
   /** Toggle a model's pinned state. Receives the model name. */
@@ -499,6 +501,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   onOpenCustomModels,
   onOpenRouter,
   onUpdateAllModels,
+  onToggleListPanel,
+  listPanelCollapsed,
   pinnedNames,
   onTogglePin,
   favoriteNames,
@@ -699,7 +703,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
 
   return (
     <WorkspaceListPanel
-      className="model-list-panel"
+      className={`model-list-panel${listPanelCollapsed ? ' is-collapsed' : ''}`}
       headerClassName="manager__title"
       title="Models"
       subtitle={`${flatList.length} ${flatList.length === 1 ? 'model' : 'models'}`}
@@ -734,6 +738,16 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               onClick={onUpdateAllModels}
               aria-label="Update all models"
               title="Update all downloaded models"
+            />
+          )}
+          {onToggleListPanel && (
+            <WorkspaceActionButton
+              size="toolbar"
+              icon={listPanelCollapsed ? 'panel-left-open' : 'panel-left-close'}
+              iconOnly
+              onClick={onToggleListPanel}
+              aria-label={listPanelCollapsed ? 'Expand model list' : 'Collapse model list'}
+              title={listPanelCollapsed ? 'Expand model list' : 'Collapse model list'}
             />
           )}
         </WorkspaceActionGroup>

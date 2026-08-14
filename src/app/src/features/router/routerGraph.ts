@@ -91,18 +91,18 @@ export function removeRouterNodeAtPath(root: RouterNode, path: RouterNodePath): 
     if (root.operator === 'not' && root.children.length === 1) {
       return { ...root, children: [] };
     }
-    return normalizeRouterNode({
-      ...root,
-      children: root.children.filter((_, childIndex) => childIndex !== index),
-    });
+    // Preserve AND/OR groups even when they drop to 1 child — the graph shows
+    // a validation error prompting the user to add a second condition, and the
+    // gate shape is still visible so the intent is not silently discarded.
+    return { ...root, children: root.children.filter((_, i) => i !== index) };
   }
 
-  return normalizeRouterNode({
+  return {
     ...root,
     children: root.children.map((child, childIndex) =>
       childIndex === index ? removeRouterNodeAtPath(child, rest) : child
     ),
-  });
+  };
 }
 
 export function createEmptyRouterGraphGroup(operator: RouterGroupOperator): RouterGroupNode {

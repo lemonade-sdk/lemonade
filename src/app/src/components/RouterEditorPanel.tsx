@@ -5,6 +5,7 @@ import { Icon } from './Icon';
 import Modal from './inspect/Modal';
 import RouterModelPicker from './RouterModelPicker';
 import RouterRuleGraph from './RouterRuleGraph';
+import { RouterSelect } from './RouterNodeEditor';
 import {
   WorkspaceActionButton,
   WorkspaceActionGroup,
@@ -908,13 +909,15 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       actions={(
         <WorkspaceActionGroup label="Router editor actions">
           <WorkspaceActionButton appearance="primary" icon="check" disabled={saving || deleting || savingProvider || validationErrors.length > 0} onClick={() => { void save(); }}>
-            {saving ? 'Registering…' : 'Save & register'}
+            {saving ? 'Saving…' : 'Save'}
           </WorkspaceActionButton>
           {draft.modelName && (
             <WorkspaceActionButton appearance="danger" icon="trash" disabled={saving || deleting || savingProvider} onClick={requestDeleteCurrent}>Delete</WorkspaceActionButton>
           )}
+          <WorkspaceActionButton appearance="secondary" icon="x" disabled={saving || deleting || savingProvider} onClick={requestClose}>Cancel</WorkspaceActionButton>
           <span className="workspace-action-group__spacer" />
-          <WorkspaceActionButton appearance="secondary" icon="x" disabled={saving || deleting || savingProvider} onClick={requestClose}>Close</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="quiet" icon="file" disabled={!request} onClick={() => request && downloadJson(routerDisplayName(request.model_name), request)}>Export</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="quiet" icon="file-up" disabled={saving} onClick={() => importRef.current?.click()}>Import</WorkspaceActionButton>
         </WorkspaceActionGroup>
       )}
       titleExtras={(
@@ -928,10 +931,6 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                 {savedRecords.map(record => <option key={record.model_name} value={record.model_name}>{record.display_name}</option>)}
               </select>
             </label>
-          </div>
-          <div className="router-editor__toolbar-row router-editor__toolbar-row--files">
-            <WorkspaceActionButton size="small" icon="file-up" disabled={saving} onClick={() => importRef.current?.click()}>Import</WorkspaceActionButton>
-            <WorkspaceActionButton size="small" icon="file" disabled={!request} onClick={() => request && downloadJson(routerDisplayName(request.model_name), request)}>Export</WorkspaceActionButton>
           </div>
           <input ref={importRef} className="hidden-file-input" type="file" accept="application/json,.json" onChange={event => { void importFile(event.target.files?.[0]); }} />
         </div>
@@ -964,7 +963,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
           <>
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Identity</h3><p>Saved as a virtual model.</p></div>
+                <div><h3>Identity</h3><p>Appears in your model list like any other model.</p></div>
               </div>
               <div className="router-editor__form-grid">
                 <label><span>Router Name</span><input className="input" value={draft.name} placeholder="Fast-or-smart" onChange={event => setPatch({ name: event.target.value })} /></label>
@@ -974,7 +973,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
 
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Candidate Models</h3><p>The router may select only from these registered models.</p></div>
+                <div><h3>Candidate Models</h3><p>Traffic is distributed only among these models.</p></div>
                 <span className="router-editor__count">{draft.candidates.length} selected</span>
               </div>
               <div className="router-editor__candidate-search"><Icon name="search" size={14} /><input value={candidateSearch} placeholder="Search registered models" onChange={event => setCandidateSearch(event.target.value)} /></div>
@@ -1022,6 +1021,12 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                             <strong>{connection.displayName}</strong>
                             {connection.modelName === draft.defaultModel && <span className="router-editor__default-badge">Default</span>}
                           </div>
+                          <div className="router-editor__connection-source">
+                            <span className={`router-editor__source-badge router-editor__source-badge--${connection.kind}`}>
+                              {connection.kind === 'external' ? 'External' : connection.kind === 'internal' ? 'Internal' : 'Unresolved'}
+                            </span>
+                            <small>{connection.kind === 'external' ? (connection.provider || 'Unknown provider') : (connection.backend || connection.recipe || 'Unknown source')}</small>
+                          </div>
                         </div>
                         {connection.kind === 'external' && (
                           <div className="router-editor__connection-endpoint">
@@ -1059,12 +1064,6 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                           </div>
                         )}
                         <div className="router-editor__connection-trailing">
-                          <div className="router-editor__connection-source">
-                            <span className={`router-editor__source-badge router-editor__source-badge--${connection.kind}`}>
-                              {connection.kind === 'external' ? 'External' : connection.kind === 'internal' ? 'Internal' : 'Unresolved'}
-                            </span>
-                            <small>{connection.kind === 'external' ? (connection.provider || 'Unknown provider') : (connection.backend || connection.recipe || 'Unknown source')}</small>
-                          </div>
                           {draft.candidates.includes(connection.modelName) && (
                             <WorkspaceActionButton
                               appearance="danger"
@@ -1087,7 +1086,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
 
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Routing Strategy</h3><p>Choose how the router selects a candidate. Switching modes clears incompatible configuration after confirmation.</p></div>
+                <div><h3>Routing Strategy</h3><p>Pick the mechanism that decides which model handles each request.</p></div>
               </div>
               <div className="router-editor__strategy" role="radiogroup" aria-label="Routing strategy">
                 <button
@@ -1098,7 +1097,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                   onClick={() => setRoutingMode('rules')}
                 >
                   <Icon name="layers" size={18} />
-                  <span><strong>Ordered Rules</strong><small>Deterministic conditions and optional model-backed signals. First match wins.</small></span>
+                  <span><strong>Ordered Rules</strong><small>Pattern-based rules with optional classifier signals - first match wins.</small></span>
                 </button>
                 <button
                   type="button"
@@ -1108,7 +1107,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                   onClick={() => setRoutingMode('llm')}
                 >
                   <Icon name="brain-circuit" size={18} />
-                  <span><strong>Natural-Language Router</strong><small>A routing model reads your instruction and chooses one candidate directly.</small></span>
+                  <span><strong>Natural-Language Router</strong><small>An LLM model reads your instruction and picks the right candidate for each request.</small></span>
                 </button>
               </div>
             </section>
@@ -1143,7 +1142,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
               <>
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Classifiers</h3><p>Optional model-backed signals evaluated once per request.</p></div>
+                <div><h3>Classifiers</h3><p>Model-scored signals you can reference inside your rules.</p></div>
                 <div className="router-editor__section-actions">
                   <WorkspaceActionButton size="small" icon="plus" onClick={() => addClassifier('classifier')}>Classifier</WorkspaceActionButton>
                   <WorkspaceActionButton size="small" icon="plus" onClick={() => addClassifier('semantic_similarity')}>Semantic</WorkspaceActionButton>
@@ -1162,7 +1161,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                         </div>
                         <div className="router-editor__form-grid router-editor__form-grid--classifier">
                           <label><span>ID</span><CommittedTextInput value={classifier.id} ariaLabel={`Classifier ${index + 1} ID`} normalize={input => input} onCommit={nextId => commitClassifierId(index, nextId)} /></label>
-                          <label><span>Type</span><select className="select" value={classifier.type} onChange={event => updateClassifier(index, { ...createRouterClassifier(index, event.target.value as RouterClassifier['type']), id: classifier.id })}><option value="classifier">classifier</option><option value="semantic_similarity">semantic_similarity</option><option value="llm">llm</option></select></label>
+                          <label><span>Type</span><RouterSelect value={classifier.type} options={[{ value: 'classifier', label: 'classifier' }, { value: 'semantic_similarity', label: 'semantic_similarity' }, { value: 'llm', label: 'llm' }]} onChange={(val: string) => updateClassifier(index, { ...createRouterClassifier(index, val as RouterClassifier['type']), id: classifier.id })} ariaLabel="Classifier type" /></label>
                           <div className="router-editor__wide router-editor__field">
                             <span>Model</span>
                             <RouterModelPicker
@@ -1219,8 +1218,8 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                               /></label>
                             </>
                           )}
-                          <label><span>Default Label</span><select className="select" value={classifier.defaultLabel || ''} onChange={event => updateClassifier(index, { defaultLabel: event.target.value || undefined })}><option value="">None</option>{labels.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
-                          <label><span>On Error</span><select className="select" value={classifier.onError} onChange={event => updateClassifier(index, { onError: event.target.value as RouterClassifier['onError'] })}><option value="match_false">Do not match</option><option value="match_true">Match rule</option></select></label>
+                          <label><span>Default Label</span><RouterSelect value={classifier.defaultLabel || ''} options={[{ value: '', label: 'None' }, ...labels.map(label => ({ value: label, label }))]} onChange={(val: string) => updateClassifier(index, { defaultLabel: val || undefined })} ariaLabel="Default label" /></label>
+                          <label><span>On Error</span><RouterSelect value={classifier.onError} options={[{ value: 'match_false', label: 'Do not match' }, { value: 'match_true', label: 'Match rule' }]} onChange={(val: string) => updateClassifier(index, { onError: val as RouterClassifier['onError'] })} ariaLabel="On error" /></label>
                         </div>
                       </article>
                     );
@@ -1231,7 +1230,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
 
             <section className="router-editor__section">
               <div className="router-editor__section-head">
-                <div><h3>Ordered Rules</h3><p>First matching rule wins. The default model handles the remainder.</p></div>
+                <div><h3>Ordered Rules</h3><p>Evaluated top to bottom - the first match wins, everything else falls back to the default.</p></div>
                 <WorkspaceActionButton size="small" icon="plus" onClick={addRule}>Rule</WorkspaceActionButton>
               </div>
               <div className="router-editor__rules-workspace">
@@ -1300,14 +1299,20 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                   {selectedRule ? (
                     <>
                       <div className="router-editor__rule-builder-head">
-                        <div>
-                          <strong>Rule {selectedRuleIndex + 1}: {selectedRule.id || 'Untitled rule'}</strong>
-                          <span>Build the match expression by dragging gates and conditions onto the graph.</span>
-                        </div>
-                      </div>
-                      <div className="router-editor__rule-meta">
-                        <label><span>Rule ID</span><input className="input" value={selectedRule.id} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, id: event.target.value } : item) })} /></label>
-                        <label><span>Route To</span><select className="select" value={selectedRule.routeTo} onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, routeTo: event.target.value } : item) })}><option value="">Select candidate</option>{draft.candidates.map(candidate => <option key={candidate} value={candidate}>{candidate}</option>)}</select></label>
+                        <span className="router-editor__rule-builder-label">Rule {selectedRuleIndex + 1}:</span>
+                        <input
+                          className="input router-editor__rule-id-input"
+                          value={selectedRule.id}
+                          aria-label="Rule ID"
+                          onChange={event => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, id: event.target.value } : item) })}
+                        />
+                        <RouterSelect
+                          className="router-editor__rule-route-select"
+                          value={selectedRule.routeTo}
+                          options={[{ value: '', label: 'Route to…' }, ...draft.candidates.map(c => ({ value: c, label: c }))]}
+                          onChange={(val: string) => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, routeTo: val } : item) })}
+                          ariaLabel="Route To"
+                        />
                       </div>
                       <RouterRuleGraph
                         key={`rule-${selectedRuleIndex}`}
@@ -1358,6 +1363,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
         onClose={() => setExpandedRuleIndex(null)}
         title={expandedRule && expandedRuleIndex != null ? `Rule ${expandedRuleIndex + 1}: ${expandedRule.id || 'Untitled Rule'}` : 'Graph Builder'}
         maxWidth="calc(100vw - 48px)"
+        className="inspect-modal-content--full-height"
         ariaLabelledBy="router-graph-expanded-title"
       >
         {expandedRule && expandedRuleIndex != null && (
@@ -1366,6 +1372,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
               key={`expanded-${expandedRuleIndex}`}
               node={expandedRule.condition}
               classifiers={draft.classifiers}
+              expanded
               onChange={condition => setPatch({
                 rules: draft.rules.map((item, itemIndex) => itemIndex === expandedRuleIndex ? { ...item, condition } : item),
               })}
