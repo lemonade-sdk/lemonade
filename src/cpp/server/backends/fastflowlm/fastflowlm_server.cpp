@@ -43,7 +43,7 @@ InstallParams FastFlowLMServer::get_install_params(const std::string& backend, c
         return params;
     }
 
-    params.repo = "FastFlowLM/FastFlowLM";
+    params.repo = "ROCm/FastFlowLM";
 
     // Release asset filenames use bare version numbers (no 'v' prefix)
     std::string bare_version = version;

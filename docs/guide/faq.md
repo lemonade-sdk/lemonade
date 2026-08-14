@@ -193,7 +193,7 @@
 
    No inference engine providers have plans to support NPUs prior to Ryzen AI 300-series, but you can still request this by filing an issue on their respective GitHubs:
       - Ryzen AI SW: https://github.com/amd/ryzenai-sw
-      - FastFlowLM: https://github.com/FastFlowLM/FastFlowLM
+      - FastFlowLM: https://github.com/ROCm/FastFlowLM
 
 ### 5. **How do I know what model architectures are supported by the NPU?**
 
