@@ -181,11 +181,10 @@ namespace lemon::backends {
 
         /** Join runtime library directories into a single loader-path string
          *  (';' on Windows, ':' elsewhere), converting each to an absolute path.
-         *  When include_llvm is true, each directory's sibling LLVM runtime dir is
-         *  appended too (backends that dlopen the bundled LLVM runtime need it).
-         *  Returns "" for empty input. */
+         *  LLVM paths must already be included in dirs (see
+         *  get_therock_lib_paths). Returns "" for empty input. */
         static std::string join_runtime_dirs(const std::vector<std::string>& dirs,
-                                             bool include_llvm);
+                                             bool /*include_llvm*/);
 
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);

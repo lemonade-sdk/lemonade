@@ -5115,9 +5115,10 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         if (resolved_backend == "rocm-stable") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
-                std::string therock_lib = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
-                if (!therock_lib.empty()) {
-                    lib_path = therock_lib + ":" + lib_path;
+                std::string therock_dirs = lemon::backends::BackendUtils::join_runtime_dirs(
+                    lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch), false);
+                if (!therock_dirs.empty()) {
+                    lib_path = therock_dirs + ":" + lib_path;
                 }
             }
         }
@@ -5148,6 +5149,24 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             const char* existing_path = std::getenv("PATH");
             if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
             env_vars.push_back({"PATH", new_path});
+
+            // Copy amdhip64_7.dll from TheRock to sd-cli.exe directory to
+            // override System32 version. Windows DLL search order checks
+            // System32 BEFORE PATH, so PATH-only approach fails when a rogue
+            // DLL is present.
+            fs::path therock_dll = fs::path(therock_dirs.front()) / "amdhip64_7.dll";
+            fs::path target_dll = cli_exe.parent_path() / "amdhip64_7.dll";
+            if (fs::exists(therock_dll)) {
+                std::error_code ec;
+                fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
+                if (!ec) {
+                    LOG(INFO, "Server") << "Copied amdhip64_7.dll from TheRock to "
+                        << lemon::utils::path_to_utf8(target_dll) << std::endl;
+                } else {
+                    LOG(WARNING, "Server") << "Failed to copy amdhip64_7.dll: "
+                        << ec.message() << std::endl;
+                }
+            }
         }
 #endif
 
