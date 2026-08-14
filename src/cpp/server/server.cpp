@@ -5163,7 +5163,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
                     LOG(INFO, "Server") << "Copied amdhip64_7.dll from TheRock to "
                         << lemon::utils::path_to_utf8(target_dll) << std::endl;
                 } else {
-                    LOG(WARNING, "Server") << "Failed to copy amdhip64_7.dll: "
+                    LOG(ERROR, "Server") << "Failed to copy amdhip64_7.dll: "
                         << ec.message() << std::endl;
                 }
             }

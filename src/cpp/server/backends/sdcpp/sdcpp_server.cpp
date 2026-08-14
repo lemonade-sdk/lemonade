@@ -349,7 +349,7 @@ void SDServer::load(const std::string& model_name,
                         if (!ec) {
                             LOG(INFO, "SDServer") << "Copied amdhip64_7.dll from TheRock to " << path_to_utf8(target_dll) << std::endl;
                         } else {
-                            LOG(WARNING, "SDServer") << "Failed to copy amdhip64_7.dll: " << ec.message() << std::endl;
+                            LOG(ERROR, "SDServer") << "Failed to copy amdhip64_7.dll: " << ec.message() << std::endl;
                         }
                     } else {
                         LOG(DEBUG, "SDServer") << "amdhip64_7.dll not found in TheRock at " << path_to_utf8(therock_dll) << std::endl;

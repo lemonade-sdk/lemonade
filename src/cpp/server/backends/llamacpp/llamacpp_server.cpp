@@ -526,7 +526,7 @@ void LlamaCppServer::load(const std::string& model_name,
                             LOG(INFO, "LlamaCpp") << "Copied amdhip64_7.dll from TheRock to "
                                 << path_to_utf8(target_dll) << std::endl;
                         } else {
-                            LOG(WARNING, "LlamaCpp") << "Failed to copy amdhip64_7.dll: "
+                            LOG(ERROR, "LlamaCpp") << "Failed to copy amdhip64_7.dll: "
                                 << ec.message() << std::endl;
                         }
                     }
