@@ -125,7 +125,7 @@ lemonade backends install llamacpp:rocm
 
 ### Reusing a System-Installed ROCm (Windows and Linux)
 
-On the stable channel Lemonade normally downloads its own ROCm runtime. By default it installs the ROCm runtime from AMD's pip wheels into a lemonade-managed virtual environment (under `therock-wheels/<arch>-<version>/` in the cache), and falls back to the TheRock tarball (under `therock/<arch>-<version>/`) when Python/venv/pip is unavailable or the wheel install can't serve your GPU. Because recipes can pin different ROCm versions (e.g. sd-cpp lags llama.cpp), more than one ROCm version may be installed concurrently. See [`rocm_install_method`](#choosing-the-rocm-install-method) to force one path.
+On the stable channel Lemonade normally downloads its own ROCm runtime. By default it installs the ROCm runtime from AMD's pip wheels into a lemonade-managed virtual environment (under `therock-wheels/<arch>-<version>/` in the cache), and falls back to the TheRock tarball (under `therock/<arch>-<version>/`) when Python/venv/pip is unavailable or the wheel install can't serve your GPU. See [`rocm_install_method`](#choosing-the-rocm-install-method) to force one path.
 
 If you already have ROCm installed system-wide, Lemonade reuses it instead of downloading a second copy when it can find a matching version. It locates the install root in this order, using the first directory that contains the HIP runtime (`bin\amdhip64.dll` or `bin\amdhip64_<version>.dll` on Windows, `lib{,64}/libamdhip64.so` on Linux):
 
@@ -171,6 +171,8 @@ You can pin `llamacpp.rocm_bin` to a specific release tag instead of using `"bui
 | `nightly` | [lemonade-sdk/llamacpp-rocm](https://github.com/lemonade-sdk/llamacpp-rocm) | Nightly tags, e.g. `b1260` |
 
 > **Always set `rocm_channel` to the correct channel before setting `rocm_bin` to a specific tag.** If the tag does not exist in the current channel's repository, the download will fail with HTTP 404.
+
+> **On the stable channel, prefer `rocm_bin=builtin` over `latest`.** Stable ROCm binaries come from upstream ggml-org, which publishes a ROCm asset only for some builds and only for specific ROCm versions. `latest` resolves to the newest build tag regardless, so its ROCm asset for Lemonade's pinned ROCm version often does not exist and the download fails with HTTP 404. `builtin` uses a version whose assets Lemonade has validated.
 
 Example — pin to a specific nightly build:
 ```bash

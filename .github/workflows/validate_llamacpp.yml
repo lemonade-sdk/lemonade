@@ -233,6 +233,13 @@ jobs:
               "metal": [
                   f"llama-{ggml_release}-bin-macos-arm64.tar.gz",
               ],
+              # rocm-stable is served from ggml-org/llama.cpp (see
+              # LlamaCppServer::get_install_params), so validate and pin it
+              # against the ggml release, not the lemonade-sdk fork.
+              "rocm-stable": [
+                  f"llama-{ggml_release}-bin-win-rocm-{therock}-x64.zip",
+                  f"llama-{ggml_release}-bin-ubuntu-rocm-{therock}-x64.tar.gz",
+              ],
           }
 
           rocm_nightly_requirements = {
@@ -247,10 +254,6 @@ jobs:
           }
 
           lemonade_requirements = {
-              "rocm-stable": [
-                  f"llama-{lemonade_release}-bin-win-rocm-{therock}-x64.zip",
-                  f"llama-{lemonade_release}-bin-ubuntu-rocm-{therock}-x64.tar.gz",
-              ],
               "cuda": [
                   asset
                   for sm in CUDA_SMS
@@ -270,9 +273,9 @@ jobs:
               "ggml_update_backends": ",".join(ggml_updates),
               "lemonade_update_backends": ",".join(lemonade_updates),
               "rocm_update_backends": ",".join(rocm_updates),
-              "ggml_missing_count": str(sum(len(items) for items in ggml_missing.values())),
+              "ggml_missing_count": str(sum(len(items) for key, items in ggml_missing.items() if key != "rocm-stable")),
               "rocm_nightly_missing_count": str(len(rocm_missing["rocm-nightly"])),
-              "rocm_stable_missing_count": str(len(lemonade_missing["rocm-stable"])),
+              "rocm_stable_missing_count": str(len(ggml_missing["rocm-stable"])),
               "cuda_missing_count": str(len(lemonade_missing["cuda"])),
               "vulkan_available": "true" if not ggml_missing["vulkan"] else "false",
               "cpu_available": "true" if not ggml_missing["cpu"] else "false",
@@ -982,7 +985,7 @@ jobs:
               "cpu": pin_action("cpu", llamacpp, "cpu" in ggml_updates),
               "metal": pin_action("metal", llamacpp, "metal" in ggml_updates),
               "rocm-nightly": pin_action("rocm-nightly", rocm_nightly, "rocm-nightly" in rocm_updates),
-              "rocm-stable": pin_action("rocm-stable", lemonade_release, "rocm-stable" in lemonade_updates),
+              "rocm-stable": pin_action("rocm-stable", llamacpp, "rocm-stable" in ggml_updates),
               "cuda": pin_action("cuda", lemonade_release, "cuda" in lemonade_updates),
           }
 
@@ -1076,7 +1079,7 @@ jobs:
 
           git checkout -b "$BRANCH"
           git add src/cpp/resources/backend_versions.json
-          git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm-stable to ${LLAMACPP_LEMONADE_RELEASE}, rocm-nightly to ${LLAMACPP_ROCM_RELEASE}"
+          git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE} (incl. rocm-stable), rocm-nightly to ${LLAMACPP_ROCM_RELEASE}, cuda to ${LLAMACPP_LEMONADE_RELEASE}"
           git push origin "$BRANCH"
 
           gh pr create \

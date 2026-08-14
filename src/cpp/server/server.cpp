@@ -5116,7 +5116,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
                 std::string therock_dirs = lemon::backends::BackendUtils::join_runtime_dirs(
-                    lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch), false);
+                    lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch));
                 if (!therock_dirs.empty()) {
                     lib_path = therock_dirs + ":" + lib_path;
                 }

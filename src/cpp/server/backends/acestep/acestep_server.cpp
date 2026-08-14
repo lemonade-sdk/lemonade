@@ -145,7 +145,7 @@ void AceStepServer::load(const std::string& model_name,
         std::string dirs;
         if (!arch.empty()) {
             dirs = BackendUtils::join_runtime_dirs(
-                BackendUtils::get_therock_lib_paths(arch), false);
+                BackendUtils::get_therock_lib_paths(arch));
         }
         prepend_loader_path(dirs);
     } else if (backend == "cuda") {

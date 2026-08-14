@@ -1055,21 +1055,6 @@ namespace lemon::backends {
     }  // namespace
 
     namespace {
-        // A concrete gfx target (e.g. gfx1151, gfx90a) maps to a rocm-sdk-device
-        // wheel; family placeholders like gfx110X do not, so those fall back to
-        // the tarball (whose url_mapping already resolves families).
-        bool is_concrete_gfx_arch(const std::string& arch) {
-            if (arch.rfind("gfx", 0) != 0 || arch.size() <= 3) {
-                return false;
-            }
-            for (size_t i = 3; i < arch.size(); ++i) {
-                if (!std::isxdigit(static_cast<unsigned char>(arch[i]))) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
         // Locate a Python interpreter that can create virtual environments.
         std::string find_python_for_venv() {
 #ifdef _WIN32
@@ -1082,6 +1067,16 @@ namespace lemon::backends {
                 if (path.empty()) {
                     continue;
                 }
+#ifdef _WIN32
+                // Skip the Microsoft Store alias: it pops the Store UI and stalls
+                // the probe ~30 s instead of running Python.
+                std::string lower = path;
+                std::transform(lower.begin(), lower.end(), lower.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (lower.find("windowsapps") != std::string::npos) {
+                    continue;
+                }
+#endif
                 // Confirm venv can actually build a working environment. On
                 // Debian/Ubuntu `import venv` succeeds without python3-venv, but
                 // `python -m venv` then fails on the missing ensurepip; probing
@@ -1140,8 +1135,9 @@ namespace lemon::backends {
                 lines.push_back(line);
                 return true;
             };
+            // -X utf8 so non-ASCII paths print as UTF-8 regardless of host locale.
             int rc = utils::ProcessManager::run_process_with_output(
-                venv_python, {"-c", probe}, on_line, /*working_dir=*/"",
+                venv_python, {"-X", "utf8", "-c", probe}, on_line, /*working_dir=*/"",
                 /*timeout_seconds=*/60);
             if (rc != 0) {
                 return {};
@@ -1156,7 +1152,7 @@ namespace lemon::backends {
                     trimmed.pop_back();
                 }
                 std::error_code ec;
-                if (!trimmed.empty() && fs::is_directory(trimmed, ec)) {
+                if (!trimmed.empty() && fs::is_directory(utils::path_from_utf8(trimmed), ec)) {
                     dirs.push_back(trimmed);
                 }
             }
@@ -1238,6 +1234,12 @@ namespace lemon::backends {
 
         if (method != "tarball") {
             if (install_therock_wheels(arch, version, progress_cb)) {
+                // Drop the other tree so its method.txt can't re-trigger the
+                // mismatch reinstall on every load.
+                if (method == "wheel") {
+                    std::error_code ec;
+                    fs::remove_all(get_therock_install_dir(arch, version), ec);
+                }
                 return;
             }
             if (get_therock_wheels_cancelled()) {
@@ -1251,6 +1253,74 @@ namespace lemon::backends {
             }
         }
         install_therock(arch, version, progress_cb);
+        // Drop the other tree so its method.txt can't re-trigger the mismatch
+        // reinstall on every load.
+        if (method == "tarball") {
+            std::error_code ec;
+            fs::remove_all(get_therock_wheel_dir(arch, version), ec);
+        }
+    }
+
+    bool BackendUtils::is_concrete_gfx_arch(const std::string& arch) {
+        if (arch.rfind("gfx", 0) != 0 || arch.size() <= 3) {
+            return false;
+        }
+        for (size_t i = 3; i < arch.size(); ++i) {
+            if (!std::isxdigit(static_cast<unsigned char>(arch[i]))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool BackendUtils::parse_pip_download_line(const std::string& line,
+                                               std::string& filename,
+                                               size_t& bytes_total) {
+        filename.clear();
+        bytes_total = 0;
+
+        static const std::string dl_marker = "Downloading ";
+        const size_t dl_pos = line.find(dl_marker);
+        if (dl_pos == std::string::npos) {
+            return false;
+        }
+
+        const std::string rest = line.substr(dl_pos + dl_marker.size());
+        // Filename is the first whitespace-delimited token.
+        const size_t sp = rest.find_first_of(" \t");
+        const std::string token = sp == std::string::npos ? rest : rest.substr(0, sp);
+        const size_t slash = token.find_last_of("/\\");
+        filename = slash == std::string::npos ? token : token.substr(slash + 1);
+
+        // Search the full remainder, not the whitespace-cut token: pip prints
+        // "Downloading <name> (414.0 MB)", so the parens follow the filename.
+        const size_t lparen = rest.rfind('(');
+        const size_t rparen = rest.rfind(')');
+        if (lparen == std::string::npos || rparen == std::string::npos || rparen <= lparen + 1) {
+            return true;
+        }
+
+        const std::string size_part = rest.substr(lparen + 1, rparen - lparen - 1);
+        // pip prints units uppercase (kB/MB/GB), hence the case-insensitive match.
+        double multiplier = 1.0;
+        size_t unit_pos = std::string::npos;
+        for (size_t i = 0; i < size_part.size(); ++i) {
+            const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(size_part[i])));
+            if (c == 'k') { multiplier = 1024.0; unit_pos = i; break; }
+            if (c == 'm') { multiplier = 1048576.0; unit_pos = i; break; }
+            if (c == 'g') { multiplier = 1073741824.0; unit_pos = i; break; }
+        }
+
+        std::string num_str = unit_pos == std::string::npos ? size_part : size_part.substr(0, unit_pos);
+        while (!num_str.empty() && (num_str.back() == ' ' || num_str.back() == '\t')) {
+            num_str.pop_back();
+        }
+        try {
+            bytes_total = static_cast<size_t>(std::stod(num_str) * multiplier);
+        } catch (const std::exception&) {
+            bytes_total = 0;
+        }
+        return true;
     }
 
     bool BackendUtils::install_therock_wheels(const std::string& arch, const std::string& version,
@@ -1327,38 +1397,13 @@ namespace lemon::backends {
             // per wheel. Surface it so the UI shows movement across the ~730 MB
             // install, parse the size for a real progress bar, and honour the
             // callback's cancellation return by killing pip.
-            static const std::string dl_marker = "Downloading ";
-            const size_t dl_pos = line.find(dl_marker);
-            if (dl_pos != std::string::npos) {
-                std::string rest = line.substr(dl_pos + dl_marker.size());
-                const size_t sp = rest.find_first_of(" \t");
-                std::string token = sp == std::string::npos ? rest : rest.substr(0, sp);
-                const size_t slash = token.find_last_of("/\\");
+            std::string fname;
+            size_t this_size = 0;
+            if (parse_pip_download_line(line, fname, this_size)) {
+                bytes_total += this_size;
                 DownloadProgress p;
-                p.file = slash == std::string::npos ? token : token.substr(slash + 1);
-                // Parse size in parens, e.g. "(414.0 MB)"
-                const size_t lparen = token.rfind('(');
-                const size_t rparen = token.rfind(')');
-                if (lparen != std::string::npos && rparen != std::string::npos && rparen > lparen + 1) {
-                    std::string size_part = token.substr(lparen + 1, rparen - lparen - 1);
-                    // Trim any trailing text like "of 428 MB" that pip sometimes prints
-                    size_t paren_end = size_part.rfind(' ');
-                    if (paren_end != std::string::npos) {
-                        size_part.resize(paren_end);
-                    }
-                    size_t unit_start = size_part.find_last_of("kmb");
-                    if (unit_start != std::string::npos) {
-                        char unit = size_part[unit_start];
-                        std::string num_str = size_part.substr(0, unit_start);
-                        double size = std::stod(num_str);
-                        if (unit == 'k') size *= 1024.0;
-                        else if (unit == 'm') size *= 1048576.0;
-                        else if (unit == 'g') size *= 1073741824.0;
-                        p.bytes_total = static_cast<size_t>(size);
-                    }
-                }
-                // Running total for progress bar; add this download's size
-                bytes_total += p.bytes_total;
+                p.file = fname;
+                p.bytes_total = bytes_total;
                 p.bytes_downloaded = bytes_downloaded;
                 p.file_index = ++downloads_seen;
                 p.total_files = 2;
@@ -1370,16 +1415,18 @@ namespace lemon::backends {
                 if (!keep) {
                     g_therock_wheels_cancelled = true;
                 }
-                bytes_downloaded += p.bytes_total;
+                bytes_downloaded += this_size;
                 // Emit updated progress with this wheel completed
                 {
                     DownloadProgress done;
-                    done.file = p.file;
+                    done.file = fname;
                     done.file_index = downloads_seen;
                     done.total_files = 2;
                     done.bytes_total = bytes_total;
                     done.bytes_downloaded = bytes_downloaded;
-                    done.percent = static_cast<int>((bytes_downloaded * 100) / bytes_total);
+                    done.percent = bytes_total > 0
+                        ? static_cast<int>((bytes_downloaded * 100) / bytes_total)
+                        : 0;
                     done.complete = true;
                     progress_cb(done);
                 }
@@ -1445,7 +1492,10 @@ namespace lemon::backends {
             // machine-level extra index can't shadow rocm-sdk-*. Note: `rocm` is an
             // sdist, so pip build-isolates it and fetches setuptools from this same
             // index — an implicit dependency on AMD's index contents.
-            {"-m", "pip", "install", "--isolated", "--no-input", "--index-url", index_url, spec},
+            // --no-cache-dir: the wheels land in the venv, so a ~730 MB pip cache
+            // that nothing reuses only wastes disk.
+            {"-m", "pip", "install", "--isolated", "--no-cache-dir", "--no-input",
+             "--index-url", index_url, spec},
             log_line, /*working_dir=*/"", /*timeout_seconds=*/1800);
         if (rc != 0) {
             LOG(WARNING, "BackendUtils")
@@ -1518,7 +1568,7 @@ namespace lemon::backends {
 
         if (progress_cb) {
             DownloadProgress p;
-            p.file = spec;
+            p.file = "ROCm runtime";
             p.file_index = 1;
             p.total_files = 1;
             p.percent = 100;
@@ -1699,15 +1749,22 @@ namespace lemon::backends {
 
         std::string version = config["therock"]["version"].get<std::string>();
 
-        // Prefer the lemonade-managed pip-wheel install when present. Its ROCm
-        // runtime is split across multiple directories (_rocm_sdk_core/bin,
-        // _rocm_sdk_core/lib, _rocm_sdk_libraries/bin), recorded in
-        // runtime_paths.txt at install time. ALL of them must be on the loader
-        // path: amdhip64/amd_comgr/rocm_kpack live in _rocm_sdk_core/bin while
-        // rocblas/hipblas/hipblaslt live in _rocm_sdk_libraries/bin, and a
-        // consumer that loads only the first directory fails to resolve the
-        // BLAS DLLs (STATUS_DLL_NOT_FOUND).
-        {
+        // rocm_install_method=tarball must skip the wheel tree, or the venv keeps
+        // serving backends and the knob does nothing.
+        std::string install_method = "auto";
+        if (auto* cfg = RuntimeConfig::global()) {
+            install_method = cfg->rocm_install_method();
+        }
+
+        // Prefer the lemonade-managed pip-wheel install when present (unless the
+        // user pinned the tarball above). Its ROCm runtime is split across
+        // multiple directories (_rocm_sdk_core/bin, _rocm_sdk_core/lib,
+        // _rocm_sdk_libraries/bin), recorded in runtime_paths.txt at install
+        // time. ALL of them must be on the loader path: amdhip64/amd_comgr/
+        // rocm_kpack live in _rocm_sdk_core/bin while rocblas/hipblas/hipblaslt
+        // live in _rocm_sdk_libraries/bin, and a consumer that loads only the
+        // first directory fails to resolve the BLAS DLLs (STATUS_DLL_NOT_FOUND).
+        if (install_method != "tarball") {
             fs::path paths_file =
                 fs::path(get_therock_wheel_dir(rocm_arch, version)) / "runtime_paths.txt";
             std::error_code ec;
@@ -1723,7 +1780,8 @@ namespace lemon::backends {
                         continue;
                     }
                     std::error_code dir_ec;
-                    if (fs::is_directory(line, dir_ec)) {
+                    // Decode UTF-8 so non-ASCII Windows profile paths aren't dropped.
+                    if (fs::is_directory(utils::path_from_utf8(line), dir_ec)) {
                         lib_paths.push_back(line);
                     }
                 }
@@ -1748,11 +1806,9 @@ namespace lemon::backends {
 #else
             std::string lib_path = (fs::path(install_dir) / "lib").string();
 #endif
-            // LLVM lives in <tarball_root>/lib/llvm/lib on both platforms.
-            // On Windows install_dir is the root, so parent_path() of bin/ gives root.
-            // On Linux install_dir is the root, and lib_path is root/lib.
+            // LLVM DLLs live in bin on Windows, .so files in lib on Linux.
 #ifdef _WIN32
-            fs::path llvm_path = fs::path(install_dir) / "lib" / "llvm" / "lib";
+            fs::path llvm_path = fs::path(install_dir) / "lib" / "llvm" / "bin";
 #else
             fs::path llvm_path = fs::path(install_dir) / "lib" / "llvm" / "lib";
 #endif
@@ -1779,8 +1835,7 @@ namespace lemon::backends {
         return paths.empty() ? std::string() : paths.front();
     }
 
-    std::string BackendUtils::join_runtime_dirs(const std::vector<std::string>& dirs,
-                                                bool /*include_llvm*/) {
+    std::string BackendUtils::join_runtime_dirs(const std::vector<std::string>& dirs) {
 #if !defined(__linux__) && !defined(_WIN32)
         (void)dirs;
         return "";
