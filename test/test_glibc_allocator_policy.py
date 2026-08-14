@@ -49,10 +49,13 @@ def run_case(
             if log_path.exists()
             else []
         )
-        observed = "1048576" in calls
-        if observed != expect_mallopt:
+        expected_call = "1048576 threads=1"
+        expected_calls = [expected_call] if expect_mallopt else []
+        if calls != expected_calls:
             expectation = (
-                "a 1 MiB mallopt call" if expect_mallopt else "no mallopt call"
+                "a single-threaded 1 MiB mallopt call"
+                if expect_mallopt
+                else "no mallopt call"
             )
             raise RuntimeError(f"{name}: expected {expectation}, observed {calls}")
 
