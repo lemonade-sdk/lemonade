@@ -1634,6 +1634,10 @@ RecipeOptions ModelManager::preview_saved_model_options(const ModelInfo& info, c
 // i.e. the layer between image_defaults and what the user saved.
 json ModelManager::registry_recipe_options(const std::string& cache_key) {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return registry_recipe_options_locked(cache_key);
+}
+
+json ModelManager::registry_recipe_options_locked(const std::string& cache_key) {
     const bool is_user_model = is_user_model_name(cache_key);
     const std::string json_key = strip_user_model_prefix(cache_key);
     const json* model_json = nullptr;
@@ -1670,8 +1674,9 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
     const std::string id = cache_key_to_canonical_id(cache_key);
     LOG(INFO, "ModelManager") << "Updating saved options for model: " << model_name << std::endl;
 
-    // Both of these take models_cache_mutex_ themselves, so gather the layers
-    // the merged options are rebuilt from before locking.
+    // get_model_info takes models_cache_mutex_ itself, so read it before
+    // locking. The registry layer is re-read under the lock instead, since the
+    // rebuild below has to reflect the registry as it stands at that moment.
     ModelInfo info;
     bool have_info = true;
     try {
@@ -1679,7 +1684,6 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
     } catch (const std::exception&) {
         have_info = false;
     }
-    const json registry_options = have_info ? registry_recipe_options(cache_key) : json(nullptr);
 
     std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
 
@@ -1711,8 +1715,8 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
 
         if (have_info) {
             // Same layering as build_cache(), so the two can't drift.
-            info.recipe_options = build_recipe_options(info, registry_options, id,
-                                                       json{{id, saved}});
+            info.recipe_options = build_recipe_options(
+                info, registry_recipe_options_locked(cache_key), id, json{{id, saved}});
             update_model_options_in_cache_locked(info);
         }
     }

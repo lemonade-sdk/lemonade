@@ -385,6 +385,8 @@ private:
     void notify_models_changed();
 
     json registry_recipe_options(const std::string& cache_key);
+    // Caller must hold models_cache_mutex_.
+    json registry_recipe_options_locked(const std::string& cache_key);
     json write_saved_model_options(const std::string& model_name, const json& options, bool merge);
 
     // Cache management
