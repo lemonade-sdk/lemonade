@@ -314,14 +314,20 @@
         switch (gsPlatform) {
           case 'windows':
             html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi">' +
-              '<span class="material-symbols-outlined">desktop_windows</span> Download for Windows (.msi)</a>';
+              '<span class="material-symbols-outlined">desktop_windows</span> Download for Windows (.msi)</a>' +
+              '<div class="gs-install-block">' +
+                gsConsoleHtml(['winget install --id AMD.LemonadeServer -e']) +
+              '</div>';
             break;
           case 'apple':
-            html = v
+            html = (v
               ? '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade-' + v + '-Darwin.pkg">' +
                 '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>'
               : '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest">' +
-                '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>';
+                '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>') +
+              '<div class="gs-install-block">' +
+                gsConsoleHtml(['brew install --cask lemonade-server']) +
+              '</div>';
             break;
           case 'docker':
             html = gsConsoleHtml([

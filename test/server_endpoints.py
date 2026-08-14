@@ -206,7 +206,66 @@ class EndpointTests(ServerTestBase):
                     f"Endpoint {endpoint} is not registered on {version}",
                 )
 
+        # POST-only routes should be probed with their actual method. httplib does
+        # not synthesize HEAD responses for POST handlers.
+        for endpoint in ["models/register"]:
+            for version in ["v0", "v1"]:
+                url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
+                response = session.post(url, json={}, timeout=TIMEOUT_DEFAULT)
+                self.assertNotEqual(
+                    response.status_code,
+                    404,
+                    f"POST endpoint {endpoint} is not registered on {version}",
+                )
+
         session.close()
+
+    def test_000a_register_model_definition_without_pull(self):
+        """Register a user model definition without downloading its checkpoint."""
+        canonical_name = f"user.RegisterEndpoint-{uuid.uuid4().hex[:8]}"
+        checkpoint = "example/register-endpoint-test:Q4_K_M"
+        try:
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "llamacpp",
+                    "checkpoint": checkpoint,
+                    "labels": ["test-register-endpoint"],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            body = response.json()
+            self.assertEqual(body.get("status"), "success")
+            self.assertEqual(body.get("canonical_model_name"), canonical_name)
+            public_name = body.get("model_name")
+            self.assertIsInstance(public_name, str)
+            self.assertTrue(public_name)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200, models_response.text)
+            entry = next(
+                model
+                for model in models_response.json()["data"]
+                if model["id"] == public_name
+            )
+            self.assertEqual(entry.get("checkpoint"), checkpoint)
+            self.assertEqual(entry.get("recipe"), "llamacpp")
+            self.assertFalse(entry.get("downloaded"))
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
@@ -7410,12 +7469,14 @@ class EndpointTests(ServerTestBase):
                 pass
 
     def test_037_model_update_check_lifecycle(self):
-        """A successful re-pull clears a staged per-model update marker.
+        """A staged stale provenance snapshot must not flag a false update.
 
-        The production fix stores the processed upstream snapshot per model
-        selection in .lemonade_registry.json. Staging only that value as stale
-        exercises the regression without moving refs/main or model files that
-        may be shared by sibling variants in the same repository.
+        The processed-at-pull snapshot recorded in .lemonade_registry.json can
+        name a commit whose snapshot was never materialized locally (pull keeps
+        refs/main on an older snapshot when the selected artifacts are
+        unchanged). The update check compares against the on-disk snapshot,
+        never that recorded sha, so staging only it as stale must not report an
+        "Update available". Regression for the false-positive cycle on restart.
         """
         pull_response = requests.post(
             f"{self.base_url}/pull",
@@ -7481,7 +7542,12 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(stale_response.status_code, 200, stale_response.text)
             stale_result = stale_response.json()
             self.assertEqual(stale_result.get("status"), "success")
-            self.assertIn(ENDPOINT_TEST_MODEL, stale_result.get("models", []))
+            self.assertNotIn(
+                ENDPOINT_TEST_MODEL,
+                stale_result.get("models", []),
+                "A stale provenance snapshot must not raise a false update flag "
+                "while the on-disk snapshot is unchanged",
+            )
 
             repull_response = requests.post(
                 f"{self.base_url}/pull",
@@ -7508,7 +7574,7 @@ class EndpointTests(ServerTestBase):
             with open(provenance_path, "w", encoding="utf-8") as provenance_file:
                 provenance_file.write(original_provenance)
 
-        print("[OK] /models/check-updates lifecycle clears after re-pull")
+        print("[OK] /models/check-updates ignores stale provenance snapshots")
 
 
 if __name__ == "__main__":

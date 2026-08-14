@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/audio_types.h"
 #include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
 #include <optional>
@@ -1196,6 +1197,10 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
 
     // Model management endpoints
+    register_post("models/register", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_register(req, res);
+    });
+
     register_post("pull", [this](const httplib::Request& req, httplib::Response& res) {
         handle_pull(req, res);
     });
@@ -2582,6 +2587,239 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     }
 
     res.set_content(response.dump(), "application/json");
+}
+
+void Server::validate_model_registration_name(const std::string& model_name,
+                                             bool require_user_namespace) {
+    if (lemon::is_reserved_registration_name(model_name)) {
+        throw std::invalid_argument(
+            "Model names with 'extra.' / 'builtin.' prefixes are reserved, "
+            "including as bare-name parts of a 'user.' alias. Received: " + model_name);
+    }
+
+    if (require_user_namespace &&
+        (model_name.size() <= 5 || model_name.rfind("user.", 0) != 0)) {
+        throw std::invalid_argument(
+            "Registered model definitions must use a non-empty `user.*` name, "
+            "for example `user.Phi-4-Mini-GGUF`. Received: " + model_name);
+    }
+}
+
+void Server::normalize_model_registration_source(nlohmann::json& request_json,
+                                                 bool local_import) {
+    if (!request_json.contains("source") && !request_json.contains("registry_source")) {
+        return;
+    }
+
+    std::optional<std::string> normalized_registry;
+    if (request_json.contains("registry_source")) {
+        if (!request_json["registry_source"].is_string()) {
+            throw std::invalid_argument("`registry_source` must be a string when provided");
+        }
+        normalized_registry = remote_registry_source_name(
+            parse_remote_registry_source(
+                request_json["registry_source"].get<std::string>()));
+    }
+
+    if (request_json.contains("source")) {
+        if (!request_json["source"].is_string()) {
+            throw std::invalid_argument("`source` must be a string when provided");
+        }
+        const std::string public_source = request_json["source"].get<std::string>();
+        if (is_remote_registry_source(public_source)) {
+            const std::string normalized_public = remote_registry_source_name(
+                parse_remote_registry_source(public_source));
+            if (normalized_registry && *normalized_registry != normalized_public) {
+                throw std::invalid_argument(
+                    "`source` and `registry_source` must identify the same registry");
+            }
+            normalized_registry = normalized_public;
+            request_json["source"] = normalized_public;
+        } else if (!local_import && public_source != "local_upload" &&
+                   public_source != "local_path" &&
+                   public_source != "extra_models_dir") {
+            throw std::invalid_argument(
+                "Unsupported model source '" + public_source +
+                "' (expected 'huggingface', 'modelscope', or a local source)");
+        }
+    }
+
+    if (normalized_registry) {
+        if (!request_json.contains("source") ||
+            is_remote_registry_source(request_json["source"].get<std::string>())) {
+            request_json["source"] = *normalized_registry;
+        }
+        request_json["registry_source"] = *normalized_registry;
+    }
+}
+
+void Server::validate_and_canonicalize_collection_registration(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool allow_embedded_models) {
+    const std::string recipe = request_json.value("recipe", std::string());
+    if (!is_model_collection_recipe(recipe)) {
+        return;
+    }
+
+    if (request_json.contains("models") && !allow_embedded_models) {
+        throw std::invalid_argument(
+            "`models` embeds additional model definitions and is not accepted by "
+            "the single-model registration endpoint; register components first");
+    }
+
+    if (request_json.contains("components")) {
+        if (!request_json["components"].is_array()) {
+            throw std::invalid_argument("`components` must be an array when provided");
+        }
+        for (const auto& component : request_json["components"]) {
+            if (!component.is_string()) {
+                throw std::invalid_argument(
+                    "Every collection component must be a string model name");
+            }
+        }
+    }
+
+    if (auto err = model_manager_->validate_collection_request(model_name, request_json)) {
+        throw std::invalid_argument(*err);
+    }
+
+    // Single-definition collections reference models already present in the
+    // registry. Exported bundles keep their raw component names because their
+    // embedded definitions are resolved by the collection import/download path.
+    if (request_json.contains("components") && request_json["components"].is_array() &&
+        (!request_json.contains("models") || !request_json["models"].is_array())) {
+        for (auto& component : request_json["components"]) {
+            component = model_manager_->resolve_model_name(component.get<std::string>());
+        }
+    }
+}
+
+std::string Server::register_model_definition_internal(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool require_definition,
+        bool allow_embedded_models,
+        bool local_import) {
+    if (!request_json.is_object()) {
+        throw std::invalid_argument("Request body must be a JSON object");
+    }
+
+    if (request_json.contains("recipe") && !request_json["recipe"].is_string()) {
+        throw std::invalid_argument("`recipe` must be a string when provided");
+    }
+    const std::string recipe = request_json.value("recipe", std::string());
+    if (require_definition && recipe.empty()) {
+        throw std::invalid_argument("A non-empty string `recipe` is required");
+    }
+
+    if (request_json.contains("checkpoint") && !request_json["checkpoint"].is_string()) {
+        throw std::invalid_argument("`checkpoint` must be a string when provided");
+    }
+    if (request_json.contains("checkpoints")) {
+        const auto& checkpoints = request_json["checkpoints"];
+        if (!checkpoints.is_object() || !checkpoints.contains("main")) {
+            throw std::invalid_argument(
+                "If present, `checkpoints` must be an object containing `main`");
+        }
+        for (const auto& [role, checkpoint] : checkpoints.items()) {
+            if (!checkpoint.is_string()) {
+                throw std::invalid_argument(
+                    "Every `checkpoints` value must be a string; invalid role: " + role);
+            }
+        }
+    }
+
+    const bool has_definition =
+        require_definition || !recipe.empty() || request_json.contains("checkpoint") ||
+        request_json.contains("checkpoints") || request_json.contains("components") ||
+        request_json.contains("models");
+    validate_model_registration_name(model_name, has_definition);
+
+    if (request_json.contains("models") && !allow_embedded_models) {
+        throw std::invalid_argument(
+            "`models` embeds additional model definitions and is not accepted by "
+            "the single-model registration endpoint; register components first");
+    }
+
+    normalize_model_registration_source(request_json, local_import);
+    validate_and_canonicalize_collection_registration(
+        model_name, request_json, allow_embedded_models);
+
+
+    if (!has_definition && !local_import) {
+        return model_name;
+    }
+
+    if (local_import) {
+        std::string hf_cache = model_manager_->get_hf_cache_dir();
+        std::string model_name_clean = model_name.substr(5);
+        std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
+        std::string dest_path = hf_cache + "/models--" + model_name_clean;
+
+        LOG(INFO, "Server") << "Local import mode - resolving files in: "
+                            << dest_path << std::endl;
+        resolve_and_register_local_model(dest_path, model_name, request_json, hf_cache);
+    } else {
+        model_manager_->register_model(
+            model_name,
+            request_json,
+            /*allow_missing_checkpoint=*/require_definition,
+            /*replace_existing=*/require_definition);
+    }
+
+    return model_manager_->get_public_model_name(model_name);
+}
+
+void Server::handle_model_register(const httplib::Request& req, httplib::Response& res) {
+    auto bad_request = [&res](const std::string& message) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", message}}.dump(), "application/json");
+    };
+
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
+    try {
+        if (!request_json.is_object()) {
+            bad_request("Request body must be a JSON object");
+            return;
+        }
+        if (!request_json.contains("model_name") || !request_json["model_name"].is_string()) {
+            bad_request("A string `model_name` is required");
+            return;
+        }
+
+        const std::string model_name = request_json["model_name"].get<std::string>();
+        const std::string public_name = register_model_definition_internal(
+            model_name,
+            request_json,
+            /*require_definition=*/true,
+            /*allow_embedded_models=*/false,
+            /*local_import=*/false);
+
+        nlohmann::json response = {
+            {"status", "success"},
+            {"model_name", public_name},
+            {"canonical_model_name", model_name},
+        };
+
+        const auto models = model_manager_->get_supported_models();
+        auto model_it = models.find(public_name);
+        if (model_it != models.end()) {
+            response["model"] = model_info_to_json(public_name, model_it->second);
+        }
+
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        bad_request(e.what());
+    } catch (const nlohmann::json::exception& e) {
+        bad_request(e.what());
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_model_register: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
 }
 
 // Maximum collection-component nesting depth embedded in "models" arrays.
@@ -4223,7 +4461,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         }
 
         // Build request JSON for router
-        nlohmann::json request_json;
+        nlohmann::json request_json = nlohmann::json::object();
 
         // Extract form fields
         if (req.form.has_field("model")) {
@@ -4242,6 +4480,20 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         }
         if (req.form.has_field("temperature")) {
             request_json["temperature"] = std::stod(req.form.get_field("temperature"));
+        }
+
+        // Validate response format early
+        std::string response_format =
+            request_json.value("response_format", lemon::audio::ResponseFormat::JSON);
+
+        if (!lemon::audio::is_supported_response_format(response_format)) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Unsupported response_format: " + response_format},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
         }
 
         // Extract audio file
@@ -4295,9 +4547,15 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         // Forward to router
         auto response = router_->audio_transcriptions(request_json);
 
-        // Check for error in response
         if (response.contains("error")) {
             set_error_response(response, res, 500);
+            return;
+        }
+
+        if (lemon::audio::is_plain_text_format(response_format) &&
+            response.contains("text") &&
+            response["text"].is_string()) {
+            res.set_content(response["text"].get<std::string>(), "text/plain");
             return;
         }
 
@@ -5363,51 +5621,6 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         // The helper may have rewritten a provider URL into an owner/repo id.
         checkpoint = request_json.value("checkpoint", "");
 
-        // Validate and canonicalize remote-registry provenance before anything is
-        // persisted. `source` remains backward-compatible with local origins, while
-        // remote registrations store a canonical huggingface/modelscope value.
-        if (request_json.contains("source") || request_json.contains("registry_source")) {
-            try {
-                std::optional<std::string> normalized_registry;
-                if (request_json.contains("registry_source")) {
-                    normalized_registry = remote_registry_source_name(
-                        parse_remote_registry_source(
-                            request_json["registry_source"].get<std::string>()));
-                }
-
-                if (request_json.contains("source")) {
-                    const std::string public_source = request_json["source"].get<std::string>();
-                    if (is_remote_registry_source(public_source)) {
-                        const std::string normalized_public = remote_registry_source_name(
-                            parse_remote_registry_source(public_source));
-                        if (normalized_registry && *normalized_registry != normalized_public) {
-                            bad_request("'source' and 'registry_source' must identify the same registry");
-                            return;
-                        }
-                        normalized_registry = normalized_public;
-                        request_json["source"] = normalized_public;
-                    } else if (!local_import && public_source != "local_upload" &&
-                               public_source != "local_path" &&
-                               public_source != "extra_models_dir") {
-                        bad_request("Unsupported model source '" + public_source +
-                                    "' (expected 'huggingface' or 'modelscope')");
-                        return;
-                    }
-                }
-
-                if (normalized_registry) {
-                    if (!request_json.contains("source") ||
-                        is_remote_registry_source(request_json["source"].get<std::string>())) {
-                        request_json["source"] = *normalized_registry;
-                    }
-                    request_json["registry_source"] = *normalized_registry;
-                }
-            } catch (const std::exception& e) {
-                bad_request(e.what());
-                return;
-            }
-        }
-
         LOG(INFO, "Server") << "Pulling model: " << model_name << std::endl;
         if (!checkpoint.empty()) {
             LOG(INFO, "Server") << "   checkpoint: " << checkpoint << std::endl;
@@ -5416,66 +5629,24 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             LOG(INFO, "Server") << "   recipe: " << recipe << std::endl;
         }
 
-        // Reject reserved prefixes — extra.* / builtin.* cannot be created via
-        // /pull, and user.extra.* / user.builtin.* are also rejected because
-        // their bare-name part ("extra.X" / "builtin.X") would otherwise hijack
-        // the corresponding canonical alias slot. Then enforce the existing rule
-        // that explicit checkpoint/recipe requires the user.* prefix.
-        if (lemon::is_reserved_registration_name(model_name)) {
-            res.status = 400;
-            nlohmann::json error = {{"error",
-                "Model names with 'extra.' / 'builtin.' prefixes are reserved, "
-                "including as bare-name parts of a 'user.' alias. "
-                "Use 'user.<name>' for registration where <name> does not begin "
-                "with 'extra.' or 'builtin.'. Received: " + model_name}};
-            res.set_content(error.dump(), "application/json");
+        // Both API operations always enter the same registration path.
+        // /pull continues with installation after this; /models/register returns.
+        const bool collection_file_import =
+            request_json.contains("models") && request_json["models"].is_array();
+
+        try {
+            register_model_definition_internal(
+                model_name,
+                request_json,
+                /*require_definition=*/false,
+                /*allow_embedded_models=*/true,
+                local_import);
+        } catch (const std::invalid_argument& e) {
+            bad_request(e.what());
             return;
         }
-        if (!checkpoint.empty() || !recipe.empty()) {
-            if (model_name.substr(0, 5) != "user.") {
-                bad_request(
-                    "When providing 'checkpoint' or 'recipe', the model name must include the "
-                    "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + model_name);
-                return;
-            }
-        }
 
-        if (is_model_collection_recipe(recipe)) {
-            if (auto err = model_manager_->validate_collection_request(model_name, request_json)) {
-                bad_request(*err);
-                return;
-            }
-            // A body carrying a `models` array is a collection file import: its
-            // components may not be registered yet (download_model registers them
-            // from the embedded definitions and canonicalizes the list itself).
-            // A pointer body (registry-backed collection) has no `components` at all —
-            // they come from the downloaded manifest. Only pre-canonicalize an
-            // inline `components` list whose entries must already exist.
-            if (request_json.contains("components") && request_json["components"].is_array() &&
-                (!request_json.contains("models") || !request_json["models"].is_array())) {
-                // Canonicalize components so downstream cache lookups
-                // (check_component_downloaded, update_model_in_cache) succeed
-                // even when the client passed a public alias (bare name) rather
-                // than the canonical `user.X` / `builtin.X` form.
-                for (auto& c : request_json["components"]) {
-                    c = model_manager_->resolve_model_name(c.get<std::string>());
-                }
-            }
-        }
-
-        // Local import mode: CLI has already copied files to HF cache, just resolve and register
         if (local_import) {
-            std::string hf_cache = model_manager_->get_hf_cache_dir();
-            std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
-            std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
-            std::string dest_path = hf_cache + "/models--" + model_name_clean;
-
-            LOG(INFO, "Server") << "Local import mode - resolving files in: " << dest_path << std::endl;
-
-            resolve_and_register_local_model(
-                dest_path, model_name, request_json, hf_cache
-            );
-
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
@@ -5492,9 +5663,13 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             return;
         }
 
+        nlohmann::json download_request = collection_file_import
+            ? request_json
+            : nlohmann::json::object();
+
         if (stream) {
-            auto operation = [this, model_name, request_json, do_not_upgrade](DownloadProgressCallback progress_cb) {
-                model_manager_->download_model(model_name, request_json, do_not_upgrade, progress_cb);
+            auto operation = [this, model_name, download_request, do_not_upgrade](DownloadProgressCallback progress_cb) {
+                model_manager_->download_model(model_name, download_request, do_not_upgrade, progress_cb);
             };
 
             if (!subscribe) {
@@ -5518,7 +5693,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             stream_download_operation(res, operation);
         } else {
             // Legacy synchronous mode - blocks until complete
-            model_manager_->download_model(model_name, request_json, do_not_upgrade);
+            model_manager_->download_model(model_name, download_request, do_not_upgrade);
 
             nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
             res.set_content(response.dump(), "application/json");
@@ -6066,6 +6241,20 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
     }
 }
 
+// Alias failures are not model-lookup failures. create_model_error() rewrites its
+// message whenever the name is absent from the registry, which is always true for a
+// new alias, so routing these through it would report "model not found" instead of
+// the actual reason.
+static nlohmann::json create_alias_error(const std::string& message, const std::string& code,
+                                         const std::string& type = "invalid_request_error") {
+    return nlohmann::json{{"error", {
+        {"message", message},
+        {"type", type},
+        {"param", "alias"},
+        {"code", code}
+    }}};
+}
+
 void Server::handle_aliases_get(const httplib::Request& req, httplib::Response& res) {
     try {
         nlohmann::json alias_list = nlohmann::json::array();
@@ -6092,7 +6281,7 @@ void Server::handle_aliases_get(const httplib::Request& req, httplib::Response& 
         res.set_content(nlohmann::json{{"aliases", alias_list}}.dump(), "application/json");
     } catch (const std::exception& e) {
         res.status = 500;
-        res.set_content(create_model_error("", e.what()).dump(), "application/json");
+        res.set_content(create_alias_error(e.what(), "internal_error", "server_error").dump(), "application/json");
     }
 }
 
@@ -6104,19 +6293,19 @@ void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& 
 
         if (alias.empty() || target.empty()) {
             res.status = 400;
-            res.set_content(create_model_error("", "Alias and target fields are required").dump(), "application/json");
+            res.set_content(create_alias_error("Alias and target fields are required", "invalid_request").dump(), "application/json");
             return;
         }
 
         if (alias == target) {
             res.status = 400;
-            res.set_content(create_model_error(alias, "Alias cannot point to itself").dump(), "application/json");
+            res.set_content(create_alias_error("Alias cannot point to itself", "invalid_alias").dump(), "application/json");
             return;
         }
 
         if (alias.rfind("user.", 0) == 0 || alias.rfind("extra.", 0) == 0 || alias.rfind("builtin.", 0) == 0) {
             res.status = 400;
-            res.set_content(create_model_error(alias, "Alias name cannot use reserved prefixes (user., extra., builtin.)").dump(), "application/json");
+            res.set_content(create_alias_error("Alias name cannot use reserved prefixes (user., extra., builtin.)", "invalid_alias").dump(), "application/json");
             return;
         }
 
@@ -6124,21 +6313,21 @@ void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& 
             std::string canonical = model_manager_->resolve_model_name(alias);
             if (canonical == alias || canonical == "user." + alias || canonical == "builtin." + alias) {
                 res.status = 409;
-                res.set_content(create_model_error(alias, "Cannot create alias '" + alias + "': Name conflicts with an existing canonical model").dump(), "application/json");
+                res.set_content(create_alias_error("Cannot create alias '" + alias + "': Name conflicts with an existing canonical model", "alias_conflict").dump(), "application/json");
                 return;
             }
         }
 
         if (!alias_manager_) {
             res.status = 500;
-            res.set_content(create_model_error(alias, "AliasManager uninitialized").dump(), "application/json");
+            res.set_content(create_alias_error("AliasManager uninitialized", "internal_error", "server_error").dump(), "application/json");
             return;
         }
 
         std::string err_msg;
         if (!alias_manager_->set_alias(alias, target, err_msg)) {
             res.status = 409;
-            res.set_content(create_model_error(alias, err_msg).dump(), "application/json");
+            res.set_content(create_alias_error(err_msg, "alias_conflict").dump(), "application/json");
             return;
         }
 
@@ -6150,7 +6339,7 @@ void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& 
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
         res.status = 400;
-        res.set_content(create_model_error("", e.what()).dump(), "application/json");
+        res.set_content(create_alias_error(e.what(), "invalid_request").dump(), "application/json");
     }
 }
 
@@ -6159,7 +6348,7 @@ void Server::handle_aliases_remove(const httplib::Request& req, httplib::Respons
     try {
         if (!alias_manager_ || !alias_manager_->remove_alias(alias)) {
             res.status = 404;
-            res.set_content(create_model_error(alias, "Alias not found: " + alias).dump(), "application/json");
+            res.set_content(create_alias_error("Alias not found: " + alias, "alias_not_found").dump(), "application/json");
             return;
         }
         nlohmann::json response = {
@@ -6169,7 +6358,7 @@ void Server::handle_aliases_remove(const httplib::Request& req, httplib::Respons
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
         res.status = 500;
-        res.set_content(create_model_error(alias, e.what()).dump(), "application/json");
+        res.set_content(create_alias_error(e.what(), "internal_error", "server_error").dump(), "application/json");
     }
 }
 

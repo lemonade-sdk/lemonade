@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.5.2)
+project(lemon_cpp VERSION 11.6.0)
 
 include(CTest)
 
@@ -2309,6 +2309,26 @@ if(BUILD_TESTING AND EXISTS "${_GGUF_CAPS_TEST_SRC}")
     add_cpp_ci_test(GgufCapabilitiesTest CI OFF COMMAND test_gguf_capabilities)
 endif()
 
+# Transcription response_format interpretation (issue #1833): the requested
+# format, not a parse attempt, decides how a successful body is read.
+# Header-only unit under test, so no extra source files are required.
+set(_TRANSCRIPTION_FORMAT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_transcription_response_format.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_TRANSCRIPTION_FORMAT_TEST_SRC}")
+    add_executable(test_transcription_response_format
+        test/cpp/test_transcription_response_format.cpp
+    )
+    target_include_directories(test_transcription_response_format PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_transcription_response_format PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(TranscriptionResponseFormatTest CI ON COMMAND test_transcription_response_format)
+endif()
+
 set(_GGUF_SHARD_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_shard_utils.cpp"
 )
@@ -2325,6 +2345,26 @@ if(BUILD_TESTING AND EXISTS "${_GGUF_SHARD_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(GgufShardUtilsTest CI ON COMMAND test_gguf_shard_utils)
+endif()
+
+# Per-model artifact selection and snapshot baselines used to decide whether an
+# upstream commit actually touches a downloaded model.
+set(_HF_UPDATE_CHECK_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hf_update_check.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_HF_UPDATE_CHECK_TEST_SRC}")
+    add_executable(test_hf_update_check
+        test/cpp/test_hf_update_check.cpp
+    )
+    target_include_directories(test_hf_update_check PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_hf_update_check PRIVATE lemonade-server-core)
+    add_dependencies(test_hf_update_check copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(HfUpdateCheckTest CI ON COMMAND test_hf_update_check)
 endif()
 
 # Model residency role/pool contract for router dependencies
@@ -2820,6 +2860,19 @@ if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC}")
     )
 endif()
 
+set(_RUNTIME_CONFIG_DIRECTORY_VALIDATION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_runtime_config_directory_validation.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_DIRECTORY_VALIDATION_TEST_SRC}")
+    add_executable(test_runtime_config_directory_validation
+        test/cpp/test_runtime_config_directory_validation.cpp
+    )
+    target_link_libraries(test_runtime_config_directory_validation PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RuntimeConfigDirectoryValidationTest CI ON
+        COMMAND test_runtime_config_directory_validation
+    )
+endif()
+
 set(_CONFIG_DEFAULT_SOURCE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_default_source.cpp")
 if(BUILD_TESTING AND EXISTS "${_CONFIG_DEFAULT_SOURCE_TEST_SRC}")
     add_executable(test_config_default_source test/cpp/test_config_default_source.cpp)
@@ -2896,6 +2949,13 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_executable(test_http_client_security test/cpp/test_http_client_security.cpp)
     target_link_libraries(test_http_client_security PRIVATE lemonade-server-core)
     add_cpp_ci_test(HttpClientSecurityTest CI OFF COMMAND test_http_client_security)
+endif()
+
+set(_STREAMING_PROXY_CANCEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_cancel.cpp")
+if(BUILD_TESTING AND EXISTS "${_STREAMING_PROXY_CANCEL_TEST_SRC}")
+    add_executable(test_streaming_proxy_cancel test/cpp/test_streaming_proxy_cancel.cpp)
+    target_link_libraries(test_streaming_proxy_cancel PRIVATE lemonade-server-core)
+    add_cpp_ci_test(StreamingProxyCancelTest CI OFF COMMAND test_streaming_proxy_cancel)
 endif()
 
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")

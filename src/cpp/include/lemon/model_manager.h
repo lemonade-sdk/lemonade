@@ -210,6 +210,13 @@ public:
                             const json& model_data,
                             const std::string& source = "");
 
+    // Register or validate a model definition without downloading its files.
+    // Uses the same registration path as download_model.
+    void register_model(const std::string& model_name,
+                       const json& model_data,
+                       bool allow_missing_checkpoint = false,
+                       bool replace_existing = false);
+
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,
                        const json& model_data,
@@ -336,7 +343,10 @@ private:
                        const json& model_data,
                        bool do_not_upgrade,
                        DownloadProgressCallback progress_callback,
-                       std::set<std::string>& visited);
+                       std::set<std::string>& visited,
+                       bool register_only,
+                       bool allow_missing_checkpoint,
+                       bool replace_existing);
 
     json load_server_models();
     json load_architecture_defaults();
