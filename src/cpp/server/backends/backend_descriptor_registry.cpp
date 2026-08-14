@@ -1,6 +1,5 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 
-#include <algorithm>
 #include <utility>
 
 // Generated from LEMON_BACKENDS at configure time. Defines
@@ -56,9 +55,13 @@ bool serves(const std::vector<std::string>& modes, ModelType wanted) {
     return false;
 }
 
-bool unservable(const std::vector<std::string>& modes, const std::string& label) {
-    ModelType claimed = ModelType::LLM;
-    return deployment_mode_of(label, claimed) && !serves(modes, claimed);
+std::string quote_join(const std::vector<std::string>& items) {
+    std::string out;
+    for (const std::string& item : items) {
+        if (!out.empty()) out += ", ";
+        out += "'" + item + "'";
+    }
+    return out;
 }
 
 } // namespace
@@ -88,33 +91,48 @@ std::string modality_display_for(const BackendDescriptor& descriptor) {
     return "";
 }
 
-std::vector<std::string> ensure_deployment_label(std::vector<std::string>& labels,
-                                                 const std::string& recipe) {
-    const BackendDescriptor* d = descriptor_for(recipe);
-    const std::vector<std::string> kNoModes;
-    const std::vector<std::string>& modes = d != nullptr ? d->supported_modes : kNoModes;
+std::string illegal_deployment_labels(const std::vector<std::string>& labels,
+                                      const std::string& recipe) {
+    const std::vector<std::string>& modes = supported_modes_for(recipe);
 
-    // A mode the backend cannot serve is not a mode. Dropping it here, rather
-    // than correcting the resolved type later, is what keeps a model's labels
-    // and its ModelType from disagreeing.
-    std::vector<std::string> dropped;
-    auto drop = std::remove_if(labels.begin(), labels.end(),
-                               [&](const std::string& label) {
-                                   return unservable(modes, label);
-                               });
-    dropped.assign(std::make_move_iterator(drop), std::make_move_iterator(labels.end()));
-    labels.erase(drop, labels.end());
+    std::string deploys_as;
+    ModelType deployed = ModelType::LLM;
+    for (const std::string& label : labels) {
+        ModelType claimed = ModelType::LLM;
+        if (!deployment_mode_of(label, claimed)) continue;
 
+        if (!serves(modes, claimed)) {
+            return "recipe '" + recipe + "' cannot serve '" + label + "'. It serves " +
+                   quote_join(modes) + ". Omit the label to deploy as '" +
+                   default_mode_for(recipe) + "'.";
+        }
+        if (deploys_as.empty()) {
+            deploys_as = label;
+            deployed = claimed;
+        } else if (claimed != deployed) {
+            // The subprocess is spawned for one mode and configured for it at
+            // load time (llama-server's --embeddings, --reranking), so the
+            // second mode would name an endpoint it was never set up to answer.
+            return "a model deploys in exactly one mode, but these labels name "
+                   "two: '" + deploys_as + "' and '" + label +
+                   "'. Register one model per mode.";
+        }
+    }
+    return "";
+}
+
+void ensure_deployment_label(std::vector<std::string>& labels,
+                             const std::string& recipe) {
     ModelType mode = ModelType::LLM;
     if (!find_deployment_mode(labels, mode)) {
         labels.push_back(default_mode_for(recipe));
     }
+    const BackendDescriptor* d = descriptor_for(recipe);
     if (d != nullptr) {
         for (const std::string& capability : d->default_capabilities) {
             add_label_once(labels, capability);
         }
     }
-    return dropped;
 }
 
 } // namespace backends

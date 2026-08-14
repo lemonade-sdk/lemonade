@@ -132,62 +132,75 @@ int main() {
                     join(desc.default_capabilities).c_str());
     }
 
-    // Ingest normalization: a model's labels and its resolved ModelType agree by
-    // construction, because a mode claim the backend cannot serve is dropped
-    // before the mode is read rather than corrected afterwards.
+    // Ingest: a label set either describes a model this backend can deploy, or
+    // no model at all. Nothing in between, so a model's labels and its resolved
+    // ModelType agree by construction rather than by later correction.
     struct IngestCase {
         const char* name;
         std::string recipe;
         std::vector<std::string> labels;
-        std::vector<std::string> expect_present;
-        std::vector<std::string> expect_absent;
-        ModelType expect_type;
-        bool expect_unservable;
+        bool legal;
+        std::vector<std::string> expect_present;  // checked only when legal
+        ModelType expect_type;                    // checked only when legal
     };
 
     const std::vector<IngestCase> ingest = {
-        // An LLM-as-classifier for a router collection. llamacpp cannot answer
-        // /v1/classify, so the claim is refused; the model is a chat model and
-        // must carry `chat` or it drops out of every chat-model picker.
-        {"llamacpp + classification", "llamacpp", {"classification"},
-         {"chat"}, {"classification"}, ModelType::LLM, true},
-        // The mirror image: a mode label the backend cannot serve must not
-        // promote an image model into the chat path.
-        {"sd-cpp + chat", "sd-cpp", {"chat"},
-         {"image"}, {"chat"}, ModelType::IMAGE, true},
-        // A mode the backend does serve is left alone — llamacpp embedding
-        // models must keep deploying as embeddings.
-        {"llamacpp + embeddings", "llamacpp", {"embeddings"},
-         {"embeddings"}, {"chat"}, ModelType::EMBEDDING, false},
-        {"llamacpp bare", "llamacpp", {}, {"chat"}, {}, ModelType::LLM, false},
-        {"sd-cpp bare", "sd-cpp", {}, {"image"}, {"chat"}, ModelType::IMAGE, false},
+        // A mode the backend cannot serve. llamacpp answers no /v1/classify, so
+        // an LLM-as-classifier must be registered as the chat model it is.
+        {"llamacpp + classification", "llamacpp", {"classification"}, false, {}, {}},
+        // The mirror image: a fixed-modality backend cannot be talked into chat.
+        {"sd-cpp + chat", "sd-cpp", {"chat"}, false, {}, {}},
+        // Two modes the backend does serve are still two modes. llama-server is
+        // spawned with --embeddings for an embedding model only, so keeping both
+        // would advertise /embeddings on a model loaded for chat.
+        {"llamacpp + chat + embeddings", "llamacpp", {"chat", "embeddings"},
+         false, {}, {}},
+        {"llamacpp + embeddings + reranking", "llamacpp", {"embeddings", "reranking"},
+         false, {}, {}},
+        // One mode per model holds for collections too: they route by their
+        // components' labels, not by the collection entry's own.
+        {"collection + chat + image", "collection.omni", {"chat", "image"},
+         false, {}, {}},
+        // A mode the backend does serve is left alone.
+        {"llamacpp + embeddings", "llamacpp", {"embeddings"}, true,
+         {"embeddings"}, ModelType::EMBEDDING},
+        {"llamacpp bare", "llamacpp", {}, true, {"chat"}, ModelType::LLM},
+        {"sd-cpp bare", "sd-cpp", {}, true, {"image"}, ModelType::IMAGE},
         // onnxruntime is the backend that does serve classification.
-        {"onnxruntime + classification", "onnxruntime", {"classification"},
-         {"classification"}, {"chat"}, ModelType::CLASSIFICATION, false},
-        // Capability labels ride along with the default mode.
-        {"whispercpp bare", "whispercpp", {},
-         {"transcription", "realtime-transcription"}, {"chat"},
-         ModelType::TRANSCRIPTION, false},
-        // Collections have no backend to reject anything: routing is the
-        // collection's business, so any declared mode stands.
-        {"collection + transcription", "collection.omni", {"transcription"},
-         {"transcription"}, {"chat"}, ModelType::TRANSCRIPTION, false},
+        {"onnxruntime + classification", "onnxruntime", {"classification"}, true,
+         {"classification"}, ModelType::CLASSIFICATION},
+        // Aliases of one mode are one claim, not two.
+        {"llamacpp + embedding alias", "llamacpp", {"embedding", "embeddings"}, true,
+         {"embedding", "embeddings"}, ModelType::EMBEDDING},
+        // Capability labels ride along with the mode and are not a second one.
+        {"whispercpp bare", "whispercpp", {}, true,
+         {"transcription", "realtime-transcription"}, ModelType::TRANSCRIPTION},
+        {"whispercpp + realtime", "whispercpp",
+         {"transcription", "realtime-transcription"}, true,
+         {"transcription", "realtime-transcription"}, ModelType::TRANSCRIPTION},
+        // Collections have no backend to reject a single mode: routing is the
+        // collection's business, so the one declared mode stands.
+        {"collection + transcription", "collection.omni", {"transcription"}, true,
+         {"transcription"}, ModelType::TRANSCRIPTION},
     };
 
     for (const auto& c : ingest) {
+        const std::string illegal =
+            lemon::backends::illegal_deployment_labels(c.labels, c.recipe);
+        check(std::string(c.name) + ": " + (c.legal ? "legal" : "refused"),
+              illegal.empty() == c.legal);
+        if (!c.legal) {
+            // The message has to name what to change, since nothing repairs it.
+            check(std::string(c.name) + ": names the offending label",
+                  illegal.find('\'') != std::string::npos);
+            continue;
+        }
+
         std::vector<std::string> labels = c.labels;
-        std::vector<std::string> dropped =
-            lemon::backends::ensure_deployment_label(labels, c.recipe);
-        check(std::string(c.name) + ": reports " +
-                  (c.expect_unservable ? "a dropped mode" : "nothing dropped"),
-              !dropped.empty() == c.expect_unservable);
+        lemon::backends::ensure_deployment_label(labels, c.recipe);
         for (const auto& expected : c.expect_present) {
             check(std::string(c.name) + ": keeps '" + expected + "'",
                   std::find(labels.begin(), labels.end(), expected) != labels.end());
-        }
-        for (const auto& forbidden : c.expect_absent) {
-            check(std::string(c.name) + ": drops '" + forbidden + "'",
-                  std::find(labels.begin(), labels.end(), forbidden) == labels.end());
         }
         const ModelType type = lemon::get_model_type_from_labels(labels);
         check(std::string(c.name) + ": deploys as " +
@@ -200,6 +213,13 @@ int main() {
         check(std::string(c.name) + ": LLM carries 'chat'",
               (type == ModelType::LLM) ==
                   (std::find(labels.begin(), labels.end(), "chat") != labels.end()));
+
+        // Stamping is idempotent: a stored entry re-read on every cache build
+        // must not accumulate labels or change mode on the second pass.
+        std::vector<std::string> restamped = labels;
+        lemon::backends::ensure_deployment_label(restamped, c.recipe);
+        check(std::string(c.name) + ": stamping twice changes nothing",
+              restamped == labels);
     }
 
     // Every backend that serves the Realtime API declares it, so the desktop and

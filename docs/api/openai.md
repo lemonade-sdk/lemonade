@@ -1068,7 +1068,7 @@ labels that name different modes:
 | Label | Endpoint | Description |
 |-------|----------|-------------|
 | `chat` | `/chat/completions`, `/completions`, `/responses` | Text-generating LLM. This label is what makes a model an LLM — it is not inferred from `reasoning`/`vision`/`tool-calling`/`chat-transcription`, which are characteristics rather than deployment modes. |
-| `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). A model carrying both `chat` and `transcription` is an omni LLM that also accepts audio, and deploys as an LLM. |
+| `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). An omni LLM that accepts audio in a chat turn is not one of these — it carries `chat` and the `chat-transcription` capability below. |
 | `embeddings` | `/embeddings` | Produces text embedding vectors. Also accepted as `embedding`. |
 | `reranking` | `/rerank` | Scores and reranks a list of passages given a query. Also reachable at the aliases `/reranking` and `/reranker`. |
 | `image` | `/images/generations`, `/images/edits`, `/images/variations` | Text-to-image generation model. |
@@ -1080,9 +1080,24 @@ labels that name different modes:
 When a model declares no deployment label at all, it inherits its recipe's
 default — `chat` for `llamacpp`, `flm`, `ryzenai-llm`, `vllm` and `cloud`,
 `transcription` for `whispercpp`, `image` for `sd-cpp`, `tts` for `kokoro`, and
-so on. `classification` is the one label a recipe can override: `/classify` is
-served only by `onnxruntime`, so on any other recipe the label is dropped and the
-model stays whatever its remaining labels make it.
+so on.
+
+Two label sets describe a model that cannot exist, and are refused rather than
+repaired:
+
+- **A mode the recipe's backend does not serve.** `/classify` is served only by
+  `onnxruntime`, so `labels: ["classification"]` on a `llamacpp` model is an
+  error — register it as the chat model it is.
+- **Two different modes.** `labels: ["chat", "embeddings"]` on a `llamacpp` model
+  is an error even though llama.cpp serves both: the subprocess is launched for
+  one mode, so the second would name an endpoint it was never configured to
+  answer. Register one model per mode. The legacy `embedding` and `reranking`
+  booleans count as mode claims here, exactly as the labels do.
+
+[`POST /v1/pull`](./lemonade.md#post-v1pull) answers `400` and registers nothing.
+An entry already stored in `user_models.json` — written before these rules — is
+skipped at startup with an error naming it, and the file is left untouched so it
+can be corrected by hand.
 
 **Input-modality labels** — the model accepts additional input types in `/chat/completions`:
 

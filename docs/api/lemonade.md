@@ -289,10 +289,10 @@ A model definition requires at least a `main` checkpoint. This can be either
 be specified with the `checkpoint` parameter, or a `main` key in the
 `checkpoints` dict.
 
-Each backend serves a fixed set of [deployment modes](openai.md#model-labels).
-Naming one the recipe cannot serve — whether through `labels` or through the
-`embedding` / `reranking` parameters — is rejected with `400` and nothing is
-registered:
+Each backend serves a fixed set of [deployment modes](openai.md#model-labels),
+and a model deploys in exactly one of them. Naming a mode the recipe cannot
+serve, or naming two — whether through `labels` or through the `embedding` /
+`reranking` parameters — is rejected with `400` and nothing is registered:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/pull \
@@ -302,7 +302,18 @@ curl -X POST http://localhost:8000/api/v1/pull \
 ```
 
 ```json
-{"error": "Model 'user.Clf': recipe 'llamacpp' cannot serve 'classification'. Supported: 'chat', 'embeddings', 'reranking'. Omit the label to deploy as 'chat'."}
+{"error": "Model 'user.Clf': recipe 'llamacpp' cannot serve 'classification'. It serves 'chat', 'embeddings', 'reranking'. Omit the label to deploy as 'chat'."}
+```
+
+```bash
+curl -X POST http://localhost:8000/api/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{"model_name": "user.Both", "recipe": "llamacpp",
+       "checkpoint": "example/model:Q4_K_M", "labels": ["chat", "embeddings"]}'
+```
+
+```json
+{"error": "Model 'user.Both': a model deploys in exactly one mode, but these labels name two: 'chat' and 'embeddings'. Register one model per mode."}
 ```
 
 Omitting the deployment label entirely is always valid — the recipe's default is

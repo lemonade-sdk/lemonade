@@ -151,6 +151,13 @@ static std::string cache_key_to_canonical_id(const std::string& cache_key) {
     return canonical_id(ModelSource::Builtin, cache_key);
 }
 
+// An illegal label set names the model it came from, wherever it is reported —
+// a /pull 400, a collection import refusal, a skipped entry on load.
+static std::string describe_illegal_labels(const std::string& model_name,
+                                           const std::string& reason) {
+    return "Model '" + model_name + "': " + reason;
+}
+
 // Candidate roots that FLM may use to store models. FLM resolves its model
 // directory from the FLM_MODEL_PATH env var (set by the installer) and falls
 // back to a built-in default that has changed across releases. lemond is often
@@ -2001,10 +2008,19 @@ void ModelManager::build_cache() {
             json_recipe_options[key] = value["recipe_options"];
         }
 
-        // Built-ins declare their mode in server_models.json, so this normally
-        // changes nothing — but it is what makes "an LLM always carries `chat`"
-        // hold for every ingest path rather than only for the ones that happen
-        // to call it.
+        // Built-ins declare their mode in server_models.json, and
+        // test_server_models_labels.py fails CI on one that names an illegal
+        // set, so this normally changes nothing — but it is what makes "an LLM
+        // always carries `chat`" hold for every ingest path rather than only
+        // for the ones that happen to call it.
+        std::string illegal =
+            lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
+        if (!illegal.empty()) {
+            LOG(ERROR, "ModelManager")
+                << "Skipping " << describe_illegal_labels(info.model_name, illegal)
+                << std::endl;
+            continue;
+        }
         lemon::backends::ensure_deployment_label(info.labels, info.recipe);
 
         // Populate type and device fields (multi-model support)
@@ -2058,8 +2074,18 @@ void ModelManager::build_cache() {
                 info.labels.push_back(label.get<std::string>());
             }
         }
-        // Registration is not re-run on load, so entries persisted before the
-        // deployment labels existed are stamped here instead.
+        // Registration is not re-run on load, so an entry persisted before the
+        // deployment labels existed is checked and stamped here instead. Skipping
+        // it costs the user one model; guessing which of its mode claims was
+        // meant would make every consumer trust an answer nobody wrote.
+        std::string illegal =
+            lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
+        if (!illegal.empty()) {
+            LOG(ERROR, "ModelManager")
+                << "Skipping " << describe_illegal_labels(info.model_name, illegal)
+                << std::endl;
+            continue;
+        }
         lemon::backends::ensure_deployment_label(info.labels, info.recipe);
 
         parse_image_defaults(info, value);
@@ -2296,6 +2322,13 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         for (const auto& label : (*model_json)["labels"]) {
             info.labels.push_back(label.get<std::string>());
         }
+    }
+    std::string illegal =
+        lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
+    if (!illegal.empty()) {
+        LOG(ERROR, "ModelManager")
+            << "Skipping " << describe_illegal_labels(model_name, illegal) << std::endl;
+        return;
     }
     lemon::backends::ensure_deployment_label(info.labels, info.recipe);
 
@@ -2829,36 +2862,15 @@ size_t ModelManager::count_cloud_models(const std::string& provider) const {
                          });
 }
 
-static std::string quote_join(const std::vector<std::string>& items) {
-    std::string out;
-    for (const auto& item : items) {
-        if (!out.empty()) out += ", ";
-        out += "'" + item + "'";
-    }
-    return out;
-}
-
-// Why a definition naming an unservable mode is refused, phrased for the caller
-// that typed it. Shared so /pull and collection validation reject in the same
-// words for the same reason.
-static std::string describe_unservable_modes(const std::string& model_name,
-                                             const std::string& recipe,
-                                             const std::vector<std::string>& modes) {
-    return "Model '" + model_name + "': recipe '" + recipe + "' cannot serve " +
-           quote_join(modes) + ". Supported: " +
-           quote_join(lemon::backends::supported_modes_for(recipe)) +
-           ". Omit the label to deploy as '" +
-           lemon::backends::default_mode_for(recipe) + "'.";
-}
-
 // The label set a user or inline model definition normalizes to. Kept in one
 // place so model registration (register_user_model) and collection.router
 // capability validation (validate_collection_request) derive the same type for
 // the same definition: explicit labels + the capability booleans + the recipe's
-// default deployment mode. `dropped_modes`, when given, receives the mode claims
-// the recipe cannot serve, so the caller can report what normalization changed.
+// default deployment mode. `illegal`, when given, receives why the definition
+// cannot describe a model, so the caller can refuse it in those words. The
+// returned set is meaningless when it is non-empty.
 static std::set<std::string> normalized_definition_labels(
-    const json& model_data, std::vector<std::string>* dropped_modes = nullptr) {
+    const json& model_data, std::string* illegal = nullptr) {
     const std::string recipe = model_data.value("recipe", std::string());
     std::vector<std::string> labels = {"custom"};
     for (const auto& label : model_data.value("labels", std::vector<std::string>{})) {
@@ -2869,9 +2881,10 @@ static std::set<std::string> normalized_definition_labels(
     if (model_data.value("embedding", false)) add_label_once(labels, "embeddings");
     if (model_data.value("reranking", false)) add_label_once(labels, "reranking");
 
-    std::vector<std::string> dropped =
-        lemon::backends::ensure_deployment_label(labels, recipe);
-    if (dropped_modes != nullptr) *dropped_modes = std::move(dropped);
+    if (illegal != nullptr) {
+        *illegal = lemon::backends::illegal_deployment_labels(labels, recipe);
+    }
+    lemon::backends::ensure_deployment_label(labels, recipe);
     return std::set<std::string>(labels.begin(), labels.end());
 }
 
@@ -2908,14 +2921,14 @@ void ModelManager::register_user_model(const std::string& model_name,
     }
     // Every registration path funnels through here — direct registration, an
     // imported collection's inline components, re-registration — so this is the
-    // one gate that refuses a mode the backend cannot serve. Loading an
-    // already-persisted entry does not come through here, and is normalized
-    // instead, so an entry written by an older version still loads.
-    std::vector<std::string> dropped_modes;
-    std::set<std::string> labels = normalized_definition_labels(model_data, &dropped_modes);
-    if (!dropped_modes.empty()) {
-        throw InvalidModelDefinitionError(
-            describe_unservable_modes(model_name, recipe, dropped_modes));
+    // one gate that refuses an illegal set of mode labels. Loading an
+    // already-persisted entry does not come through here; it is checked again on
+    // load, where an entry written by an older version is skipped rather than
+    // blocking startup.
+    std::string illegal;
+    std::set<std::string> labels = normalized_definition_labels(model_data, &illegal);
+    if (!illegal.empty()) {
+        throw InvalidModelDefinitionError(describe_illegal_labels(model_name, illegal));
     }
 
     model_entry["labels"] = labels;
@@ -4927,11 +4940,10 @@ std::optional<std::string> ModelManager::validate_collection_request(
             // registration, leaving a partly-imported collection behind. Report
             // it here, where the import can still be refused whole.
             if (!model_exists(bare) && def != nullptr) {
-                std::vector<std::string> unservable;
-                normalized_definition_labels(*def, &unservable);
-                if (!unservable.empty()) {
-                    return describe_unservable_modes(
-                        component_name, def->value("recipe", std::string()), unservable);
+                std::string illegal;
+                normalized_definition_labels(*def, &illegal);
+                if (!illegal.empty()) {
+                    return describe_illegal_labels(component_name, illegal);
                 }
             }
         } else if (!model_exists(component_name)) {
@@ -5107,6 +5119,14 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
                 info.labels.push_back(label.get<std::string>());
             }
         }
+    }
+    // This path reads the registry json directly rather than the cache the
+    // illegal entries were skipped from, so it refuses them again in its own
+    // "no such model" terms.
+    std::string illegal =
+        lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
+    if (!illegal.empty()) {
+        throw std::runtime_error(describe_illegal_labels(info.model_name, illegal));
     }
     lemon::backends::ensure_deployment_label(info.labels, info.recipe);
 

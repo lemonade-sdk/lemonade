@@ -243,6 +243,39 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
           error_contains(manager.validate_collection_request("user.RouterKit", llama_clf_label),
                          "cannot serve"));
 
+    // llamacpp serves chat and embeddings, but llama-server is spawned for one
+    // of them, so a model claiming both would advertise /embeddings while loaded
+    // for chat. Both mode claims are servable here — it is having two that is
+    // refused.
+    bool two_modes_rejected = false;
+    try {
+        manager.register_user_model(
+            "user.LlamaBoth",
+            json{{"model_name", "user.LlamaBoth"}, {"recipe", "llamacpp"},
+                 {"checkpoint", "example/y:Q4_K_M"}, {"labels", {"chat", "embeddings"}}});
+    } catch (const lemon::InvalidModelDefinitionError&) {
+        two_modes_rejected = true;
+    }
+    check("llamacpp + labels:[chat, embeddings] rejected at registration",
+          two_modes_rejected);
+    check("rejected two-mode registration persists nothing",
+          !manager.model_exists("user.LlamaBoth"));
+
+    // The legacy capability flags are the same claim by another spelling, so the
+    // rule cannot be sidestepped by writing `embedding: true` beside `chat`.
+    bool flag_rejected = false;
+    try {
+        manager.register_user_model(
+            "user.LlamaFlag",
+            json{{"model_name", "user.LlamaFlag"}, {"recipe", "llamacpp"},
+                 {"checkpoint", "example/z:Q4_K_M"}, {"labels", {"chat"}},
+                 {"embedding", true}});
+    } catch (const lemon::InvalidModelDefinitionError&) {
+        flag_rejected = true;
+    }
+    check("llamacpp + labels:[chat] + embedding:true rejected at registration",
+          flag_rejected);
+
     // An LLM used as a router classifier needs no label of its own: the plain
     // chat model is a valid classifier.
     json llama_clf_bare = router_with_classifier(

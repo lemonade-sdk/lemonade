@@ -94,8 +94,8 @@ def check_models(models, recipe_modes):
             )
             continue
 
-        # Registration rejects a mode the backend cannot serve, so a built-in
-        # carrying one would advertise an endpoint it can never answer.
+        # An illegal mode claim is refused rather than repaired, so a built-in
+        # carrying one is skipped at startup and vanishes from the catalog.
         supported = recipe_modes.get(recipe)
         if supported is None:
             continue

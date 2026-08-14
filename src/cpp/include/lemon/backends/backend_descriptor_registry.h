@@ -44,17 +44,24 @@ bool backend_serves_mode(const std::string& recipe, ModelType mode);
 // (e.g. chat -> "Text generation"), derived from its default mode.
 std::string modality_display_for(const BackendDescriptor& descriptor);
 
-// Drop any label claiming a deployment mode `recipe` cannot serve, then stamp
-// the recipe's default mode if none is left, plus the backend's default
-// capabilities. Every model ends up carrying exactly one mode label, so
-// consumers can test for a label instead of inferring the mode from which
-// labels happen to be absent.
+// Why `labels` cannot describe a model of `recipe`, or empty if it can. A model
+// deploys in exactly one mode, so a label naming a mode the backend does not
+// serve, or a second mode beside the one the model deploys in, describes a model
+// that cannot exist. The sentence is phrased for whoever wrote the labels and
+// names the offending label, since which claim was meant is theirs to say.
 //
-// Returns the labels dropped. Registration treats a non-empty result as a bad
-// definition and refuses it; loading a persisted entry accepts the drop, so an
-// entry written by an older version still loads instead of blocking startup.
-std::vector<std::string> ensure_deployment_label(std::vector<std::string>& labels,
-                                                 const std::string& recipe);
+// Callers refuse the whole model rather than repairing the label set: /pull
+// answers 400, and a stored entry is skipped with a warning naming it.
+std::string illegal_deployment_labels(const std::vector<std::string>& labels,
+                                      const std::string& recipe);
+
+// Stamp the recipe's default mode if `labels` names none, plus the backend's
+// default capabilities. Every model ends up carrying exactly one mode label, so
+// consumers can test for a label instead of inferring the mode from which labels
+// happen to be absent. Fills in what a legal label set leaves unsaid and repairs
+// nothing, so callers reject with illegal_deployment_labels() first.
+void ensure_deployment_label(std::vector<std::string>& labels,
+                             const std::string& recipe);
 
 } // namespace backends
 } // namespace lemon
