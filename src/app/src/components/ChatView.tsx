@@ -329,10 +329,6 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
     .flatMap(server => server.toolOptions.map(tool => tool.runtimeName));
 }
 
-function modelModeBadge(capability: ModelCapability, recipe?: string | null): string {
-  return isRouterRecipe(recipe) ? 'router' : capabilityBadge(capability);
-}
-
 const ModelModeIcons: React.FC<{
   capability: ModelCapability;
   recipe?: string | null;
@@ -406,7 +402,6 @@ interface ChatViewProps {
   serverModels: ModelInfo[];
   connectionStatus: ConnectionStatus;
   onModelSelect: (model: string) => void;
-  onOpenModelDetails: (model: string) => void;
   onRefresh: () => void | Promise<void>;
 }
 
@@ -755,7 +750,7 @@ function friendlyChatError(message: string): string {
   return `I couldn't complete that request.\n\n${cleaned}`;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, serverModels, connectionStatus, onModelSelect, onOpenModelDetails, onRefresh }) => {
+const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, serverModels, connectionStatus, onModelSelect, onRefresh }) => {
   const [fallbackModelOverride, setFallbackModelOverride] = useState<string | null>(null);
   const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName());
   const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName());
@@ -2901,21 +2896,6 @@ ${finalText}`
     }
   }, [modelPickerUnloading, onRefresh]);
 
-  const handleLoadedCardUnload = useCallback((modelName: string) => {
-    if (modelPickerUnloading) return;
-    setModelPickerUnloading(modelName);
-    void (async () => {
-      try {
-        const api = await getApiClient();
-        await api.unloadModel(modelName);
-        await Promise.resolve(onRefresh());
-        setUnloadAnnouncement(`${modelName} unloaded`);
-      } finally {
-        setModelPickerUnloading(null);
-      }
-    })();
-  }, [modelPickerUnloading, onRefresh]);
-
   const handleModelPickerSelect = useCallback(async (option: ModelPickerOption) => {
     if (option.loaded) {
       setFallbackModelOverride(null);
@@ -3223,13 +3203,7 @@ ${finalText}`
           {!hasMessages ? (
             <EmptyState
               loadedModels={loadedModels}
-              currentModel={currentModel}
-              onModelSelect={onModelSelect}
-              onOpenModelDetails={onOpenModelDetails}
-              onUnloadModel={handleLoadedCardUnload}
-              unloadingModel={modelPickerUnloading}
               onChipClick={startLemonadeToolPrompt}
-              customModelInfos={customModelInfos}
             />
           ) : (
             <div className="thread">
@@ -4106,113 +4080,37 @@ ${finalText}`
 
 interface EmptyStateProps {
   loadedModels: LoadedModel[];
-  currentModel: string | null;
-  onModelSelect: (model: string) => void;
-  onOpenModelDetails: (model: string) => void;
-  onUnloadModel: (model: string) => void;
-  unloadingModel: string | null;
   onChipClick: (text: string) => void;
-  customModelInfos: ModelInfo[];
 }
 
-const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onOpenModelDetails, onUnloadModel, unloadingModel, onChipClick, customModelInfos }) => (
-  <>
-    <div className="hero">
-      <h1 className="hero__title">Get to know Lemonade</h1>
-      <p className="hero__subtitle">
-        {loadedModels.length > 0
-          ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} ready. Ask a question or explore what Lemonade can do.`
-          : 'Ask a question to learn how Lemonade works and get started with your first model.'}
-      </p>
+const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, onChipClick }) => (
+  <div className="hero">
+    <h1 className="hero__title">Get to know Lemonade</h1>
+    <p className="hero__subtitle">
+      {loadedModels.length > 0
+        ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} ready. Ask a question or explore what Lemonade can do.`
+        : 'Ask a question to learn how Lemonade works and get started with your first model.'}
+    </p>
 
-      <div className="chips" role="list">
-        <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
-          How do I use Lemonade?
-        </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
-          How do I add a model?
-        </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
-          What are Lemonade tools?
-        </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
-          What can my hardware run?
-        </button>
-      </div>
+    <div className="chips" role="list">
+      <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
+        <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
+        How do I use Lemonade?
+      </button>
+      <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
+        <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
+        How do I add a model?
+      </button>
+      <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
+        <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
+        What are Lemonade tools?
+      </button>
+      <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
+        <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
+        What can my hardware run?
+      </button>
     </div>
-
-    {loadedModels.length > 0 && (
-      <>
-        <div className="section-label">
-          <span>Loaded right now</span>
-          <span className="section-label__rule" />
-        </div>
-        <div className="active-models">
-          {loadedModels.map(m => {
-            const customInfo = customModelInfos.find(cm => (cm.name || cm.id) === m.model_name);
-            const cap = customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(m);
-            const audioInput = modelSupportsChatAudioInput(customInfo || null, m);
-            const modeLabel = modelModeDisplayLabel(cap, audioInput, m.recipe);
-            const modeBadge = modelModeBadge(cap, m.recipe);
-            const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
-            const isActive = currentModel === m.model_name;
-            return (
-              <article className="active-card" key={m.model_name}>
-                <div className="active-card__head">
-                  <div>
-                    <div className="active-card__name-row">
-                      <button
-                        type="button"
-                        className="active-card__name"
-                        onClick={() => onOpenModelDetails(m.model_name)}
-                        title={`Open ${m.model_name} in Models`}
-                      >
-                        {m.model_name}
-                      </button>
-                    </div>
-                    <div className="active-card__meta">{m.recipe || 'runtime'} · {m.checkpoint || 'default'}</div>
-                  </div>
-                  <span className="active-card__device">{m.device || 'device unknown'}</span>
-                </div>
-                <div className="active-card__badges">
-                  <span className={`cap-badge cap-badge--${modeBadge}`}><ModelModeIcons capability={cap} recipe={m.recipe} audioInput={audioInput} size={13} /> {modeLabel}</span>
-                </div>
-                <div className="active-card__actions">
-                  {isActive ? (
-                    <span className="active-card__status">● Active {modeLabel} mode</span>
-                  ) : selectable ? (
-                    <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
-                      Use in {modeLabel}
-                    </button>
-                  ) : (
-                    <span className="active-card__status active-card__status--muted">Utility model only</span>
-                  )}
-                </div>
-                <div className="active-card__footer">
-                  <button type="button" className="active-card__details" onClick={() => onOpenModelDetails(m.model_name)}>
-                    View details
-                  </button>
-                  <button
-                    type="button"
-                    className="active-card__eject"
-                    onClick={() => onUnloadModel(m.model_name)}
-                    disabled={unloadingModel === m.model_name}
-                    title={`Unload ${m.model_name}`}
-                  >
-                    {unloadingModel === m.model_name ? 'Unloading…' : 'Unload'}
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </>
-    )}
-  </>
+  </div>
 );
 
 /* ─── Message bubble ──────────────────────────────────── */

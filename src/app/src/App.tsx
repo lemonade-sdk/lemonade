@@ -880,11 +880,6 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const openModelDetails = useCallback((modelName: string) => {
-    setModelDetailsRequest({ modelName, nonce: Date.now() });
-    setView('models');
-  }, [setView]);
-
   // Desktop host deep-links use the same canonical routes as browser navigation.
   useEffect(() => {
     let cancelled = false;
@@ -1218,7 +1213,6 @@ const App: React.FC = () => {
                 serverModels={serverModels}
                 connectionStatus={status}
                 onModelSelect={handleModelSelect}
-                onOpenModelDetails={openModelDetails}
                 onRefresh={handleRefreshModels}
               />
             </ViewErrorBoundary>
