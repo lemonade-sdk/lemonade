@@ -276,15 +276,15 @@ jobs:
           - label: cpu
             backend: cpu
             channel: ""
-            runner: [self-hosted, Windows, stx-halo, vulkan]
+            runner: [self-hosted, Windows, stx-halo, vulkan, lemon-prod]
           - label: vulkan
             backend: vulkan
             channel: ""
-            runner: [self-hosted, Windows, stx-halo, vulkan]
+            runner: [self-hosted, Windows, stx-halo, vulkan, lemon-prod]
           - label: rocm-stable
             backend: rocm
             channel: stable
-            runner: [self-hosted, Windows, stx-halo, rocm]
+            runner: [self-hosted, Windows, stx-halo, rocm, lemon-prod]
           # CUDA is pinned by the updater and its assets are required by the
           # verify-cuda-assets job after this validation matrix completes.
           # Validation stays disabled until a matching runner exists.
