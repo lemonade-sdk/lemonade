@@ -14,6 +14,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -850,12 +851,6 @@ namespace lemon::backends {
             return g_therock_wheels_cancelled;
         }
 
-        // Track the user-requested install method so that
-        // is_therock_installed_for_current_arch can verify a reinstall is
-        // needed when the preferred method conflicts with what's already on
-        // disk (e.g. wheel installed but user sets rocm_install_method=tarball).
-        thread_local std::string g_therock_install_method = "auto";
-
         // Non-throwing fs overloads so a bogus user-supplied path reports
         // "not a root" instead of throwing.
         std::optional<fs::path> validate_rocm_root(const fs::path& root) {
@@ -1240,7 +1235,6 @@ namespace lemon::backends {
         }
 
         reset_therock_wheels_cancelled();
-        g_therock_install_method = method;
 
         if (method != "tarball") {
             if (install_therock_wheels(arch, version, progress_cb)) {
@@ -1305,36 +1299,121 @@ namespace lemon::backends {
         fs::create_directories(wheel_dir, ec);
 
         int downloads_seen = 0;
-        auto log_line = [&progress_cb, &downloads_seen, &g_therock_wheels_cancelled](const std::string& line) {
+        size_t bytes_total = 0;
+        size_t bytes_downloaded = 0;
+        bool install_phase_started = false;
+
+        // Emit an initial 0% event so the download manager identifies this
+        // row immediately (otherwise it sits with no name while venv + pip
+        // resolve phases take several seconds with zero output).
+        if (progress_cb) {
+            DownloadProgress p;
+            p.file = "ROCm runtime (preparing venv)";
+            p.file_index = 0;
+            p.total_files = 2;
+            p.percent = 0;
+            p.complete = false;
+            progress_cb(p);
+        }
+
+        auto log_line = [&progress_cb, &downloads_seen, &g_therock_wheels_cancelled,
+                         &bytes_total, &bytes_downloaded, &install_phase_started](const std::string& line) {
             LOG(INFO, "BackendUtils") << "(pip) " << line << std::endl;
             if (!progress_cb) {
                 return true;
             }
+
             // pip (non-interactive) prints one "Downloading <name> (<size>)" line
             // per wheel. Surface it so the UI shows movement across the ~730 MB
-            // install instead of sitting at 0% until completion, and honor the
+            // install, parse the size for a real progress bar, and honour the
             // callback's cancellation return by killing pip.
-            static const std::string marker = "Downloading ";
-            const size_t pos = line.find(marker);
-            if (pos == std::string::npos) {
-                return true;
+            static const std::string dl_marker = "Downloading ";
+            const size_t dl_pos = line.find(dl_marker);
+            if (dl_pos != std::string::npos) {
+                std::string rest = line.substr(dl_pos + dl_marker.size());
+                const size_t sp = rest.find_first_of(" \t");
+                std::string token = sp == std::string::npos ? rest : rest.substr(0, sp);
+                const size_t slash = token.find_last_of("/\\");
+                DownloadProgress p;
+                p.file = slash == std::string::npos ? token : token.substr(slash + 1);
+                // Parse size in parens, e.g. "(414.0 MB)"
+                const size_t lparen = token.rfind('(');
+                const size_t rparen = token.rfind(')');
+                if (lparen != std::string::npos && rparen != std::string::npos && rparen > lparen + 1) {
+                    std::string size_part = token.substr(lparen + 1, rparen - lparen - 1);
+                    // Trim any trailing text like "of 428 MB" that pip sometimes prints
+                    size_t paren_end = size_part.rfind(' ');
+                    if (paren_end != std::string::npos) {
+                        size_part.resize(paren_end);
+                    }
+                    size_t unit_start = size_part.find_last_of("kmb");
+                    if (unit_start != std::string::npos) {
+                        char unit = size_part[unit_start];
+                        std::string num_str = size_part.substr(0, unit_start);
+                        double size = std::stod(num_str);
+                        if (unit == 'k') size *= 1024.0;
+                        else if (unit == 'm') size *= 1048576.0;
+                        else if (unit == 'g') size *= 1073741824.0;
+                        p.bytes_total = static_cast<size_t>(size);
+                    }
+                }
+                // Running total for progress bar; add this download's size
+                bytes_total += p.bytes_total;
+                p.bytes_downloaded = bytes_downloaded;
+                p.file_index = ++downloads_seen;
+                p.total_files = 2;
+                p.complete = false;
+                p.percent = bytes_total > 0
+                    ? static_cast<int>((bytes_downloaded * 100) / bytes_total)
+                    : 0;
+                bool keep = progress_cb(p);
+                if (!keep) {
+                    g_therock_wheels_cancelled = true;
+                }
+                bytes_downloaded += p.bytes_total;
+                // Emit updated progress with this wheel completed
+                {
+                    DownloadProgress done;
+                    done.file = p.file;
+                    done.file_index = downloads_seen;
+                    done.total_files = 2;
+                    done.bytes_total = bytes_total;
+                    done.bytes_downloaded = bytes_downloaded;
+                    done.percent = static_cast<int>((bytes_downloaded * 100) / bytes_total);
+                    done.complete = true;
+                    progress_cb(done);
+                }
+                return keep;
             }
-            std::string rest = line.substr(pos + marker.size());
-            const size_t sp = rest.find_first_of(" \t");
-            std::string token = sp == std::string::npos ? rest : rest.substr(0, sp);
-            const size_t slash = token.find_last_of("/\\");
-            DownloadProgress p;
-            p.file = slash == std::string::npos ? token : token.substr(slash + 1);
-            if (p.file.empty()) {
-                p.file = "ROCm runtime";
+
+            // Detect pip's install phase; emit a coarse progress bump so the
+            // long unpack / hash / link phase doesn't stall at a static value.
+            static const std::string install_markers[] = {
+                "Installing collected packages",
+                "Processing ",
+            };
+            for (const auto& marker : install_markers) {
+                if (line.find(marker) != std::string::npos) {
+                    install_phase_started = true;
+                    DownloadProgress p;
+                    p.file = "ROCm runtime (installing)";
+                    p.file_index = downloads_seen > 0 ? downloads_seen : 1;
+                    p.total_files = 2;
+                    p.bytes_total = bytes_total;
+                    p.bytes_downloaded = bytes_downloaded;
+                    p.percent = bytes_total > 0
+                        ? static_cast<int>((bytes_downloaded * 100) / bytes_total)
+                        : 95;
+                    p.complete = false;
+                    bool keep = progress_cb(p);
+                    if (!keep) {
+                        g_therock_wheels_cancelled = true;
+                    }
+                    return keep;
+                }
             }
-            p.file_index = ++downloads_seen;
-            p.complete = false;
-            bool keep = progress_cb(p);
-            if (!keep) {
-                g_therock_wheels_cancelled = true;
-            }
-            return keep;
+
+            return true;
         };
 
         int rc = utils::ProcessManager::run_process_with_output(
