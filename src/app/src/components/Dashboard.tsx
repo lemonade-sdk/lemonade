@@ -450,7 +450,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
           ) : (
             <div className="dash2-card">
               <h2 className="dash2-card__h">Last Inference</h2>
-              <div className="dash2-empty">No inference data yet — send a request to see stats</div>
+              <div className="dash2-empty">No inference data yet. Send a request to see stats.</div>
             </div>
           )}
         </div>

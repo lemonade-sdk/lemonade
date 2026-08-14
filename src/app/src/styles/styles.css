@@ -1290,6 +1290,12 @@ input[type="checkbox"]:disabled {
   animation: blink-cursor 0.8s infinite;
 }
 
+.streaming-cursor--leading {
+  height: 1em;
+  margin-left: 0;
+  margin-right: var(--space-1);
+}
+
 /* ---------- Composer ---------- */
 .composer {
   grid-area: composer;
@@ -1702,6 +1708,7 @@ input[type="checkbox"]:disabled {
   flex-shrink: 0;
 }
 
+.composer__send .app-icon { stroke-width: 2; }
 .composer__send:hover { background: var(--accent-hover); }
 [data-theme="light"] .composer__send:hover { filter: brightness(0.85) saturate(1.5); }
 .composer__send:disabled { opacity: 0.3; cursor: default; }
@@ -3529,9 +3536,10 @@ optgroup {
 /* ---------- 480px — phone --------------------------------- */
 @media (max-width: 480px) {
 
-  /* ── Composer: increase send/stop to 44 px touch targets ── */
+  /* ── Composer: keep primary and add actions at 44 px touch targets ── */
   .composer__send,
-  .composer__stop {
+  .composer__stop,
+  .composer__add-trigger {
     width: 44px;
     height: 44px;
     flex-shrink: 0;
@@ -4498,7 +4506,7 @@ optgroup {
 
 .options-block__btn:hover {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border-color: var(--accent-fg);
 }
 
@@ -4508,14 +4516,14 @@ optgroup {
 
 .options-block__btn--selected {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border-color: var(--accent-fg);
   cursor: default;
 }
 
 .options-block__btn--selected:hover {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border-color: var(--accent-fg);
 }
 
@@ -4553,7 +4561,7 @@ optgroup {
 
 .options-block__submit {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-on);
   border: none;
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-3);
@@ -4644,10 +4652,48 @@ optgroup {
 }
 
 .composer__add-trigger {
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
   justify-content: center;
-  border-radius: var(--radius-pill);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-secondary);
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.composer__add-trigger .app-icon {
+  stroke-width: 2.25;
+}
+
+.composer__add-trigger:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: color-mix(
+    in srgb,
+    var(--text-primary) 7%,
+    transparent
+  );
+}
+
+.composer__add-trigger:focus-visible {
+  color: var(--text-primary);
+  background: color-mix(
+    in srgb,
+    var(--text-primary) 7%,
+    transparent
+  );
+}
+
+.composer__add-trigger[aria-expanded='true'] {
+  color: var(--text-primary);
+  background: color-mix(
+    in srgb,
+    var(--text-primary) 9%,
+    transparent
+  );
 }
 
 .composer__add-menu {
@@ -13767,6 +13813,9 @@ button.workspace-metadata-chip:hover {
 
 .effective-settings__source {
   justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-size: var(--type-caption-size);
   padding: 1px var(--space-2);
   border-radius: var(--radius-pill);
@@ -13774,6 +13823,10 @@ button.workspace-metadata-chip:hover {
   color: var(--text-secondary);
   background: var(--surface-2);
   border: 1px solid var(--border-subtle);
+}
+
+.effective-settings__source--chat-add .app-icon {
+  stroke-width: 2;
 }
 
 .effective-settings__source--generic {

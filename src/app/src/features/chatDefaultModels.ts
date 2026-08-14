@@ -9,7 +9,6 @@ export interface LemonadeDefaultChatModel {
   name: string;
   tier: LemonadeDefaultModelTier;
   label: string;
-  icon: LemonadeDefaultModelIcon;
   description: string;
 }
 
@@ -22,14 +21,12 @@ export const LEMONADE_DEFAULT_CHAT_MODELS: readonly LemonadeDefaultChatModel[] =
     name: 'Bonsai-8B-gguf',
     tier: 'tiny',
     label: 'default tiny',
-    icon: 'minimize-2',
     description: 'Smaller Lemonade default · downloads when first used',
   },
   {
     name: 'Qwen3.5-4B-GGUF',
     tier: 'quality',
     label: 'default quality',
-    icon: 'gem',
     description: 'Higher-quality Lemonade default · downloads when first used',
   },
 ] as const;

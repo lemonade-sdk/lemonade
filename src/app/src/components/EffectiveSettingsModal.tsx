@@ -421,7 +421,13 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
               <div className="effective-settings__row">
                 <span className="effective-settings__row-label">MCP servers</span>
                 <span className="effective-settings__row-value">{!mcpEnabled ? 'Off' : (mcpServerIds.length > 0 ? mcpServerIds.join(', ') : 'Built-in Lemonade')}</span>
-                <span className="effective-settings__source effective-settings__source--generic">Setting</span>
+                <span
+                  className="effective-settings__source effective-settings__source--generic effective-settings__source--chat-add"
+                  title="Configured from the chat + menu"
+                >
+                  <Icon name="plus" size={11} />
+                  <span>Menu</span>
+                </span>
               </div>
               {resolved && (
                 <div className="effective-settings__row">

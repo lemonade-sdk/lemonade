@@ -1311,7 +1311,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     detail: string;
     defaultTier?: 'tiny' | 'quality';
     defaultLabel?: string;
-    defaultIcon?: 'minimize-2' | 'gem';
     deferredUntilSend?: boolean;
   };
 
@@ -1328,7 +1327,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         ...option,
         defaultTier: configuredDefault.tier,
         defaultLabel: configuredDefault.label,
-        defaultIcon: configuredDefault.icon,
       } : option);
     };
 
@@ -1958,10 +1956,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, []);
 
   const handleDeleteConversation = useCallback((id: string) => {
+    streaming.stop(id);
+    delete streamModelsRef.current[id];
     setConversations(prev => prev.filter(c => c.id !== id));
     if (activeId === id) setActiveId(null);
-  }, [activeId]);
-
+  }, [activeId, streaming.stop]);
 
 
   const handleRailToggle = useCallback(() => {
@@ -3004,7 +3003,7 @@ ${finalText}`
             ? (!!inputValue.trim() && !openMossDescribeUnavailable && !openMossCloneUnavailable)
             : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
-    ? 'Draft a message — connect and load a model to send…'
+    ? 'Draft a message. Connect and load a model to send…'
     : currentCapability === 'omni'
       ? `Message ${currentModel} through the Omni collection…`
       : currentCapability === 'chat' && supportsChatImageInput && supportsChatAudioInput
@@ -3298,7 +3297,7 @@ ${finalText}`
                       <div className="message__author">Lemonade</div>
                     </div>
                     <div className="message__content message__content--pending">
-                      <span className="streaming-cursor" aria-hidden="true" />
+                      <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
                       {modelPreparation.phase === 'loading'
                         ? `Loading ${modelPreparation.modelName} for chat…`
                         : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`}
@@ -3315,7 +3314,7 @@ ${finalText}`
                       <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
                     </div>
                     <div className="message__content message__content--pending">
-                      <span className="streaming-cursor" aria-hidden="true" />
+                      <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
                       Working in {capabilityLabel(currentCapability)} mode…
                     </div>
                   </div>
@@ -3377,13 +3376,11 @@ ${finalText}`
                 )}
                 {!currentLoadedModel && currentDefaultModel && (
                   <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
-                    <Icon name={currentDefaultModel.icon} size={13} />
                   </span>
                 )}
                 <span className="composer__model-button-name">{currentModel}</span>
                 {currentLoadedModel && currentDefaultModel && (
                   <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
-                    <Icon name={currentDefaultModel.icon} size={13} />
                   </span>
                 )}
                 {selectableModels.length > 0 && (
@@ -3876,7 +3873,7 @@ ${finalText}`
               aria-haspopup={mcpPickerOpen ? 'dialog' : 'menu'}
               aria-expanded={addMenuOpen}
             >
-              <Icon name="plus" size={18} />
+              <Icon name="plus" size={20} />
             </button>
             {addMenuOpen && !mcpPickerOpen && (
               <div className="composer__add-menu" role="menu" aria-label="Add to chat">
@@ -3892,17 +3889,17 @@ ${finalText}`
                 >
                   <span className="composer__add-icon"><Icon name="paperclip" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Add photos & files</strong>
+                    <strong>Add files</strong>
                     <small>{isOpenMossCloneMode
-                      ? 'Upload a WAV voice sample'
+                      ? 'WAV audio file'
                       : currentCapability === 'model3d'
-                        ? 'Upload a reference image'
+                        ? 'PNG, JPEG, BMP, or GIF image'
                         : acceptsImageAttachments && acceptsAudioAttachments
-                          ? 'Upload images or audio'
+                          ? 'Images and audio files'
                           : acceptsImageAttachments
-                            ? 'Upload images'
+                            ? 'Images'
                             : acceptsAudioAttachments
-                              ? 'Upload audio'
+                              ? 'Audio files'
                               : 'Not available for this model'}</small>
                   </span>
                 </button>
@@ -4275,11 +4272,11 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
                   ))}
                 </div>
                 {selectedChoice && (
-                  <div className="options-block__confirmation">\u2713 You chose: {selectedChoice}</div>
+                  <div className="options-block__confirmation">✓ You chose: {selectedChoice}</div>
                 )}
                 {!selectedChoice && allowCustom && (
                   <div className="options-block__custom">
-                    <input className="options-block__input" placeholder="Or type your own\u2026"
+                    <input className="options-block__input" placeholder="Or type your own…"
                       onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) { handleSelect((e.target as HTMLInputElement).value.trim()); } }} />
                     <button className="options-block__submit" onClick={e => {
                       const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement;
