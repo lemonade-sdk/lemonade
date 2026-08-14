@@ -305,8 +305,7 @@ std::vector<ModelInfo> flm_discover_models() {
                     // ("embeddings" on embed-gemma:300m, "transcription" on
                     // whisper-v3:turbo) and both are identifiable from the
                     // checkpoint name, so classify from the name and treat the
-                    // rest as chat. FLM's own /v1/rerank is served by a chat
-                    // model, so there is no reranking mode to detect here.
+                    // rest as chat.
                     // https://github.com/ROCm/FastFlowLM/issues/668 would let
                     // FLM report the mode and remove this workaround.
                     const std::string id = to_lower(checkpoint);

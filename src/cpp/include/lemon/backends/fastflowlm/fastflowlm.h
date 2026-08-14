@@ -31,7 +31,7 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"npu", {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
-    /*supported_modes*/ {"chat", "embeddings", "reranking", "transcription"},
+    /*supported_modes*/ {"chat", "embeddings", "transcription"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*experimental*/    false,

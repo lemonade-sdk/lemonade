@@ -9,7 +9,7 @@
 namespace lemon {
 namespace backends {
 
-class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public ITranscriptionServer {
+class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public ITranscriptionServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -36,9 +36,6 @@ public:
 
     // IEmbeddingsServer implementation
     json embeddings(const json& request) override;
-
-    // IRerankingServer implementation
-    json reranking(const json& request) override;
 
     // ITranscriptionServer implementation
     json audio_transcriptions(const json& request) override;
