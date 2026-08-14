@@ -5273,12 +5273,13 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         if (resolved_backend == "rocm-stable") {
             std::string new_path = cli_dir.string();
             std::string rocm_arch = SystemInfo::get_rocm_arch();
+            std::vector<std::string> therock_dirs;
             if (!rocm_arch.empty()) {
                 // Prepend ALL TheRock runtime dirs (not just _rocm_sdk_core/bin) so
                 // sd-cli can resolve the BLAS DLLs in _rocm_sdk_libraries/bin; a
                 // single-dir PATH makes sd-cli fail at load with STATUS_DLL_NOT_FOUND
                 // (0xC0000135), surfacing as "ESRGAN upscale failed".
-                std::vector<std::string> therock_dirs =
+                therock_dirs =
                     lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch);
                 for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
                     if (!it->empty()) {
@@ -5295,17 +5296,19 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             // override System32 version. Windows DLL search order checks
             // System32 BEFORE PATH, so PATH-only approach fails when a rogue
             // DLL is present.
-            fs::path therock_dll = fs::path(therock_dirs.front()) / "amdhip64_7.dll";
-            fs::path target_dll = cli_exe.parent_path() / "amdhip64_7.dll";
-            if (fs::exists(therock_dll)) {
-                std::error_code ec;
-                fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-                if (!ec) {
-                    LOG(INFO, "Server") << "Copied amdhip64_7.dll from TheRock to "
-                        << lemon::utils::path_to_utf8(target_dll) << std::endl;
-                } else {
-                    LOG(ERROR, "Server") << "Failed to copy amdhip64_7.dll: "
-                        << ec.message() << std::endl;
+            if (!therock_dirs.empty()) {
+                fs::path therock_dll = fs::path(therock_dirs.front()) / "amdhip64_7.dll";
+                fs::path target_dll = cli_exe.parent_path() / "amdhip64_7.dll";
+                if (fs::exists(therock_dll)) {
+                    std::error_code ec;
+                    fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
+                    if (!ec) {
+                        LOG(INFO, "Server") << "Copied amdhip64_7.dll from TheRock to "
+                            << lemon::utils::path_to_utf8(target_dll) << std::endl;
+                    } else {
+                        LOG(ERROR, "Server") << "Failed to copy amdhip64_7.dll: "
+                            << ec.message() << std::endl;
+                    }
                 }
             }
         }
