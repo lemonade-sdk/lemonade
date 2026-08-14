@@ -63,6 +63,8 @@ static void test_check_case_name(TestResult& r) {
              check_case_name(json::object(), seen) == NameStatus::kMissing);
     r.expect("empty name string",
              check_case_name(json{{"name", ""}}, seen) == NameStatus::kMissing);
+    r.expect("non-string name",
+             check_case_name(json{{"name", 123}}, seen) == NameStatus::kNotString);
     r.expect("duplicate name",
              check_case_name(json{{"name", "already"}}, seen) == NameStatus::kDuplicate);
 }

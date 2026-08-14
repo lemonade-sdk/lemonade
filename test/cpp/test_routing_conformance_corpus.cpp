@@ -139,9 +139,18 @@ static std::vector<fs::path> find_case_dirs(const fs::path& root) {
             if (sec) {
                 fail(rel + ": is readable", sec.message());
                 ok = false;
-            } else if (!nested.dirs.empty()) {
-                check(rel + ": is a leaf (no subdirectories)", false);
-                ok = false;
+            } else {
+                if (!nested.dirs.empty()) {
+                    check(rel + ": is a leaf (no subdirectories)", false);
+                    ok = false;
+                }
+                for (const auto& entry : nested.non_dirs) {
+                    const std::string fname = entry.filename().string();
+                    if (fname != "policy.json" && fname != "cases.jsonl") {
+                        check(rel_label(entry, root) + ": is policy.json or cases.jsonl", false);
+                        ok = false;
+                    }
+                }
             }
             if (ok) {
                 dirs.push_back(case_dir);
@@ -400,18 +409,21 @@ static std::optional<json> read_case_row(const std::string& line, const std::str
     if (!unknown_keys.empty()) {
         return std::nullopt;
     }
-    const std::string case_name = row.value("name", "");
     switch (lemon::conformance::check_case_name(row, seen_names)) {
         case lemon::conformance::NameStatus::kMissing:
             check(where + " has a name", false);
             return std::nullopt;
+        case lemon::conformance::NameStatus::kNotString:
+            check(where + " name is a string", false);
+            return std::nullopt;
         case lemon::conformance::NameStatus::kDuplicate:
-            check(where + " duplicate case name '" + case_name + "'", false);
+            check(where + " duplicate case name '" + row.value("name", "") + "'", false);
             return std::nullopt;
         case lemon::conformance::NameStatus::kOk:
             break;
     }
-    seen_names.insert(case_name);
+    // check_case_name accepted it, so "name" is a non-empty string here.
+    seen_names.insert(row.value("name", ""));
     return row;
 }
 

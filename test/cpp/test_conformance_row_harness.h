@@ -49,14 +49,17 @@ inline std::vector<std::string> unknown_service_names(const nlohmann::json& serv
     return unknown;
 }
 
-enum class NameStatus { kOk, kMissing, kDuplicate };
+enum class NameStatus { kOk, kMissing, kNotString, kDuplicate };
 
-// A row's "name": missing/empty/non-string, a duplicate of one already accepted,
-// or ok. Pure — does not mutate `seen_names`; the caller records the name after
-// accepting it.
+// A row's "name": missing/empty, present but not a string, a duplicate of one
+// already accepted, or ok. Pure — does not mutate `seen_names`; the caller records
+// the name after accepting it.
 inline NameStatus check_case_name(const nlohmann::json& row,
                                   const std::set<std::string>& seen_names) {
-    const std::string name = row.value("name", "");
+    const auto it = row.is_object() ? row.find("name") : row.end();
+    if (it == row.end()) return NameStatus::kMissing;
+    if (!it->is_string()) return NameStatus::kNotString;
+    const std::string name = it->get<std::string>();
     if (name.empty()) return NameStatus::kMissing;
     if (seen_names.count(name) != 0) return NameStatus::kDuplicate;
     return NameStatus::kOk;
