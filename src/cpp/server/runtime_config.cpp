@@ -280,9 +280,23 @@ std::string RuntimeConfig::extra_models_dir() const {
     return config_["extra_models_dir"].get<std::string>();
 }
 
-bool RuntimeConfig::no_broadcast() const {
+bool RuntimeConfig::broadcast() const {
     std::shared_lock lock(mutex_);
-    return config_["no_broadcast"].get<bool>();
+    if (broadcast_override_.has_value()) {
+        return *broadcast_override_;
+    }
+    if (config_.contains("broadcast") && config_["broadcast"].is_boolean()) {
+        return config_["broadcast"].get<bool>();
+    }
+    if (config_.contains("no_broadcast") && config_["no_broadcast"].is_boolean()) {
+        return !config_["no_broadcast"].get<bool>();
+    }
+    return true;
+}
+
+void RuntimeConfig::set_broadcast_override(std::optional<bool> override_val) {
+    std::unique_lock lock(mutex_);
+    broadcast_override_ = override_val;
 }
 
 long RuntimeConfig::global_timeout() const {
@@ -619,7 +633,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument(
                 "'default_model_source' must be either 'huggingface', or 'modelscope'");
         }
-    } else if (key == "no_broadcast" || key == "offline" ||
+    } else if (key == "broadcast" || key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||
                key == "no_fetch_executables" ||
                key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
@@ -917,6 +931,19 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
                     }
                 }
             }
+        } else if (key == "no_broadcast") {
+            bool bcast = !value.get<bool>();
+            if (!config_.contains("broadcast") || config_["broadcast"] != bcast) {
+                config_["broadcast"] = bcast;
+                applied_diff["broadcast"] = bcast;
+            }
+            broadcast_override_ = std::nullopt;
+        } else if (key == "broadcast") {
+            if (!config_.contains("broadcast") || config_["broadcast"] != value) {
+                config_["broadcast"] = value;
+                applied_diff["broadcast"] = value;
+            }
+            broadcast_override_ = std::nullopt;
         } else {
             if (!config_.contains(key) || config_[key] != value) {
                 config_[key] = value;

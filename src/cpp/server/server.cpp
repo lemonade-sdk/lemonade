@@ -2043,8 +2043,8 @@ void Server::run() {
         // Enumerate all RFC1918 interfaces to determine if we can broadcast.
         // The beacon will send per-interface with the correct IP in the payload.
         auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
-        bool no_bcast = config_->no_broadcast();
-        if (!rfc1918Interfaces.empty() && !no_bcast) {
+        bool bcast = config_->broadcast();
+        if (!rfc1918Interfaces.empty() && bcast) {
             std::cout << "[Server] [Net Broadcast] Broadcasting on " << rfc1918Interfaces.size()
                       << " RFC1918 interface(s):";
             for (const auto& iface : rfc1918Interfaces) {
@@ -2056,8 +2056,8 @@ void Server::run() {
                 port_,
                 2
             );
-        } else if (!rfc1918Interfaces.empty() && no_bcast) {
-            LOG(INFO, "Server") << "Broadcasting disabled by --no-broadcast option" << std::endl;
+        } else if (!rfc1918Interfaces.empty() && !bcast) {
+            LOG(INFO, "Server") << "Broadcasting disabled by configuration or CLI option" << std::endl;
         } else {
             LOG(INFO, "Server") << "Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl
                         << "or hostname that resolves to RFC1918 IPv4." << std::endl;
@@ -7004,10 +7004,10 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
             utils::HttpClient::set_default_timeout(timeout);
-        } else if (key == "no_broadcast") {
-            bool nb = config_->no_broadcast();
-            LOG(INFO, "Server") << "Broadcast " << (nb ? "disabled" : "enabled") << std::endl;
-            if (nb) {
+        } else if (key == "broadcast" || key == "no_broadcast") {
+            bool bcast = config_->broadcast();
+            LOG(INFO, "Server") << "Broadcast " << (bcast ? "enabled" : "disabled") << std::endl;
+            if (!bcast) {
                 udp_beacon_.stopBroadcasting();
             } else {
                 auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
