@@ -4,12 +4,6 @@ on:
   schedule:
     - cron: '0 2 * * *'
 
-  # TEMPORARY: branch push trigger for validating this PR before merge.
-  # REMOVE before merging to main.
-  push:
-    branches:
-      - iswarya/issue-2858-backend-perf-tracker
-
   release:
     types: [published]
 
