@@ -272,11 +272,21 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "model_name": "Qwen3-0.6B-GGUF"
   },
   "resolved_ctx_size": 32768,
-  "load_command": "curl -X POST http://localhost:13305/v1/load -H \"Content-Type: application/json\" -d '{\"ctx_size\":-1, ...}'"
+  "load_command": "curl -X POST $LEMONADE_BASE_URL/v1/load -H \"Content-Type: application/json\" -d '{\"ctx_size\":-1, ...}'"
 }
 ```
 
-`load_command` is `effective` posted to [`/v1/load`](#post-v1load), rendered against the base URL this request came through. Run or display it verbatim: it reproduces the exact load the model would get right now.
+`load_command` is `effective` posted to [`/v1/load`](#post-v1load): the exact load the model would get right now, as a command.
+
+The base URL is left as `$LEMONADE_BASE_URL`, and the API key, when the server requires one, as `$LEMONADE_API_KEY`. The server cannot fill either in: it always listens over plain HTTP, so a client that reached it through a TLS-terminating proxy is on `https` without the server ever knowing, and the `Host` header is only the caller's own claim about where it sent the request. Export the variables to run the command as-is:
+
+```bash
+export LEMONADE_BASE_URL=http://localhost:13305
+```
+
+A client that already knows its base URL — every GUI and CLI does — can substitute the two tokens before displaying the command.
+
+The quoting is for POSIX shells: bash, zsh, and PowerShell 7.3 and newer, which is where PowerShell began passing arguments to native commands unchanged. `cmd.exe` does not treat `'` as a quote character at all. In either of those, build the request from `effective` rather than pasting the command.
 
 | Field | Description |
 |-------|-------------|
@@ -286,7 +296,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 | `effective` | The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. |
 | `defaults` | What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically. |
 | `resolved_ctx_size` | The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. |
-| `load_command` | The complete curl command that reproduces the load: `effective` posted to `/v1/load` at the base URL this request came through. |
+| `load_command` | The curl command that reproduces the load: `effective` posted to `/v1/load`, with `$LEMONADE_BASE_URL` (and `$LEMONADE_API_KEY` on a key-protected server) left for the caller to fill in. |
 
 > Note: per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
 

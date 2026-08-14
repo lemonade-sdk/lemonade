@@ -2883,13 +2883,17 @@ void Server::respond_with_model_options(
         const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
             : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
 
-        // The load command, rendered against the base URL this request used.
-        const std::string host = req.get_header_value("Host");
-        const std::string base =
-            "http://" + (host.empty() ? "localhost:" + std::to_string(port_.load()) : host);
-        const std::string load_command =
-            "curl -X POST " + base + "/v1/load -H \"Content-Type: application/json\" -d " +
-            shell_single_quote(effective_json.dump());
+        // The load command, with the two things only the caller knows left as
+        // environment references. lemond always listens in the clear, so a
+        // client that reached it through a TLS-terminating proxy is on https
+        // and this process cannot tell; the Host header is a guess of the same
+        // kind, supplied by the caller.
+        std::string load_command =
+            "curl -X POST $LEMONADE_BASE_URL/v1/load -H \"Content-Type: application/json\"";
+        if (!api_key_.empty()) {
+            load_command += " -H \"Authorization: Bearer $LEMONADE_API_KEY\"";
+        }
+        load_command += " -d " + shell_single_quote(effective_json.dump());
 
         nlohmann::json response = {
             {"model_name", model_id},
