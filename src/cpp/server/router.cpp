@@ -858,6 +858,13 @@ void Router::load_model(const std::string& model_name,
             json requested_opts = effective_options.to_resolved_json();
             existing_opts.erase("pinned");
             requested_opts.erase("pinned");
+            // An auto-sized process holds the number auto-tune picked, which no
+            // request can spell. Asking for auto again asks for what is running.
+            if (existing->ctx_size_is_auto() &&
+                requested_opts.value("ctx_size", json(nullptr)) == -1) {
+                existing_opts.erase("ctx_size");
+                requested_opts.erase("ctx_size");
+            }
             if (allow_reload_on_option_change && existing_opts != requested_opts) {
                 LOG(INFO, "Router") << "Options changed, reloading model: " << canonical_model_name << std::endl;
                 evict_server(existing);
@@ -972,6 +979,7 @@ void Router::load_model(const std::string& model_name,
         // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
         int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
+        const bool ctx_size_auto = auto_ctx != -2;
         if (auto_ctx > 0) {
             LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
             effective_options.set_option("ctx_size", auto_ctx);
@@ -984,6 +992,7 @@ void Router::load_model(const std::string& model_name,
 
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        new_server->set_ctx_size_auto(ctx_size_auto);
         new_server->set_residency_class(requested_residency_class);
         new_server->set_pinned(final_pinned);
         new_server->update_access_time();
@@ -1092,6 +1101,7 @@ void Router::load_model(const std::string& model_name,
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+            retry_server->set_ctx_size_auto(ctx_size_auto);
             retry_server->set_residency_class(requested_residency_class);
             retry_server->set_pinned(final_pinned);
             retry_server->update_access_time();
