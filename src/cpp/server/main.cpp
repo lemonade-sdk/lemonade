@@ -78,7 +78,9 @@ int main(int argc, char** argv) {
         utils::set_cache_dir(cli_config.cache_dir);
         json config_json = ConfigFile::load(cli_config.cache_dir);
 
-        // CLI --port/--host override config.json and persist
+        // CLI --port/--host/--no-broadcast override config.json and persist.
+        // LEMONADE_NO_BROADCAST is handled separately, live, by RuntimeConfig::no_broadcast()
+        // (via get_bool_opt) so it's never written to config.json.
         bool cli_overrides = false;
         if (cli_config.port != -1) {
             config_json["port"] = cli_config.port;
@@ -86,6 +88,10 @@ int main(int argc, char** argv) {
         }
         if (!cli_config.host.empty()) {
             config_json["host"] = cli_config.host;
+            cli_overrides = true;
+        }
+        if (cli_config.no_broadcast) {
+            config_json["no_broadcast"] = cli_config.no_broadcast;
             cli_overrides = true;
         }
         auto config = std::make_shared<RuntimeConfig>(config_json);
@@ -101,6 +107,9 @@ int main(int argc, char** argv) {
             }
             if (!cli_config.host.empty()) {
                 LOG(INFO) << "Persisted host=" << cli_config.host << " to config.json" << std::endl;
+            }
+            if (cli_config.no_broadcast) {
+                LOG(INFO) << "Persisted no_broadcast=true to config.json" << std::endl;
             }
         }
 

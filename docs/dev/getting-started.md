@@ -609,7 +609,7 @@ The client automatically:
 - Uses port 13305 to broadcast to the network that it exists
 - Clients can read the json broadcast message to add server to server picker.
 - Uses machine hostname as broadcast name.
-- The custom flag --no-broadcast is available in the command line to disable.
+- The `--no-broadcast` command-line flag disables it and persists to `config.json`, same as setting the `no_broadcast` key directly. `LEMONADE_NO_BROADCAST` (accepts exactly `1`, `true`, `True`, `TRUE`, `yes`, or `YES` — no other casing) disables it for the life of the process without touching `config.json`, and takes precedence over both whenever it's set — for container use.
 - Auto protection, doesnt broadcast on non RFC1918 Networks.
 
 ### Internal Endpoints

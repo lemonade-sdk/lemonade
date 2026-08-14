@@ -24,6 +24,9 @@ CLIParser::CLIParser()
 
     app_.add_option("--host", config_.host, "Address to bind for connections (overrides config.json)")
         ->type_name("HOST");
+
+    app_.add_flag("--no-broadcast", config_.no_broadcast,
+                  "Disable the UDP discovery beacon (overrides config.json; LEMONADE_NO_BROADCAST env var also works)");
 }
 
 int CLIParser::parse(int argc, char** argv) {

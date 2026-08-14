@@ -56,6 +56,32 @@ docker run -d \
 
 > This will run the server on port 5000 inside the container, mapped to port 4000 on your host.
 
+### Docker/Podman Run with the Discovery Beacon Disabled
+
+`lemond` periodically broadcasts a small UDP beacon on port 13305 so LAN clients can auto-discover it. In some container networking setups — notably rootless Podman with the `pasta` network plugin — the container isn't permitted to send broadcast traffic, and every failed attempt logs a `Permission denied` message to the host's journal every couple of seconds.
+
+Disable the beacon with the `LEMONADE_NO_BROADCAST` environment variable (no need to override the container's command). Unlike the flag/config.json forms below, this is not persisted, so it must be passed on every `run`:
+
+> `LEMONADE_NO_BROADCAST` always takes precedence while it's set (over both `config.json` and any `--no-broadcast` flag). It accepts exactly `1`, `true`, `True`, `TRUE`, `yes`, or `YES` — other casings (e.g. `Yes`, `TRUe`) are not recognized and are treated as unset.
+
+```bash
+podman run -d \
+  --name lemonade-server \
+  -p 13305:13305 \
+  -e LEMONADE_NO_BROADCAST=true \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
+Equivalently, pass `--no-broadcast` on the command line (this requires specifying the full command, since it replaces the image's default `CMD`), or set `"no_broadcast": true` in `config.json`:
+
+```bash
+podman run -d \
+  --name lemonade-server \
+  -p 13305:13305 \
+  ghcr.io/lemonade-sdk/lemonade-server:latest \
+  ./lemond --host 0.0.0.0 --no-broadcast
+```
+
 ### Docker Run with CPU backend
 
 To use the CPU backend, create or modify the `config.json` file in the `lemonade-recipe` volume:

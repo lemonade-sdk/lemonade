@@ -281,8 +281,7 @@ std::string RuntimeConfig::extra_models_dir() const {
 }
 
 bool RuntimeConfig::no_broadcast() const {
-    std::shared_lock lock(mutex_);
-    return config_["no_broadcast"].get<bool>();
+    return get_bool_opt("LEMONADE_NO_BROADCAST", {"no_broadcast"}, false);
 }
 
 long RuntimeConfig::global_timeout() const {

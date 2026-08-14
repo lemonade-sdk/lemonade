@@ -183,6 +183,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         config_json["host"] = cli_config.host;
         cli_overrides = true;
     }
+    if (cli_config.no_broadcast) {
+        config_json["no_broadcast"] = cli_config.no_broadcast;
+        cli_overrides = true;
+    }
     if (cli_overrides) {
         lemon::ConfigFile::save(cli_config.cache_dir, config_json);
     }

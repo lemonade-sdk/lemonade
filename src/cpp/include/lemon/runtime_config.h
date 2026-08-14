@@ -135,7 +135,10 @@ private:
     void apply_changes(const json& changes, json& applied_diff);
 
     // Helpers to retrieve configuration options with environment variable override
-    // and fallback to config JSON under a shared lock.
+    // and fallback to config JSON under a shared lock. Callers must not already
+    // hold mutex_ (in any mode) when calling these — std::shared_mutex doesn't
+    // guarantee a second shared lock from the same thread won't deadlock behind
+    // a writer queued in between the two acquisitions.
     bool get_bool_opt(const char* env_name, const std::vector<std::string>& path, bool default_val) const;
     int get_int_opt(const char* env_name, const std::vector<std::string>& path, int default_val) const;
     double get_double_opt(const char* env_name, const std::vector<std::string>& path, double default_val) const;

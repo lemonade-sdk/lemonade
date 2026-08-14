@@ -9,6 +9,7 @@ struct ServerConfig {
     std::string cache_dir;     // Positional arg: lemonade cache dir (optional, platform default)
     int port = -1;             // -1 = not specified on CLI, use config.json value
     std::string host;          // Empty = not specified on CLI, use config.json value
+    bool no_broadcast = false;
 };
 
 class CLIParser {
