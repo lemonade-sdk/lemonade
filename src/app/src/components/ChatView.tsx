@@ -1882,6 +1882,20 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     if (isBusy) setThinkingMenuOpen(false);
   }, [isBusy]);
 
+  useEffect(() => {
+    const onThinkingShortcut = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'm' || !event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return;
+      if (!modeSupportsChatCompletions || isBusy) return;
+      event.preventDefault();
+      setAddMenuOpen(false);
+      setMcpPickerOpen(false);
+      setThinkingMenuOpen(open => !open);
+      requestAnimationFrame(() => thinkingTriggerRef.current?.focus());
+    };
+    window.addEventListener('keydown', onThinkingShortcut);
+    return () => window.removeEventListener('keydown', onThinkingShortcut);
+  }, [isBusy, modeSupportsChatCompletions]);
+
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
   const streamingToolStatus = currentStream?.toolStatus || '';
@@ -4134,18 +4148,24 @@ ${finalText}`
                   setThinkingMenuOpen(open => !open);
                 }}
                 disabled={isBusy}
-                title="Thinking"
-                aria-label={`Thinking: ${thinkingMode === 'off' ? 'Off' : 'Normal'}`}
+                aria-label={`Reasoning: ${thinkingMode === 'off' ? 'Off' : 'Thinking'}`}
                 aria-haspopup="menu"
                 aria-expanded={thinkingMenuOpen}
               >
-                <span>{thinkingMode === 'off' ? 'Off' : 'Normal'}</span>
+                <span>{thinkingMode === 'off' ? 'Off' : 'Thinking'}</span>
                 <Icon name="chevron-down" size={12} aria-hidden="true" />
               </button>
+              {!thinkingMenuOpen && (
+                <div className="composer__thinking-tooltip" role="tooltip" aria-hidden="true">
+                  <span>Reasoning</span>
+                  <kbd>Ctrl ⇧ M</kbd>
+                </div>
+              )}
               {thinkingMenuOpen && (
-                <div className="composer__thinking-menu" role="menu" aria-label="Thinking">
+                <div className="composer__thinking-menu" role="menu" aria-label="Reasoning">
                   {(['normal', 'off'] as const).map(mode => {
                     const selected = thinkingMode === mode;
+                    const enabled = mode !== 'off';
                     return (
                       <button
                         key={mode}
@@ -4155,7 +4175,12 @@ ${finalText}`
                         className={`composer__thinking-option${selected ? ' is-selected' : ''}`}
                         onClick={() => selectThinkingMode(mode)}
                       >
-                        <span>{mode === 'off' ? 'Off' : 'Normal'}</span>
+                        <span className="composer__thinking-option-copy">
+                          <span className="composer__thinking-option-label">{enabled ? 'Thinking' : 'Off'}</span>
+                          <span className="composer__thinking-option-description">
+                            {enabled ? 'Model thinks before answering' : 'Direct answer'}
+                          </span>
+                        </span>
                         {selected && <Icon name="check" size={13} aria-hidden="true" />}
                       </button>
                     );
