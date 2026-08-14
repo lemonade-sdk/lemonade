@@ -592,9 +592,57 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         is_rocm_stable_backend && will_install_therock(os, backend_versions_);
     const bool rocm_runtime_update_required =
         therock_applicable && backend_update_required(recipe, backend);
+
+    // Determine if we need a TheRock download, respecting the requested install
+    // method (wheel vs tarball). On a cold install `is_therock_installed_for_
+    // current_arch` correctly returns false. On warm installs it returns true
+    // when a runtime exists, but does not know which method was used. Check
+    // method.txt to force a reinstall when the preferred method conflicts with
+    // what's on disk.
+    const std::string rocm_method =
+        (RuntimeConfig::global() ? RuntimeConfig::global()->rocm_install_method() : "auto");
+    const bool method_mismatch = [&]() -> bool {
+        if (rocm_method == "auto") {
+            return false;
+        }
+        const std::string arch = SystemInfo::get_rocm_arch();
+        if (arch.empty()) {
+            return false;
+        }
+        const std::string version = backend_versions_["therock"]["version"].get<std::string>();
+
+        // Check wheel method marker
+        const fs::path wheel_method_file =
+            fs::path(backends::BackendUtils::get_therock_wheel_dir(arch, version)) / "method.txt";
+        {
+            std::ifstream mf(wheel_method_file);
+            if (mf.is_open()) {
+                std::string stored;
+                std::getline(mf, stored);
+                if (stored == "wheel") {
+                    return rocm_method == "tarball"; // user wants tarball but wheel is installed
+                }
+            }
+        }
+        // Check tarball method marker
+        const fs::path tarball_method_file =
+            fs::path(backends::BackendUtils::get_therock_install_dir(arch, version)) / "method.txt";
+        {
+            std::ifstream mf(tarball_method_file);
+            if (mf.is_open()) {
+                std::string stored;
+                std::getline(mf, stored);
+                if (stored == "tarball") {
+                    return rocm_method == "wheel"; // user wants wheel but tarball is installed
+                }
+            }
+        }
+        return false;
+    }();
+
     const bool needs_therock_download =
         therock_applicable &&
-        (rocm_runtime_update_required ||
+        (method_mismatch || rocm_runtime_update_required ||
          !is_therock_installed_for_current_arch(backend_versions_));
 
     struct RuntimeInstallStep {

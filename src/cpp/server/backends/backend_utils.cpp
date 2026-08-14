@@ -836,6 +836,26 @@ namespace lemon::backends {
         }
     }
     namespace {
+        // Track whether the DownloadProgressCallback returned false (user
+        // cancellation) during a wheel installation. This prevents
+        // install_rocm_runtime from falling back to the tarball after a
+        // user-initiated cancel.
+        thread_local bool g_therock_wheels_cancelled = false;
+
+        void reset_therock_wheels_cancelled() {
+            g_therock_wheels_cancelled = false;
+        }
+
+        bool get_therock_wheels_cancelled() {
+            return g_therock_wheels_cancelled;
+        }
+
+        // Track the user-requested install method so that
+        // is_therock_installed_for_current_arch can verify a reinstall is
+        // needed when the preferred method conflicts with what's already on
+        // disk (e.g. wheel installed but user sets rocm_install_method=tarball).
+        thread_local std::string g_therock_install_method = "auto";
+
         // Non-throwing fs overloads so a bogus user-supplied path reports
         // "not a root" instead of throwing.
         std::optional<fs::path> validate_rocm_root(const fs::path& root) {
@@ -1087,11 +1107,12 @@ namespace lemon::backends {
         // every candidate and keep the directories that actually exist so the
         // logic is correct on both Windows (bin) and Linux (lib).
         std::vector<std::string> query_wheel_runtime_dirs(const std::string& venv_python) {
-            // Print candidate {bin,lib} dirs for each rocm-sdk runtime package.
+            // Print candidate {bin,lib,llvm} dirs for each rocm-sdk runtime package.
             // Keep it tolerant: a missing package or a namespace package (whose
             // __file__ is None in kpack-split mode) must not abort the probe, so
             // each import is guarded and __path__ is used as a fallback root.
             static const char* probe =
+#ifdef _WIN32
                 "import importlib,os\n"
                 "for m in ('_rocm_sdk_core','_rocm_sdk_libraries'):\n"
                 "    try:\n"
@@ -1102,8 +1123,22 @@ namespace lemon::backends {
                 "else (list(getattr(mod,'__path__',[]))[:1] or [''])[0]\n"
                 "    if not root:\n"
                 "        continue\n"
-                "    for s in ('bin','lib'):\n"
+                "    for s in ('bin','lib',os.path.join('lib','llvm','bin')):\n"
                 "        print(os.path.join(root,s))\n";
+#else
+                "import importlib,os\n"
+                "for m in ('_rocm_sdk_core','_rocm_sdk_libraries'):\n"
+                "    try:\n"
+                "        mod=importlib.import_module(m)\n"
+                "    except Exception:\n"
+                "        continue\n"
+                "    root=os.path.dirname(mod.__file__) if getattr(mod,'__file__',None) "
+                "else (list(getattr(mod,'__path__',[]))[:1] or [''])[0]\n"
+                "    if not root:\n"
+                "        continue\n"
+                "    for s in ('lib',os.path.join('llvm','lib')):\n"
+                "        print(os.path.join(root,s))\n";
+#endif
 
             std::vector<std::string> lines;
             auto on_line = [&lines](const std::string& line) {
@@ -1204,8 +1239,15 @@ namespace lemon::backends {
             method = cfg->rocm_install_method();
         }
 
+        reset_therock_wheels_cancelled();
+        g_therock_install_method = method;
+
         if (method != "tarball") {
             if (install_therock_wheels(arch, version, progress_cb)) {
+                return;
+            }
+            if (get_therock_wheels_cancelled()) {
+                LOG(INFO, "BackendUtils") << "ROCm install cancelled by user" << std::endl;
                 return;
             }
             if (method == "wheel") {
@@ -1263,7 +1305,7 @@ namespace lemon::backends {
         fs::create_directories(wheel_dir, ec);
 
         int downloads_seen = 0;
-        auto log_line = [&progress_cb, &downloads_seen](const std::string& line) {
+        auto log_line = [&progress_cb, &downloads_seen, &g_therock_wheels_cancelled](const std::string& line) {
             LOG(INFO, "BackendUtils") << "(pip) " << line << std::endl;
             if (!progress_cb) {
                 return true;
@@ -1288,7 +1330,11 @@ namespace lemon::backends {
             }
             p.file_index = ++downloads_seen;
             p.complete = false;
-            return progress_cb(p);
+            bool keep = progress_cb(p);
+            if (!keep) {
+                g_therock_wheels_cancelled = true;
+            }
+            return keep;
         };
 
         int rc = utils::ProcessManager::run_process_with_output(
@@ -1387,16 +1433,9 @@ namespace lemon::backends {
         }
 
         // Drop other wheel versions for this base dir to bound disk usage.
-        fs::path wheels_base = fs::path(utils::get_downloaded_bin_dir()) / "therock-wheels";
-        const std::string keep = fs::path(wheel_dir).filename().string();
-        for (fs::directory_iterator it(wheels_base, ec), end; it != end && !ec; it.increment(ec)) {
-            if (it->is_directory(ec) && it->path().filename().string() != keep) {
-                LOG(DEBUG, "BackendUtils")
-                    << "Cleaning up old ROCm wheel install: "
-                    << it->path().filename().string() << std::endl;
-                fs::remove_all(it->path(), ec);
-            }
-        }
+        cleanup_stale_version_dirs(
+            fs::path(utils::get_downloaded_bin_dir()) / "therock-wheels",
+            fs::path(wheel_dir).filename().string());
 
         if (progress_cb) {
             DownloadProgress p;
@@ -1406,6 +1445,13 @@ namespace lemon::backends {
             p.percent = 100;
             p.complete = true;
             progress_cb(p);
+        }
+
+        // Write method marker so that method mismatch (e.g. user switched from
+        // wheel to tarball) is detected on the next install attempt.
+        {
+            std::ofstream mf(fs::path(wheel_dir) / "method.txt");
+            mf << "wheel";
         }
 
         LOG(INFO, "BackendUtils") << "ROCm wheel installation complete" << std::endl;
@@ -1537,6 +1583,13 @@ namespace lemon::backends {
         vf << version;
         vf.close();
 
+        // Write method marker so that method mismatch (e.g. user switched from
+        // tarball to wheel) is detected on the next install attempt.
+        {
+            std::ofstream mf(fs::path(install_dir) / "method.txt");
+            mf << "tarball";
+        }
+
         fs::remove(tarball_path);
         cleanup_old_therock_versions();
 
@@ -1604,17 +1657,33 @@ namespace lemon::backends {
             }
         }
 
-        // Tarball layout: a single runtime directory.
+        // Tarball layout: a single runtime directory with a shared LLVM dir.
         std::string install_dir = get_therock_install_dir(rocm_arch, version);
         std::error_code ec;
         if (fs::exists(install_dir, ec)) {
-#ifdef _WIN32
             // On Windows, DLLs are in bin/ (lib/ contains only import .lib files)
+            // On Linux, shared libraries are in lib/
+            // Both are under the common tarball root which also keeps LLVM in lib/llvm/.
+#ifdef _WIN32
             std::string lib_path = (fs::path(install_dir) / "bin").string();
 #else
-            // On Linux, shared libraries are in lib/
             std::string lib_path = (fs::path(install_dir) / "lib").string();
 #endif
+            // LLVM lives in <tarball_root>/lib/llvm/lib on both platforms.
+            // On Windows install_dir is the root, so parent_path() of bin/ gives root.
+            // On Linux install_dir is the root, and lib_path is root/lib.
+#ifdef _WIN32
+            fs::path llvm_path = fs::path(install_dir) / "lib" / "llvm" / "lib";
+#else
+            fs::path llvm_path = fs::path(install_dir) / "lib" / "llvm" / "lib";
+#endif
+            std::error_code llvm_ec;
+            if (fs::is_directory(llvm_path, llvm_ec) && !llvm_ec) {
+                LOG(DEBUG, "BackendUtils")
+                    << "Returning TheRock runtime + LLVM paths: " << lib_path << ", "
+                    << utils::path_to_utf8(llvm_path) << std::endl;
+                return {lib_path, utils::path_to_utf8(fs::absolute(llvm_path, llvm_ec))};
+            }
             LOG(DEBUG, "BackendUtils") << "Returning TheRock runtime path: " << lib_path << std::endl;
             return {lib_path};
         }
@@ -1632,9 +1701,9 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::join_runtime_dirs(const std::vector<std::string>& dirs,
-                                                bool include_llvm) {
+                                                bool /*include_llvm*/) {
 #if !defined(__linux__) && !defined(_WIN32)
-        (void)dirs; (void)include_llvm;
+        (void)dirs;
         return "";
 #else
 #ifdef _WIN32
@@ -1661,17 +1730,7 @@ namespace lemon::backends {
             if (d.empty()) {
                 continue;
             }
-            fs::path dir = utils::path_from_utf8(d);
-            add(dir);
-            if (include_llvm) {
-#ifdef _WIN32
-                // Tarball layout keeps LLVM under <root>/lib/llvm/bin; <dir> is
-                // <root>/bin here, so step up before descending.
-                add(dir.parent_path() / "lib" / "llvm" / "bin");
-#else
-                add(dir / "llvm" / "lib");
-#endif
-            }
+            add(utils::path_from_utf8(d));
         }
         return out;
 #endif

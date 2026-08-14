@@ -303,9 +303,10 @@ void SDServer::load(const std::string& model_name,
     if (resolved_backend == "rocm-stable") {
         std::string rocm_arch = SystemInfo::get_rocm_arch();
         if (!rocm_arch.empty()) {
-            std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
-            if (!therock_lib.empty()) {
-                lib_path = therock_lib + ":" + lib_path;
+            std::string therock_dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(rocm_arch), false);
+            if (!therock_dirs.empty()) {
+                lib_path = therock_dirs + ":" + lib_path;
             }
         }
     }
