@@ -1124,6 +1124,21 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(response.status_code, 400, f"Expected 400 for body {body}")
             self.assertIn("error", response.json())
 
+        # Numeric literals no int64 can hold. The first overflows a double,
+        # which the JSON parser reports as a distinct error class; the second
+        # would wrap to -1 and read as "size it automatically".
+        for raw_body in ('{"ctx_size": 1e400}', '{"ctx_size": 18446744073709551615}'):
+            response = requests.post(
+                self._options_url(),
+                data=raw_body,
+                headers={"Content-Type": "application/json"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                response.status_code, 400, f"Expected 400 for body {raw_body}"
+            )
+            self.assertIn("error", response.json())
+
         # Nothing was persisted by any of the rejected requests
         self.assertEqual(
             requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["saved"],
@@ -1196,41 +1211,51 @@ class EndpointTests(ServerTestBase):
 
         Load with saved options, erase them, then replay `effective` verbatim:
         if it fully captures the load command, the router resolves identical
-        options and keeps the backend process; any gap forces a reload."""
+        options and keeps the backend process; any gap forces a reload.
+
+        An explicit ctx_size and an automatic one take different paths through
+        that check: the running process holds the concrete size auto-tune chose,
+        which no request can spell, so -1 has to be recognized as the size it
+        already resolved to."""
         self.addCleanup(self._reset_options)
-        self._reset_options()
-        # An auto-sized model restarts on every /load, so pin an explicit size.
-        requests.post(
-            self._options_url(),
-            json={"ctx_size": 3072, "llamacpp_args": "--no-mmap"},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        effective = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
-            "effective"
-        ]
-        self.assertEqual(effective["model_name"], ENDPOINT_TEST_MODEL)
 
-        load = requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(load.status_code, 200, load.text)
-        loaded_before = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
-        self._assert_loaded_model_pid(loaded_before)
+        for ctx_size in (3072, -1):
+            with self.subTest(ctx_size=ctx_size):
+                self._reset_options()
+                requests.post(
+                    self._options_url(),
+                    json={"ctx_size": ctx_size, "llamacpp_args": "--no-mmap"},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                effective = requests.get(
+                    self._options_url(), timeout=TIMEOUT_DEFAULT
+                ).json()["effective"]
+                self.assertEqual(effective["model_name"], ENDPOINT_TEST_MODEL)
+                self.assertEqual(effective["ctx_size"], ctx_size)
 
-        self._reset_options()
-        replay = requests.post(
-            f"{self.base_url}/load", json=effective, timeout=TIMEOUT_MODEL_OPERATION
-        )
-        self.assertEqual(replay.status_code, 200, replay.text)
-        loaded_after = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
-        self._assert_loaded_model_pid(loaded_after)
-        self.assertEqual(
-            loaded_after["pid"],
-            loaded_before["pid"],
-            "Replaying `effective` must resolve to the same load",
-        )
+                load = requests.post(
+                    f"{self.base_url}/load",
+                    json={"model_name": ENDPOINT_TEST_MODEL},
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(load.status_code, 200, load.text)
+                loaded_before = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+                self._assert_loaded_model_pid(loaded_before)
+
+                self._reset_options()
+                replay = requests.post(
+                    f"{self.base_url}/load",
+                    json=effective,
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(replay.status_code, 200, replay.text)
+                loaded_after = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+                self._assert_loaded_model_pid(loaded_after)
+                self.assertEqual(
+                    loaded_after["pid"],
+                    loaded_before["pid"],
+                    "Replaying `effective` must resolve to the same load",
+                )
 
         print("[OK] `effective` replays verbatim as a /v1/load command")
 
@@ -1250,11 +1275,13 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["resolved_ctx_size"], 4096)
         self.assertEqual(data["saved"], {}, "dry_run must not persist anything")
 
-        # load_command is effective posted to /v1/load at the base URL this
-        # request used, so the client can run or display it verbatim.
+        # load_command is effective posted to /v1/load, with the base URL left
+        # to the caller: lemond only ever listens over plain HTTP, so it cannot
+        # know the scheme a client reached it through.
         command = data["load_command"]
-        self.assertTrue(command.startswith("curl -X POST http://"), command)
-        self.assertIn(f"localhost:{PORT}/v1/load", command)
+        self.assertTrue(
+            command.startswith("curl -X POST $LEMONADE_BASE_URL/v1/load"), command
+        )
         self.assertIn('"ctx_size":4096', command)
         self.assertIn(f'"model_name":"{ENDPOINT_TEST_MODEL}"', command)
 
@@ -1274,6 +1301,96 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(rejected.status_code, 400, "dry_run still validates")
 
         print("[OK] resolved_ctx_size is concrete and dry_run persists nothing")
+
+    def test_012v_load_command_omits_client_supplied_host(self):
+        """The command is built from what the server knows, not what it is told.
+
+        `Host` is the caller's own claim about where it sent the request, and
+        the command is meant to be run, so none of it may reach the string.
+        """
+        forged = "evil.example.com; touch /tmp/lemonade-load-command"
+        response = requests.get(
+            self._options_url(),
+            headers={"Host": forged},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        command = response.json()["load_command"]
+        self.assertIn("$LEMONADE_BASE_URL/v1/load", command)
+        self.assertNotIn("evil.example.com", command)
+        self.assertNotIn("touch", command)
+
+        print("[OK] load_command never repeats the caller's Host header")
+
+    def test_012w_load_command_carries_auth_when_a_key_is_required(self):
+        """A key-protected server renders the header its own /v1/load demands.
+
+        Without it the command reports a load that would come back 401. The key
+        itself stays out of the response: only the variable holding it is named.
+        """
+        lemond_binary = _resolve_lemond_binary()
+        if not lemond_binary:
+            self.skipTest("lemond binary not found (build it or add it to PATH)")
+
+        api_key = "options-load-command-key"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        port = _pick_free_port()
+        cache_dir = tempfile.mkdtemp(prefix="lemond_optauth_")
+        log_path = os.path.join(cache_dir, "lemond.log")
+        env = os.environ.copy()
+        env["LEMONADE_API_KEY"] = api_key
+        env.pop("LEMONADE_ADMIN_API_KEY", None)
+
+        server = None
+        try:
+            with open(log_path, "w", encoding="utf-8") as log_file:
+                server = subprocess.Popen(
+                    [lemond_binary, cache_dir, "--port", str(port)],
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                )
+
+            deadline = time.time() + 60
+            healthy = False
+            while time.time() < deadline:
+                if server.poll() is not None:
+                    break  # exited early; surface the log below
+                if _lemond_health_ok(port, headers):
+                    healthy = True
+                    break
+                time.sleep(1)
+
+            if not healthy:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    log = f.read()
+                self.fail(
+                    f"lemond never became healthy on port {port}.\n"
+                    f"=== lemond log ===\n{log}"
+                )
+
+            response = requests.get(
+                f"http://localhost:{port}/api/v1/models/{ENDPOINT_TEST_MODEL}/options",
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            command = response.json()["load_command"]
+            self.assertIn('-H "Authorization: Bearer $LEMONADE_API_KEY"', command)
+            self.assertNotIn(api_key, command)
+
+            print("[OK] load_command carries the Authorization header /load requires")
+        finally:
+            if server is not None and server.poll() is None:
+                server.terminate()
+                try:
+                    server.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    server.kill()
+                    server.wait(timeout=10)
+            shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
