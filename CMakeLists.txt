@@ -2840,6 +2840,19 @@ if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC}")
     )
 endif()
 
+set(_RUNTIME_CONFIG_DIRECTORY_VALIDATION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_runtime_config_directory_validation.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_DIRECTORY_VALIDATION_TEST_SRC}")
+    add_executable(test_runtime_config_directory_validation
+        test/cpp/test_runtime_config_directory_validation.cpp
+    )
+    target_link_libraries(test_runtime_config_directory_validation PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RuntimeConfigDirectoryValidationTest CI ON
+        COMMAND test_runtime_config_directory_validation
+    )
+endif()
+
 set(_CONFIG_DEFAULT_SOURCE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_default_source.cpp")
 if(BUILD_TESTING AND EXISTS "${_CONFIG_DEFAULT_SOURCE_TEST_SRC}")
     add_executable(test_config_default_source test/cpp/test_config_default_source.cpp)

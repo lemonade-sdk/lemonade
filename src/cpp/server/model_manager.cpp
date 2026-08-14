@@ -1230,23 +1230,37 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         return discovered;
     }
 
-    if (!fs::exists(extra_models_dir_)) {
-        // Directory doesn't exist, return empty
+    const fs::path search_path = path_from_utf8(extra_models_dir_);
+    std::error_code status_ec;
+    const fs::file_status status = fs::status(search_path, status_ec);
+    if (status_ec) {
+        if (status_ec == std::errc::no_such_file_or_directory) {
+            return discovered;
+        }
+        LOG(ERROR, "ModelManager") << "Cannot inspect extra models directory "
+                                   << extra_models_dir_ << ": "
+                                   << status_ec.message() << std::endl;
+        return discovered;
+    }
+    if (!fs::is_directory(status)) {
+        // A missing path is allowed because the directory watcher may observe it
+        // later. A non-directory cannot contribute models, but must not affect
+        // the registered model cache either.
         return discovered;
     }
 
-    std::string search_dir = extra_models_dir_;
-
-    LOG(INFO, "ModelManager") << "Scanning for GGUF models in: " << search_dir << std::endl;
+    LOG(INFO, "ModelManager") << "Scanning for GGUF models in: " << extra_models_dir_ << std::endl;
 
     // Track which directories we've processed (for multimodal/multi-shard detection)
-    std::map<std::string, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
+    std::map<fs::path, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
     std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
 
     // Recursively find all .gguf files
     try {
-        for (const auto& entry : fs::recursive_directory_iterator(search_dir)) {
-            if (!entry.is_regular_file()) continue;
+        for (const auto& entry : fs::recursive_directory_iterator(
+                 search_path, fs::directory_options::skip_permission_denied)) {
+            std::error_code entry_ec;
+            if (!entry.is_regular_file(entry_ec)) continue;
 
             std::string filename = entry.path().filename().string();
 
@@ -1255,16 +1269,16 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             fs::path parent_dir = entry.path().parent_path();
 
             // Check if this file is directly in the search directory or in a subdirectory
-            if (parent_dir == fs::path(search_dir)) {
+            if (parent_dir == search_path) {
                 // Standalone file in the root of search directory
                 standalone_files.push_back(entry.path());
             } else {
                 // File in a subdirectory - group by parent directory
-                dirs_with_gguf[parent_dir.string()].push_back(entry.path());
+                dirs_with_gguf[parent_dir].push_back(entry.path());
             }
         }
     } catch (const std::exception& e) {
-        LOG(ERROR, "ModelManager") << "Error scanning directory " << search_dir << ": " << e.what() << std::endl;
+        LOG(ERROR, "ModelManager") << "Error scanning directory " << extra_models_dir_ << ": " << e.what() << std::endl;
         return discovered;
     }
 
@@ -1295,7 +1309,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     // Process directories (multimodal and multi-shard models)
     for (const auto& [dir_path, gguf_files] : dirs_with_gguf) {
         if (gguf_files.empty()) continue;
-        discover_extra_models_in_directory(fs::path(dir_path), gguf_files, discovered);
+        discover_extra_models_in_directory(dir_path, gguf_files, discovered);
     }
 
     LOG(INFO, "ModelManager") << "Discovered " << discovered.size() << " models from extra directory" << std::endl;
@@ -2261,7 +2275,15 @@ void ModelManager::build_cache() {
     // canonical IDs from any user. or builtin. records that may share a bare
     // name. Bare-name collisions are surfaced via the friendly-name layer in
     // rebuild_public_model_aliases_locked, not by dropping records here.
-    auto discovered_models = discover_extra_models();
+    std::map<std::string, ModelInfo> discovered_models;
+    try {
+        discovered_models = discover_extra_models();
+    } catch (const std::exception& e) {
+        // External discovery is additive. A filesystem failure in that optional
+        // source must never make built-in or user-registered models disappear.
+        LOG(ERROR, "ModelManager") << "Extra model discovery failed; keeping registered models: "
+                                   << e.what() << std::endl;
+    }
     for (const auto& [name, info] : discovered_models) {
         if (all_models.find(name) != all_models.end()) {
             LOG(INFO, "ModelManager") << "Warning: Discovered model '" << name

@@ -160,6 +160,8 @@ extra.my_custom_model.gguf              Yes         llamacpp
 
 > Tip: `extra_models_dir` can be a relative path to any location within your app's package, or any absolute path on your user's system. It searches recursively and can import many GGUFs from a single directory tree.
 
+> Note: When an existing `extra_models_dir` is set at runtime, the path must be a readable directory for the `lemond` process. Permission or I/O failures are rejected instead of replacing the current model view. A path that does not exist yet is allowed and can be picked up later by the directory watcher.
+
 ## Customization
 
 ### Changing the Built-In Models List
