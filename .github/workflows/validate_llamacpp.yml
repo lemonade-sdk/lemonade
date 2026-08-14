@@ -376,24 +376,12 @@ jobs:
 
           $script | python -
 
-      - name: Cache FetchContent dependencies
-        # Shared with validate_sdcpp, which restores this key read-only: both
-        # configure the same preset with the same options, so their _deps are
-        # interchangeable and one entry serves both instead of two.
-        # vs2026 marker: VS 2022-built _deps are generator-incompatible with the
-        # VS 2026 configure. Bump it to abandon an entry CMake accepts but
-        # cannot build from — cache keys are immutable, so this is the only
-        # in-repo way to invalidate one.
-        uses: actions/cache@v5
-        with:
-          path: build/_deps
-          key: fetchcontent-validate-vs2026-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake') }}
-          restore-keys: fetchcontent-validate-vs2026-
-
       - name: Build lemond
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
+          Write-Host "Building Lemonade server binaries..." -ForegroundColor Cyan
+          if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
           # The validation drives lemond over HTTP and never invokes the CLI,
           # so lemond is the only target it needs.
           cmake --preset vs18 -DBUILD_WEB_APP=OFF
