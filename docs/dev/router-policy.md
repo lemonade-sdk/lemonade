@@ -157,8 +157,8 @@ and every entry's `model` must be one of `components`:
 Register the policy like any collection — from the CLI:
 
 ```bash
-lemonade pull ./my-router.json            # register (idempotent: re-pull to update)
-lemonade pull ./my-router.json --dry-run  # validate only; nothing is registered
+lemonade import ./my-router.json            # register (idempotent: re-import to update)
+lemonade import ./my-router.json --dry-run  # validate only; nothing is registered
 ```
 
 `--dry-run` runs the same structural checks as registration plus the

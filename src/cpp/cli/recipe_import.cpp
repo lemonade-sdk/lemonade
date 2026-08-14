@@ -408,8 +408,7 @@ int validate_model_json_file(lemonade::LemonadeClient& client,
 
 int import_model_from_json_file(lemonade::LemonadeClient& client,
                                 const std::string& json_path,
-                                std::string* imported_model_out,
-                                bool upgrade) {
+                                std::string* imported_model_out) {
     nlohmann::json model_data;
 
     std::ifstream file(json_path);
@@ -434,7 +433,7 @@ int import_model_from_json_file(lemonade::LemonadeClient& client,
         return 1;
     }
 
-    return client.pull_model(model_data, "", upgrade);
+    return client.pull_model(model_data);
 }
 
 bool list_remote_recipe_files(const std::string& repo_dir,

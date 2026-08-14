@@ -19,7 +19,6 @@
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <string>
-#include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -331,9 +330,22 @@ static bool handle_backend_operation(const std::string& spec, const std::string&
 
 static int handle_import_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (!config.model.empty()) {
-        return lemon_cli::import_model_from_json_file(client, config.model);
+        if (config.dry_run) {
+            return lemon_cli::validate_model_json_file(client, config.model);
+        }
+        std::string imported_model;
+        const int res = lemon_cli::import_model_from_json_file(
+            client, config.model, &imported_model);
+        if (res == 0 && !config.alias_name.empty() && !imported_model.empty()) {
+            client.alias_add(config.alias_name, imported_model);
+        }
+        return res;
     }
 
+    if (config.dry_run || !config.alias_name.empty()) {
+        std::cerr << "Error: --dry-run and --alias require a JSON file argument." << std::endl;
+        return 1;
+    }
     return lemon_cli::import_remote_recipe(client, config.repo_dir, config.recipe_file,
                                            config.skip_prompt, config.yes, nullptr, true);
 }
@@ -403,30 +415,11 @@ static bool has_manual_pull_options(const CliConfig& config) {
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (lemon_cli::looks_like_json_file_argument(config.model)) {
-        if (has_manual_pull_options(config)) {
-            std::cerr << "Error: manual configuration options (--checkpoint, --recipe, "
-                         "--label, --components) cannot be combined with a JSON file argument."
-                      << std::endl;
-            return 1;
-        }
-        std::error_code ec;
-        if (!std::filesystem::is_regular_file(config.model, ec)) {
-            std::cerr << "Error: JSON file not found: '" << config.model << "'" << std::endl;
-            return 1;
-        }
-        if (config.dry_run) {
-            return lemon_cli::validate_model_json_file(client, config.model);
-        }
-        std::string imported_model;
-        const int res = lemon_cli::import_model_from_json_file(
-            client, config.model, &imported_model, /*upgrade=*/true);
-        if (res == 0 && !config.alias_name.empty() && !imported_model.empty()) {
-            client.alias_add(config.alias_name, imported_model);
-        }
-        return res;
-    }
-    if (config.dry_run) {
-        std::cerr << "Error: --dry-run requires a local .json file argument." << std::endl;
+        // Local files are import's job — redirect instead of silently falling
+        // through to a registry lookup that cannot succeed.
+        std::cerr << "Error: '" << config.model << "' looks like a local JSON file. "
+                     "Use: lemonade import " << config.model << " [--dry-run] [--alias ALIAS]"
+                  << std::endl;
         return 1;
     }
     if (has_manual_pull_options(config)) {
@@ -1361,13 +1354,10 @@ int main(int argc, char* argv[]) {
 
     // Pull options
     pull_cmd->add_option("model", config.model,
-        "Registered model name, registry checkpoint (owner/repo[:variant]), model URL, "
-        "or path to a local .json model/policy file (e.g. a collection.router policy)")
+        "Registered model name, registry checkpoint (owner/repo[:variant]), or model URL. "
+        "For a local .json model/policy file, use 'lemonade import'.")
         ->required()
-        ->type_name("MODEL_OR_CHECKPOINT_OR_FILE");
-    pull_cmd->add_flag("--dry-run", config.dry_run,
-        "With a .json file argument: validate without registering (structural checks, "
-        "plus the server-side policy parse for collection.router files)");
+        ->type_name("MODEL_OR_CHECKPOINT");
     CLI::Option* pull_source_opt =
         pull_cmd->add_option("--source", config.model_source,
             "Remote registry for checkpoint pulls: huggingface or modelscope "
@@ -1413,7 +1403,15 @@ int main(int argc, char* argv[]) {
     CLI::App* alias_list_cmd = alias_cmd->add_subcommand("list", "List registered model aliases")->group("Subcommands");
 
     // Import options
-    import_cmd->add_option("json_file", config.model, "Path to JSON file")->type_name("JSON_FILE");
+    import_cmd->add_option("json_file", config.model,
+        "Path to a JSON model/policy file (e.g. a collection.router policy)")
+        ->type_name("JSON_FILE");
+    import_cmd->add_flag("--dry-run", config.dry_run,
+        "Validate the JSON file without registering (structural checks, plus the "
+        "server-side policy parse for collection.router files)");
+    import_cmd->add_option("--alias", config.alias_name,
+        "Optional alias to register for the imported model")
+        ->type_name("ALIAS");
     import_cmd->add_option("--directory", config.repo_dir,
         "Remote recipe directory to query (e.g., coding-agents)")->type_name("DIR");
     import_cmd->add_option("--recipe-file", config.recipe_file,
