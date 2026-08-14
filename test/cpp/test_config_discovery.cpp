@@ -34,11 +34,16 @@ int main() {
     config.set({{"broadcast", true}});
     check(config.broadcast() == true, "broadcast updated to true");
 
-    // 2. Test legacy no_broadcast alias mapping
+    // 2. Test legacy no_broadcast alias mapping via set()
     config.set({{"no_broadcast", true}});
     check(config.broadcast() == false, "legacy no_broadcast: true sets broadcast to false");
+    check(config.snapshot()["broadcast"] == false, "snapshot contains broadcast: false");
+    check(!config.snapshot().contains("no_broadcast"), "snapshot does not contain legacy no_broadcast");
+
     config.set({{"no_broadcast", false}});
     check(config.broadcast() == true, "legacy no_broadcast: false sets broadcast to true");
+    check(config.snapshot()["broadcast"] == true, "snapshot contains broadcast: true");
+    check(!config.snapshot().contains("no_broadcast"), "snapshot does not contain legacy no_broadcast");
 
     // 3. Validation: rejects non-boolean values
     bool threw_invalid_broadcast = false;
@@ -94,6 +99,29 @@ int main() {
     check(server_parser_3.parse(1, const_cast<char**>(argv3)) == 0, "CLIParser parses default invocation");
     check(!server_parser_3.get_config().broadcast.has_value(),
           "default invocation leaves broadcast unset (nullopt)");
+
+    // 8. Test legacy constructor JSON migration
+    json legacy_cfg_true = {
+        {"config_version", 2},
+        {"port", 13305},
+        {"host", "localhost"},
+        {"no_broadcast", true}
+    };
+    RuntimeConfig config_legacy_true(legacy_cfg_true);
+    check(config_legacy_true.broadcast() == false, "legacy no_broadcast: true migrates to broadcast: false in ctor");
+    check(config_legacy_true.snapshot()["broadcast"] == false, "snapshot has broadcast: false");
+    check(!config_legacy_true.snapshot().contains("no_broadcast"), "legacy no_broadcast removed from snapshot");
+
+    json legacy_cfg_false = {
+        {"config_version", 2},
+        {"port", 13305},
+        {"host", "localhost"},
+        {"no_broadcast", false}
+    };
+    RuntimeConfig config_legacy_false(legacy_cfg_false);
+    check(config_legacy_false.broadcast() == true, "legacy no_broadcast: false migrates to broadcast: true in ctor");
+    check(config_legacy_false.snapshot()["broadcast"] == true, "snapshot has broadcast: true");
+    check(!config_legacy_false.snapshot().contains("no_broadcast"), "legacy no_broadcast removed from snapshot");
 
     return test_helpers::report_results("C++ config/discovery");
 }

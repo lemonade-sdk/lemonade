@@ -134,6 +134,18 @@ json ConfigFile::load(const std::string& cache_dir) {
     // Apply migrations if the config is older than the current version.
     // The inline config_migrate() handles version bumping and field removal.
     bool migrated = config_migrate(merged, defaults, original_version);
+
+    // Handle legacy no_broadcast key migration
+    if (loaded.contains("no_broadcast")) {
+        if (!loaded.contains("broadcast") && loaded["no_broadcast"].is_boolean()) {
+            merged["broadcast"] = !loaded["no_broadcast"].get<bool>();
+            LOG(INFO) << "Migrating config: no_broadcast=" << loaded["no_broadcast"]
+                      << " -> broadcast=" << merged["broadcast"] << std::endl;
+        }
+        merged.erase("no_broadcast");
+        migrated = true;
+    }
+
     if (migrated) {
         // Log migration details for user visibility.
         if (original_version < config_get_version(defaults)) {

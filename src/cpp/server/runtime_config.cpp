@@ -114,6 +114,17 @@ static std::pair<json, std::string> normalize_config_set_changes(const json& cha
         LOG(WARNING) << message << std::endl;
     }
 
+    // Migrate legacy no_broadcast to broadcast
+    if (normalized.contains("no_broadcast")) {
+        if (!normalized["no_broadcast"].is_boolean()) {
+            throw std::invalid_argument("'no_broadcast' must be a boolean");
+        }
+        if (!normalized.contains("broadcast")) {
+            normalized["broadcast"] = !normalized["no_broadcast"].get<bool>();
+        }
+        normalized.erase("no_broadcast");
+    }
+
     // Promote flat backend keys (e.g. "vllm_args", "llamacpp_backend") into
     // their nested form ("vllm": {"args": ...}). Backend CLI flags and docs use
     // the flat underscore form, but config.json stores backend options nested.
@@ -241,7 +252,13 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
 
 RuntimeConfig::RuntimeConfig(const json& config)
     : config_(config) {
-    // Config is expected to already have defaults merged in (by ConfigFile::load).
+    // Migrate legacy no_broadcast if present
+    if (config_.contains("no_broadcast")) {
+        if (!config_.contains("broadcast") && config_["no_broadcast"].is_boolean()) {
+            config_["broadcast"] = !config_["no_broadcast"].get<bool>();
+        }
+        config_.erase("no_broadcast");
+    }
 
     // In CI mode, override log level to debug for easier diagnostics
     const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
