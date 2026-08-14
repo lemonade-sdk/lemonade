@@ -31,10 +31,9 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"npu", {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
-    /*default_labels*/  {},
+    /*supported_modes*/ {"chat", "embeddings", "reranking", "transcription"},
     /*required_checkpoints*/ {"main"},
-    /*default_classification*/ "chat",
-    /*modality*/        "Text generation",
+    /*default_capabilities*/ {},
     /*experimental*/    false,
     /*web_display_name*/ "FastFlowLM NPU",
     /*rocm_channels*/   {},

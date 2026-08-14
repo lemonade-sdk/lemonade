@@ -141,30 +141,6 @@ static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 static constexpr const char EXTRA_MODEL_RECIPE[] = "llamacpp";
 static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
 
-// The deployment ModelType a model actually serves.
-//
-// `classification` is the one label that does not mean what it says on most
-// backends: /v1/classify is served only by onnxruntime, so typing any other
-// backend CLASSIFICATION would send run_classifier to Router::classify() and hit
-// an unsupported-capability error. Drop the claim there so the model stays an
-// LLM, usable as an LLM-as-classifier over chat.
-static ModelType get_deployment_model_type(const std::string& recipe,
-                                           const std::vector<std::string>& labels) {
-    ModelType type = get_model_type_from_labels(labels);
-    if (type != ModelType::CLASSIFICATION ||
-        lemon::backends::default_classification_for(recipe) == "classification") {
-        return type;
-    }
-
-    std::vector<std::string> non_classification;
-    for (const auto& label : labels) {
-        if (label != "classification" && label != "classifier") {
-            non_classification.push_back(label);
-        }
-    }
-    return get_model_type_from_labels(non_classification);
-}
-
 // Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
 // include their canonical prefix. This helper returns the canonical ID for any
 // cache key, which is the form used by recipe_options.json on disk.
@@ -1394,7 +1370,7 @@ void ModelManager::discover_extra_models_in_directory(
                 info.resolved_paths["mmproj"] = mmproj_file.string();
                 info.labels.push_back("vision");
             }
-            info.type = get_deployment_model_type(info.recipe, info.labels);
+            info.type = get_model_type_from_labels(info.labels);
 
             // Keep the old folder name working in requests without listing it.
             if (path == main_model_path) {
@@ -1417,7 +1393,7 @@ void ModelManager::discover_extra_models_in_directory(
             info.resolved_paths["mmproj"] = mmproj_file.string();
             info.labels.push_back("vision");
         }
-        info.type = get_deployment_model_type(info.recipe, info.labels);
+        info.type = get_model_type_from_labels(info.labels);
         add_extra_model(discovered, dir_name, dir_path, std::move(info));
     }
 }
@@ -2025,8 +2001,14 @@ void ModelManager::build_cache() {
             json_recipe_options[key] = value["recipe_options"];
         }
 
+        // Built-ins declare their mode in server_models.json, so this normally
+        // changes nothing — but it is what makes "an LLM always carries `chat`"
+        // hold for every ingest path rather than only for the ones that happen
+        // to call it.
+        lemon::backends::ensure_deployment_label(info.labels, info.recipe);
+
         // Populate type and device fields (multi-model support)
-        info.type = get_deployment_model_type(info.recipe, info.labels);
+        info.type = get_model_type_from_labels(info.labels);
         info.device = device_type_for_recipe(info.recipe);
 
         try {
@@ -2089,7 +2071,7 @@ void ModelManager::build_cache() {
         }
 
         // Populate type and device fields (multi-model support)
-        info.type = get_deployment_model_type(info.recipe, info.labels);
+        info.type = get_model_type_from_labels(info.labels);
         info.device = device_type_for_recipe(info.recipe);
 
         try {
@@ -2318,7 +2300,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     lemon::backends::ensure_deployment_label(info.labels, info.recipe);
 
     // Populate type and device fields (multi-model support)
-    info.type = get_deployment_model_type(info.recipe, info.labels);
+    info.type = get_model_type_from_labels(info.labels);
     info.device = device_type_for_recipe(info.recipe);
 
     resolve_all_model_paths(info);
@@ -2847,28 +2829,50 @@ size_t ModelManager::count_cloud_models(const std::string& provider) const {
                          });
 }
 
+static std::string quote_join(const std::vector<std::string>& items) {
+    std::string out;
+    for (const auto& item : items) {
+        if (!out.empty()) out += ", ";
+        out += "'" + item + "'";
+    }
+    return out;
+}
+
+// Why a definition naming an unservable mode is refused, phrased for the caller
+// that typed it. Shared so /pull and collection validation reject in the same
+// words for the same reason.
+static std::string describe_unservable_modes(const std::string& model_name,
+                                             const std::string& recipe,
+                                             const std::vector<std::string>& modes) {
+    return "Model '" + model_name + "': recipe '" + recipe + "' cannot serve " +
+           quote_join(modes) + ". Supported: " +
+           quote_join(lemon::backends::supported_modes_for(recipe)) +
+           ". Omit the label to deploy as '" +
+           lemon::backends::default_mode_for(recipe) + "'.";
+}
+
 // The label set a user or inline model definition normalizes to. Kept in one
 // place so model registration (register_user_model) and collection.router
 // capability validation (validate_collection_request) derive the same type for
-// the same definition: explicit labels + legacy capability flags + the backend
-// descriptor's default labels (e.g. sd-cpp -> "image", whispercpp -> "transcription").
-static std::set<std::string> normalized_definition_labels(const json& model_data) {
+// the same definition: explicit labels + the capability booleans + the recipe's
+// default deployment mode. `dropped_modes`, when given, receives the mode claims
+// the recipe cannot serve, so the caller can report what normalization changed.
+static std::set<std::string> normalized_definition_labels(
+    const json& model_data, std::vector<std::string>* dropped_modes = nullptr) {
     const std::string recipe = model_data.value("recipe", std::string());
-    std::set<std::string> labels = {"custom"};
-    std::vector<std::string> extra = model_data.value("labels", std::vector<std::string>{});
-    labels.insert(extra.begin(), extra.end());
-    if (model_data.value("reasoning", false)) labels.insert("reasoning");
-    if (model_data.value("vision", false)) labels.insert("vision");
-    if (model_data.value("embedding", false)) labels.insert("embeddings");
-    if (model_data.value("reranking", false)) labels.insert("reranking");
-    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
-        for (const auto& label : desc->default_labels) labels.insert(label);
+    std::vector<std::string> labels = {"custom"};
+    for (const auto& label : model_data.value("labels", std::vector<std::string>{})) {
+        add_label_once(labels, label);
     }
-    ModelType mode = ModelType::LLM;
-    if (!find_deployment_mode(labels, mode)) {
-        labels.insert(lemon::backends::default_classification_for(recipe));
-    }
-    return labels;
+    if (model_data.value("reasoning", false)) add_label_once(labels, "reasoning");
+    if (model_data.value("vision", false)) add_label_once(labels, "vision");
+    if (model_data.value("embedding", false)) add_label_once(labels, "embeddings");
+    if (model_data.value("reranking", false)) add_label_once(labels, "reranking");
+
+    std::vector<std::string> dropped =
+        lemon::backends::ensure_deployment_label(labels, recipe);
+    if (dropped_modes != nullptr) *dropped_modes = std::move(dropped);
+    return std::set<std::string>(labels.begin(), labels.end());
 }
 
 // Whether the persisted user-model entry under `key` is a router collection.
@@ -2887,6 +2891,8 @@ static bool user_entry_is_router_collection(const json& user_models,
 void ModelManager::register_user_model(const std::string& model_name,
                                       const json& model_data,
                                       const std::string& source) {
+    const std::string recipe = model_data.value("recipe", std::string());
+
     // Remove "user." prefix if present
     std::string clean_name = model_name;
     if (is_user_model_name(clean_name)) {
@@ -2900,11 +2906,17 @@ void ModelManager::register_user_model(const std::string& model_name,
             model_entry[prop] = model_data[prop];
         }
     }
-    std::set<std::string> labels = normalized_definition_labels(model_data);
-
-    // `recipe` already copied into `model_entry` by the USER_DEFINED_MODEL_PROPS
-    // loop above; this local is just for the collection handling below.
-    std::string recipe = model_data.value("recipe", "");
+    // Every registration path funnels through here — direct registration, an
+    // imported collection's inline components, re-registration — so this is the
+    // one gate that refuses a mode the backend cannot serve. Loading an
+    // already-persisted entry does not come through here, and is normalized
+    // instead, so an entry written by an older version still loads.
+    std::vector<std::string> dropped_modes;
+    std::set<std::string> labels = normalized_definition_labels(model_data, &dropped_modes);
+    if (!dropped_modes.empty()) {
+        throw InvalidModelDefinitionError(
+            describe_unservable_modes(model_name, recipe, dropped_modes));
+    }
 
     model_entry["labels"] = labels;
     model_entry["suggested"] = true; // Always set suggested=true for user models
@@ -4911,6 +4923,17 @@ std::optional<std::string> ModelManager::validate_collection_request(
                        "' has an incomplete definition in 'models' (a recipe and "
                        "at least one checkpoint are required).";
             }
+            // register_user_model() would throw on this once the import reached
+            // registration, leaving a partly-imported collection behind. Report
+            // it here, where the import can still be refused whole.
+            if (!model_exists(bare) && def != nullptr) {
+                std::vector<std::string> unservable;
+                normalized_definition_labels(*def, &unservable);
+                if (!unservable.empty()) {
+                    return describe_unservable_modes(
+                        component_name, def->value("recipe", std::string()), unservable);
+                }
+            }
         } else if (!model_exists(component_name)) {
             return "Collection component not registered: '" + component_name +
                    "'. Pull or register it before referencing it in a collection.";
@@ -4942,13 +4965,11 @@ std::optional<std::string> ModelManager::validate_collection_request(
                 if (!def) {
                     return std::nullopt;
                 }
-                // Derive the type exactly as register_user_model() +
-                // get_deployment_model_type() would once this inline definition
-                // is registered, so validation and runtime cannot disagree (e.g.
-                // a label-less sd-cpp model is IMAGE, not LLM).
+                // Derive the type exactly as register_user_model() would once
+                // this inline definition is registered, so validation and
+                // runtime cannot disagree.
                 std::set<std::string> label_set = normalized_definition_labels(*def);
-                return get_deployment_model_type(
-                    def->value("recipe", std::string()),
+                return get_model_type_from_labels(
                     std::vector<std::string>(label_set.begin(), label_set.end()));
             }
         };

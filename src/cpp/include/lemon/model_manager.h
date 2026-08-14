@@ -40,6 +40,19 @@ public:
 };
 constexpr const char* kUnknownModelErrorCode = "unknown_model";
 
+// Thrown when a definition names a deployment mode its recipe's backend cannot
+// serve. Registering it would list the model as something it is not and then
+// fail at inference time. A definition naming *no* mode is not an error: the
+// recipe's default is stamped instead.
+//
+// CONTRACT: the /pull HTTP handler catches this type and returns 400. Loading an
+// already-persisted entry does not go through registration, so an entry written
+// by an older version is still normalized rather than blocking startup.
+class InvalidModelDefinitionError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 // Progress information for download operations
 struct DownloadProgress {
     std::string file;           // Current file being downloaded

@@ -66,6 +66,7 @@ namespace fastflowlm {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();
+constexpr uint32_t capabilities() { return capability_mask_of<FastFlowLMServer>(); }
 }  // namespace fastflowlm
 }  // namespace backends
 }  // namespace lemon

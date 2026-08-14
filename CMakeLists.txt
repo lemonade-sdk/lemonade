@@ -1032,6 +1032,7 @@ set(LEMON_DESCRIPTOR_INCLUDES "")
 set(LEMON_DESCRIPTOR_ENTRIES "")
 set(LEMON_FACTORY_INCLUDES "")
 set(LEMON_FACTORY_ENTRIES "")
+set(LEMON_CAPABILITY_ENTRIES "")
 # The data registry (descriptors, header-only) links into both binaries; the
 # factory registry + per-backend server sources are server-only.
 # Absolute paths so the CLI subdirectory can reuse LEMON_BACKEND_DESCRIPTOR_SOURCES.
@@ -1060,6 +1061,8 @@ foreach(_backend_entry ${LEMON_BACKENDS})
         "#include \"lemon/backends/${_backend_stem}/${_backend_stem}_server.h\"\n")
     string(APPEND LEMON_FACTORY_ENTRIES
         "        { &lemon::backends::${_backend_stem}::descriptor, &lemon::backends::${_backend_stem}::create, lemon::backends::${_backend_stem}::spec(), lemon::backends::${_backend_stem}::ops() },\n")
+    string(APPEND LEMON_CAPABILITY_ENTRIES
+        "        { &lemon::backends::${_backend_stem}::descriptor, lemon::backends::${_backend_stem}::capabilities() },\n")
 endforeach()
 
 configure_file(
@@ -1069,6 +1072,10 @@ configure_file(
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_factories_generated.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/include/backend_factories_generated.h
+    @ONLY)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_capabilities_generated.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/backend_capabilities_generated.h
     @ONLY)
 
 # lemond gets both descriptor data and factories; the CLI gets only the data
@@ -2380,6 +2387,31 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_TYPE_CLASSIFIER_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelTypeClassifierTest CI ON COMMAND test_model_type_classifier)
+endif()
+
+# Descriptor contract: every mode a backend advertises in `supported_modes` is
+# backed by a capability interface its server class implements. Compiles the
+# server class definitions (for the compile-time capability mask) but calls
+# nothing on them, so it links only the descriptor registry.
+set(_BACKEND_MODE_CONTRACT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_mode_contract.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
+    add_executable(test_backend_mode_contract
+        test/cpp/test_backend_mode_contract.cpp
+        ${LEMON_BACKEND_DESCRIPTOR_SOURCES}
+    )
+    target_include_directories(test_backend_mode_contract PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_backend_mode_contract PRIVATE
+        nlohmann_json::nlohmann_json
+        lemonade-httplib
+    )
+
+    include(CTest)
+    add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
 endif()
 
 # Job engine pure core: the `when`/`branch` expression evaluator + reference

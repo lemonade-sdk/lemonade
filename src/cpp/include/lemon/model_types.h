@@ -1,8 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace lemon {
@@ -171,6 +173,13 @@ inline bool find_deployment_mode(const Labels& labels, ModelType& out) {
         }
     }
     return false;
+}
+
+// Single-label form of find_deployment_mode(), for callers testing labels one at
+// a time. Allocates nothing.
+inline bool deployment_mode_of(std::string_view label, ModelType& out) {
+    const std::array<std::string_view, 1> one{label};
+    return find_deployment_mode(one, out);
 }
 
 // A label set that names no deployment mode stays usable as a chat model rather

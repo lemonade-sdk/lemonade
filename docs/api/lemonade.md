@@ -289,6 +289,25 @@ A model definition requires at least a `main` checkpoint. This can be either
 be specified with the `checkpoint` parameter, or a `main` key in the
 `checkpoints` dict.
 
+Each backend serves a fixed set of [deployment modes](openai.md#model-labels).
+Naming one the recipe cannot serve — whether through `labels` or through the
+`embedding` / `reranking` parameters — is rejected with `400` and nothing is
+registered:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{"model_name": "user.Clf", "recipe": "llamacpp",
+       "checkpoint": "example/model:Q4_K_M", "labels": ["classification"]}'
+```
+
+```json
+{"error": "Model 'user.Clf': recipe 'llamacpp' cannot serve 'classification'. Supported: 'chat', 'embeddings', 'reranking'. Omit the label to deploy as 'chat'."}
+```
+
+Omitting the deployment label entirely is always valid — the recipe's default is
+applied.
+
 Other checkpoint types may also be specified depending on the model type.
 This list is not exhaustive, and may change or grow over time as models
 and backends evolve:

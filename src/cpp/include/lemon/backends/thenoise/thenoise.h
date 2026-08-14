@@ -38,10 +38,9 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152"}}}, "Supported AMD ROCm iGPU families"},
     },
-    /*default_labels*/  {"image"},
+    /*supported_modes*/ {"image"},
     /*required_checkpoints*/ {"main"},  // text_encoder+vae validated together in load()
-    /*default_classification*/ "image",
-    /*modality*/        "Image generation",
+    /*default_capabilities*/ {},
     /*experimental*/    true,
     /*web_display_name*/ "thenoise",
     /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels

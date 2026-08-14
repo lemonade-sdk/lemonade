@@ -1,10 +1,16 @@
 """
-Registry invariant: every model in server_models.json declares a modality.
+Registry invariant: every model in server_models.json declares a deployment mode
+its backend can actually serve.
 
 A model's deployment mode (which backend endpoint it is routed to) comes from a
 single label. Nothing in the C++ ingest path can recover a missing one for a
 built-in model, and a model without it silently disappears from the chat model
 pickers, so it is checked here instead.
+
+The mode must also be one the recipe's backend serves. `supported_modes` in each
+backend descriptor is the same list the C++ registration path validates against;
+BackendModeContractTest proves that list matches the capability interfaces the
+backend implements.
 
 Run standalone: python test/test_server_models_labels.py
 """
@@ -35,19 +41,20 @@ DEPLOYMENT_LABELS = {
     "3d": "MESH",
 }
 
-DESCRIPTOR_FIELD = re.compile(r"/\*(recipe|default_classification)\*/\s*\"([^\"]*)\"")
+RECIPE_FIELD = re.compile(r"/\*recipe\*/\s*\"([^\"]*)\"")
+SUPPORTED_MODES_FIELD = re.compile(r"/\*supported_modes\*/\s*\{([^}]*)\}")
 
 
-def load_recipe_classifications():
-    """Map each recipe to its descriptor's default_classification."""
-    classifications = {}
+def load_recipe_modes():
+    """Map each recipe to the deployment modes its backend descriptor declares."""
+    recipe_modes = {}
     for header in sorted(BACKENDS_DIR.glob("*/*.h")):
-        fields = dict(DESCRIPTOR_FIELD.findall(header.read_text(encoding="utf-8")))
-        recipe = fields.get("recipe")
-        classification = fields.get("default_classification")
-        if recipe and classification:
-            classifications[recipe] = classification
-    return classifications
+        text = header.read_text(encoding="utf-8")
+        recipe = RECIPE_FIELD.search(text)
+        modes = SUPPORTED_MODES_FIELD.search(text)
+        if recipe and modes:
+            recipe_modes[recipe.group(1)] = re.findall(r"\"([^\"]+)\"", modes.group(1))
+    return recipe_modes
 
 
 def check_label_table_is_current():
@@ -64,20 +71,19 @@ def check_label_table_is_current():
     return []
 
 
-def check_models(models, recipe_classifications):
+def check_models(models, recipe_modes):
     errors = []
     for name, entry in sorted(models.items()):
         labels = entry.get("labels", [])
         recipe = entry.get("recipe", "")
-        modes = {
-            DEPLOYMENT_LABELS[label] for label in labels if label in DEPLOYMENT_LABELS
-        }
+        declared = [label for label in labels if label in DEPLOYMENT_LABELS]
+        modes = {DEPLOYMENT_LABELS[label] for label in declared}
 
         if not modes:
-            expected = recipe_classifications.get(recipe, "chat")
+            supported = recipe_modes.get(recipe) or ["chat"]
             errors.append(
                 f"{name}: no modality label. Recipe '{recipe}' deploys as "
-                f"'{expected}' — add it to the model's \"labels\" array."
+                f"'{supported[0]}' — add it to the model's \"labels\" array."
             )
             continue
 
@@ -88,29 +94,29 @@ def check_models(models, recipe_classifications):
             )
             continue
 
-        # A backend that cannot chat overrides the model's own labels at load
-        # time, so a mismatch here means the registry advertises an endpoint the
-        # model will never serve.
-        classification = recipe_classifications.get(recipe)
-        if classification and classification != "chat":
-            expected_mode = DEPLOYMENT_LABELS[classification]
-            if expected_mode not in modes:
-                errors.append(
-                    f"{name}: recipe '{recipe}' always deploys as "
-                    f"'{classification}', but the labels name {sorted(modes)}."
-                )
+        # Registration rejects a mode the backend cannot serve, so a built-in
+        # carrying one would advertise an endpoint it can never answer.
+        supported = recipe_modes.get(recipe)
+        if supported is None:
+            continue
+        unservable = [label for label in declared if label not in supported]
+        if unservable:
+            errors.append(
+                f"{name}: recipe '{recipe}' cannot serve {sorted(unservable)}; "
+                f"it supports {supported}."
+            )
     return errors
 
 
 def main():
     models = json.loads(SERVER_MODELS.read_text(encoding="utf-8"))
-    recipe_classifications = load_recipe_classifications()
-    if not recipe_classifications:
+    recipe_modes = load_recipe_modes()
+    if not recipe_modes:
         print(f"FAIL: no backend descriptors found under {BACKENDS_DIR}")
         return 1
 
     errors = check_label_table_is_current()
-    errors += check_models(models, recipe_classifications)
+    errors += check_models(models, recipe_modes)
 
     if errors:
         print(f"FAIL: {len(errors)} problem(s) in {SERVER_MODELS.name}\n")
