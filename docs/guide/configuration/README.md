@@ -80,7 +80,6 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "cpu_args": "",
     "cpu_bin": "builtin"
   },
-  "no_broadcast": false,
   "no_fetch_executables": false,
   "offline": false,
   "onnxruntime": {
