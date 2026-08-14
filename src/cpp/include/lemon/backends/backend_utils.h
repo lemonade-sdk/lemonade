@@ -159,6 +159,22 @@ namespace lemon::backends {
         /** Directory holding the lemonade-managed ROCm wheel venv for arch/version. */
         static std::string get_therock_wheel_dir(const std::string& arch, const std::string& version);
 
+        /** True for a concrete gfx target (e.g. gfx1151, gfx90a) that maps to a
+         *  rocm-sdk-device wheel; false for family placeholders like gfx110X,
+         *  which have no device wheel and fall back to the tarball. Exposed for
+         *  unit testing. */
+        static bool is_concrete_gfx_arch(const std::string& arch);
+
+        /** Parse a pip "Downloading <name> (<size>)" progress line. On a match,
+         *  sets filename to the wheel's basename and bytes_total to the parsed
+         *  size (0 when the size is absent or unparseable) and returns true;
+         *  returns false when the line is not a pip download line. pip prints
+         *  units as kB/MB/GB (uppercase), so matching is case-insensitive.
+         *  Exposed for unit testing. */
+        static bool parse_pip_download_line(const std::string& line,
+                                            std::string& filename,
+                                            size_t& bytes_total);
+
         /** Download and install TheRock ROCm tarball for the specified architecture (Linux only) */
         static void install_therock(const std::string& arch, const std::string& version,
                                    DownloadProgressCallback progress_cb = nullptr);
@@ -183,8 +199,7 @@ namespace lemon::backends {
          *  (';' on Windows, ':' elsewhere), converting each to an absolute path.
          *  LLVM paths must already be included in dirs (see
          *  get_therock_lib_paths). Returns "" for empty input. */
-        static std::string join_runtime_dirs(const std::vector<std::string>& dirs,
-                                             bool /*include_llvm*/);
+        static std::string join_runtime_dirs(const std::vector<std::string>& dirs);
 
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);

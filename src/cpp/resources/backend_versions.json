@@ -99,8 +99,6 @@
       "gfx120X"
     ],
     "url_mapping": {
-      "gfx908": "gfx90X-dcgpu",
-      "gfx90a": "gfx90X-dcgpu",
       "gfx942": "gfx94X-dcgpu",
       "gfx950": "gfx950-dcgpu",
       "gfx103X": "gfx103X-all",
