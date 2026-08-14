@@ -2817,9 +2817,15 @@ static std::string validate_option_value(const std::string& key,
                                          const nlohmann::json& expected,
                                          const nlohmann::json& value) {
     if (key == "ctx_size") {
+        // A literal above INT64_MAX parses as an unsigned and wraps on the way
+        // to int64_t, so 2^64-1 would arrive as -1 and read as "size it
+        // automatically". Rule it out before the conversion.
+        const bool fits_int64 = value.is_number_integer() &&
+            (!value.is_number_unsigned() ||
+             value.get<uint64_t>() <= static_cast<uint64_t>(INT64_MAX));
         // 0 is not a shorthand for anything here: only -1 auto-resolves, so a 0
         // reaches the backend verbatim and FastFlowLM and vLLM both reject it.
-        if (!value.is_number_integer() || value.get<int64_t>() < -1 || value == 0) {
+        if (!fits_int64 || value.get<int64_t>() < -1 || value == 0) {
             return "'ctx_size' must be a positive whole number, "
                    "or -1 to size it automatically";
         }
@@ -5308,7 +5314,9 @@ bool Server::parse_required_json_body(const httplib::Request& req,
     try {
         out = nlohmann::json::parse(req.body);
         return true;
-    } catch (const nlohmann::json::parse_error& e) {
+    } catch (const nlohmann::json::exception& e) {
+        // Not just parse_error: a numeric literal too large for a double raises
+        // out_of_range, which is a sibling type and would otherwise escape as a 500.
         res.status = 400;
         nlohmann::json error = {{"error", std::string("Invalid JSON in request body: ") + e.what()}};
         res.set_content(error.dump(), "application/json");
