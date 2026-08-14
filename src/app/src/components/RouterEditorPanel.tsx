@@ -1003,10 +1003,12 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
               </div>
               <label className="router-editor__default-model">
                 <span>Default Model <small>Used when no rule matches or evaluation fails.</small></span>
-                <select className="select" value={draft.defaultModel} onChange={event => setPatch({ defaultModel: event.target.value })}>
-                  <option value="">Select default</option>
-                  {draft.candidates.map(candidate => <option key={candidate} value={candidate}>{candidate}</option>)}
-                </select>
+                <RouterSelect
+                  value={draft.defaultModel}
+                  options={[{ value: '', label: 'Select default' }, ...draft.candidates.map(c => ({ value: c, label: c }))]}
+                  onChange={(val: string) => setPatch({ defaultModel: val })}
+                  ariaLabel="Default model"
+                />
               </label>
 
               <div className="router-editor__connections" aria-label="Connected model topology">
