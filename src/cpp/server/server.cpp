@@ -7017,10 +7017,16 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                     websocket_server_->start();
                 }
             }
-        } else if (key == "log_level") {
-            std::string level = config_->log_level();
-            LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
-            reconfigure_application_logging(level);
+        } else if (key == "log_level" || key == "log_file" || key == "log_max_file_size_mb" || key == "log_max_files") {
+            LogRotationConfig rot_cfg;
+            rot_cfg.file_mode = config_->log_file();
+            rot_cfg.max_file_size_mb = config_->log_max_file_size_mb();
+            rot_cfg.max_files = config_->log_max_files();
+            LOG(INFO, "Server") << "Logging configuration updated (level=" << config_->log_level()
+                                << ", file=" << rot_cfg.file_mode
+                                << ", max_size=" << rot_cfg.max_file_size_mb << "MB"
+                                << ", max_files=" << rot_cfg.max_files << ")" << std::endl;
+            reconfigure_application_logging(config_->log_level(), rot_cfg);
         } else if (key == "global_timeout") {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
