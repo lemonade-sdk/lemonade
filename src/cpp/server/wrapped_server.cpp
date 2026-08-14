@@ -695,8 +695,7 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
 
 json WrappedServer::forward_multipart_request(const std::string& endpoint,
                                                const std::vector<utils::MultipartField>& fields,
-                                               long timeout_seconds,
-                                               bool allow_plain_text_success) {
+                                               long timeout_seconds) {
     if (!is_backend_alive()) {
         if (was_watchdog_triggered() || has_backend_process_exited()) {
             if (!was_watchdog_triggered()) {
@@ -720,22 +719,7 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
         note_backend_activity();
 
         if (response.status_code == 200) {
-            try {
-                return json::parse(response.body);
-            } catch (const json::parse_error&) {
-                if (allow_plain_text_success) {
-                    return json{{"text", response.body}};
-                }
-
-                return ErrorResponse::create(
-                    server_name_ + " returned invalid JSON",
-                    ErrorType::BACKEND_ERROR,
-                    {
-                        {"status_code", response.status_code},
-                        {"response", response.body}
-                    }
-                );
-            }
+            return json::parse(response.body);
         } else {
             LOG(ERROR, "WrappedServer") << "Backend returned HTTP " << response.status_code
                       << " for multipart request: " << response.body << std::endl;

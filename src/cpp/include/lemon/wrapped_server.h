@@ -575,13 +575,10 @@ protected:
 
     json forward_get_request(const std::string& endpoint, long timeout_seconds = 0);
 
-    // Forward multipart form data to the wrapped server. Successful responses
-    // must be JSON unless allow_plain_text_success is explicitly enabled for
-    // endpoints that intentionally return raw text bodies.
+    // Forward multipart form data to the wrapped server
     json forward_multipart_request(const std::string& endpoint,
                                    const std::vector<utils::MultipartField>& fields,
-                                   long timeout_seconds = 0,
-                                   bool allow_plain_text_success = false);
+                                   long timeout_seconds = 0);
 
     // Validate that the process is running (platform-agnostic check)
     bool is_process_running() const;

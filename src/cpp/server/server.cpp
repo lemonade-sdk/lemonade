@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/audio_types.h"
 #include "lemon/error_types.h"
 #include <optional>
 #include "lemon/collection_orchestrator.h"
@@ -3970,13 +3971,10 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         }
 
         // Validate response format early
-        std::string response_format = request_json.value("response_format", "json");
+        std::string response_format =
+            request_json.value("response_format", lemon::audio::ResponseFormat::JSON);
 
-        if (response_format != "json" &&
-            response_format != "verbose_json" &&
-            response_format != "text" &&
-            response_format != "srt" &&
-            response_format != "vtt") {
+        if (!lemon::audio::is_supported_response_format(response_format)) {
             res.status = 400;
             nlohmann::json error = {{"error", {
                 {"message", "Unsupported response_format: " + response_format},
@@ -4042,9 +4040,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
             return;
         }
 
-        if ((response_format == "text" ||
-             response_format == "srt" ||
-             response_format == "vtt") &&
+        if (lemon::audio::is_plain_text_format(response_format) &&
             response.contains("text") &&
             response["text"].is_string()) {
             res.set_content(response["text"].get<std::string>(), "text/plain");

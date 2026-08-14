@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/audio_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/error_types.h"
@@ -338,6 +339,18 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
         );
     }
 
+    // FLM's transcription endpoint ignores response_format and always answers with
+    // the compact {model, text} JSON. Plain text can be derived from that; SRT and
+    // VTT cannot, because they need the per-segment timestamps FLM never returns.
+    const std::string requested_format = request.value("response_format", audio::ResponseFormat::JSON);
+    if (requested_format == audio::ResponseFormat::SRT ||
+        requested_format == audio::ResponseFormat::VTT) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("response_format '" + requested_format + "'",
+                                          "FLM transcription models (no segment timestamps)")
+        );
+    }
+
     try {
         if (!request.contains("file_data")) {
             throw std::runtime_error("Missing 'file_data' in request");
@@ -380,16 +393,9 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
             fields.push_back({"temperature", std::to_string(request["temperature"].get<double>()), "", ""});
         }
 
-        std::string response_format = request.value("response_format", "json");
-
-        return forward_multipart_request(
-            "/v1/audio/transcriptions",
-            fields,
-            0,
-            response_format == "text" ||
-            response_format == "srt" ||
-            response_format == "vtt"
-        );
+        // FLM always replies with JSON here, so the strict shared helper is correct:
+        // handle_audio_transcriptions() renders the "text" field for plain-text formats.
+        return forward_multipart_request("/v1/audio/transcriptions", fields);
 
     } catch (const std::exception& e) {
         return json{
