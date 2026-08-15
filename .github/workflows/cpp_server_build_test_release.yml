@@ -53,95 +53,10 @@ jobs:
           fetch-depth: 0
 
       - name: Install CMake if not available
-        shell: PowerShell
-        run: |
-          # Check if CMake is already installed
-          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
+        uses: ./.github/actions/install-cmake-windows
 
-          if (-not $cmakeInstalled) {
-              Write-Host "CMake not found, installing..." -ForegroundColor Yellow
-
-              # Download CMake installer
-              $cmakeVersion = "3.28.1"
-              $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
-              $cmakeInstaller = "cmake-installer.msi"
-
-              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller -UseBasicParsing
-
-              # Install CMake silently
-              Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
-
-              # Add CMake to PATH for this session AND future steps
-              $cmakePath = "C:\Program Files\CMake\bin"
-              $env:PATH = "$cmakePath;$env:PATH"
-
-              # Persist to GITHUB_PATH for future steps
-              echo $cmakePath >> $env:GITHUB_PATH
-
-              # Verify installation
-              cmake --version
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
-                  exit 1
-              }
-
-              Write-Host "CMake installed successfully and added to PATH!" -ForegroundColor Green
-          } else {
-              Write-Host "CMake is already installed:" -ForegroundColor Green
-              cmake --version
-          }
-
-      - name: Install WiX Toolset 5.0.2 (CLI)
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Write-Host "Downloading WiX Toolset 5.0.2 CLI..." -ForegroundColor Cyan
-          $wixUri = "https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi"
-          $msiPath = "$env:RUNNER_TEMP\wix-cli-x64.msi"
-
-          Invoke-WebRequest -UseBasicParsing -Uri $wixUri -OutFile $msiPath
-
-          Write-Host "Installing WiX Toolset 5.0.2 CLI..." -ForegroundColor Cyan
-          $p = Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$msiPath`"", "/qn", "/norestart") -PassThru -Wait
-          if ($p.ExitCode -ne 0) {
-            Write-Host "WiX installer exited with code $($p.ExitCode)" -ForegroundColor Red
-            exit $p.ExitCode
-          }
-
-      - name: Verify WiX installation
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          # WiX CLI MSI does not always add itself to PATH in non-interactive installs,
-          # so we locate it explicitly and then update PATH for subsequent steps.
-          $wixDirs = @(
-            "C:\Program Files\WiX Toolset v5.0\bin",
-            "C:\Program Files (x86)\WiX Toolset v5.0\bin"
-          )
-
-          $wixExe = $null
-          foreach ($dir in $wixDirs) {
-            if (Test-Path (Join-Path $dir "wix.exe")) {
-              $wixExe = Join-Path $dir "wix.exe"
-              break
-            }
-          }
-
-          if (-not $wixExe) {
-            Write-Host "ERROR: wix.exe not found after installation." -ForegroundColor Red
-            Get-ChildItem -Recurse "C:\Program Files" -Filter wix.exe -ErrorAction SilentlyContinue | Select-Object -First 20 | Format-List FullName
-            exit 1
-          }
-
-          $wixDir = Split-Path $wixExe -Parent
-
-          # Persist wix.exe directory to PATH for all subsequent steps
-          "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-          Write-Host "Using WiX from: $wixExe" -ForegroundColor Green
-          & $wixExe --version
+      - name: Install WiX Toolset
+        uses: ./.github/actions/install-wix
 
       - name: Cache FetchContent dependencies
         uses: actions/cache@v5
@@ -161,28 +76,48 @@ jobs:
 
       - name: Build installers
         shell: PowerShell
+        env:
+          # The Tauri desktop app (cargo + webpack) is roughly a third of this
+          # build, and it only ends up in lemonade.msi. Every downstream test
+          # job installs lemonade-server-minimal.msi, so on the PR and
+          # merge-queue paths the full installer is pure critical-path latency;
+          # build-lemonade-desktop-installer covers it off the critical path.
+          BUILD_FULL_INSTALLER: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true }}
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Building C++ server, Tauri app, web app, and MSI installers..." -ForegroundColor Cyan
+          $full = $env:BUILD_FULL_INSTALLER -eq 'true'
+          $target = if ($full) { "wix_installers" } else { "wix_installer_minimal" }
+          # wix_installers is the only target that owns two wix build runs, and
+          # it is only ever built here on the release and signing paths — so a
+          # parallel configuration used there would first run for real during a
+          # release. Build it serially; the two MSIs take seconds either way.
+          $nodes = if ($full) { "/m:1" } else { "/m:2" }
+          $expected = @(
+              "build\Release\lemond.exe",
+              "build\Release\LemonadeServer.exe",
+              "build\resources\web-app\index.html",
+              "lemonade-server-minimal.msi"
+          )
+          if ($full) { $expected += "build\app\lemonade-app.exe", "lemonade.msi" }
 
-          # Single build command: wix_installers depends on all C++ targets,
-          # tauri-app, and web-app via CMake dependency graph.
+          Write-Host "Building target $target..." -ForegroundColor Cyan
+
           # Build by directory (not --preset) so we follow whichever generator
           # setup.ps1 auto-detected for the installed Visual Studio version.
-          cmake --build build --config Release --target wix_installers
+          # /m lets MSBuild overlap independent projects — the lemonade CLI and
+          # LemonadeServer otherwise wait for lemonade-server-core to finish.
+          # Capped at 2 because /MP already spawns one cl.exe per core inside
+          # each project, and the two multiply: unbounded, a 4-core runner can
+          # reach 16 concurrent compilers and run itself out of heap.
+          # Passed straight through rather than via --parallel, which makes
+          # CMake set CL_MPCount=1 and cancel the /MP in CMakeLists.txt.
+          cmake --build build --config Release --target $target -- $nodes
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify outputs
           $failures = @()
-          @(
-              "build\Release\lemond.exe",
-              "build\Release\LemonadeServer.exe",
-              "build\app\lemonade-app.exe",
-              "build\resources\web-app\index.html",
-              "lemonade-server-minimal.msi",
-              "lemonade.msi"
-          ) | ForEach-Object {
+          $expected | ForEach-Object {
               if (-not (Test-Path $_)) {
                   Write-Host "ERROR: $_ not found!" -ForegroundColor Red
                   $failures += $_
@@ -210,10 +145,140 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: Lemonade_Server_MSI
-          path: |
-            lemonade-server-minimal.msi
-            lemonade.msi
+          # Glob rather than two literal paths: lemonade.msi is only built on
+          # the release/signing path (see BUILD_FULL_INSTALLER above).
+          path: lemonade*.msi
           retention-days: 7
+
+  build-lemonade-desktop-installer:
+    name: Build Lemonade Desktop Installer
+    # Packaging-only variant: it builds the Tauri desktop app and lemonade.msi,
+    # which no test job installs. The merge queue gates every merge, so PR
+    # pushes skip it and any desktop/full-MSI break still blocks at merge-queue
+    # time. It reports through the `Packaging builds` gate, so it takes that
+    # gate's `ci:distros` label rather than introducing a second label for one
+    # check. The release paths are excluded because the build above already
+    # produces lemonade.msi there; that first clause is the negation of
+    # BUILD_FULL_INSTALLER above, spelled the same way so the two stay
+    # provably complementary.
+    if: >-
+      !(startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true) &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros'))
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Install CMake if not available
+        uses: ./.github/actions/install-cmake-windows
+
+      - name: Install WiX Toolset
+        uses: ./.github/actions/install-wix
+
+      - name: Restore FetchContent dependencies
+        # Restore-only, and deliberately sharing build-lemonade-server-installer's
+        # namespace: both jobs run bare setup.ps1, so they configure the same
+        # preset and produce an identical build/_deps. That job runs
+        # concurrently and owns the save; saving from here too would just race
+        # it for the same key and log a reservation failure every cold run.
+        # Best-effort by construction: on a run that changes CMakeLists.txt
+        # neither job can hit the exact key, so this one falls back through
+        # restore-keys or builds the dependencies cold.
+        uses: actions/cache/restore@v5
+        with:
+          path: build/_deps
+          key: fetchcontent-windows-vs2026-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            fetchcontent-windows-vs2026-
+
+      - name: Run setup.ps1 to configure environment
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\setup.ps1
+
+      - name: Build desktop installer
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          # /m:1, not /m:2: wix_installer_full depends on both web-app and
+          # tauri-app, and they both touch src/app — web-app robocopies the whole
+          # tree while tauri-app runs npm ci inside it. Run concurrently, robocopy
+          # hits files npm is rewriting and retries under its default
+          # /R:1000000 /W:30, hanging the job rather than failing.
+          cmake --build build --config Release --target wix_installer_full -- /m:1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $failures = @()
+          @(
+              "build\app\lemonade-app.exe",
+              "build\resources\web-app\index.html",
+              "lemonade.msi"
+          ) | ForEach-Object {
+              if (-not (Test-Path $_)) {
+                  Write-Host "ERROR: $_ not found!" -ForegroundColor Red
+                  $failures += $_
+              }
+          }
+          if ($failures.Count -gt 0) { exit 1 }
+          Write-Host "Desktop installer built successfully!" -ForegroundColor Green
+
+      - name: Upload Lemonade Desktop Installer
+        # Without this the MSI is built and discarded, so nothing installs it
+        # until a tag. Note this is a new artifact name, not a restoration of
+        # Lemonade_Server_MSI: that one now carries only the minimal MSI off the
+        # release path. No in-repo consumer reads lemonade.msi from it.
+        uses: actions/upload-artifact@v7
+        with:
+          name: Lemonade_Desktop_MSI
+          path: lemonade.msi
+          retention-days: 7
+
+  tauri-compile-check:
+    name: Compile-check the Tauri host (${{ matrix.os }})
+    # The Tauri host is Rust, which `npm run typecheck` does not touch. Both
+    # jobs that build it — the Windows desktop installer and the macOS .dmg —
+    # defer to the merge queue, so without this a broken src-tauri compiles
+    # nowhere until a PR is already queued.
+    #
+    # Windows is not optional here: webview_shim.rs and lib.rs gate code behind
+    # cfg(target_os = "windows"), and webview2-com/windows are Windows-only
+    # dependencies, so a Linux-only check would miss exactly the code whose
+    # packaging job was deferred. cargo check rather than a full build — this
+    # is a compile canary, not a packaging step, so it catches type and borrow
+    # errors but not link failures or asset embedding: `custom-protocol` stays
+    # off, which is also why it needs no built renderer. Those still surface in
+    # the desktop installer and .dmg jobs at merge-queue time.
+    #
+    # Deliberately uncached: a cold check measures ~1.5 min, and the Actions
+    # cache is a 10 GB LRU pool shared with the FetchContent caches the Windows
+    # installer jobs restore from.
+    #
+    # Lives here rather than in Docs And Style so it can report through the
+    # `Packaging builds` gate, alongside the desktop installer it stands in for.
+    # A new job name would otherwise block nothing until someone registered it
+    # in branch protection.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Tauri build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Compile-check the Tauri host
+        working-directory: src/app/src-tauri
+        run: cargo check --locked --all-targets
 
   sign-msi-installers:
     name: Sign MSI Installers with SignPath
@@ -283,6 +348,31 @@ jobs:
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
 
+      - name: Use the compiler cache primed into the build image
+        # Release builds opt out so their -fdebug-prefix-map keeps the package
+        # version dpkg derives from the changelog. Everywhere else it is pinned
+        # to the value the prime recorded, which is what makes the primed
+        # objects reusable across commits at all. release-v* is included
+        # because those pushes also produce .deb and -dbgsym artifacts.
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && !startsWith(github.ref, 'refs/heads/release-v') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The prime writes this file itself, so an image built without it —
+          # including one published before the prime existed — is detected
+          # rather than assumed. Compiling without a cache is the safe fallback.
+          debugpath_file=/opt/ccache-debugpath
+          if [ ! -f "$debugpath_file" ]; then
+            echo "No primed compiler cache in this build image; compiling without it."
+            exit 0
+          fi
+          {
+            echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
+            echo "DEB_BUILD_DEBUGPATH=$(cat "$debugpath_file")"
+          } >> "$GITHUB_ENV"
+          ccache -z
+
       - name: Prepare Debian build
         id: get_version
         uses: ./.github/actions/prepare-debian-build
@@ -297,19 +387,73 @@ jobs:
           package-type: binary
           deb-version: ${{ steps.get_version.outputs.version }}
 
-      - name: Run C++ unit tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          cmake --preset default
-          cmake --build --preset default --target cpp-ci-tests
-          ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-deb
           path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
           retention-days: 7
+
+      - name: Report compiler cache hit rate
+        # Set only by the opt-in step above, so this covers both the release
+        # path and an image published before the prime existed.
+        if: ${{ always() && env.CMAKE_CXX_COMPILER_LAUNCHER == 'ccache' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache -s
+          # Zero hits against a primed image means the prime and this job
+          # disagree on the compile command line — most likely the workspace
+          # path, which GitHub derives from the repository name and the prime
+          # hardcodes. Warn rather than fail: a change to a widely included
+          # header legitimately invalidates every entry.
+          stats="$(ccache --print-stats 2>/dev/null || true)"
+          if ! grep -q '^direct_cache_hit' <<< "$stats"; then
+            echo "Could not read ccache counters; skipping the hit-rate check."
+            exit 0
+          fi
+          hits="$(awk -F'\t' '/^(direct|preprocessed)_cache_hit\t/ { n += $2 } END { print n+0 }' <<< "$stats")"
+          echo "Cache hits this build: ${hits}"
+          if [ "$hits" -eq 0 ]; then
+            echo "::warning title=Primed ccache produced no hits::The build image ships a primed cache but nothing matched. Check that the prime path in .ubuntu/Dockerfile still matches this job's workspace."
+          fi
+
+  cpp-unit-tests:
+    name: C++ unit tests
+    # Own job rather than a step of build-lemonade-deb: it shares nothing with
+    # the packaging build (different configure, different flags), so as a step
+    # it just added its full build time to the critical path that gates every
+    # .deb test job. Same build-environment image, so the configure resolves
+    # the same system dependencies.
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Install build dependencies
+        # As a step of build-lemonade-deb this inherited the build-dep install
+        # that job performs. Standalone it would rely on whatever the nightly
+        # image baked in, so a newly added Build-Depends would fail here — and
+        # not in the .deb job, which installs them — until the image caught up.
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update && apt-get build-dep ./contrib -y
+
+      - name: Build and run C++ unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --preset default
+          cmake --build --preset default --target cpp-ci-tests
+          ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"
 
   build-lemonade-debian13:
     name: Build Lemonade .deb Package (Debian 13)${{ matrix.job-suffix }}
@@ -323,7 +467,7 @@ jobs:
     container:
       image: debian:trixie
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - arch-name: X86_64
@@ -405,7 +549,7 @@ jobs:
     container:
       image: debian:trixie
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - arch-name: X86_64
@@ -483,7 +627,7 @@ jobs:
       image: fedora:${{ matrix.fedora-version }}
 
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         fedora-version: ["43", "44"]
         runs-on: ["ubuntu-latest", "ubuntu-24.04-arm"]
@@ -524,6 +668,12 @@ jobs:
 
           echo "Running setup.sh to configure build environment..."
           bash setup.sh
+
+          # setup.sh configures with testing on, and the build below has no
+          # --target, so every unit-test binary would be built and then left out
+          # of the .rpm. Same reasoning as BUILD_TESTING=OFF in contrib/debian/rules.
+          echo "Reconfiguring without the unit-test targets..."
+          cmake --preset default -DBUILD_TESTING=OFF
 
           echo "Building lemond and lemonade for Fedora ${{ matrix.fedora-version }} (${{ matrix.arch-name }})..."
           cmake --build --preset default
@@ -643,7 +793,7 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - arch-name: X86_64
@@ -745,36 +895,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install CMake if not available
-        shell: PowerShell
-        run: |
-          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
-
-          if (-not $cmakeInstalled) {
-              Write-Host "CMake not found, installing..." -ForegroundColor Yellow
-
-              $cmakeVersion = "3.28.1"
-              $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
-              $cmakeInstaller = "cmake-installer.msi"
-
-              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller -UseBasicParsing
-
-              Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
-
-              $cmakePath = "C:\Program Files\CMake\bin"
-              $env:PATH = "$cmakePath;$env:PATH"
-              echo $cmakePath >> $env:GITHUB_PATH
-
-              cmake --version
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
-                  exit 1
-              }
-
-              Write-Host "CMake installed successfully!" -ForegroundColor Green
-          } else {
-              Write-Host "CMake is already installed:" -ForegroundColor Green
-              cmake --version
-          }
+        uses: ./.github/actions/install-cmake-windows
 
       - name: Get version from CMakeLists.txt
         id: get_version
@@ -797,7 +918,7 @@ jobs:
           cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          cmake --build build --config Release --target embeddable
+          cmake --build build --config Release --target embeddable -- /m:2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $archive = "build\lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64.zip"
@@ -877,7 +998,7 @@ jobs:
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - name: llamacpp
@@ -1145,7 +1266,7 @@ jobs:
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - name: llamacpp
@@ -1163,6 +1284,11 @@ jobs:
             extra_args: ""
             backends: "cpu rocm vulkan"
             runner: [Linux, vulkan, rocm, lemon-prod]
+          - name: thenoise
+            script: server_thenoise.py
+            extra_args: "--wrapped-server thenoise"
+            backends: "rocm"
+            runner: [Linux, rocm, stx-halo, lemon-prod]
           - name: audio-gen-thinksound
             script: server_audio_generation.py
             extra_args: "--wrapped-server thinksound"
@@ -1280,7 +1406,7 @@ jobs:
       image: fedora:${{ matrix.fedora-version }}
 
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         fedora-version: ["43", "44"]
         runs-on: ["ubuntu-latest", "ubuntu-24.04-arm"]
@@ -1360,7 +1486,7 @@ jobs:
   # to run on ordinary pull request pushes.
   packaging-gate:
     name: Packaging builds
-    needs: [build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package]
+    needs: [build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package, build-lemonade-desktop-installer, tauri-compile-check]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1390,7 +1516,7 @@ jobs:
   # so renaming the job requires a matching branch-protection update.
   backends-gate:
     name: Inference backend tests
-    needs: [build-lemonade-server-installer, build-lemonade-deb, test-exe-inference, test-deb-inference]
+    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1446,7 +1572,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: build-lemonade-embeddable-linux
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - label: Linux
@@ -1915,6 +2041,9 @@ jobs:
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
+        env:
+          # No persistent HF cache here, so prefer the 2 GB GGUF build.
+          LEMONADE_TEST_SD_MODEL: SD-Turbo-GGUF
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu ollama"
           .venv/bin/python test/test_ollama.py --cli-binary lemonade
@@ -1953,7 +2082,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     needs: build-lemonade-linux-arm64
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         # llamacpp-system and env-vars omitted: no system llama-server or .deb on
         # GitHub-hosted ARM64 runners; Vulkan tests omitted: no GPU available.
@@ -2129,6 +2258,9 @@ jobs:
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
+        env:
+          # No persistent HF cache here, so prefer the 2 GB GGUF build.
+          LEMONADE_TEST_SD_MODEL: SD-Turbo-GGUF
         run: |
           $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "windows-latest ollama"
           $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"

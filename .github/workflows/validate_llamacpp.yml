@@ -376,15 +376,20 @@ jobs:
 
           $script | python -
 
-      - name: Build C++ Server with CMake
+      - name: Build lemond
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
           Write-Host "Building Lemonade server binaries..." -ForegroundColor Cyan
           if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-          cmake --preset vs18
+          # The validation drives lemond over HTTP and never invokes the CLI,
+          # so lemond is the only target it needs.
+          cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build build --config Release
+          # /m:2 goes straight to MSBuild rather than through --parallel, which
+          # makes CMake set CL_MPCount=1 and cancel the /MP in CMakeLists.txt.
+          # Capped at 2 because /MP already spawns one cl.exe per core.
+          cmake --build build --config Release --target lemond -- /m:2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path "build\Release\lemond.exe")) {
               Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
@@ -410,7 +415,7 @@ jobs:
     if: always() && needs.build.result == 'success'
     runs-on: ${{ matrix.runner }}
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - backend: vulkan
@@ -428,18 +433,220 @@ jobs:
           # - backend: cuda
           #   runner: [self-hosted, Windows, 128gb, cuda]
     steps:
-      - name: Prepare Windows runner for long paths and stale workspace caches
-        if: runner.os == 'Windows'
+      - name: Capture Vulkan runner configuration
+        if: matrix.backend == 'vulkan'
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Continue"
 
-          # 1. Kill any running/orphaned processes to release file locks
-          $patterns = @("lemonade", "lemond", "llama-server", "llama", "flm", "ort-server", "moonshine-server", "wscript", "LemonadeServer")
-          foreach ($p in $patterns) {
-              Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          $outDir = Join-Path $env:RUNNER_TEMP "vulkan-runner-config"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          # General system / Windows / BIOS information
+          $os = Get-CimInstance Win32_OperatingSystem
+          $computer = Get-CimInstance Win32_ComputerSystem
+          $bios = Get-CimInstance Win32_BIOS
+
+          [pscustomobject]@{
+            CapturedUtc        = (Get-Date).ToUniversalTime()
+            RunnerName         = $env:RUNNER_NAME
+            Manufacturer       = $computer.Manufacturer
+            Model              = $computer.Model
+            PhysicalMemoryGiB  = [math]::Round(
+              $computer.TotalPhysicalMemory / 1GB,
+              2
+            )
+            WindowsCaption     = $os.Caption
+            WindowsVersion     = $os.Version
+            WindowsBuild       = $os.BuildNumber
+            OSArchitecture     = $os.OSArchitecture
+            LastBootUpTime     = $os.LastBootUpTime
+            UptimeHours        = [math]::Round(
+              ((Get-Date) - $os.LastBootUpTime).TotalHours,
+              2
+            )
+            BIOSManufacturer   = $bios.Manufacturer
+            BIOSVersion        = $bios.SMBIOSBIOSVersion
+            BIOSReleaseDate    = $bios.ReleaseDate
+          } |
+            Format-List |
+            Out-File (Join-Path $outDir "system.txt") -Encoding utf8
+
+          # GPU model, PCI device ID and Windows display-driver information
+          Get-CimInstance Win32_VideoController |
+            Select-Object `
+              Name,
+              VideoProcessor,
+              PNPDeviceID,
+              DriverVersion,
+              DriverDate,
+              Status |
+            Format-List |
+            Out-File (Join-Path $outDir "gpu.txt") -Encoding utf8
+
+          Get-CimInstance Win32_PnPSignedDriver |
+            Where-Object { $_.DeviceClass -eq "DISPLAY" } |
+            Select-Object `
+              DeviceName,
+              Manufacturer,
+              DriverProviderName,
+              DriverVersion,
+              DriverDate,
+              InfName,
+              DeviceID |
+            Format-List |
+            Out-File (Join-Path $outDir "display-drivers.txt") -Encoding utf8
+
+          # Current Windows power scheme
+          powercfg /getactivescheme 2>&1 |
+            Out-File (Join-Path $outDir "power.txt") -Encoding utf8
+
+          # Reboot-frequency proxy plus exact current boot time above
+          $bootEvents = @(
+            Get-WinEvent -FilterHashtable @{
+              LogName   = "System"
+              Id        = 6005
+              StartTime = (Get-Date).AddDays(-30)
+            } -ErrorAction SilentlyContinue
+          )
+
+          "Event Log service starts in last 30 days: $($bootEvents.Count)" |
+            Out-File (Join-Path $outDir "reboots.txt") -Encoding utf8
+
+          # Relevant workloads present before validation cleanup
+          $processes = @(
+            Get-Process -Name @(
+              "lemond",
+              "llama-server",
+              "lemonade",
+              "LemonadeServer",
+              "flm",
+              "ort-server",
+              "moonshine-server"
+            ) -ErrorAction SilentlyContinue
+          )
+
+          if ($processes.Count -gt 0) {
+            $processes |
+              Select-Object ProcessName, Id, StartTime, CPU, WorkingSet64 |
+              Format-Table -AutoSize |
+              Out-File (Join-Path $outDir "processes-before-cleanup.txt") `
+                -Encoding utf8
+          } else {
+            "No known inference processes detected." |
+              Out-File (Join-Path $outDir "processes-before-cleanup.txt") `
+                -Encoding utf8
           }
 
+          # Best-effort AMD cache-directory state.
+          # This does not modify or clear any cache.
+          $amdRoot = if ($env:LOCALAPPDATA) {
+            Join-Path $env:LOCALAPPDATA "AMD"
+          } else {
+            $null
+          }
+
+          if ($amdRoot -and (Test-Path $amdRoot)) {
+            Get-ChildItem $amdRoot -Directory -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match "cache" } |
+              Select-Object Name, CreationTimeUtc, LastWriteTimeUtc |
+              Format-Table -AutoSize |
+              Out-File (Join-Path $outDir "amd-cache-state.txt") `
+                -Encoding utf8
+          } else {
+            "AMD local cache directory not found." |
+              Out-File (Join-Path $outDir "amd-cache-state.txt") `
+                -Encoding utf8
+          }
+
+          # Vulkan device, driver, memory heaps and capabilities
+          $vulkaninfo = Get-Command vulkaninfo -ErrorAction SilentlyContinue
+
+          if ($vulkaninfo) {
+            & $vulkaninfo.Source --summary *>&1 |
+              Out-File (Join-Path $outDir "vulkaninfo-summary.txt") `
+                -Encoding utf8
+            $summaryExitCode = $LASTEXITCODE
+
+            & $vulkaninfo.Source *>&1 |
+              Out-File (Join-Path $outDir "vulkaninfo.txt") `
+                -Encoding utf8
+            $fullExitCode = $LASTEXITCODE
+
+            Write-Host "=== vulkaninfo --summary ==="
+            Get-Content (Join-Path $outDir "vulkaninfo-summary.txt")
+
+            Write-Host "vulkaninfo summary exit code: $summaryExitCode"
+            Write-Host "vulkaninfo full exit code: $fullExitCode"
+          } else {
+            "vulkaninfo was not found in PATH." |
+              Out-File (Join-Path $outDir "vulkaninfo-unavailable.txt") `
+                -Encoding utf8
+            Write-Warning "vulkaninfo was not found in PATH."
+          }
+
+          Write-Host "=== Runner configuration ==="
+          Get-Content (Join-Path $outDir "system.txt")
+          Get-Content (Join-Path $outDir "gpu.txt")
+          Get-Content (Join-Path $outDir "display-drivers.txt")
+          Get-Content (Join-Path $outDir "power.txt")
+          Get-Content (Join-Path $outDir "reboots.txt")
+          Get-Content (Join-Path $outDir "processes-before-cleanup.txt")
+
+          # Environment collection should never make validation fail.
+          exit 0
+
+      - name: Upload Vulkan runner configuration
+        if: always() && matrix.backend == 'vulkan'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vulkan-runner-config
+          path: ${{ runner.temp }}/vulkan-runner-config/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Cleanup prior validation processes
+        if: runner.os == 'Windows'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $workspaceRoot = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE)
+          $lemondPath = [IO.Path]::GetFullPath(
+            (Join-Path $workspaceRoot "build\Release\lemond.exe")
+          )
+          $cachePrefix = [IO.Path]::GetFullPath(
+            (Join-Path $workspaceRoot "ci-cache-")
+          )
+          $staleProcesses = @(
+            Get-CimInstance Win32_Process `
+              -Filter "Name = 'lemond.exe' OR Name = 'llama-server.exe'" `
+              -ErrorAction SilentlyContinue | Where-Object {
+                $_.ExecutablePath -and (
+                  ($_.Name -eq "lemond.exe" -and $_.ExecutablePath.Equals(
+                    $lemondPath,
+                    [StringComparison]::OrdinalIgnoreCase
+                  )) -or
+                  ($_.Name -eq "llama-server.exe" -and $_.ExecutablePath.StartsWith(
+                    $cachePrefix,
+                    [StringComparison]::OrdinalIgnoreCase
+                  ))
+                )
+              }
+          )
+
+          foreach ($process in $staleProcesses) {
+            Write-Host "Stopping stale $($process.Name) PID $($process.ProcessId)." `
+              -ForegroundColor Yellow
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+          }
+          if ($staleProcesses.Count -gt 0) {
+            Start-Sleep -Seconds 1
+            foreach ($process in $staleProcesses) {
+              if (Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue) {
+                throw "Failed to stop workspace process PID $($process.ProcessId)."
+              }
+            }
+          }
 
       - uses: actions/checkout@v5
         with:
@@ -464,6 +671,7 @@ jobs:
               exit 1
           }
           & $lemondExe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host "Binaries verified!" -ForegroundColor Green
 
       - name: Setup Python and virtual environment
@@ -477,13 +685,30 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
+          $port = 13305
           $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
           $backend = "${{ matrix.backend }}"
           $channel = "${{ matrix.channel }}"
           $label = if ($channel) { "$backend-$channel" } else { $backend }
           $logsDir = "server-logs-$label"
           $cacheDir = Join-Path $PWD "ci-cache-$label"
+          $cachePrefix = [IO.Path]::GetFullPath($cacheDir)
+          $separator = [string][IO.Path]::DirectorySeparatorChar
+          if (-not $cachePrefix.EndsWith($separator)) { $cachePrefix += $separator }
           $venvPython = ".\.venv\Scripts\python.exe"
+          $tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $PWD }
+          $pidFile = Join-Path $tempRoot "lemond-validate-llamacpp.pid"
+
+          function Get-ValidationLlamaServers {
+            Get-CimInstance Win32_Process `
+              -Filter "Name = 'llama-server.exe'" `
+              -ErrorAction SilentlyContinue | Where-Object {
+                $_.ExecutablePath -and $_.ExecutablePath.StartsWith(
+                  $cachePrefix,
+                  [StringComparison]::OrdinalIgnoreCase
+                )
+              }
+          }
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
@@ -491,41 +716,125 @@ jobs:
           $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
           $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
 
-          # Start lemond (Python script handles readiness polling)
-          $proc = Start-Process `
-            -FilePath $lemondExe `
-            -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
-            -RedirectStandardOutput $stdoutLog `
-            -RedirectStandardError $stderrLog `
-            -PassThru
+          # Do not benchmark while another known inference process is active.
+          $conflicts = @(
+            Get-Process -Name @(
+              "lemond", "llama-server", "lemonade", "LemonadeServer",
+              "flm", "ort-server", "moonshine-server"
+            ) -ErrorAction SilentlyContinue
+          )
+          if ($conflicts.Count -gt 0) {
+            $details = ($conflicts | ForEach-Object {
+              "$($_.ProcessName):$($_.Id)"
+            }) -join ", "
+            throw "Runner is not idle: $details"
+          }
 
-          Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
+          if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) {
+            throw "Port $port is already in use."
+          }
+
+          $proc = $null
+          $validationExitCode = 0
 
           try {
+            $proc = Start-Process `
+              -FilePath $lemondExe `
+              -ArgumentList @($cacheDir, "--port", $port, "--host", "127.0.0.1") `
+              -RedirectStandardOutput $stdoutLog `
+              -RedirectStandardError $stderrLog `
+              -PassThru
+
+            # Same-job fallback for the existing final cleanup action.
+            Set-Content -Path $pidFile -Value $proc.Id -Encoding ASCII
+            Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
+
+            if ($proc.WaitForExit(500)) {
+              throw "lemond exited before validation started. See $stderrLog."
+            }
+
             $validationArgs = @(
               "test/validate_llamacpp.py",
               "--backend", $backend,
+              "--port", $port,
               "--output", "llamacpp_validation_$label.json",
               "--logs-dir", $logsDir
             )
+
             if ($channel) {
               $validationArgs += "--channel"
               $validationArgs += $channel
             }
+
             if ("${{ env.LITE_MODE }}" -eq "true") {
               $validationArgs += "--lite"
             }
 
             & $venvPython @validationArgs
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $validationExitCode = $LASTEXITCODE
           } finally {
-            try {
-              Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" `
-                -Method POST -TimeoutSec 10 | Out-Null
-              Start-Sleep -Seconds 2
-            } catch {
-              Write-Host "lemond shutdown not reachable; relying on cleanup step." -ForegroundColor Yellow
+            if ($null -ne $proc) {
+              try {
+                if (-not $proc.HasExited) {
+                  Invoke-WebRequest -Uri "http://127.0.0.1:$port/internal/shutdown" `
+                    -Method POST -TimeoutSec 10 -UseBasicParsing | Out-Null
+                  $null = $proc.WaitForExit(10000)
+                }
+              } catch {
+                Write-Host "Graceful shutdown failed; forcing targeted cleanup." `
+                  -ForegroundColor Yellow
+              }
+
+              if (-not $proc.HasExited) {
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+                $null = $proc.WaitForExit(5000)
+              }
+
+              # Catch a llama-server orphan even if its lemond parent exited first.
+              $orphans = @(Get-ValidationLlamaServers)
+              foreach ($orphan in $orphans) {
+                Write-Host "Stopping validation llama-server PID $($orphan.ProcessId)." `
+                  -ForegroundColor Yellow
+                Stop-Process -Id $orphan.ProcessId -Force -ErrorAction SilentlyContinue
+              }
+
+              # Process teardown can lag slightly on Windows, especially after
+              # releasing Vulkan resources. Give it a short bounded grace period.
+              $remainingOrphans = @(Get-ValidationLlamaServers)
+              $cleanupDeadline = (Get-Date).AddSeconds(5)
+
+              while (
+                $remainingOrphans.Count -gt 0 -and
+                (Get-Date) -lt $cleanupDeadline
+              ) {
+                Start-Sleep -Milliseconds 500
+                $remainingOrphans = @(Get-ValidationLlamaServers)
+              }
+
+              if ($proc.HasExited -and $remainingOrphans.Count -eq 0) {
+                Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+              } else {
+                if (-not $proc.HasExited) {
+                  Write-Warning "lemond PID $($proc.Id) is still running after cleanup."
+                }
+
+                foreach ($orphan in $remainingOrphans) {
+                  Write-Warning (
+                    "llama-server still present after cleanup: " +
+                    "PID=$($orphan.ProcessId), Path=$($orphan.ExecutablePath)"
+                  )
+                }
+
+                Write-Warning (
+                  "Validation cleanup did not fully complete. " +
+                  "The validation result will be preserved."
+                )
+              }
             }
+          }
+
+          if ($validationExitCode -ne 0) {
+            exit $validationExitCode
           }
 
       - name: Upload results

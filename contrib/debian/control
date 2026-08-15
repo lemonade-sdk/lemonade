@@ -1,7 +1,8 @@
 Source: lemonade
-Section: utils
-Priority: optional
+Standards-Version: 4.7.4
 Maintainer: Mario Limonciello <superm1@debian.org>
+Section: utils
+Testsuite: autopkgtest-pkg-python
 Build-Depends:
  cmake,
  debhelper-compat (= 13),
@@ -38,17 +39,20 @@ Build-Depends:
  node-webpack-cli,
  nodejs,
  pkgconf,
- quilt,
-Testsuite: autopkgtest-pkg-python
-Standards-Version: 4.7.3
-Homepage: https://lemonade-server.ai/
 Vcs-Browser: https://salsa.debian.org/debian/lemonade
 Vcs-Git: https://salsa.debian.org/debian/lemonade.git
+Homepage: https://lemonade-server.ai/
 
 Package: lemonade-server
 Architecture: linux-any
 Multi-Arch: foreign
-Depends: ${shlibs:Depends}, ${misc:Depends}, fonts-katex, unzip, libatomic1, libgomp1
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ fonts-katex,
+ unzip,
+ libatomic1,
+ libgomp1,
 Description: Local LLM serving with GPU and NPU acceleration server
  Lemonade helps users run local LLMs with the highest performance by
  configuring state-of-the-art inference engines for their NPUs and GPUs.
@@ -59,8 +63,14 @@ Description: Local LLM serving with GPU and NPU acceleration server
 Package: lemonade-desktop
 Architecture: all
 Multi-Arch: foreign
-Depends: ${shlibs:Depends}, ${misc:Depends}, jq, lemonade-server, xdg-utils
-Recommends: chromium | www-browser
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ jq,
+ lemonade-server,
+ xdg-utils,
+Recommends:
+ chromium | www-browser,
 Description: Local LLM serving with GPU and NPU acceleration web application
  Lemonade helps users run local LLMs with the highest performance by
  configuring state-of-the-art inference engines for their NPUs and GPUs.
