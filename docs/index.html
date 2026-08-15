@@ -314,14 +314,20 @@
         switch (gsPlatform) {
           case 'windows':
             html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi">' +
-              '<span class="material-symbols-outlined">desktop_windows</span> Download for Windows (.msi)</a>';
+              '<span class="material-symbols-outlined">desktop_windows</span> Download for Windows (.msi)</a>' +
+              '<div class="gs-install-block">' +
+                gsConsoleHtml(['winget install --id AMD.LemonadeServer -e']) +
+              '</div>';
             break;
           case 'apple':
-            html = v
+            html = (v
               ? '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade-' + v + '-Darwin.pkg">' +
                 '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>'
               : '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest">' +
-                '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>';
+                '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>') +
+              '<div class="gs-install-block">' +
+                gsConsoleHtml(['brew install --cask lemonade-server']) +
+              '</div>';
             break;
           case 'docker':
             html = gsConsoleHtml([
@@ -728,7 +734,7 @@
         var logos = [
           { href: 'https://github.com/ggml-org/llama.cpp', img: 'llama_cpp.png', alt: 'llama.cpp' },
           { href: 'https://github.com/microsoft/onnxruntime', img: 'onnx_runtime.png', alt: 'ONNX Runtime' },
-          { href: 'https://github.com/FastFlowLM/FastFlowLM', img: 'fastflowlm.png', alt: 'FastFlowLM' },
+          { href: 'https://github.com/ROCm/FastFlowLM', img: 'fastflowlm.png', alt: 'FastFlowLM' },
           { href: 'https://github.com/amd/RyzenAI-SW', img: 'ryzen_ai_sw.png', alt: 'Ryzen AI SW' },
           { href: 'https://rocm.docs.amd.com/', img: 'rocm.png', alt: 'ROCm' },
           { href: 'https://huggingface.co/', img: 'hugging_face.png', alt: 'Hugging Face' },

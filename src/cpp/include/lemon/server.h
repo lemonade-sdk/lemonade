@@ -107,10 +107,29 @@ private:
     void handle_health(const httplib::Request& req, httplib::Response& res);
     void handle_live(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
+    void handle_model_register(const httplib::Request& req, httplib::Response& res);
+    void validate_model_registration_name(const std::string& model_name,
+                                         bool require_user_namespace);
+    void normalize_model_registration_source(nlohmann::json& request_json,
+                                             bool local_import);
+    void validate_and_canonicalize_collection_registration(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool allow_embedded_models);
+    std::string register_model_definition_internal(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool require_definition,
+        bool allow_embedded_models,
+        bool local_import);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
+    // Log and atomically record one non-streaming response's telemetry
+    // (usage/timings, cached tokens) against the serving model.
+    void record_response_telemetry(const nlohmann::json& response,
+                                   const nlohmann::json& request_json);
     // Server-side tool-calling orchestration for Omni "collection" models.
     void handle_collection_chat_completions(const nlohmann::json& request_json,
                                             const ModelInfo& collection_info,
