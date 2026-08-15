@@ -393,6 +393,18 @@ public:
         std::lock_guard<std::mutex> lock(state_mutex_);
         return recipe_options_;
     }
+
+    // recipe_options_ holds the ctx_size the backend was started with, so the
+    // -1 that asked for it is gone by the time anyone reads it back. Keep that
+    // request so a later load spelling -1 can be recognized as the same load.
+    void set_ctx_size_auto(bool ctx_size_auto) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        ctx_size_auto_ = ctx_size_auto;
+    }
+    bool ctx_size_is_auto() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return ctx_size_auto_;
+    }
     int get_process_id() const { return get_process_handle_snapshot().pid; }
     int get_backend_port() const;
 
@@ -613,6 +625,7 @@ protected:
     DeviceType device_type_ = DEVICE_NONE;
     std::chrono::steady_clock::time_point last_access_time_;
     RecipeOptions recipe_options_;
+    bool ctx_size_auto_ = false;
 
     // Busy state tracking (for safe eviction)
     mutable std::mutex state_mutex_;
