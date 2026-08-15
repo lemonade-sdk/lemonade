@@ -314,7 +314,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       if (key === 'merge_args' || key === 'mmproj_enabled' || key === 'ctx_size') continue;
       rows.push({
         key: `ro-${key}`,
-        label: optionLabel(key),
+        label: optionLabel(key, recipe),
         value: displayValue(value),
         source: resolved.sources.recipe_options[key as keyof RecipeOptions],
       });

@@ -24,7 +24,13 @@ global.CustomEvent = class CustomEvent {
 function loadModelConfigurationModule() {
   const source = fs.readFileSync(modulePath, 'utf8')
     .replace("import { capabilityFromModelInfo, type ModelCapability } from './modelCapabilities';", 'const capabilityFromModelInfo = () => null;')
-    .replace("import { storageKey } from './storage';", "const storageKey = (key: string) => `lemonade:${key}`;");
+    .replace("import { storageKey } from './storage';", "const storageKey = (key: string) => `lemonade:${key}`;")
+    // The catalog is empty here on purpose: migration must survive a snapshot
+    // taken before lemond has answered /v1/system-info.
+    .replace(
+      "import { getBackendCatalogSnapshot } from './features/backends/backendCatalogStore';",
+      "const getBackendCatalogSnapshot = () => ({ status: 'idle', catalog: null, error: null });",
+    );
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       target: ts.ScriptTarget.ES2020,

@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { systemInfoRecipes } from './fixtures/systemInfoRecipes';
 
 const realServerRequired = /^(06|07|08|09|10|11|14|21|22)\b/;
 
@@ -711,12 +712,12 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }));
     await page.route('**/api/v1/system-info**', route => route.fulfill({
       json: {
-        recipes: {
+        recipes: systemInfoRecipes({
           llamacpp: {
             default_backend: 'cpu',
             backends: { cpu: { state: 'installed', version: 'test' } },
           },
-        },
+        }),
       },
     }));
     await page.route('**/api/v1/load', route => {
@@ -1444,12 +1445,12 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }));
     await page.route('**/api/v1/system-info**', route => route.fulfill({
       json: {
-        recipes: {
+        recipes: systemInfoRecipes({
           llamacpp: {
             default_backend: 'cpu',
             backends: { cpu: { state: 'installed', version: 'test' } },
           },
-        },
+        }),
       },
     }));
     await page.route('**/api/v1/models**', route => route.fulfill({
@@ -1512,7 +1513,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
       json: { status: 'ok', version: 'test', all_models_loaded: [] },
     }));
     await page.route('**/api/v1/system-info**', route => route.fulfill({
-      json: { recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed', version: 'test' } } } } },
+      json: { recipes: systemInfoRecipes({ llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed', version: 'test' } } } }) },
     }));
     await page.route('**/api/v1/models**', route => route.fulfill({
       json: {

@@ -14,3 +14,8 @@ export {
   sectionMeta,
 } from '../../src/features/backends/backendSections';
 export { backendCompactLabel, backendLabel } from '../../src/modelPresentation';
+export {
+  backendSupportsArgs,
+  loadBackendTunings,
+  saveBackendTunings,
+} from '../../src/modelConfiguration';

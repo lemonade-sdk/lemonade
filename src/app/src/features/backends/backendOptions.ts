@@ -11,12 +11,15 @@ export function descriptorForRecipe(recipe: string) {
   return getBackendCatalogSnapshot().catalog?.byRecipe.get(String(recipe || '').toLowerCase());
 }
 
-export function optionSchemaForRecipe(recipe: string): Map<string, RecipeOptionSchema> {
-  return new Map((descriptorForRecipe(recipe)?.options ?? []).map(option => [option.name, option]));
-}
-
-/** Option names are unique across recipes, so a name is enough to find its schema. */
-export function findOptionSchema(name: string): RecipeOptionSchema | undefined {
+/**
+ * The image backends all declare `steps`, `width`, `height` and `cfg_scale`,
+ * and describe them differently, so a caller that knows which recipe it is
+ * editing must say so or it gets another backend's wording. Callers with no
+ * recipe in hand still resolve, through the first descriptor declaring the key.
+ */
+export function findOptionSchema(name: string, recipe?: string): RecipeOptionSchema | undefined {
+  const own = recipe ? descriptorForRecipe(recipe)?.options.find(option => option.name === name) : undefined;
+  if (own) return own;
   for (const descriptor of getBackendCatalogSnapshot().catalog?.recipes ?? []) {
     const match = descriptor.options.find(option => option.name === name);
     if (match) return match;
@@ -35,54 +38,40 @@ const LABEL_OVERRIDES: Record<string, string> = {
 
 const TYPE_LABELS: Record<string, string> = { BACKEND: 'Backend', DEVICES: 'Device' };
 
-/* Hints describing this editor's behavior, which the server cannot know. */
-const TYPE_HINTS: Record<string, string> = {
-  BACKEND: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
-  DEVICES: 'Optional device selector for the selected backend.',
-};
-
-const HINT_OVERRIDES: Record<string, string> = {
-  ctx_size: 'Runtime context window for this exact model.',
-};
-
-export function optionLabel(key: string): string {
+export function optionLabel(key: string, recipe?: string): string {
   const override = LABEL_OVERRIDES[key];
   if (override) return override;
-  const byType = TYPE_LABELS[findOptionSchema(key)?.typeName ?? ''];
+  const byType = TYPE_LABELS[findOptionSchema(key, recipe)?.typeName ?? ''];
   if (byType) return byType;
-  if (key.endsWith('_args')) return 'Backend args';
+  if (isArgsOption(key)) return 'Backend args';
   return key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
 }
 
-export function optionHint(key: string): string | undefined {
-  const override = HINT_OVERRIDES[key];
-  if (override) return override;
-  const schema = findOptionSchema(key);
-  const byType = TYPE_HINTS[schema?.typeName ?? ''];
-  if (byType) return byType;
-  if (key.endsWith('_args')) return 'Raw backend args for this model only.';
-  return schema?.help || undefined;
+/** The backend's own CLI help, which is the only description of an option anyone writes. */
+export function optionHint(key: string, recipe?: string): string | undefined {
+  const help = findOptionSchema(key, recipe)?.help;
+  return help || (isArgsOption(key) ? 'Raw backend args for this model only.' : undefined);
 }
 
 /* `speed` comes from a model's sample_params, not from any descriptor. */
 const RESIDUAL_NUMERIC_KEYS = new Set(['speed']);
 
-export function isBackendOption(key: string): boolean {
-  return findOptionSchema(key)?.typeName === 'BACKEND';
+export function isBackendOption(key: string, recipe?: string): boolean {
+  return findOptionSchema(key, recipe)?.typeName === 'BACKEND';
 }
 
-export function isDeviceOption(key: string): boolean {
-  return findOptionSchema(key)?.typeName === 'DEVICES';
+export function isDeviceOption(key: string, recipe?: string): boolean {
+  return findOptionSchema(key, recipe)?.typeName === 'DEVICES';
 }
 
 export function isArgsOption(key: string): boolean {
   return key.endsWith('_args');
 }
 
-export function isNumericOption(key: string): boolean {
-  return findOptionSchema(key)?.typeName === 'SIZE' || RESIDUAL_NUMERIC_KEYS.has(key);
+export function isNumericOption(key: string, recipe?: string): boolean {
+  return findOptionSchema(key, recipe)?.typeName === 'SIZE' || RESIDUAL_NUMERIC_KEYS.has(key);
 }
 
-export function isBooleanOption(key: string): boolean {
-  return findOptionSchema(key)?.typeName === 'BOOL';
+export function isBooleanOption(key: string, recipe?: string): boolean {
+  return findOptionSchema(key, recipe)?.typeName === 'BOOL';
 }

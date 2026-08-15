@@ -109,8 +109,21 @@ export function backendFieldForRecipe(recipe: string): string | null {
   return recipeDescriptor(recipe)?.backendOptionName ?? null;
 }
 
+/** True once lemond has described a recipe that takes args, so a UI may offer an args editor. */
 export function backendSupportsArgs(recipe: string): boolean {
   return backendArgsFieldForRecipe(recipe) !== null;
+}
+
+/**
+ * Whether stored backend args for a recipe may be kept. Silence is not a
+ * denial: before lemond has answered, every recipe looks argsless, and reusing
+ * backendSupportsArgs here would drop the user's saved args on read and erase
+ * them on the next write. Only a recipe the server has actually described - and
+ * described as taking no args - loses its entry.
+ */
+function backendArgsAreObsolete(recipe: string): boolean {
+  const descriptor = recipeDescriptor(recipe);
+  return descriptor !== undefined && descriptor.argsOptionName === null;
 }
 
 export interface SessionArgsOverride {
@@ -272,7 +285,7 @@ export function loadBackendTunings(): Record<string, BackendTuning> {
     for (const [key, value] of Object.entries(parsed)) {
       const tuning = sanitizeBackendTuning(value as Partial<BackendTuning>);
       const recipe = key.split(':')[0] || '';
-      if (tuning && backendSupportsArgs(recipe)) normalized[key] = tuning;
+      if (tuning && !backendArgsAreObsolete(recipe)) normalized[key] = tuning;
     }
     return normalized;
   } catch {
@@ -285,7 +298,7 @@ export function saveBackendTunings(tunings: Record<string, BackendTuning>): void
   for (const [key, value] of Object.entries(tunings)) {
     const recipe = key.split(':')[0] || '';
     const tuning = sanitizeBackendTuning(value);
-    if (tuning && backendSupportsArgs(recipe)) normalized[key] = tuning;
+    if (tuning && !backendArgsAreObsolete(recipe)) normalized[key] = tuning;
   }
   localStorage.setItem(scopedStorageKey(LS_BACKEND_TUNINGS), JSON.stringify(normalized));
   emitModelConfigurationEvent();
@@ -298,7 +311,7 @@ export function backendTuningForKey(key: string): BackendTuning | null {
 export function saveBackendTuning(key: string, args: string, source: BackendTuning['source'] = 'user'): void {
   if (!key) return;
   const recipe = key.split(':')[0] || '';
-  if (!backendSupportsArgs(recipe)) return;
+  if (backendArgsAreObsolete(recipe)) return;
   const next = { ...loadBackendTunings() };
   const trimmed = String(args || '').trim();
   if (!trimmed) {

@@ -938,6 +938,9 @@ const ModelConfigurationTab: React.FC<{
     [model, serverDefaultCtxSize],
   );
   const supportsContextSize = modelSupportsContextSize(model);
+  // Recipes share option names (every image backend declares `steps`), so each
+  // lookup names the recipe being edited or it gets another backend's wording.
+  const activeRecipe = activeRecipeForModel(model);
   const recipeKeys = useMemo(() => tuningKeysForModel(model), [model]);
   const knownVoiceOptions = useMemo(() => knownVoiceOptionsForModel(model), [model]);
   const knownVoiceIds = useMemo(() => new Set(knownVoiceOptions.map(option => option.id.toLowerCase())), [knownVoiceOptions]);
@@ -1017,7 +1020,7 @@ const ModelConfigurationTab: React.FC<{
     );
     setCtxSizeDraft(String(nextValue));
   };
-  const selectorKeys = recipeKeys.filter(key => isBackendOption(key) || isDeviceOption(key));
+  const selectorKeys = recipeKeys.filter(key => isBackendOption(key, activeRecipe) || isDeviceOption(key, activeRecipe));
   const argsKeys = recipeKeys.filter(key => isArgsOption(key));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
 
@@ -1025,9 +1028,9 @@ const ModelConfigurationTab: React.FC<{
     const raw: Partial<RecipeOptions> = {};
     for (const [key, value] of Object.entries(recipeDraft) as Array<[keyof RecipeOptions, string]>) {
       if (!value.trim()) continue;
-      if (isBooleanOption(key)) {
+      if (isBooleanOption(key, activeRecipe)) {
         (raw as Record<string, unknown>)[key] = value === 'true';
-      } else if (isNumericOption(key)) {
+      } else if (isNumericOption(key, activeRecipe)) {
         const n = parseNumberOrUndefined(value);
         if (n !== undefined) (raw as Record<string, unknown>)[key] = n;
       } else {
@@ -1088,11 +1091,12 @@ const ModelConfigurationTab: React.FC<{
 
   const renderConfigRecipeField = (key: keyof RecipeOptions) => {
     const fieldId = `config-${name}-${String(key)}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-    const label = optionLabel(key);
+    const label = optionLabel(key, activeRecipe);
+    const hint = optionHint(key, activeRecipe);
     const draftValue = recipeDraft[String(key)] || '';
     const baseValue = baseTuning.recipe_options[key];
 
-    if (isBackendOption(key)) {
+    if (isBackendOption(key, activeRecipe)) {
       const activeBackend = activeBackendValue(key, baseValue, model, info);
       const options = backendOptionsForKey(key, draftValue || undefined, model, info).filter(opt => opt !== activeBackend);
       // Present but inert until the server has said which backends exist.
@@ -1114,7 +1118,7 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
-    if (isDeviceOption(key)) {
+    if (isDeviceOption(key, activeRecipe)) {
       const backendKey = descriptorForModel(model)?.backendOptionName ?? '';
       const selectedBackend = recipeDraft[String(backendKey)] || activeBackendValue(backendKey, baseTuning.recipe_options[backendKey], model, info);
       const activeDevice = optionalDisplayValue(baseValue) || 'auto';
@@ -1187,7 +1191,6 @@ const ModelConfigurationTab: React.FC<{
     }
 
     if (isArgsOption(key)) {
-      const hint = optionHint(key);
       const defaultPlaceholders: Partial<Record<keyof RecipeOptions, string>> = {
         llamacpp_args: '--gpu-layers 35 --threads 8 --batch-size 512',
         vllm_args: '--tensor-parallel-size 1 --max-model-len 8192',
@@ -1220,7 +1223,27 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
-    if (isNumericOption(key)) {
+    if (isBooleanOption(key, activeRecipe)) {
+      return (
+        <div key={String(key)} className="detail-tuning__field detail-configuration__field">
+          <span id={`${fieldId}-label`}>{label}</span>
+          <select
+            id={fieldId}
+            className="select detail-configuration__select"
+            value={draftValue}
+            aria-labelledby={`${fieldId}-label`}
+            onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
+          >
+            <option value="">{baseValue === undefined ? 'Model default' : `Model default (${baseValue ? 'on' : 'off'})`}</option>
+            <option value="true">On</option>
+            <option value="false">Off</option>
+          </select>
+          {hint && <small>{hint}</small>}
+        </div>
+      );
+    }
+
+    if (isNumericOption(key, activeRecipe)) {
       const stepNumericInput = (direction: -1 | 1) => {
         const input = document.getElementById(fieldId);
         if (!(input instanceof HTMLInputElement)) return;
@@ -1251,6 +1274,7 @@ const ModelConfigurationTab: React.FC<{
               </button>
             </span>
           </div>
+          {hint && <small>{hint}</small>}
         </div>
       );
     }
@@ -1266,6 +1290,7 @@ const ModelConfigurationTab: React.FC<{
           placeholder={optionalDisplayValue(baseValue) || ''}
           onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
         />
+        {hint && <small>{hint}</small>}
       </label>
     );
   };

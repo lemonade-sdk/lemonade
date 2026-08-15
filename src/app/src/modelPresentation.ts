@@ -4,8 +4,9 @@ import { getBackendCatalogSnapshot } from './features/backends/backendCatalogSto
  * Recipe names come from lemond, and so do their labels: `web_display_name`
  * falling back to `display_name`. These overrides exist only where the server's
  * docs-facing vocabulary is wrong for a UI chip — it bakes the device into the
- * name ("llama.cpp GPU", "Ryzen AI SW NPU") or repeats the experimental flag
- * ("vLLM ROCm (experimental)") — plus the three `collection*` pseudo-recipes,
+ * name ("llama.cpp GPU", "Ryzen AI SW NPU"), repeats the experimental flag
+ * ("vLLM ROCm (experimental)"), or is a lowercase website slug rather than a
+ * name ("thenoise") — plus the three `collection*` pseudo-recipes,
  * which are client-side and have no server counterpart by construction.
  *
  * This is an override map, never an allowlist: a recipe that is not listed
@@ -20,6 +21,7 @@ const BRAND_OVERRIDES: Record<string, { label?: string; compact?: string }> = {
   flm: { label: 'FastFlowLM', compact: 'FLM' },
   'ryzenai-llm': { label: 'RyzenAI', compact: 'RyzenAI' },
   'sd-cpp': { compact: 'SD.cpp' },
+  thenoise: { label: 'TheNoise', compact: 'TheNoise' },
   whispercpp: { compact: 'Whisper' },
   kokoro: { label: 'Kokoro TTS', compact: 'Kokoro' },
   openmoss: { compact: 'OpenMOSS' },

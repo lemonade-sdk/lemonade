@@ -112,8 +112,22 @@ function makeApi() {
   };
 }
 
+function installBrowserGlobals() {
+  const values = new Map();
+  global.localStorage = {
+    getItem: key => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: key => values.delete(key),
+    key: index => [...values.keys()][index] ?? null,
+    get length() { return values.size; },
+  };
+  global.window = { addEventListener() {}, removeEventListener() {}, dispatchEvent() {} };
+  global.CustomEvent = class CustomEvent {};
+}
+
 async function main() {
   const outputPath = await bundle();
+  installBrowserGlobals();
   const store = require(path.join(outputPath, 'backendCatalog.cjs'));
   const { parseBackendCatalog, backendLabel, backendCompactLabel } = store;
   const { orderSections, sectionForModality, sectionMeta, OTHER_RUNTIMES } = store;
@@ -207,6 +221,28 @@ async function main() {
     'the chip shortens where the published name is too long');
   assert.equal(backendLabel('never-heard-of-it'), 'never-heard-of-it',
     'an unknown recipe falls back to its id, never to empty or undefined');
+
+  /* ── A cold catalog must not erase saved backend args ─────────── */
+
+  store.resetBackendCatalogForTests();
+  const saved = { 'moonshine:cpu': { args: '--threads 8', source: 'user' } };
+  store.saveBackendTunings(saved);
+
+  assert.equal(store.backendSupportsArgs('moonshine'), false,
+    'with no catalog the client cannot know moonshine takes args');
+  assert.deepEqual(Object.keys(store.loadBackendTunings()), ['moonshine:cpu'],
+    'saved args survive a read taken before lemond has answered');
+  store.saveBackendTunings(store.loadBackendTunings());
+  assert.deepEqual(Object.keys(store.loadBackendTunings()), ['moonshine:cpu'],
+    'and a write in that window must not erase them from storage');
+
+  const tuningApi = makeApi();
+  store.attachBackendCatalog(tuningApi);
+  tuningApi.deliver(PAYLOAD);
+
+  store.saveBackendTunings({ ...saved, 'kokoro:cpu': { args: '--threads 4', source: 'user' } });
+  assert.deepEqual(Object.keys(store.loadBackendTunings()), ['moonshine:cpu'],
+    'once the server says kokoro declares no args option, its entry is dropped');
 
   /* ── A stale failure never replaces a fresher catalog ──────────── */
 

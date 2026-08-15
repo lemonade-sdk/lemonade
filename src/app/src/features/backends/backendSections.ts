@@ -6,9 +6,9 @@
  * edit here, and a modality this build has not seen still gets a section
  * instead of being silently filed under the first one.
  *
- * MODALITY_ORDER mirrors docs/tools/gen_backend_boilerplate.py:129 and carries
- * the same rule stated there: it controls presentation only, and must never
- * filter recipes.
+ * MODALITY_ORDER mirrors the list of the same name in
+ * docs/tools/gen_backend_boilerplate.py and carries the rule stated there: it
+ * controls presentation only, and must never filter recipes.
  */
 const MODALITY_ORDER = [
   'Text generation',

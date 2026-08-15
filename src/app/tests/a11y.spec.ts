@@ -22,6 +22,7 @@
 
 import { test, expect, Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { systemInfoRecipes } from './fixtures/systemInfoRecipes';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -610,15 +611,20 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
     lemonade_version: '1.0.0',
     os_version: 'Test OS',
     devices: { cpu: { name: 'Test CPU', available: true } },
-    recipes: {
+    recipes: systemInfoRecipes({
       llamacpp: {
         default_backend: 'cpu',
         backends: {
-          vulkan: { state: 'installable', version: 'b1234', message: '', action: '', experimental: true },
+          vulkan: { state: 'installable', version: 'b1234', message: '', action: '' },
           cpu: { state: 'installed', version: 'b1234', message: '', action: '', can_uninstall: true },
         },
       },
-    },
+      // lemond declares experimental per recipe, never per backend variant.
+      vllm: {
+        default_backend: 'rocm',
+        backends: { rocm: { state: 'installable', version: '0.1', message: '', action: '' } },
+      },
+    }),
   };
 
   test.beforeEach(async ({ page }) => {
@@ -659,12 +665,13 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
   });
 
   test('A56b — experimental backend marker is labelled and exposes the requested tooltip', async ({ page }) => {
-    const marker = page.locator('[data-cell="llamacpp:vulkan"] .cell__experimental-icon');
+    const marker = page.locator('[data-cell="vllm:rocm"] .cell__experimental-icon');
     await expect(marker).toBeVisible();
     await expect(marker).toHaveAttribute('aria-label', 'experimental');
     await expect(marker).toHaveAttribute('title', 'experimental');
     await expect(marker.locator('[data-icon="flask-conical"]')).toBeVisible();
     await expect(page.locator('[data-cell="llamacpp:cpu"] .cell__experimental-icon')).toHaveCount(0);
+    await expect(page.locator('[data-cell="llamacpp:vulkan"] .cell__experimental-icon')).toHaveCount(0);
   });
 
   // ── #2351 — persistent polite live region for toasts ───
@@ -686,7 +693,7 @@ test.describe('Accessibility — Backend Manager refresh lifecycle (#2343)', () 
       lemonade_version: '1.0.0',
       os_version: 'Test OS',
       devices: { cpu: { name: 'Test CPU', available: true } },
-      recipes: {
+      recipes: systemInfoRecipes({
         llamacpp: {
           default_backend: 'cpu',
           backends: {
@@ -699,7 +706,7 @@ test.describe('Accessibility — Backend Manager refresh lifecycle (#2343)', () 
             },
           },
         },
-      },
+      }),
     };
   }
 
@@ -741,7 +748,7 @@ test.describe('Accessibility — backend argument tuning', () => {
     lemonade_version: '1.0.0',
     os_version: 'Test OS',
     devices: { cpu: { name: 'Test CPU', available: true } },
-    recipes: {
+    recipes: systemInfoRecipes({
       llamacpp: {
         default_backend: 'cpu',
         backends: {
@@ -756,7 +763,7 @@ test.describe('Accessibility — backend argument tuning', () => {
           cpu: { state: 'installed', version: 'b1234', message: '', action: '' },
         },
       },
-    },
+    }),
   };
 
   test.beforeEach(async ({ page }) => {
