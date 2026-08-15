@@ -278,7 +278,7 @@
         .label.llm { background: rgba(139, 92, 246, 0.2); color: var(--accent-purple); }
         .label.embedding { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); }
         .label.reranking { background: rgba(245, 158, 11, 0.2); color: var(--accent-orange); }
-        .label.audio { background: rgba(255, 0, 128, 0.2); color: var(--accent-pink); }
+        .label.transcription { background: rgba(255, 0, 128, 0.2); color: var(--accent-pink); }
         .label.loaded { background: rgba(0, 212, 255, 0.2); color: var(--accent-cyan); }
 
         /* Loaded Models Table */
@@ -352,7 +352,7 @@
         .meta-value.type-llm { color: var(--accent-purple); }
         .meta-value.type-embedding { color: var(--accent-green); }
         .meta-value.type-reranking { color: var(--accent-orange); }
-        .meta-value.type-audio { color: var(--accent-pink); }
+        .meta-value.type-transcription { color: var(--accent-pink); }
 
         .eject-btn {
             background: rgba(239, 68, 68, 0.1);
@@ -974,15 +974,16 @@
         // Get model type from model info
         function getModelType(model) {
             const labels = model.labels || [];
-            const recipe = (model.recipe || '').toLowerCase();
-            const modelId = (model.id || '').toLowerCase();
 
-            // Check for audio/whisper models
-            if (labels.includes('audio') || recipe.includes('whisper') || modelId.includes('whisper')) {
-                return 'audio';
+            const chatIndicators = ['vision', 'reasoning', 'tool-calling', 'tools', 'chat-transcription'];
+            if (labels.some(label => chatIndicators.includes(label))) {
+                return 'llm';
             }
             if (labels.includes('embedding') || labels.includes('embeddings')) return 'embedding';
             if (labels.includes('reranking')) return 'reranking';
+            if (labels.includes('transcription')) return 'transcription';
+            if (labels.includes('image')) return 'image';
+            if (labels.includes('tts')) return 'tts';
             return 'llm';
         }
 
@@ -1237,7 +1238,7 @@
                         </button>
                     </div>
                 `;
-            } else if (type === 'audio') {
+            } else if (type === 'transcription') {
                 return `
                     <div class="input-section">
                         <span class="input-label">Audio File <span class="key-hint">(Drag & drop or click to select)</span></span>

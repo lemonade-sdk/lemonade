@@ -8,6 +8,7 @@ Tests use the skip_if_unsupported decorator to skip tests for unsupported featur
 """
 
 from functools import wraps
+import os
 import unittest
 
 # Global state for current test configuration
@@ -41,6 +42,7 @@ CAPABILITIES = {
             "backends": [
                 "vulkan",
                 "rocm",
+                "cuda",
                 "metal",
                 "cpu",
                 "system",
@@ -63,6 +65,9 @@ CAPABILITIES = {
                 "stop_parameter": True,
                 "echo_parameter": False,
                 "generation_parameters": False,
+                "slots": True,
+                "tokenize": True,
+                "static_max_context_window": True,
             },
             "test_models": {
                 "llm": "LFM2-1.2B-GGUF",
@@ -90,6 +95,8 @@ CAPABILITIES = {
                 "stop_parameter": True,
                 "echo_parameter": False,
                 "generation_parameters": False,
+                "slots": False,
+                "static_max_context_window": False,
             },
             "test_models": {
                 "llm_cpu": "Qwen2.5-0.5B-Instruct-CPU",
@@ -117,6 +124,8 @@ CAPABILITIES = {
                 "stop_parameter": False,
                 "echo_parameter": False,
                 "generation_parameters": False,
+                "slots": False,
+                "static_max_context_window": True,
             },
             "test_models": {
                 "llm": "llama3.2-1b-FLM",
@@ -126,7 +135,7 @@ CAPABILITIES = {
     },
     "whisper": {
         "whispercpp": {
-            "backends": ["cpu", "npu", "vulkan"],
+            "backends": ["cpu", "npu", "vulkan", "metal"],
             "supports": {
                 "transcription": True,
                 "transcription_with_language": True,
@@ -149,16 +158,110 @@ CAPABILITIES = {
                 "audio": "whisper-v3-turbo-FLM",
             },
         },
+        "moonshine": {
+            "backends": ["cpu"],
+            "supports": {
+                "transcription": True,
+                # English-only checkpoints; the language param is ignored
+                "transcription_with_language": False,
+                "rai_cache": False,
+                "realtime_websocket": True,
+            },
+            "test_models": {
+                "audio": "Moonshine-Tiny-Streaming",
+            },
+        },
     },
     "stable_diffusion": {
         "sd-cpp": {
-            "backends": ["cpu", "vulkan"],
+            "backends": ["cpu", "vulkan", "metal"],
             "supports": {
                 "image_generation": True,
                 "image_generation_b64": True,
             },
             "test_models": {
                 "image": "SD-Turbo",
+            },
+        },
+        "thenoise": {
+            "backends": ["rocm"],
+            "supports": {
+                "image_generation": True,
+                "image_generation_b64": True,
+            },
+            "test_models": {
+                "image": "Anima-Turbo",
+            },
+        },
+    },
+    "audio_generation": {
+        "thinksound": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "audio_generation": True,
+            },
+            "test_models": {
+                "audio_generation": "ThinkSound-SFX",
+            },
+        },
+        "acestep": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "audio_generation": True,
+            },
+            "test_models": {
+                "audio_generation": "ACE-Step-Music",
+            },
+        },
+    },
+    "model3d": {
+        "trellis": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "model_3d_generation": True,
+            },
+            "test_models": {
+                "model3d": "TRELLIS-3D",
+            },
+        },
+    },
+    "classification": {
+        "onnxruntime": {
+            "backends": ["cpu"],
+            "supports": {
+                "classify": True,
+            },
+            "test_models": {
+                "classification": "Phishing-Email-Detection-ONNX",
+            },
+        },
+    },
+    "tts": {
+        "openmoss": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "tts": True,
+                "voice_cloning": True,
+                "voice_design": True,
+            },
+            "test_models": {
+                "tts": "OpenMOSS-TTS",
+                "tts_design": "MOSS-VoiceGen",
+            },
+        },
+    },
+    "omni": {
+        # Omni "collection" models run a server-side tool-calling loop. The
+        # wrapped server here is the collection's chat (planner) component,
+        # which is llamacpp — so --backend selects the llamacpp backend.
+        "llamacpp": {
+            "backends": ["vulkan", "rocm", "cpu", "metal"],
+            "supports": {
+                "collection_chat": True,
+                "collection_chat_streaming": True,
+            },
+            "test_models": {
+                "omni": "LMX-Omni-5.5B-Lite",
             },
         },
     },
@@ -319,3 +422,21 @@ def requires_backend(backend: str):
         return wrapper
 
     return decorator
+
+
+def skip_heavy(test_func):
+    """
+    Skip a heavy, non-critical test by default to keep CI fast.
+
+    Heavy tests (e.g. slow GPU inference) are disabled unless
+    LEMONADE_TEST_HEAVY=1 is set (e.g. on a dedicated runner).
+
+    Usage:
+        @skip_heavy
+        def test_slow_generation(self):
+            ...
+    """
+    return unittest.skipUnless(
+        os.environ.get("LEMONADE_TEST_HEAVY") == "1",
+        "Heavy test disabled by default; set LEMONADE_TEST_HEAVY=1 to enable",
+    )(test_func)

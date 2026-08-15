@@ -16,7 +16,7 @@ Expects a running server (started by the installer or manually).
 
 Usage:
     python server_cli2.py
-    python server_cli2.py --server-binary /path/to/lemonade-server
+    python server_cli2.py --cli-binary /path/to/lemonade
 """
 
 import argparse
@@ -24,14 +24,17 @@ import glob
 import json
 import os
 import platform
+import re
+import requests
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 
-from utils.server_base import wait_for_server
+from utils.server_base import _auth_headers, set_server_config, wait_for_server
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     ENDPOINT_TEST_MODEL_CTX_SIZE,
@@ -53,7 +56,7 @@ from utils.test_models import (
     USER_MODEL_MAIN_CHECKPOINT,
     USER_MODEL_TE_CHECKPOINT,
     USER_MODEL_NAME,
-    get_default_server_binary,
+    get_default_cli_binary,
     get_hf_cache_dir_candidates,
 )
 
@@ -122,7 +125,8 @@ def _resolve_hf_cache_root(repo_cache_dirs, checkpoint_specs=None):
 
 # Global configuration
 _config = {
-    "server_binary": None,
+    "cli_binary": None,
+    "cli_api_key": None,
 }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -130,30 +134,30 @@ WINDOWS_LAUNCH_STUB_SKIP_REASON = "Windows launch-stub execution uses non-native
 
 
 def get_cli_binary():
-    """Get the CLI binary path (same as server binary but called 'lemonade')."""
-    server_binary = _config["server_binary"] or get_default_server_binary()
-    # Replace 'lemonade-server' with 'lemonade' in the path
-    return server_binary.replace("lemonade-server", "lemonade")
-
-
-def get_legacy_cli_binary():
-    """Get the deprecated lemonade-server shim binary path."""
-    return _config["server_binary"] or get_default_server_binary()
+    """Get the lemonade CLI binary path."""
+    return _config["cli_binary"] or get_default_cli_binary()
 
 
 def parse_cli_args():
     """Parse command line arguments for CLI client tests."""
     parser = argparse.ArgumentParser(description="Test lemonade CLI client")
     parser.add_argument(
-        "--server-binary",
+        "--cli-binary",
         type=str,
-        default=get_default_server_binary(),
-        help="Path to lemonade-server binary (default: CMake build output)",
+        default=get_default_cli_binary(),
+        help="Path to lemonade CLI binary (default: CMake build output)",
+    )
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        default=None,
+        help="API key to pass to all CLI invocations (for servers requiring auth)",
     )
 
     args = parser.parse_args()
 
-    _config["server_binary"] = args.server_binary
+    _config["cli_binary"] = args.cli_binary
+    _config["cli_api_key"] = args.api_key
 
     return args
 
@@ -161,6 +165,9 @@ def parse_cli_args():
 def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     """
     Run a CLI command and return the result.
+
+    If --api-key was provided to the test runner, it is automatically prepended
+    to every CLI invocation so commands work against a server requiring auth.
 
     Args:
         args: List of command arguments (without the binary)
@@ -172,6 +179,9 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     Returns:
         subprocess.CompletedProcess result
     """
+    cli_args = list(args)
+    if _config["cli_api_key"]:
+        cli_args = ["--api-key", _config["cli_api_key"]] + cli_args
     cli_binary = get_cli_binary()
     if os.path.isabs(cli_binary):
         resolved_cli_binary = cli_binary
@@ -207,32 +217,59 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     return result
 
 
-def run_legacy_cli_command(args, timeout=60, check=False):
-    """Run the deprecated lemonade-server shim and return the result."""
-    legacy_binary = get_legacy_cli_binary()
-    cmd = [legacy_binary] + args
-    print(f"Running legacy shim: {' '.join(cmd)}")
+def _is_transient_cli_pull_failure(result):
+    """Return True when a failed CLI pull looks like a transient server/HF issue."""
+    if result.returncode == 0:
+        return False
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        encoding="utf-8",
-        errors="replace",
+    output = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
+    transient_statuses = {408, 409, 429, 500, 502, 503, 504}
+    observed_statuses = {
+        int(match) for match in re.findall(r"(?:status\s*[:=]|http\s*)(\d{3})", output)
+    }
+
+    if observed_statuses.intersection(transient_statuses):
+        return True
+
+    return (
+        "too many requests" in output
+        or "rate limit" in output
+        or "temporarily unavailable" in output
+        or "connection reset" in output
+        or "connection aborted" in output
+        or "connection refused" in output
+        or "timed out" in output
+        or "timeout" in output
     )
 
-    if result.stdout:
-        print(f"legacy stdout: {result.stdout}")
-    if result.stderr:
-        print(f"legacy stderr: {result.stderr}")
 
-    if check and result.returncode != 0:
-        raise subprocess.CalledProcessError(
-            result.returncode, cmd, result.stdout, result.stderr
-        )
+def run_cli_pull_command_with_retry(args, timeout=TIMEOUT_MODEL_OPERATION, attempts=3):
+    """Run a CLI pull command with bounded retry for transient setup failures.
 
-    return result
+    The command still has to succeed with exit code 0. This only retries failures
+    that look transient, such as HF rate limits or temporary server/network errors.
+    """
+    last_result = None
+
+    for attempt in range(1, attempts + 1):
+        if attempt > 1:
+            time.sleep(min(30, 2 ** (attempt - 1)))
+
+        result = run_cli_command(args, timeout=timeout)
+        if result.returncode == 0:
+            return result
+
+        last_result = result
+        if _is_transient_cli_pull_failure(result) and attempt < attempts:
+            print(
+                f"Transient CLI pull failure, attempt {attempt}/{attempts}. "
+                "Retrying..."
+            )
+            continue
+
+        break
+
+    return last_result
 
 
 class PersistentServerCLIClientTests(unittest.TestCase):
@@ -338,6 +375,18 @@ sys.exit(0)
         return env
 
     # =============================================================================
+    # Version Tests
+    # =============================================================================
+
+    def test_005_version(self):
+        """Test --version flag."""
+        result = self.assertCommandSucceeds(["--version"])
+        self.assertTrue(
+            len(result.stdout) > 0 or len(result.stderr) > 0,
+            "Version command should produce output",
+        )
+
+    # =============================================================================
     # Status Tests
     # =============================================================================
 
@@ -359,17 +408,117 @@ sys.exit(0)
     # List Tests
     # =============================================================================
 
+    def _section_between(self, output, start_header, end_header=None):
+        lines = output.splitlines()
+        self.assertIn(start_header, lines)
+
+        start = lines.index(start_header) + 1
+        end = (
+            lines.index(end_header)
+            if end_header and end_header in lines
+            else len(lines)
+        )
+
+        return "\n".join(lines[start:end])
+
+    def _parse_model_table(self, section_text):
+        parsed_models = []
+        for line in section_text.splitlines():
+            line = line.strip()
+            if (
+                not line
+                or line.startswith("Model Name")
+                or line.startswith("---")
+                or "No local models" in line
+                or "No models available" in line
+            ):
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                name = parts[0]
+                downloaded = parts[1] == "Yes"
+                details = parts[2] if len(parts) > 2 else ""
+                parsed_models.append(
+                    {"name": name, "downloaded": downloaded, "details": details}
+                )
+        return parsed_models
+
     def test_020_list(self):
         """Test list command."""
         result = self.assertCommandSucceeds(["list"])
         output = result.stdout + result.stderr
         print(f"List output: {output}")
+        output_lines = output.splitlines()
+        self.assertIn("Local", output_lines)
+        self.assertIn("Available for Download", output_lines)
+        self.assertLess(
+            output_lines.index("Local"),
+            output_lines.index("Available for Download"),
+        )
+
+        local_section = self._section_between(output, "Local", "Available for Download")
+        available_section = self._section_between(output, "Available for Download")
+
+        local_models = self._parse_model_table(local_section)
+        available_models = self._parse_model_table(available_section)
+
+        if not local_models:
+            self.assertIn("No local models downloaded.", local_section)
+        else:
+            for m in local_models:
+                self.assertTrue(
+                    m["downloaded"],
+                    f"Model {m['name']} in Local section should be downloaded (Yes)",
+                )
+
+        for m in available_models:
+            self.assertFalse(
+                m["downloaded"],
+                f"Model {m['name']} in Available for Download section should not be downloaded (No)",
+            )
 
     def test_021_list_downloaded_flag(self):
         """Test list --downloaded flag."""
+        # Get all models from the full list to know what's available vs downloaded
+        all_result = self.assertCommandSucceeds(["list"])
+        all_output = all_result.stdout + all_result.stderr
+        available_section = self._section_between(all_output, "Available for Download")
+        available_models = self._parse_model_table(available_section)
+
         result = self.assertCommandSucceeds(["list", "--downloaded"])
         output = result.stdout + result.stderr
         print(f"List --downloaded output: {output}")
+        output_lines = output.splitlines()
+        self.assertNotIn("Local", output_lines)
+        self.assertNotIn("Available for Download", output_lines)
+
+        # A fresh cache has no local models yet, so --downloaded may return
+        # the empty local-state message instead of a table.
+        if "No local models downloaded." in output:
+            downloaded_models = []
+        else:
+            self.assertIn("Model Name", output)
+            self.assertIn("Downloaded", output)
+            self.assertIn("Details", output)
+            downloaded_models = self._parse_model_table(output)
+
+        for m in downloaded_models:
+            self.assertTrue(
+                m["downloaded"],
+                f"Model {m['name']} in --downloaded list should be downloaded (Yes)",
+            )
+
+        non_downloaded_names = [
+            m["name"] for m in available_models if not m["downloaded"]
+        ]
+        if non_downloaded_names:
+            downloaded_names = [m["name"] for m in downloaded_models]
+            for name in non_downloaded_names:
+                self.assertNotIn(
+                    name,
+                    downloaded_names,
+                    f"Non-downloaded model {name} should not be in --downloaded list",
+                )
 
     # =============================================================================
     # Export Tests
@@ -429,12 +578,137 @@ sys.exit(0)
         print(f"Backends uninstall exit code: {result.returncode}")
 
     # =============================================================================
+    # Runtime Config Tests
+    # =============================================================================
+
+    def test_043_listen_all_via_runtime_config(self):
+        """Test that setting host to 0.0.0.0 via /internal/set works."""
+        try:
+            # Set host to 0.0.0.0 (listen on all interfaces).
+            try:
+                set_server_config({"host": "0.0.0.0"})
+                print("[OK] Set host to 0.0.0.0 via /internal/set")
+            except Exception as e:
+                self.fail(f"Failed to set host to 0.0.0.0: {e}")
+
+            # Wait for server to finish rebinding. Use 127.0.0.1 explicitly
+            # because 0.0.0.0 only binds IPv4, and "localhost" may resolve to
+            # ::1 (IPv6) in some environments (e.g. Fedora containers).
+            for i in range(30):
+                try:
+                    response = requests.get(
+                        f"http://127.0.0.1:{PORT}/api/v1/health",
+                        headers=_auth_headers(),
+                        timeout=2,
+                    )
+                    if response.status_code == 200:
+                        break
+                except requests.ConnectionError:
+                    pass
+                time.sleep(1)
+            else:
+                self.fail(
+                    "Server did not become reachable on 127.0.0.1 after rebind to 0.0.0.0"
+                )
+
+            # Verify the server still responds (status command should work).
+            result = self.assertCommandSucceeds(["status"])
+            output = result.stdout.lower() + result.stderr.lower()
+            self.assertTrue(
+                "running" in output or "online" in output or "active" in output,
+                f"Status should indicate server is running on 0.0.0.0: {result.stdout}",
+            )
+
+            # Verify via health endpoint too (use 127.0.0.1 for same IPv4 reason).
+            response = requests.get(
+                f"http://127.0.0.1:{PORT}/api/v1/health",
+                headers=_auth_headers(),
+                timeout=10,
+            )
+            self.assertEqual(response.status_code, 200)
+        finally:
+            # Best-effort restore: this test runs inside CI jobs that execute
+            # multiple modules against one long-lived server, so cleanup must not
+            # mask the primary assertion failure. reset_server_state also restores
+            # the host before subsequent CI suites.
+            try:
+                response = requests.post(
+                    f"http://127.0.0.1:{PORT}/internal/set",
+                    json={"host": "localhost"},
+                    headers=_auth_headers(),
+                    timeout=10,
+                )
+                if response.status_code < 400:
+                    wait_for_server(port=PORT, timeout=30)
+                    print("[OK] Restored host to localhost and server is reachable")
+                else:
+                    print(
+                        "Warning: Failed to restore host to localhost: "
+                        f"{response.status_code}: {response.text}"
+                    )
+            except Exception as e:  # noqa: BLE001 - best-effort cleanup
+                print(f"Warning: Failed to restore host to localhost: {e}")
+
+    def test_044_config_set_flat_backend_key(self):
+        """Flat backend keys (e.g. vllm_args) map to their nested form (issue #1824)."""
+        try:
+            # The flat underscore form is what the CLI flags and docs use; it
+            # must be accepted and stored under the nested "vllm.args" key.
+            self.assertCommandSucceeds(
+                ["config", "set", "vllm_args=--max-num-seqs 128"]
+            )
+
+            result = self.assertCommandSucceeds(["config"])
+            output = result.stdout
+            self.assertIn(
+                "vllm.args",
+                output,
+                f"vllm.args should appear in config output: {output}",
+            )
+            self.assertIn(
+                "--max-num-seqs 128",
+                output,
+                f"flat vllm_args value should be stored under vllm.args: {output}",
+            )
+        finally:
+            # Restore the default (empty) value so later tests are unaffected.
+            run_cli_command(["config", "set", "vllm.args="])
+
+    def test_044_config_set_cli(self):
+        """Verify that CLI config set parses nested dotted keys and modifies the server config."""
+        # 1. Set some values using the CLI config set
+        result = self.assertCommandSucceeds(
+            [
+                "config",
+                "set",
+                "telemetry.otlp.endpoint=http://127.0.0.1:4444/v1/traces",
+                "telemetry.otlp.protocol=http/json",
+                'telemetry.otlp.semantics=["openinference"]',
+            ]
+        )
+        print(f"Config set output: {result.stdout}")
+
+        # 2. Query the params to verify it parsed correctly and merged
+        response = requests.get(
+            f"http://localhost:{PORT}/api/v1/params",
+            headers=_auth_headers(),
+            timeout=10,
+        )
+        self.assertEqual(response.status_code, 200)
+        telemetry = response.json().get("telemetry", {})
+        self.assertEqual(
+            telemetry.get("otlp", {}).get("endpoint"), "http://127.0.0.1:4444/v1/traces"
+        )
+        self.assertEqual(telemetry.get("otlp", {}).get("protocol"), "http/json")
+        self.assertEqual(telemetry.get("otlp", {}).get("semantics"), ["openinference"])
+
+    # =============================================================================
     # Pull Tests
     # =============================================================================
 
     def test_050_pull_with_checkpoint(self):
         """Test pull command with --checkpoint option."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -450,7 +724,7 @@ sys.exit(0)
 
     def test_051_pull_with_labels(self):
         """Test pull command with --label option."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -493,7 +767,7 @@ sys.exit(0)
 
     def test_053_pull_with_multiple_checkpoints(self):
         """Test pull command with multiple checkpoints (e.g., main + mmproj)."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -512,14 +786,112 @@ sys.exit(0)
 
     def test_054_pull_registered_name(self):
         """Test pull command with a registered model name (no flags)."""
-        result = self.assertCommandSucceeds(
+        result = run_cli_pull_command_with_retry(
             ["pull", ENDPOINT_TEST_MODEL],
             timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"Command failed with exit code {result.returncode}: {result.stderr}",
         )
         output = result.stdout.lower() + result.stderr.lower()
         self.assertFalse(
             "error" in output and "failed" in output,
             f"Pull should not report errors: {result.stdout}",
+        )
+
+    def test_055_pull_components_omni_collection(self):
+        """Test pull command with --components flag registers an omni collection."""
+        collection_name = f"user.CliColl-{uuid.uuid4().hex[:8]}"
+        # Registered collections list under their canonical `user.` id (matching
+        # registration/fetch/chat); the bare name is a resolvable alias only.
+        bare_name = collection_name[5:]
+        try:
+            result = run_cli_pull_command_with_retry(
+                [
+                    "pull",
+                    collection_name,
+                    "--recipe",
+                    "collection.omni",
+                    "--components",
+                    ENDPOINT_TEST_MODEL,
+                ],
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                f"Command failed with exit code {result.returncode}: {result.stderr}",
+            )
+            output = result.stdout.lower() + result.stderr.lower()
+            self.assertFalse(
+                "error" in output and "failed" in output,
+                f"Pull should not report errors: {result.stdout}",
+            )
+
+            # Verify the collection landed in /models with components populated.
+            response = requests.get(
+                f"http://localhost:{PORT}/api/v1/models?show_all=true",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200)
+            ids = [m["id"] for m in response.json()["data"]]
+            self.assertIn(
+                collection_name,
+                ids,
+                f"{collection_name} should appear in /models under its user. id",
+            )
+            self.assertNotIn(
+                bare_name,
+                ids,
+                "Collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in response.json()["data"] if m["id"] == collection_name
+            )
+            self.assertEqual(entry.get("recipe"), "collection.omni")
+            self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
+
+            # Both the bare and prefixed ids still resolve on GET /models/{id}.
+            for lookup in (collection_name, bare_name):
+                single = requests.get(
+                    f"http://localhost:{PORT}/api/v1/models/{lookup}",
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    single.status_code, 200, f"{lookup} should resolve: {single.text}"
+                )
+                self.assertEqual(single.json().get("id"), collection_name)
+        finally:
+            try:
+                requests.post(
+                    f"http://localhost:{PORT}/api/v1/delete",
+                    json={"model_name": collection_name},
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_056_pull_components_missing_for_omni_recipe(self):
+        """`--recipe collection.omni` without --components is rejected by the CLI."""
+        result = self.assertCommandFails(
+            [
+                "pull",
+                f"user.MissingComps-{uuid.uuid4().hex[:8]}",
+                "--recipe",
+                "collection.omni",
+            ],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        output = (result.stdout + result.stderr).lower()
+        self.assertIn(
+            "--components",
+            output,
+            f"Error should point at the missing --components flag: {output}",
         )
 
     # =============================================================================
@@ -545,45 +917,6 @@ sys.exit(0)
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
             print(f"Import from JSON exit code: {result.returncode}")
-        finally:
-            if os.path.exists(json_file):
-                os.unlink(json_file)
-
-    def test_060a_import_json_file_with_appear_builtin_label(self):
-        """Import should preserve appear-builtin and expose the bare model name."""
-        canonical_name = f"user.ImportAlias-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name[5:]
-        json_data = {
-            "model_name": canonical_name,
-            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-            "recipe": "llamacpp",
-            "labels": ["appear-builtin"],
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json_file = f.name
-            json.dump(json_data, f)
-
-        try:
-            import_result = run_cli_command(
-                ["import", json_file],
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(import_result.returncode, 0)
-
-            list_result = run_cli_command(
-                ["list", "--downloaded"],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            output = list_result.stdout + list_result.stderr
-            self.assertIn(public_name, output)
-            self.assertNotIn(canonical_name, output)
-
-            delete_result = run_cli_command(
-                ["delete", public_name],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(delete_result.returncode, 0)
         finally:
             if os.path.exists(json_file):
                 os.unlink(json_file)
@@ -948,7 +1281,13 @@ sys.exit(0)
             )
             self.assertIn('model_provider="lemonade"', argv)
             self.assertEqual(payload["env"]["OPENAI_BASE_URL"], "")
-            self.assertEqual(payload["env"]["OPENAI_API_KEY"], "lemonade")
+            # OPENAI_API_KEY mirrors whatever lemonade was running with — the
+            # default "lemonade" when no key is set, or the LEMONADE_API_KEY
+            # env value when the test job sets one (e.g. Test API Key CI job).
+            self.assertEqual(
+                payload["env"]["OPENAI_API_KEY"],
+                os.environ.get("LEMONADE_API_KEY", "lemonade"),
+            )
 
     def test_114_launch_claude_defaults_and_host_normalization(self):
         """Claude launch should default auth token and normalize wildcard host to localhost."""
@@ -982,10 +1321,50 @@ sys.exit(0)
             with open(capture_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
 
-            self.assertEqual(payload["env"]["ANTHROPIC_AUTH_TOKEN"], "lemonade")
-            self.assertEqual(payload["env"]["LEMONADE_API_KEY"], "lemonade")
+            # Both env vars mirror the lemonade api key in use — default
+            # "lemonade" when no key is set, or LEMONADE_API_KEY when the
+            # test job sets one (e.g. Test API Key CI job).
+            expected_key = os.environ.get("LEMONADE_API_KEY", "lemonade")
+            self.assertEqual(payload["env"]["ANTHROPIC_AUTH_TOKEN"], expected_key)
+            self.assertEqual(payload["env"]["LEMONADE_API_KEY"], expected_key)
             self.assertEqual(
                 payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
+            )
+
+    def test_115_launch_claude_windows_prefers_cmd_over_npm_shim(self):
+        """On Windows, launch must run claude.cmd, not npm's extensionless shell script."""
+        if not IS_WINDOWS:
+            self.skipTest(
+                "Windows-only: npm shim vs .cmd resolution does not apply on Unix"
+            )
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "claude_cmd_capture.txt")
+
+            # Recreate what 'npm install -g' leaves on PATH: a Unix shell
+            # script named just "claude" next to claude.cmd. Windows cannot
+            # run the shell script, so the launcher must pick the .cmd.
+            with open(os.path.join(temp_dir, "claude"), "w", encoding="utf-8") as f:
+                f.write('#!/bin/sh\nexec node "$(dirname "$0")/claude.js" "$@"\n')
+            with open(os.path.join(temp_dir, "claude.cmd"), "w", encoding="utf-8") as f:
+                f.write(f'@echo off\necho fake-agent-ok> "{capture_path}"\nexit /b 0\n')
+
+            env = self._build_stubbed_agent_env(temp_dir)
+            result = run_cli_command(
+                ["launch", "claude", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(
+                result.returncode,
+                0,
+                "launch failed; the extensionless npm shim was likely picked "
+                "instead of claude.cmd (Error 193)",
+            )
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "claude.cmd was not executed",
             )
 
     def test_102c_launch_codex_provider_default(self):
@@ -1144,7 +1523,10 @@ sys.exit(0)
 
             self.assertNotEqual(result.returncode, 0)
             output = result.stdout + result.stderr
-            self.assertIn("only supported for the codex agent", output)
+            self.assertIn(
+                "Error: --provider is only supported for 'lemonade launch codex'.",
+                output,
+            )
 
     def test_102h_launch_agent_args_passthrough(self):
         """--agent-args should be tokenized and appended to agent argv."""
@@ -1284,7 +1666,11 @@ sys.exit(0)
             lemonade = cfg["provider"]["Lemonade"]
             self.assertEqual(lemonade["npm"], "@ai-sdk/openai-compatible")
             self.assertIn("baseURL", lemonade["options"])
-            self.assertEqual(lemonade["options"]["apiKey"], "lemonade")
+            # Mirrors lemonade api key in use; LEMONADE_API_KEY env wins.
+            self.assertEqual(
+                lemonade["options"]["apiKey"],
+                os.environ.get("LEMONADE_API_KEY", "lemonade"),
+            )
             self.assertIn(ENDPOINT_TEST_MODEL, lemonade["models"])
             self.assertEqual(
                 lemonade["models"][ENDPOINT_TEST_MODEL]["limit"]["context"],
@@ -1454,6 +1840,45 @@ sys.exit(0)
             timeout=TIMEOUT_DEFAULT,
         )
         print(f"Delete model exit code: {result.returncode}")
+
+    def test_090a_naming_spec_list_shows_canonical_shadowed_rows(self):
+        """`list` prints API ids verbatim, so shadowed sources appear under their canonical IDs.
+
+        Verifies the copy-paste-safe contract: when a user.* shadows a built-in,
+        the list shows both `<bare>` (winner) and `builtin.<bare>` (shadowed),
+        and either string is directly usable in `lemonade load`/`delete`.
+        """
+        bare = ENDPOINT_TEST_MODEL  # known built-in
+        user_canonical = f"user.{bare}"
+
+        try:
+            pull_response = requests.post(
+                f"http://localhost:{PORT}/api/v1/pull",
+                json={
+                    "model_name": user_canonical,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200)
+
+            result = self.assertCommandSucceeds(["list"], timeout=TIMEOUT_DEFAULT)
+            output = result.stdout + result.stderr
+
+            # Winner appears as bare id; shadowed built-in appears under its canonical id.
+            self.assertIn(bare, output)
+            self.assertIn(f"builtin.{bare}", output)
+            # The user.* canonical form must NOT appear in output — winners emit bare.
+            self.assertNotIn(user_canonical, output)
+
+            print(
+                f"[OK] list shows both {bare} (user winner) and builtin.{bare} (shadowed)"
+            )
+        finally:
+            run_cli_command(["delete", user_canonical], timeout=TIMEOUT_DEFAULT)
 
     def test_091_delete_preserves_shared_repo(self):
         """Test that deleting one model preserves files used by another model sharing the same repo."""
@@ -1696,31 +2121,105 @@ sys.exit(0)
 class CLIHelpDocsConsistencyTests(unittest.TestCase):
     """Lightweight checks that compare CLI help semantics with docs text."""
 
+    def test_899_run_load_recipe_options_are_grouped(self):
+        """Run/load help should keep every recipe flag under the intended group."""
+        expected_groups = {
+            "General Options:": ["--ctx-size", "--merge-args"],
+            "Llama.cpp Backend Options:": [
+                "--llamacpp",
+                "--llamacpp-device",
+                "--llamacpp-args",
+            ],
+            "Stable Diffusion Options:": ["--sdcpp", "--sdcpp-args"],
+            "vLLM Options:": ["--vllm", "--vllm-args"],
+            "Whisper.cpp Options:": ["--whispercpp", "--whispercpp-args"],
+        }
+
+        for command in ("run", "load"):
+            with self.subTest(command=command):
+                result = run_cli_command([command, "--help"], timeout=TIMEOUT_DEFAULT)
+                self.assertEqual(result.returncode, 0)
+
+                help_output = result.stdout + result.stderr
+                group_positions = {
+                    group: help_output.find(group) for group in expected_groups
+                }
+                for group, position in group_positions.items():
+                    self.assertNotEqual(position, -1, f"Missing help group: {group}")
+
+                ordered_groups = sorted(
+                    group_positions.items(), key=lambda item: item[1]
+                )
+                for index, (group, start) in enumerate(ordered_groups):
+                    end = (
+                        ordered_groups[index + 1][1]
+                        if index + 1 < len(ordered_groups)
+                        else len(help_output)
+                    )
+                    section = help_output[start:end]
+
+                    for flag in expected_groups[group]:
+                        self.assertTrue(
+                            any(
+                                line.strip().startswith(flag)
+                                and (
+                                    len(line.strip()) == len(flag)
+                                    or line.strip()[len(flag)] in " ,"
+                                )
+                                for line in section.splitlines()
+                            ),
+                            f"{flag} missing from {group} in `{command} --help`",
+                        )
+
     def test_900_launch_docs_match_help_text(self):
         """The launch model-selection wording in docs should match actual CLI behavior/help."""
         result = run_cli_command(["launch", "--help"], timeout=TIMEOUT_DEFAULT)
         self.assertEqual(result.returncode, 0)
 
         help_output = result.stdout + result.stderr
-        self.assertIn(
-            "Remote recipe directory used only if you choose recipe import at prompt",
-            help_output,
+        self.assertIn("Agents:", help_output)
+        self.assertIn("claude", help_output)
+        self.assertIn("codex", help_output)
+        self.assertIn("opencode", help_output)
+        self.assertNotIn("--model", help_output)
+        self.assertNotIn("--directory", help_output)
+        self.assertNotIn("--recipe-file", help_output)
+        self.assertNotIn("--agent-args", help_output)
+        self.assertNotIn("--provider", help_output)
+        self.assertNotIn("--ctx-size", help_output)
+        self.assertNotIn("LEMONADE_CTX_SIZE", help_output)
+
+        claude_result = run_cli_command(
+            ["launch", "claude", "--help"], timeout=TIMEOUT_DEFAULT
         )
-        self.assertIn(
-            "Remote recipe JSON filename used only if you choose recipe import at prompt",
-            help_output,
+        self.assertEqual(claude_result.returncode, 0)
+        claude_help = claude_result.stdout + claude_result.stderr
+        self.assertNotIn("--provider", claude_help)
+        self.assertNotIn("--ctx-size", claude_help)
+        self.assertNotIn("LEMONADE_CTX_SIZE", claude_help)
+        self.assertNotIn("--llamacpp", claude_help)
+
+        opencode_result = run_cli_command(
+            ["launch", "opencode", "--help"], timeout=TIMEOUT_DEFAULT
         )
-        self.assertIn(
-            "Use model provider name for Codex",
-            help_output,
+        self.assertEqual(opencode_result.returncode, 0)
+        opencode_help = opencode_result.stdout + opencode_result.stderr
+        self.assertNotIn("--provider", opencode_help)
+        self.assertNotIn("--ctx-size", opencode_help)
+        self.assertNotIn("LEMONADE_CTX_SIZE", opencode_help)
+
+        codex_result = run_cli_command(
+            ["launch", "codex", "--help"], timeout=TIMEOUT_DEFAULT
         )
-        self.assertIn(
-            "Custom arguments to pass directly to the launched agent process",
-            help_output,
-        )
+        self.assertEqual(codex_result.returncode, 0)
+        codex_help = codex_result.stdout + codex_result.stderr
+        self.assertIn("Use model provider name for Codex", codex_help)
+        self.assertIn("--provider", codex_help)
+        self.assertNotIn("--ctx-size", codex_help)
+        self.assertNotIn("LEMONADE_CTX_SIZE", codex_help)
 
         docs_path = os.path.join(
-            os.path.dirname(__file__), "..", "docs", "lemonade-cli.md"
+            os.path.dirname(__file__), "..", "docs", "guide", "cli.md"
         )
         with open(docs_path, "r", encoding="utf-8") as f:
             docs_text = f.read()
@@ -1740,24 +2239,83 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         )
         self.assertIn("--provider,-p [PROVIDER]", docs_text)
         self.assertIn("--agent-args ARGS", docs_text)
+        launch_section = docs_text.split("## Options for launch", 1)[1].split(
+            "## Options for scan", 1
+        )[0]
+        self.assertNotIn("--ctx-size", launch_section)
+        self.assertNotIn("--llamacpp", launch_section)
 
-    def test_901_legacy_pull_deprecation_message(self):
-        """The legacy shim should not forward pull args and should print migration guidance."""
-        result = run_legacy_cli_command(
-            ["pull", "Qwen3-0.6B-GGUF"], timeout=TIMEOUT_DEFAULT
+
+class CLIUrlSchemeTests(unittest.TestCase):
+    """Tests URL scheme parsing, HTTPS/TLS connections, and port overrides in the C++ CLI client."""
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server
+        import threading
+        import socket
+
+        class MockHTTPHandler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass
+
+            def do_GET(self):
+                if self.path.startswith("/api/v1/models") or self.path.startswith(
+                    "/api/v0/models"
+                ):
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"data":[]}')
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+        # Find a free port
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(("127.0.0.1", 0))
+        cls.mock_port = s.getsockname()[1]
+        s.close()
+
+        cls.server = http.server.HTTPServer(
+            ("127.0.0.1", cls.mock_port), MockHTTPHandler
         )
-        self.assertNotEqual(result.returncode, 0)
+        cls.thread = threading.Thread(target=cls.server.serve_forever)
+        cls.thread.daemon = True
+        cls.thread.start()
 
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.thread.join()
+
+    def test_http_scheme_port_default(self):
+        """Should connect successfully and default port when http:// scheme is used."""
+        env = os.environ.copy()
+        env["LEMONADE_HOST"] = f"http://127.0.0.1:{self.mock_port}"
+        result = run_cli_command(["list"], env=env, timeout=10)
         output = result.stdout + result.stderr
-        self.assertIn("This command is deprecated.", output)
-        self.assertIn("use 'lemonade pull --help' instead", output.lower())
-        self.assertIn("Built-in model: lemonade pull Qwen3-0.6B-GGUF", output)
-        self.assertIn(
-            "Checkpoint:     lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M", output
-        )
-        self.assertIn(
-            "Manual pull:    lemonade pull user.MyModel --checkpoint main org/repo:Q4_K_M --recipe llamacpp",
-            output,
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("No models available", output)
+
+    def test_https_scheme_connection_attempt(self):
+        """Should attempt a secure TLS connection when https:// scheme is used."""
+        # Connecting https://127.0.0.1:mock_port will attempt a TLS handshake on our HTTP server.
+        # This will fail (since the server is HTTP), but it verifies that:
+        # 1. The hostname/port were parsed correctly to 127.0.0.1:mock_port.
+        # 2. It attempted a TLS handshake.
+        env = os.environ.copy()
+        env["LEMONADE_HOST"] = f"https://127.0.0.1:{self.mock_port}"
+        result = run_cli_command(["list"], env=env, timeout=10)
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0)
+        # Verify it either tried to establish connection/handshake or failed because HTTPS is compiled out
+        self.assertTrue(
+            "Could not connect to Lemonade server" in output
+            or "HTTPS support is not compiled" in output
+            or "'https' scheme is not supported" in output,
+            f"Expected connection error or HTTPS unsupported error, got: {output}",
         )
 
 
@@ -1767,7 +2325,6 @@ def run_cli_client_tests():
 
     print(f"\n{'=' * 70}")
     print("CLI CLIENT TESTS")
-    print(f"Server binary: {_config['server_binary']}")
     print(f"CLI binary: {get_cli_binary()}")
     print(f"{'=' * 70}\n")
 
@@ -1776,6 +2333,7 @@ def run_cli_client_tests():
     suite = unittest.TestSuite()
     suite.addTests(loader.loadTestsFromTestCase(PersistentServerCLIClientTests))
     suite.addTests(loader.loadTestsFromTestCase(CLIHelpDocsConsistencyTests))
+    suite.addTests(loader.loadTestsFromTestCase(CLIUrlSchemeTests))
 
     runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
     result = runner.run(suite)

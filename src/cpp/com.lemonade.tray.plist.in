@@ -17,9 +17,9 @@
     <false/>
 
     <key>StandardOutPath</key>
-    <string>/tmp/lemonade-tray.out.log</string>
+    <string>/Users/Shared/lemonade-tray.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/lemonade-tray.err.log</string>
+    <string>/Users/Shared/lemonade-tray.err.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

@@ -2,7 +2,7 @@
 
 This guide shows how to build the embeddable `lemond` and `lemonade` binaries from source.
 
-For general prerequisites, toolchain setup, and broader development workflows, see [Lemonade Development](../dev-getting-started.md).
+For general prerequisites, toolchain setup, and broader development workflows, see [Lemonade Development](../dev/getting-started.md).
 
 Contents:
 
@@ -12,7 +12,7 @@ Contents:
 
 ## Default Embeddable Build
 
-The `embeddable` CMake target builds the server, CLI, and required resource files, then packages them into a single archive. The [release workflow](../../.github/workflows/cpp_server_build_test_release.yml) uses this target to produce the embeddable archives.
+The `embeddable` CMake target builds the server, CLI, and required resource files, then packages them into a single archive. The [release workflow](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml) uses this target to produce the embeddable archives.
 
 === "Windows (cmd.exe)"
 
@@ -32,7 +32,17 @@ The `embeddable` CMake target builds the server, CLI, and required resource file
     cmake --build --preset default --target embeddable
     ```
 
-    This produces `build/lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz`.
+    This produces `build/lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz` on x86_64 Linux and `build/lemonade-embeddable-{VERSION}-ubuntu-arm64.tar.gz` on ARM64 Linux.
+
+=== "macOS (bash)"
+
+    ```bash
+    brew install cmake ninja
+    cmake --preset default -DBUILD_WEB_APP=OFF
+    cmake --build --preset default --target embeddable
+    ```
+
+    This produces `build/lemonade-embeddable-{VERSION}-macos-arm64.tar.gz`.
 
 ## Include the Web App
 
@@ -52,14 +62,23 @@ If you want the embeddable build to include the browser UI assets under `resourc
     cmake --build --preset default --target web-app embeddable
     ```
 
+=== "macOS (bash)"
+
+    ```bash
+    cmake --preset default -DBUILD_WEB_APP=ON
+    cmake --build --preset default --target web-app embeddable
+    ```
+
 ## Expected Outputs
 
 The `embeddable` target produces a single archive in `build/`:
 
 | Platform | Archive |
 |----------|---------|
-| Linux    | `lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz` |
+| Linux (x86_64) | `lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz` |
+| Linux (ARM64)  | `lemonade-embeddable-{VERSION}-ubuntu-arm64.tar.gz` |
 | Windows  | `lemonade-embeddable-{VERSION}-windows-x64.zip` |
+| macOS    | `lemonade-embeddable-{VERSION}-macos-arm64.tar.gz` |
 
 Each archive contains:
 

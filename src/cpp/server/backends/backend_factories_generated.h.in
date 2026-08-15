@@ -1,0 +1,21 @@
+#pragma once
+//
+// AUTO-GENERATED at CMake configure time from LEMON_BACKENDS in CMakeLists.txt.
+// Do not edit by hand. Binds each descriptor to its server class's create()
+// (server-only: pulls in server classes, compiled into lemond not the CLI).
+//
+#include <vector>
+#include "lemon/backends/backend_registry.h"
+@LEMON_DESCRIPTOR_INCLUDES@
+@LEMON_FACTORY_INCLUDES@
+namespace lemon {
+namespace backends {
+
+inline std::vector<BackendRegistration> generated_registrations() {
+    return {
+@LEMON_FACTORY_ENTRIES@
+    };
+}
+
+} // namespace backends
+} // namespace lemon

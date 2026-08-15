@@ -52,7 +52,6 @@ fi
 # Kill any lingering lemonade processes to ensure clean startup
 killall lemond 2>/dev/null || true
 killall lemonade-tray 2>/dev/null || true
-killall lemonade-server 2>/dev/null || true
 sleep 1
 
 # ------------------------------------------------------------------------------
@@ -62,7 +61,6 @@ echo "Ensuring binaries are updated..."
 
 # Force update binaries (in case installer didn't overwrite running ones)
 LEMOND_BIN="${INSTALL_ROOT}/usr/local/bin/lemond"
-LEMONADE_SERVER="${INSTALL_ROOT}/usr/local/bin/lemonade-server"
 LEMONADE_CLI="${INSTALL_ROOT}/usr/local/bin/lemonade"
 
 # If binaries exist, touch them to ensure timestamps are updated
@@ -70,11 +68,6 @@ LEMONADE_CLI="${INSTALL_ROOT}/usr/local/bin/lemonade"
 if [ -f "$LEMOND_BIN" ]; then
     touch "$LEMOND_BIN"
     echo "Updated lemond timestamp"
-fi
-
-if [ -f "$LEMONADE_SERVER" ]; then
-    touch "$LEMONADE_SERVER"
-    echo "Updated lemonade-server timestamp"
 fi
 
 if [ -f "$LEMONADE_CLI" ]; then

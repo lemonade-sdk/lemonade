@@ -7,9 +7,11 @@
 #include <functional>
 #include <future>
 #include <atomic>
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include "streaming_audio_buffer.h"
 #include "vad.h"
+#include "utils/tcp_jsonl_client.h"
 
 namespace lemon {
 
@@ -44,10 +46,21 @@ struct RealtimeSession {
 
     // Timestamps for audio tracking
     int64_t audio_start_ms = 0;  // Start of current speech segment
+    std::atomic<bool> vad_speech_window_open{false};
 
     // Interim transcription state
     int64_t last_interim_transcription_ms = 0;  // When we last fired an interim transcription
     std::atomic<bool> interim_in_flight{false};  // Guard against overlapping interim requests
+    std::atomic<std::uint64_t> interim_generation{0}; // Invalidates stale queued interim requests
+    // Serializes all Whisper calls for this session. A final transcription
+    // invalidates queued interim work before it can reach the backend.
+    std::mutex transcription_mutex;
+
+    // Streaming backend connection (used when backend supports IStreamingTranscriptionServer).
+    // streaming_mutex guards streaming_client against concurrent forward/disconnect.
+    std::mutex streaming_mutex;
+    std::unique_ptr<utils::TcpJsonlClient> streaming_client;
+    std::atomic<bool> use_streaming_backend{false};
 
     RealtimeSession(const std::string& id)
         : session_id(id),
@@ -149,10 +162,19 @@ private:
     // When is_interim is true the result is sent as a delta event.
     void transcribe_wav(std::shared_ptr<RealtimeSession> session,
                         std::vector<uint8_t> wav_data, std::string model,
-                        bool is_interim = false);
+                        bool is_interim = false,
+                        std::uint64_t interim_generation = 0);
 
     // Process VAD for a session
     void process_vad(std::shared_ptr<RealtimeSession> session);
+
+    // Streaming backend helpers
+    void connect_streaming_backend(std::shared_ptr<RealtimeSession> session);
+    void disconnect_streaming_backend(std::shared_ptr<RealtimeSession> session);
+    void forward_streaming_audio(std::shared_ptr<RealtimeSession> session,
+                                 const std::string& base64_audio);
+    void forward_streaming_commit(std::shared_ptr<RealtimeSession> session);
+    void forward_streaming_clear(std::shared_ptr<RealtimeSession> session);
 
     // Get session by ID (returns nullptr if not found)
     std::shared_ptr<RealtimeSession> get_session(const std::string& session_id);

@@ -10,6 +10,7 @@ runtime configuration via POST /internal/set.
 """
 
 import unittest
+import contextlib
 import socket
 import time
 import sys
@@ -45,12 +46,13 @@ from .test_models import (
     STANDARD_MESSAGES,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
-    get_default_server_binary,
+    TIMEOUT_ROCM_INSTALL,
+    get_default_cli_binary,
 )
 
 # Global configuration set by parse_args()
 _config = {
-    "server_binary": None,
+    "cli_binary": None,
     "wrapped_server": None,
     "backend": None,
     "modality": None,
@@ -84,10 +86,10 @@ def parse_args(additional_args=None, modality=None):
         help="Run tests in offline mode",
     )
     parser.add_argument(
-        "--server-binary",
+        "--cli-binary",
         type=str,
-        default=get_default_server_binary(),
-        help="Path to server binary (default: lemonade-server in venv)",
+        default=get_default_cli_binary(),
+        help="Path to lemonade CLI binary (default: build/lemonade)",
     )
     parser.add_argument(
         "--wrapped-server",
@@ -105,7 +107,7 @@ def parse_args(additional_args=None, modality=None):
     args, unknown = parser.parse_known_args()
 
     # Update global config
-    _config["server_binary"] = args.server_binary
+    _config["cli_binary"] = args.cli_binary
     _config["wrapped_server"] = args.wrapped_server
     _config["backend"] = args.backend
     _config["modality"] = modality
@@ -124,9 +126,9 @@ def get_config():
     return _config.copy()
 
 
-def get_server_binary():
-    """Get the server binary path."""
-    return _config["server_binary"]
+def get_cli_binary():
+    """Get the lemonade CLI binary path."""
+    return _config["cli_binary"]
 
 
 def wait_for_server(port=PORT, timeout=60):
@@ -184,6 +186,170 @@ def unload_all_models(port=PORT):
     return response
 
 
+def load_model(model_name, port=PORT, timeout=TIMEOUT_MODEL_OPERATION, **options):
+    """POST /api/v1/load for one model, forwarding any recipe options."""
+    payload = {"model_name": model_name}
+    payload.update(options)
+    response = requests.post(
+        f"http://localhost:{port}/api/v1/load",
+        json=payload,
+        headers=_auth_headers(),
+        timeout=timeout,
+    )
+    return response
+
+
+def get_model_options(model_name, port=PORT):
+    """GET /api/v1/models/{id}/options — saved, effective, and default options."""
+    response = requests.get(
+        f"http://localhost:{port}/api/v1/models/{model_name}/options",
+        headers=_auth_headers(),
+        timeout=TIMEOUT_DEFAULT,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+@contextlib.contextmanager
+def model_recipe_options(model_name, port=PORT, **options):
+    """Apply recipe options to one model for the duration of the block.
+
+    Snapshots the model's saved options, applies `options`, and restores the
+    snapshot on exit. A test that needs a particular option must set it itself
+    rather than inherit whatever an earlier test happened to leave behind, and
+    must not leave it behind in turn — several suites share one long-lived
+    server, and options persist across all of them.
+
+    The model is unloaded on both edges so the next load builds a backend
+    process from the options in force rather than reusing the previous one.
+    """
+    saved = get_model_options(model_name, port=port)["saved"]
+    url = f"http://localhost:{port}/api/v1/models/{model_name}/options"
+
+    def restore():
+        requests.delete(url, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT)
+        if saved:
+            requests.post(
+                url, json=saved, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT
+            )
+        unload_model(model_name, port=port)
+
+    try:
+        response = requests.post(
+            url, json=options, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT
+        )
+        response.raise_for_status()
+        unload_model(model_name, port=port)
+        yield response.json()
+    finally:
+        restore()
+
+
+def unload_model(model_name, port=PORT):
+    """POST /api/v1/unload for one model, leaving anything else resident."""
+    if not model_name:
+        # The server reads an empty name as "unload everything".
+        raise ValueError("unload_model needs a model name; use unload_all_models()")
+    response = requests.post(
+        f"http://localhost:{port}/api/v1/unload",
+        json={"model_name": model_name},
+        headers=_auth_headers(),
+        timeout=30,
+    )
+    # 200 = unloaded, 404 = not loaded — both OK
+    return response
+
+
+def _is_transient_pull_status(status_code):
+    return status_code in {408, 409, 429, 500, 502, 503, 504}
+
+
+def _pull_model_streaming(model_name, port):
+    """Pull via the SSE streaming mode and block until the download completes.
+
+    Large models (10+ GB) exceed any fixed read timeout on the synchronous
+    /pull; the progress events keep the connection alive so the timeout only
+    applies between events, not to the whole download.
+    """
+    with requests.post(
+        f"http://localhost:{port}/api/v1/pull",
+        json={"model_name": model_name, "stream": True},
+        stream=True,
+        timeout=TIMEOUT_MODEL_OPERATION,
+    ) as response:
+        if response.status_code != 200:
+            return response.status_code, response.text[:1000]
+
+        event = ""
+        for raw_line in response.iter_lines(decode_unicode=True):
+            if raw_line is None:
+                continue
+            line = raw_line.strip()
+            if line.startswith("event:"):
+                event = line[len("event:") :].strip()
+            elif line.startswith("data:") and event == "error":
+                body = line[len("data:") :].strip()[:1000]
+                status = 400 if "unknown_model" in body else 500
+                return status, body
+            elif line.startswith("data:") and event == "complete":
+                return 200, ""
+        return 500, "SSE stream ended without a 'complete' event"
+
+
+def pull_model_with_retry(model_name, attempts=3, port=PORT):
+    """Pull a model with bounded retry for transient setup failures.
+
+    Test setup should tolerate one-off transient pull failures, but persistent
+    failures and permanent client errors should still fail with useful details.
+    """
+    last_status = None
+    last_body = ""
+    last_error = None
+
+    for attempt in range(1, attempts + 1):
+        if attempt > 1:
+            time.sleep(min(30, 2 ** (attempt - 1)))
+
+        try:
+            status, body = _pull_model_streaming(model_name, port)
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt < attempts:
+                print(
+                    f"Transient /pull setup request failure for {model_name}: "
+                    f"{exc} (attempt {attempt}/{attempts}). Retrying..."
+                )
+                continue
+            break
+
+        if status == 200:
+            return
+
+        last_status = status
+        last_body = body
+
+        if _is_transient_pull_status(status) and attempt < attempts:
+            print(
+                f"Transient /pull setup failure for {model_name}: "
+                f"status={status}, attempt={attempt}/{attempts}. "
+                "Retrying..."
+            )
+            continue
+
+        break
+
+    if last_error is not None and last_status is None:
+        raise AssertionError(
+            f"Expected 200 from /api/v1/pull for {model_name} after "
+            f"{attempts} attempt(s), last request failed with: {last_error}"
+        )
+
+    raise AssertionError(
+        f"Expected 200 from /api/v1/pull for {model_name} after "
+        f"{attempts} attempt(s), got {last_status}. Body: {last_body}"
+    )
+
+
 def _build_runtime_config(additional_server_args=None):
     """
     Translate CLI args (--wrapped-server, --backend, additional_server_args)
@@ -203,8 +369,18 @@ def _build_runtime_config(additional_server_args=None):
         config["llamacpp"] = {"backend": backend}
     elif wrapped_server == "sd-cpp" and backend:
         config["sdcpp"] = {"backend": backend}
+    elif wrapped_server == "thenoise" and backend:
+        config["thenoise"] = {"backend": backend}
     elif wrapped_server == "whispercpp" and backend:
         config["whispercpp"] = {"backend": backend}
+    elif wrapped_server == "thinksound" and backend:
+        config["thinksound"] = {"backend": backend}
+    elif wrapped_server == "acestep" and backend:
+        config["acestep"] = {"backend": backend}
+    elif wrapped_server == "trellis" and backend:
+        config["trellis"] = {"backend": backend}
+    elif wrapped_server == "openmoss" and backend:
+        config["openmoss"] = {"backend": backend}
 
     # Parse additional_server_args for known flags
     additional = list(_config.get("additional_server_args", []))
@@ -223,6 +399,9 @@ def _build_runtime_config(additional_server_args=None):
         elif arg == "--sdcpp" and i + 1 < len(additional):
             config["sdcpp"] = {"backend": additional[i + 1]}
             i += 2
+        elif arg == "--thenoise" and i + 1 < len(additional):
+            config["thenoise"] = {"backend": additional[i + 1]}
+            i += 2
         elif arg == "--whispercpp" and i + 1 < len(additional):
             config["whispercpp"] = {"backend": additional[i + 1]}
             i += 2
@@ -236,6 +415,64 @@ def _build_runtime_config(additional_server_args=None):
             i += 1
 
     return config
+
+
+# Recipes whose "rocm" backend resolves to the rocm-stable channel and therefore
+# trigger a TheRock runtime download on a cold cache (see will_install_therock in
+# backend_manager.cpp). Other rocm consumers (vllm, llamacpp rocm-nightly) bundle
+# their own runtime and do not need this.
+_THEROCK_RECIPES = (
+    "llamacpp",
+    "sd-cpp",
+    "thinksound",
+    "acestep",
+    "trellis",
+    "openmoss",
+)
+
+
+def ensure_rocm_runtime():
+    """
+    Pre-warm the ROCm (TheRock) runtime before running rocm-backend tests.
+
+    On a cold cache, loading a rocm-stable model triggers a ~4.5 GB TheRock
+    download inside the first inference request, which can exceed the tighter
+    per-request inference timeout. Doing it here, as an explicit setup step with
+    a generous timeout, keeps that cost out of the test body and surfaces a
+    download/runtime failure as a clear, distinct setup error rather than a
+    confusing inference timeout.
+
+    No-op unless the active backend is "rocm" and the recipe is one that uses
+    the TheRock runtime. Idempotent: the server skips the download when TheRock
+    is already installed, so this is a fast check on a warm cache.
+    """
+    if _config.get("backend") != "rocm":
+        return
+    recipe = _config.get("wrapped_server")
+    if recipe not in _THEROCK_RECIPES:
+        return
+    if requests is None:
+        raise RuntimeError(
+            "ROCM_INSTALL_FAILED: the `requests` package is required to pre-warm "
+            "the ROCm (TheRock) runtime; install it with `pip install requests`."
+        )
+
+    print(f"\n=== Ensuring ROCm (TheRock) runtime for {recipe}:rocm ===")
+    try:
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/install",
+            json={"recipe": recipe, "backend": "rocm", "stream": False},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_ROCM_INSTALL,
+        )
+        response.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(
+            f"ROCM_INSTALL_FAILED: ROCm runtime (TheRock) install failed for "
+            f"{recipe}:rocm. This is an environment/setup failure, not a test "
+            f"failure. Detail: {e}"
+        ) from e
+    print(f"ROCm (TheRock) runtime ready for {recipe}:rocm")
 
 
 class ServerTestBase(unittest.TestCase):
@@ -279,6 +516,10 @@ class ServerTestBase(unittest.TestCase):
             )
         print("Server is reachable on port %d" % PORT)
 
+        # Pre-warm the ROCm (TheRock) runtime so its cold-cache download does not
+        # blow the per-request inference timeout inside the first test.
+        ensure_rocm_runtime()
+
         # Build and apply runtime config from CLI args + class-level args
         runtime_config = _build_runtime_config(cls.additional_server_args)
 
@@ -306,6 +547,7 @@ class ServerTestBase(unittest.TestCase):
         print(f"\n=== Starting test: {self._testMethodName} ===")
 
         self.base_url = f"http://localhost:{PORT}/api/v1"
+        self.internal_url = f"http://localhost:{PORT}/internal"
         self.messages = STANDARD_MESSAGES.copy()
 
     def tearDown(self):
@@ -395,7 +637,12 @@ def run_server_tests(
 
     # Create and run test suite
     loader = unittest.TestLoader()
-    suite = loader.loadTestsFromTestCase(test_class)
+    if isinstance(test_class, (list, tuple)):
+        suite = unittest.TestSuite()
+        for tc in test_class:
+            suite.addTests(loader.loadTestsFromTestCase(tc))
+    else:
+        suite = loader.loadTestsFromTestCase(test_class)
 
     runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
     result = runner.run(suite)
@@ -409,10 +656,13 @@ __all__ = [
     "ServerTestBase",
     "parse_args",
     "get_config",
-    "get_server_binary",
+    "get_cli_binary",
     "wait_for_server",
     "set_server_config",
     "unload_all_models",
+    "load_model",
+    "unload_model",
+    "pull_model_with_retry",
     "run_server_tests",
     "OpenAI",
     "AsyncOpenAI",

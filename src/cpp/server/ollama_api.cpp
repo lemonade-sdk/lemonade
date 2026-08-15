@@ -1,10 +1,13 @@
 #include "lemon/ollama_api.h"
+#include "lemon/error_types.h"
 #include "lemon/model_types.h"
+#include "lemon/runtime_config.h"
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
 #include <sstream>
 #include <algorithm>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace lemon {
@@ -102,6 +105,18 @@ static bool send_backend_error(const json& response, httplib::Response& res) {
 // Ollama → OpenAI option name mapping (ollama_key → openai_key)
 // Options where both names are the same use identical strings.
 // ============================================================================
+static void set_ollama_residency_conflict_response(
+    const RouterResidencyConflictException& error,
+    httplib::Response& res) {
+    res.status = 409;
+    json body = {
+        {"error", error.what()},
+        {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+        {"code", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+    };
+    res.set_content(body.dump(), "application/json");
+}
+
 struct OptionMapping { const char* ollama_key; const char* openai_key; };
 
 static const OptionMapping OPTION_MAPPINGS[] = {
@@ -222,10 +237,18 @@ std::string OllamaApi::normalize_model_name(const std::string& name) {
 // ============================================================================
 // auto-load model if needed (mirrors Server::auto_load_model_if_needed)
 // ============================================================================
-void OllamaApi::auto_load_model(const std::string& model) {
+void OllamaApi::auto_load_model(const std::string& model, const json& request_options) {
     std::string name = normalize_model_name(model);
 
-    if (router_->is_model_loaded(name)) {
+    if (router_->ensure_loaded_model_residency(
+            name, LoadPurpose::UserInference)) {
+        if (request_options.contains("ctx_size")) {
+            auto loaded_ctx = router_->get_model_recipe_options(name).get_option("ctx_size");
+            LOG(DEBUG, "OllamaApi")
+                << "Ignoring requested ctx_size=" << request_options["ctx_size"]
+                << " for already-loaded " << name
+                << " (loaded ctx_size=" << loaded_ctx << ")" << std::endl;
+        }
         return;
     }
 
@@ -237,15 +260,35 @@ void OllamaApi::auto_load_model(const std::string& model) {
 
     auto info = model_manager_->get_model_info(name);
 
-    // Download if not cached
-    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(name)) {
+    // Download if not cached (backends that self-manage downloads pull on load)
+    if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
+        !model_manager_->is_model_downloaded(name)) {
         LOG(INFO, "OllamaApi") << "Model not cached, downloading..." << std::endl;
         model_manager_->download_registered_model(info, true);
         info = model_manager_->get_model_info(name);
     }
 
-    router_->load_model(name, info, RecipeOptions(info.recipe, json::object()), true);
+    router_->load_model(name, info, RecipeOptions(info.recipe, request_options), true);
     LOG(INFO, "OllamaApi") << "Model loaded: " << name << std::endl;
+}
+
+// ============================================================================
+// Forward load-level options only so request-scoped fields can't leak
+// ============================================================================
+nlohmann::json OllamaApi::extract_auto_load_options(const json& request) {
+    nlohmann::json result = json::object();
+
+    if (request.contains("options") && request["options"].is_object() &&
+        request["options"].contains("num_ctx")) {
+        result["ctx_size"] = request["options"]["num_ctx"];
+    }
+
+    // Top-level wins over options.num_ctx, matching map_ollama_options precedence.
+    if (request.contains("ctx_size")) {
+        result["ctx_size"] = request["ctx_size"];
+    }
+
+    return result;
 }
 
 // build Ollama model entry from ModelInfo
@@ -261,6 +304,86 @@ static json build_ollama_details(const std::string& model_name,
         {"parameter_size", extract_parameter_size(model_name)},
         {"quantization_level", extract_quantization_level(checkpoint)}
     };
+}
+
+static json build_ollama_capabilities(const ModelInfo& info) {
+    json capabilities = json::array();
+    ModelType model_type = get_model_type_from_labels(info.labels);
+
+    if (model_type == ModelType::LLM) {
+        capabilities.push_back("completion");
+    } else if (model_type == ModelType::EMBEDDING) {
+        capabilities.push_back("embedding");
+    }
+
+    if (has_label(info.labels, "tool-calling") || has_label(info.labels, "tools")) {
+        capabilities.push_back("tools");
+    }
+
+    if (has_label(info.labels, "vision")) {
+        capabilities.push_back("vision");
+    }
+
+    if (has_label(info.labels, "reasoning")) {
+        capabilities.push_back("thinking");
+    }
+
+    return capabilities;
+}
+
+static json normalize_ollama_tool_calls(json tool_calls) {
+    if (!tool_calls.is_array()) {
+        return tool_calls;
+    }
+
+    for (auto& tool_call : tool_calls) {
+        if (!tool_call.is_object() ||
+            !tool_call.contains("function") ||
+            !tool_call["function"].is_object()) {
+            continue;
+        }
+
+        auto& function = tool_call["function"];
+        if (!function.contains("arguments") || !function["arguments"].is_string()) {
+            continue;
+        }
+
+        std::string arguments = function["arguments"].get<std::string>();
+        try {
+            function["arguments"] = json::parse(arguments);
+        } catch (const std::exception&) {
+            function["arguments"] = json::object();
+        }
+    }
+
+    return tool_calls;
+}
+
+static json normalize_openai_tool_calls(json tool_calls) {
+    if (!tool_calls.is_array()) {
+        return tool_calls;
+    }
+
+    for (auto& tool_call : tool_calls) {
+        if (!tool_call.is_object() ||
+            !tool_call.contains("function") ||
+            !tool_call["function"].is_object()) {
+            continue;
+        }
+
+        if (!tool_call.contains("type") || !tool_call["type"].is_string()) {
+            tool_call["type"] = "function";
+        }
+
+        auto& function = tool_call["function"];
+        if (!function.contains("arguments") || function["arguments"].is_string()) {
+            continue;
+        }
+
+        function["arguments"] = function["arguments"].dump();
+    }
+
+    return tool_calls;
 }
 
 json OllamaApi::build_ollama_model_entry(const std::string& id, const ModelInfo& info) {
@@ -292,9 +415,11 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
     // Map messages
     if (ollama_request.contains("messages")) {
         json messages = json::array();
+        std::unordered_map<std::string, std::string> tool_call_ids_by_name;
         for (const auto& msg : ollama_request["messages"]) {
             json openai_msg;
-            openai_msg["role"] = msg.value("role", "user");
+            std::string role = msg.value("role", "user");
+            openai_msg["role"] = role;
 
             // Handle content - could be string or have images
             if (msg.contains("images") && msg["images"].is_array() && !msg["images"].empty()) {
@@ -315,8 +440,28 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
             }
 
             // Forward tool_calls if present
-            if (msg.contains("tool_calls")) {
-                openai_msg["tool_calls"] = msg["tool_calls"];
+            if (msg.contains("tool_calls") && msg["tool_calls"].is_array() && !msg["tool_calls"].empty()) {
+                auto tool_calls = normalize_openai_tool_calls(msg["tool_calls"]);
+                openai_msg["tool_calls"] = tool_calls;
+                for (const auto& tool_call : tool_calls) {
+                    if (tool_call.contains("id") && tool_call["id"].is_string() &&
+                        tool_call.contains("function") && tool_call["function"].is_object() &&
+                        tool_call["function"].contains("name") && tool_call["function"]["name"].is_string()) {
+                        tool_call_ids_by_name[tool_call["function"]["name"].get<std::string>()] =
+                            tool_call["id"].get<std::string>();
+                    }
+                }
+            }
+
+            if (role == "tool") {
+                if (msg.contains("tool_call_id") && msg["tool_call_id"].is_string()) {
+                    openai_msg["tool_call_id"] = msg["tool_call_id"];
+                } else if (msg.contains("tool_name") && msg["tool_name"].is_string()) {
+                    auto it = tool_call_ids_by_name.find(msg["tool_name"].get<std::string>());
+                    if (it != tool_call_ids_by_name.end()) {
+                        openai_msg["tool_call_id"] = it->second;
+                    }
+                }
             }
 
             messages.push_back(openai_msg);
@@ -398,7 +543,7 @@ json OllamaApi::convert_openai_chat_to_ollama(const json& openai_response, const
 
             // Forward tool_calls if present
             if (message.contains("tool_calls")) {
-                msg["tool_calls"] = message["tool_calls"];
+                msg["tool_calls"] = normalize_ollama_tool_calls(message["tool_calls"]);
             }
 
             ollama_res["message"] = msg;
@@ -595,7 +740,10 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
 
         // Auto-load the model
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
+        } catch (const RouterResidencyConflictException& e) {
+            set_ollama_residency_conflict_response(e, res);
+            return;
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
@@ -609,7 +757,35 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
         // Convert to OpenAI format
         auto openai_req = convert_ollama_to_openai_chat(request_json);
 
-        if (stream) {
+        bool has_tools = request_json.contains("tools") &&
+                         request_json["tools"].is_array() &&
+                         !request_json["tools"].empty();
+
+        if (stream && has_tools) {
+            LOG(INFO, "OllamaApi") << "POST /api/chat - Streaming requested with tools; using non-streaming backend call (model: " << model << ")" << std::endl;
+
+            auto openai_response = router_->chat_completion(openai_req);
+
+            if (send_backend_error(openai_response, res)) return;
+
+            auto ollama_response = convert_openai_chat_to_ollama(openai_response, model);
+            json done_response = {
+                {"model", model}, {"created_at", "2024-01-01T00:00:00Z"},
+                {"message", {{"role", "assistant"}, {"content", ""}}},
+                {"done", true},
+                {"done_reason", ollama_response.value("done_reason", "stop")},
+                {"total_duration", ollama_response.value("total_duration", 0)},
+                {"load_duration", ollama_response.value("load_duration", 0)},
+                {"prompt_eval_count", ollama_response.value("prompt_eval_count", 0)},
+                {"prompt_eval_duration", ollama_response.value("prompt_eval_duration", 0)},
+                {"eval_count", ollama_response.value("eval_count", 0)},
+                {"eval_duration", ollama_response.value("eval_duration", 0)}
+            };
+
+            ollama_response["done"] = false;
+            std::string body = ollama_response.dump() + "\n" + done_response.dump() + "\n";
+            res.set_content(body, "application/x-ndjson");
+        } else if (stream) {
             LOG(INFO, "OllamaApi") << "POST /api/chat - Streaming (model: " << model << ")" << std::endl;
 
             // Set streaming body as OpenAI format with stream=true
@@ -699,7 +875,10 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
+        } catch (const RouterResidencyConflictException& e) {
+            set_ollama_residency_conflict_response(e, res);
+            return;
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
@@ -958,14 +1137,17 @@ void OllamaApi::handle_show(const httplib::Request& req, httplib::Response& res)
         }
 
         auto info = model_manager_->get_model_info(name);
+        int ctx_size = info.recipe_options.get_option("ctx_size");
 
         json response = {
             {"modelfile", "# Modelfile generated by Lemonade\nFROM " + info.checkpoint()},
-            {"parameters", ""},
+            {"parameters", "num_ctx " + std::to_string(ctx_size)},
             {"template", ""},
             {"details", build_ollama_details(name, info.recipe, info.checkpoint())},
+            {"capabilities", build_ollama_capabilities(info)},
             {"model_info", {
                 {"general.architecture", info.recipe},
+                {info.recipe + ".context_length", ctx_size},
                 {"general.file_type", 0},
                 {"general.parameter_count", 0},
                 {"general.quantization_version", 0}
@@ -1040,6 +1222,13 @@ void OllamaApi::handle_pull(const httplib::Request& req, httplib::Response& res)
         if (!model_manager_->model_exists(name)) {
             res.status = 404;
             json error = {{"error", "model '" + name + "' not found"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        auto* cfg = RuntimeConfig::global();
+        if (cfg && cfg->offline()) {
+            res.status = 400;
+            json error = {{"error", "Lemond is in offline mode, models not downloaded"}, {"code", "lemond_offline"}};
             res.set_content(error.dump(), "application/json");
             return;
         }
@@ -1126,7 +1315,10 @@ void OllamaApi::handle_embed(const httplib::Request& req, httplib::Response& res
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
+        } catch (const RouterResidencyConflictException& e) {
+            set_ollama_residency_conflict_response(e, res);
+            return;
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found"}};
@@ -1193,7 +1385,10 @@ void OllamaApi::handle_embeddings(const httplib::Request& req, httplib::Response
         }
 
         try {
-            auto_load_model(model);
+            auto_load_model(model, extract_auto_load_options(request_json));
+        } catch (const RouterResidencyConflictException& e) {
+            set_ollama_residency_conflict_response(e, res);
+            return;
         } catch (const std::exception& e) {
             res.status = 404;
             json error = {{"error", "model '" + model + "' not found"}};

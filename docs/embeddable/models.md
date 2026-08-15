@@ -22,7 +22,7 @@ Contents:
 
 ### Sharing Models With Other Apps
 
-The default value for `models_dir` is `"auto"`, which means "respect my user's `HF_HOME` and `HF_HUB_CACHE` environment variables, in accordance with the Hugging Face Hub standard." If those environment variables are not set, it defaults to `~/.cache/huggingface/hub`.
+The default value for `models_dir` is `"auto"`, which means "respect my user's `HF_HOME` and `HF_HUB_CACHE` environment variables, in accordance with the Hugging Face Hub standard." If those environment variables are not set, it defaults to `~/.cache/huggingface/hub`. This directory is Lemonade's shared model-hub cache for both Hugging Face and ModelScope.
 
 The benefit of `models_dir="auto"` is that models are placed in a common location on your user's drive, which means they can be shared across applications. However, the downside is that other applications could manage models that your app relies on.
 
@@ -66,21 +66,33 @@ You can test whether models end up at the desired location with a pull command:
     ls models
     ```
 
-Which should return:
+Which should return a Hugging Face cache directory:
 
 ```
 models--unsloth--Qwen3-0.6B-GGUF
 ```
 
-> Note: if you need to use a GGUF LLM that is not available on huggingface.co, you can use GGUF files acquired through other means using the `extra_models_dir` configuration discussed in [Importing Models to `lemond`](#importing-models-to-lemond).
+A ModelScope pull uses the same `models_dir` but a separate namespace:
+
+```bash
+./lemonade pull --source modelscope Qwen/Qwen3-0.6B-GGUF
+```
+
+```
+modelscope--models--Qwen--Qwen3-0.6B-GGUF
+```
+
+Both layouts contain `snapshots/` and `refs/main`, so runtime resolution, deletion, and bundling use one cache model without allowing identically named repositories on the two hubs to collide.
+
+> Note: if a GGUF is on neither supported registry, use `extra_models_dir` as described in [Importing Models to `lemond`](#importing-models-to-lemond).
 
 ### Importing Models to `lemond`
 
 You may want to share models within your app if `lemond` is not your only inference provider for GGUF LLMs.
 
-There is also a scenario where `lemond`'s Hugging Face Hub-based `pull` methodology is not able to obtain the models you need, for example:
-- Hugging Face Hub is blocked in your users' locality.
-- Your GGUF files are not on Hugging Face Hub.
+There are also scenarios where registry pulls cannot obtain the models you need, for example:
+- Neither Hugging Face nor ModelScope is reachable in your deployment.
+- Your GGUF files are not published on either registry.
 
 To address all of these scenarios, `lemond` can recursively search a directory for GGUF files using the `extra_models_dir` configuration.
 
@@ -148,6 +160,8 @@ extra.my_custom_model.gguf              Yes         llamacpp
 
 > Tip: `extra_models_dir` can be a relative path to any location within your app's package, or any absolute path on your user's system. It searches recursively and can import many GGUFs from a single directory tree.
 
+> Note: When an existing `extra_models_dir` is set at runtime, the path must be a readable directory for the `lemond` process. Permission or I/O failures are rejected instead of replacing the current model view. A path that does not exist yet is allowed and can be picked up later by the directory watcher.
+
 ## Customization
 
 ### Changing the Built-In Models List
@@ -180,6 +194,7 @@ For example, if you wanted to add [OmniCoder-9B](https://huggingface.co/Tesslate
 
 ```
 "OmniCoder-9B-GGUF": {
+    "source": "huggingface",
     "checkpoint": "Tesslate/OmniCoder-9B-GGUF:omnicoder-9b-q4_k_m.gguf",
     "recipe": "llamacpp",
     "suggested": true,
@@ -190,11 +205,13 @@ For example, if you wanted to add [OmniCoder-9B](https://huggingface.co/Tesslate
 }
 ```
 
-You can learn more in the [Custom Models](../server/custom-models.md) guide, including how to enable your users to register their own custom models at runtime.
+You can learn more in the [Custom Models](../guide/configuration/custom-models.md) guide, including how to enable your users to register their own custom models at runtime.
+
+Set `"source": "modelscope"` for curated entries hosted on ModelScope. Lemonade preserves that field in its model metadata and uses it for every subsequent download and update check. When `source` is omitted the shipped default is `huggingface`, so existing registry files require no migration.
 
 ### Per-Model Load Options
 
-You may want to customize how specific models will load on your user's system. You can do this with the `recipe_options.json` file. Learn more in the [Custom Models](../server/custom-models.md) guide.
+You may want to customize how specific models will load on your user's system. You can do this with the `recipe_options.json` file. Learn more in the [Custom Models](../guide/configuration/custom-models.md) guide.
 
 ## Bundling Models
 

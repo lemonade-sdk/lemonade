@@ -1,0 +1,19 @@
+#pragma once
+//
+// AUTO-GENERATED at CMake configure time from LEMON_BACKENDS in CMakeLists.txt.
+// Do not edit by hand. Descriptor DATA only (CLI-safe; no server classes).
+//
+#include <vector>
+#include "lemon/backends/backend_descriptor.h"
+@LEMON_DESCRIPTOR_INCLUDES@
+namespace lemon {
+namespace backends {
+
+inline std::vector<const BackendDescriptor*> all_generated_descriptors() {
+    return {
+@LEMON_DESCRIPTOR_ENTRIES@
+    };
+}
+
+} // namespace backends
+} // namespace lemon

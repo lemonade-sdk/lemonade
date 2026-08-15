@@ -12,13 +12,13 @@ Models are categorized into five types:
 - `llm`: Chat and completion models (default type)
 - `embedding`: Models with the `embedding` label
 - `reranking`: Models with the `reranking` label
-- `audio`: Models with the `audio` label (e.g., Whisper)
+- `transcription`: Models with the `transcription` label (e.g., Whisper)
 - `image`: Models with the `image` label (e.g., Stable Diffusion)
 
 The default value is `1`, meaning one model of each type can be loaded simultaneously.
 
 Examples:
-- `--max-loaded-models 3` → up to 3 LLMs, 3 embedding, 3 reranking, 3 audio, 3 image
+- `--max-loaded-models 3` → up to 3 LLMs, 3 embedding, 3 reranking, 3 transcription, 3 image
 - `--max-loaded-models 5` → up to 5 of each type
 - `--max-loaded-models -1` → unlimited (no eviction based on slot count)
 

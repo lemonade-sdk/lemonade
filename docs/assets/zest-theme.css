@@ -1,0 +1,650 @@
+/* zest-theme.css — bridge from Crystalline Zest tokens to Zensical's --md-*
+   variables. Tokens themselves live in website-styles.css (light in :root,
+   dark under [data-md-color-scheme="zest-dark"]); this file maps them onto
+   the names the SSG's chrome reads. */
+
+/* ===== Light scheme ================================================== */
+[data-md-color-scheme="zest-light"] {
+  --md-primary-fg-color:           var(--primary-yellow);
+  --md-primary-fg-color--light:    var(--primary-yellow-dark);
+  --md-primary-fg-color--dark:     var(--primary-yellow-darker);
+  --md-primary-bg-color:           var(--on-primary);
+  --md-primary-bg-color--light:    var(--on-primary-muted);
+
+  /* Accent FG drives hover, focus rings, and active-state text everywhere
+     in Zensical's chrome. On the warm-white surfaces of Crystalline Zest
+     pure yellow is invisible, so we land it on --accent-gold (DESIGN.md §2
+     "value-link text on white surfaces"). Dark mode keeps yellow because
+     yellow pops on dark. */
+  --md-accent-fg-color:            var(--accent-gold);
+  --md-accent-fg-color--transparent: rgba(252, 216, 70, 0.15);
+  --md-accent-bg-color:             var(--on-primary);
+  --md-accent-bg-color--light:      var(--on-primary-muted);
+
+  --md-default-fg-color:           var(--text-primary);
+  --md-default-fg-color--light:    var(--text-secondary);
+  --md-default-fg-color--lighter:  var(--text-muted);
+  --md-default-fg-color--lightest: var(--text-light);
+  --md-default-bg-color:           var(--surface-container-lowest);
+  --md-default-bg-color--light:    var(--surface-container-low);
+  --md-default-bg-color--lighter:  var(--surface);
+  --md-default-bg-color--lightest: var(--surface-container);
+
+  --md-typeset-color:              var(--text-primary);
+  --md-typeset-a-color:            var(--accent-gold);
+
+  --md-code-fg-color:              var(--text-primary);
+  --md-code-bg-color:              var(--surface);
+  --md-code-hl-color:              rgba(252, 216, 70, 0.30);
+
+  --md-footer-fg-color:            var(--text-primary);
+  --md-footer-fg-color--light:     var(--text-secondary);
+  --md-footer-fg-color--lighter:   var(--text-muted);
+  --md-footer-bg-color:            var(--surface-container-lowest);
+  --md-footer-bg-color--dark:      var(--surface-container-lowest);
+}
+
+/* ===== Dark scheme =================================================== */
+[data-md-color-scheme="zest-dark"] {
+  --md-primary-fg-color:           var(--primary-yellow);
+  --md-primary-fg-color--light:    var(--primary-yellow-dark);
+  --md-primary-fg-color--dark:     var(--primary-yellow-darker);
+  --md-primary-bg-color:           var(--on-primary);
+  --md-primary-bg-color--light:    var(--on-primary-muted);
+
+  --md-accent-fg-color:            var(--primary-yellow);
+  --md-accent-fg-color--transparent: rgba(252, 216, 70, 0.18);
+  --md-accent-bg-color:             var(--on-primary);
+  --md-accent-bg-color--light:      var(--on-primary-muted);
+
+  --md-default-fg-color:           var(--text-primary);
+  --md-default-fg-color--light:    var(--text-secondary);
+  --md-default-fg-color--lighter:  var(--text-muted);
+  --md-default-fg-color--lightest: var(--text-light);
+  --md-default-bg-color:           var(--surface-container-lowest);
+  --md-default-bg-color--light:    var(--surface-container-low);
+  --md-default-bg-color--lighter:  var(--surface);
+  --md-default-bg-color--lightest: var(--surface-container);
+
+  --md-typeset-color:              var(--text-primary);
+  --md-typeset-a-color:            var(--primary-yellow);
+
+  --md-code-fg-color:              var(--text-primary);
+  --md-code-bg-color:              var(--surface-container);
+  --md-code-hl-color:              rgba(252, 216, 70, 0.18);
+
+  --md-footer-fg-color:            var(--text-primary);
+  --md-footer-fg-color--light:     var(--text-secondary);
+  --md-footer-fg-color--lighter:   var(--text-muted);
+  --md-footer-bg-color:            var(--surface-container-lowest);
+  --md-footer-bg-color--dark:      var(--surface-container-lowest);
+
+  /* Zensical's search dialog is rendered in a shadow root and reads these
+     RGB triplet tokens directly, not the --md-* surface variables above. */
+  --color-foreground: 242 239 229;
+  --color-background: 37 34 27;
+  --color-background-subtle: 45 41 34;
+  --color-backdrop: 14 14 11;
+}
+
+/* ===== Scrollbar gutter — Zensical sets `html { scrollbar-gutter: stable }`
+   so the right edge always reserves space for a vertical scrollbar even
+   on short pages. The body has the page's tonal gradient, but the gutter
+   strip is part of html (outside body), so without help it shows white
+   through against the gradient. Painting the gradient on html works in
+   Chrome but Safari ignores html bg here (body-bg propagation rules
+   leave html's painted color invisible). Use a fixed-position pseudo on
+   body: it paints into the viewport regardless of body's bounds, so it
+   covers the gutter, and Safari honors it. The gradient itself comes from
+   --page-gradient in website-styles.css. */
+html {
+  overflow-x: clip;
+  scrollbar-color: var(--border-medium) transparent;
+}
+body {
+  overflow-x: clip;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  display: block;
+  background: var(--page-gradient);
+}
+/* Let the fixed pseudo own the viewport gradient, including the scrollbar
+   gutter, instead of layering a second body gradient on top. */
+body {
+  background: transparent !important;
+}
+
+/* WebKit — these only take effect on browsers that show solid (non-overlay)
+   scrollbars; on macOS overlay scrollbars they're ignored, but the gutter
+   above already blends. The thumb sits as a faint pill in the gradient. */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+  background: transparent;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ===== Re-skin admonitions, tabs, and details as ice cards ===========
+   The card chrome (glass bg, blur, border, shadow) lives on the OUTER
+   element. Inner panels get padding only — no nested card-in-a-card. */
+.md-typeset .admonition,
+.md-typeset details,
+.md-typeset .tabbed-set {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-ambient);
+  overflow: hidden; /* clip rounded corners against the labels strip */
+}
+
+/* Admonition title strip — yellow accent ribbon */
+.md-typeset .admonition-title,
+.md-typeset summary {
+  background: rgba(252, 216, 70, 0.18);
+  border-bottom: 1px solid var(--glass-border);
+  font-family: var(--font-display);
+  font-weight: 700;
+  padding: 0.75rem 1.5rem;
+  margin: 0;
+}
+
+/* Admonition body padding — breathing room per DESIGN.md §6 */
+.md-typeset .admonition > :not(.admonition-title),
+.md-typeset details > :not(summary) {
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+.md-typeset .admonition > :not(.admonition-title):first-of-type,
+.md-typeset details > :not(summary):first-of-type {
+  padding-top: 1rem;
+}
+.md-typeset .admonition > :not(.admonition-title):last-of-type,
+.md-typeset details > :not(summary):last-of-type {
+  padding-bottom: 1rem;
+}
+
+/* Tabbed labels strip — typography matches DESIGN §3, padding so the first
+   label isn't flush against the rounded corner. */
+.md-typeset .tabbed-labels {
+  padding: 0.25rem 1rem 0;
+  background: rgba(252, 216, 70, 0.10);
+  border-bottom: 1px solid var(--glass-border);
+}
+.md-typeset .tabbed-labels > label {
+  font-family: var(--font-display);
+  font-weight: 500;
+}
+
+/* Selected tab outweighs inactive ones. Zensical's modern theme pins the
+   :checked label to font-weight:500, which inverts the hierarchy when the
+   inactive base is heavier. We mirror Zensical's nth-child selector chain
+   (1..9) and bump the active label to 700. */
+.md-typeset .tabbed-set > input:nth-child(1):checked ~ .tabbed-labels > :nth-child(1),
+.md-typeset .tabbed-set > input:nth-child(2):checked ~ .tabbed-labels > :nth-child(2),
+.md-typeset .tabbed-set > input:nth-child(3):checked ~ .tabbed-labels > :nth-child(3),
+.md-typeset .tabbed-set > input:nth-child(4):checked ~ .tabbed-labels > :nth-child(4),
+.md-typeset .tabbed-set > input:nth-child(5):checked ~ .tabbed-labels > :nth-child(5),
+.md-typeset .tabbed-set > input:nth-child(6):checked ~ .tabbed-labels > :nth-child(6),
+.md-typeset .tabbed-set > input:nth-child(7):checked ~ .tabbed-labels > :nth-child(7),
+.md-typeset .tabbed-set > input:nth-child(8):checked ~ .tabbed-labels > :nth-child(8),
+.md-typeset .tabbed-set > input:nth-child(9):checked ~ .tabbed-labels > :nth-child(9) {
+  font-weight: 700;
+}
+
+/* Tabbed content body — explicit padding so paragraphs and code blocks
+   inside don't touch the card edge. The .tabbed-content wrapper itself
+   stays transparent (no nested card). */
+.md-typeset .tabbed-set > .tabbed-content {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 1.25rem 1.5rem;
+}
+.md-typeset .tabbed-set > .tabbed-content > .tabbed-block > :first-child {
+  margin-top: 0;
+}
+.md-typeset .tabbed-set > .tabbed-content > .tabbed-block > :last-child {
+  margin-bottom: 0;
+}
+
+/* Code blocks — surface tint + rounded corners (DESIGN §4 radius-xl) */
+.md-typeset pre > code,
+.md-typeset code {
+  border-radius: var(--radius-md);
+}
+.md-typeset pre {
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-light);
+}
+
+/* Headings use the display font per DESIGN §3 "Editorial Authority" */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4,
+.md-typeset h5,
+.md-typeset h6 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+/* Body content sits above the page gradient — let it show through */
+.md-main,
+.md-content,
+.md-content__inner {
+  background: transparent;
+}
+
+/* ===== Hover / active polish =========================================
+   Zensical's modern theme defaults the primary-nav hover to a flat
+   --md-default-fg-color--lightest gray. Replace it with the same warm
+   yellow-tint wash the active state uses, so the chrome reads as a
+   single coherent design system instead of a yellow accent bolted onto
+   a gray-on-white skin. */
+.md-nav--primary .md-nav__link[for]:hover:not(.md-nav__link--active),
+.md-nav--primary .md-nav__link[for]:focus:not(.md-nav__link--active),
+.md-nav--primary .md-nav__link[href]:hover:not(.md-nav__link--active),
+.md-nav--primary .md-nav__link[href]:focus:not(.md-nav__link--active) {
+  background-color: var(--md-accent-fg-color--transparent);
+  color: var(--md-accent-fg-color);
+}
+
+/* Active sidebar item — pin the text to gold so it stays readable over
+   the yellow-tinted background regardless of Zensical rule ordering. */
+.md-nav__link--active,
+.md-nav__item .md-nav__link--active code {
+  color: var(--md-typeset-a-color);
+}
+
+/* Sidebar nav: keep the sticky wrapper transparent. Zensical gives it
+   height: 0 plus vertical padding at desktop widths; painting this wrapper
+   creates a column-width band above the actual nav content. */
+.md-sidebar {
+  background: transparent;
+}
+
+/* ===== Zensical header — Crystalline Zest restyle ====================
+   Matches the homepage navbar (DESIGN.md §2 + website-styles.css .navbar):
+   glass background, Plus Jakarta Sans wordmark, yellow accent, soft shadows.
+   The structure is Zensical's; only the visual layer is overridden. */
+
+.md-header,
+.md-header--shadow {
+  background: rgba(255, 255, 255, 0.70);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: var(--text-primary);
+  border-bottom: none;
+  box-shadow: none;
+  padding: 0 1.5rem;
+  height: 64px;
+}
+[data-md-color-scheme="zest-dark"] .md-header,
+[data-md-color-scheme="zest-dark"] .md-header--shadow {
+  background: var(--glass-bg-dense);
+}
+.md-header__inner {
+  align-items: center;
+  height: 64px;
+}
+
+@media screen and (max-width: 76.234375em) {
+  .md-header,
+  .md-header--shadow {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  .md-header__inner {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .md-header__button[for="__drawer"] {
+    margin-left: 0;
+  }
+}
+
+/* Brand mark: favicon glyph + "Lemonade" wordmark, matching .navbar-brand.
+   Selector specificity (.md-header .md-logo) wins over Zensical's own
+   .md-logo rule without needing !important. */
+.md-header .md-logo {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  width: auto;
+  height: auto;
+}
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  width: 31.5px;
+  height: 31.5px;
+  object-fit: contain;
+  margin-right: 7.875px;
+}
+.md-header__button.md-logo::after {
+  content: "Lemonade";
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 26.25px;
+  letter-spacing: -0.04em;
+  color: var(--text-primary);
+  line-height: 1.15;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
+/* Mobile drawer: the title label contains its own logo and source link.
+   Keep it from picking up the desktop wordmark treatment, and make the
+   drawer chrome honor the active Zest palette instead of Zensical defaults. */
+@media screen and (max-width: 76.234375em) {
+  .md-sidebar--primary {
+    background: var(--surface-container-lowest);
+    border: 1px solid var(--border-medium);
+  }
+
+  [data-md-color-scheme="zest-dark"] .md-sidebar--primary {
+    background: var(--glass-bg-dense);
+    border-color: var(--glass-border);
+  }
+
+  .md-nav .md-nav__title[for="__drawer"] {
+    background: transparent;
+    border-bottom: 1px solid var(--border-medium);
+    color: var(--text-primary);
+    font-size: 0;
+    min-height: 64px;
+  }
+
+  .md-nav .md-nav__title[for="__drawer"]::after {
+    content: "Lemonade";
+    color: var(--text-primary);
+    font-family: var(--font-display);
+    font-size: 26.25px;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    line-height: 1.15;
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+  }
+
+  .md-nav .md-nav__title[for="__drawer"] .md-logo::after {
+    content: none;
+  }
+
+  .md-nav .md-nav__title[for="__drawer"] .md-source {
+    display: none;
+  }
+}
+
+/* Site / page title — quieter subtitle next to the wordmark */
+.md-header__title {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  margin-left: 1rem;
+}
+/* "Lemonade Server Documentation" duplicates the wordmark on first paint;
+   the second topic ("<page title>") swaps in on scroll and is what we want. */
+.md-header__title .md-header__topic:first-child {
+  display: none;
+}
+
+/* Icon buttons (drawer toggle, palette toggle, search) */
+.md-header__button.md-icon {
+  color: var(--text-primary);
+  border-radius: var(--radius-full);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.md-header__button.md-icon:hover {
+  background: var(--glass-bg-hover);
+  color: var(--text-on-light);
+}
+
+/* ===== Search bar — Crystalline Zest pill =============================
+   Zensical's modern theme defaults: 8.9rem × 1.6rem pill at 0.7rem font,
+   inheriting --md-default-fg-color--lightest as background and ⌘K badge
+   from --md-default-bg-color--light. We restyle to match the homepage
+   navbar scale and the glass aesthetic. */
+
+/* Hide the redundant icon-only search trigger at desktop — the visible pill
+   below it covers the same affordance. The icon stays as mobile fallback;
+   Zensical hides .md-search at <60em automatically. */
+@media screen and (min-width: 60em) {
+  .md-header__inner > label.md-header__button.md-icon[for="__search"] {
+    display: none;
+  }
+}
+
+/* Search pill — solid surface + ambient shadow so it lifts off the glass
+   header (the homepage's .dev-btn uses the same recipe via .ice-card).
+   Layout-affecting rules (width, padding) are scoped to the desktop media
+   query, but visual rules (background, border, radius, height) live in the
+   base block so mobile and desktop share one source of truth. */
+.md-header .md-search__button {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.675rem;
+  height: 1.6875rem;
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-full);
+  color: var(--text-nav);
+  box-shadow: var(--shadow-light);
+  transition: background var(--transition-fast),
+              border-color var(--transition-fast),
+              color var(--transition-fast),
+              box-shadow var(--transition-fast);
+}
+@media screen and (min-width: 45em) {
+  .md-header .md-search__button {
+    width: 10.5rem;
+    padding-left: 1.95rem;
+    padding-right: 2.55rem;
+  }
+  .md-header .md-search__button:hover,
+  .md-header .md-search__button:focus {
+    border-color: rgba(252, 216, 70, 0.55);
+    color: var(--text-on-light);
+    box-shadow: var(--shadow-medium);
+  }
+}
+
+/* Dark mode: the deepest surface (#0E0E0B) recedes against the dark glass
+   header, so use --surface-container-high (#2D2922) for elevated contrast. */
+[data-md-color-scheme="zest-dark"] .md-header .md-search__button {
+  background: var(--surface-container-high);
+  border-color: var(--glass-border);
+}
+@media screen and (min-width: 45em) {
+  [data-md-color-scheme="zest-dark"] .md-header .md-search__button:hover,
+  [data-md-color-scheme="zest-dark"] .md-header .md-search__button:focus {
+    border-color: rgba(252, 216, 70, 0.40);
+  }
+}
+
+/* Search icon prefix (mask-image set by Zensical at :before) — recolor only */
+.md-header .md-search__button::before {
+  background-color: var(--text-nav);
+  height: 0.75rem;
+  width: 0.75rem;
+  margin-left: 0.6375rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.md-header .md-search__button:hover::before,
+.md-header .md-search__button:focus::before {
+  background-color: var(--text-on-light);
+}
+
+/* ⌘K / Ctrl+K kbd-style hint badge — vertically centered */
+.md-header .md-search__button::after {
+  background: var(--surface-container);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.465rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 0.165rem 0.27rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-medium);
+  top: 50%;
+  right: 0.375rem;
+  transform: translateY(-50%);
+}
+
+/* Dark mode badge: lift a touch above the pill surface and bump text contrast
+   so the keyboard hint reads as a kbd cap, not a sunken hole. */
+[data-md-color-scheme="zest-dark"] .md-header .md-search__button::after {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* Search input (the field that appears when the overlay opens) */
+.md-search__input {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+.md-search__input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Repo link area, when Zensical renders one */
+.md-header__source {
+  font-family: var(--font-display);
+  color: var(--text-primary);
+}
+
+/* ===== Footer — Zensical's stock chrome (prev/next nav + meta strip)
+   reskinned with Crystalline Zest tokens. The full-bleed background comes
+   from .md-footer; .md-footer__inner and .md-footer-meta__inner are
+   .md-grid containers that center to the page max-width. */
+.md-footer {
+  background: var(--md-footer-bg-color);
+  color: var(--text-primary);
+  border-top: 1px solid var(--border-light);
+  border-bottom: none;
+}
+.md-footer__inner {
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* Prev/next nav block — compact, balanced typography. Zensical's defaults
+   inset 1rem top + 0.7rem margin-bottom inside the title, which produced a
+   tall, lopsided strip; tighten it. */
+.md-footer__inner {
+  padding: 0.75rem 0.5rem;
+}
+.md-footer__link {
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  opacity: 1;
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  align-items: center;
+  flex-grow: 1;
+  flex-basis: 0;
+  min-width: 0;
+  overflow: visible;
+  transition: color var(--transition-fast);
+}
+.md-footer__link:hover,
+.md-footer__link:focus {
+  color: var(--md-accent-fg-color);
+  opacity: 1;
+}
+/* Allow titles to wrap or breathe instead of truncating to "Welco…". The
+   Zensical default constrains them to single-line nowrap with a hard
+   max-width. Drop both. */
+.md-footer__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0 0.6rem;
+  line-height: 1.3;
+  white-space: normal;
+  max-width: none;
+  overflow: visible;
+}
+.md-footer__title .md-ellipsis {
+  white-space: normal;
+  text-overflow: clip;
+  overflow: visible;
+}
+.md-footer__direction {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 1;
+  margin-bottom: 0.15rem;
+  display: block;
+}
+.md-footer__button.md-icon {
+  color: var(--text-secondary);
+  margin: 0;
+  padding: 0.3rem;
+}
+
+/* Meta strip — copyright + social. Zensical's default uses
+   --md-footer-bg-color--dark (a darker shade) for this strip; we map it to
+   the same surface token as the rest of the footer for a flat look that
+   matches the homepage's white footer in light mode and the deep surface
+   in dark mode. */
+.md-footer-meta {
+  background: var(--md-footer-bg-color--dark);
+  color: var(--md-footer-fg-color);
+}
+.md-footer-meta__inner {
+  padding: 0.6rem 0.5rem;
+  align-items: center;
+}
+.md-copyright {
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+.md-copyright__highlight {
+  color: var(--text-secondary);
+}
+.md-social {
+  padding: 0;
+}
+.md-social__link {
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+}
+.md-social__link:hover,
+.md-social__link:focus {
+  color: var(--md-accent-fg-color);
+}

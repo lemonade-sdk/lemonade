@@ -14,9 +14,16 @@ namespace lemon {
 namespace utils {
 
 struct HttpResponse {
-    int status_code;
+    int status_code = 0;
     std::string body;
     std::map<std::string, std::string> headers;
+
+    // Transport status from libcurl. For non-streaming callers this remains
+    // CURLE_OK/0 because transport errors are thrown. Streaming callers need the
+    // original code so they can distinguish a clean [DONE] from an interrupted
+    // backend connection that happened after HTTP headers were received.
+    int curl_code = 0;
+    std::string curl_error;
 };
 
 struct MultipartField {
@@ -38,11 +45,30 @@ struct DownloadResult {
     size_t total_bytes = 0;           // Total file size (if known)
     bool can_resume = false;          // Whether partial download can be resumed
     bool disk_full = false;            // True if download failed due to insufficient disk space
+    bool permanent = false;            // Non-recoverable failure (e.g. unsupported protocol, malformed URL); do not retry
 };
 
 // Progress callback returns bool: true = continue, false = cancel download
 using ProgressCallback = std::function<bool(size_t downloaded, size_t total)>;
 using StreamCallback = std::function<bool(const char* data, size_t length)>;
+
+// Trust boundary for outgoing HTTP requests. Selects which URL schemes are
+// allowed for the initial request and, for request types that follow redirects,
+// which schemes are allowed for redirect targets.
+enum class HttpSecurityPolicy {
+    // External hosts (Hugging Face, GitHub, release CDNs). Require https for the
+    // initial request and every redirect hop; bound the redirect chain. This is
+    // the default so untrusted destinations are HTTPS-only unless a caller opts
+    // out for a specific trust boundary.
+    ExternalHttpsOnly,
+    // Lemonade-managed backends reached over loopback http://127.0.0.1. Require
+    // http and never follow redirects.
+    TrustedLoopback,
+    // User-configured plaintext endpoints that explicitly opted in via
+    // allow_insecure_http. Permit http and https; when redirects are enabled,
+    // bound the redirect chain.
+    AllowInsecureHttp,
+};
 
 // Download configuration options
 struct DownloadOptions {
@@ -50,14 +76,24 @@ struct DownloadOptions {
     int initial_retry_delay_ms = 1000; // Initial delay between retries (doubles each time)
     int max_retry_delay_ms = 60000;   // Maximum delay between retries (1 minute)
     bool resume_partial = true;       // Resume partial downloads if possible
-    int low_speed_limit = 1000;       // Minimum bytes/sec before timeout (1KB/s)
-    int low_speed_time = 60;          // Seconds below low_speed_limit before timeout
+    int low_speed_limit = 0;       // Minimum bytes/sec before timeout (disabled — 0 = no limit)
+    int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
+    int no_progress_timeout = 60;      // Seconds without byte progress before aborting (0 = disabled)
+    bool range_retry_on_zero_byte_retry = true; // Retry empty failed attempts with Range: 0-
+    bool force_initial_range_request = false;   // Force Range: 0- even on the first attempt
+
+    // Optional content verification. expected_hash accepts plain hex or
+    // prefixed values like "sha256:<hex>", "sha1:<hex>", or
+    // "git-sha1:<hex>". git-sha1 verifies the Git blob object id, i.e.
+    // SHA1("blob <size>\0" + file bytes), which is what Hugging Face uses
+    // for non-LFS file ETags. SHA256 is used for LFS objects and release assets.
+    std::string expected_hash;
+    std::string expected_hash_algorithm;
 };
 
 class HttpClient {
 public:
-    // Set default timeout for all requests
     static void set_default_timeout(long timeout_seconds) {
         default_timeout_seconds_ = timeout_seconds;
     }
@@ -66,37 +102,55 @@ public:
         return default_timeout_seconds_;
     }
 
-    // Simple GET request
+    // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
     static HttpResponse get(const std::string& url,
-                           const std::map<std::string, std::string>& headers = {});
+                           const std::map<std::string, std::string>& headers = {},
+                           long timeout_seconds = 0,
+                           HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
-    // Simple POST request
-    static HttpResponse post(const std::string& url,
-                            const std::string& body,
-                            const std::map<std::string, std::string>& headers = {},
-                            long timeout_seconds = 300);
+    // Simple POST request. Redirects are never followed.
+    static HttpResponse post(
+        const std::string& url,
+        const std::string& body,
+        const std::map<std::string, std::string>& headers = {},
+        long timeout_seconds = 300,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        std::atomic<bool>* cancel_flag = nullptr);
 
-    // Multipart form data POST request
-    static HttpResponse post_multipart(const std::string& url,
-                                       const std::vector<MultipartField>& fields,
-                                       long timeout_seconds = 300);
+    // Multipart form data POST request. Redirects are never followed.
+    static HttpResponse post_multipart(
+        const std::string& url,
+        const std::vector<MultipartField>& fields,
+        long timeout_seconds = 300,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
-    // Streaming POST request (calls callback for each chunk as it arrives)
-    static HttpResponse post_stream(const std::string& url,
-                                   const std::string& body,
-                                   StreamCallback stream_callback,
-                                   const std::map<std::string, std::string>& headers = {},
-                                   long timeout_seconds = 300);
+    // Streaming POST request (calls callback for each chunk as it arrives).
+    // on_status fires once, before the first chunk is delivered, so callers can
+    // divert an error body instead of forwarding it as payload bytes. Redirects
+    // are never followed.
+    static HttpResponse post_stream(
+        const std::string& url,
+        const std::string& body,
+        StreamCallback stream_callback,
+        const std::map<std::string, std::string>& headers = {},
+        long timeout_seconds = 300,
+        std::function<void(int status_code)> on_status = nullptr,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        std::function<bool()> should_cancel = nullptr);
 
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,
                                         const std::string& output_path,
                                         ProgressCallback callback = nullptr,
                                         const std::map<std::string, std::string>& headers = {},
-                                        const DownloadOptions& options = DownloadOptions());
+                                        const DownloadOptions& options = DownloadOptions(),
+                                        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
-    // Check if URL is reachable
-    static bool is_reachable(const std::string& url, int timeout_seconds = 5);
+    // Check if URL is reachable. Redirects are never followed.
+    static bool is_reachable(
+        const std::string& url,
+        int timeout_seconds = 5,
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
 private:
     static std::atomic<long> default_timeout_seconds_;
@@ -107,7 +161,9 @@ private:
                                            size_t resume_from,
                                            ProgressCallback callback,
                                            const std::map<std::string, std::string>& headers,
-                                           const DownloadOptions& options);
+                                           const DownloadOptions& options,
+                                           bool initial_range_request,
+                                           HttpSecurityPolicy policy);
 };
 
 // Creates a throttled progress callback that prints at most once per second.

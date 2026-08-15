@@ -13,7 +13,7 @@ Tests each state against all relevant API actions:
 
 Usage:
     python test/test_flm_status.py
-    python test/test_flm_status.py --server-binary /path/to/lemonade-server
+    python test/test_flm_status.py --cli-binary /path/to/lemonade
 """
 
 import json
@@ -36,8 +36,8 @@ try:
 except ImportError as e:
     raise ImportError("You must `pip install requests` to run this test", e)
 
-from utils.test_models import PORT, TIMEOUT_DEFAULT, get_default_server_binary
-from utils.server_base import wait_for_server
+from utils.test_models import PORT, TIMEOUT_DEFAULT, get_default_cli_binary
+from utils.server_base import _auth_headers, wait_for_server
 
 
 def wait_for_port_free(port=PORT, timeout=30):
@@ -71,10 +71,10 @@ MOCK_FLM_MODEL_NAME = "test-model-1b-FLM"
 FAKE_FLM_MODEL = "nonexistent-model-FLM"
 
 
-def get_server_version(server_binary: str) -> str:
+def get_server_version(cli_binary: str) -> str:
     try:
         result = subprocess.run(
-            [server_binary, "--version"],
+            [cli_binary, "--version"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -90,13 +90,13 @@ def get_server_version(server_binary: str) -> str:
         return "9.0.0"
 
 
-def stop_server(server_binary):
+def stop_server():
+    """Best-effort shutdown of any pre-existing server via /internal/shutdown."""
     try:
-        subprocess.run(
-            [server_binary, "stop"],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        requests.post(
+            f"http://localhost:{PORT}/internal/shutdown",
+            headers=_auth_headers(),
+            timeout=5,
         )
         time.sleep(2)
     except Exception:
@@ -253,18 +253,18 @@ class FlmStatusTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.server_binary = (
-            getattr(cls, "_cli_server_binary", None) or get_default_server_binary()
+        cls.cli_binary = (
+            getattr(cls, "_cli_binary_override", None) or get_default_cli_binary()
         )
-        cls.server_version = get_server_version(cls.server_binary)
+        cls.server_version = get_server_version(cls.cli_binary)
         print(f"[SETUP] Using server version: {cls.server_version}")
 
-        # Derive lemond path from the server binary
-        server_dir = os.path.dirname(cls.server_binary)
+        # Derive lemond path from the CLI binary (they live in the same build dir)
+        build_dir = os.path.dirname(cls.cli_binary)
         if IS_WINDOWS:
-            cls.router_binary = os.path.join(server_dir, "lemond.exe")
+            cls.router_binary = os.path.join(build_dir, "lemond.exe")
         else:
-            cls.router_binary = os.path.join(server_dir, "lemond")
+            cls.router_binary = os.path.join(build_dir, "lemond")
         if not os.path.exists(cls.router_binary):
             cls.router_binary = shutil.which("lemond") or cls.router_binary
         print(f"[SETUP] Using router binary: {cls.router_binary}")
@@ -272,7 +272,7 @@ class FlmStatusTests(unittest.TestCase):
         # Read required FLM version from backend_versions.json
         global REQUIRED_FLM_VERSION
         try:
-            for base in [server_dir, os.path.dirname(cls.router_binary)]:
+            for base in [build_dir, os.path.dirname(cls.router_binary)]:
                 bv_path = os.path.join(base, "resources", "backend_versions.json")
                 if os.path.exists(bv_path):
                     with open(bv_path) as f:
@@ -286,7 +286,7 @@ class FlmStatusTests(unittest.TestCase):
         print(f"[SETUP] Required FLM version: {REQUIRED_FLM_VERSION}")
 
         # Ensure any existing server is stopped
-        stop_server(cls.server_binary)
+        stop_server()
 
     # ------------------------------------------------------------------ #
     #  Server lifecycle context manager
@@ -296,17 +296,11 @@ class FlmStatusTests(unittest.TestCase):
     def _server(self, hardware, flm_dir=None):
         """Start router directly with mock hardware + optional PATH-based FLM mocking.
 
-        Starts lemond directly (not via lemonade-server serve) to avoid
-        the fork/exec indirection that can leave orphaned router processes between
-        test methods. With ~20 test methods each starting a fresh server, the
-        lemonade-server serve approach (fork + execv) risks the previous test's
-        router surviving long enough for the next test's wait_for_server() to
-        connect to it — giving stale hardware state. Starting the router directly
-        gives us a single process we fully control.
-
-        server_system_info.py can use lemonade-server serve because it has fewer
-        tests and the stop_server() + sleep(2) timing is sufficient. This test
-        needs tighter process control.
+        Starts lemond directly to avoid any fork/exec indirection that can leave
+        orphaned router processes between test methods. With ~20 test methods each
+        starting a fresh server, anything beyond a single controlled process risks
+        the previous test's router surviving long enough for the next test's
+        wait_for_server() to connect to it — giving stale hardware state.
 
         Args:
             hardware: Hardware info dict to write as hardware_info.json.
@@ -938,7 +932,6 @@ class FlmStatusTests(unittest.TestCase):
                 self.assertEqual(body.get("status"), "success")
                 print(f"  [OK] installed install: already installed, 200")
 
-
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     @unittest.skipIf(IS_WINDOWS, "SIGHUP not available on Windows")
     def test_sighup_rescan(self):
@@ -993,11 +986,11 @@ class FlmStatusTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    # Parse --server-binary before unittest sees sys.argv
+    # Parse --cli-binary before unittest sees sys.argv
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--server-binary", type=str, default=None)
+    parser.add_argument("--cli-binary", type=str, default=None)
     args, remaining = parser.parse_known_args()
     # Store for setUpClass to pick up
-    FlmStatusTests._cli_server_binary = args.server_binary
+    FlmStatusTests._cli_binary_override = args.cli_binary
     sys.argv = [sys.argv[0]] + remaining
     unittest.main(verbosity=2)

@@ -30,6 +30,7 @@ import {
   LemonadeToolsResult,
   ToolExecutionContext,
 } from '../../utils/lemonadeTools';
+import { COLLECTION_IMAGE_HEIGHT } from '../../utils/collectionImageConfig';
 import { useAudioCapture } from '../../hooks/useAudioCapture';
 import { encodeWAV, base64ToPlaybackUrl } from '../../utils/audioUtils';
 
@@ -101,6 +102,35 @@ function splitDataUrl(dataUrl: string): { base64: string } {
   return { base64: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl };
 }
 
+
+function getToolArgs(toolCall: any): Record<string, any> {
+  try {
+    const args = JSON.parse(toolCall?.function?.arguments || '{}');
+    return args && typeof args === 'object' ? args : {};
+  } catch {
+    return {};
+  }
+}
+
+function getImageToolRequestKey(toolCall: any): string {
+  const args = getToolArgs(toolCall);
+  const normalize = (value: any): string => {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'string') return value.trim().replace(/\s+/g, ' ').toLowerCase();
+    return String(value);
+  };
+
+  return JSON.stringify({
+    prompt: normalize(args.prompt),
+    size: normalize(args.size),
+    steps: normalize(args.steps),
+    cfg_scale: normalize(args.cfg_scale),
+    seed: normalize(args.seed),
+    sample_method: normalize(args.sample_method),
+    flow_shift: normalize(args.flow_shift),
+  });
+}
+
 interface LLMChatPanelProps {
   isBusy: boolean;
   isPreFlight: boolean;
@@ -166,6 +196,12 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const autoScrollResetRef = useRef<number | null>(null);
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(false);
+  // Kill switch for the auto-scroll useEffect once a collection image is
+  // anchored. Needed because handleScroll resets userScrolledAwayRef → false
+  // whenever the post-anchor position is within the "at bottom" threshold
+  // (which happens whenever the message is shorter than the viewport),
+  // re-enabling auto-scroll for subsequent audio/text artifacts.
+  const collectionAutoScrollDisabledRef = useRef(false);
 
   useEffect(() => {
     const decodePrompt = (raw: string) => {
@@ -354,7 +390,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   // Auto-scroll
   useEffect(() => {
-    if (!userScrolledAwayRef.current && isUserAtBottom) {
+    if (!collectionAutoScrollDisabledRef.current && !userScrolledAwayRef.current && isUserAtBottom) {
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       scrollToBottom();
     }
@@ -423,9 +459,40 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     });
   };
 
+  // Freeze auto-scroll and pin the viewport on the assistant's image. Called
+  // after the setMessages that renders the image so the RAF can find it in the
+  // DOM. The disabled-ref persists across iterations so later audio/text
+  // artifacts don't re-trigger auto-scroll; it's reset in sendMessage /
+  // submitEdit when the user starts a new turn.
+  const anchorOnCollectionImage = (messageIndex: number) => {
+    collectionAutoScrollDisabledRef.current = true;
+    userScrolledAwayRef.current = true;
+
+    if (autoScrollRafRef.current !== null) {
+      window.cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
+    if (autoScrollResetRef.current !== null) {
+      window.clearTimeout(autoScrollResetRef.current);
+      autoScrollResetRef.current = null;
+    }
+    pendingAutoScrollRef.current = false;
+    autoScrollInProgressRef.current = false;
+
+    window.requestAnimationFrame(() => {
+      const container = messagesContainerRef.current;
+      const messageEl = container?.querySelector<HTMLElement>(`.chat-message[data-message-index="${messageIndex}"]`);
+      if (!container || !messageEl) return;
+      const target = messageEl.querySelector<HTMLElement>('.collection-chat-image') ?? messageEl;
+      container.scrollTop += target.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    });
+  };
+
   const buildChatRequestBody = (messageHistory: Message[]) => ({
     model: chatModelName,
-    messages: messageHistory,
+    // Strip UI-only fields (e.g. `thinking`) so strict providers like
+    // Fireworks don't 400 on unknown keys in the assistant turn.
+    messages: messageHistory.map(({ role, content }) => ({ role, content })),
     stream: true,
     ...buildChatRequestOverrides(appSettings),
   });
@@ -456,6 +523,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if (!lemonadeTools) throw new Error('Lemonade tools not loaded');
     const MAX_ITERATIONS = 5;
     const isNewModelLoad = currentLoadedModel !== chatModelName;
+    const assistantMessageIndex = messageHistory.length;
 
     // Pre-extract audio and image data from user messages
     const extractedAudio: Array<{ data: string; mime: string }> = [];
@@ -536,6 +604,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     // artifacts: generated this turn — rendered in the assistant response.
     const artifacts: Artifact[] = [];
 
+    // Track exact repeated generation requests only. Distinct prompts/options
+    // such as "cat" and "dog" or different camera angles remain allowed.
+    const generatedImageRequestKeys = new Set<string>();
+
     // Agentic loop
     const llmMessages = [...processedMessages];
 
@@ -600,36 +672,46 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       for (const toolCall of assistantMsg.tool_calls) {
         const funcName = toolCall.function.name;
         const toolModel = lemonadeTools.models[funcName];
+        const imageRequestKey = funcName === 'generate_image' ? getImageToolRequestKey(toolCall) : '';
 
         let resultContent: string;
+        let imageAddedThisCall = false;
         if (toolModel) {
           try {
-            const context: ToolExecutionContext = {
-              extractedAudio,
-              extractedImages,
-              previousArtifacts: [...sourceArtifacts, ...artifacts],
-            };
-            const result = await executeLemonadeTool(toolCall, toolModel, context, modelsData, abortControllerRef.current?.signal);
-
-            if (result.type === 'image' && result.data) {
-              // For edits, replace the last generated image from this turn if
-              // one exists; otherwise append. The source image is never
-              // rendered, so there's nothing to replace on the first edit.
-              let lastImageIdx = -1;
-              for (let i = artifacts.length - 1; i >= 0; i--) {
-                if (artifacts[i].type === 'image') { lastImageIdx = i; break; }
-              }
-              if (funcName === 'edit_image' && lastImageIdx !== -1) {
-                artifacts[lastImageIdx] = { type: 'image', data: result.data, mime: result.mime || 'image/png' };
-              } else {
-                artifacts.push({ type: 'image', data: result.data, mime: result.mime || 'image/png' });
-              }
-              resultContent = funcName === 'edit_image' ? 'Image edited successfully.' : 'Image generated successfully.';
-            } else if (result.type === 'audio' && result.data) {
-              artifacts.push({ type: 'audio', data: result.data, mime: result.mime || 'audio/wav' });
-              resultContent = 'Audio generated successfully.';
+            if (funcName === 'generate_image' && generatedImageRequestKeys.has(imageRequestKey)) {
+              resultContent = 'Duplicate image generation skipped because this exact image request was already generated for this turn.';
             } else {
-              resultContent = result.text || 'Tool executed successfully.';
+              const context: ToolExecutionContext = {
+                extractedAudio,
+                extractedImages,
+                previousArtifacts: [...sourceArtifacts, ...artifacts],
+              };
+              const result = await executeLemonadeTool(toolCall, toolModel, context, modelsData, abortControllerRef.current?.signal);
+
+              if (result.type === 'image' && result.data) {
+                // For edits, replace the last generated image from this turn if
+                // one exists; otherwise append. The source image is never
+                // rendered, so there's nothing to replace on the first edit.
+                let lastImageIdx = -1;
+                for (let i = artifacts.length - 1; i >= 0; i--) {
+                  if (artifacts[i].type === 'image') { lastImageIdx = i; break; }
+                }
+                if (funcName === 'edit_image' && lastImageIdx !== -1) {
+                  artifacts[lastImageIdx] = { type: 'image', data: result.data, mime: result.mime || 'image/png' };
+                } else {
+                  artifacts.push({ type: 'image', data: result.data, mime: result.mime || 'image/png' });
+                }
+                resultContent = funcName === 'edit_image' ? 'Image edited successfully.' : 'Image generated successfully.';
+                if (funcName === 'generate_image') {
+                  generatedImageRequestKeys.add(imageRequestKey);
+                }
+                imageAddedThisCall = true;
+              } else if (result.type === 'audio' && result.data) {
+                artifacts.push({ type: 'audio', data: result.data, mime: result.mime || 'audio/wav' });
+                resultContent = 'Audio generated successfully.';
+              } else {
+                resultContent = result.text || 'Tool executed successfully.';
+              }
             }
           } catch (err: any) {
             resultContent = `Error: ${err.message || 'Tool execution failed'}`;
@@ -654,6 +736,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           };
           return newMessages;
         });
+
+        if (imageAddedThisCall) {
+          anchorOnCollectionImage(assistantMessageIndex);
+        }
       }
     }
 
@@ -834,6 +920,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     abortControllerRef.current = new AbortController();
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
+    collectionAutoScrollDisabledRef.current = false;
 
     let messageContent: MessageContent;
     if (uploadedImages.length > 0 || uploadedAudio.length > 0) {
@@ -909,6 +996,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     abortControllerRef.current = new AbortController();
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
+    collectionAutoScrollDisabledRef.current = false;
 
     const truncatedMessages = messages.slice(0, editingIndex);
 
@@ -998,6 +1086,14 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     });
   };
 
+  const isCollectionImageOnlyMessage = (message: Message) => (
+    collectionMode &&
+    message.role === 'assistant' &&
+    Array.isArray(message.content) &&
+    message.content.length > 0 &&
+    message.content.every((item) => item.type === 'image_url')
+  );
+
   const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number, isComplete?: boolean, role?: string) => (
     <>
       {thinking && (
@@ -1039,20 +1135,15 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               if (!url.startsWith('data:image/')) return null;
               if (role === 'assistant') {
                 return (
-                  <div key={index} className="image-generation-item">
-                    <div className="generated-images-row">
-                      <div className="generated-image-column">
-                        <div className="image-wrapper">
-                          <img
-                            src={url}
-                            alt="Generated"
-                            className="generated-image in-chat"
-                            onClick={() => setLightboxSrc(url)}
-                            title="Click to expand"
-                          />
-                        </div>
-                      </div>
-                    </div>
+                  <div key={index} className="collection-chat-image">
+                    <img
+                      src={url}
+                      alt="Generated"
+                      className="generated-image in-chat"
+                      style={{ height: COLLECTION_IMAGE_HEIGHT }}
+                      onClick={() => setLightboxSrc(url)}
+                      title="Click to expand"
+                    />
                   </div>
                 );
               }
@@ -1189,12 +1280,16 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         {messages.length === 0 && <EmptyState title="Lemonade Chat" />}
         {messages.map((message, index) => {
           const isGrayedOut = editingIndex !== null && index > editingIndex;
+          const isBubblelessImageMessage = isCollectionImageOnlyMessage(message);
           return (
             <div
               key={index}
+              data-message-index={index}
               className={`chat-message ${message.role === 'user' ? 'user-message' : 'assistant-message'} ${
                 message.role === 'user' && !isBusy ? 'editable' : ''
-              } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
+              } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''} ${
+                isBubblelessImageMessage ? 'collection-image-message' : ''
+              }`}
             >
               {renderAudioButton(message.role, message.content, index)}
               {editingIndex === index ? (

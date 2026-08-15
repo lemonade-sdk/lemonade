@@ -113,7 +113,7 @@ if(NOT USE_SYSTEM_NODEJS_MODULES_ENABLED)
 
     message(STATUS "Installing npm dependencies...")
     execute_process(
-        COMMAND "${NPM_EXECUTABLE}" install
+        COMMAND "${NPM_EXECUTABLE}" ci --ignore-scripts
         WORKING_DIRECTORY "${WEB_APP_BUILD_SOURCE_DIR}"
         RESULT_VARIABLE INSTALL_RESULT
     )

@@ -257,16 +257,17 @@ def main():
         choices=[
             "vulkan",
             "rocm",
+            "cuda",
             "cpu",
             "metal",
             "system",
         ],
-        help="Backend to test (vulkan, rocm, cpu, metal, system)",
+        help="Backend to test (vulkan, rocm, cuda, cpu, metal, system)",
     )
     parser.add_argument(
         "--channel",
         default=None,
-        choices=["stable", "preview", "nightly"],
+        choices=["stable", "nightly"],
         help="Channel for backends that support multiple releases (e.g. rocm)",
     )
     parser.add_argument(

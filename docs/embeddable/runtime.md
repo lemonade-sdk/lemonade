@@ -10,6 +10,7 @@ Contents:
 - [Runtime Settings Management](#runtime-settings-management)
   - [`GET /internal/config`](#get-internalconfig)
   - [`POST /internal/set`](#post-internalset)
+  - [`POST /internal/pin`](#post-internalpin)
 
 ## Launching
 
@@ -103,7 +104,7 @@ This matches the existing CLI, tray, app, and test implementations in this repo.
 | `GET /v1/models` | List available models |
 | `GET /v1/health` | Server status and loaded models |
 
-See the [Server Spec](../server/server_spec.md) for full request/response details.
+See the [Endpoints Spec](../api/README.md) for full request/response details.
 
 ## Runtime Settings Management
 
@@ -113,8 +114,10 @@ Your app can manage its `lemond` instance at runtime by using `/internal` endpoi
 |--------|------|-------------|
 | `POST` | `/internal/set` | Unified config setter (see below) |
 | `GET`  | `/internal/config` | Returns the full runtime config snapshot |
+| `GET`  | `/internal/config/defaults` | Returns the canonical default config (factory defaults) |
+| `POST` | `/internal/pin` | Pin or unpin a loaded model (prevents auto-eviction) |
 
-The settings defined in `config.json` can all be changed at runtime without restarting `lemond` with the `/internal/set` endpoint. See the [Configuration Guide](../server/configuration.md) for details on all settings.
+The settings defined in `config.json` can all be changed at runtime without restarting `lemond` with the `/internal/set` endpoint. See the [Configuration Guide](../guide/configuration/README.md) for details on all settings.
 
 > Note: The `lemonade` CLI uses `/internal/set` and `/internal/config` internally for the `lemonade config` commands.
 
@@ -135,6 +138,23 @@ Returns the full runtime configuration as a flat JSON object containing all serv
     curl http://localhost:8000/internal/config
     ```
 
+#### `GET /internal/config/defaults`
+
+Returns the canonical default configuration — the values a brand-new `config.json` is seeded with, independent of this instance's current config or any deployment override. The per-recipe sections are derived from the backend descriptors, so this is the authoritative source for "what are the factory defaults." It is what `docs/tools/gen_backend_boilerplate.py` reads to regenerate `src/cpp/resources/defaults.json`.
+
+**Example:**
+=== "Windows (cmd.exe)"
+
+    ```cmd
+    curl http://localhost:8000/internal/config/defaults
+    ```
+
+=== "Linux (bash)"
+
+    ```bash
+    curl http://localhost:8000/internal/config/defaults
+    ```
+
 #### `POST /internal/set`
 
 Accepts a JSON object with one or more keys to update atomically. Returns `{"status":"success","updated":{...}}` on success, or `400` with an error message on validation failure.
@@ -148,7 +168,10 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
 | `global_timeout` | int (positive) | Updates default HTTP client timeout |
 | `no_broadcast` | bool | Stops or starts UDP beacon |
-| `extra_models_dir` | string | Updates model manager search path |
+| `models_dir` | string (`"auto"` or path) | Updates the primary model cache location |
+| `extra_models_dir` | string | Validates access and updates the external GGUF search path |
+
+When `extra_models_dir` points to an existing path, `lemond` validates that it is a readable directory before applying the update. A path that does not exist yet is accepted so the directory watcher can pick it up if it is created later. Because `/internal/set` validates all supplied keys before applying any of them, a directory validation error rejects the whole request with `400`.
 
 **Deferred keys** (affect the next model load or eviction decision, no immediate side effect):
 
@@ -161,11 +184,12 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `sdcpp_backend` | string |
 | `whispercpp_backend` | string |
 | `whispercpp_args` | string |
+| `vllm_backend` | string |
+| `vllm_args` | string |
 | `steps` | int (positive) |
 | `cfg_scale` | number |
 | `width` | int (positive) |
 | `height` | int (positive) |
-| `flm_args` | string |
 
 **Example:**
 === "Windows (cmd.exe)"
@@ -183,3 +207,40 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
       -H "Content-Type: application/json" \
       -d '{"ctx_size": 8192, "max_loaded_models": 3, "log_level": "debug"}'
     ```
+
+#### `POST /internal/pin`
+
+Pin or unpin a loaded model in memory. Pinned models are excluded from the Least Recently Used (LRU) eviction policy.
+
+**Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_name` | Yes | Name of the loaded model to pin or unpin. |
+| `pinned` | Yes | Boolean. Set to `true` to pin the model, or `false` to unpin it. |
+
+**Example:**
+=== "Windows (cmd.exe)"
+
+    ```cmd
+    curl -X POST http://localhost:8000/internal/pin ^
+      -H "Content-Type: application/json" ^
+      -d "{\"model_name\": \"Qwen3-0.6B-GGUF\", \"pinned\": true}"
+    ```
+
+=== "Linux (bash)"
+
+    ```bash
+    curl -X POST http://localhost:8000/internal/pin \
+      -H "Content-Type: application/json" \
+      -d '{"model_name": "Qwen3-0.6B-GGUF", "pinned": true}'
+    ```
+
+**Response format:**
+```json
+{
+  "status": "success",
+  "model_name": "Qwen3-0.6B-GGUF",
+  "pinned": true
+}
+```

@@ -33,11 +33,8 @@ async function fetchLoadedAudioModel(modelsData: ModelsData): Promise<string | n
     if (!res.ok) return null;
     const health = await res.json();
     const allLoaded: { model_name: string; type?: string }[] = health.all_models_loaded || [];
-    // Must be *loaded as audio* — omni models (e.g. gemma4) carry the "audio"
-    // label statically but may be currently loaded as an LLM; using one of
-    // those for transcription hangs the realtime session.
     const loaded = allLoaded.find(
-      (m) => m.type === 'audio' && modelsData[m.model_name]?.labels?.includes('audio'),
+      (m) => m.type === 'transcription' && modelsData[m.model_name]?.labels?.includes('realtime-transcription'),
     );
     return loaded?.model_name ?? null;
   } catch {
@@ -54,7 +51,7 @@ export function useVoiceTranscription({
   onError,
 }: UseVoiceTranscriptionOptions): UseVoiceTranscriptionResult {
   const { modelsData } = useModels();
-  const audioModels = Object.keys(modelsData).filter(name => modelsData[name]?.labels?.includes('audio'));
+  const audioModels = Object.keys(modelsData).filter(name => modelsData[name]?.labels?.includes('realtime-transcription'));
 
   // Prefer the smallest downloaded model (fastest for real-time), fall back to any audio model.
   const activeModel =
@@ -94,8 +91,15 @@ export function useVoiceTranscription({
     wsToCloseRef.current?.close();
   }, []);
 
-  // Manual-stop path: commit buffered audio so the server transcribes it, then
-  // keep the socket alive until the 'completed' response arrives.
+  const closeCommittedWs = useCallback(() => {
+    if (wsToCloseRef.current) {
+      wsToCloseRef.current.close();
+      wsToCloseRef.current = null;
+    }
+  }, []);
+
+  // Manual-stop path: ask the server to finish any active VAD speech window,
+  // then keep the socket alive until the server replies with completed/cleared.
   const closeWs = useCallback(() => {
     if (wsClientRef.current) {
       wsClientRef.current.commitAudio();
@@ -127,17 +131,16 @@ export function useVoiceTranscription({
     setInputValueRef.current(newValue);
     if (textareaRef?.current) adjustTextareaHeight(textareaRef.current);
 
-    // After manual stop the committed buffer produces one last 'completed' —
-    // close the socket cleanly once it arrives.
+    // After manual stop, close the socket once the server finishes or discards
+    // the pending buffer.
     if (isFinal && !isRecordingRef.current && wsToCloseRef.current) {
-      wsToCloseRef.current.close();
-      wsToCloseRef.current = null;
+      closeCommittedWs();
     }
-  }, [textareaRef]);
+  }, [textareaRef, closeCommittedWs]);
 
   const start = useCallback(async () => {
     if (!activeModel) {
-      onError('No Whisper model available. Pull one from the Model Manager first.');
+      onError('No realtime transcription model available. Pull one from the Model Manager first.');
       return;
     }
     baseTextRef.current = inputValue;
@@ -157,6 +160,7 @@ export function useVoiceTranscription({
       wsClientRef.current = await TranscriptionWebSocket.connect(modelToUse, {
         onTranscription: handleTranscription,
         onSpeechEvent: () => {},
+        onAudioBufferCleared: closeCommittedWs,
         onError: (err) => onError(err),
       });
       await new Promise(r => setTimeout(r, 500));

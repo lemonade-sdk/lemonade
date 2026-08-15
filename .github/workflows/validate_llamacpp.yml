@@ -8,6 +8,8 @@ on:
         type: boolean
         default: false
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  merge_group:
   schedule:
     # Sunday at 12:00 PM ET (17:00 UTC, 16:00 UTC during EDT)
     - cron: "0 16 * * 0"
@@ -16,10 +18,15 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
-  LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
+  HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+  LITE_MODE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
 
 jobs:
   # ========================================================================
@@ -27,12 +34,15 @@ jobs:
   # ========================================================================
   get-latest-releases:
     name: Get latest releases
-    if: github.event_name != 'pull_request'
+    # Only the auto-update runs resolve upstream releases. Everywhere else the
+    # build validates the pins committed in backend_versions.json, so a bad
+    # upstream release can't fail a merge or hide a broken pin.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       llamacpp_release: ${{ steps.llamacpp.outputs.release }}
       llamacpp_rocm_release: ${{ steps.llamacpp_rocm.outputs.release }}
-      llamacpp_rocm_preview_release: ${{ steps.llamacpp_rocm_preview.outputs.release }}
+      llamacpp_lemonade_release: ${{ steps.llamacpp_lemonade.outputs.release }}
     steps:
       - name: Get latest llama.cpp release
         id: llamacpp
@@ -52,24 +62,264 @@ jobs:
           echo "Latest llamacpp-rocm release: $RELEASE"
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
-      - name: Get latest llamacpp-rocm-preview release
-        id: llamacpp_rocm_preview
+      - name: Get latest lemonade-sdk/llama.cpp release
+        id: llamacpp_lemonade
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           RELEASE=$(gh api repos/lemonade-sdk/llama.cpp/releases/latest --jq '.tag_name')
-          echo "Latest llamacpp-rocm-preview release: $RELEASE"
+          echo "Latest lemonade-sdk/llama.cpp release: $RELEASE"
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
   # ========================================================================
   # Build binaries with updated backend versions
   # ========================================================================
+  verify-release-assets:
+    name: Verify release assets
+    needs: get-latest-releases
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      ggml_update_backends: ${{ steps.assets.outputs.ggml_update_backends }}
+      lemonade_update_backends: ${{ steps.assets.outputs.lemonade_update_backends }}
+      rocm_update_backends: ${{ steps.assets.outputs.rocm_update_backends }}
+      ggml_missing_count: ${{ steps.assets.outputs.ggml_missing_count }}
+      rocm_nightly_missing_count: ${{ steps.assets.outputs.rocm_nightly_missing_count }}
+      rocm_stable_missing_count: ${{ steps.assets.outputs.rocm_stable_missing_count }}
+      cuda_missing_count: ${{ steps.assets.outputs.cuda_missing_count }}
+      vulkan_available: ${{ steps.assets.outputs.vulkan_available }}
+      cpu_available: ${{ steps.assets.outputs.cpu_available }}
+      metal_available: ${{ steps.assets.outputs.metal_available }}
+      rocm_nightly_available: ${{ steps.assets.outputs.rocm_nightly_available }}
+      rocm_stable_available: ${{ steps.assets.outputs.rocm_stable_available }}
+      cuda_available: ${{ steps.assets.outputs.cuda_available }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch release asset lists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GGML_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
+          ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+          LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
+        run: |
+          set -euo pipefail
+
+          for value in GGML_RELEASE ROCM_RELEASE LEMONADE_RELEASE; do
+            if [ -z "${!value}" ]; then
+              echo "::error::$value was not resolved."
+              exit 1
+            fi
+          done
+
+          gh api "repos/ggml-org/llama.cpp/releases/tags/${GGML_RELEASE}" \
+            --jq '.assets[].name' | sort > ggml_assets.txt
+          gh api "repos/lemonade-sdk/llamacpp-rocm/releases/tags/${ROCM_RELEASE}" \
+            --jq '.assets[].name' | sort > rocm_assets.txt
+          gh api "repos/lemonade-sdk/llama.cpp/releases/tags/${LEMONADE_RELEASE}" \
+            --jq '.assets[].name' | sort > lemonade_assets.txt
+
+          echo "ggml-org/llama.cpp assets for ${GGML_RELEASE}:"
+          cat ggml_assets.txt
+          echo "lemonade-sdk/llamacpp-rocm assets for ${ROCM_RELEASE}:"
+          cat rocm_assets.txt
+          echo "lemonade-sdk/llama.cpp assets for ${LEMONADE_RELEASE}:"
+          cat lemonade_assets.txt
+
+      - name: Verify expected asset families
+        id: assets
+        env:
+          GGML_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
+          ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+          LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          RELEASE_RE = re.compile(r"^b[0-9]+$")
+          CUDA_SMS = (
+              "sm_75",
+              "sm_80",
+              "sm_86",
+              "sm_89",
+              "sm_90",
+              "sm_100",
+              "sm_120",
+          )
+          ROCM_NIGHTLY_ARCHES = (
+              "gfx1151",
+              "gfx1150",
+              "gfx120X",
+              "gfx110X",
+              "gfx103X",
+              "gfx90a",
+              "gfx908",
+          )
+
+          def require_release(name):
+              value = os.environ[name].strip()
+              if not RELEASE_RE.match(value):
+                  raise SystemExit(f"Invalid {name}: {value!r}")
+              return value
+
+          def read_assets(path):
+              return set(Path(path).read_text(encoding="utf-8").splitlines())
+
+          def update_outputs(values):
+              github_output = os.environ.get("GITHUB_OUTPUT")
+              if not github_output:
+                  return
+              with open(github_output, "a", encoding="utf-8") as out:
+                  for key, value in values.items():
+                      out.write(f"{key}={value}\n")
+
+          def report_group(name, release, backend_requirements):
+              update_backends = []
+              missing_by_backend = {}
+              for backend, required in backend_requirements.items():
+                  missing = [asset for asset in required if asset not in release]
+                  missing_by_backend[backend] = missing
+                  if missing:
+                      print(f"{name}: {backend} assets incomplete; keeping existing pin.")
+                      for asset in missing:
+                          print(f"  missing: {asset}")
+                  else:
+                      print(f"{name}: {backend} assets complete; pin may update.")
+                      update_backends.append(backend)
+              return update_backends, missing_by_backend
+
+          ggml_release = require_release("GGML_RELEASE")
+          rocm_release = require_release("ROCM_RELEASE")
+          lemonade_release = require_release("LEMONADE_RELEASE")
+
+          ggml_assets = read_assets("ggml_assets.txt")
+          rocm_assets = read_assets("rocm_assets.txt")
+          lemonade_assets = read_assets("lemonade_assets.txt")
+
+          with open("src/cpp/resources/backend_versions.json", encoding="utf-8") as f:
+              versions = json.load(f)
+
+          therock = str(versions.get("therock", {}).get("version", "")).strip()
+          if therock.startswith("v"):
+              therock = therock[1:]
+          therock_parts = therock.split(".")
+          if len(therock_parts) >= 2:
+              therock = ".".join(therock_parts[:2])
+          if not therock:
+              raise SystemExit("backend_versions.json is missing therock.version")
+
+          asset_families = versions.get("rocm_asset_families", {})
+          if not isinstance(asset_families, dict):
+              raise SystemExit("backend_versions.json rocm_asset_families must be an object")
+
+          rocm_nightly_targets = sorted({asset_families.get(arch, arch) for arch in ROCM_NIGHTLY_ARCHES})
+
+          ggml_requirements = {
+              "vulkan": [
+                  f"llama-{ggml_release}-bin-win-vulkan-x64.zip",
+                  f"llama-{ggml_release}-bin-ubuntu-vulkan-x64.tar.gz",
+                  f"llama-{ggml_release}-bin-ubuntu-vulkan-arm64.tar.gz",
+              ],
+              "cpu": [
+                  f"llama-{ggml_release}-bin-win-cpu-x64.zip",
+                  f"llama-{ggml_release}-bin-ubuntu-x64.tar.gz",
+                  f"llama-{ggml_release}-bin-ubuntu-arm64.tar.gz",
+              ],
+              "metal": [
+                  f"llama-{ggml_release}-bin-macos-arm64.tar.gz",
+              ],
+          }
+
+          rocm_nightly_requirements = {
+              "rocm-nightly": [
+                  asset
+                  for target in rocm_nightly_targets
+                  for asset in (
+                      f"llama-{rocm_release}-windows-rocm-{target}-x64.zip",
+                      f"llama-{rocm_release}-ubuntu-rocm-{target}-x64.zip",
+                  )
+              ],
+          }
+
+          lemonade_requirements = {
+              "rocm-stable": [
+                  f"llama-{lemonade_release}-bin-win-rocm-{therock}-x64.zip",
+                  f"llama-{lemonade_release}-bin-ubuntu-rocm-{therock}-x64.tar.gz",
+              ],
+              "cuda": [
+                  asset
+                  for sm in CUDA_SMS
+                  for asset in (
+                      f"llama-{lemonade_release}-windows-cuda-{sm}-x64.7z",
+                      f"llama-{lemonade_release}-ubuntu-cuda-{sm}-x64.tar.xz",
+                      f"llama-{lemonade_release}-ubuntu-cuda-{sm}-arm64.tar.xz",
+                  )
+              ],
+          }
+
+          ggml_updates, ggml_missing = report_group("ggml-org/llama.cpp", ggml_assets, ggml_requirements)
+          rocm_updates, rocm_missing = report_group("lemonade-sdk/llamacpp-rocm", rocm_assets, rocm_nightly_requirements)
+          lemonade_updates, lemonade_missing = report_group("lemonade-sdk/llama.cpp", lemonade_assets, lemonade_requirements)
+
+          values = {
+              "ggml_update_backends": ",".join(ggml_updates),
+              "lemonade_update_backends": ",".join(lemonade_updates),
+              "rocm_update_backends": ",".join(rocm_updates),
+              "ggml_missing_count": str(sum(len(items) for items in ggml_missing.values())),
+              "rocm_nightly_missing_count": str(len(rocm_missing["rocm-nightly"])),
+              "rocm_stable_missing_count": str(len(lemonade_missing["rocm-stable"])),
+              "cuda_missing_count": str(len(lemonade_missing["cuda"])),
+              "vulkan_available": "true" if not ggml_missing["vulkan"] else "false",
+              "cpu_available": "true" if not ggml_missing["cpu"] else "false",
+              "metal_available": "true" if not ggml_missing["metal"] else "false",
+              "rocm_nightly_available": "true" if not rocm_missing["rocm-nightly"] else "false",
+              "rocm_stable_available": "true" if not lemonade_missing["rocm-stable"] else "false",
+              "cuda_available": "true" if not lemonade_missing["cuda"] else "false",
+          }
+          update_outputs(values)
+
+          print("Eligible ggml-org/llama.cpp backend updates: " + (values["ggml_update_backends"] or "none"))
+          print("Eligible lemonade-sdk/llamacpp-rocm backend updates: " + (values["rocm_update_backends"] or "none"))
+          print("Eligible lemonade-sdk/llama.cpp backend updates: " + (values["lemonade_update_backends"] or "none"))
+          PY
+
   build:
     name: Build
-    needs: get-latest-releases
-    if: always() && !failure() && !cancelled()
+    needs: [get-latest-releases, verify-release-assets]
+    # Label a PR `ci:upgrades` to opt it back in.
+    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
     runs-on: windows-latest
+    outputs:
+      lite: ${{ steps.lite.outputs.lite }}
     steps:
+      - name: Resolve lite mode
+        # The env context is unavailable in a job's `strategy` block, so the
+        # validate matrix reads LITE_MODE through this output to size its
+        # runners from the same source of truth the validation itself uses.
+        id: lite
+        shell: PowerShell
+        run: |
+          "lite=$env:LITE_MODE" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Prepare Windows runner for long paths and stale workspace caches
+        if: runner.os == 'Windows'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          # 1. Kill any running/orphaned processes to release file locks
+          $patterns = @("lemonade", "lemond", "llama-server", "llama", "flm", "ort-server", "moonshine-server", "wscript", "LemonadeServer")
+          foreach ($p in $patterns) {
+              Get-Process | Where-Object { $_.ProcessName -like "*$p*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
+
       - uses: actions/checkout@v5
         with:
           clean: true
@@ -81,49 +331,77 @@ jobs:
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
-          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
+          LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
+          LLAMACPP_GGML_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.ggml_update_backends }}
+          LLAMACPP_ROCM_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.rocm_update_backends }}
+          LLAMACPP_LEMONADE_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.lemonade_update_backends }}
         run: |
           $ErrorActionPreference = "Stop"
-          $path = "src/cpp/resources/backend_versions.json"
-          $data = Get-Content $path -Raw | ConvertFrom-Json
 
-          $release = $env:LLAMACPP_RELEASE
-          Write-Host "Updating llamacpp vulkan/cpu/metal to $release" -ForegroundColor Cyan
-          foreach ($key in @("vulkan", "cpu", "metal")) {
-              $old = $data.llamacpp.$key
-              $data.llamacpp.$key = $release
-              Write-Host "  llamacpp.${key}: $old -> $release"
-          }
+          $script = @'
+          import json
+          import os
+          import re
+          from pathlib import Path
 
-          $rocm = $env:LLAMACPP_ROCM_RELEASE
-          Write-Host "Updating llamacpp rocm-nightly to $rocm" -ForegroundColor Cyan
-          $old = $data.llamacpp.'rocm-nightly'
-          $data.llamacpp.'rocm-nightly' = $rocm
-          Write-Host "  llamacpp.rocm-nightly: $old -> $rocm"
+          RELEASE_RE = re.compile(r"^b[0-9]+$")
 
-          $rocmStable = $env:LLAMACPP_RELEASE
-          Write-Host "Updating llamacpp rocm-stable to $rocmStable" -ForegroundColor Cyan
-          $old = $data.llamacpp.'rocm-stable'
-          $data.llamacpp.'rocm-stable' = $rocmStable
-          Write-Host "  llamacpp.rocm-stable: $old -> $rocmStable"
+          def parse_csv(value):
+              return [item.strip() for item in (value or "").split(",") if item.strip()]
 
-          $rocmPreview = $env:LLAMACPP_ROCM_PREVIEW_RELEASE
-          Write-Host "Updating llamacpp rocm-preview to $rocmPreview" -ForegroundColor Cyan
-          $old = $data.llamacpp.'rocm-preview'
-          $data.llamacpp.'rocm-preview' = $rocmPreview
-          Write-Host "  llamacpp.rocm-preview: $old -> $rocmPreview"
+          def update(section, release, backends):
+              if not backends:
+                  return []
+              if not RELEASE_RE.match(release):
+                  raise SystemExit(f"Invalid llama.cpp release tag: {release}")
+              changed = []
+              for key in backends:
+                  if key not in section:
+                      raise SystemExit(f"Refusing to create missing llamacpp.{key}")
+                  if not isinstance(section[key], str):
+                      raise SystemExit(f"llamacpp.{key} must be a string")
+                  old = section[key]
+                  section[key] = release
+                  changed.append((key, old, release))
+              return changed
 
-          $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
+          path = Path("src/cpp/resources/backend_versions.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          section = data.get("llamacpp")
+          if not isinstance(section, dict):
+              raise SystemExit("backend_versions.json is missing a llamacpp object")
 
-      - name: Build C++ Server with CMake
+          changes = []
+          changes += update(section, os.environ["LLAMACPP_RELEASE"], parse_csv(os.environ.get("LLAMACPP_GGML_UPDATE_BACKENDS", "")))
+          changes += update(section, os.environ["LLAMACPP_ROCM_RELEASE"], parse_csv(os.environ.get("LLAMACPP_ROCM_UPDATE_BACKENDS", "")))
+          changes += update(section, os.environ["LLAMACPP_LEMONADE_RELEASE"], parse_csv(os.environ.get("LLAMACPP_LEMONADE_UPDATE_BACKENDS", "")))
+
+          path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+          print("Updated llamacpp backend versions:")
+          if changes:
+              for key, old, new in changes:
+                  print(f"  llamacpp.{key}: {old} -> {new}")
+          else:
+              print("  none")
+          '@
+
+          $script | python -
+
+      - name: Build lemond
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
           Write-Host "Building Lemonade server binaries..." -ForegroundColor Cyan
           if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-          cmake --preset windows
+          # The validation drives lemond over HTTP and never invokes the CLI,
+          # so lemond is the only target it needs.
+          cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build build --config Release
+          # /m:2 goes straight to MSBuild rather than through --parallel, which
+          # makes CMake set CL_MPCount=1 and cancel the /MP in CMakeLists.txt.
+          # Capped at 2 because /MP already spawns one cl.exe per core.
+          cmake --build build --config Release --target lemond -- /m:2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path "build\Release\lemond.exe")) {
               Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
@@ -149,21 +427,251 @@ jobs:
     if: always() && needs.build.result == 'success'
     runs-on: ${{ matrix.runner }}
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
+        # Full runs walk every hot model, topping out at gpt-oss-120b (59 GiB),
+        # which only fits the 128gb runner. Lite runs test just the smallest hot
+        # model (0.6 GiB), so they stay off that single contended machine.
         include:
           - backend: vulkan
-            runner: [self-hosted, Windows, 128gb, vulkan]
+            runner: >-
+              ${{ fromJSON(needs.build.outputs.lite == 'true'
+              && '["self-hosted","Windows","stx-halo","vulkan","lemon-prod"]'
+              || '["self-hosted","Windows","128gb","vulkan","lemon-prod"]') }}
           - backend: rocm
             channel: stable
-            runner: [self-hosted, Windows, 128gb, rocm]
-          - backend: rocm
-            channel: preview
-            runner: [self-hosted, Windows, 128gb, rocm]
+            runner: >-
+              ${{ fromJSON(needs.build.outputs.lite == 'true'
+              && '["self-hosted","Windows","stx-halo","rocm","lemon-prod"]'
+              || '["self-hosted","Windows","128gb","rocm","lemon-prod"]') }}
           - backend: rocm
             channel: nightly
-            runner: [self-hosted, Windows, 128gb, rocm]
+            runner: >-
+              ${{ fromJSON(needs.build.outputs.lite == 'true'
+              && '["self-hosted","Windows","stx-halo","rocm","lemon-prod"]'
+              || '["self-hosted","Windows","128gb","rocm","lemon-prod"]') }}
+          # CUDA validation is prepared but intentionally disabled until an
+          # NVIDIA self-hosted runner is available. To enable it, uncomment this
+          # matrix entry.
+          #
+          # - backend: cuda
+          #   runner: [self-hosted, Windows, 128gb, cuda]
     steps:
+      - name: Capture Vulkan runner configuration
+        if: matrix.backend == 'vulkan'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          $outDir = Join-Path $env:RUNNER_TEMP "vulkan-runner-config"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          # General system / Windows / BIOS information
+          $os = Get-CimInstance Win32_OperatingSystem
+          $computer = Get-CimInstance Win32_ComputerSystem
+          $bios = Get-CimInstance Win32_BIOS
+
+          [pscustomobject]@{
+            CapturedUtc        = (Get-Date).ToUniversalTime()
+            RunnerName         = $env:RUNNER_NAME
+            Manufacturer       = $computer.Manufacturer
+            Model              = $computer.Model
+            PhysicalMemoryGiB  = [math]::Round(
+              $computer.TotalPhysicalMemory / 1GB,
+              2
+            )
+            WindowsCaption     = $os.Caption
+            WindowsVersion     = $os.Version
+            WindowsBuild       = $os.BuildNumber
+            OSArchitecture     = $os.OSArchitecture
+            LastBootUpTime     = $os.LastBootUpTime
+            UptimeHours        = [math]::Round(
+              ((Get-Date) - $os.LastBootUpTime).TotalHours,
+              2
+            )
+            BIOSManufacturer   = $bios.Manufacturer
+            BIOSVersion        = $bios.SMBIOSBIOSVersion
+            BIOSReleaseDate    = $bios.ReleaseDate
+          } |
+            Format-List |
+            Out-File (Join-Path $outDir "system.txt") -Encoding utf8
+
+          # GPU model, PCI device ID and Windows display-driver information
+          Get-CimInstance Win32_VideoController |
+            Select-Object `
+              Name,
+              VideoProcessor,
+              PNPDeviceID,
+              DriverVersion,
+              DriverDate,
+              Status |
+            Format-List |
+            Out-File (Join-Path $outDir "gpu.txt") -Encoding utf8
+
+          Get-CimInstance Win32_PnPSignedDriver |
+            Where-Object { $_.DeviceClass -eq "DISPLAY" } |
+            Select-Object `
+              DeviceName,
+              Manufacturer,
+              DriverProviderName,
+              DriverVersion,
+              DriverDate,
+              InfName,
+              DeviceID |
+            Format-List |
+            Out-File (Join-Path $outDir "display-drivers.txt") -Encoding utf8
+
+          # Current Windows power scheme
+          powercfg /getactivescheme 2>&1 |
+            Out-File (Join-Path $outDir "power.txt") -Encoding utf8
+
+          # Reboot-frequency proxy plus exact current boot time above
+          $bootEvents = @(
+            Get-WinEvent -FilterHashtable @{
+              LogName   = "System"
+              Id        = 6005
+              StartTime = (Get-Date).AddDays(-30)
+            } -ErrorAction SilentlyContinue
+          )
+
+          "Event Log service starts in last 30 days: $($bootEvents.Count)" |
+            Out-File (Join-Path $outDir "reboots.txt") -Encoding utf8
+
+          # Relevant workloads present before validation cleanup
+          $processes = @(
+            Get-Process -Name @(
+              "lemond",
+              "llama-server",
+              "lemonade",
+              "LemonadeServer",
+              "flm",
+              "ort-server",
+              "moonshine-server"
+            ) -ErrorAction SilentlyContinue
+          )
+
+          if ($processes.Count -gt 0) {
+            $processes |
+              Select-Object ProcessName, Id, StartTime, CPU, WorkingSet64 |
+              Format-Table -AutoSize |
+              Out-File (Join-Path $outDir "processes-before-cleanup.txt") `
+                -Encoding utf8
+          } else {
+            "No known inference processes detected." |
+              Out-File (Join-Path $outDir "processes-before-cleanup.txt") `
+                -Encoding utf8
+          }
+
+          # Best-effort AMD cache-directory state.
+          # This does not modify or clear any cache.
+          $amdRoot = if ($env:LOCALAPPDATA) {
+            Join-Path $env:LOCALAPPDATA "AMD"
+          } else {
+            $null
+          }
+
+          if ($amdRoot -and (Test-Path $amdRoot)) {
+            Get-ChildItem $amdRoot -Directory -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match "cache" } |
+              Select-Object Name, CreationTimeUtc, LastWriteTimeUtc |
+              Format-Table -AutoSize |
+              Out-File (Join-Path $outDir "amd-cache-state.txt") `
+                -Encoding utf8
+          } else {
+            "AMD local cache directory not found." |
+              Out-File (Join-Path $outDir "amd-cache-state.txt") `
+                -Encoding utf8
+          }
+
+          # Vulkan device, driver, memory heaps and capabilities
+          $vulkaninfo = Get-Command vulkaninfo -ErrorAction SilentlyContinue
+
+          if ($vulkaninfo) {
+            & $vulkaninfo.Source --summary *>&1 |
+              Out-File (Join-Path $outDir "vulkaninfo-summary.txt") `
+                -Encoding utf8
+            $summaryExitCode = $LASTEXITCODE
+
+            & $vulkaninfo.Source *>&1 |
+              Out-File (Join-Path $outDir "vulkaninfo.txt") `
+                -Encoding utf8
+            $fullExitCode = $LASTEXITCODE
+
+            Write-Host "=== vulkaninfo --summary ==="
+            Get-Content (Join-Path $outDir "vulkaninfo-summary.txt")
+
+            Write-Host "vulkaninfo summary exit code: $summaryExitCode"
+            Write-Host "vulkaninfo full exit code: $fullExitCode"
+          } else {
+            "vulkaninfo was not found in PATH." |
+              Out-File (Join-Path $outDir "vulkaninfo-unavailable.txt") `
+                -Encoding utf8
+            Write-Warning "vulkaninfo was not found in PATH."
+          }
+
+          Write-Host "=== Runner configuration ==="
+          Get-Content (Join-Path $outDir "system.txt")
+          Get-Content (Join-Path $outDir "gpu.txt")
+          Get-Content (Join-Path $outDir "display-drivers.txt")
+          Get-Content (Join-Path $outDir "power.txt")
+          Get-Content (Join-Path $outDir "reboots.txt")
+          Get-Content (Join-Path $outDir "processes-before-cleanup.txt")
+
+          # Environment collection should never make validation fail.
+          exit 0
+
+      - name: Upload Vulkan runner configuration
+        if: always() && matrix.backend == 'vulkan'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vulkan-runner-config
+          path: ${{ runner.temp }}/vulkan-runner-config/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Cleanup prior validation processes
+        if: runner.os == 'Windows'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $workspaceRoot = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE)
+          $lemondPath = [IO.Path]::GetFullPath(
+            (Join-Path $workspaceRoot "build\Release\lemond.exe")
+          )
+          $cachePrefix = [IO.Path]::GetFullPath(
+            (Join-Path $workspaceRoot "ci-cache-")
+          )
+          $staleProcesses = @(
+            Get-CimInstance Win32_Process `
+              -Filter "Name = 'lemond.exe' OR Name = 'llama-server.exe'" `
+              -ErrorAction SilentlyContinue | Where-Object {
+                $_.ExecutablePath -and (
+                  ($_.Name -eq "lemond.exe" -and $_.ExecutablePath.Equals(
+                    $lemondPath,
+                    [StringComparison]::OrdinalIgnoreCase
+                  )) -or
+                  ($_.Name -eq "llama-server.exe" -and $_.ExecutablePath.StartsWith(
+                    $cachePrefix,
+                    [StringComparison]::OrdinalIgnoreCase
+                  ))
+                )
+              }
+          )
+
+          foreach ($process in $staleProcesses) {
+            Write-Host "Stopping stale $($process.Name) PID $($process.ProcessId)." `
+              -ForegroundColor Yellow
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+          }
+          if ($staleProcesses.Count -gt 0) {
+            Start-Sleep -Seconds 1
+            foreach ($process in $staleProcesses) {
+              if (Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue) {
+                throw "Failed to stop workspace process PID $($process.ProcessId)."
+              }
+            }
+          }
+
       - uses: actions/checkout@v5
         with:
           clean: true
@@ -187,6 +695,7 @@ jobs:
               exit 1
           }
           & $lemondExe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host "Binaries verified!" -ForegroundColor Green
 
       - name: Setup Python and virtual environment
@@ -200,13 +709,30 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
+          $port = 13305
           $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
           $backend = "${{ matrix.backend }}"
           $channel = "${{ matrix.channel }}"
           $label = if ($channel) { "$backend-$channel" } else { $backend }
           $logsDir = "server-logs-$label"
           $cacheDir = Join-Path $PWD "ci-cache-$label"
+          $cachePrefix = [IO.Path]::GetFullPath($cacheDir)
+          $separator = [string][IO.Path]::DirectorySeparatorChar
+          if (-not $cachePrefix.EndsWith($separator)) { $cachePrefix += $separator }
           $venvPython = ".\.venv\Scripts\python.exe"
+          $tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $PWD }
+          $pidFile = Join-Path $tempRoot "lemond-validate-llamacpp.pid"
+
+          function Get-ValidationLlamaServers {
+            Get-CimInstance Win32_Process `
+              -Filter "Name = 'llama-server.exe'" `
+              -ErrorAction SilentlyContinue | Where-Object {
+                $_.ExecutablePath -and $_.ExecutablePath.StartsWith(
+                  $cachePrefix,
+                  [StringComparison]::OrdinalIgnoreCase
+                )
+              }
+          }
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
@@ -214,41 +740,125 @@ jobs:
           $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
           $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
 
-          # Start lemond (Python script handles readiness polling)
-          $proc = Start-Process `
-            -FilePath $lemondExe `
-            -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
-            -RedirectStandardOutput $stdoutLog `
-            -RedirectStandardError $stderrLog `
-            -PassThru
+          # Do not benchmark while another known inference process is active.
+          $conflicts = @(
+            Get-Process -Name @(
+              "lemond", "llama-server", "lemonade", "LemonadeServer",
+              "flm", "ort-server", "moonshine-server"
+            ) -ErrorAction SilentlyContinue
+          )
+          if ($conflicts.Count -gt 0) {
+            $details = ($conflicts | ForEach-Object {
+              "$($_.ProcessName):$($_.Id)"
+            }) -join ", "
+            throw "Runner is not idle: $details"
+          }
 
-          Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
+          if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) {
+            throw "Port $port is already in use."
+          }
+
+          $proc = $null
+          $validationExitCode = 0
 
           try {
+            $proc = Start-Process `
+              -FilePath $lemondExe `
+              -ArgumentList @($cacheDir, "--port", $port, "--host", "127.0.0.1") `
+              -RedirectStandardOutput $stdoutLog `
+              -RedirectStandardError $stderrLog `
+              -PassThru
+
+            # Same-job fallback for the existing final cleanup action.
+            Set-Content -Path $pidFile -Value $proc.Id -Encoding ASCII
+            Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
+
+            if ($proc.WaitForExit(500)) {
+              throw "lemond exited before validation started. See $stderrLog."
+            }
+
             $validationArgs = @(
               "test/validate_llamacpp.py",
               "--backend", $backend,
+              "--port", $port,
               "--output", "llamacpp_validation_$label.json",
               "--logs-dir", $logsDir
             )
+
             if ($channel) {
               $validationArgs += "--channel"
               $validationArgs += $channel
             }
+
             if ("${{ env.LITE_MODE }}" -eq "true") {
               $validationArgs += "--lite"
             }
 
             & $venvPython @validationArgs
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $validationExitCode = $LASTEXITCODE
           } finally {
-            try {
-              Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" `
-                -Method POST -TimeoutSec 10 | Out-Null
-              Start-Sleep -Seconds 2
-            } catch {
-              Write-Host "lemond shutdown not reachable; relying on cleanup step." -ForegroundColor Yellow
+            if ($null -ne $proc) {
+              try {
+                if (-not $proc.HasExited) {
+                  Invoke-WebRequest -Uri "http://127.0.0.1:$port/internal/shutdown" `
+                    -Method POST -TimeoutSec 10 -UseBasicParsing | Out-Null
+                  $null = $proc.WaitForExit(10000)
+                }
+              } catch {
+                Write-Host "Graceful shutdown failed; forcing targeted cleanup." `
+                  -ForegroundColor Yellow
+              }
+
+              if (-not $proc.HasExited) {
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+                $null = $proc.WaitForExit(5000)
+              }
+
+              # Catch a llama-server orphan even if its lemond parent exited first.
+              $orphans = @(Get-ValidationLlamaServers)
+              foreach ($orphan in $orphans) {
+                Write-Host "Stopping validation llama-server PID $($orphan.ProcessId)." `
+                  -ForegroundColor Yellow
+                Stop-Process -Id $orphan.ProcessId -Force -ErrorAction SilentlyContinue
+              }
+
+              # Process teardown can lag slightly on Windows, especially after
+              # releasing Vulkan resources. Give it a short bounded grace period.
+              $remainingOrphans = @(Get-ValidationLlamaServers)
+              $cleanupDeadline = (Get-Date).AddSeconds(5)
+
+              while (
+                $remainingOrphans.Count -gt 0 -and
+                (Get-Date) -lt $cleanupDeadline
+              ) {
+                Start-Sleep -Milliseconds 500
+                $remainingOrphans = @(Get-ValidationLlamaServers)
+              }
+
+              if ($proc.HasExited -and $remainingOrphans.Count -eq 0) {
+                Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+              } else {
+                if (-not $proc.HasExited) {
+                  Write-Warning "lemond PID $($proc.Id) is still running after cleanup."
+                }
+
+                foreach ($orphan in $remainingOrphans) {
+                  Write-Warning (
+                    "llama-server still present after cleanup: " +
+                    "PID=$($orphan.ProcessId), Path=$($orphan.ExecutablePath)"
+                  )
+                }
+
+                Write-Warning (
+                  "Validation cleanup did not fully complete. " +
+                  "The validation result will be preserved."
+                )
+              }
             }
+          }
+
+          if ($validationExitCode -ne 0) {
+            exit $validationExitCode
           }
 
       - name: Upload results
@@ -277,11 +887,15 @@ jobs:
   # ========================================================================
   create-pr:
     name: Create update PR
-    needs: [get-latest-releases, validate]
+    needs: [get-latest-releases, verify-release-assets, validate]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate.result == 'success'
+      needs.validate.result == 'success' &&
+      needs.verify-release-assets.result == 'success'
     steps:
       - uses: actions/checkout@v5
 
@@ -291,60 +905,147 @@ jobs:
           pattern: validation-results-*
           merge-multiple: true
 
-      - name: Update backend_versions.json with both releases
+      - name: Update backend_versions.json with verified releases
         shell: bash
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
-          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
+          LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
+          LLAMACPP_GGML_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.ggml_update_backends }}
+          LLAMACPP_ROCM_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.rocm_update_backends }}
+          LLAMACPP_LEMONADE_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.lemonade_update_backends }}
         run: |
-          python3 -c "
-          import json, os
-          path = 'src/cpp/resources/backend_versions.json'
-          with open(path, 'r') as f:
-              data = json.load(f)
-          llamacpp = os.environ['LLAMACPP_RELEASE']
-          rocm_preview = os.environ['LLAMACPP_ROCM_PREVIEW_RELEASE']
-          rocm_nightly = os.environ['LLAMACPP_ROCM_RELEASE']
-          data['llamacpp']['vulkan'] = llamacpp
-          data['llamacpp']['cpu'] = llamacpp
-          data['llamacpp']['metal'] = llamacpp
-          data['llamacpp']['rocm-stable'] = llamacpp
-          data['llamacpp']['rocm-nightly'] = rocm_nightly
-          data['llamacpp']['rocm-preview'] = rocm_preview
-          with open(path, 'w') as f:
-              json.dump(data, f, indent=2)
-              f.write('\n')
-          print(f'Updated: vulkan/cpu/metal/rocm-stable={llamacpp}, rocm-nightly={rocm_nightly}, rocm-preview={rocm_preview}')
-          "
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          RELEASE_RE = re.compile(r"^b[0-9]+$")
+
+          def parse_csv(value):
+              return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+          def update(section, release, backends):
+              if not backends:
+                  return []
+              if not RELEASE_RE.match(release):
+                  raise SystemExit(f"Invalid llama.cpp release tag: {release}")
+              changed = []
+              for key in backends:
+                  if key not in section:
+                      raise SystemExit(f"Refusing to create missing llamacpp.{key}")
+                  if not isinstance(section[key], str):
+                      raise SystemExit(f"llamacpp.{key} must be a string")
+                  old = section[key]
+                  section[key] = release
+                  changed.append((key, old, release))
+              return changed
+
+          path = Path("src/cpp/resources/backend_versions.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          section = data.get("llamacpp")
+          if not isinstance(section, dict):
+              raise SystemExit("backend_versions.json is missing a llamacpp object")
+
+          changes = []
+          changes += update(section, os.environ["LLAMACPP_RELEASE"], parse_csv(os.environ.get("LLAMACPP_GGML_UPDATE_BACKENDS", "")))
+          changes += update(section, os.environ["LLAMACPP_ROCM_RELEASE"], parse_csv(os.environ.get("LLAMACPP_ROCM_UPDATE_BACKENDS", "")))
+          changes += update(section, os.environ["LLAMACPP_LEMONADE_RELEASE"], parse_csv(os.environ.get("LLAMACPP_LEMONADE_UPDATE_BACKENDS", "")))
+
+          path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+          print("Updated llamacpp backend versions:")
+          if changes:
+              for key, old, new in changes:
+                  print(f"  llamacpp.{key}: {old} -> {new}")
+          else:
+              print("  none")
+          PY
 
       - name: Generate PR body
         shell: bash
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
-          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
+          LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
+          LLAMACPP_GGML_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.ggml_update_backends }}
+          LLAMACPP_ROCM_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.rocm_update_backends }}
+          LLAMACPP_LEMONADE_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.lemonade_update_backends }}
+          VULKAN_AVAILABLE: ${{ needs.verify-release-assets.outputs.vulkan_available }}
+          CPU_AVAILABLE: ${{ needs.verify-release-assets.outputs.cpu_available }}
+          METAL_AVAILABLE: ${{ needs.verify-release-assets.outputs.metal_available }}
+          ROCM_NIGHTLY_AVAILABLE: ${{ needs.verify-release-assets.outputs.rocm_nightly_available }}
+          ROCM_STABLE_AVAILABLE: ${{ needs.verify-release-assets.outputs.rocm_stable_available }}
+          CUDA_AVAILABLE: ${{ needs.verify-release-assets.outputs.cuda_available }}
+          GGML_MISSING_COUNT: ${{ needs.verify-release-assets.outputs.ggml_missing_count }}
+          ROCM_NIGHTLY_MISSING_COUNT: ${{ needs.verify-release-assets.outputs.rocm_nightly_missing_count }}
+          ROCM_STABLE_MISSING_COUNT: ${{ needs.verify-release-assets.outputs.rocm_stable_missing_count }}
+          CUDA_MISSING_COUNT: ${{ needs.verify-release-assets.outputs.cuda_missing_count }}
         run: |
-          python3 << 'PYEOF'
-          import json, os
+          python3 <<'PYEOF'
+          import json
+          import os
+
+          def parse_csv(value):
+              return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+          def yes(name):
+              return os.environ.get(name, "false") == "true"
+
+          def pin_action(backend, release, enabled):
+              return release if enabled else "unchanged"
 
           body_lines = []
           llamacpp = os.environ.get("LLAMACPP_RELEASE", "unknown")
           rocm_nightly = os.environ.get("LLAMACPP_ROCM_RELEASE", "unknown")
-          rocm_preview = os.environ.get("LLAMACPP_ROCM_PREVIEW_RELEASE", "unknown")
+          lemonade_release = os.environ.get("LLAMACPP_LEMONADE_RELEASE", "unknown")
+          ggml_updates = set(parse_csv(os.environ.get("LLAMACPP_GGML_UPDATE_BACKENDS", "")))
+          rocm_updates = set(parse_csv(os.environ.get("LLAMACPP_ROCM_UPDATE_BACKENDS", "")))
+          lemonade_updates = set(parse_csv(os.environ.get("LLAMACPP_LEMONADE_UPDATE_BACKENDS", "")))
+
+          pin_plan = {
+              "vulkan": pin_action("vulkan", llamacpp, "vulkan" in ggml_updates),
+              "cpu": pin_action("cpu", llamacpp, "cpu" in ggml_updates),
+              "metal": pin_action("metal", llamacpp, "metal" in ggml_updates),
+              "rocm-nightly": pin_action("rocm-nightly", rocm_nightly, "rocm-nightly" in rocm_updates),
+              "rocm-stable": pin_action("rocm-stable", lemonade_release, "rocm-stable" in lemonade_updates),
+              "cuda": pin_action("cuda", lemonade_release, "cuda" in lemonade_updates),
+          }
 
           body_lines.append("## Auto-update llama.cpp backends")
           body_lines.append("")
-          body_lines.append(f"- **llama.cpp** (vulkan/cpu/metal/rocm-stable): `{llamacpp}`")
-          body_lines.append(f"- **llamacpp-rocm** (rocm-nightly): `{rocm_nightly}`")
-          body_lines.append(f"- **llamacpp-rocm-preview**: `{rocm_preview}`")
+          body_lines.append("This PR updates only backend pins whose expected release assets were found.")
+          body_lines.append("")
+          body_lines.append(f"- **ggml-org/llama.cpp candidate**: `{llamacpp}`")
+          body_lines.append(f"- **lemonade-sdk/llamacpp-rocm candidate**: `{rocm_nightly}`")
+          body_lines.append(f"- **lemonade-sdk/llama.cpp candidate**: `{lemonade_release}`")
+          body_lines.append("")
+          body_lines.append("| Backend | Pin action | Asset check |")
+          body_lines.append("|---|---|---|")
+          body_lines.append(f"| `vulkan` | `{pin_plan['vulkan']}` | {'complete' if yes('VULKAN_AVAILABLE') else 'incomplete'} |")
+          body_lines.append(f"| `cpu` | `{pin_plan['cpu']}` | {'complete' if yes('CPU_AVAILABLE') else 'incomplete'} |")
+          body_lines.append(f"| `metal` | `{pin_plan['metal']}` | {'complete' if yes('METAL_AVAILABLE') else 'incomplete'} |")
+          body_lines.append(f"| `rocm-nightly` | `{pin_plan['rocm-nightly']}` | {'complete' if yes('ROCM_NIGHTLY_AVAILABLE') else 'incomplete'} |")
+          body_lines.append(f"| `rocm-stable` | `{pin_plan['rocm-stable']}` | {'complete' if yes('ROCM_STABLE_AVAILABLE') else 'incomplete'} |")
+          body_lines.append(f"| `cuda` | `{pin_plan['cuda']}` | {'complete' if yes('CUDA_AVAILABLE') else 'incomplete'} |")
+          body_lines.append("")
+          body_lines.append("Missing asset counts:")
+          body_lines.append(f"- ggml-org/llama.cpp: `{os.environ.get('GGML_MISSING_COUNT', 'unknown')}`")
+          body_lines.append(f"- lemonade-sdk/llamacpp-rocm rocm-nightly: `{os.environ.get('ROCM_NIGHTLY_MISSING_COUNT', 'unknown')}`")
+          body_lines.append(f"- lemonade-sdk/llama.cpp rocm-stable: `{os.environ.get('ROCM_STABLE_MISSING_COUNT', 'unknown')}`")
+          body_lines.append(f"- lemonade-sdk/llama.cpp cuda: `{os.environ.get('CUDA_MISSING_COUNT', 'unknown')}`")
+          body_lines.append("")
+          body_lines.append("CUDA remains asset-gated only until a CUDA self-hosted runner is enabled.")
           body_lines.append("")
           body_lines.append("## Validation Results")
           body_lines.append("")
           body_lines.append("| Model | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
           body_lines.append("|-------|--------|----------|--------------|---------------|---------------------|-------------------|")
 
-          for backend in ["vulkan", "rocm-stable", "rocm-preview", "rocm-nightly"]:
+          for backend in ["vulkan", "rocm-stable", "rocm-nightly"]:
               # Labels match the artifact names produced by the validate job
               results_file = f"llamacpp_validation_{backend}.json"
               if not os.path.isfile(results_file):
@@ -382,9 +1083,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
-          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
+          LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
         run: |
-          BRANCH="auto/llamacpp-update-${LLAMACPP_RELEASE}-${LLAMACPP_ROCM_RELEASE}-${LLAMACPP_ROCM_PREVIEW_RELEASE}"
+          BRANCH="auto/llamacpp-update-${LLAMACPP_RELEASE}-${LLAMACPP_LEMONADE_RELEASE}-${LLAMACPP_ROCM_RELEASE}"
 
           # Check if a PR already exists for this update
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
@@ -404,7 +1105,7 @@ jobs:
 
           git checkout -b "$BRANCH"
           git add src/cpp/resources/backend_versions.json
-          git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm-nightly to ${LLAMACPP_ROCM_RELEASE}, rocm-preview to ${LLAMACPP_ROCM_PREVIEW_RELEASE}"
+          git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm-stable to ${LLAMACPP_LEMONADE_RELEASE}, rocm-nightly to ${LLAMACPP_ROCM_RELEASE}"
           git push origin "$BRANCH"
 
           gh pr create \
@@ -412,3 +1113,32 @@ jobs:
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"
+
+  # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
+  # successfully (otherwise the merge is blocked), and 2. these jobs do not need
+  # to run on ordinary pull request pushes.
+  validation-gate:
+    name: llama.cpp validation
+    needs: [build, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+          # Fail if any job broke. In the merge queue, also fail if any never ran.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
+          fi

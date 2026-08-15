@@ -117,6 +117,15 @@ pub fn run() {
                 // Also register `lemonade` scheme at runtime (no-op if the OS already
                 // knows via the installer/Info.plist). Dev builds need this.
                 let _ = app.deep_link().register("lemonade");
+
+                // Cold start on Linux/Windows: the URL arrives via argv, not
+                // on_open_url. Single-instance covers warm re-launches.
+                let initial_urls: Vec<String> = std::env::args()
+                    .filter(|s| s.starts_with("lemonade://"))
+                    .collect();
+                if !initial_urls.is_empty() {
+                    handle_protocol_urls(&app_handle, &initial_urls);
+                }
             }
 
             // Forward maximize state changes so TitleBar.tsx stays in sync
