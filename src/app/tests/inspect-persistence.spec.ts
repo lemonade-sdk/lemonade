@@ -104,7 +104,7 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
   await page.waitForTimeout(500);
 
   // Click the model search box inside the modal
-  const modelSearch = page.locator('input[placeholder="Search model..."]').first();
+  const modelSearch = page.getByRole('dialog').locator('.model-search-wrapper').getByRole('combobox');
   await modelSearch.click();
   await page.waitForTimeout(200);
 

@@ -37,11 +37,13 @@ const capabilitiesPath = path.join(root, 'src/modelCapabilities.ts');
 const chatViewPath = path.join(root, 'src/components/ChatView.tsx');
 const apiPath = path.join(root, 'src/api.ts');
 const stylesPath = path.join(root, 'src/styles/styles.css');
+const chatLocalePath = path.join(root, 'src/i18n/locales/en-US/chat.json');
 
 const capabilitiesSource = fs.readFileSync(capabilitiesPath, 'utf8');
 const chatViewSource = fs.readFileSync(chatViewPath, 'utf8');
 const apiSource = fs.readFileSync(apiPath, 'utf8');
 const stylesSource = fs.readFileSync(stylesPath, 'utf8');
+const chatLocaleSource = fs.readFileSync(chatLocalePath, 'utf8');
 
 const {
   deploymentKindFromLabels,
@@ -188,7 +190,7 @@ assert.match(chatViewSource, /<CapabilityIcon capability="audio"/,
   'paired mode icons must include the Audio glyph');
 assert.match(chatViewSource, /const showAudio = audioInput && capability === 'chat'/,
   'the paired Audio icon must only decorate Chat mode, not Omni collections');
-assert.match(chatViewSource, /currentLoadedModel \? \([\s\S]*composer__model-mode--\$\{modelModeBadge\(currentCapability, currentRecipe\)\}[\s\S]*modelModeDisplayLabel\(currentCapability, supportsChatAudioInput, currentRecipe\)/,
+assert.match(chatViewSource, /currentLoadedModel \? \([\s\S]*composer__model-mode--\$\{modelModeBadge\(currentCapability, currentRecipe\)\}[\s\S]*modelModeDisplayLabel\(currentCapability, supportsChatAudioInput, currentRecipe, t\)/,
   'the active model pill must include the colored mode label only for the currently loaded model');
 assert.doesNotMatch(chatViewSource, /composer__mode-badge--interactive/,
   'the redundant standalone mode pill must not remain in the chat composer');
@@ -196,9 +198,9 @@ assert.match(stylesSource, /\.composer__model-mode--chat \{ color: var\(--cap-ch
   'the merged Chat status must use the formal chat capability color');
 assert.match(stylesSource, /\.composer__model-button-name[\s\S]*color: var\(--text-primary\)/,
   'the model name must keep the normal text color beside the colored status');
-assert.match(chatViewSource, /Omni collection mode/,
+assert.match(chatLocaleSource, /Omni collection mode/,
   'the UI must describe Omni as collection orchestration');
-assert.match(chatViewSource, /Chat \+ audio mode/,
+assert.match(chatLocaleSource, /Chat \+ audio mode/,
   'the composer must explain the combined chat/audio behavior');
 assert.match(chatViewSource, /includeDirectAudioParts = canUseAudioInput && modeSupportsChatCompletions/,
   'audio files must be routed through the normal chat completion request');
@@ -210,7 +212,7 @@ assert.match(chatViewSource, /const canAttach = acceptsImageAttachments \|\| acc
   'the paperclip must only be enabled for modalities supported by the selected model');
 assert.match(chatViewSource, /if \(!acceptsImageAttachments\) return;/,
   'paste, drop, and file selection must reject images for text-only models');
-assert.match(chatViewSource, /The selected text model does not support image input/,
+assert.match(chatViewSource, /errors\.imageInputUnsupported/,
   'stale or retried image messages must be blocked before reaching a text-only backend');
 assert.match(chatViewSource, /if \(m\.images\?\.length && supportsChatImageInput\)/,
   'image-bearing conversation history must be stripped when switching to a text-only model');

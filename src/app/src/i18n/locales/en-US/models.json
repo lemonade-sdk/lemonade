@@ -1,0 +1,727 @@
+{
+  "common": {
+    "model": {
+      "one": "{{count}} model",
+      "other": "{{count}} models"
+    },
+    "downloaded": "Downloaded",
+    "running": "Running",
+    "available": "Not downloaded",
+    "pinned": "Pinned",
+    "cancel": "Cancel",
+    "save": "Save",
+    "download": "Download"
+  },
+  "list": {
+    "title": "Models",
+    "actions": "Model list actions",
+    "openCustom": "Open custom models",
+    "manageCustom": "Manage custom models",
+    "openRouter": "Open router editor",
+    "manageRouter": "Create or edit a model router",
+    "updateAll": "Update all models",
+    "updateAllTitle": "Update all downloaded models",
+    "search": "Search models",
+    "searchBuiltInOnline": "Search built-in and online catalogs…",
+    "searchBuiltIn": "Search built-in catalogs…",
+    "clearSearch": "Clear search",
+    "sort": "Sort",
+    "sortBy": "Sort models by",
+    "sortName": "Name (A–Z)",
+    "sortSize": "Size (largest first)",
+    "sortLastUsed": "Last used",
+    "sortDownloads": "Download count",
+    "aria": "Model list",
+    "noMatches": "No models match your search.",
+    "sections": {
+      "pinned": "Pinned",
+      "downloaded": "Downloaded",
+      "available": "Not downloaded"
+    },
+    "readiness": {
+      "running": "Backend active; model is running.",
+      "downloading": "Model download in progress{{progress}}.",
+      "available": "Model is available to download.",
+      "statusDownloading": "Downloading{{progress}}",
+      "statusRunning": "Running",
+      "withBackend": "{{status}} ({{backend}})",
+      "missing": "Engine not installed",
+      "update_required": "Engine update required",
+      "update_available": "Engine update available",
+      "installable": "Engine download required",
+      "action_required": "Engine needs attention",
+      "unsupported": "Engine unsupported",
+      "attention": "Engine needs attention",
+      "ready": "Backend ready; model can be loaded.",
+      "unknown": "Backend status could not be verified."
+    },
+    "ariaRow": "{{name}}{{pinned}}{{status}}{{backend}}{{readiness}}",
+    "ariaPinned": ", pinned",
+    "ariaRunning": ", running",
+    "ariaDownloading": ", downloading",
+    "ariaPart": ", {{value}}",
+    "pin": "Pin {{model}} (P)",
+    "unpin": "Unpin {{model}} (P)"
+  },
+  "nav": {
+    "filters": "Model filters",
+    "title": "Filters",
+    "primary": {
+      "all": "All Models",
+      "downloaded": "Downloaded",
+      "myModels": "My Models",
+      "favorites": "Favorites"
+    },
+    "tasks": {
+      "title": "Tasks",
+      "filter": "Filter by task",
+      "all": "All",
+      "llm": "Chat",
+      "omni": "Omni",
+      "router": "Router",
+      "image": "Image",
+      "audio": "Audio",
+      "audioGeneration": "Music & SFX",
+      "tts": "TTS",
+      "model3d": "3D",
+      "embedding": "Embed",
+      "classification": "Classify"
+    },
+    "backends": "Backends",
+    "filterBackend": "Filter by backend",
+    "catalogs": "Online Catalogs",
+    "tags": "Tags",
+    "filterTag": "Filter by tag",
+    "addTag": "Add custom tag",
+    "customTag": "Custom tag",
+    "storage": "Storage",
+    "storageAria": "Model storage: {{used}} of {{total}} GB used",
+    "sidebarLabel": "model filters",
+    "categories": "Categories",
+    "task": "Task",
+    "countModels": {
+      "one": ", {{count}} model",
+      "other": ", {{count}} models"
+    },
+    "providerSearchOn": "{{provider}} will be searched during online model search",
+    "providerSearchOff": "{{provider}} will not be searched during online model search",
+    "searchResults": {
+      "one": ", {{count}} search result",
+      "other": ", {{count}} search results"
+    },
+    "removeCustomTag": "Remove custom tag {{tag}}",
+    "removeTag": "Remove {{tag}}",
+    "storageEstimated": "Storage (est.)",
+    "storageUsed": "Model storage used",
+    "storageUsedEstimated": "Model storage used (estimated)",
+    "storageValue": "{{used}} GB / {{total}} GB",
+    "storageValueText": "{{used}} of {{total}} gigabytes used{{estimated}}",
+    "estimatedSuffix": " (estimated)",
+    "builtInTags": {
+      "recommended": "Recommended",
+      "hot": "Hot",
+      "small": "Small"
+    }
+  },
+  "downloads": {
+    "aria": "Download manager",
+    "title": "Download Manager",
+    "counts": "{{active}} active · {{completed}} completed",
+    "close": "Close download manager",
+    "emptyTitle": "No downloads yet",
+    "emptyBody": "Download models from the Model Manager to see them here.",
+    "models": "models: {{models}}",
+    "file": "File",
+    "filePrefix": "· File {{file}}",
+    "error": "Error: {{error}}",
+    "cancelled": "Cancelled",
+    "deletingFiles": "Deleting files...",
+    "pause": "Pause download",
+    "cancel": "Cancel download",
+    "cancelDelete": "Cancel download and delete files",
+    "pausing": "Pausing",
+    "resume": "Resume download",
+    "deletePartial": "Delete partial download",
+    "remove": "Remove from list",
+    "deleting": "Deleting...",
+    "cancelling": "Cancelling...",
+    "retry": "Retry download",
+    "finalizing": "Finalizing...",
+    "status": "Status:",
+    "statuses": {
+      "downloading": "Downloading",
+      "paused": "Paused",
+      "completed": "Completed",
+      "error": "Error",
+      "cancelled": "Cancelled",
+      "deleting": "Deleting"
+    },
+    "currentFile": "Current file:",
+    "files": "Files:",
+    "of": "of",
+    "downloaded": "Downloaded:",
+    "totalSize": "Total size:",
+    "speed": "Speed:",
+    "clearCompleted": "Clear completed",
+    "announcements": {
+      "started": "Downloading {{model}} started",
+      "complete": "{{model}} download complete",
+      "failed": "{{model}} download failed{{error}}",
+      "cancelled": "{{model}} download cancelled",
+      "paused": "{{model}} download paused",
+      "resumed": "{{model}} download resumed"
+    },
+    "settingUp": "Setting up {{model}}",
+    "componentModels": {
+      "one": "{{count}} model: {{models}}",
+      "other": "{{count}} models: {{models}}"
+    },
+    "fileProgress": "File {{index}}/{{total}} · {{downloaded}} / {{size}}",
+    "paused": "Paused",
+    "finalizingStatus": "Finalizing",
+    "completed": "Completed",
+    "unknownError": "Unknown error",
+    "progressAria": "Downloading {{model}}: {{percent}}%"
+  },
+  "detail": {
+    "copyName": "Copy model name: {{model}}",
+    "copiedName": "Copied model name: {{model}}",
+    "readmeLoading": "Loading README…",
+    "readmeUnavailable": "README unavailable for this model.",
+    "hf": {
+      "included": "Included components",
+      "visionProjector": "Vision projector (MMProj)",
+      "variants": "Variants (select one)",
+      "downloadVariant": "Download {{variant}}",
+      "downloadVariantAria": "Download {{variant}} from {{model}}",
+      "variantsAria": "Variants for {{model}}",
+      "sharded": "sharded",
+      "repositoryDownload": "Repository download",
+      "downloadModel": "Download model",
+      "downloadModelAria": "Download {{model}}",
+      "noVariants": "No downloadable variants found for this repository.",
+      "loadingVariants": "Loading variant information…",
+      "overview": "Overview",
+      "readme": "README",
+      "downloads": "{{count}} downloads",
+      "likes": "{{count}} likes",
+      "cancel": "Cancel",
+      "openOn": "Open on {{provider}}",
+      "providerModelAria": "{{provider}} model: {{model}}",
+      "viewOnProvider": "View {{model}} on {{provider}} (opens in new tab)"
+    },
+    "config": {
+      "customVoice": "Custom voice…",
+      "customVoicePlaceholder": "Enter custom voice ID",
+      "customVoiceAria": "Custom voice ID",
+      "voiceHelp": "Choose a known voice, or use a custom voice ID when the backend supports one.",
+      "loadAria": "Load settings",
+      "loadTitle": "Load settings",
+      "loadHelp": "Settings used when this model loads or reloads.",
+      "loadedNow": "Loaded now",
+      "contextSize": "Context size",
+      "contextAria": "Context size tokens",
+      "autoTune": "Auto tune context size",
+      "save": "Save",
+      "discard": "Discard changes",
+      "reset": "Reset to defaults",
+      "saved": "Saved for future loads",
+      "resetNotice": "Load settings reset to built-in defaults.",
+      "discardNotice": "Unsaved load setting changes discarded.",
+      "reloadSuccess": "Model reloaded with current configuration.",
+      "reloadFailed": "Reload failed. Check the server logs.",
+      "discardConfirm": "Discard unsaved load setting changes?",
+      "autoTooltip": "Lemonade estimates the context size from available memory when the model loads. Uncheck to use a fixed value.",
+      "fixedTooltip": "Context size is fixed at {{count}} tokens. Check Auto tune context size to let Lemonade estimate it from available memory at load time.",
+      "modelDefault": "Model default",
+      "modelDefaultValue": "Model default ({{value}})",
+      "argsPlaceholder": "Space-separated CLI flags",
+      "customArgs": "Custom args saved for this model.",
+      "currentArgs": "Using the current backend args. Edit to customize load/reload flags.",
+      "increase": "Increase {{label}}",
+      "decrease": "Decrease {{label}}",
+      "increaseContext": "Increase context size by {{count}} tokens",
+      "decreaseContext": "Decrease context size by {{count}} tokens",
+      "reloading": "Reloading…",
+      "reload": "Reload model",
+      "labels": {
+        "context": "Context size",
+        "backend": "Backend",
+        "device": "Device",
+        "backendArgs": "Backend args",
+        "steps": "Steps",
+        "cfgScale": "CFG scale",
+        "width": "Width",
+        "height": "Height",
+        "samplingMethod": "Sampling method",
+        "flowShift": "Flow shift",
+        "voice": "Voice",
+        "speed": "Speed"
+      }
+    },
+    "files": {
+      "loading": "Loading files…",
+      "unable": "Unable to load files for this model.",
+      "none": "No files found for this model.",
+      "noneHelp": "Files appear here once the model has been downloaded.",
+      "backing": "Files backing {{model}}",
+      "file": "File",
+      "role": "Role",
+      "size": "Size",
+      "status": "Status",
+      "downloaded": "Downloaded",
+      "notDownloaded": "Not downloaded",
+      "fallbackRole": "File"
+    },
+    "router": {
+      "title": "Router settings",
+      "help": "Review every model connected to this virtual model, including provider endpoints used by external candidates.",
+      "editAria": "Edit router settings",
+      "edit": "Edit router",
+      "summaryAria": "Router strategy summary",
+      "routing": "Routing",
+      "strategy": "Strategy",
+      "defaultModel": "Default model",
+      "targets": "Routing targets",
+      "connectedAria": "Connected router models",
+      "connected": "Connected models",
+      "providerHelp": "Endpoint changes are provider-wide and apply to all models registered through that provider.",
+      "default": "Default",
+      "allowHttp": "Allow insecure HTTP",
+      "cancel": "Cancel",
+      "editEndpoint": "Edit endpoint",
+      "managed": "Managed by Lemonade",
+      "local": "Local registered model",
+      "none": "No connected models were found in this router definition.",
+      "unknownProvider": "Unknown provider",
+      "localModel": "Local model",
+      "loadProvidersFailed": "Could not load external providers.",
+      "updateProviderFailed": "Could not update provider endpoint.",
+      "routingTarget": "Routing target",
+      "naturalLanguageRouter": "Natural-language router",
+      "classifier": "Classifier · {{name}}",
+      "collectionComponent": "Collection component",
+      "orderedRules": "Ordered rules",
+      "notSet": "Not set",
+      "external": "External",
+      "internal": "Internal",
+      "unresolved": "Unresolved",
+      "endpointAria": "{{provider}} endpoint",
+      "endpointUnavailable": "Endpoint unavailable",
+      "endpointNotConfigured": "Endpoint not configured",
+      "authConfigured": "Authentication configured",
+      "authRequired": "Authentication required",
+      "saving": "Saving…",
+      "save": "Save"
+    },
+    "collection": {
+      "title": "Collection settings",
+      "help": "Components stay editable after the collection has been saved or downloaded.",
+      "editAria": "Edit collection settings",
+      "edit": "Edit settings",
+      "componentsAria": "Collection components",
+      "components": "Components",
+      "toolModel": "Tool model",
+      "advancedAria": "Advanced collection settings summary",
+      "advanced": "Advanced",
+      "systemPrompt": "System prompt",
+      "customTools": "Custom model tools",
+      "notSet": "Not set",
+      "customized": "Customized",
+      "default": "Default",
+      "roles": {
+        "llm": "Planner LLM",
+        "vision": "Vision",
+        "image": "Image generation",
+        "edit": "Image editing",
+        "transcription": "Transcription",
+        "speech": "Text to speech"
+      }
+    },
+    "main": {
+      "aria": "Model detail",
+      "backAria": "Back to models list",
+      "back": "Back to models",
+      "noModels": "No models found",
+      "noSelection": "No model selected",
+      "noModelsHelp": "No models are available in the registry yet. Pull a model or adjust your filters to get started.",
+      "noSelectionHelp": "Select a model from the list to view its details.",
+      "running": "Running",
+      "ready": "Ready",
+      "viewOnHf": "View {{model}} on Hugging Face",
+      "actions": "Actions for {{model}}",
+      "cancelDownload": "Cancel download of {{model}}",
+      "cancel": "Cancel",
+      "workingAria": "Working on {{model}}…",
+      "unloadAria": "Unload {{model}}",
+      "working": "Working…",
+      "unload": "Unload",
+      "loadingAria": "Loading {{model}}…",
+      "loadAria": "Load {{model}}",
+      "loading": "Loading…",
+      "load": "Load",
+      "getLoadAria": "Get and load {{model}}",
+      "getLoad": "Get & Load",
+      "downloadAria": "Download {{model}}",
+      "download": "Download",
+      "unpinAria": "Unpin {{model}}",
+      "pinAria": "Pin {{model}}",
+      "unpinTitle": "Unpin model",
+      "pinTitle": "Pin model",
+      "pinned": "Pinned",
+      "pin": "Pin",
+      "removeFavoriteAria": "Remove {{model}} from favorites",
+      "addFavoriteAria": "Add {{model}} to favorites",
+      "removeFavoriteTitle": "Remove from favorites",
+      "addFavoriteTitle": "Add to favorites",
+      "favorited": "Favorited",
+      "favorite": "Favorite",
+      "deleteCustomAria": "Delete custom model definition for {{model}}",
+      "deleteFilesAria": "Delete downloaded files for {{model}}",
+      "deleteDefinition": "Delete model definition",
+      "deleteFiles": "Delete downloaded files",
+      "delete": "Delete",
+      "detailsAria": "Model details: {{model}}",
+      "sections": "Model details sections",
+      "recipeOmniCollection": "Omni collection",
+      "recipeRouter": "Router",
+      "recipeCollection": "Collection",
+      "recipeUnknown": "Unknown",
+      "capabilityUnknown": "Unknown capability",
+      "capabilityClassification": "Classification"
+    },
+    "tabs": {
+      "configuration": "Configuration",
+      "readme": "README",
+      "files": "Files",
+      "settings": "Settings"
+    },
+    "readmeImageUnavailable": "README image unavailable"
+  },
+  "effective": {
+    "title": "Effective settings",
+    "close": "Cancel",
+    "backend": "Backend: {{backend}}",
+    "settingsBySource": "Settings by source",
+    "sourceNotePrefix": "These rows show known sources for individual settings. The",
+    "sourceNoteCommand": "Effective load command",
+    "sourceNoteSuffix": "below is authoritative. It includes architecture and global defaults applied by the server that may not appear here.",
+    "contextSize": "Context size",
+    "mcpServers": "MCP servers",
+    "configuredChatMenu": "Configured from the chat + menu",
+    "menu": "Menu",
+    "thinking": "Thinking",
+    "detailsUnavailable": "Model tuning details are unavailable for this model.",
+    "autoContextHelp": "Context size is auto-resolved from available memory. This is an estimate - the final value is computed at load time after any model eviction.",
+    "chatSampling": "Chat sampling",
+    "samplingHelp": "Leave fields empty to use the backend defaults. Saved values are sent with future chat requests for this model.",
+    "backendDefault": "Backend default",
+    "saveSampling": "Save sampling",
+    "loadCommand": "Effective load command",
+    "resolving": "Resolving...",
+    "loadCommandHelp": "Fixed launch flags (model path, port, chat template, metrics) are added by the server at load time and are not shown here.",
+    "unlock": "I know what I am doing. Let me edit the final loading arguments",
+    "rawArgsHelp": "These raw backend arguments replace the resolved ones for the next load of this model. Session-only - nothing is written to disk, and it resets when you reload the app.",
+    "applying": "Applying...",
+    "applyReload": "Apply & reload",
+    "applyNext": "Apply for next load",
+    "resetOverride": "Reset override",
+    "overrideActive": "A session override is active.",
+    "appliedReloaded": "Applied and reloaded with the new arguments.",
+    "savedSession": "Saved for this session. It will take effect the next time this model loads.",
+    "clearedReloaded": "Cleared the session override and reloaded with resolved settings.",
+    "cleared": "Cleared the session override.",
+    "samplingSaved": "Sampling overrides will be sent with future chat requests.",
+    "samplingDefault": "Chat requests will use the backend sampling defaults.",
+    "off": "Off",
+    "on": "On",
+    "builtIn": "Built-in Lemonade",
+    "auto": "Auto",
+    "runtime": "Runtime",
+    "configuration": "Configuration",
+    "effectiveLoad": "Effective load",
+    "unavailable": "Unavailable",
+    "autoValue": "{{value}} (auto)",
+    "source": {
+      "custom": "Direct configuration",
+      "builtIn": "Recipe default",
+      "optimized": "Optimized",
+      "default": "Default"
+    },
+    "fields": {
+      "backend": "Backend",
+      "device": "Device",
+      "backendArgs": "Backend args",
+      "steps": "Steps",
+      "cfgScale": "CFG scale",
+      "width": "Width",
+      "height": "Height",
+      "samplingMethod": "Sampling method",
+      "flowShift": "Flow shift",
+      "voice": "Voice",
+      "speed": "Speed"
+    },
+    "sampling": {
+      "temperature": "Temperature",
+      "topP": "Top-p",
+      "topK": "Top-k",
+      "minP": "Min-p",
+      "repeatPenalty": "Repeat penalty",
+      "increase": "Increase {{label}}",
+      "decrease": "Decrease {{label}}"
+    },
+    "thinkingModes": {
+      "none": "None",
+      "normal": "Normal",
+      "smart": "Smart",
+      "smartExtra": "Smart Extra"
+    }
+  },
+  "manager": {
+    "remote": {
+      "downloadingPercent": "Downloading {{percent}}%",
+      "downloadingModel": "Downloading {{model}}",
+      "downloads": "{{count}} downloads",
+      "likes": "{{count}} likes",
+      "notDownloaded": "not downloaded",
+      "rowAria": "{{model}}, {{downloads}}, {{likes}}{{recipe}}{{status}}",
+      "recipePart": ", {{recipe}}",
+      "downloadingPart": ", downloading {{percent}}%",
+      "notDownloadedPart": ", not downloaded",
+      "cancelDownload": "Cancel download of {{model}}",
+      "copied": "Copied",
+      "copyRepo": "Copy repository name: {{model}}",
+      "zoneAria": "{{provider}} search results",
+      "searching": "Searching {{provider}}...",
+      "unavailable": "{{provider}} search is unavailable: {{error}}",
+      "noMatches": "No compatible {{provider}} models match the active filters.",
+      "results": "{{provider}} results",
+      "allResults": "Remote model search results"
+    },
+    "custom": {
+      "example": "Example:",
+      "title": {
+        "editOmni": "Edit Omni collection",
+        "customOmni": "Custom Omni collection",
+        "customModel": "Custom model"
+      },
+      "metadata": {
+        "omniCollection": "Omni collection",
+        "customModel": "Custom model",
+        "editing": "Editing saved definition"
+      },
+      "description": "Register a model or collection that is not included in the Lemonade catalog.",
+      "actions": {
+        "group": "{{title}} actions",
+        "save": "Save",
+        "cancel": "Cancel",
+        "export": "Export",
+        "import": "Import",
+        "close": "Close custom model editor"
+      },
+      "editingSavedCollection": "Editing saved collection",
+      "typeAria": "Custom model type",
+      "types": {
+        "model": "Custom model",
+        "omni": "Omni collection"
+      },
+      "fields": {
+        "name": "Name",
+        "nameOmniPlaceholder": "My Omni collection",
+        "nameModelPlaceholder": "My custom model",
+        "extraLabels": "Extra labels",
+        "capability": "Capability",
+        "recipe": "Recipe/backend",
+        "noBackend": "No compatible backend available",
+        "checkpoint": "Checkpoint, Hugging Face repo, or local path",
+        "mmproj": "Vision projector (mmproj)",
+        "textEncoder": "Text encoder checkpoint",
+        "vae": "VAE checkpoint",
+        "optional": "Optional",
+        "collectionHint": "Choose the models that make up this collection. Only the planner LLM is required."
+      },
+      "capabilities": {
+        "chat": "Chat",
+        "omni": "Omni",
+        "image": "Image generation",
+        "audio": "Transcription",
+        "audio-generation": "Audio generation",
+        "tts": "Text to speech",
+        "model3d": "3D generation",
+        "embedding": "Embedding",
+        "reranking": "Reranking",
+        "classification": "Classification"
+      },
+      "advanced": {
+        "title": "Advanced settings",
+        "subtitle": "System prompt and custom model tools",
+        "systemPrompt": "Omni tool system prompt",
+        "reset": "Reset to default"
+      },
+      "tools": {
+        "title": "Custom model tools",
+        "help": "Add an editable example, choose its endpoint, then select one of the models configured in this collection.",
+        "llmExample": "LLM example",
+        "visionExample": "Vision example",
+        "imageExample": "Image example",
+        "codingPair": "Coding pair",
+        "none": "No custom model tools configured. The buttons above insert working examples that you can rename and adapt.",
+        "tool": "Tool {{index}}",
+        "editable": "Editable example · {{type}}",
+        "remove": "Remove",
+        "name": "Tool name",
+        "executionType": "Execution type",
+        "types": {
+          "chat": "Chat / LLM",
+          "vision": "Vision LLM",
+          "image": "Image generation"
+        },
+        "endpointHelp": "Selects the Lemonade endpoint used for this model.",
+        "targetModel": "Target model",
+        "selectTarget": "Select a configured target",
+        "configureTarget": "Configure a compatible collection component first",
+        "targetHelp": "Only models configured in this Omni collection are available as targets.",
+        "description": "Description",
+        "descriptionPlaceholder": "When should the planner use this tool?",
+        "systemPrompt": "Target system prompt",
+        "userPrompt": "Target user prompt template",
+        "schema": "Tool argument schema JSON",
+        "schemaHelp": "This editable schema tells the planner which arguments it may send.",
+        "maxTokens": "Max tokens"
+      },
+      "picker": {
+        "roles": {
+          "llm": {
+            "label": "Planner LLM",
+            "placeholder": "Search downloaded, registry, or custom LLMs...",
+            "help": "Required planner model for chat and tool calls."
+          },
+          "vision": {
+            "label": "Vision",
+            "placeholder": "Search vision/VLM components...",
+            "help": "Optional model used for image analysis."
+          },
+          "image": {
+            "label": "Image generation",
+            "placeholder": "Search image generation components...",
+            "help": "Optional model used to generate images."
+          },
+          "edit": {
+            "label": "Image editing",
+            "placeholder": "Search image edit components...",
+            "help": "Optional model used to edit existing images."
+          },
+          "transcription": {
+            "label": "Transcription",
+            "placeholder": "Search Whisper/Moonshine/audio components...",
+            "help": "Optional speech-to-text model."
+          },
+          "speech": {
+            "label": "Text to speech",
+            "placeholder": "Search TTS/speech components...",
+            "help": "Optional text-to-speech model."
+          }
+        },
+        "clear": "Clear {{label}}",
+        "options": "{{label}} options",
+        "groups": {
+          "custom": "Custom models",
+          "downloaded": "Downloaded locally",
+          "registered": "Registered registry models"
+        },
+        "none": "No compatible {{label}} model found. Use the main search or HuggingFace zone to download/register one first.",
+        "searchHf": "Search HuggingFace for \"{{query}}\"",
+        "details": {
+          "custom": "custom",
+          "downloaded": "downloaded",
+          "registered": "registered · will download when pulled",
+          "configured": "configured in this collection"
+        }
+      },
+      "notices": {
+        "exported": "Exported custom model JSON.",
+        "imported": {
+          "one": "Imported {{count}} custom model.",
+          "other": "Imported {{count}} custom models."
+        },
+        "skipped": ", skipped {{count}}"
+      },
+      "errors": {
+        "import": "Could not import JSON: {{error}}",
+        "enterName": "Enter a model name.",
+        "selectPlanner": "Select a planner LLM for the Omni collection.",
+        "toolName": "Custom tool {{index}}: enter a tool name.",
+        "toolConflict": "Custom tool {{name}} conflicts with a built-in Omni tool.",
+        "toolDuplicate": "Custom tool {{name}} is duplicated.",
+        "toolTarget": "Custom tool {{name}}: select a target model.",
+        "toolTargetMissing": "Custom tool {{name}}: target {{target}} is not configured in this Omni collection.",
+        "toolDescription": "Custom tool {{name}}: enter a description so the planner knows when to call it.",
+        "schemaObject": "schema must be a JSON object",
+        "toolSchema": "Custom tool {{name}}: invalid JSON parameter schema ({{error}}).",
+        "noBackend": "No compatible recipe/backend is available for this capability on the connected Lemonade server.",
+        "save": "Could not save custom model."
+      },
+      "suggestions": {
+        "llamacpp": {
+          "note": "GGUF repo plus quantization suffix; Lemonade can download the selected quantization.",
+          "mmproj": "Optional for llama.cpp vision models; leave empty for text-only GGUFs."
+        },
+        "vllm": {
+          "note": "Upstream Hugging Face transformer checkpoint; vLLM loads the repo directly."
+        },
+        "flm": {
+          "note": "FastFlowLM model id or local FastFlowLM artifact path for supported AMD NPU models."
+        },
+        "ryzenai-llm": {
+          "note": "RyzenAI-compatible ONNX/HF checkpoint or local path."
+        },
+        "sd-cpp": {
+          "note": "Primary diffusion checkpoint. Extra fields below cover multi-file image models.",
+          "text_encoder": "Optional text encoder checkpoint for Flux/Qwen-style image pipelines.",
+          "vae": "Optional VAE checkpoint for image models that split the VAE from the main model."
+        },
+        "whispercpp": {
+          "note": "Whisper.cpp checkpoint repo plus .bin model file."
+        },
+        "moonshine": {
+          "note": "Moonshine streaming checkpoint repo plus ONNX variant path."
+        },
+        "kokoro": {
+          "note": "Kokoro ONNX model repository or local model path."
+        },
+        "acestep": {
+          "note": "ACE-Step checkpoint for music generation."
+        },
+        "thinksound": {
+          "note": "ThinkSound checkpoint for prompt-driven sound effects."
+        },
+        "openmoss": {
+          "note": "OpenMOSS checkpoint for speech synthesis or voice design."
+        },
+        "trellis": {
+          "note": "TRELLIS.2 checkpoint for image-to-3D reconstruction."
+        }
+      },
+      "availability": {
+        "plain": "Available on this Lemonade server.",
+        "states": "Available on this Lemonade server ({{states}})."
+      }
+    },
+    "emptyDetail": {
+      "aria": "Model detail",
+      "loading": "Loading model catalog...",
+      "none": "No model selected",
+      "loadingHelp": "Downloaded models appear first while the full Lemonade catalog finishes loading.",
+      "noneHelp": "Select a model from the list to view its details."
+    },
+    "modelFiltersMenu": "Open model filters",
+    "resizeList": "Resize model list panel",
+    "confirmDeleteRouter": "Delete router definition “{{model}}”?",
+    "confirmDeleteCollection": "Delete Omni collection “{{model}}”? This removes only the collection definition. Component model files will not be removed.",
+    "confirmDeleteCustom": "Delete custom model “{{model}}”? This removes the model definition and downloaded model files, if present.",
+    "confirmDeleteDownloaded": "Delete “{{model}}”? This removes the downloaded files. If the model is loaded, it will be unloaded first.",
+    "load": {
+      "downloadInProgress": "{{model}} is still downloading. Wait for the download to finish before loading it."
+    }
+  }
+}

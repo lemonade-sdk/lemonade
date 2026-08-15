@@ -1,4 +1,5 @@
 import React from 'react';
+import { useI18n } from '../../i18n';
 import '../vendor/model-viewer.min.js';
 
 const ModelViewer = 'model-viewer' as unknown as React.FC<any>;
@@ -8,10 +9,12 @@ interface ModelViewer3DProps {
   alt?: string;
 }
 
-const ModelViewer3D: React.FC<ModelViewer3DProps> = ({ src, alt = '3D model preview' }) => (
+const ModelViewer3D: React.FC<ModelViewer3DProps> = ({ src, alt }) => {
+  const { t } = useI18n('chat');
+  return (
   <ModelViewer
     src={src}
-    alt={alt}
+    alt={alt ?? t('model3d.preview')}
     camera-controls
     auto-rotate
     shadow-intensity="1"
@@ -24,6 +27,7 @@ const ModelViewer3D: React.FC<ModelViewer3DProps> = ({ src, alt = '3D model prev
       borderRadius: '8px',
     }}
   />
-);
+  );
+};
 
 export default ModelViewer3D;

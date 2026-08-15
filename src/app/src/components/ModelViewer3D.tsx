@@ -1,4 +1,5 @@
 import React from 'react';
+import { useI18n } from '../i18n';
 
 // Keep the viewer implementation identical to the proven GUI2 path. This file
 // is only reached through React.lazy(Model3DResult), so the ~1 MiB vendor bundle
@@ -13,10 +14,12 @@ interface ModelViewer3DProps {
   alt?: string;
 }
 
-const ModelViewer3D: React.FC<ModelViewer3DProps> = ({ src, alt = '3D model preview' }) => (
+const ModelViewer3D: React.FC<ModelViewer3DProps> = ({ src, alt }) => {
+  const { t } = useI18n('chat');
+  return (
   <ModelViewer
     src={src}
-    alt={alt}
+    alt={alt ?? t('model3d.preview')}
     camera-controls
     auto-rotate
     shadow-intensity="1"
@@ -24,6 +27,7 @@ const ModelViewer3D: React.FC<ModelViewer3DProps> = ({ src, alt = '3D model prev
     interaction-prompt="auto"
     className="model3d-viewer"
   />
-);
+  );
+};
 
 export default ModelViewer3D;

@@ -361,7 +361,7 @@ export function normalizeRouterNode(node: RouterNode): RouterNode {
   }
   if (children.length === 0) return createRouterLeaf();
   // Preserve AND/OR groups even with 1 child so gate structure is not silently
-  // discarded — validation will prompt the user to add a second condition.
+  // discarded. The v1 server accepts any/all with any non-empty child array.
   return { ...node, children };
 }
 
@@ -480,7 +480,6 @@ function validateNode(
   if (node.kind === 'group') {
     if (node.operator === 'not' && node.children.length !== 1) errors.push(`${path}: NOT requires exactly one condition.`);
     if ((node.operator === 'all' || node.operator === 'any') && node.children.length === 0) errors.push(`${path}: ${node.operator.toUpperCase()} gate requires at least one condition.`);
-    if ((node.operator === 'all' || node.operator === 'any') && node.children.length === 1) errors.push(`${path}: ${node.operator.toUpperCase()} gate needs at least 2 conditions - add another or remove the gate.`);
 
     const directConditions = new Set<string>();
     node.children.forEach((child, index) => {

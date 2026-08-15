@@ -1,0 +1,85 @@
+{
+  "skipToMain": "Skip to main content",
+  "primaryNavigation": "Primary",
+  "appControls": "App controls",
+  "search": {
+    "aria": "Search Lemonade",
+    "openAria": "Open search",
+    "placeholder": "Search",
+    "shortcut": "Search shortcut: {{shortcut}}",
+    "commandK": "Command K",
+    "controlK": "Control K",
+    "results": "Global search results",
+    "noResults": "No matching results.",
+    "hint": "Search models, backends, apps, and settings.",
+    "page": "Page",
+    "model": "Model",
+    "backend": "Backend",
+    "app": "App",
+    "appCategory": "App - {{category}}"
+  },
+  "navigation": {
+    "chat": {
+      "label": "Chat",
+      "keywords": "conversation messages"
+    },
+    "models": {
+      "label": "Models",
+      "keywords": "model manager download load"
+    },
+    "backends": {
+      "label": "Backends",
+      "keywords": "runtime inference engine"
+    },
+    "apps": {
+      "label": "Apps",
+      "keywords": "clients integrations"
+    },
+    "dashboard": {
+      "label": "Monitor",
+      "keywords": "dashboard monitor system hardware statistics"
+    },
+    "connect": {
+      "label": "Settings",
+      "keywords": "connect configuration preferences server language locale"
+    }
+  },
+  "server": {
+    "label": "Server",
+    "connected": "Connected",
+    "connecting": "Connecting…",
+    "offline": "Offline",
+    "ariaConnected": "Server connected",
+    "ariaConnecting": "Server connecting",
+    "ariaOffline": "Server offline"
+  },
+  "theme": {
+    "toggle": "Toggle theme",
+    "switchLight": "Switch to light mode",
+    "switchDark": "Switch to dark mode",
+    "light": "Light mode",
+    "dark": "Dark mode"
+  },
+  "downloads": {
+    "open": "Open download manager",
+    "title": "Download manager",
+    "label": "Downloads"
+  },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "close": "Cancel"
+  },
+  "loading": {
+    "view": "Loading view",
+    "downloads": "Loading downloads",
+    "models": "Loading models",
+    "backends": "Loading backends",
+    "apps": "Loading apps",
+    "monitor": "Loading monitor",
+    "settings": "Loading settings"
+  },
+  "error": {
+    "view": "Something went wrong in \"{{view}}\""
+  }
+}

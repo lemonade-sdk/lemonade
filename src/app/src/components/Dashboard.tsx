@@ -5,6 +5,7 @@ import { backendCompactLabel } from '../modelPresentation';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { dashboardMemoryTopology } from '../features/dashboard/memoryTopology';
 import { WorkspaceActionButton, WorkspaceList, WorkspaceListRow, WorkspacePaneHeader } from './WorkspacePanels';
+import { useI18n } from '../i18n';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -13,11 +14,6 @@ function pct(value: number | null): string {
   return `${Math.round(value)}%`;
 }
 
-function fmtNum(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
 
 function elapsed(startMs: number): string {
   const s = Math.floor((Date.now() - startMs) / 1000);
@@ -29,21 +25,14 @@ function elapsed(startMs: number): string {
   return `${sec}s`;
 }
 
-function relativeTime(ms: number): string {
-  const YEAR_2020_MS = 1577836800000;
-  if (ms > YEAR_2020_MS) {
-    const delta = Date.now() - ms;
-    if (delta < 5000) return 'just now';
-    if (delta < 60000) return `${Math.round(delta / 1000)}s ago`;
-    if (delta < 3600000) return `${Math.round(delta / 60000)}m ago`;
-    return `${Math.round(delta / 3600000)}h ago`;
-  }
-  const totalSec = Math.floor(ms / 1000);
-  if (totalSec < 60) return `${totalSec}s uptime`;
-  const m = Math.floor(totalSec / 60);
-  if (m < 60) return `${m}m uptime`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m uptime`;
+function durationFromMs(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const sec = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
 }
 
 function typeIcon(type: string): string {
@@ -162,11 +151,21 @@ const SmoothChart = React.memo<{
  */
 const ModelRow = React.memo<{ model: LoadedModel; onEject: (name: string) => void; ejecting: boolean }>(
   ({ model, onEject, ejecting }) => {
+    const { t, formatRelativeTime } = useI18n('monitor');
+    const lastUse = (() => {
+      const YEAR_2020_MS = 1577836800000;
+      if (model.last_use <= YEAR_2020_MS) return t('dashboard.uptime', { duration: durationFromMs(model.last_use) });
+      const delta = Math.max(0, Date.now() - model.last_use);
+      if (delta < 5000) return formatRelativeTime(0, 'second', { numeric: 'auto' });
+      if (delta < 60_000) return formatRelativeTime(-Math.max(1, Math.round(delta / 1000)), 'second', { numeric: 'always' });
+      if (delta < 3_600_000) return formatRelativeTime(-Math.round(delta / 60_000), 'minute');
+      return formatRelativeTime(-Math.round(delta / 3_600_000), 'hour');
+    })();
     const facts = [
       model.recipe && backendCompactLabel(model.recipe),
       model.device,
       model.pid != null && `PID ${model.pid}`,
-      relativeTime(model.last_use),
+      lastUse,
     ].filter(Boolean) as string[];
 
     return (
@@ -177,13 +176,13 @@ const ModelRow = React.memo<{ model: LoadedModel; onEject: (name: string) => voi
       // Every row in this card is loaded, so the card heading carries that and
       // no row repeats it. Only an eject in flight is a state worth a dot.
       status={ejecting ? 'busy' : undefined}
-      statusText={ejecting ? 'Ejecting…' : undefined}
+      statusText={ejecting ? t('dashboard.ejecting') : undefined}
       meta={facts}
       disabled={ejecting}
       ariaLabel={`${model.model_name}, ${facts.join(', ')}`}
       action={{
         icon: 'eject',
-        label: `Eject model ${model.model_name}`,
+        label: t('dashboard.ejectModel', { name: model.model_name }),
         onClick: () => onEject(model.model_name),
         latched: true,
       }}
@@ -201,6 +200,7 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
+  const { t, formatNumber } = useI18n('monitor');
   const {
     health, stats, sysStats, systemInfo, slots, slotLive,
     lastError, slotsUnsupported, slotStatus, paused, setPaused,
@@ -227,6 +227,11 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
     })();
   }, [refresh]);
 
+  const serverVersion = String(health?.version ?? '').trim();
+  const displayServerVersion = serverVersion
+    && !['unknown', 'null', 'undefined', 'none', 'n/a'].includes(serverVersion.toLowerCase())
+    ? serverVersion
+    : t('dashboard.versionUnknown');
   const memoryTopology = useMemo(() => dashboardMemoryTopology(systemInfo), [systemInfo]);
   const ramUsedGb = sysStats?.memory_gb ?? null;
   const ramGaugeMax = memoryTopology.hostTotalGb
@@ -242,12 +247,12 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         <WorkspacePaneHeader
           className="dashboard-header"
           headingLevel={1}
-          title="Performance"
-          subtitle="Throughput, capacity and resource utilization for this server session."
+          title={t('dashboard.title')}
+          subtitle={t('dashboard.subtitle')}
           actions={<div className="dashboard-header__actions">
             <div className="dashboard-header__server" data-connected={!!health}>
               <span className="dash2-bar__dot" data-connected={!!health} />
-              <span><strong>{health ? `Lemonade ${health.version}` : 'Disconnected'}</strong>{health && <small>{elapsed(counters.sessionStart)}</small>}</span>
+              <span><strong>{health ? `Lemonade ${displayServerVersion}` : t('dashboard.disconnected')}</strong>{health && <small>{elapsed(counters.sessionStart)}</small>}</span>
             </div>
             <WorkspaceActionButton
               size="small"
@@ -255,37 +260,37 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
               icon={paused ? 'play' : 'pause'}
               className={`dash2-bar__btn${paused ? ' is-paused' : ''}`}
               onClick={() => setPaused(p => !p)}
-              title={paused ? 'Resume monitor updates' : 'Pause monitor updates'}
-              aria-label={paused ? 'Resume monitor updates' : 'Pause monitor updates'}
+              title={paused ? t('dashboard.resumeUpdates') : t('dashboard.pauseUpdates')}
+              aria-label={paused ? t('dashboard.resumeUpdates') : t('dashboard.pauseUpdates')}
               data-dashboard-poll-toggle>
-              {paused ? 'Resume' : 'Pause'}
+              {paused ? t('dashboard.resume') : t('dashboard.pause')}
             </WorkspaceActionButton>
           </div>}
         />
 
-      {lastError && <div className="dash2-err">Warning: {lastError}</div>}
+      {lastError && <div className="dash2-err">{t('dashboard.warning', { error: lastError })}</div>}
 
       <div className="dash2-scroll">
         {/* ═══ HERO — Aggregate Throughput ═══ */}
         <div className="dash2-card">
-          <h2 className="dash2-card__h">Aggregate Throughput</h2>
+          <h2 className="dash2-card__h">{t('dashboard.aggregate')}</h2>
 
           {/* Inline metrics — guaranteed visible with explicit colors */}
           <div className="dash2-hero-metrics">
             <div className="dash2-hero-metric">
               <span className="dash2-hero-metric__val dash2-hero-metric__val--tps">
-                {latestTps > 0.05 ? latestTps.toFixed(1) : (counters.peakTps > 0 ? '0.0' : '—')}
+                {latestTps > 0.05 ? formatNumber(latestTps, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : (counters.peakTps > 0 ? formatNumber(0, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—')}
               </span>
               <span className="dash2-hero-metric__unit">tok/s</span>
               {counters.peakTps > 0 && (
                 <span className="dash2-hero-metric__peak">
-                  peak {counters.peakTps.toFixed(1)}
+                  {t('dashboard.peak', { value: formatNumber(counters.peakTps, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}
                 </span>
               )}
             </div>
             <div className="dash2-hero-metric">
               <span className="dash2-hero-metric__val dash2-hero-metric__val--pp">
-                {latestPP > 0.05 ? latestPP.toFixed(0) : (counters.peakPromptTps > 0 ? '0' : '—')}
+                {latestPP > 0.05 ? formatNumber(latestPP, { maximumFractionDigits: 0 }) : (counters.peakPromptTps > 0 ? formatNumber(0, { maximumFractionDigits: 0 }) : '—')}
               </span>
               <span className="dash2-hero-metric__unit">pp/s</span>
             </div>
@@ -294,19 +299,19 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                 {activeSlotCount}
               </span>
               <span className="dash2-hero-metric__unit">
-                {activeSlotCount === 1 ? 'stream' : 'streams'}
+                {t('dashboard.streams', { count: activeSlotCount })}
               </span>
             </div>
             <div className="dash2-hero-metric__totals">
-              <span>{fmtNum(counters.totalTokensGenerated)} total tokens</span>
+              <span>{t('dashboard.totalTokens', { count: counters.totalTokensGenerated })}</span>
             </div>
           </div>
 
           <SmoothChart
             data={aggChartData}
             series={[
-              { key: 'genTps', color: 'var(--chart-series-1)', name: 'Generation TPS' },
-              { key: 'ppTps', color: 'var(--chart-series-2)', name: 'Prompt Processing' },
+              { key: 'genTps', color: 'var(--chart-series-1)', name: t('dashboard.generationTps') },
+              { key: 'ppTps', color: 'var(--chart-series-2)', name: t('dashboard.promptProcessing') },
             ]}
             height={120}
             unit=" tok/s"
@@ -314,11 +319,11 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
           <div className="dash2-chart-legend">
             <span className="dash2-chart-legend__item">
               <span className="dash2-chart-legend__swatch dash2-chart-legend__swatch--tps" />
-              Generation TPS
+              {t('dashboard.generationTps')}
             </span>
             <span className="dash2-chart-legend__item">
               <span className="dash2-chart-legend__swatch dash2-chart-legend__swatch--pp" />
-              Prompt Processing
+              {t('dashboard.promptProcessing')}
             </span>
           </div>
         </div>
@@ -327,15 +332,15 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         {slots.length > 0 ? (
           <div className="dash2-card">
             <h2 className="dash2-card__h">
-              Parallel Slots
-              <span className="dash2-card__badge">{activeSlotCount} / {slots.length} active</span>
+              {t('dashboard.parallelSlots')}
+              <span className="dash2-card__badge">{t('dashboard.activeSlots', { active: activeSlotCount, total: slots.length })}</span>
             </h2>
             <SmoothChart
               data={slotChartData}
               series={slots.map((s, i) => ({
                 key: `slot${s.id}`,
                 color: SLOT_COLORS[i % SLOT_COLORS.length],
-                name: `Slot ${s.id}`,
+                name: t('dashboard.slot', { id: s.id }),
               }))}
               height={160}
               unit=" tok/s"
@@ -354,9 +359,9 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                 return (
                   <div key={s.id} className={`dash2-slot-legend__item${isActive ? '' : ' dash2-slot-legend__item--idle'}`}>
                     <span className="dash2-slot-legend__dot" style={{ background: color, boxShadow: isActive ? `0 0 6px ${color}` : 'none' }} />
-                    <span className="dash2-slot-legend__label">Slot {s.id}</span>
+                    <span className="dash2-slot-legend__label">{t('dashboard.slot', { id: s.id })}</span>
                     <span className={`dash2-slot-legend__tps ${isActive ? 'dash2-slot-legend__tps--active' : 'dash2-slot-legend__tps--idle'}`}>
-                      {tps > 0.05 ? `${tps.toFixed(1)} tok/s` : 'idle'}
+                      {tps > 0.05 ? `${formatNumber(tps, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} tok/s` : t('dashboard.idle')}
                     </span>
                     <span className="dash2-slot-legend__kv">
                       KV {pct(cu)}
@@ -368,9 +373,9 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
           </div>
         ) : (
           <div className="dash2-card dash2-card--notice">
-            <h2 className="dash2-card__h">Parallel Slots</h2>
+            <h2 className="dash2-card__h">{t('dashboard.parallelSlots')}</h2>
             <p className="dash2-card__text">
-              {slotsUnsupported ? 'No compatible slot data for the loaded backend.' : 'No slot data yet.'} {slotStatus}
+              {slotsUnsupported ? t('dashboard.noCompatibleSlots') : t('dashboard.noSlotData')} {slotStatus}
             </p>
           </div>
         )}
@@ -378,7 +383,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         {/* ═══ Two-column: System Vitals | Last Inference ═══ */}
         <div className="dash2-grid-2col">
           <div className="dash2-card">
-            <h2 className="dash2-card__h">System Vitals</h2>
+            <h2 className="dash2-card__h">{t('dashboard.systemVitals')}</h2>
             <div className="dash2-gauges">
               <RingGauge label="CPU" value={sysStats?.cpu_percent ?? null}
                 subtitle={pct(sysStats?.cpu_percent ?? null)} />
@@ -389,17 +394,17 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                   max={ramGaugeMax}
                   unit="GB"
                   color="var(--info)"
-                  subtitle={ramUsedGb == null ? 'Shared memory pool' : `${ramUsedGb.toFixed(1)} GB used · shared pool`}
+                  subtitle={ramUsedGb == null ? t('dashboard.sharedMemoryPool') : t('dashboard.usedSharedPool', { value: formatNumber(ramUsedGb, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}
                 />
               ) : (
                 <RingGauge label="RAM" value={ramUsedGb} max={ramGaugeMax} unit="GB"
-                  color="var(--info)" subtitle={ramUsedGb == null ? '—' : `${ramUsedGb.toFixed(1)} GB`} />
+                  color="var(--info)" subtitle={ramUsedGb == null ? '—' : `${formatNumber(ramUsedGb, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} GB`} />
               )}
               {hasGpu && <RingGauge label="GPU" value={sysStats!.gpu_percent!}
                 color="var(--accent)" subtitle={pct(sysStats!.gpu_percent)} />}
               {!memoryTopology.unified && hasGpu && sysStats!.vram_gb != null && sysStats!.vram_gb >= 0 && (
                 <RingGauge label="VRAM" value={sysStats!.vram_gb!} max={vramGaugeMax} unit="GB"
-                  color="var(--warn)" subtitle={`${sysStats!.vram_gb!.toFixed(1)} GB`} />
+                  color="var(--warn)" subtitle={`${formatNumber(sysStats!.vram_gb!, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} GB`} />
               )}
               {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
                 color="var(--chart-series-4)" subtitle={pct(sysStats!.npu_percent)} />}
@@ -419,23 +424,23 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
 
           {stats ? (
             <div className="dash2-card">
-              <h2 className="dash2-card__h">Last Inference</h2>
+              <h2 className="dash2-card__h">{t('dashboard.lastInference')}</h2>
               <div className="dash2-inf-grid">
                 <div className="dash2-inf">
-                  <span className="dash2-inf__v">{stats.tokens_per_second > 0 ? stats.tokens_per_second.toFixed(1) : '—'}</span>
-                  <span className="dash2-inf__l">Decode tok/s</span>
+                  <span className="dash2-inf__v">{stats.tokens_per_second > 0 ? formatNumber(stats.tokens_per_second, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</span>
+                  <span className="dash2-inf__l">{t('dashboard.decodeTps')}</span>
                 </div>
                 <div className="dash2-inf">
-                  <span className="dash2-inf__v">{stats.time_to_first_token > 0 ? `${(stats.time_to_first_token * 1000).toFixed(0)}` : '—'}</span>
-                  <span className="dash2-inf__l">TTFT (ms)</span>
+                  <span className="dash2-inf__v">{stats.time_to_first_token > 0 ? formatNumber(stats.time_to_first_token * 1000, { maximumFractionDigits: 0 }) : '—'}</span>
+                  <span className="dash2-inf__l">{t('dashboard.ttft')}</span>
                 </div>
                 <div className="dash2-inf">
                   <span className="dash2-inf__v">{stats.prompt_tokens || stats.input_tokens}</span>
-                  <span className="dash2-inf__l">Prompt Tokens</span>
+                  <span className="dash2-inf__l">{t('dashboard.promptTokens')}</span>
                 </div>
                 <div className="dash2-inf">
                   <span className="dash2-inf__v">{stats.output_tokens}</span>
-                  <span className="dash2-inf__l">Completion Tokens</span>
+                  <span className="dash2-inf__l">{t('dashboard.completionTokens')}</span>
                 </div>
               </div>
               <div className="dash2-mt-auto">
@@ -449,8 +454,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
             </div>
           ) : (
             <div className="dash2-card">
-              <h2 className="dash2-card__h">Last Inference</h2>
-              <div className="dash2-empty">No inference data yet. Send a request to see stats.</div>
+              <h2 className="dash2-card__h">{t('dashboard.lastInference')}</h2>
+              <div className="dash2-empty">{t('dashboard.noInference')}</div>
             </div>
           )}
         </div>
@@ -459,13 +464,13 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         <div className="dash2-grid-2col">
           <div className="dash2-card">
             <h2 className="dash2-card__h">
-              Loaded Models
+              {t('dashboard.loadedModels')}
               {loadedModels.length > 0 && <span className="dash2-card__badge">{loadedModels.length}</span>}
             </h2>
             {loadedModels.length === 0 ? (
-              <div className="dash2-empty">No models loaded</div>
+              <div className="dash2-empty">{t('dashboard.noModels')}</div>
             ) : (
-              <WorkspaceList className="dash2-models" label="Loaded models" selectable={false}>
+              <WorkspaceList className="dash2-models" label={t('dashboard.loadedModelsAria')} selectable={false}>
                 {loadedModels.map(m => (
                   <ModelRow
                     key={m.model_name}
@@ -480,7 +485,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
 
           {health?.max_models ? (
             <div className="dash2-card">
-              <h2 className="dash2-card__h">Model Capacity</h2>
+              <h2 className="dash2-card__h">{t('dashboard.modelCapacity')}</h2>
               <div className="dash2-caps">
                 {Object.entries(health.max_models).map(([type, max]) => {
                   const loaded = modelsByType[type]?.length || 0;
@@ -502,8 +507,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
             </div>
           ) : (
             <div className="dash2-card">
-              <h2 className="dash2-card__h">Model Capacity</h2>
-              <div className="dash2-empty">Connect to a server to see capacity</div>
+              <h2 className="dash2-card__h">{t('dashboard.modelCapacity')}</h2>
+              <div className="dash2-empty">{t('dashboard.connectCapacity')}</div>
             </div>
           )}
         </div>
@@ -511,23 +516,23 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         {/* ═══ Session Summary (hidden until inference happens) ═══ */}
         {(counters.totalTokensGenerated > 0 || counters.totalPromptTokens > 0 || counters.peakTps > 0) && (
         <div className="dash2-card dash2-card--summary">
-          <h3 className="dash2-card__h">Session Summary</h3>
+          <h3 className="dash2-card__h">{t('dashboard.sessionSummary')}</h3>
           <div className="dash2-summary">
             <span className="dash2-summary__item">
-              <span className="dash2-summary__val">{fmtNum(counters.totalTokensGenerated)}</span>
-              <span className="dash2-summary__lbl">Tokens generated</span>
+              <span className="dash2-summary__val">{formatNumber(counters.totalTokensGenerated, { notation: 'compact', maximumFractionDigits: 1 })}</span>
+              <span className="dash2-summary__lbl">{t('dashboard.tokensGenerated')}</span>
             </span>
             <span className="dash2-summary__item">
-              <span className="dash2-summary__val">{fmtNum(counters.totalPromptTokens)}</span>
-              <span className="dash2-summary__lbl">Tokens processed</span>
+              <span className="dash2-summary__val">{formatNumber(counters.totalPromptTokens, { notation: 'compact', maximumFractionDigits: 1 })}</span>
+              <span className="dash2-summary__lbl">{t('dashboard.tokensProcessed')}</span>
             </span>
             <span className="dash2-summary__item">
               <span className="dash2-summary__val">{counters.peakTps > 0 ? counters.peakTps.toFixed(1) : '—'}</span>
-              <span className="dash2-summary__lbl">Peak TPS</span>
+              <span className="dash2-summary__lbl">{t('dashboard.peakTps')}</span>
             </span>
             <span className="dash2-summary__item">
               <span className="dash2-summary__val">{elapsed(counters.sessionStart)}</span>
-              <span className="dash2-summary__lbl">Session time</span>
+              <span className="dash2-summary__lbl">{t('dashboard.sessionTime')}</span>
             </span>
           </div>
         </div>

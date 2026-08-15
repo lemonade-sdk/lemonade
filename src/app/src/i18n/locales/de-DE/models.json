@@ -1,0 +1,727 @@
+{
+  "common": {
+    "model": {
+      "one": "{{count}} Modell",
+      "other": "{{count}} Modelle"
+    },
+    "downloaded": "Heruntergeladen",
+    "running": "Läuft",
+    "available": "Nicht heruntergeladen",
+    "pinned": "Angeheftet",
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "download": "Herunterladen"
+  },
+  "list": {
+    "title": "Modelle",
+    "actions": "Aktionen der Modellliste",
+    "openCustom": "Benutzerdefinierte Modelle öffnen",
+    "manageCustom": "Benutzerdefinierte Modelle verwalten",
+    "openRouter": "Router-Editor öffnen",
+    "manageRouter": "Modell-Router erstellen oder bearbeiten",
+    "updateAll": "Alle Modelle aktualisieren",
+    "updateAllTitle": "Alle heruntergeladenen Modelle aktualisieren",
+    "search": "Modelle durchsuchen",
+    "searchBuiltInOnline": "In integrierten und Online-Katalogen suchen…",
+    "searchBuiltIn": "In integrierten Katalogen suchen…",
+    "clearSearch": "Suche leeren",
+    "sort": "Sortieren",
+    "sortBy": "Modelle sortieren nach",
+    "sortName": "Name (A–Z)",
+    "sortSize": "Größe (größte zuerst)",
+    "sortLastUsed": "Zuletzt verwendet",
+    "sortDownloads": "Downloadanzahl",
+    "aria": "Modellliste",
+    "noMatches": "Keine Modelle entsprechen deiner Suche.",
+    "sections": {
+      "pinned": "Angeheftet",
+      "downloaded": "Heruntergeladen",
+      "available": "Nicht heruntergeladen"
+    },
+    "readiness": {
+      "running": "Backend aktiv; das Modell läuft.",
+      "downloading": "Modell wird heruntergeladen{{progress}}.",
+      "available": "Modell kann heruntergeladen werden.",
+      "statusDownloading": "Wird heruntergeladen{{progress}}",
+      "statusRunning": "Läuft",
+      "withBackend": "{{status}} ({{backend}})",
+      "missing": "Engine nicht installiert",
+      "update_required": "Engine-Update erforderlich",
+      "update_available": "Engine-Update verfügbar",
+      "installable": "Engine-Download erforderlich",
+      "action_required": "Engine benötigt Aufmerksamkeit",
+      "unsupported": "Engine nicht unterstützt",
+      "attention": "Engine benötigt Aufmerksamkeit",
+      "ready": "Backend bereit; das Modell kann geladen werden.",
+      "unknown": "Backendstatus konnte nicht geprüft werden."
+    },
+    "ariaRow": "{{name}}{{pinned}}{{status}}{{backend}}{{readiness}}",
+    "ariaPinned": ", angeheftet",
+    "ariaRunning": ", läuft",
+    "ariaDownloading": ", wird heruntergeladen",
+    "ariaPart": ", {{value}}",
+    "pin": "{{model}} anheften (P)",
+    "unpin": "{{model}} lösen (P)"
+  },
+  "nav": {
+    "filters": "Modellfilter",
+    "title": "Filter",
+    "primary": {
+      "all": "Alle Modelle",
+      "downloaded": "Heruntergeladen",
+      "myModels": "Meine Modelle",
+      "favorites": "Favoriten"
+    },
+    "tasks": {
+      "title": "Aufgaben",
+      "filter": "Nach Aufgabe filtern",
+      "all": "Alle",
+      "llm": "Chat",
+      "omni": "Omni",
+      "router": "Router",
+      "image": "Bild",
+      "audio": "Audio",
+      "audioGeneration": "Musik & SFX",
+      "tts": "TTS",
+      "model3d": "3D",
+      "embedding": "Embedding",
+      "classification": "Klassifikation"
+    },
+    "backends": "Backends",
+    "filterBackend": "Nach Backend filtern",
+    "catalogs": "Online-Kataloge",
+    "tags": "Tags",
+    "filterTag": "Nach Tag filtern",
+    "addTag": "Eigenes Tag hinzufügen",
+    "customTag": "Eigenes Tag",
+    "storage": "Speicher",
+    "storageAria": "Modellspeicher: {{used}} von {{total}} GB belegt",
+    "sidebarLabel": "Modellfilter",
+    "categories": "Kategorien",
+    "task": "Aufgabe",
+    "countModels": {
+      "one": ", {{count}} Modell",
+      "other": ", {{count}} Modelle"
+    },
+    "providerSearchOn": "{{provider}} wird bei der Online-Modellsuche durchsucht",
+    "providerSearchOff": "{{provider}} wird bei der Online-Modellsuche nicht durchsucht",
+    "searchResults": {
+      "one": ", {{count}} Suchergebnis",
+      "other": ", {{count}} Suchergebnisse"
+    },
+    "removeCustomTag": "Eigenes Tag {{tag}} entfernen",
+    "removeTag": "{{tag}} entfernen",
+    "storageEstimated": "Speicher (geschätzt)",
+    "storageUsed": "Modellspeicher belegt",
+    "storageUsedEstimated": "Modellspeicher belegt (geschätzt)",
+    "storageValue": "{{used}} GB / {{total}} GB",
+    "storageValueText": "{{used}} von {{total}} Gigabyte belegt{{estimated}}",
+    "estimatedSuffix": " (geschätzt)",
+    "builtInTags": {
+      "recommended": "Empfohlen",
+      "hot": "Beliebt",
+      "small": "Klein"
+    }
+  },
+  "downloads": {
+    "aria": "Download-Manager",
+    "title": "Download-Manager",
+    "counts": "{{active}} aktiv · {{completed}} abgeschlossen",
+    "close": "Download-Manager schließen",
+    "emptyTitle": "Noch keine Downloads",
+    "emptyBody": "Lade Modelle im Modell-Manager herunter, dann erscheinen sie hier.",
+    "models": "Modelle: {{models}}",
+    "file": "Datei",
+    "filePrefix": "· Datei {{file}}",
+    "error": "Fehler: {{error}}",
+    "cancelled": "Abgebrochen",
+    "deletingFiles": "Dateien werden gelöscht...",
+    "pause": "Download pausieren",
+    "cancel": "Download abbrechen",
+    "cancelDelete": "Download abbrechen und Dateien löschen",
+    "pausing": "Wird pausiert",
+    "resume": "Download fortsetzen",
+    "deletePartial": "Teilweisen Download löschen",
+    "remove": "Aus Liste entfernen",
+    "deleting": "Wird gelöscht...",
+    "cancelling": "Wird abgebrochen...",
+    "retry": "Download erneut versuchen",
+    "finalizing": "Wird abgeschlossen...",
+    "status": "Status:",
+    "statuses": {
+      "downloading": "Wird heruntergeladen",
+      "paused": "Pausiert",
+      "completed": "Abgeschlossen",
+      "error": "Fehler",
+      "cancelled": "Abgebrochen",
+      "deleting": "Wird gelöscht"
+    },
+    "currentFile": "Aktuelle Datei:",
+    "files": "Dateien:",
+    "of": "von",
+    "downloaded": "Heruntergeladen:",
+    "totalSize": "Gesamtgröße:",
+    "speed": "Geschwindigkeit:",
+    "clearCompleted": "Abgeschlossene löschen",
+    "announcements": {
+      "started": "Download von {{model}} gestartet",
+      "complete": "Download von {{model}} abgeschlossen",
+      "failed": "Download von {{model}} fehlgeschlagen{{error}}",
+      "cancelled": "Download von {{model}} abgebrochen",
+      "paused": "Download von {{model}} pausiert",
+      "resumed": "Download von {{model}} fortgesetzt"
+    },
+    "settingUp": "{{model}} wird eingerichtet",
+    "componentModels": {
+      "one": "{{count}} Modell: {{models}}",
+      "other": "{{count}} Modelle: {{models}}"
+    },
+    "fileProgress": "Datei {{index}}/{{total}} · {{downloaded}} / {{size}}",
+    "paused": "Pausiert",
+    "finalizingStatus": "Wird abgeschlossen",
+    "completed": "Abgeschlossen",
+    "unknownError": "Unbekannter Fehler",
+    "progressAria": "{{model}} wird heruntergeladen: {{percent}}%"
+  },
+  "detail": {
+    "copyName": "Modellnamen kopieren: {{model}}",
+    "copiedName": "Modellname kopiert: {{model}}",
+    "readmeLoading": "README wird geladen…",
+    "readmeUnavailable": "Für dieses Modell ist keine README verfügbar.",
+    "hf": {
+      "included": "Enthaltene Komponenten",
+      "visionProjector": "Vision-Projektor (MMProj)",
+      "variants": "Varianten (eine auswählen)",
+      "downloadVariant": "{{variant}} herunterladen",
+      "downloadVariantAria": "{{variant}} von {{model}} herunterladen",
+      "variantsAria": "Varianten für {{model}}",
+      "sharded": "aufgeteilt",
+      "repositoryDownload": "Repository-Download",
+      "downloadModel": "Modell herunterladen",
+      "downloadModelAria": "{{model}} herunterladen",
+      "noVariants": "Für dieses Repository wurden keine herunterladbaren Varianten gefunden.",
+      "loadingVariants": "Varianteninformationen werden geladen…",
+      "overview": "Übersicht",
+      "readme": "README",
+      "downloads": "{{count}} Downloads",
+      "likes": "{{count}} Likes",
+      "cancel": "Abbrechen",
+      "openOn": "Auf {{provider}} öffnen",
+      "providerModelAria": "{{provider}}-Modell: {{model}}",
+      "viewOnProvider": "{{model}} auf {{provider}} anzeigen (öffnet neuen Tab)"
+    },
+    "config": {
+      "customVoice": "Eigene Stimme…",
+      "customVoicePlaceholder": "Eigene Stimmen-ID eingeben",
+      "customVoiceAria": "Eigene Stimmen-ID",
+      "voiceHelp": "Wähle eine bekannte Stimme oder verwende eine eigene Stimmen-ID, wenn das Backend dies unterstützt.",
+      "loadAria": "Ladeeinstellungen",
+      "loadTitle": "Ladeeinstellungen",
+      "loadHelp": "Einstellungen, die beim Laden oder Neuladen dieses Modells verwendet werden.",
+      "loadedNow": "Jetzt geladen",
+      "contextSize": "Kontextgröße",
+      "contextAria": "Kontextgröße in Token",
+      "autoTune": "Kontextgröße automatisch abstimmen",
+      "save": "Speichern",
+      "discard": "Änderungen verwerfen",
+      "reset": "Auf Standard zurücksetzen",
+      "saved": "Für zukünftiges Laden gespeichert",
+      "resetNotice": "Ladeeinstellungen wurden auf die integrierten Standardwerte zurückgesetzt.",
+      "discardNotice": "Nicht gespeicherte Änderungen an den Ladeeinstellungen wurden verworfen.",
+      "reloadSuccess": "Modell wurde mit der aktuellen Konfiguration neu geladen.",
+      "reloadFailed": "Neuladen fehlgeschlagen. Prüfe die Server-Logs.",
+      "discardConfirm": "Nicht gespeicherte Änderungen an den Ladeeinstellungen verwerfen?",
+      "autoTooltip": "Lemonade schätzt die Kontextgröße beim Laden anhand des verfügbaren Speichers. Deaktiviere dies, um einen festen Wert zu verwenden.",
+      "fixedTooltip": "Die Kontextgröße ist auf {{count}} Token festgelegt. Aktiviere die automatische Abstimmung, damit Lemonade sie beim Laden anhand des verfügbaren Speichers schätzt.",
+      "modelDefault": "Modellstandard",
+      "modelDefaultValue": "Modellstandard ({{value}})",
+      "argsPlaceholder": "CLI-Flags durch Leerzeichen getrennt",
+      "customArgs": "Eigene Argumente für dieses Modell gespeichert.",
+      "currentArgs": "Die aktuellen Backend-Argumente werden verwendet. Bearbeite sie, um Flags für Laden/Neuladen anzupassen.",
+      "increase": "{{label}} erhöhen",
+      "decrease": "{{label}} verringern",
+      "increaseContext": "Kontextgröße um {{count}} Token erhöhen",
+      "decreaseContext": "Kontextgröße um {{count}} Token verringern",
+      "reloading": "Wird neu geladen…",
+      "reload": "Modell neu laden",
+      "labels": {
+        "context": "Kontextgröße",
+        "backend": "Backend",
+        "device": "Gerät",
+        "backendArgs": "Backend-Argumente",
+        "steps": "Schritte",
+        "cfgScale": "CFG-Skala",
+        "width": "Breite",
+        "height": "Höhe",
+        "samplingMethod": "Sampling-Methode",
+        "flowShift": "Flow-Shift",
+        "voice": "Stimme",
+        "speed": "Geschwindigkeit"
+      }
+    },
+    "files": {
+      "loading": "Dateien werden geladen…",
+      "unable": "Dateien für dieses Modell konnten nicht geladen werden.",
+      "none": "Für dieses Modell wurden keine Dateien gefunden.",
+      "noneHelp": "Dateien erscheinen hier, sobald das Modell heruntergeladen wurde.",
+      "backing": "Dateien für {{model}}",
+      "file": "Datei",
+      "role": "Rolle",
+      "size": "Größe",
+      "status": "Status",
+      "downloaded": "Heruntergeladen",
+      "notDownloaded": "Nicht heruntergeladen",
+      "fallbackRole": "Datei"
+    },
+    "router": {
+      "title": "Router-Einstellungen",
+      "help": "Prüfe alle mit diesem virtuellen Modell verbundenen Modelle einschließlich Provider-Endpunkten externer Kandidaten.",
+      "editAria": "Router-Einstellungen bearbeiten",
+      "edit": "Router bearbeiten",
+      "summaryAria": "Zusammenfassung der Router-Strategie",
+      "routing": "Routing",
+      "strategy": "Strategie",
+      "defaultModel": "Standardmodell",
+      "targets": "Routing-Ziele",
+      "connectedAria": "Verbundene Router-Modelle",
+      "connected": "Verbundene Modelle",
+      "providerHelp": "Änderungen am Endpunkt gelten providerweit für alle über diesen Provider registrierten Modelle.",
+      "default": "Standard",
+      "allowHttp": "Unsicheres HTTP erlauben",
+      "cancel": "Abbrechen",
+      "editEndpoint": "Endpunkt bearbeiten",
+      "managed": "Von Lemonade verwaltet",
+      "local": "Lokal registriertes Modell",
+      "none": "In dieser Router-Definition wurden keine verbundenen Modelle gefunden.",
+      "unknownProvider": "Unbekannter Provider",
+      "localModel": "Lokales Modell",
+      "loadProvidersFailed": "Externe Provider konnten nicht geladen werden.",
+      "updateProviderFailed": "Provider-Endpunkt konnte nicht aktualisiert werden.",
+      "routingTarget": "Routing-Ziel",
+      "naturalLanguageRouter": "Natürlichsprachiger Router",
+      "classifier": "Klassifikator · {{name}}",
+      "collectionComponent": "Sammlungskomponente",
+      "orderedRules": "Geordnete Regeln",
+      "notSet": "Nicht gesetzt",
+      "external": "Extern",
+      "internal": "Intern",
+      "unresolved": "Nicht aufgelöst",
+      "endpointAria": "Endpunkt für {{provider}}",
+      "endpointUnavailable": "Endpunkt nicht verfügbar",
+      "endpointNotConfigured": "Endpunkt nicht konfiguriert",
+      "authConfigured": "Authentifizierung konfiguriert",
+      "authRequired": "Authentifizierung erforderlich",
+      "saving": "Wird gespeichert…",
+      "save": "Speichern"
+    },
+    "collection": {
+      "title": "Sammlungseinstellungen",
+      "help": "Komponenten bleiben auch nach dem Speichern oder Herunterladen der Sammlung bearbeitbar.",
+      "editAria": "Sammlungseinstellungen bearbeiten",
+      "edit": "Einstellungen bearbeiten",
+      "componentsAria": "Sammlungskomponenten",
+      "components": "Komponenten",
+      "toolModel": "Tool-Modell",
+      "advancedAria": "Zusammenfassung erweiterter Sammlungseinstellungen",
+      "advanced": "Erweitert",
+      "systemPrompt": "System-Prompt",
+      "customTools": "Benutzerdefinierte Modell-Tools",
+      "notSet": "Nicht gesetzt",
+      "customized": "Angepasst",
+      "default": "Standard",
+      "roles": {
+        "llm": "Planer-LLM",
+        "vision": "Vision",
+        "image": "Bildgenerierung",
+        "edit": "Bildbearbeitung",
+        "transcription": "Transkription",
+        "speech": "Text-zu-Sprache"
+      }
+    },
+    "main": {
+      "aria": "Modelldetails",
+      "backAria": "Zurück zur Modellliste",
+      "back": "Zurück zu Modelle",
+      "noModels": "Keine Modelle gefunden",
+      "noSelection": "Kein Modell ausgewählt",
+      "noModelsHelp": "Im Registry sind noch keine Modelle verfügbar. Lade ein Modell herunter oder passe deine Filter an.",
+      "noSelectionHelp": "Wähle ein Modell aus der Liste aus, um seine Details anzuzeigen.",
+      "running": "Läuft",
+      "ready": "Bereit",
+      "viewOnHf": "{{model}} auf Hugging Face anzeigen",
+      "actions": "Aktionen für {{model}}",
+      "cancelDownload": "Download von {{model}} abbrechen",
+      "cancel": "Abbrechen",
+      "workingAria": "{{model}} wird verarbeitet…",
+      "unloadAria": "{{model}} entladen",
+      "working": "Wird verarbeitet…",
+      "unload": "Entladen",
+      "loadingAria": "{{model}} wird geladen…",
+      "loadAria": "{{model}} laden",
+      "loading": "Wird geladen…",
+      "load": "Laden",
+      "getLoadAria": "{{model}} herunterladen und laden",
+      "getLoad": "Holen & laden",
+      "downloadAria": "{{model}} herunterladen",
+      "download": "Herunterladen",
+      "unpinAria": "{{model}} lösen",
+      "pinAria": "{{model}} anheften",
+      "unpinTitle": "Modell lösen",
+      "pinTitle": "Modell anheften",
+      "pinned": "Angeheftet",
+      "pin": "Anheften",
+      "removeFavoriteAria": "{{model}} aus Favoriten entfernen",
+      "addFavoriteAria": "{{model}} zu Favoriten hinzufügen",
+      "removeFavoriteTitle": "Aus Favoriten entfernen",
+      "addFavoriteTitle": "Zu Favoriten hinzufügen",
+      "favorited": "Favorit",
+      "favorite": "Favorisieren",
+      "deleteCustomAria": "Benutzerdefinierte Modelldefinition für {{model}} löschen",
+      "deleteFilesAria": "Heruntergeladene Dateien für {{model}} löschen",
+      "deleteDefinition": "Modelldefinition löschen",
+      "deleteFiles": "Heruntergeladene Dateien löschen",
+      "delete": "Löschen",
+      "detailsAria": "Modelldetails: {{model}}",
+      "sections": "Bereiche der Modelldetails",
+      "recipeOmniCollection": "Omni-Sammlung",
+      "recipeRouter": "Router",
+      "recipeCollection": "Sammlung",
+      "recipeUnknown": "Unbekannt",
+      "capabilityUnknown": "Unbekannte Fähigkeit",
+      "capabilityClassification": "Klassifikation"
+    },
+    "tabs": {
+      "configuration": "Konfiguration",
+      "readme": "README",
+      "files": "Dateien",
+      "settings": "Einstellungen"
+    },
+    "readmeImageUnavailable": "README-Bild nicht verfügbar"
+  },
+  "effective": {
+    "title": "Effektive Einstellungen",
+    "close": "Abbrechen",
+    "backend": "Backend: {{backend}}",
+    "settingsBySource": "Einstellungen nach Quelle",
+    "sourceNotePrefix": "Diese Zeilen zeigen die bekannten Quellen einzelner Einstellungen. Der",
+    "sourceNoteCommand": "effektive Ladebefehl",
+    "sourceNoteSuffix": "unten ist maßgeblich. Er enthält Architektur- und globale Standardwerte des Servers, die hier eventuell nicht erscheinen.",
+    "contextSize": "Kontextgröße",
+    "mcpServers": "MCP-Server",
+    "configuredChatMenu": "Im Chat-Plus-Menü konfiguriert",
+    "menu": "Menü",
+    "thinking": "Thinking",
+    "detailsUnavailable": "Für dieses Modell sind keine Tuning-Details verfügbar.",
+    "autoContextHelp": "Die Kontextgröße wird automatisch aus dem verfügbaren Speicher bestimmt. Das ist eine Schätzung; der endgültige Wert wird beim Laden nach einer möglichen Modellentladung berechnet.",
+    "chatSampling": "Chat-Sampling",
+    "samplingHelp": "Leere Felder verwenden die Backend-Standardwerte. Gespeicherte Werte werden bei künftigen Chat-Anfragen für dieses Modell gesendet.",
+    "backendDefault": "Backend-Standard",
+    "saveSampling": "Sampling speichern",
+    "loadCommand": "Effektiver Ladebefehl",
+    "resolving": "Wird aufgelöst...",
+    "loadCommandHelp": "Feste Startparameter (Modellpfad, Port, Chat-Template, Metriken) werden beim Laden vom Server ergänzt und hier nicht angezeigt.",
+    "unlock": "Ich weiß, was ich tue. Die finalen Ladeargumente bearbeiten",
+    "rawArgsHelp": "Diese rohen Backend-Argumente ersetzen beim nächsten Laden dieses Modells die aufgelösten Werte. Nur für diese Sitzung; es wird nichts auf die Festplatte geschrieben und beim Neuladen der App wird die Einstellung zurückgesetzt.",
+    "applying": "Wird angewendet...",
+    "applyReload": "Anwenden & neu laden",
+    "applyNext": "Beim nächsten Laden anwenden",
+    "resetOverride": "Überschreibung zurücksetzen",
+    "overrideActive": "Eine Sitzungsüberschreibung ist aktiv.",
+    "appliedReloaded": "Mit den neuen Argumenten angewendet und neu geladen.",
+    "savedSession": "Für diese Sitzung gespeichert. Wird beim nächsten Laden des Modells wirksam.",
+    "clearedReloaded": "Sitzungsüberschreibung entfernt und mit den aufgelösten Einstellungen neu geladen.",
+    "cleared": "Sitzungsüberschreibung entfernt.",
+    "samplingSaved": "Sampling-Überschreibungen werden bei künftigen Chat-Anfragen gesendet.",
+    "samplingDefault": "Chat-Anfragen verwenden die Sampling-Standardwerte des Backends.",
+    "off": "Aus",
+    "on": "An",
+    "builtIn": "Integriertes Lemonade",
+    "auto": "Automatisch",
+    "runtime": "Laufzeit",
+    "configuration": "Konfiguration",
+    "effectiveLoad": "Effektives Laden",
+    "unavailable": "Nicht verfügbar",
+    "autoValue": "{{value}} (automatisch)",
+    "source": {
+      "custom": "Direkte Konfiguration",
+      "builtIn": "Rezept-Standard",
+      "optimized": "Optimiert",
+      "default": "Standard"
+    },
+    "fields": {
+      "backend": "Backend",
+      "device": "Gerät",
+      "backendArgs": "Backend-Argumente",
+      "steps": "Schritte",
+      "cfgScale": "CFG-Skala",
+      "width": "Breite",
+      "height": "Höhe",
+      "samplingMethod": "Sampling-Methode",
+      "flowShift": "Flow Shift",
+      "voice": "Stimme",
+      "speed": "Geschwindigkeit"
+    },
+    "sampling": {
+      "temperature": "Temperatur",
+      "topP": "Top-p",
+      "topK": "Top-k",
+      "minP": "Min-p",
+      "repeatPenalty": "Wiederholungsstrafe",
+      "increase": "{{label}} erhöhen",
+      "decrease": "{{label}} verringern"
+    },
+    "thinkingModes": {
+      "none": "Keine",
+      "normal": "Normal",
+      "smart": "Smart",
+      "smartExtra": "Smart Extra"
+    }
+  },
+  "manager": {
+    "remote": {
+      "downloadingPercent": "Wird heruntergeladen: {{percent}} %",
+      "downloadingModel": "{{model}} wird heruntergeladen",
+      "downloads": "{{count}} Downloads",
+      "likes": "{{count}} Likes",
+      "notDownloaded": "nicht heruntergeladen",
+      "rowAria": "{{model}}, {{downloads}}, {{likes}}{{recipe}}{{status}}",
+      "recipePart": ", {{recipe}}",
+      "downloadingPart": ", wird heruntergeladen: {{percent}} %",
+      "notDownloadedPart": ", nicht heruntergeladen",
+      "cancelDownload": "Download von {{model}} abbrechen",
+      "copied": "Kopiert",
+      "copyRepo": "Repository-Namen kopieren: {{model}}",
+      "zoneAria": "Suchergebnisse von {{provider}}",
+      "searching": "{{provider}} wird durchsucht...",
+      "unavailable": "Suche bei {{provider}} ist nicht verfügbar: {{error}}",
+      "noMatches": "Keine kompatiblen Modelle bei {{provider}} entsprechen den aktiven Filtern.",
+      "results": "Ergebnisse von {{provider}}",
+      "allResults": "Suchergebnisse externer Modellkataloge"
+    },
+    "custom": {
+      "example": "Beispiel:",
+      "title": {
+        "editOmni": "Omni-Sammlung bearbeiten",
+        "customOmni": "Eigene Omni-Sammlung",
+        "customModel": "Eigenes Modell"
+      },
+      "metadata": {
+        "omniCollection": "Omni-Sammlung",
+        "customModel": "Eigenes Modell",
+        "editing": "Gespeicherte Definition wird bearbeitet"
+      },
+      "description": "Registriere ein Modell oder eine Sammlung, die nicht im Lemonade-Katalog enthalten ist.",
+      "actions": {
+        "group": "Aktionen für {{title}}",
+        "save": "Speichern",
+        "cancel": "Abbrechen",
+        "export": "Exportieren",
+        "import": "Importieren",
+        "close": "Editor für eigene Modelle schließen"
+      },
+      "editingSavedCollection": "Gespeicherte Sammlung wird bearbeitet",
+      "typeAria": "Typ des eigenen Modells",
+      "types": {
+        "model": "Eigenes Modell",
+        "omni": "Omni-Sammlung"
+      },
+      "fields": {
+        "name": "Name",
+        "nameOmniPlaceholder": "Meine Omni-Sammlung",
+        "nameModelPlaceholder": "Mein eigenes Modell",
+        "extraLabels": "Zusätzliche Labels",
+        "capability": "Fähigkeit",
+        "recipe": "Recipe/Backend",
+        "noBackend": "Kein kompatibles Backend verfügbar",
+        "checkpoint": "Checkpoint, Hugging-Face-Repository oder lokaler Pfad",
+        "mmproj": "Vision-Projektor (mmproj)",
+        "textEncoder": "Text-Encoder-Checkpoint",
+        "vae": "VAE-Checkpoint",
+        "optional": "Optional",
+        "collectionHint": "Wähle die Modelle aus, aus denen diese Sammlung besteht. Nur das Planer-LLM ist erforderlich."
+      },
+      "capabilities": {
+        "chat": "Chat",
+        "omni": "Omni",
+        "image": "Bilderzeugung",
+        "audio": "Transkription",
+        "audio-generation": "Audioerzeugung",
+        "tts": "Text zu Sprache",
+        "model3d": "3D-Erzeugung",
+        "embedding": "Embedding",
+        "reranking": "Reranking",
+        "classification": "Klassifikation"
+      },
+      "advanced": {
+        "title": "Erweiterte Einstellungen",
+        "subtitle": "System-Prompt und eigene Modell-Tools",
+        "systemPrompt": "System-Prompt für Omni-Tools",
+        "reset": "Auf Standard zurücksetzen"
+      },
+      "tools": {
+        "title": "Eigene Modell-Tools",
+        "help": "Füge ein bearbeitbares Beispiel hinzu, wähle dessen Endpunkt und anschließend eines der in dieser Sammlung konfigurierten Modelle.",
+        "llmExample": "LLM-Beispiel",
+        "visionExample": "Vision-Beispiel",
+        "imageExample": "Bild-Beispiel",
+        "codingPair": "Coding-Paar",
+        "none": "Keine eigenen Modell-Tools konfiguriert. Die Schaltflächen oben fügen funktionierende Beispiele ein, die du umbenennen und anpassen kannst.",
+        "tool": "Tool {{index}}",
+        "editable": "Bearbeitbares Beispiel · {{type}}",
+        "remove": "Entfernen",
+        "name": "Tool-Name",
+        "executionType": "Ausführungstyp",
+        "types": {
+          "chat": "Chat / LLM",
+          "vision": "Vision-LLM",
+          "image": "Bilderzeugung"
+        },
+        "endpointHelp": "Legt den Lemonade-Endpunkt fest, der für dieses Modell verwendet wird.",
+        "targetModel": "Zielmodell",
+        "selectTarget": "Konfiguriertes Ziel auswählen",
+        "configureTarget": "Zuerst eine kompatible Sammlungskomponente konfigurieren",
+        "targetHelp": "Nur in dieser Omni-Sammlung konfigurierte Modelle können als Ziele verwendet werden.",
+        "description": "Beschreibung",
+        "descriptionPlaceholder": "Wann soll der Planer dieses Tool verwenden?",
+        "systemPrompt": "System-Prompt des Ziels",
+        "userPrompt": "Benutzer-Prompt-Vorlage des Ziels",
+        "schema": "JSON-Schema der Tool-Argumente",
+        "schemaHelp": "Dieses bearbeitbare Schema legt fest, welche Argumente der Planer senden darf.",
+        "maxTokens": "Max. Token"
+      },
+      "picker": {
+        "roles": {
+          "llm": {
+            "label": "Planer-LLM",
+            "placeholder": "Heruntergeladene, Registry- oder eigene LLMs suchen...",
+            "help": "Erforderliches Planermodell für Chat und Tool-Aufrufe."
+          },
+          "vision": {
+            "label": "Vision",
+            "placeholder": "Vision-/VLM-Komponenten suchen...",
+            "help": "Optionales Modell für Bildanalyse."
+          },
+          "image": {
+            "label": "Bilderzeugung",
+            "placeholder": "Komponenten zur Bilderzeugung suchen...",
+            "help": "Optionales Modell zur Bilderzeugung."
+          },
+          "edit": {
+            "label": "Bildbearbeitung",
+            "placeholder": "Komponenten zur Bildbearbeitung suchen...",
+            "help": "Optionales Modell zur Bearbeitung vorhandener Bilder."
+          },
+          "transcription": {
+            "label": "Transkription",
+            "placeholder": "Whisper-/Moonshine-/Audio-Komponenten suchen...",
+            "help": "Optionales Speech-to-Text-Modell."
+          },
+          "speech": {
+            "label": "Text zu Sprache",
+            "placeholder": "TTS-/Sprach-Komponenten suchen...",
+            "help": "Optionales Text-to-Speech-Modell."
+          }
+        },
+        "clear": "{{label}} löschen",
+        "options": "Optionen für {{label}}",
+        "groups": {
+          "custom": "Eigene Modelle",
+          "downloaded": "Lokal heruntergeladen",
+          "registered": "Registrierte Registry-Modelle"
+        },
+        "none": "Kein kompatibles Modell für {{label}} gefunden. Nutze die Hauptsuche oder den HuggingFace-Bereich, um zuerst eines herunterzuladen oder zu registrieren.",
+        "searchHf": "HuggingFace nach „{{query}}“ durchsuchen",
+        "details": {
+          "custom": "eigenes Modell",
+          "downloaded": "heruntergeladen",
+          "registered": "registriert · wird beim Abruf heruntergeladen",
+          "configured": "in dieser Sammlung konfiguriert"
+        }
+      },
+      "notices": {
+        "exported": "JSON der eigenen Modelle exportiert.",
+        "imported": {
+          "one": "{{count}} eigenes Modell importiert.",
+          "other": "{{count}} eigene Modelle importiert."
+        },
+        "skipped": ", {{count}} übersprungen"
+      },
+      "errors": {
+        "import": "JSON konnte nicht importiert werden: {{error}}",
+        "enterName": "Gib einen Modellnamen ein.",
+        "selectPlanner": "Wähle ein Planer-LLM für die Omni-Sammlung aus.",
+        "toolName": "Eigenes Tool {{index}}: Gib einen Tool-Namen ein.",
+        "toolConflict": "Das eigene Tool {{name}} kollidiert mit einem integrierten Omni-Tool.",
+        "toolDuplicate": "Das eigene Tool {{name}} ist doppelt vorhanden.",
+        "toolTarget": "Eigenes Tool {{name}}: Wähle ein Zielmodell aus.",
+        "toolTargetMissing": "Eigenes Tool {{name}}: Das Ziel {{target}} ist in dieser Omni-Sammlung nicht konfiguriert.",
+        "toolDescription": "Eigenes Tool {{name}}: Gib eine Beschreibung ein, damit der Planer weiß, wann es aufgerufen werden soll.",
+        "schemaObject": "Das Schema muss ein JSON-Objekt sein",
+        "toolSchema": "Eigenes Tool {{name}}: Ungültiges JSON-Parameterschema ({{error}}).",
+        "noBackend": "Für diese Fähigkeit ist auf dem verbundenen Lemonade-Server kein kompatibles Recipe/Backend verfügbar.",
+        "save": "Eigenes Modell konnte nicht gespeichert werden."
+      },
+      "suggestions": {
+        "llamacpp": {
+          "note": "GGUF-Repository plus Quantisierungssuffix; Lemonade kann die gewählte Quantisierung herunterladen.",
+          "mmproj": "Optional für llama.cpp-Vision-Modelle; für reine Text-GGUFs leer lassen."
+        },
+        "vllm": {
+          "note": "Upstream-Hugging-Face-Transformer-Checkpoint; vLLM lädt das Repository direkt."
+        },
+        "flm": {
+          "note": "FastFlowLM-Modell-ID oder lokaler FastFlowLM-Artefaktpfad für unterstützte AMD-NPU-Modelle."
+        },
+        "ryzenai-llm": {
+          "note": "RyzenAI-kompatibler ONNX-/HF-Checkpoint oder lokaler Pfad."
+        },
+        "sd-cpp": {
+          "note": "Primärer Diffusions-Checkpoint. Die Zusatzfelder unten unterstützen Bildmodelle mit mehreren Dateien.",
+          "text_encoder": "Optionaler Text-Encoder-Checkpoint für Flux-/Qwen-artige Bildpipelines.",
+          "vae": "Optionaler VAE-Checkpoint für Bildmodelle mit separater VAE-Datei."
+        },
+        "whispercpp": {
+          "note": "Whisper.cpp-Checkpoint-Repository plus .bin-Modelldatei."
+        },
+        "moonshine": {
+          "note": "Moonshine-Streaming-Checkpoint-Repository plus ONNX-Variantenpfad."
+        },
+        "kokoro": {
+          "note": "Kokoro-ONNX-Modellrepository oder lokaler Modellpfad."
+        },
+        "acestep": {
+          "note": "ACE-Step-Checkpoint für Musikerzeugung."
+        },
+        "thinksound": {
+          "note": "ThinkSound-Checkpoint für promptgesteuerte Soundeffekte."
+        },
+        "openmoss": {
+          "note": "OpenMOSS-Checkpoint für Sprachsynthese oder Voice Design."
+        },
+        "trellis": {
+          "note": "TRELLIS.2-Checkpoint für Image-to-3D-Rekonstruktion."
+        }
+      },
+      "availability": {
+        "plain": "Auf diesem Lemonade-Server verfügbar.",
+        "states": "Auf diesem Lemonade-Server verfügbar ({{states}})."
+      }
+    },
+    "emptyDetail": {
+      "aria": "Modelldetail",
+      "loading": "Modellkatalog wird geladen...",
+      "none": "Kein Modell ausgewählt",
+      "loadingHelp": "Heruntergeladene Modelle erscheinen zuerst, während der vollständige Lemonade-Katalog noch geladen wird.",
+      "noneHelp": "Wähle ein Modell aus der Liste aus, um Details anzuzeigen."
+    },
+    "modelFiltersMenu": "Modellfilter öffnen",
+    "resizeList": "Breite der Modellliste ändern",
+    "confirmDeleteRouter": "Router-Definition „{{model}}“ löschen?",
+    "confirmDeleteCollection": "Omni-Sammlung „{{model}}“ löschen? Dadurch wird nur die Sammlungsdefinition entfernt. Die Dateien der Komponentenmodelle bleiben erhalten.",
+    "confirmDeleteCustom": "Benutzerdefiniertes Modell „{{model}}“ löschen? Dadurch werden die Modelldefinition und vorhandene heruntergeladene Modelldateien entfernt.",
+    "confirmDeleteDownloaded": "„{{model}}“ löschen? Dadurch werden die heruntergeladenen Dateien entfernt. Ist das Modell geladen, wird es zuerst entladen.",
+    "load": {
+      "downloadInProgress": "{{model}} wird noch heruntergeladen. Warte, bis der Download abgeschlossen ist, bevor du es lädst."
+    }
+  }
+}

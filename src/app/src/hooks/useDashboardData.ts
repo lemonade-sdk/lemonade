@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import api, { HealthData, StatsData, SystemStatsData, SlotData, LoadedModel, LogStreamHandle, getCacheTokenCount, friendlyErrorMessage } from '../api';
+import { useI18n } from '../i18n';
 
 /* ── History ring buffer ───────────────────────────────────── */
 
@@ -133,6 +134,7 @@ export interface DashboardData {
 const POLL_INTERVAL = 2000;
 
 export function useDashboardData(isActive = true): DashboardData {
+  const { t } = useI18n('monitor');
   const [health, setHealth] = useState<HealthData | null>(null);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [sysStats, setSysStats] = useState<SystemStatsData | null>(null);
@@ -141,9 +143,12 @@ export function useDashboardData(isActive = true): DashboardData {
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [slotHistory, setSlotHistory] = useState<Record<number, SlotHistoryPoint[]>>({});
   const [slotLive, setSlotLive] = useState<Record<number, SlotLiveTps>>({});
-  const [lastError, setLastError] = useState<string | null>(null);
+  const [lastErrorState, setLastErrorState] = useState<{ message: string; paused: boolean } | null>(null);
   const [slotsUnsupported, setSlotsUnsupported] = useState(false);
-  const [slotStatus, setSlotStatus] = useState('Slot telemetry is waiting for a compatible backend.');
+  const [slotStatusState, setSlotStatusState] = useState<{
+    code: 'waiting' | 'live' | 'idle' | 'unavailable' | 'unsupported' | 'loadModel';
+    message?: string;
+  }>({ code: 'waiting' });
   const [paused, setPaused] = useState(false);
 
   // Hardware topology is effectively static during a dashboard session. Fetch
@@ -231,6 +236,18 @@ export function useDashboardData(isActive = true): DashboardData {
 
   /* ── Polling ─────────────────────────────────────────────── */
 
+  const recordPollFailure = useCallback((error: unknown | null) => {
+    failureCountRef.current += 1;
+    const message = error
+      ? friendlyErrorMessage(error)
+      : String(api.lastConnectionError || '').trim();
+    const pausedAfterFailure = failureCountRef.current >= 3;
+    setLastErrorState({ message, paused: pausedAfterFailure });
+    setSlots([]);
+    setSlotLive({});
+    if (pausedAfterFailure) setPaused(true);
+  }, []);
+
   const poll = useCallback(async () => {
     try {
       let healthError: unknown = null;
@@ -240,7 +257,10 @@ export function useDashboardData(isActive = true): DashboardData {
         api.systemStats().catch(() => null),
       ]);
 
-      if (!h) throw healthError || new Error(api.lastConnectionError || 'Server health endpoint is unavailable.');
+      if (!h) {
+        recordPollFailure(healthError);
+        return;
+      }
       failureCountRef.current = 0;
 
       setHealth(h);
@@ -264,17 +284,15 @@ export function useDashboardData(isActive = true): DashboardData {
           const response = await api.slots();
           slotData = Array.isArray(response) ? response : [];
           setSlotsUnsupported(false);
-          setSlotStatus(slotData.length > 0 ? 'Slot telemetry is live.' : 'Compatible backend loaded, but no slot activity is currently reported.');
+          setSlotStatusState({ code: slotData.length > 0 ? 'live' : 'idle' });
         } catch (err) {
           slotData = [];
           setSlotsUnsupported(true);
-          setSlotStatus(`Slot telemetry unavailable: ${friendlyErrorMessage(err)}`);
+          setSlotStatusState({ code: 'unavailable', message: friendlyErrorMessage(err) });
         }
       } else {
         setSlotsUnsupported(Boolean(activeModel));
-        setSlotStatus(activeModel
-          ? 'Current backend does not expose llama.cpp/vLLM slot telemetry.'
-          : 'Load a llama.cpp or vLLM chat model to see slot telemetry.');
+        setSlotStatusState({ code: activeModel ? 'unsupported' : 'loadModel' });
       }
       setSlots(slotData);
 
@@ -319,15 +337,11 @@ export function useDashboardData(isActive = true): DashboardData {
       tgt.totalSlots = totalSlots;
       tgt.cacheUtil = cacheUtil;
 
-      setLastError(null);
+      setLastErrorState(null);
     } catch (err) {
-      failureCountRef.current += 1;
-      setLastError(`${friendlyErrorMessage(err)}${failureCountRef.current >= 3 ? ' Polling paused after repeated failures.' : ''}`);
-      setSlots([]);
-      setSlotLive({});
-      if (failureCountRef.current >= 3) setPaused(true);
+      recordPollFailure(err);
     }
-  }, [computeAggregates]);
+  }, [computeAggregates, recordPollFailure]);
 
   // A manual resume starts a fresh retry window. Without resetting the
   // consecutive-failure counter, the very next failed poll immediately pauses
@@ -349,16 +363,14 @@ export function useDashboardData(isActive = true): DashboardData {
   }, [paused, isActive]);
 
   useEffect(() => {
-    if (!isActive) {
+    if (!isActive || paused) {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
       return;
     }
 
-    poll();
-    if (!paused) {
-      pollRef.current = setInterval(poll, POLL_INTERVAL);
-    }
+    void poll();
+    pollRef.current = setInterval(poll, POLL_INTERVAL);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
@@ -578,6 +590,14 @@ export function useDashboardData(isActive = true): DashboardData {
   const getSlotTarget = useCallback((slotId: number) =>
     targetSlotRef.current.get(slotId),
   []);
+
+  const slotStatus = t(`dashboard.slotTelemetry.${slotStatusState.code}`, { message: slotStatusState.message || '' });
+  const lastError = lastErrorState
+    ? t('dashboard.pollError', {
+        message: lastErrorState.message || t('dashboard.serverHealthUnavailable'),
+        paused: lastErrorState.paused ? t('dashboard.pollPausedSuffix') : '',
+      })
+    : null;
 
   return {
     health, stats, sysStats, systemInfo, slots, slotLive,

@@ -37,6 +37,7 @@ export default defineConfig({
   timeout: 60000,
   use: {
     baseURL,
+    locale: 'en-US',
     screenshot: 'on',
     trace: 'retain-on-failure',
   },

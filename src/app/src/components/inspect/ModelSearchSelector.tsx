@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useId } from 'react';
 import { type ModelInfo } from '../../api';
+import { useI18n } from '../../i18n';
 
 interface ModelSearchSelectorProps {
   label: string;
@@ -13,13 +14,15 @@ interface ModelSearchSelectorProps {
 
 export default function ModelSearchSelector({
   label,
-  placeholder = 'Search model...',
+  placeholder,
   value,
   onChange,
   availableModels,
   className = 'critique-input-control',
   showAllOnFocus = false
 }: ModelSearchSelectorProps) {
+  const { t } = useI18n('inspect');
+  const resolvedPlaceholder = placeholder ?? t('modelSearch.placeholder');
   const [search, setSearch] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -120,7 +123,7 @@ export default function ModelSearchSelector({
         ref={inputRef}
         id={baseId}
         type="text"
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         value={isOpen ? search : value}
         onChange={(e) => {
           setSearch(e.target.value);

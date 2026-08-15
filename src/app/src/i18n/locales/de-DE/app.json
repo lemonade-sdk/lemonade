@@ -1,0 +1,85 @@
+{
+  "skipToMain": "Zum Hauptinhalt springen",
+  "primaryNavigation": "Hauptnavigation",
+  "appControls": "App-Steuerung",
+  "search": {
+    "aria": "Lemonade durchsuchen",
+    "openAria": "Suche öffnen",
+    "placeholder": "Suchen",
+    "shortcut": "Suchkürzel: {{shortcut}}",
+    "commandK": "Befehl K",
+    "controlK": "Strg K",
+    "results": "Globale Suchergebnisse",
+    "noResults": "Keine passenden Ergebnisse.",
+    "hint": "Modelle, Backends, Apps und Einstellungen durchsuchen.",
+    "page": "Seite",
+    "model": "Modell",
+    "backend": "Backend",
+    "app": "App",
+    "appCategory": "App - {{category}}"
+  },
+  "navigation": {
+    "chat": {
+      "label": "Chat",
+      "keywords": "unterhaltung nachrichten chat"
+    },
+    "models": {
+      "label": "Modelle",
+      "keywords": "modellverwaltung herunterladen laden modelle"
+    },
+    "backends": {
+      "label": "Backends",
+      "keywords": "laufzeit inference engine backend"
+    },
+    "apps": {
+      "label": "Apps",
+      "keywords": "clients integrationen apps"
+    },
+    "dashboard": {
+      "label": "Monitor",
+      "keywords": "dashboard monitor system hardware statistik leistung"
+    },
+    "connect": {
+      "label": "Einstellungen",
+      "keywords": "konfiguration einstellungen server sprache locale"
+    }
+  },
+  "server": {
+    "label": "Server",
+    "connected": "Verbunden",
+    "connecting": "Verbindung wird hergestellt…",
+    "offline": "Offline",
+    "ariaConnected": "Server verbunden",
+    "ariaConnecting": "Server wird verbunden",
+    "ariaOffline": "Server offline"
+  },
+  "theme": {
+    "toggle": "Darstellung umschalten",
+    "switchLight": "Zum hellen Modus wechseln",
+    "switchDark": "Zum dunklen Modus wechseln",
+    "light": "Heller Modus",
+    "dark": "Dunkler Modus"
+  },
+  "downloads": {
+    "open": "Download-Manager öffnen",
+    "title": "Download-Manager",
+    "label": "Downloads"
+  },
+  "window": {
+    "minimize": "Minimieren",
+    "maximize": "Maximieren",
+    "close": "Abbrechen"
+  },
+  "loading": {
+    "view": "Ansicht wird geladen",
+    "downloads": "Downloads werden geladen",
+    "models": "Modelle werden geladen",
+    "backends": "Backends werden geladen",
+    "apps": "Apps werden geladen",
+    "monitor": "Monitor wird geladen",
+    "settings": "Einstellungen werden geladen"
+  },
+  "error": {
+    "view": "In \"{{view}}\" ist ein Fehler aufgetreten"
+  }
+}

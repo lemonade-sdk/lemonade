@@ -10,6 +10,11 @@ import {
   WorkspaceActionGroup,
   WorkspacePaneHeader,
 } from './WorkspacePanels';
+import { useI18n } from '../i18n';
+import {
+  localizedMarketplaceCategory,
+  localizedMarketplaceDescription,
+} from '../features/apps/marketplacePresentation';
 
 export type MarketplaceApp = {
   id: string;
@@ -49,10 +54,6 @@ function categoryIcon(category: string): IconName {
   return 'layers';
 }
 
-function appCountLabel(count: number): string {
-  return `${count} compatible ${count === 1 ? 'app' : 'apps'}`;
-}
-
 function categoryLabel(category: string): string {
   return category.trim().replace(/(^|[\s/&-])(\p{Ll})/gu, (_match, separator: string, letter: string) =>
     `${separator}${letter.toLocaleUpperCase()}`);
@@ -73,6 +74,7 @@ function collectCategoryGroups(
   categoriesOf: (app: MarketplaceApp) => string[],
   labelByCategory: Map<string, string>,
   feedOrder: Map<string, number>,
+  otherLabel: string,
 ): CategoryGroup[] {
   const groups = new Map<string, CategoryGroup>();
   apps.forEach(app => {
@@ -84,7 +86,7 @@ function collectCategoryGroups(
       seenKeys.add(key);
       let group = groups.get(key);
       if (!group) {
-        group = { key, label: raw ? labelByCategory.get(key) ?? categoryLabel(raw) : 'Other', apps: [] };
+        group = { key, label: raw ? labelByCategory.get(key) ?? categoryLabel(raw) : otherLabel, apps: [] };
         groups.set(key, group);
       }
       group.apps.push(app);
@@ -179,6 +181,8 @@ const AppsView: React.FC<AppsViewProps> = ({
   loading: marketplaceLoading,
   error: marketplaceError,
 }) => {
+  const { t, tOptional } = useI18n('apps');
+  const displayMarketplaceError = marketplaceError === 'Unknown error' ? t('unknownError') : marketplaceError;
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
   const featuredApps = useMemo(
@@ -187,11 +191,16 @@ const AppsView: React.FC<AppsViewProps> = ({
   );
 
   const labelByCategory = useMemo(() => new Map(
-    marketplaceCategories.map(category => [normalizedCategory(category.id), category.label]),
-  ), [marketplaceCategories]);
+    marketplaceCategories.map(category => [
+      normalizedCategory(category.id),
+      localizedMarketplaceCategory(category.id, category.label, tOptional),
+    ]),
+  ), [marketplaceCategories, tOptional]);
 
-  const displayLabel = (rawCategory: string): string =>
-    labelByCategory.get(normalizedCategory(rawCategory)) ?? categoryLabel(rawCategory);
+  const displayLabel = (rawCategory: string): string => {
+    const fallback = labelByCategory.get(normalizedCategory(rawCategory)) ?? categoryLabel(rawCategory);
+    return localizedMarketplaceCategory(rawCategory, fallback, tOptional);
+  };
 
   const feedOrder = useMemo(() => new Map(
     marketplaceCategories.map((category, index) => [normalizedCategory(category.id), index]),
@@ -201,13 +210,13 @@ const AppsView: React.FC<AppsViewProps> = ({
    * match every assigned category, so a multi-category app is reachable from
    * all of them. */
   const categoryGroups = useMemo(
-    () => collectCategoryGroups(marketplaceApps, app => app.category?.slice(0, 1) ?? [], labelByCategory, feedOrder),
-    [feedOrder, labelByCategory, marketplaceApps],
+    () => collectCategoryGroups(marketplaceApps, app => app.category?.slice(0, 1) ?? [], labelByCategory, feedOrder, t('category.other')),
+    [feedOrder, labelByCategory, marketplaceApps, t],
   );
 
   const categoryOptions = useMemo(
-    () => collectCategoryGroups(marketplaceApps, app => app.category ?? [], labelByCategory, feedOrder),
-    [feedOrder, labelByCategory, marketplaceApps],
+    () => collectCategoryGroups(marketplaceApps, app => app.category ?? [], labelByCategory, feedOrder, t('category.other')),
+    [feedOrder, labelByCategory, marketplaceApps, t],
   );
 
   useEffect(() => {
@@ -217,23 +226,23 @@ const AppsView: React.FC<AppsViewProps> = ({
   const categoryFilters = useMemo<CatalogFilterDefinition<string>[]>(() => [
     {
       id: ALL_APPS_SECTION,
-      label: 'All Apps',
+      label: t('filters.all'),
       description: marketplaceLoading
-        ? 'Loading directory'
+        ? t('filters.loading')
         : marketplaceError
-          ? 'Directory unavailable'
-          : 'Compatible clients and tools',
+          ? t('filters.unavailable')
+          : t('filters.compatible'),
       icon: 'globe',
       count: marketplaceLoading || marketplaceError ? undefined : marketplaceApps.length,
     },
     ...categoryOptions.map(group => ({
       id: categorySectionId(group.key),
       label: group.label,
-      description: appCountLabel(group.apps.length),
+      description: t('filters.count', { count: group.apps.length }),
       icon: categoryIcon(group.key),
       count: group.apps.length,
     })),
-  ], [categoryOptions, marketplaceApps.length, marketplaceError, marketplaceLoading]);
+  ], [categoryOptions, marketplaceApps.length, marketplaceError, marketplaceLoading, t]);
 
   const categoryBySection = useMemo(() => new Map(
     categoryOptions.map(group => [categorySectionId(group.key), group.key]),
@@ -254,8 +263,8 @@ const AppsView: React.FC<AppsViewProps> = ({
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const paneTitle = 'Apps Marketplace';
-  const paneSubtitle = 'Lemonade works best as the inference server for applications. Try out this curated list of apps!';
+  const paneTitle = t('title');
+  const paneSubtitle = t('subtitle');
 
   const showFeatured = !activeGroup && featuredApps.length > 0;
   const visibleGroups = (activeGroup ? [activeGroup] : categoryGroups)
@@ -278,12 +287,12 @@ const AppsView: React.FC<AppsViewProps> = ({
           )}
         </span>
       </header>
-      <p className="app-card__description">{app.description || 'No description available.'}</p>
+      <p className="app-card__description">{localizedMarketplaceDescription(app, tOptional) || t('card.noDescription')}</p>
       <footer className="app-card__footer">
-        <WorkspaceActionGroup className="app-card__actions" label={`Links for ${app.name}`}>
-          {app.links?.app && <WorkspaceActionButton appearance="secondary" size="small" icon="globe" onClick={() => openExternal(app.links?.app)}>Visit</WorkspaceActionButton>}
-          {app.links?.guide && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.guide)}>Guide</WorkspaceActionButton>}
-          {app.links?.video && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.video)}>Video</WorkspaceActionButton>}
+        <WorkspaceActionGroup className="app-card__actions" label={t('card.links', { name: app.name })}>
+          {app.links?.app && <WorkspaceActionButton appearance="secondary" size="small" icon="globe" onClick={() => openExternal(app.links?.app)}>{t('card.visit')}</WorkspaceActionButton>}
+          {app.links?.guide && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.guide)}>{t('card.guide')}</WorkspaceActionButton>}
+          {app.links?.video && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => openExternal(app.links?.video)}>{t('card.video')}</WorkspaceActionButton>}
         </WorkspaceActionGroup>
       </footer>
     </article>
@@ -294,10 +303,10 @@ const AppsView: React.FC<AppsViewProps> = ({
       view="apps"
       className="apps-workspace"
       panelId="apps-types-panel"
-      railTitle="Filters"
-      railLabel="App categories"
-      sidebarLabel="app categories"
-      mobileMenuLabel="Open app categories"
+      railTitle={t('filters.title')}
+      railLabel={t('filters.railLabel')}
+      sidebarLabel={t('filters.sidebarLabel')}
+      mobileMenuLabel={t('filters.mobileMenu')}
       filters={categoryFilters}
       activeFilter={activeCategorySection}
       onFilterChange={section => setCategoryFilter(categoryBySection.get(section) ?? null)}
@@ -311,15 +320,15 @@ const AppsView: React.FC<AppsViewProps> = ({
       }
     >
       {marketplaceLoading ? (
-        <div className="apps__empty" role="status">Loading apps...</div>
+        <div className="apps__empty" role="status">{t('loading')}</div>
       ) : marketplaceError ? (
-        <div className="apps__error" role="alert">Apps unavailable: {marketplaceError}</div>
+        <div className="apps__error" role="alert">{t('error', { error: displayMarketplaceError })}</div>
       ) : (
-        <div className="workspace-catalog" aria-label={`${paneTitle} directory`}>
+        <div className="workspace-catalog" aria-label={t('directory', { title: paneTitle })}>
           {showFeatured && (
             <WorkspaceCatalogSection
-              title="Featured"
-              description="Picks from the Lemonade team."
+              title={t('featured.title')}
+              description={t('featured.description')}
             >
               {featuredApps.map(renderAppCard)}
             </WorkspaceCatalogSection>
@@ -331,7 +340,7 @@ const AppsView: React.FC<AppsViewProps> = ({
           ))}
           {marketplaceApps.length === 0 && (
             <div className="apps__empty">
-              No apps are available yet.
+              {t('empty')}
             </div>
           )}
         </div>

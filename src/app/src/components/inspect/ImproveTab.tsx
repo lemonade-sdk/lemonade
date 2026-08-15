@@ -15,6 +15,7 @@ import {
   modelIsDownloaded,
 } from '../../features/chatDefaultModels';
 import { useServerModelState } from '../../features/models/modelState';
+import { useI18n } from '../../i18n';
 
 interface ImproveTabProps {
   selectedTrace: Trace;
@@ -55,6 +56,7 @@ function truncateText(text: string, maxChars: number): string {
 }
 
 export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
+  const { t } = useI18n('inspect');
   const serverModelState = useServerModelState();
   const availableModels = serverModelState.models?.data ?? api.allModels;
   const modelCatalogReady = serverModelState.models !== null || api.allModels.length > 0;
@@ -82,7 +84,7 @@ export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
     return QUALITY_DEFAULT_MODEL;
   }, [optimizerModels]);
   const [improveModel, setImproveModel] = useState('');
-  const [improveCritique, setImproveCritique] = useState('The response was too verbose and failed to strictly answer in the requested format.');
+  const [improveCritique, setImproveCritique] = useState(() => t('improve.defaultCritique'));
   const [improveOutput, setImproveOutput] = useState('');
   const [improveRunning, setImproveRunning] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -145,7 +147,7 @@ export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
 
   // Test modal states
   const [testModalOpen, setTestModalOpen] = useState(false);
-  const [testMessage, setTestMessage] = useState('Tell me a joke about compiler optimizations.');
+  const [testMessage, setTestMessage] = useState(() => t('improve.defaultTestMessage'));
   const [testSelectedModel, setTestSelectedModel] = useState('');
   const [testRunning, setTestRunning] = useState(false);
   const [testStreamingText, setTestStreamingText] = useState('');
@@ -221,7 +223,7 @@ export default function ImproveTab({ selectedTrace }: ImproveTabProps) {
     setActiveSubTab('optimization');
     setTestModalOpen(false);
     setWhatChangedModalOpen(false);
-    setTestMessage('Tell me a joke about compiler optimizations.');
+    setTestMessage(t('improve.defaultTestMessage'));
     setTestSelectedModel('');
     setTestRunning(false);
     setTestStreamingText('');
@@ -794,7 +796,7 @@ ${truncatedOutput}
       });
       inspectStore.setState({ traces: updatedTraces });
 
-      inspectStore.showToast('Prompt analysis complete');
+      inspectStore.showToast({ code: 'prompt_analysis_complete' });
     } catch (e: any) {
       if (controller.signal.aborted || e?.name === 'AbortError') return;
       console.error('Prompt optimizer execution failed:', e);
@@ -802,9 +804,9 @@ ${truncatedOutput}
         setImproveOutput(response);
       }
       if (e.message?.toLowerCase().includes('exceeds') || e.message?.toLowerCase().includes('context size') || e.message?.toLowerCase().includes('400')) {
-        setImproveError(`Context window exceeded: The trace history (prompts/outputs) is too large (400 Bad Request: ${e.message}). We have applied additional text truncation, but you may need to reduce your critique length, select a model with a larger context window, or increase the model's context size setting (e.g., n_ctx) in Lemonade's backend configuration.`);
+        setImproveError(t('improve.errors.contextExceededAnalysis', { message: e.message }));
       } else {
-        setImproveError(`Failed to execute prompt analysis: ${e.message}`);
+        setImproveError(t('improve.errors.analysisFailed', { message: e.message }));
       }
       setImproveParsedData(null);
       setWhatChangedModalOpen(true);
@@ -820,8 +822,8 @@ ${truncatedOutput}
   const handleRunTest = async () => {
     saveEditsToStore();
     if (!testSelectedModel) {
-      setTestValidationError('Please select a model for testing');
-      inspectStore.showToast('Please select a model for testing');
+      setTestValidationError(t('improve.errors.selectTestModel'));
+      inspectStore.showToast({ code: 'select_test_model' });
       return;
     }
     setTestRunning(true);
@@ -864,13 +866,13 @@ ${truncatedOutput}
             elapsed: Math.round(performance.now() - startTime),
           });
           setTestRunning(false);
-          inspectStore.showToast('Test execution completed');
+          inspectStore.showToast({ code: 'test_execution_completed' });
         },
         onError: (err) => {
           console.error(err);
           const errMsg = err?.message || String(err);
           if (errMsg.toLowerCase().includes('exceeds') || errMsg.toLowerCase().includes('context size') || errMsg.toLowerCase().includes('400')) {
-            setTestError(`Context Window Exceeded: ${errMsg}. Tip: Reduce prompt length or increase n_ctx in local model parameter settings.`);
+            setTestError(t('improve.errors.contextExceededTest', { message: errMsg }));
           } else {
             setTestError(errMsg);
           }
@@ -942,7 +944,7 @@ ${truncatedOutput}
       {/* Search selection bar & critique query */}
       <div className="improve-inputs-grid">
         <ModelSearchSelector
-          label="Select LLM Optimizer"
+          label={t('improve.selectOptimizer')}
           value={improveModel}
           onChange={setImproveModel}
           availableModels={optimizerModels}
@@ -950,13 +952,13 @@ ${truncatedOutput}
         />
 
         <div className="flex-col gap-4">
-          <label className="input-label" htmlFor="improve-critique-input">Critique / Desired Behavior</label>
+          <label className="input-label" htmlFor="improve-critique-input">{t('improve.critiqueLabel')}</label>
           <input
             id="improve-critique-input"
             type="text"
             value={improveCritique}
             onChange={(e) => setImproveCritique(e.target.value)}
-            placeholder="Describe the failure mode or what to fix..."
+            placeholder={t('improve.critiquePlaceholder')}
             className="critique-input-control"
           />
         </div>
@@ -968,7 +970,7 @@ ${truncatedOutput}
           className="preview-toggle-btn"
           onClick={() => setPreviewOpen(true)}
         >
-          Show Meta-Prompt Payload Details
+          {t('improve.showPayload')}
         </button>
 
         <button
@@ -978,7 +980,7 @@ ${truncatedOutput}
           onClick={handleRunImprovement}
           style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}
         >
-          {improveRunning ? 'Analyzing...' : <><span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 'var(--space-1.5)' }}><Icon name="omni" size={14} /></span>Analyze and Optimize Prompt</>}
+          {improveRunning ? t('improve.analyzing') : <><span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 'var(--space-1.5)' }}><Icon name="omni" size={14} /></span>{t('improve.analyze')}</>}
         </button>
       </div>
 
@@ -986,7 +988,7 @@ ${truncatedOutput}
       <Modal
         isOpen={previewOpen}
         onClose={() => setPreviewOpen(false)}
-        title="Meta-Prompt Payload Details"
+        title={t('improve.payloadTitle')}
         maxWidth="640px"
       >
         <div className="inspect-modal-body">
@@ -998,14 +1000,14 @@ ${truncatedOutput}
             className="inspect-footer-btn outline"
             onClick={() => copyMetaPrompt(generatedMetaPayload)}
           >
-            ⧉ Copy Payload
+            {t('improve.copyPayload')}
           </button>
           <button
             type="button"
             className="inspect-footer-btn outline"
             onClick={() => setPreviewOpen(false)}
           >
-            Close
+            {t('common.close')}
           </button>
         </div>
       </Modal>
@@ -1014,7 +1016,7 @@ ${truncatedOutput}
       <Modal
         isOpen={improveRunning}
         onClose={handleCancelImprovement}
-        title="Analyzing & Optimizing Prompt"
+        title={t('improve.analyzingTitle')}
         ariaLabelledBy="unified-modal-title"
         maxWidth="640px"
       >
@@ -1024,9 +1026,9 @@ ${truncatedOutput}
           style={{ padding: 'var(--space-3)', height: '480px', maxHeight: '480px', overflowY: 'auto' }}
         >
           <div className="flex-row justify-between align-center" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
-            <span className="input-label" style={{ color: 'var(--accent)', fontWeight: 'var(--weight-bold)' }}>Streaming live analysis...</span>
+            <span className="input-label" style={{ color: 'var(--accent)', fontWeight: 'var(--weight-bold)' }}>{t('improve.streamingAnalysis')}</span>
             <span className="replay-loading" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-              Generating tokens...
+              {t('create.generatingTokens')}
             </span>
           </div>
 
@@ -1034,7 +1036,7 @@ ${truncatedOutput}
             <div className="reasoning-block" style={{ marginBottom: 'var(--space-3)' }}>
               <div className="reasoning-block__header" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1.5)', fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 'var(--space-1)' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--accent)' }}><Icon name="omni" size={12} /></span>
-                <span>Reasoning Process</span>
+                <span>{t('common.reasoning')}</span>
               </div>
               <div className="reasoning-block__body" style={{ fontStyle: 'italic', opacity: 0.8, fontSize: 'var(--text-xs)', padding: 'var(--space-2) var(--space-3)', background: 'var(--surface-2)', borderRadius: 'var(--radius-sm)', borderLeft: '2px solid var(--accent)', whiteSpace: 'pre-wrap' }}>
                 {improveStreamingReasoning}
@@ -1043,12 +1045,12 @@ ${truncatedOutput}
           )}
 
           <div className="comparison-output-box streaming" ref={improveOutputBoxRef} style={{ height: '300px', overflowY: 'auto', fontFamily: 'var(--font-mono, monospace)', fontSize: 'var(--text-xs)' }}>
-            {improveStreamingText || <span style={{ opacity: 0.5 }}>Waiting for first token...</span>}
+            {improveStreamingText || <span style={{ opacity: 0.5 }}>{t('common.waitingFirstToken')}</span>}
             <span className="cursor-blink">|</span>
           </div>
         </div>
         <div className="inspect-modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-subtle)', paddingTop: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
-          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-disabled)' }}>Please wait while optimization runs...</span>
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-disabled)' }}>{t('improve.pleaseWait')}</span>
         </div>
       </Modal>
 
@@ -1059,29 +1061,29 @@ ${truncatedOutput}
           setImproveError(null);
           setWhatChangedModalOpen(false);
         }}
-        title="Prompt Optimization Failed"
+        title={t('improve.failedTitle')}
         ariaLabelledBy="unified-modal-title"
         maxWidth="640px"
       >
         <div className="inspect-modal-body flex-col gap-14" style={{ height: '480px', maxHeight: '480px', overflowY: 'auto', padding: 'var(--space-4)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--danger)', marginBottom: 'var(--space-1)' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--danger)' }}><Icon name="alert" size={24} /></span>
-            <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>The optimization model failed to generate compliant JSON suggestions.</strong>
+            <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{t('improve.failedDescription')}</strong>
           </div>
 
           <div style={{ background: 'var(--surface-2)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-            <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase', display: 'block', marginBottom: 'var(--space-1.5)' }}>Error Details</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase', display: 'block', marginBottom: 'var(--space-1.5)' }}>{t('improve.errorDetails')}</span>
             <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-primary)', lineHeight: '1.5', fontFamily: 'var(--font-mono, monospace)', whiteSpace: 'pre-wrap' }}>
               {improveError}
             </p>
           </div>
 
           <div style={{ background: 'var(--surface-base)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-            <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Recommended Actions</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>{t('improve.recommendedActions')}</span>
             <ul style={{ margin: 0, paddingLeft: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1.5)' }}>
-              <li><strong>Use a larger model</strong>: Select a model with stronger schema compliance and reasoning.</li>
-              <li><strong>Reduce context length</strong>: The telemetry trace data might be too long. Try selecting a shorter trace to optimize.</li>
-              <li><strong>Adjust server parameters</strong>: Ensure the backend model loaded has a sufficient context limit (<code>n_ctx</code>).</li>
+              <li><strong>{t('improve.useLargerModel')}</strong>{t('improve.useLargerModelHint')}</li>
+              <li><strong>{t('improve.reduceContext')}</strong>{t('improve.reduceContextHint')}</li>
+              <li><strong>{t('improve.adjustServer')}</strong>{t('improve.adjustServerHint')} (<code>n_ctx</code>).</li>
             </ul>
           </div>
         </div>
@@ -1095,7 +1097,7 @@ ${truncatedOutput}
               setWhatChangedModalOpen(false);
             }}
           >
-            Close
+            {t('common.close')}
           </button>
         </div>
       </Modal>
@@ -1104,7 +1106,7 @@ ${truncatedOutput}
       <Modal
         isOpen={!improveRunning && whatChangedModalOpen && !!improveParsedData}
         onClose={() => setWhatChangedModalOpen(false)}
-        title="Prompt Optimization Delta"
+        title={t('improve.deltaTitle')}
         ariaLabelledBy="unified-modal-title"
         maxWidth="640px"
       >
@@ -1115,7 +1117,7 @@ ${truncatedOutput}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 'var(--space-3)' }}>
                 {/* Metric 1: System Instructions Chars */}
                 <div style={{ background: 'var(--surface-2)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                  <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase' }}>System Instructions</span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase' }}>{t('improve.systemInstructions')}</span>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', marginTop: 'var(--space-1)' }}>
                     {(() => {
                       const origSysLength = (originalSystemPrompt || '').length;
@@ -1137,7 +1139,7 @@ ${truncatedOutput}
 
                 {/* Metric 2: Temperature */}
                 <div style={{ background: 'var(--surface-2)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                  <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Temperature</span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: 'bold', textTransform: 'uppercase' }}>{t('replay.temperature')}</span>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', marginTop: 'var(--space-1)' }}>
                     <span style={{ color: 'var(--text-secondary)' }}>{(selectedTrace.temp ?? 0.7).toFixed(2)}</span>
                     <span style={{ margin: '0 var(--space-1.5)', color: 'var(--text-tertiary)' }}>→</span>
@@ -1150,7 +1152,7 @@ ${truncatedOutput}
 
               {/* Key Improvements Checklist */}
               <div className="flex-col gap-6" style={{ marginTop: 'var(--space-2)' }}>
-                <span className="input-label" style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Key Improvements</span>
+                <span className="input-label" style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>{t('improve.keyImprovements')}</span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                   {improveParsedData.key_improvements && improveParsedData.key_improvements.map((improvement, index) => (
                     <div
@@ -1176,7 +1178,7 @@ ${truncatedOutput}
 
               {/* Summary / Config Details Section */}
               <div className="flex-col gap-6" style={{ marginTop: 'var(--space-2)' }}>
-                <span className="input-label" style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Configuration Summary</span>
+                <span className="input-label" style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>{t('improve.configSummary')}</span>
                 <div
                   style={{
                     display: 'flex',
@@ -1189,16 +1191,16 @@ ${truncatedOutput}
                   }}
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                    <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'bold', color: 'var(--text-primary)' }}>System-vs-User Split Suggestion</span>
+                    <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'bold', color: 'var(--text-primary)' }}>{t('improve.splitSuggestion')}</span>
                     <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
                       {improveParsedData.parameter_diff.system_vs_user_split
-                        ? 'Migrating instructions into system context is recommended for better adherence and safety.'
-                        : 'Current structural separation is optimal.'}
+                        ? t('improve.migrateRecommended')
+                        : t('improve.currentSeparationOptimal')}
                     </span>
                   </div>
 
                   <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 'var(--space-2.5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                    <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'bold', color: 'var(--text-primary)' }}>Temperature Tuning Rationale</span>
+                    <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'bold', color: 'var(--text-primary)' }}>{t('improve.temperatureRationale')}</span>
                     <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: '1.4' }}>
                       {improveParsedData.parameter_diff.temperature.rationale}
                     </span>
@@ -1213,7 +1215,7 @@ ${truncatedOutput}
                 className="inspect-footer-btn outline"
                 onClick={() => setWhatChangedModalOpen(false)}
               >
-                Close
+                {t('common.close')}
               </button>
             </div>
           </>
@@ -1228,21 +1230,21 @@ ${truncatedOutput}
                 className={`detail-tab ${activeSubTab === 'optimization' ? 'active' : ''}`}
                 onClick={() => setActiveSubTab('optimization')}
               >
-                Prompt
+                {t('improve.tabs.prompt')}
               </button>
               <button
                 type="button"
                 className={`detail-tab ${activeSubTab === 'critiques' ? 'active' : ''}`}
                 onClick={() => setActiveSubTab('critiques')}
               >
-                Feedback
+                {t('improve.tabs.feedback')}
               </button>
               <button
                 type="button"
                 className={`detail-tab ${activeSubTab === 'config' ? 'active' : ''}`}
                 onClick={() => setActiveSubTab('config')}
               >
-                Config
+                {t('improve.tabs.config')}
               </button>
               {selectedTrace.improveRawOutput && (
                 <button
@@ -1250,7 +1252,7 @@ ${truncatedOutput}
                   className={`detail-tab ${activeSubTab === 'raw-output' ? 'active' : ''}`}
                   onClick={() => setActiveSubTab('raw-output')}
                 >
-                  Raw Response
+                  {t('improve.tabs.raw')}
                 </button>
               )}
             </div>
@@ -1260,7 +1262,7 @@ ${truncatedOutput}
               onClick={() => setWhatChangedModalOpen(true)}
               style={{ display: 'flex', alignItems: 'center', height: '28px', padding: '0 var(--space-2)', fontSize: 'var(--text-xs)' }}
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 'var(--space-1)' }}><Icon name="info" size={12} /></span> What Changed?
+              <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 'var(--space-1)' }}><Icon name="info" size={12} /></span> {t('improve.whatChanged')}
             </button>
           </div>
 
@@ -1272,7 +1274,7 @@ ${truncatedOutput}
                   {/* Grouped Critique Ledger categories vertically stacked */}
                   {Object.keys(groupedCritiques).length === 0 ? (
                     <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', padding: 'var(--space-4)', textAlign: 'center' }}>
-                      No critiques generated.
+                      {t('improve.noCritiques')}
                     </div>
                   ) : (
                     Object.keys(groupedCritiques).map((cat) => (
@@ -1300,7 +1302,7 @@ ${truncatedOutput}
                                   <span className="critique-finding">{crit.finding}</span>
                                   <span style={{ marginLeft: 'auto', fontSize: 'var(--text-xs)', color: 'var(--text-disabled)', display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}>
                                     <Icon name={isExpanded ? 'chevron-up' : 'chevron-down'} size={12} />
-                                    {isExpanded ? 'Collapse' : 'Expand Rationale'}
+                                    {t(isExpanded ? 'improve.collapse' : 'improve.expandRationale')}
                                   </span>
                                 </div>
                                 {isExpanded && (
@@ -1308,7 +1310,7 @@ ${truncatedOutput}
                                     className={`critique-rationale ${crit.severity}`}
                                     onClick={(e) => e.stopPropagation()}
                                   >
-                                    <strong>Trace Delta Reasoning:</strong> {crit.rationale}
+                                    <strong>{t('improve.traceDeltaReasoning')}</strong> {crit.rationale}
                                   </div>
                                 )}
                               </div>
@@ -1326,12 +1328,12 @@ ${truncatedOutput}
                   <div className="diff-columns">
                     {/* Left Viewport: Immutable original prompt */}
                     <div className="diff-col">
-                      <h5 style={{ height: '24px', display: 'flex', alignItems: 'center', margin: 0 }}>Original Prompt (Read-only)</h5>
+                      <h5 style={{ height: '24px', display: 'flex', alignItems: 'center', margin: 0 }}>{t('improve.originalPrompt')}</h5>
                       <div ref={leftBoxRef} onScroll={handleLeftScroll} className="diff-box" style={{ background: 'var(--surface-base)', opacity: 0.85, marginTop: 'var(--space-1.5)' }}>
                         <textarea
                           readOnly
                           value={originalSystemPrompt}
-                          placeholder="No system instructions..."
+                          placeholder={t('improve.noSystemInstructions')}
                           style={{ width: '100%', height: '100%', resize: 'none' }}
                         />
                       </div>
@@ -1340,7 +1342,7 @@ ${truncatedOutput}
                     {/* Right Viewport: Optimized Prompt (Editable) */}
                     <div className="diff-col">
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '24px' }}>
-                        <h5 style={{ margin: 0 }}>Optimized Prompt (Editable)</h5>
+                        <h5 style={{ margin: 0 }}>{t('improve.optimizedPrompt')}</h5>
                         <div className="diff-actions" style={{ margin: 0, display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
                           <button
                             type="button"
@@ -1349,7 +1351,7 @@ ${truncatedOutput}
                             onClick={() => setTestModalOpen(true)}
                             style={{ display: 'flex', alignItems: 'center', height: '20px', padding: '0 var(--space-2)', fontSize: '10px' }}
                           >
-                            Test
+                            {t('improve.test')}
                           </button>
                           <button
                             type="button"
@@ -1357,7 +1359,7 @@ ${truncatedOutput}
                             onClick={() => handleCopyText(editedSystemPrompt, 'system')}
                             style={{ height: '20px', padding: '0 var(--space-2)', fontSize: '10px' }}
                           >
-                            {copiedSystem ? '✓ Copied!' : 'Copy'}
+                            {copiedSystem ? t('improve.copied') : t('improve.copy')}
                           </button>
                         </div>
                       </div>
@@ -1366,7 +1368,7 @@ ${truncatedOutput}
                           value={editedSystemPrompt}
                           onChange={(e) => setEditedSystemPrompt(e.target.value)}
                           onBlur={() => saveEditsToStore()}
-                          placeholder="Add system prompt instructions..."
+                          placeholder={t('improve.addSystemInstructions')}
                           style={{ width: '100%', height: '100%', resize: 'none' }}
                         />
                       </div>
@@ -1378,25 +1380,25 @@ ${truncatedOutput}
               {activeSubTab === 'config' && (
                 <div className="config-workspace flex-col gap-14" style={{ padding: 'var(--space-4)', background: 'var(--surface-1)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
                   <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-3)' }}>
-                    <h4 style={{ margin: 0, fontSize: 'var(--text-sm)', fontWeight: 'var(--weight-bold)', color: 'var(--text-primary)' }}>Configuration Tuning & Parameter Recommendations</h4>
-                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Adjust parameters and architectural boundaries suggested by the prompt optimization models.</p>
+                    <h4 style={{ margin: 0, fontSize: 'var(--text-sm)', fontWeight: 'var(--weight-bold)', color: 'var(--text-primary)' }}>{t('improve.tuningTitle')}</h4>
+                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t('improve.tuningDescription')}</p>
                   </div>
 
                   {/* System-vs-User Split Card */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', padding: 'var(--space-3)', background: 'var(--surface-base)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 'var(--weight-semibold)' }}>System-vs-User Content Split</span>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 'var(--weight-semibold)' }}>{t('improve.splitTitle')}</span>
                     {improveParsedData.parameter_diff.system_vs_user_split ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1.5)' }}>
                          <div className="attention-badge" style={{ display: 'inline-flex', alignItems: 'center', width: 'fit-content', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger, #f87171)', padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: '10px', fontWeight: 'bold' }}>
-                           <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 'var(--space-1)' }}><Icon name="alert" size={12} /></span> Separation Enforced
+                           <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 'var(--space-1)' }}><Icon name="alert" size={12} /></span> {t('improve.separationEnforced')}
                          </div>
                          <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                           The optimizer suggests isolating prompt variables/user inputs into distinct system instructions to minimize leakage and maximize instruction adherence.
+                           {t('improve.separationHint')}
                          </p>
                       </div>
                     ) : (
                       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                        Separation patterns optimal. No splitting/migration required.
+                        {t('improve.separationOptimal')}
                       </span>
                     )}
                   </div>
@@ -1404,7 +1406,7 @@ ${truncatedOutput}
                   {/* Temperature Card */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-3)', background: 'var(--surface-base)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 'var(--weight-semibold)' }}>Temperature Optimization</span>
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 'var(--weight-semibold)' }}>{t('improve.temperatureOptimization')}</span>
                       <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--accent)' }}>{sliderTemp.toFixed(2)}</strong>
                     </div>
                     <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
@@ -1424,11 +1426,11 @@ ${truncatedOutput}
                       />
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-tertiary)' }}>
-                      <span>Original: {selectedTrace.temp ?? 0.7}</span>
-                      <span>Suggested: {improveParsedData.parameter_diff.temperature.suggested.toFixed(2)}</span>
+                      <span>{t('improve.original')}: {selectedTrace.temp ?? 0.7}</span>
+                      <span>{t('improve.suggested')}: {improveParsedData.parameter_diff.temperature.suggested.toFixed(2)}</span>
                     </div>
                     <div style={{ borderLeft: '2px solid var(--accent)', paddingLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontStyle: 'italic', marginTop: 'var(--space-1)' }}>
-                      <strong>Tuning Rationale:</strong> {improveParsedData.parameter_diff.temperature.rationale}
+                      <strong>{t('improve.tuningRationale')}:</strong> {improveParsedData.parameter_diff.temperature.rationale}
                     </div>
                   </div>
                 </div>
@@ -1437,8 +1439,8 @@ ${truncatedOutput}
               {activeSubTab === 'raw-output' && (
                 <div className="raw-response-workspace" style={{ padding: 'var(--space-4)', background: 'var(--surface-1)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, boxSizing: 'border-box' }}>
                   <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
-                    <h4 style={{ margin: 0, fontSize: 'var(--text-sm)', fontWeight: 'var(--weight-bold)', color: 'var(--text-primary)' }}>Raw Optimization Response</h4>
-                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Full completion payload returned by the LLM prompt optimizer.</p>
+                    <h4 style={{ margin: 0, fontSize: 'var(--text-sm)', fontWeight: 'var(--weight-bold)', color: 'var(--text-primary)' }}>{t('improve.rawTitle')}</h4>
+                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{t('improve.rawDescription')}</p>
                   </div>
                   <div className="raw-response-markdown" style={{ padding: 'var(--space-3)', background: 'var(--surface-base)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', flex: 1, overflowY: 'auto', minHeight: 0 }} onClick={(e) => e.stopPropagation()}>
                     <MarkdownMessage content={selectedTrace.improveRawOutput || ''} />
@@ -1454,7 +1456,7 @@ ${truncatedOutput}
       {/* Fallback to simple suggestions if improveParsedData is empty but improveOutput has content */}
       {!improveRunning && !improveError && !improveParsedData && improveOutput && (
         <div className="improvement-results-panel">
-          <h4 style={{ margin: 0 }}>Raw Response Suggestions</h4>
+          <h4 style={{ margin: 0 }}>{t('improve.rawSuggestions')}</h4>
           <div style={{ whiteSpace: 'pre-wrap', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', padding: 'var(--space-3)', background: 'var(--surface-1)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)' }}>
             {improveOutput}
           </div>
@@ -1463,7 +1465,7 @@ ${truncatedOutput}
             className="improve-btn outline"
             onClick={() => copySuggestions(improveOutput)}
           >
-            Copy Suggestions
+            {t('improve.copySuggestions')}
           </button>
         </div>
       )}
@@ -1472,7 +1474,7 @@ ${truncatedOutput}
       <Modal
         isOpen={testModalOpen}
         onClose={() => setTestModalOpen(false)}
-        title="Test Optimized Prompt"
+        title={t('improve.testTitle')}
         ariaLabelledBy="test-modal-title"
         maxWidth="640px"
       >
@@ -1480,7 +1482,7 @@ ${truncatedOutput}
           {!testRunning && !testStreamingText && !testError ? (
             <>
               <ModelSearchSelector
-                label="Select Test Model"
+                label={t('improve.selectTestModel')}
                 value={testSelectedModel}
                 onChange={setTestSelectedModel}
                 availableModels={availableModels}
@@ -1488,7 +1490,7 @@ ${truncatedOutput}
 
               {!availableModels || availableModels.length === 0 ? (
                 <div style={{ color: 'var(--danger)', fontSize: 'var(--text-xs)', marginTop: '-8px' }}>
-                  No models available. Please pull or install a model first.
+                  {t('create.noModels')}
                 </div>
               ) : testValidationError ? (
                 <div style={{ color: 'var(--danger)', fontSize: 'var(--text-xs)', marginTop: '-8px' }}>
@@ -1497,12 +1499,12 @@ ${truncatedOutput}
               ) : null}
 
               <div className="flex-col gap-4">
-                <label className="input-label" htmlFor="test-message-input">Test Input Message</label>
+                <label className="input-label" htmlFor="test-message-input">{t('improve.testInput')}</label>
                 <textarea
                   id="test-message-input"
                   value={testMessage}
                   onChange={(e) => setTestMessage(e.target.value)}
-                  placeholder="Type a test query to send with your optimized prompts..."
+                  placeholder={t('improve.testInputPlaceholder')}
                   rows={5}
                   className="system-prompt-textarea"
                   style={{ width: '100%' }}
@@ -1512,17 +1514,17 @@ ${truncatedOutput}
           ) : (
             <div className="flex-col gap-12" style={{ padding: 'var(--space-2)' }}>
               <div className="flex-col gap-4" style={{ background: 'var(--surface-2)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                <span className="input-label" style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>TEST INPUT QUERY</span>
+                <span className="input-label" style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{t('improve.testInputQuery')}</span>
                 <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>{testMessage}</p>
               </div>
 
               <div className="flex-row justify-between align-center" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span className="input-label" style={{ color: 'var(--accent)' }}>
-                  {testRunning ? 'Streaming live response...' : 'Execution complete'}
+                  {testRunning ? t('create.streamingResponse') : t('improve.executionComplete')}
                 </span>
                 {testRunning && (
                   <span className="replay-loading" style={{ fontSize: 'var(--text-xs)' }}>
-                    Generating tokens...
+                    {t('create.generatingTokens')}
                   </span>
                 )}
               </div>
@@ -1538,7 +1540,7 @@ ${truncatedOutput}
                     ) : '—'}
                   </span>
                   <span className="iteration-metric-pill">
-                    Throughput: {testStats.tps ? (
+                    {t('improve.throughput')}: {testStats.tps ? (
                       <>
                         {testStats.tps.toFixed(1)}
                         <span className="metric-card__unit"> tok/s</span>
@@ -1547,7 +1549,7 @@ ${truncatedOutput}
                   </span>
                   {testStats.elapsed && (
                     <span className="iteration-metric-pill">
-                      Duration: {testStats.elapsed.toFixed(1)}
+                      {t('improve.duration')}: {testStats.elapsed.toFixed(1)}
                       <span className="metric-card__unit"> ms</span>
                     </span>
                   )}
@@ -1563,7 +1565,7 @@ ${truncatedOutput}
               {testStreamingReasoning && (
                 <div className="reasoning-block" style={{ marginBottom: 'var(--space-2)' }}>
                   <div className="reasoning-block__header">
-                    <span>Reasoning Process</span>
+                    <span>{t('common.reasoning')}</span>
                   </div>
                   <div className="reasoning-block__body" style={{ fontStyle: 'italic', opacity: 0.8 }}>
                     {testStreamingReasoning}
@@ -1572,7 +1574,7 @@ ${truncatedOutput}
               )}
 
               <div ref={testOutputBoxRef} className="comparison-output-box streaming">
-                {testStreamingText || <span style={{ opacity: 0.5 }}>Waiting for first token...</span>}
+                {testStreamingText || <span style={{ opacity: 0.5 }}>{t('common.waitingFirstToken')}</span>}
                 {testRunning && <span className="cursor-blink">|</span>}
               </div>
             </div>
@@ -1592,7 +1594,7 @@ ${truncatedOutput}
               }}
               style={{ marginRight: 'auto' }}
             >
-              Test Again
+              {t('improve.testAgain')}
             </button>
           )}
 
@@ -1602,7 +1604,7 @@ ${truncatedOutput}
               className="inspect-footer-btn primary"
               onClick={handleRunTest}
             >
-              Send
+              {t('improve.send')}
             </button>
           ) : null}
 
@@ -1612,7 +1614,7 @@ ${truncatedOutput}
             onClick={() => setTestModalOpen(false)}
             disabled={testRunning}
           >
-            Close
+            {t('common.close')}
           </button>
         </div>
       </Modal>

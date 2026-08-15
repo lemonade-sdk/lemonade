@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState } from 'react';
 import { type Trace, inspectStore } from '../../inspectStore';
 import { Icon, type CapabilityIconTarget } from '../Icon';
 import WorkspaceRailHeader from '../WorkspaceRailHeader';
+import { useI18n } from '../../i18n';
+import { traceDiagnosticText, traceStatusLabel } from './tracePresentation';
 import {
   WorkspaceActionButton,
   WorkspaceList,
@@ -26,11 +28,11 @@ interface TraceListProps {
 }
 
 const TRACE_FILTERS = [
-  ['All', 'All', 'globe', 'var(--text-tertiary)'],
-  ['LLM', 'LLM', 'chat', 'var(--cap-chat)'],
-  ['EMBEDDING', 'Embed', 'embedding', 'var(--cap-embedding)'],
-  ['RERANKER', 'Rerank', 'reranking', 'var(--cap-reranking)'],
-  ['Errors', 'Errors', 'alert', 'var(--danger)'],
+  ['All', 'traces.filters.all', 'globe', 'var(--text-tertiary)'],
+  ['LLM', 'traces.filters.llm', 'chat', 'var(--cap-chat)'],
+  ['EMBEDDING', 'traces.filters.embedding', 'embedding', 'var(--cap-embedding)'],
+  ['RERANKER', 'traces.filters.reranker', 'reranking', 'var(--cap-reranking)'],
+  ['Errors', 'traces.filters.errors', 'alert', 'var(--danger)'],
 ] as const;
 
 const TRACE_KIND_CAPABILITY: Record<Trace['kind'], CapabilityIconTarget> = {
@@ -47,16 +49,6 @@ const TRACE_STATUS: Record<Trace['status'], WorkspaceListRowStatus | undefined> 
   error: 'error',
 };
 
-export function getRelativeTimeAgo(startTimeMs: number): string {
-  const diffSeconds = Math.max(0, Math.floor((Date.now() - startTimeMs) / 1000));
-  if (diffSeconds < 5) return 'Just now';
-  if (diffSeconds < 60) return `${diffSeconds}s ago`;
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
-  const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return new Date(startTimeMs).toLocaleDateString();
-}
 
 export default function TraceList({
   traces,
@@ -73,6 +65,7 @@ export default function TraceList({
   onToggleCollapsed,
   embedded = false,
 }: TraceListProps) {
+  const { t: tr, formatRelativeTime } = useI18n('inspect');
   const listboxRef = useRef<HTMLUListElement>(null);
   const [activeTraceId, setActiveTraceId] = useState<string | null>(selectedTraceId);
 
@@ -103,23 +96,23 @@ export default function TraceList({
   };
 
   const getBadgeLabel = () => {
-    if (!capturing) return 'Paused';
-    if (captureReady === 'connecting') return 'Connecting...';
-    if (captureReady === 'unsupported') return 'Unsupported';
-    return `Capturing · ${traces.length}`;
+    if (!capturing) return tr('traces.capture.paused');
+    if (captureReady === 'connecting') return tr('traces.capture.connecting');
+    if (captureReady === 'unsupported') return tr('traces.capture.unsupported');
+    return tr('traces.capture.capturing', { count: traces.length });
   };
 
   return (
     <div className={`inspect-rail ${embedded ? 'monitor-subpanel' : 'workspace-rail'}${collapsed ? ' is-collapsed' : ''}`}>
       {embedded ? (
         <header className="monitor-subpanel__header">
-          <h2>Request history</h2>
-          <p>{filteredTraces.length} of {traces.length} captured</p>
+          <h2>{tr('traces.history')}</h2>
+          <p>{tr('traces.capturedCount', { filtered: filteredTraces.length, total: traces.length })}</p>
         </header>
       ) : (
         <WorkspaceRailHeader
-          title="Requests"
-          sidebarLabel="request history"
+          title={tr('traces.requests')}
+          sidebarLabel={tr('traces.sidebar')}
           purpose="history"
           collapsed={collapsed}
           onToggle={onToggleCollapsed}
@@ -128,8 +121,8 @@ export default function TraceList({
       <div className="inspect-rail__controls">
         <div className="inspect-rail__capture-group-row">
           <div className="inspect-rail__capture-label-group">
-            <span className="inspect-rail__capture-label">Auto-capture inferences</span>
-            <span className="inspect-rail__capture-sublabel">Enables OTel on demand, with no server-side storage</span>
+            <span className="inspect-rail__capture-label">{tr('traces.capture.label')}</span>
+            <span className="inspect-rail__capture-sublabel">{tr('traces.capture.hint')}</span>
             <span className={`capture-badge ${getBadgeClass()}`}>
               <span className="capture-badge__dot"></span>
               {getBadgeLabel()}
@@ -141,7 +134,7 @@ export default function TraceList({
             aria-checked={capturing}
             className={`switch-control ${capturing ? 'active' : ''}`}
             onClick={() => inspectStore.toggleCapture()}
-            aria-label="Toggle auto-capture"
+            aria-label={tr('traces.capture.toggle')}
           >
             <span className="switch-control__thumb"></span>
           </button>
@@ -150,17 +143,17 @@ export default function TraceList({
         <div className="inspect-rail__search-row">
           <input
             type="text"
-            placeholder="Search model, trace ID, content..."
+            placeholder={tr('traces.search')}
             value={searchQuery}
             onChange={(e) => inspectStore.setSearchQuery(e.target.value)}
-            aria-label="Search traces"
+            aria-label={tr('traces.searchAria')}
             className="inspect-search-input"
           />
         </div>
 
         <nav
           className="model-nav-rail__chip-list"
-          aria-label="Request filters"
+          aria-label={tr('traces.filtersAria')}
         >
           {TRACE_FILTERS.map(([kind, label, icon, color]) => {
             const active = filterKind === kind;
@@ -179,7 +172,7 @@ export default function TraceList({
                   size={13}
                   className="model-nav-rail__task-icon"
                 />
-                <span>{label}</span>
+                <span>{tr(label)}</span>
               </button>
             );
           })}
@@ -192,9 +185,9 @@ export default function TraceList({
             <span className="inspect-empty-state__glyph">
               <Icon name="search-check" size={32} />
             </span>
-            <p>No captured requests yet</p>
+            <p>{tr('traces.empty')}</p>
             <span className="inspect-empty-state__hint">
-              Run prompts in the Chat view to capture live requests here.
+              {tr('traces.emptyHint')}
             </span>
           </div>
         </div>
@@ -202,13 +195,14 @@ export default function TraceList({
         <WorkspaceList
           listRef={listboxRef}
           className="inspect-rail__list"
-          label="Trace runs"
+          label={tr('traces.listAria')}
           tabIndex={-1}
           onRowFocus={setActiveTraceId}
           onRowActivate={id => inspectStore.selectTrace(id)}
         >
           {filteredTraces.map((t) => {
-            const statusLabel = t.status === 'ok' ? 'OK' : t.status.charAt(0).toUpperCase() + t.status.slice(1);
+            const statusLabel = traceStatusLabel(t.status, tr);
+            const diagnosticText = traceDiagnosticText(t.diag, t.dur, tr);
             const durationFormatted = t.kind === 'LLM'
               ? (t.ttft ? `${Math.round(t.ttft)}ms` : '—')
               : `${t.dur}ms`;
@@ -216,7 +210,12 @@ export default function TraceList({
               ? formatTokens(t.completion ?? 0)
               : formatTokens(t.prompt ?? 0);
 
-            const timeStr = getRelativeTimeAgo(t.startTimeMs);
+            const diffSeconds = Math.max(0, Math.floor((Date.now() - t.startTimeMs) / 1000));
+            const timeStr = diffSeconds < 60
+              ? formatRelativeTime(-diffSeconds, 'second', { numeric: 'auto' })
+              : diffSeconds < 3600
+                ? formatRelativeTime(-Math.floor(diffSeconds / 60), 'minute', { numeric: 'auto' })
+                : formatRelativeTime(-Math.floor(diffSeconds / 3600), 'hour', { numeric: 'auto' });
             const metrics = t.kind === 'LLM'
               ? `${durationFormatted} · ${tokensFormatted}`
               : `${tokensFormatted} · ${durationFormatted}`;
@@ -226,8 +225,8 @@ export default function TraceList({
             // one keeps its metrics in the status line — they are the evidence,
             // and that is exactly when they matter most.
             const statusText = t.status === 'error'
-              ? `Failed${t.diag?.title ? ` · ${t.diag.title}` : ''}`
-              : t.status === 'slow' ? `Slow · ${metrics}` : undefined;
+              ? `${tr('traces.failed')}${diagnosticText ? ` · ${diagnosticText.title}` : ''}`
+              : t.status === 'slow' ? `${tr('traces.slow')} · ${metrics}` : undefined;
             const meta = [t.synthetic && 'mock', metrics].filter(Boolean);
 
             return (
@@ -241,11 +240,11 @@ export default function TraceList({
                 anchor={timeStr}
                 status={TRACE_STATUS[t.status]}
                 statusText={statusText}
-                statusLabel={`Status ${statusLabel}`}
+                statusLabel={tr('traces.status', { status: statusLabel })}
                 selected={selectedTraceId === t.id}
                 tabIndex={currentActiveId === t.id ? 0 : -1}
                 dataAttributes={{ 'data-trace-id': t.id }}
-                ariaLabel={`Trace: ${t.model}, ${t.kind}, status ${statusLabel}, duration ${durationFormatted}, tokens ${tokensFormatted}, captured ${timeStr}`}
+                ariaLabel={tr('traces.rowAria', { model: t.model, kind: t.kind, status: statusLabel, duration: durationFormatted, tokens: tokensFormatted, time: timeStr })}
                 onClick={() => {
                   setActiveTraceId(t.id);
                   inspectStore.selectTrace(t.id);
@@ -255,7 +254,7 @@ export default function TraceList({
                 }}
                 action={{
                   icon: 'trash',
-                  label: `Delete request: ${t.model}, captured ${timeStr}`,
+                  label: tr('traces.deleteAria', { model: t.model, time: timeStr }),
                   onClick: () => inspectStore.removeTrace(t.id),
                 }}
               />
@@ -271,7 +270,7 @@ export default function TraceList({
           icon="compose"
           onClick={handleOpenCreateModal}
         >
-          Create
+          {tr('traces.create')}
         </WorkspaceActionButton>
         <WorkspaceActionButton
           appearance="danger"
@@ -279,7 +278,7 @@ export default function TraceList({
           icon="trash"
           onClick={() => inspectStore.clearSession()}
         >
-          Clear
+          {tr('traces.clear')}
         </WorkspaceActionButton>
         <WorkspaceActionButton
           appearance="secondary"
@@ -287,7 +286,7 @@ export default function TraceList({
           icon="copy"
           onClick={handleExportSession}
         >
-          Export
+          {tr('traces.export')}
         </WorkspaceActionButton>
       </div>
     </div>

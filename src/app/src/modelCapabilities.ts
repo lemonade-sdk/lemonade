@@ -215,23 +215,6 @@ export function canSelectInComposer(model?: LoadedModel | null): boolean {
   return isComposerSelectableCapability(capabilityFromLoaded(model));
 }
 
-export function capabilityLabel(capability: ModelIdentity): string {
-  switch (capability) {
-    case 'chat': return 'Chat';
-    case 'omni': return 'Omni';
-    case 'router': return 'Router';
-    case 'image': return 'Image';
-    case 'audio': return 'Audio';
-    case 'audio-generation': return 'Music & SFX';
-    case 'tts': return 'TTS';
-    case 'model3d': return '3D';
-    case 'embedding': return 'Embedding';
-    case 'reranking': return 'Reranking';
-    case 'classification': return 'Classification';
-    default: return 'Unknown';
-  }
-}
-
 export function capabilityBadge(capability: ModelIdentity): string {
   switch (capability) {
     case 'chat': return 'chat';
@@ -294,8 +277,8 @@ export function selectPreferredLoadedModel(loadedModels: LoadedModel[]): LoadedM
     || null;
 }
 
-export function modelDisplayName(model: ModelSnapshot | null | undefined): string { return model?.name || 'Assistant'; }
-export function modelInitial(model: ModelSnapshot | null | undefined): string { return modelDisplayName(model).charAt(0).toUpperCase(); }
+export function modelDisplayName(model: ModelSnapshot | null | undefined, fallback = ''): string { return model?.name || fallback; }
+export function modelInitial(model: ModelSnapshot | null | undefined, fallback = ''): string { return (modelDisplayName(model, fallback).charAt(0) || '?').toUpperCase(); }
 
 /* Functional capability tags drive both the model filters and row badges. */
 export type CapabilityTag =
@@ -308,14 +291,6 @@ export const CAPABILITY_TAG_ORDER: CapabilityTag[] = [
   'code', 'audio', 'audio-generation', 'image', 'tts', 'model3d',
   'embedding', 'reranking', 'classification',
 ];
-
-export const CAPABILITY_TAG_LABELS: Record<CapabilityTag, string> = {
-  hot: 'Hot', popular: 'Popular', chat: 'Chat', omni: 'Omni', vision: 'Vision',
-  tool: 'Tool use', reasoning: 'Reasoning', code: 'Code', audio: 'Audio',
-  'audio-generation': 'Music & SFX', image: 'Image', tts: 'Speech (TTS)',
-  model3d: '3D', embedding: 'Embeddings', reranking: 'Reranking',
-  classification: 'Classification',
-};
 
 const CAPABILITY_TAG_ALIASES: Record<CapabilityTag, string[]> = {
   hot: ['hot'],
@@ -335,6 +310,15 @@ const CAPABILITY_TAG_ALIASES: Record<CapabilityTag, string[]> = {
   reranking: ['reranking', 'reranker'],
   classification: ['classification', 'classifier'],
 };
+
+export function capabilityTagForLabel(label: string | null | undefined): CapabilityTag | null {
+  const normalized = String(label || '').toLowerCase().trim();
+  if (!normalized) return null;
+  for (const tag of CAPABILITY_TAG_ORDER) {
+    if (CAPABILITY_TAG_ALIASES[tag].includes(normalized)) return tag;
+  }
+  return null;
+}
 
 const BASE_CAPABILITY_TAG: Partial<Record<ModelIdentity, CapabilityTag>> = {
   chat: 'chat', omni: 'omni', image: 'image', audio: 'audio',

@@ -1,0 +1,172 @@
+{
+  "status": {
+    "online": "Server online",
+    "connecting": "Verbindung wird hergestellt",
+    "offline": "Server offline"
+  },
+  "server": {
+    "url": "Server-URL",
+    "urlHint": "Eine vollständige http://- oder https://-URL verwenden. Verbindungsfehler zeigen den genauen Endpunkt.",
+    "apiKey": "API-Schlüssel (optional)",
+    "rememberApiKey": "API-Schlüssel speichern",
+    "warning": "Warnung: {{message}}",
+    "actions": "Aktionen für die Serververbindung",
+    "connecting": "Verbindung wird hergestellt...",
+    "clearLocalData": "Zulässige lokale Daten löschen",
+    "connectFailed": "Verbindung zu {{url}} konnte nicht hergestellt werden.",
+    "connectedSaved": "Mit {{url}} verbunden. Der API-Schlüssel wurde in den Lemonade-App-Einstellungen gespeichert.",
+    "connected": "Mit {{url}} verbunden.",
+    "clearConfirm": "Lemonade-Browserdaten und Verbindungseinstellungen auf diesem Gerät löschen?",
+    "clearPartialError": "Die lokalen Browserdaten wurden gelöscht, aber die Lemonade-App-Einstellungen konnten nicht gelöscht werden: {{message}}",
+    "clearedNotice": "Lokale Lemonade-Daten und globale Verbindungseinstellungen wurden gelöscht.",
+    "urlRequired": "Eine Server-URL ist erforderlich.",
+    "urlProtocol": "Die Server-URL muss mit http:// oder https:// beginnen.",
+    "invalidUrl": "Ungültige Server-URL: {{url}}"
+  },
+  "language": {
+    "intro": "Wähle die Sprache der Lemonade-Oberfläche. Die Auswahl wird lokal auf diesem Gerät gespeichert.",
+    "label": "Oberflächensprache",
+    "systemOption": "Systemsprache ({{language}})",
+    "active": "Aktive Locale: {{locale}}",
+    "fallback": "Fehlende Übersetzungen fallen automatisch auf die Quellsprache zurück."
+  },
+  "help": {
+    "intro": "Schneller Zugriff auf Support, Dokumentation und Community-Kanäle des Projekts.",
+    "links": "Hilfelinks",
+    "documentation": "Dokumentation",
+    "documentationDescription": "Einrichtung, APIs und Integrationsleitfäden.",
+    "releaseNotes": "Release Notes",
+    "releaseNotesDescription": "Neueste paketierte Änderungen und Tags.",
+    "github": "GitHub",
+    "githubDescription": "Quellcode, Issues und Pull Requests.",
+    "discord": "Discord",
+    "discordDescription": "Community-Support und Austausch."
+  },
+  "storage": {
+    "intro": "Den normalen Lemonade-Modellcache getrennt von einem externen GGUF-Verzeichnis halten, das nach zusätzlichen benutzerdefinierten Modellen durchsucht wird.",
+    "modelsDirectory": "Modellverzeichnis",
+    "modelsPlaceholder": "Standardmäßiger Lemonade-Modellcache",
+    "externalDirectory": "Verzeichnis für externe benutzerdefinierte Modelle",
+    "directoryActions": "Verzeichnisaktionen",
+    "saving": "Wird gespeichert...",
+    "save": "Verzeichnisse speichern",
+    "saved": "Verzeichniseinstellungen gespeichert.",
+    "notPersisted": "Diese Laufzeit kann Verzeichniseinstellungen nicht dauerhaft speichern. Verwende die Desktop-App-Host-Bridge oder starte lemond mit --extra-models-dir."
+  },
+  "cloud": {
+    "refreshing": "Wird aktualisiert...",
+    "refresh": "Aktualisieren",
+    "intro": "OpenAI-kompatible Anbieter auf dem verbundenen Lemonade-Server registrieren. Laufzeitschlüssel können ersetzt oder gelöscht werden, ohne Dateien zu bearbeiten.",
+    "templates": "Anbietervorlagen",
+    "providerName": "Anbietername",
+    "providerNamePlaceholder": "Anbietername, z. B. fireworks",
+    "baseUrl": "Basis-URL",
+    "apiKeyOptional": "API-Schlüssel des Anbieters (optional)",
+    "apiKeyPlaceholder": "API-Schlüssel (optional)",
+    "addProvider": "Anbieter hinzufügen",
+    "baseUrlHint": "Vollständige https://-Basis-URL des OpenAI-kompatiblen Anbieter-Endpunkts.",
+    "list": "Cloud-Anbieter",
+    "loading": "Cloud-Anbieter werden geladen...",
+    "empty": "Noch keine Cloud-Anbieter konfiguriert.",
+    "connectFirst": "Mit einem Server verbinden, um Cloud-Anbieter zu verwalten.",
+    "models": "{{count}} Modelle · {{url}}",
+    "noUrl": "keine URL",
+    "authConfigured": "Authentifizierung konfiguriert",
+    "authVia": "Authentifizierung über {{variable}} konfiguriert",
+    "noApiKey": "Kein API-Schlüssel",
+    "noApiKeyVariable": "Kein API-Schlüssel ({{variable}})",
+    "actionsFor": "Aktionen für {{name}}",
+    "newApiKey": "Neuer API-Schlüssel",
+    "newApiKeyFor": "Neuer API-Schlüssel für {{name}}",
+    "providerFallback": "Anbieter",
+    "saveKey": "Schlüssel speichern",
+    "setKey": "Schlüssel setzen",
+    "clearKey": "Schlüssel löschen",
+    "remove": "Entfernen",
+    "unavailable": "Cloud-Anbieter nicht verfügbar: {{message}}",
+    "providerRequired": "Anbietername und Basis-URL sind erforderlich.",
+    "installed": {
+      "one": "{{provider}} installiert ({{count}} Modell gefunden).",
+      "other": "{{provider}} installiert ({{count}} Modelle gefunden)."
+    },
+    "keySaved": {
+      "one": "API-Schlüssel für {{provider}} gespeichert ({{count}} Modell gefunden).",
+      "other": "API-Schlüssel für {{provider}} gespeichert ({{count}} Modelle gefunden)."
+    },
+    "keyCleared": "API-Schlüssel für {{provider}} gelöscht.",
+    "removeConfirm": "Cloud-Anbieter {{provider}} entfernen?",
+    "removed": "{{provider}} entfernt."
+  },
+  "global": {
+    "chat": {
+      "historyTitle": "Chatverlauf",
+      "saveHistory": "Chatverlauf in diesem Browser speichern",
+      "mediaNotPersisted": "Chat-Medien werden nie dauerhaft gespeichert.",
+      "behaviorTitle": "Chatverhalten",
+      "collapseThinking": "Thinking standardmäßig einklappen",
+      "collapseThinkingDescription": "Reasoning bleibt in jedem Assistentenbeitrag über einen aufklappbaren Bereich verfügbar.",
+      "speechTitle": "Sprachausgabe im Chat",
+      "defaultTts": "Standard-TTS-Modell",
+      "noDefaultSpeech": "Kein Standard-Sprachmodell",
+      "kokoroGroup": "Kokoro · Englisch",
+      "kokoroMissing": "Kokoro Englisch · kokoro-v1 installieren",
+      "openMossGroup": "OpenMOSS · Mehrsprachig",
+      "openMossMissing": "OpenMOSS mehrsprachig · OpenMOSS-TTS installieren",
+      "otherTts": "Weitere TTS-Modelle",
+      "playbackMode": "Globaler TTS-Wiedergabemodus",
+      "readModes": {
+        "onDemand": {
+          "title": "Assistent bei Bedarf vorlesen",
+          "description": "Sprache nur wiedergeben, wenn die Vorleseaktion verwendet wird."
+        },
+        "agent": {
+          "title": "Assistent vorlesen",
+          "description": "Jede Antwort des Assistenten automatisch vorlesen."
+        },
+        "agentAndUser": {
+          "title": "Assistent und Benutzer vorlesen",
+          "description": "Antworten des Assistenten und gesendeten Benutzertext vorlesen."
+        }
+      }
+    },
+    "memory": {
+      "budgetTitle": "Speicherbudget",
+      "loadedEstimate": "{{count}} geladen · {{size}} geschätzt",
+      "unknown": "Unbekannt",
+      "budgetDescription": "Der Client nutzt bekannte Modellgrößen, um vor dem Laden bei Bedarf Modelle zu entladen. Im serververwalteten Modus trifft Lemonade die Speicherentscheidungen vollständig selbst.",
+      "budgetSource": "Budgetquelle",
+      "automaticServer": "Automatisch / serververwaltet",
+      "customVram": "Benutzerdefiniertes VRAM-Budget",
+      "customMemory": "Benutzerdefiniertes Arbeitsspeicher-Budget",
+      "budget": "Budget",
+      "autoEvict": "Bei Speicher- oder VRAM-Druck automatisch entladen",
+      "autoEvictDescription": "Bei einem OOM-ähnlichen Ladefehler geeignete Modelle entladen und den Ladevorgang einmal wiederholen.",
+      "loadingTitle": "Laden und Entladen",
+      "loadingPolicy": "Ladestrategie",
+      "keepLoaded": "Geladene Modelle behalten",
+      "singleActive": "Ein einzelnes aktives Modell",
+      "stayWithinBudget": "Innerhalb des Budgets bleiben",
+      "evictionOrder": "Reihenfolge beim Entladen",
+      "leastRecentlyUsed": "Am längsten nicht verwendet",
+      "largestFirst": "Größte zuerst",
+      "oldestProcess": "Ältester Prozess zuerst",
+      "manualOnly": "Nur manuell",
+      "protectPinned": "Angeheftete Modelle vor automatischem Entladen schützen",
+      "protectPinnedDescription": "Angeheftete Modelle können weiterhin manuell entladen werden."
+    },
+    "updates": {
+      "title": "Modellupdates",
+      "automatic": "Automatische Modellupdates",
+      "automaticDescription": "Standardmäßig deaktiviert. Wenn aktiviert, prüft GUI3 heruntergeladene Modelle höchstens einmal pro Tag."
+    },
+    "sectionNames": {
+      "chat": "Chat",
+      "memory": "Speicher",
+      "updates": "Modellupdates"
+    },
+    "actionsLabel": "Aktionen für {{section}}-Einstellungen",
+    "saved": "Gespeichert",
+    "save": "Einstellungen speichern",
+    "reset": "Standards zurücksetzen"
+  }
+}

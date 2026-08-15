@@ -5,6 +5,11 @@ import ChatView from './components/ChatView';
 import { scheduleIdleWork } from './startupScheduler';
 import { attachServerModelState, useServerModelState } from './features/models/modelState';
 import { preloadInteractionSurfaces } from './interactionPreload';
+import { useI18n } from './i18n';
+import {
+  localizedMarketplaceCategory,
+  localizedMarketplaceDescription,
+} from './features/apps/marketplacePresentation';
 const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 type MarketplaceApp = {
   id: string;
@@ -134,16 +139,14 @@ type AppRoute =
 
 const NAVIGATION_DESTINATIONS: Array<{
   id: View;
-  label: string;
-  keywords: string;
   icon: Parameters<typeof Icon>[0]['name'];
 }> = [
-  { id: 'chat', label: 'Chat', keywords: 'conversation messages', icon: 'chat' },
-  { id: 'models', label: 'Models', keywords: 'model manager download load', icon: 'hard-drive' },
-  { id: 'backends', label: 'Backends', keywords: 'runtime inference engine', icon: 'box' },
-  { id: 'apps', label: 'Apps', keywords: 'clients integrations', icon: 'layers' },
-  { id: 'dashboard', label: 'Monitor', keywords: 'dashboard monitor system hardware statistics', icon: 'gauge' },
-  { id: 'connect', label: 'Settings', keywords: 'connect configuration preferences server', icon: 'settings' },
+  { id: 'chat', icon: 'chat' },
+  { id: 'models', icon: 'hard-drive' },
+  { id: 'backends', icon: 'box' },
+  { id: 'apps', icon: 'layers' },
+  { id: 'dashboard', icon: 'gauge' },
+  { id: 'connect', icon: 'settings' },
 ];
 
 const BACKEND_DESTINATIONS = [
@@ -172,8 +175,13 @@ function modelSearchName(model: Record<string, unknown>): string {
 }
 
 function searchKey(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return value
+    .normalize('NFKD')
+    .toLocaleLowerCase()
+    .replace(/\p{M}+/gu, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
 }
+
 
 /* ── Error boundary ────────────────────────────────────────── */
 
@@ -196,30 +204,38 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   render() {
     if (this.state.error) {
       return (
-        <div className="view-error">
-          <h2>
-            Something went wrong in "{this.props.view}"
-          </h2>
-          <pre>
-            {this.state.error.message}
-          </pre>
-          <button
-            type="button"
-            className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium"
-            onClick={() => this.setState({ error: null })}
-          >
-            <span className="workspace-action-button__label">Try again</span>
-          </button>
-        </div>
+        <ViewErrorFallback
+          view={this.props.view}
+          message={this.state.error.message}
+          onRetry={() => this.setState({ error: null })}
+        />
       );
     }
     return this.props.children;
   }
 }
 
+const ViewErrorFallback: React.FC<{ view: string; message: string; onRetry: () => void }> = ({ view, message, onRetry }) => {
+  const { t } = useI18n('app');
+  const { t: tCommon } = useI18n('common');
+  return (
+    <div className="view-error">
+      <h2>{t('error.view', { view })}</h2>
+      <pre>{message}</pre>
+      <button
+        type="button"
+        className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium"
+        onClick={onRetry}
+      >
+        <span className="workspace-action-button__label">{tCommon('actions.retry')}</span>
+      </button>
+    </div>
+  );
+};
+
 const SIMPLE_VIEWS: SimpleView[] = ['chat', 'models', 'backends', 'apps'];
 
-const ViewLoadingFallback: React.FC<{ label?: string }> = ({ label = 'Loading view' }) => (
+const ViewLoadingFallback: React.FC<{ label: string }> = ({ label }) => (
   <div className="view-loading" role="status" aria-label={label} aria-live="polite">
     <span className="spinner" aria-hidden="true" />
   </div>
@@ -368,6 +384,9 @@ function loadTheme(): Theme {
 }
 
 const App: React.FC = () => {
+  const { t: tApp } = useI18n('app');
+  const { t: tNavigation } = useI18n('navigation');
+  const { t: tApps, tOptional: tAppsOptional } = useI18n('apps');
   const [route, setRouteState] = useState<AppRoute>(loadSavedRoute);
   const view = route.view;
   // Mount only the active workspace on cold start. Once a workspace has been
@@ -405,6 +424,14 @@ const App: React.FC = () => {
   const navigationSearchRef = useRef<HTMLInputElement>(null);
   const [isDesktop, setIsDesktop] = useState(false);
   const navigationSearchShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl+K';
+  const navigationSearchAria = view === 'apps' ? tApps('search.aria') : tApp('search.aria');
+  const navigationSearchPlaceholder = view === 'apps' ? tApps('search.placeholder') : tApp('search.placeholder');
+  const navigationSearchToggleAria = view === 'apps' ? tApps('search.openAria') : tApp('search.openAria');
+  const localizedNavigationDestinations = useMemo(() => NAVIGATION_DESTINATIONS.map(destination => ({
+    ...destination,
+    label: tApp(`navigation.${destination.id}.label`),
+    keywords: tApp(`navigation.${destination.id}.keywords`),
+  })), [tApp]);
 
   const requestMarketplace = useCallback(() => {
     if (marketplaceRequestedRef.current) return;
@@ -758,33 +785,33 @@ const App: React.FC = () => {
       !query || value.toLowerCase().includes(query) || searchKey(value).includes(normalizedQuery);
     if (!query) return [];
 
-    const pages = NAVIGATION_DESTINATIONS
+    const pages = localizedNavigationDestinations
       .filter(destination => matches(`${destination.label} ${destination.keywords}`))
       .map(destination => ({
         id: `page:${destination.id}`,
         label: destination.label,
-        description: 'Page',
+        description: tApp('search.page'),
         icon: destination.icon,
         view: destination.id,
       }));
 
     const monitorDefinition = WORKSPACE_NAVIGATION.dashboard;
     const monitor = monitorDefinition.sections
-      .filter(section => matches(`${section.label} ${section.description}`))
+      .filter(section => matches(`${tNavigation(section.labelKey)} ${tNavigation(section.descriptionKey)}`))
       .map(section => ({
         id: `workspace:dashboard:${section.id}`,
-        label: section.label,
-        description: `${monitorDefinition.label} - ${section.description}`,
+        label: tNavigation(section.labelKey),
+        description: `${tNavigation(monitorDefinition.labelKey)} - ${tNavigation(section.descriptionKey)}`,
         icon: section.icon,
         route: { view: 'dashboard', section: section.id } as AppRoute,
       }));
     const settingsDefinition = WORKSPACE_NAVIGATION.connect;
     const settings = settingsDefinition.sections
-      .filter(section => matches(`${section.label} ${section.description}`))
+      .filter(section => matches(`${tNavigation(section.labelKey)} ${tNavigation(section.descriptionKey)}`))
       .map(section => ({
         id: `workspace:connect:${section.id}`,
-        label: section.label,
-        description: `${settingsDefinition.label} - ${section.description}`,
+        label: tNavigation(section.labelKey),
+        description: `${tNavigation(settingsDefinition.labelKey)} - ${tNavigation(section.descriptionKey)}`,
         icon: section.icon,
         route: { view: 'connect', section: section.id } as AppRoute,
       }));
@@ -800,7 +827,7 @@ const App: React.FC = () => {
         return {
           id: `model:${name}`,
           label: name,
-          description: type && type.toLowerCase() !== 'model' ? `${type} model` : 'Model',
+          description: type && type.toLowerCase() !== 'model' ? `${type} ${tApp('search.model').toLowerCase()}` : tApp('search.model'),
           icon: 'hard-drive' as Parameters<typeof Icon>[0]['name'],
           modelName: name,
         };
@@ -810,17 +837,26 @@ const App: React.FC = () => {
       .map(backend => ({
         id: `backend:${backend}`,
         label: backend,
-        description: 'Backend',
+        description: tApp('search.backend'),
         icon: 'box' as Parameters<typeof Icon>[0]['name'],
         view: 'backends' as View,
       }));
     const apps = marketplaceApps
-      .filter(marketplaceApp => matches(`${marketplaceApp.name} ${marketplaceApp.description || ''} ${(marketplaceApp.category || []).join(' ')}`))
+      .map(marketplaceApp => {
+        const localizedDescription = localizedMarketplaceDescription(marketplaceApp, tAppsOptional) || '';
+        const localizedCategories = (marketplaceApp.category || []).map(category =>
+          localizedMarketplaceCategory(category, category, tAppsOptional),
+        );
+        return { marketplaceApp, localizedDescription, localizedCategories };
+      })
+      .filter(({ marketplaceApp, localizedDescription, localizedCategories }) => matches(
+        `${marketplaceApp.name} ${marketplaceApp.description || ''} ${(marketplaceApp.category || []).join(' ')} ${localizedDescription} ${localizedCategories.join(' ')}`,
+      ))
       .slice(0, 8)
-      .map(marketplaceApp => ({
+      .map(({ marketplaceApp, localizedCategories }) => ({
         id: `app:${marketplaceApp.id || marketplaceApp.name}`,
         label: marketplaceApp.name,
-        description: marketplaceApp.category?.length ? `App - ${marketplaceApp.category.join(', ')}` : 'App',
+        description: localizedCategories.length ? tApp('search.appCategory', { category: localizedCategories.join(', ') }) : tApp('search.app'),
         icon: 'layers' as Parameters<typeof Icon>[0]['name'],
         view: 'apps' as View,
       }));
@@ -844,7 +880,7 @@ const App: React.FC = () => {
           : 'models';
     const groupOrder = [preferredGroup, ...defaultOrder.filter(group => group !== preferredGroup)];
     return groupOrder.flatMap(group => groups[group]);
-  }, [marketplaceApps, navigationSearch, searchableServerModels, view]);
+  }, [localizedNavigationDestinations, marketplaceApps, navigationSearch, searchableServerModels, tApp, tAppsOptional, tNavigation, view]);
 
   const selectNavigationDestination = useCallback((destination: GlobalSearchResult) => {
     if (destination.modelName) {
@@ -968,7 +1004,7 @@ const App: React.FC = () => {
 
   return (
     <>
-      <a href="#main-content" className="skip-link">Skip to main content</a>
+      <a href="#main-content" className="skip-link">{tApp('skipToMain')}</a>
       <div className="app">
         <header className="titlebar" data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
@@ -981,13 +1017,13 @@ const App: React.FC = () => {
             status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
           }`}
             role="status"
-            aria-label={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
-            title={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
+            aria-label={status === 'connected' ? tApp('server.connected') : status === 'connecting' ? tApp('server.connecting') : tApp('server.offline')}
+            title={status === 'connected' ? tApp('server.connected') : status === 'connecting' ? tApp('server.connecting') : tApp('server.offline')}
           />
         </div>
 
-        <nav className="titlebar__nav" data-tauri-drag-region="false" aria-label="Primary">
-          {NAVIGATION_DESTINATIONS.map(({ id, label, icon }) => (
+        <nav className="titlebar__nav" data-tauri-drag-region="false" aria-label={tApp('primaryNavigation')}>
+          {localizedNavigationDestinations.map(({ id, label, icon }) => (
             <button
               key={id}
               className={view === id ? 'is-active' : ''}
@@ -1020,15 +1056,15 @@ const App: React.FC = () => {
               ref={utilityMenuTriggerRef}
               type="button"
               className="titlebar__utilities-toggle"
-              aria-label="App controls"
+              aria-label={tApp('appControls')}
               aria-expanded={utilityMenuOpen}
               aria-controls="titlebar-utility-menu"
-              title="App controls"
+              title={tApp('appControls')}
               onClick={() => setUtilityMenuOpen(open => !open)}
             >
               <Icon name="sliders-horizontal" size={17} aria-hidden="true" />
             </button>
-            <div id="titlebar-utility-menu" className="titlebar__utility-menu" aria-label="App controls">
+            <div id="titlebar-utility-menu" className="titlebar__utility-menu" aria-label={tApp('appControls')}>
               <div
                 className={`titlebar__search${navigationSearchOpen ? ' is-open' : ''}${view === 'apps' ? ' is-context-visible' : ''}`}
                 onBlur={event => {
@@ -1041,10 +1077,10 @@ const App: React.FC = () => {
                 <button
                   type="button"
                   className="titlebar__search-toggle"
-                  aria-label="Search Lemonade"
+                  aria-label={navigationSearchToggleAria}
                   aria-expanded={navigationSearchOpen}
                   aria-controls="titlebar-search-results"
-                  title="Search"
+                  title={navigationSearchToggleAria}
                   onClick={() => {
                     setNavigationSearchOpen(true);
                     requestAnimationFrame(() => navigationSearchRef.current?.focus());
@@ -1058,9 +1094,9 @@ const App: React.FC = () => {
                       ref={navigationSearchRef}
                       type="search"
                       value={navigationSearch}
-                      placeholder="Search"
+                      placeholder={navigationSearchPlaceholder}
                       role="combobox"
-                      aria-label={view === 'apps' ? 'Search apps' : 'Search Lemonade'}
+                      aria-label={navigationSearchAria}
                       aria-autocomplete="list"
                       aria-expanded={navigationSearchOpen}
                       aria-controls="titlebar-search-results"
@@ -1094,14 +1130,14 @@ const App: React.FC = () => {
                       }}
                     />
                     <kbd
-                      aria-label={navigationSearchShortcut === '⌘ K' ? 'Command K' : 'Control K'}
-                      title={`Search shortcut: ${navigationSearchShortcut}`}
+                      aria-label={navigationSearchShortcut === '⌘ K' ? tApp('search.commandK') : tApp('search.controlK')}
+                      title={tApp('search.shortcut', { shortcut: navigationSearchShortcut })}
                     >
                       {navigationSearchShortcut}
                     </kbd>
                   </div>
                   {navigationSearchOpen && (
-                    <div id="titlebar-search-results" className="titlebar__search-results" role="listbox" aria-label="Global search results">
+                    <div id="titlebar-search-results" className="titlebar__search-results" role="listbox" aria-label={tApp('search.results')}>
                       {navigationSearchResults.length > 0 ? navigationSearchResults.map((destination, index) => (
                         <button
                           key={destination.id}
@@ -1119,7 +1155,7 @@ const App: React.FC = () => {
                             <small>{destination.description}</small>
                           </span>
                         </button>
-                      )) : <p>{navigationSearch.trim() ? 'No matching results.' : 'Search models, backends, apps, and settings.'}</p>}
+                      )) : <p>{navigationSearch.trim() ? tApp('search.noResults') : tApp('search.hint')}</p>}
                     </div>
                   )}
                 </div>
@@ -1127,35 +1163,35 @@ const App: React.FC = () => {
               <div
                 className="titlebar__utility-status"
                 role="status"
-                aria-label={`Server ${status === 'connected' ? 'connected' : status === 'connecting' ? 'connecting' : 'offline'}`}
+                aria-label={status === 'connected' ? tApp('server.ariaConnected') : status === 'connecting' ? tApp('server.ariaConnecting') : tApp('server.ariaOffline')}
               >
                 <span className={`titlebar__status-dot ${
                   status === 'connected' ? 'titlebar__status-dot--connected' :
                   status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
                 }`} aria-hidden="true" />
-                <span className="titlebar__utility-label">Server</span>
+                <span className="titlebar__utility-label">{tApp('server.label')}</span>
                 <span className="titlebar__utility-value">
-                  {status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
+                  {status === 'connected' ? tApp('server.connected') : status === 'connecting' ? tApp('server.connecting') : tApp('server.offline')}
                 </span>
               </div>
               <button
                 className="titlebar__theme-toggle"
                 onClick={() => { toggleTheme(); setUtilityMenuOpen(false); }}
-                aria-label="Toggle theme"
-                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                aria-label={tApp('theme.toggle')}
+                title={theme === 'dark' ? tApp('theme.switchLight') : tApp('theme.switchDark')}
               >
                 <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
-                <span className="titlebar__utility-label">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+                <span className="titlebar__utility-label">{theme === 'dark' ? tApp('theme.light') : tApp('theme.dark')}</span>
               </button>
               <button
                 className={`titlebar__download-toggle${downloadManagerOpen ? ' is-active' : ''}${activeDownloadCount > 0 ? ' has-active-downloads' : ''}`}
                 onClick={() => { setDownloadManagerOpen(open => !open); setUtilityMenuOpen(false); }}
-                aria-label="Open download manager"
+                aria-label={tApp('downloads.open')}
                 aria-expanded={downloadManagerOpen}
-                title="Download manager"
+                title={tApp('downloads.title')}
               >
                 <Icon name="download" size={16} />
-                <span className="titlebar__utility-label">Downloads</span>
+                <span className="titlebar__utility-label">{tApp('downloads.label')}</span>
                 {activeDownloadCount > 0 && <span className="titlebar__download-badge">{activeDownloadCount > 9 ? '9+' : activeDownloadCount}</span>}
               </button>
             </div>
@@ -1166,8 +1202,8 @@ const App: React.FC = () => {
                 className="titlebar__window-btn"
                 data-tauri-drag-region="false"
                 onClick={() => window.api?.minimizeWindow?.()}
-                aria-label="Minimize"
-                title="Minimize"
+                aria-label={tApp('window.minimize')}
+                title={tApp('window.minimize')}
               >
                 <Icon name="minimize-2" size={14} />
               </button>
@@ -1175,8 +1211,8 @@ const App: React.FC = () => {
                 className="titlebar__window-btn"
                 data-tauri-drag-region="false"
                 onClick={() => window.api?.maximizeWindow?.()}
-                aria-label="Maximize"
-                title="Maximize"
+                aria-label={tApp('window.maximize')}
+                title={tApp('window.maximize')}
               >
                 <Icon name="maximize-2" size={14} />
               </button>
@@ -1184,8 +1220,8 @@ const App: React.FC = () => {
                 className="titlebar__window-btn titlebar__window-btn--close"
                 data-tauri-drag-region="false"
                 onClick={() => window.api?.closeWindow?.()}
-                aria-label="Cancel"
-                title="Cancel"
+                aria-label={tApp('window.close')}
+                title={tApp('window.close')}
               >
                 <Icon name="x" size={14} />
               </button>
@@ -1195,7 +1231,7 @@ const App: React.FC = () => {
       </header>
 
       {downloadManagerMountedRef.current && (
-        <Suspense fallback={downloadManagerOpen ? <ViewLoadingFallback label="Loading downloads" /> : null}>
+        <Suspense fallback={downloadManagerOpen ? <ViewLoadingFallback label={tApp('loading.downloads')} /> : null}>
           <DownloadManager isVisible={downloadManagerOpen} onClose={() => setDownloadManagerOpen(false)} />
         </Suspense>
       )}
@@ -1220,7 +1256,7 @@ const App: React.FC = () => {
         {mountedViewsRef.current.has('models') && (
           <div className="view-slot" hidden={view !== 'models'}>
             <ViewErrorBoundary view="models">
-              <Suspense fallback={<ViewLoadingFallback label="Loading models" />}>
+              <Suspense fallback={<ViewLoadingFallback label={tApp('loading.models')} />}>
                 <ModelManager
                   key={clientDataResetNonce}
                   onModelSelect={handleModelSelect}
@@ -1233,7 +1269,7 @@ const App: React.FC = () => {
         {mountedViewsRef.current.has('backends') && (
           <div className="view-slot" hidden={view !== 'backends'}>
             <ViewErrorBoundary view="backends">
-              <Suspense fallback={<ViewLoadingFallback label="Loading backends" />}>
+              <Suspense fallback={<ViewLoadingFallback label={tApp('loading.backends')} />}>
                 <BackendManager isActive={view === 'backends'} />
               </Suspense>
             </ViewErrorBoundary>
@@ -1242,7 +1278,7 @@ const App: React.FC = () => {
         {mountedViewsRef.current.has('apps') && (
           <div className="view-slot" hidden={view !== 'apps'}>
             <ViewErrorBoundary view="apps">
-              <Suspense fallback={<ViewLoadingFallback label="Loading apps" />}>
+              <Suspense fallback={<ViewLoadingFallback label={tApp('loading.apps')} />}>
                 <AppsView
                   apps={marketplaceApps}
                   categories={marketplaceCategories}
@@ -1256,7 +1292,7 @@ const App: React.FC = () => {
         {mountedViewsRef.current.has('dashboard') && (
           <div className="view-slot" hidden={view !== 'dashboard'}>
             <ViewErrorBoundary view="dashboard">
-              <Suspense fallback={<ViewLoadingFallback label="Loading monitor" />}>
+              <Suspense fallback={<ViewLoadingFallback label={tApp('loading.monitor')} />}>
                 <MonitorView
                   activeSection={route.view === 'dashboard' ? route.section : lastWorkspaceSectionsRef.current.dashboard}
                   isActive={view === 'dashboard'}
@@ -1269,7 +1305,7 @@ const App: React.FC = () => {
         {mountedViewsRef.current.has('connect') && (
           <div className="view-slot" hidden={view !== 'connect'}>
             <ViewErrorBoundary view="connect">
-              <Suspense fallback={<ViewLoadingFallback label="Loading settings" />}>
+              <Suspense fallback={<ViewLoadingFallback label={tApp('loading.settings')} />}>
                 <ConnectView
                   status={status}
                   isActive={view === 'connect'}

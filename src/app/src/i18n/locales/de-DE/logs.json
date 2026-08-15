@@ -1,0 +1,63 @@
+{
+  "filters": {
+    "aria": "Log-Filter",
+    "streamTitle": "Stream-Filter",
+    "close": "Log-Filter schließen",
+    "title": "Filter",
+    "sidebar": "Log-Filter",
+    "searchPlaceholder": "Nach Nachricht, Quelle oder Schweregrad suchen...",
+    "searchAria": "Logs filtern",
+    "visibility": "Sichtbarkeit",
+    "minimumLevel": "Mindeststufe",
+    "serverCaptureLevel": "Server-Erfassungsstufe",
+    "sources": "Quellen",
+    "allSources": "Alle Quellen",
+    "hiddenSources": {
+      "one": "{{count}} weniger aktive Quelle wird nicht angezeigt. Über die Suche kannst du sie finden.",
+      "other": "{{count}} weniger aktive Quellen werden nicht angezeigt. Über die Suche kannst du sie finden."
+    },
+    "otherSource": "Sonstige"
+  },
+  "status": {
+    "live": "Live",
+    "connecting": "Verbindung wird hergestellt...",
+    "error": "Fehler",
+    "disconnected": "Getrennt"
+  },
+  "counts": {
+    "entries": {
+      "one": "{{count}} Eintrag",
+      "other": "{{count}} Einträge"
+    },
+    "entriesReceived": {
+      "one": "{{count}} Eintrag empfangen",
+      "other": "{{count}} Einträge empfangen"
+    },
+    "shown": "{{shown}} von {{total}} Einträgen angezeigt"
+  },
+  "levels": {
+    "trace": "Trace",
+    "debug": "Debug",
+    "info": "Info",
+    "warning": "Warnung",
+    "error": "Fehler",
+    "fatal": "Fatal"
+  },
+  "actions": {
+    "clearTitle": "Logs löschen",
+    "clearAria": "Log-Ausgabe löschen",
+    "clearOutput": "Ausgabe löschen",
+    "reconnect": "Neu verbinden",
+    "reconnectAria": "Neu mit dem Log-Stream verbinden",
+    "openFilters": "Log-Filter öffnen",
+    "jumpBottom": "Zum Ende springen"
+  },
+  "main": {
+    "title": "Live-Stream"
+  },
+  "empty": {
+    "waiting": "Warte auf Log-Einträge...",
+    "notConnected": "Keine Verbindung zum Log-Stream",
+    "noMatch": "Keine Einträge entsprechen dem Filter \"{{filter}}\""
+  }
+}

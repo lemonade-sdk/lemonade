@@ -1,0 +1,526 @@
+{
+  "history": {
+    "title": "History",
+    "newChat": "New chat",
+    "empty": "No conversations yet",
+    "conversations": "Conversations",
+    "close": "Close conversation history",
+    "closePanel": "Close panel",
+    "open": "Open conversation history",
+    "sidebarLabel": "conversation",
+    "delete": "Delete conversation: {{title}}",
+    "generating": "Generating",
+    "generatingAria": "Generating a reply",
+    "lastReplyFailed": "Last reply failed",
+    "lastReplyFailedAria": "The last reply failed",
+    "rowAria": "{{title}}{{model}}{{status}}, {{time}}",
+    "liveMicrophoneRecording": "Live microphone recording",
+    "newConversation": "New conversation",
+    "imageConversation": "Image conversation",
+    "audioConversation": "Audio: {{file}}",
+    "audioFile": "audio file"
+  },
+  "thinking": "Thinking…",
+  "logs": {
+    "panel": "Lemonade logs next to chat",
+    "resize": "Resize logs panel",
+    "show": "Show logs next to the chat",
+    "aria": "Lemonade logs"
+  },
+  "model": {
+    "label": "Model",
+    "router": "Router",
+    "search": "Search models",
+    "searchPlaceholder": "Search ready or Lemonade default models…",
+    "noMatches": "No matching models",
+    "loading": "Loading {{model}}…",
+    "effectiveSettings": "Effective settings",
+    "models": "Models",
+    "loadingStatus": "Loading…",
+    "ejectingStatus": "Ejecting…",
+    "eject": "Eject model {{model}}",
+    "load": "Load model {{model}}",
+    "download": "Download model {{model}}",
+    "logs": "Logs",
+    "downloadInProgress": "{{model}} is still downloading. Wait for the download to finish before loading it.",
+    "loadedDetail": "Loaded{{device}}",
+    "downloadedDeferred": "Downloaded · loads when you send",
+    "downloadedLoad": "Downloaded · click to load",
+    "defaults": {
+      "tiny": {
+        "label": "default tiny",
+        "description": "Smaller Lemonade default · downloads when first used"
+      },
+      "quality": {
+        "label": "default quality",
+        "description": "Higher-quality Lemonade default · downloads when first used"
+      }
+    },
+    "modes": {
+      "chat": "Chat",
+      "chatAudio": "Chat + Audio",
+      "omni": "Omni",
+      "image": "Image",
+      "audio": "Audio",
+      "audioGeneration": "Music & SFX",
+      "tts": "TTS",
+      "model3d": "3D",
+      "embedding": "Embedding",
+      "reranking": "Reranking",
+      "unknown": "Unknown",
+      "classification": "Classification"
+    }
+  },
+  "image": {
+    "settings": "Image generation settings",
+    "mode": "Mode",
+    "generate": "Generate",
+    "edit": "Edit",
+    "steps": "Steps",
+    "cfgScale": "CFG Scale",
+    "width": "Width",
+    "height": "Height",
+    "seed": "Seed",
+    "upscale": "Upscale",
+    "off": "Off",
+    "remove": "Remove image",
+    "attachment": "Attachment {{index}}"
+  },
+  "audio": {
+    "settings": "Audio generation settings",
+    "duration": "Duration",
+    "steps": "Steps",
+    "cfg": "CFG",
+    "seed": "Seed",
+    "lyricsLanguage": "Lyrics language",
+    "lyrics": "Lyrics",
+    "lyricsOptional": "optional · leave empty for instrumental",
+    "remove": "Remove audio file",
+    "languagePlaceholder": "e.g. en",
+    "lyricsPlaceholder": "[verse]\nMoonlight spills across the floor…\n\n[chorus]\nWe sing until the morning light…",
+    "fileMessage": "Audio file: {{file}}"
+  },
+  "voice": {
+    "settings": "OpenMOSS voice settings",
+    "mode": "Voice mode",
+    "plain": "Plain",
+    "describe": "Describe voice",
+    "clone": "Clone WAV sample",
+    "descriptionLabel": "Voice description",
+    "styleNote": "Style note",
+    "styleLabel": "Voice style",
+    "optional": "optional",
+    "optionalInstruction": "optional instruction",
+    "placeholders": {
+      "describe": "Warm low female voice, British accent…",
+      "clone": "Calm, conversational delivery…",
+      "style": "Cheerful, whispering, dramatic…"
+    },
+    "status": {
+      "installVoiceGen": "Install MOSS-VoiceGen to enable described voices.",
+      "designPipeline": "Voice design: {{designModel}} → speech: {{speechModel}}",
+      "directDescribe": "Using {{model}} directly for described speech.",
+      "installCloneModel": "Install OpenMOSS-TTS to clone a WAV voice sample.",
+      "sampleReady": "Voice sample ready: {{name}}",
+      "attachSample": "Attach one WAV voice sample with the paperclip below.",
+      "directStyle": "The selected OpenMOSS model receives the optional voice style directly."
+    }
+  },
+  "model3d": {
+    "downloadGlb": "Download GLB",
+    "converting": "Converting...",
+    "exportStl": "Export STL",
+    "exportFailed": "STL export failed.",
+    "note": "STL contains mesh geometry only; GLB keeps materials and textures.",
+    "settings": "3D generation settings",
+    "source": "Source",
+    "imageTo3d": "Image → 3D",
+    "textTo3d": "Text → image → 3D",
+    "imageModel": "Image model",
+    "downloadImageModel": "Download an image model first",
+    "resolution": "Resolution",
+    "fast": "512 · fast",
+    "sharp": "1024 · sharp",
+    "heavy": "1536 · heavy",
+    "background": "Background",
+    "autoMatte": "Auto matte",
+    "plainBackground": "Plain background",
+    "preparing": "Preparing 3D result…",
+    "preview": "3D model preview"
+  },
+  "add": {
+    "button": "Add files, photos, or tools",
+    "menu": "Add to chat",
+    "files": "Add files",
+    "tools": "Tools",
+    "back": "Back",
+    "backAria": "Back to add to chat options",
+    "fileTypes": {
+      "wav": "WAV audio file",
+      "images": "PNG, JPEG, BMP, or GIF image",
+      "imagesAndAudio": "Images and audio files",
+      "imageFiles": "Images",
+      "audioFiles": "Audio files",
+      "unavailable": "Not available for this model"
+    }
+  },
+  "tools": {
+    "title": "Tools for this chat",
+    "builtInDefault": "Built-in default",
+    "providers": "Tool providers",
+    "loading": "Loading MCP tools…",
+    "noneForServer": "No tools discovered for this server.",
+    "selectAll": "Select all tools for selected servers",
+    "lemonade": "Lemonade tools",
+    "external": "External MCP servers",
+    "noneExternal": "No external MCP servers are connected.",
+    "noneLemonade": "No Lemonade tools available.",
+    "summary": {
+      "one": "{{servers}} server · {{count}} tool",
+      "other": "{{servers}} servers · {{count}} tools"
+    },
+    "selectedSummary": "{{count}} selected · Lemonade and external MCP",
+    "description": "Lemonade tools and external MCP servers",
+    "builtIn": "Built in",
+    "httpEndpoint": "HTTP endpoint",
+    "localProcess": "Local process",
+    "toolCount": {
+      "one": "{{count}} tool",
+      "other": "{{count}} tools"
+    }
+  },
+  "composer": {
+    "message": "Message",
+    "stop": "Stop generating",
+    "stopTitle": "Stop",
+    "send": "Send",
+    "micStart": "Start live microphone transcription",
+    "micStop": "Stop live microphone transcription",
+    "micUnavailable": "Live microphone needs HTTPS/localhost and a realtime-capable audio model",
+    "placeholders": {
+      "noModel": "Draft a message. Connect and load a model to send…",
+      "omni": "Message {{model}} through the Omni collection…",
+      "chatMedia": "Message {{model}} with text, images, or audio…",
+      "chatImages": "Message {{model}} with text or images…",
+      "chatAudio": "Message {{model}} with text or audio…",
+      "imageEdit": "Describe the edit for {{model}}…",
+      "imageGenerate": "Describe an image for {{model}}…",
+      "audioTranscribe": "Attach audio or use the mic with {{model}}…",
+      "music": "Describe the music style, mood, tempo, instruments, and voice…",
+      "sound": "Describe the sound effect to generate…",
+      "model3dImage": "Attach a reference image for 3D reconstruction…",
+      "model3dText": "Describe the object to render and reconstruct in 3D…",
+      "ttsClone": "Type text to speak, then attach a WAV voice sample…",
+      "tts": "Text to speak with {{model}}…",
+      "messageModel": "Message {{model}}…"
+    },
+    "hints": {
+      "chatAudioRealtime": "Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions",
+      "chatAudio": "Chat + audio mode · attached audio is routed through chat completions",
+      "omni": "Omni collection mode · requests are orchestrated across collection components",
+      "imageEdit": "Image mode · attach one source image and prompt becomes /images/edits",
+      "imageGenerate": "Image mode · prompt becomes /images/generations",
+      "audio": "Transcription mode · attach a file for /audio/transcriptions or use live mic via /v1/realtime",
+      "music": "Music mode · instrumental or optional structured lyrics via /audio/generations",
+      "sound": "Sound mode · prompt becomes /audio/generations",
+      "model3dImage": "3D mode · image becomes /3d/generations · export GLB or geometry-only STL",
+      "model3dText": "3D mode · image model renders a reference, then TRELLIS reconstructs it",
+      "openMossDescribe": "OpenMOSS · describe a voice; MOSS-VoiceGen creates a reference for speech synthesis",
+      "openMossClone": "OpenMOSS · attach one WAV sample to clone its voice",
+      "openMossPlain": "OpenMOSS · optional voice style instruction via /audio/speech",
+      "tts": "TTS mode · text becomes /audio/speech",
+      "default": "Enter to send · Shift+Enter for newline · Paste or drop images"
+    },
+    "live": {
+      "microphoneLive": "Live microphone",
+      "connecting": "Connecting microphone…",
+      "microphone": "Microphone",
+      "listening": "Listening… start speaking to see transcription.",
+      "errors": {
+        "unavailable": "Microphone capture is not available in this browser.",
+        "permissionDenied": "Microphone access denied. Allow microphone permission for this site, then try again.",
+        "failed": "Failed to access microphone.",
+        "failedDetail": "Failed to access microphone: {{detail}}"
+      }
+    }
+  },
+  "emptyState": {
+    "title": "Get to know Lemonade",
+    "loaded": "Loaded right now",
+    "activeMode": "● Active {{mode}} mode",
+    "utilityOnly": "Utility model only",
+    "ready": {
+      "one": "{{count}} model ready. Ask a question or explore what Lemonade can do.",
+      "other": "{{count}} models ready. Ask a question or explore what Lemonade can do."
+    },
+    "noModels": "Ask a question to learn how Lemonade works and get started with your first model.",
+    "chips": {
+      "use": {
+        "label": "How do I use Lemonade?",
+        "prompt": "How do I get started with Lemonade?"
+      },
+      "add": {
+        "label": "How do I add a model?",
+        "prompt": "How do I download and load a model in Lemonade?"
+      },
+      "tools": {
+        "label": "What are Lemonade tools?",
+        "prompt": "What are Lemonade tools, and how do I use them?"
+      },
+      "hardware": {
+        "label": "What can my hardware run?",
+        "prompt": "What can my hardware run well with Lemonade?"
+      }
+    },
+    "openModel": "Open {{model}} in Models",
+    "runtime": "runtime",
+    "default": "default",
+    "deviceUnknown": "device unknown",
+    "useMode": "Use in {{mode}}",
+    "viewDetails": "View details",
+    "unloadTitle": "Unload {{model}}",
+    "unloading": "Unloading…",
+    "unload": "Unload"
+  },
+  "options": {
+    "chosen": "✓ You chose: {{choice}}",
+    "customPlaceholder": "Or type your own…",
+    "send": "Send"
+  },
+  "message": {
+    "saveResend": "Save & resend",
+    "cancel": "Cancel",
+    "actions": "Message actions",
+    "reasoning": "Reasoning{{summary}}",
+    "audioUnsupported": "Your browser does not support audio playback.",
+    "editResend": "Edit & resend",
+    "attachedImage": "Attached image {{index}}",
+    "generatedImage": "Generated image {{index}}",
+    "downloadAudio": "Download audio",
+    "copy": "Copy",
+    "readAloud": "Read aloud",
+    "retry": "Retry",
+    "tokens": {
+      "one": "{{count}} token",
+      "other": "{{count}} tokens"
+    },
+    "copied": "Copied",
+    "copyFailed": "Copy failed",
+    "assistant": "Assistant",
+    "copySuccessAnnouncement": "Message copied to clipboard.",
+    "copyFailureAnnouncement": "Could not copy the message to the clipboard."
+  },
+  "user": {
+    "you": "You"
+  },
+  "stream": {
+    "thinking": "Thinking…",
+    "tokens": {
+      "one": "{{count}} token",
+      "other": "{{count}} tokens"
+    },
+    "loadingForChat": "Loading {{model}} for chat…",
+    "waitingForModel": "Waiting for {{model}}{{progress}}…",
+    "downloadingModel": "Downloading {{model}}{{progress}}…",
+    "workingInMode": "Working in {{mode}} mode…",
+    "callingTools": "Calling {{tools}}…",
+    "stopped": "Stopped."
+  },
+  "a11y": {
+    "assistantResponding": "Assistant is responding",
+    "responseComplete": "Response complete",
+    "modelUnloaded": "{{model}} unloaded"
+  },
+  "toolLabels": {
+    "list_models": "List models",
+    "get_model_info": "Get model info",
+    "load_model": "Load model",
+    "unload_model": "Unload model",
+    "get_loaded_models": "Get loaded models",
+    "get_server_health": "Server health",
+    "pull_model": "Pull model",
+    "delete_model": "Delete model",
+    "get_system_info": "System info",
+    "list_backends": "List backends",
+    "install_backend": "Install backend",
+    "ask_question": "Asking you",
+    "generate_image": "Generate image",
+    "edit_image": "Edit image",
+    "generate_audio": "Generate audio",
+    "text_to_speech": "Text to speech",
+    "transcribe_audio": "Transcribe audio",
+    "generate_3d": "Generate 3D",
+    "analyze_image": "Analyze image"
+  },
+  "toolSummary": {
+    "failed": "failed.",
+    "completed": "completed.",
+    "more": {
+      "one": "…and {{count}} more tool call.",
+      "other": "…and {{count}} more tool calls."
+    },
+    "generated3d": "Generated a 3D model from the reference image.",
+    "generatedImages": {
+      "one": "Generated {{count}} image from your prompt.",
+      "other": "Generated {{count}} images from your prompt."
+    },
+    "generatedAudio": "Generated speech audio from your text."
+  },
+  "errors": {
+    "requestFailed": "I couldn't complete that request. Please check the server logs for details.",
+    "requestFailedDetail": "I couldn't complete that request.\n\n{{message}}",
+    "imageInputUnsupported": "The selected text model does not support image input. Choose a vision-capable model to send images.",
+    "audioRetryNeedsFile": "Retrying an audio transcription needs the original audio file. Please attach it again.",
+    "audioAttachmentRetryNeedsFile": "Retrying a request with an audio attachment needs the original file. Please attach it again.",
+    "mcpSetupFailed": "MCP setup failed and was switched off for this chat. Continuing without tools: {{message}}",
+    "serverDisconnected": "Lemonade Server is not connected. Reconnect the server, then retry this message.",
+    "imagePromptRequired": "Image mode needs a text prompt.",
+    "audioGenerationPromptRequired": "Audio generation needs a prompt.",
+    "textTo3dDescriptionRequired": "Text-to-3D needs an object description.",
+    "textTo3dImageModelRequired": "Choose a downloaded image model for the text-to-3D reference step.",
+    "imageTo3dReferenceRequired": "Image-to-3D needs one reference image.",
+    "ttsTextRequired": "TTS mode needs text to speak.",
+    "installVoiceGen": "Install MOSS-VoiceGen to design a voice from a description.",
+    "cloneSampleRequired": "Attach a WAV voice sample to clone.",
+    "installOpenMossTts": "Install OpenMOSS-TTS to clone a voice sample.",
+    "audioFileRequired": "Audio mode needs an audio file to transcribe.",
+    "capabilityUnsupported": "Models with capability “{{capability}}” cannot be used from the chat composer yet.",
+    "voiceSampleTooLarge": "“{{file}}” is too large (max 10 MB). A few seconds of clean speech is enough.",
+    "voiceSampleNotWav": "“{{file}}” is not a WAV file. Voice samples must use WAV audio.",
+    "downloadPaused": "Download for {{model}} is paused. Resume it in Downloads, then send again.",
+    "downloadFailed": "Download failed for {{model}}.",
+    "downloadCancelled": "Download for {{model}} was cancelled.",
+    "downloadDisappeared": "Download for {{model}} disappeared before it became ready.",
+    "downloadTimeout": "Download for {{model}} did not finish.",
+    "downloadIncomplete": "Lemonade could not finish downloading {{model}}.",
+    "downloadedNotReady": "{{model}} was downloaded but did not become ready for chat.",
+    "toolLoopLimit": "Too many tool-call rounds. Stopping to prevent a loop.",
+    "toolExecutionFailed": "Tool execution failed: {{message}}"
+  },
+  "capabilityResults": {
+    "editedImages": {
+      "one": "Edited {{count}} image from your prompt.",
+      "other": "Edited {{count}} images from your prompt."
+    },
+    "generatedImages": {
+      "one": "Generated {{count}} image from your prompt.",
+      "other": "Generated {{count}} images from your prompt."
+    },
+    "upscaled": "Added an upscaled version.",
+    "vocalTrack": "Generated a vocal track from your prompt.",
+    "instrumentalTrack": "Generated an instrumental track from your prompt.",
+    "soundEffect": "Generated a sound effect from your prompt.",
+    "textTo3d": "Rendered a reference image and reconstructed it as a textured 3D model.",
+    "imageTo3d": "Reconstructed the reference image as a textured 3D model.",
+    "speechAudio": "Generated speech audio from your text.",
+    "designedVoice": "Designed a voice from your description and generated speech with it.",
+    "describedVoice": "Generated speech with the described voice.",
+    "clonedVoice": "Generated speech using the attached voice sample."
+  },
+  "toolResults": {
+    "localModels": {
+      "one": "{{count}} local model: {{loaded}} loaded, {{downloaded}} downloaded",
+      "other": "{{count}} local models: {{loaded}} loaded, {{downloaded}} downloaded"
+    },
+    "registryModels": {
+      "one": "{{count}} registry model",
+      "other": "{{count}} registry models"
+    },
+    "inventoryRetrieved": "Model inventory retrieved.",
+    "unknownModel": "model",
+    "modelRecipes": {
+      "one": "{{model}}: {{count}} recipe",
+      "other": "{{model}}: {{count}} recipes"
+    },
+    "modelLoaded": "Model loaded.",
+    "modelUnloaded": "Model unloaded.",
+    "modelsLoaded": {
+      "one": "{{count}} model loaded",
+      "other": "{{count}} models loaded"
+    },
+    "serverHealth": {
+      "one": "Server {{status}} · {{count}} model loaded",
+      "other": "Server {{status}} · {{count}} models loaded"
+    },
+    "needsChoice": "A choice is required.",
+    "needsChoiceWithOptions": "Choose one: {{choices}}",
+    "downloadComplete": "Download complete.",
+    "modelDeleted": "Model deleted.",
+    "systemInfo": "System info: {{recipes}} recipes, {{backends}} installed backends.",
+    "backendRecipes": {
+      "one": "{{count}} backend recipe: {{names}}",
+      "other": "{{count}} backend recipes: {{names}}"
+    },
+    "presentingChoices": "Presenting choices.",
+    "error": "Error: {{message}}",
+    "downloadCompleteModel": "Downloaded {{model}}.",
+    "backendInstalled": "Backend installation completed for {{recipe}}/{{backend}}.",
+    "imageGenerated": "Image generated.",
+    "imageEdited": "Image edited.",
+    "audioGenerated": "Audio generated.",
+    "speechGenerated": "Speech generated.",
+    "audioTranscribed": "Audio transcribed.",
+    "model3dGenerated": "3D model generated.",
+    "imageAnalyzed": "Image analyzed.",
+    "modelLoadedNamed": "Loaded {{model}}.",
+    "modelUnloadedNamed": "Unloaded {{model}}.",
+    "modelDeletedNamed": "Deleted {{model}}.",
+    "noModelsLoaded": "No models are currently loaded.",
+    "backendDefault": "default {{backend}}",
+    "noBackends": "no backends",
+    "fields": {
+      "status": "Status",
+      "capability": "Capability",
+      "size": "Size",
+      "context": "Context",
+      "checkpoint": "Checkpoint",
+      "recipes": "Recipes",
+      "components": "Components",
+      "options": "Options",
+      "version": "Version",
+      "os": "OS",
+      "source": "Source",
+      "variant": "Variant",
+      "recipe": "Recipe",
+      "device": "Device",
+      "type": "Type",
+      "file": "File",
+      "downloads": "Downloads"
+    },
+    "statuses": {
+      "loaded": "loaded",
+      "downloaded": "downloaded",
+      "registry": "registry"
+    },
+    "capabilities": {
+      "chat": "chat",
+      "omni": "omni",
+      "image": "image",
+      "audio": "audio / transcription",
+      "audio-generation": "audio generation",
+      "tts": "text to speech",
+      "model3d": "3D",
+      "embedding": "embedding",
+      "reranking": "reranking",
+      "classification": "classification"
+    },
+    "backendStates": {
+      "installed": "installed",
+      "installable": "installable",
+      "unsupported": "unsupported",
+      "update_required": "update required",
+      "update_available": "update available",
+      "action_required": "action required",
+      "unknown": "unknown"
+    },
+    "systemBackendSummary": "Backends: {{installed}} installed, {{available}} installable/update, across {{recipes}} recipes."
+  },
+  "reasoning": {
+    "title": "Reasoning",
+    "aria": "Reasoning: {{mode}}",
+    "thinking": "Thinking",
+    "off": "Off",
+    "thinkingDescription": "Model thinks before answering",
+    "offDescription": "Direct answer"
+  }
+}

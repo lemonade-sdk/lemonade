@@ -102,8 +102,8 @@ assert.match(detailPanelSource, /appearance="primary"[\s\S]*?onClick=\{\(\) => o
   'the selected quantization must have one explicit primary download action');
 assert.ok(detailPanelSource.indexOf('hf-detail__gguf-primary-action') < detailPanelSource.indexOf('role="radiogroup"'),
   'the primary download action must stay above the variant list so long lists cannot hide it');
-assert.match(detailPanelSource, /hfVariants\.mmproj_files\.length > 0[\s\S]*?Included components[\s\S]*?Vision projector \(MMProj\)/,
-  'remote details must describe a detected mmproj as an included component');
+assert.match(detailPanelSource, /hfVariants\.mmproj_files\.length > 0[\s\S]*?t\('detail\.hf\.included'\)[\s\S]*?t\('detail\.hf\.visionProjector'\)/,
+  'remote details must describe a detected mmproj through localized semantic labels');
 assert.doesNotMatch(detailPanelSource, /hfVariants\.suggested_labels\.length > 0[\s\S]*?>Capabilities<\/span>/,
   'provider capability labels must not create a duplicate Capabilities block in remote details');
 assert.doesNotMatch(detailPanelSource, /hf-detail__gguf-action/,
@@ -123,8 +123,8 @@ assert.match(listPanelSource, /const identity = identityFromModelInfo\(m\);/,
 assert.match(nav, /const \[catalogsOpen, setCatalogsOpen\] = useState\(true\)/, 'Online Catalogs must be independently collapsible');
 assert.match(nav, /aria-expanded=\{catalogsOpen\}[\s\S]*aria-controls="nav-online-catalogs"[\s\S]*setCatalogsOpen/, 'Online Catalogs must use the standard collapsible section header');
 assert.match(nav, /\{catalogsOpen && \([\s\S]*id="nav-online-catalogs"/, 'catalog checkboxes must hide when collapsed');
-assert.match(nav, /className="model-nav-rail__section-toggle"[\s\S]*aria-expanded=\{catalogsOpen\}[\s\S]*>\s*<Icon name=\{catalogsOpen \? 'chevron-down' : 'chevron-right'\}[\s\S]*<span>Online Catalogs<\/span>/,
-  'Online Catalogs must use the same collapsible heading treatment as the other filter sections');
+assert.match(nav, /className="model-nav-rail__section-toggle"[\s\S]*aria-expanded=\{catalogsOpen\}[\s\S]*>\s*<Icon name=\{catalogsOpen \? 'chevron-down' : 'chevron-right'\}[\s\S]*<span>\{t\('nav\.catalogs'\)\}<\/span>/,
+  'Online Catalogs must use the same localized collapsible heading treatment as the other filter sections');
 assert.match(nav, /className="backends__toggle model-nav-rail__provider-option"/,
   'online catalogs must reuse the Backends checkbox treatment');
 assert.match(nav, /type="checkbox"[\s\S]*checked=\{enabled\}[\s\S]*onChange=\{\(\) => onToggleProvider\(provider\.key\)\}/,
@@ -135,16 +135,17 @@ assert.match(nav, /\{showCount && \([\s\S]*model-nav-rail__nav-count[\s\S]*\{cou
   'each provider must show its own result count, including zero during an active search');
 assert.doesNotMatch(nav, /providerCounts\.huggingface \+ providerCounts\.modelscope/,
   'provider counts must not be aggregated on the Online Catalogs heading');
-assert.ok(nav.indexOf('model-nav-rail__section--backends') < nav.indexOf('Online Catalogs'),
+const catalogsLabelIndex = nav.indexOf("t('nav.catalogs')");
+assert.ok(nav.indexOf('model-nav-rail__section--backends') < catalogsLabelIndex,
   'Online Catalogs must be below Backends');
-assert.ok(nav.indexOf('Online Catalogs') < nav.indexOf('aria-controls="nav-tags"'),
+assert.ok(catalogsLabelIndex < nav.indexOf('aria-controls="nav-tags"'),
   'Online Catalogs must remain directly before Tags');
 assert.doesNotMatch(styles, /model-nav-rail__section--providers\s*\{[\s\S]*border-top:/,
   'Online Catalogs must not add a divider below Backends');
 assert.match(styles, /\.model-nav-rail__provider-list \{[\s\S]*padding: 2px var\(--space-2\) 0;/,
   'catalog checkboxes must align horizontally with the task/backend controls');
-assert.match(styles, /\.backends__toggle input \{[\s\S]*width: 16px;[\s\S]*height: 16px;[\s\S]*border-radius: 3px;/,
-  'catalog checkboxes must inherit the exact Backends checkbox geometry');
+assert.match(styles, /input\[type="checkbox"\] \{[\s\S]*width: 16px;[\s\S]*height: 16px;[\s\S]*border-radius: 4px;/,
+  'catalog and Backends checkboxes must share the global checkbox geometry');
 assert.match(manager, /providerCounts=\{providerCounts\}[\s\S]*searchActive=\{searchActive\}/,
   'ModelManager must pass the existing search activity signal to the nav rail');
 

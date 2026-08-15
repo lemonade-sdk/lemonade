@@ -118,17 +118,20 @@ const connectSource = fs.readFileSync(path.join(root, 'src/components/ConnectVie
 const navigationSource = fs.readFileSync(path.join(root, 'src/features/navigation/workspaceNavigation.ts'), 'utf8');
 const stylesSource = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
 const chatSource = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
+const settingsLocaleSource = fs.readFileSync(path.join(root, 'src/i18n/locales/en-US/settings.json'), 'utf8');
+const modelsLocaleSource = fs.readFileSync(path.join(root, 'src/i18n/locales/en-US/models.json'), 'utf8');
 
 assert.doesNotMatch(listSource, /onOpenGlobalSettings|Open global model settings|Global model settings/);
-assert.match(listSource, /onUpdateAllModels && \([\s\S]*?icon="rotate-ccw"[\s\S]*?Update all downloaded models/);
+assert.match(listSource, /onUpdateAllModels && \([\s\S]*?icon="rotate-ccw"[\s\S]*?list\.updateAllTitle/);
+assert.match(modelsLocaleSource, /Update all downloaded models/);
 assert.doesNotMatch(managerSource, /showGlobalSettings|<GlobalModelSettingsPanel/);
 assert.match(managerSource, /loadWithGlobalModelPolicy/);
 assert.match(managerSource, /handleUpdateAllModels/);
 for (const label of ['Chat history', 'Memory budget', 'Loading and eviction', 'Collapse thinking by default', 'Default TTS model', 'Automatic model updates']) {
-  assert.ok(panelSource.includes(label), `settings panel is missing ${label}`);
+  assert.ok(settingsLocaleSource.includes(label), `settings locale is missing ${label}`);
 }
-assert.match(panelSource, /Kokoro · English/);
-assert.match(panelSource, /OpenMOSS · Multilingual/);
+assert.match(settingsLocaleSource, /Kokoro · English/);
+assert.match(settingsLocaleSource, /OpenMOSS · Multilingual/);
 assert.match(panelSource, /section === 'chat'/);
 assert.match(panelSource, /section === 'memory'/);
 assert.match(panelSource, /section === 'updates'/);

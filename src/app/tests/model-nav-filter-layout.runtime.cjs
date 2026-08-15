@@ -26,9 +26,9 @@ for (const [fileName, source] of [[navPath, nav], [listPath, list], [managerPath
   assert.equal(errors.length, 0, errors.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n'));
 }
 
-assert.match(nav, /<span>\{mobileOpen \? 'Categories' : 'Task'\}<\/span>/);
-assert.match(nav, /key: 'llm', label: 'Chat'/);
-assert.match(nav, /key: 'router', label: 'Router'/);
+assert.match(nav, /<span>\{t\(mobileOpen \? 'nav\.categories' : 'nav\.task'\)\}<\/span>/);
+assert.match(nav, /key: 'llm', labelKey: 'nav\.tasks\.llm'/);
+assert.match(nav, /key: 'router', labelKey: 'nav\.tasks\.router'/);
 assert.match(nav, /model-nav-rail__task-chip/);
 assert.match(nav, /model-nav-rail__backend-chip/);
 assert.match(nav, /\{backends\.map\(backend => \{/, 'the rail must render every derived backend');
@@ -42,7 +42,7 @@ assert.match(nav, /onTagFiltersChange\(next\)/);
 assert.match(nav, /modelHasFilterableBackend\(m\)/);
 assert.match(nav, /CUSTOM_TAGS_STORAGE_KEY/);
 assert.match(nav, /addCustomTag/);
-assert.match(nav, /Remove custom tag/);
+assert.match(nav, /nav\.removeCustomTag/);
 assert.doesNotMatch(nav, /nav-backend-select/);
 assert.doesNotMatch(nav, /\+ Recommended \+/);
 
@@ -54,10 +54,12 @@ assert.match(list, /raw\.recommended === true \|\| raw\.is_recommended === true 
 assert.match(list, /TAG_CHIPS: string\[\] = \['Recommended', 'Hot'/);
 assert.match(list, /if \(t === 'hot'\) return modelIsHot\(m\);/);
 assert.match(list, /Array\.isArray\(raw\.capabilities\)/);
-assert.match(list, /const FILTER_TABS:[\s\S]*?key: 'llm', label: 'Chat'[\s\S]*?key: 'embedding', label: 'Embed'/,
-  'task filter labels must remain defined because the selected-task live region depends on FILTER_TABS');
-assert.match(list, /Array\.from\(taskFilters\)\.map\(task => FILTER_TABS\.find/,
-  'selected task labels must remain wired to FILTER_TABS');
+assert.match(list, /const FILTER_TAB_I18N_KEYS: Record<FilterTab, string>/,
+  'task labels must come from translation keys rather than hardcoded English labels');
+assert.match(list, /llm: 'nav\.tasks\.llm'/);
+assert.match(list, /embedding: 'nav\.tasks\.embedding'/);
+assert.match(list, /Array\.from\(taskFilters\)\.map\(task => t\(FILTER_TAB_I18N_KEYS\[task\]/,
+  'selected task labels must resolve through the translation catalog');
 assert.doesNotMatch(list, /model-list-panel__filter-btn/, 'middle panel must not expose a duplicate filter control (#2936)');
 assert.doesNotMatch(list, /TextFilterRule/, 'removed middle-panel text-filter implementation must not linger as dead code');
 assert.doesNotMatch(list, /capabilityFilter/, 'middle-panel capability filter state must not linger after #2936');
@@ -143,6 +145,7 @@ function loadListHelpers() {
       backendCompactLabel: recipe => recipe,
       backendLabel: recipe => recipe,
     };
+    if (request === '../i18n') return { useI18n() { return { t: (key, params) => `${key}${params?.progress || ''}` }; } };
     throw new Error(`Unexpected dependency while loading ModelListPanel helpers: ${request}`);
   };
   Function('exports', 'require', 'module', '__filename', '__dirname', compiled.outputText)(

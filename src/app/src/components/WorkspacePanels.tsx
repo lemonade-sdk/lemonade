@@ -1,7 +1,8 @@
 import React from 'react';
 import { CapabilityIcon, Icon, type CapabilityIconTarget, type IconName } from './Icon';
-import { CAPABILITY_TAG_LABELS, type CapabilityTag } from '../modelCapabilities';
+import type { CapabilityTag } from '../modelCapabilities';
 import { capabilityColor } from '../modelPresentation';
+import { useI18n } from '../i18n';
 
 export type WorkspaceMetadataEmphasis = 'high' | 'medium' | 'low';
 export type WorkspaceMetadataTone = 'neutral' | 'accent' | 'success' | 'warning';
@@ -583,6 +584,8 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
   onKeyDown,
   onFocus,
 }) => {
+  const { t } = useI18n('common');
+  const localizedCapabilityTagLabel = (glyph: CapabilityTag) => t(`capabilityTags.${glyph}`);
   const leadColor = capability ? capabilityColor(capability) : undefined;
   const factParts = (Array.isArray(meta) ? meta : [meta]).filter(Boolean);
   /* An active status takes the whole meta line rather than sharing it. Its words
@@ -607,12 +610,12 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
           key="glyphs"
           className="workspace-list-row__glyphs"
           role="img"
-          aria-label={`Additional capabilities: ${glyphs
-            .map(glyph => CAPABILITY_TAG_LABELS[glyph as CapabilityTag])
-            .join(', ')}`}
+          aria-label={t('capabilityTags.additional', {
+            capabilities: glyphs.map(glyph => localizedCapabilityTagLabel(glyph as CapabilityTag)).join(', '),
+          })}
         >
           {glyphs.map(glyph => (
-            <span key={glyph} title={CAPABILITY_TAG_LABELS[glyph as CapabilityTag]} aria-hidden="true">
+            <span key={glyph} title={localizedCapabilityTagLabel(glyph as CapabilityTag)} aria-hidden="true">
               <CapabilityIcon capability={glyph} size={12} />
             </span>
           ))}
@@ -733,19 +736,23 @@ export const WorkspaceDetailPanel = React.forwardRef<HTMLElement, WorkspaceDetai
   titleExtras,
   headerExtras,
   onBack,
-  backLabel = 'Back to list',
+  backLabel,
   backClassName = 'workspace-detail-panel__back',
   onClose,
-  closeLabel = 'Close detail panel',
+  closeLabel,
   closeClassName = 'workspace-detail-panel__close',
   closeIcon = 'x',
   className = '',
   children,
-}, ref) => (
+}, ref) => {
+  const { t } = useI18n('common');
+  const resolvedBackLabel = backLabel ?? t('detail.back');
+  const resolvedCloseLabel = closeLabel ?? t('detail.close');
+  return (
   <section ref={ref} className={`workspace-detail-panel${className ? ` ${className}` : ''}`} role="region" aria-label={ariaLabel}>
     {onBack && (
-      <button type="button" className={backClassName} onClick={onBack} aria-label={backLabel}>
-        <Icon name="chevron-right" size={14} className="workspace-detail-panel__back-icon" aria-hidden="true" /> {backLabel}
+      <button type="button" className={backClassName} onClick={onBack} aria-label={resolvedBackLabel}>
+        <Icon name="chevron-right" size={14} className="workspace-detail-panel__back-icon" aria-hidden="true" /> {resolvedBackLabel}
       </button>
     )}
     {(title !== undefined || actions || titleExtras || headerExtras) && <header className="workspace-detail-panel__header">
@@ -761,7 +768,7 @@ export const WorkspaceDetailPanel = React.forwardRef<HTMLElement, WorkspaceDetai
           </div>
           {titleExtras}
           {onClose && (
-            <button type="button" className={closeClassName} onClick={onClose} aria-label={closeLabel}>
+            <button type="button" className={closeClassName} onClick={onClose} aria-label={resolvedCloseLabel}>
               <Icon name={closeIcon} size={16} aria-hidden="true" />
             </button>
           )}
@@ -773,7 +780,8 @@ export const WorkspaceDetailPanel = React.forwardRef<HTMLElement, WorkspaceDetai
     {descriptionPlacement === 'body' && description && <div className="workspace-detail-panel__description">{description}</div>}
     {children}
   </section>
-));
+  );
+});
 
 WorkspaceDetailPanel.displayName = 'WorkspaceDetailPanel';
 

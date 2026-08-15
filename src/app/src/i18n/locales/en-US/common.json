@@ -1,0 +1,71 @@
+{
+  "actions": {
+    "add": "Add",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "close": "Close",
+    "connect": "Connect",
+    "open": "Open",
+    "refresh": "Refresh",
+    "remove": "Remove",
+    "retry": "Try again",
+    "save": "Save",
+    "search": "Search",
+    "set": "Set"
+  },
+  "status": {
+    "connected": "Connected",
+    "connecting": "Connecting…",
+    "offline": "Offline",
+    "loading": "Loading…",
+    "saving": "Saving…",
+    "refreshing": "Refreshing…"
+  },
+  "language": {
+    "system": "System default",
+    "systemDescription": "Follow the operating system language when Lemonade starts.",
+    "current": "Current language"
+  },
+  "sidebar": {
+    "expand": "Expand {{label}} sidebar",
+    "collapse": "Collapse {{label}} sidebar",
+    "close": "Close {{label}} panel",
+    "closePanel": "Close panel"
+  },
+  "markdown": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Copy failed",
+    "copyCode": "Copy code",
+    "copyFailedTitle": "Could not copy code to the clipboard",
+    "customPlaceholder": "Or type your own...",
+    "send": "Send",
+    "diagramLoading": "Loading diagram...",
+    "diagramError": "Diagram syntax error",
+    "showDiagram": "Show diagram",
+    "showSource": "Show source"
+  },
+  "detail": {
+    "back": "Back to list",
+    "close": "Close detail panel"
+  },
+  "capabilityTags": {
+    "additional": "Additional capabilities: {{capabilities}}",
+    "hot": "Hot",
+    "popular": "Popular",
+    "chat": "Chat",
+    "omni": "Omni",
+    "vision": "Vision",
+    "tool": "Tool use",
+    "reasoning": "Reasoning",
+    "code": "Code",
+    "audio": "Audio",
+    "audio-generation": "Music & SFX",
+    "image": "Image",
+    "tts": "Speech (TTS)",
+    "model3d": "3D",
+    "embedding": "Embeddings",
+    "reranking": "Reranking",
+    "classification": "Classification"
+  }
+}

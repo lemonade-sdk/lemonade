@@ -1,0 +1,172 @@
+{
+  "status": {
+    "online": "Server online",
+    "connecting": "Connecting",
+    "offline": "Server offline"
+  },
+  "server": {
+    "url": "Server URL",
+    "urlHint": "Use a full http:// or https:// URL. Connection errors show the exact endpoint.",
+    "apiKey": "API Key (optional)",
+    "rememberApiKey": "Remember API key",
+    "warning": "Warning: {{message}}",
+    "actions": "Server connection actions",
+    "connecting": "Connecting...",
+    "clearLocalData": "Clear permitted local data",
+    "connectFailed": "Could not connect to {{url}}.",
+    "connectedSaved": "Connected to {{url}}. API key saved in Lemonade app settings.",
+    "connected": "Connected to {{url}}.",
+    "clearConfirm": "Clear Lemonade browser data and connection settings on this device?",
+    "clearPartialError": "Local browser data was cleared, but Lemonade app settings could not be cleared: {{message}}",
+    "clearedNotice": "Local Lemonade data and global connection settings were cleared.",
+    "urlRequired": "Server URL is required.",
+    "urlProtocol": "Server URL must start with http:// or https://.",
+    "invalidUrl": "Invalid server URL: {{url}}"
+  },
+  "language": {
+    "intro": "Choose the language used by the Lemonade interface. The choice is stored locally on this device.",
+    "label": "Interface language",
+    "systemOption": "System default ({{language}})",
+    "active": "Active locale: {{locale}}",
+    "fallback": "Missing translations fall back to the source locale automatically."
+  },
+  "help": {
+    "intro": "Quick access to project support, documentation, and community channels.",
+    "links": "Help links",
+    "documentation": "Documentation",
+    "documentationDescription": "Setup, APIs, and integration guides.",
+    "releaseNotes": "Release notes",
+    "releaseNotesDescription": "Latest packaged changes and tags.",
+    "github": "GitHub",
+    "githubDescription": "Source, issues, and pull requests.",
+    "discord": "Discord",
+    "discordDescription": "Community support and discussion."
+  },
+  "storage": {
+    "intro": "Keep the normal Lemonade model cache separate from an external GGUF directory scanned as extra custom models.",
+    "modelsDirectory": "Models directory",
+    "modelsPlaceholder": "Default Lemonade model cache",
+    "externalDirectory": "External custom models directory",
+    "directoryActions": "Directory actions",
+    "saving": "Saving...",
+    "save": "Save directories",
+    "saved": "Directory settings saved.",
+    "notPersisted": "This runtime cannot persist directory settings; use the desktop app host bridge or start lemond with --extra-models-dir."
+  },
+  "cloud": {
+    "refreshing": "Refreshing...",
+    "refresh": "Refresh",
+    "intro": "Register OpenAI-compatible providers on the connected Lemonade server. Runtime keys can be replaced or cleared without editing files.",
+    "templates": "Provider templates",
+    "providerName": "Provider name",
+    "providerNamePlaceholder": "provider name, e.g. fireworks",
+    "baseUrl": "Base URL",
+    "apiKeyOptional": "Provider API key (optional)",
+    "apiKeyPlaceholder": "API key (optional)",
+    "addProvider": "Add provider",
+    "baseUrlHint": "Full https:// base URL of the OpenAI-compatible provider endpoint.",
+    "list": "Cloud providers",
+    "loading": "Loading cloud providers...",
+    "empty": "No cloud providers configured yet.",
+    "connectFirst": "Connect to a server to manage cloud providers.",
+    "models": "{{count}} models · {{url}}",
+    "noUrl": "no URL",
+    "authConfigured": "Auth configured",
+    "authVia": "Auth configured via {{variable}}",
+    "noApiKey": "No API key",
+    "noApiKeyVariable": "No API key ({{variable}})",
+    "actionsFor": "Actions for {{name}}",
+    "newApiKey": "New API key",
+    "newApiKeyFor": "New API key for {{name}}",
+    "providerFallback": "provider",
+    "saveKey": "Save key",
+    "setKey": "Set key",
+    "clearKey": "Clear key",
+    "remove": "Remove",
+    "unavailable": "Cloud providers unavailable: {{message}}",
+    "providerRequired": "Provider name and base URL are required.",
+    "installed": {
+      "one": "Installed {{provider}} ({{count}} model discovered).",
+      "other": "Installed {{provider}} ({{count}} models discovered)."
+    },
+    "keySaved": {
+      "one": "API key saved for {{provider}} ({{count}} model discovered).",
+      "other": "API key saved for {{provider}} ({{count}} models discovered)."
+    },
+    "keyCleared": "API key cleared for {{provider}}.",
+    "removeConfirm": "Remove cloud provider {{provider}}?",
+    "removed": "Removed {{provider}}."
+  },
+  "global": {
+    "chat": {
+      "historyTitle": "Chat history",
+      "saveHistory": "Save chat history in this browser",
+      "mediaNotPersisted": "Chat media is never persisted.",
+      "behaviorTitle": "Chat behavior",
+      "collapseThinking": "Collapse thinking by default",
+      "collapseThinkingDescription": "Reasoning remains available in an expandable section on every assistant message.",
+      "speechTitle": "Chat speech",
+      "defaultTts": "Default TTS model",
+      "noDefaultSpeech": "No default speech model",
+      "kokoroGroup": "Kokoro · English",
+      "kokoroMissing": "Kokoro English · install kokoro-v1",
+      "openMossGroup": "OpenMOSS · Multilingual",
+      "openMossMissing": "OpenMOSS multilingual · install OpenMOSS-TTS",
+      "otherTts": "Other TTS models",
+      "playbackMode": "Global TTS playback mode",
+      "readModes": {
+        "onDemand": {
+          "title": "Agent read on demand",
+          "description": "Play speech only when the speaker action is used."
+        },
+        "agent": {
+          "title": "Read agent",
+          "description": "Automatically read every assistant response."
+        },
+        "agentAndUser": {
+          "title": "Read agent and user",
+          "description": "Read assistant responses and submitted user text."
+        }
+      }
+    },
+    "memory": {
+      "budgetTitle": "Memory budget",
+      "loadedEstimate": "{{count}} loaded · {{size}} estimated",
+      "unknown": "Unknown",
+      "budgetDescription": "The client uses known model sizes to pre-evict before loading. Server-managed mode leaves memory decisions entirely to Lemonade.",
+      "budgetSource": "Budget source",
+      "automaticServer": "Automatic / server managed",
+      "customVram": "Custom VRAM budget",
+      "customMemory": "Custom system memory budget",
+      "budget": "Budget",
+      "autoEvict": "Auto-evict on memory or VRAM pressure",
+      "autoEvictDescription": "On an OOM-style load failure, evict eligible models and retry once.",
+      "loadingTitle": "Loading and eviction",
+      "loadingPolicy": "Loading policy",
+      "keepLoaded": "Keep loaded models",
+      "singleActive": "Single active model",
+      "stayWithinBudget": "Stay within budget",
+      "evictionOrder": "Eviction order",
+      "leastRecentlyUsed": "Least recently used",
+      "largestFirst": "Largest first",
+      "oldestProcess": "Oldest process first",
+      "manualOnly": "Manual only",
+      "protectPinned": "Protect pinned models from automatic eviction",
+      "protectPinnedDescription": "Pinned models can still be unloaded manually."
+    },
+    "updates": {
+      "title": "Model updates",
+      "automatic": "Automatic model updates",
+      "automaticDescription": "Off by default. When enabled, GUI3 checks downloaded models at most once per day."
+    },
+    "sectionNames": {
+      "chat": "Chat",
+      "memory": "Memory",
+      "updates": "Model updates"
+    },
+    "actionsLabel": "{{section}} settings actions",
+    "saved": "Saved",
+    "save": "Save settings",
+    "reset": "Reset defaults"
+  }
+}

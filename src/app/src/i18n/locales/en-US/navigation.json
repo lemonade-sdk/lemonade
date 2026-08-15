@@ -1,0 +1,68 @@
+{
+  "workspaces": {
+    "dashboard": {
+      "label": "Monitor"
+    },
+    "connect": {
+      "label": "Settings"
+    }
+  },
+  "sections": {
+    "performance": {
+      "label": "Performance",
+      "description": "Health and throughput"
+    },
+    "telemetry": {
+      "label": "Telemetry",
+      "description": "Traces, replay and tuning"
+    },
+    "logs": {
+      "label": "Logs",
+      "description": "Live server output"
+    },
+    "server": {
+      "label": "Server",
+      "description": "Endpoint and authentication"
+    },
+    "chat": {
+      "label": "Chat",
+      "description": "History, reasoning, and speech"
+    },
+    "memory": {
+      "label": "Memory",
+      "description": "Budget, loading and eviction"
+    },
+    "language": {
+      "label": "Language",
+      "description": "Interface language and locale"
+    },
+    "model-storage": {
+      "label": "Model storage",
+      "description": "Cache and custom directories"
+    },
+    "cloud-providers": {
+      "label": "Cloud providers",
+      "description": "OpenAI-compatible services"
+    },
+    "mcp-gateway": {
+      "label": "MCP gateway",
+      "description": "Tools and external servers"
+    },
+    "help-and-support": {
+      "label": "Help & support",
+      "description": "Docs, releases and community"
+    }
+  },
+  "rail": {
+    "settings": "Settings",
+    "connectionSettings": "Connection settings",
+    "connectSections": "Connect sections",
+    "connectionSidebar": "connection settings",
+    "openConnectionSettings": "Open connection settings",
+    "monitorNavigation": "Monitor navigation",
+    "monitorSections": "Monitor sections",
+    "views": "Views",
+    "monitorSidebar": "monitor navigation",
+    "openMonitorViews": "Open monitor views"
+  }
+}

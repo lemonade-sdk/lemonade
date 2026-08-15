@@ -1,7 +1,8 @@
 import React, { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
-import { capabilityFromModelInfo, modelCapabilityTags, modelSupportsChatImageInput } from '../modelCapabilities';
+import { useI18n } from '../i18n';
+import { capabilityFromModelInfo, capabilityTagForLabel, modelCapabilityTags, modelSupportsChatImageInput } from '../modelCapabilities';
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomModelRecord, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
@@ -77,65 +78,6 @@ function modelLabels(m: ModelInfo | null | undefined): string[] {
 
 const recipeLabel = backendLabel;
 
-function labelDisplay(label: string): string {
-  const map: Record<string, string> = {
-    'chat': 'Chat',
-    'llm': 'Chat',
-    'tool-calling': 'Tools',
-    'tools': 'Tools',
-    'vision': 'Vision',
-    'image-input': 'Vision',
-    'vlm': 'VLM',
-    'omni': 'Omni',
-    'multimodal': 'Multimodal',
-    'multi-modal': 'Multimodal',
-    'vision-language': 'Vision Language',
-    'reasoning': 'Reasoning',
-    'coding': 'Code',
-    'code': 'Code',
-    'hot': 'Hot',
-    'popular': 'Popular',
-    'mtp': 'MTP',
-    'embedding': 'Embedding',
-    'embeddings': 'Embeddings',
-    'reranker': 'Reranking',
-    'reranking': 'Reranking',
-    'audio': 'Audio',
-    'audio-generation': 'Audio generation',
-    'music-generation': 'Music generation',
-    'sound-generation': 'Sound generation',
-    'asr': 'ASR',
-    'stt': 'STT',
-    'speech-to-text': 'Speech to Text',
-    'transcription': 'Transcription',
-    'realtime-transcription': 'Realtime',
-    'chat-transcription': 'Chat ASR',
-    'tts': 'TTS',
-    'speech': 'Speech',
-    'text-to-speech': 'Text to Speech',
-    'image': 'Image',
-    'image-generation': 'Image',
-    '3d': '3D',
-    '3d-generation': '3D',
-    'image-to-3d': 'Image to 3D',
-    'model3d': '3D',
-    'diffusion': 'Image',
-    'edit': 'Edit',
-    'image-edit': 'Edit',
-    'image-editing': 'Edit',
-    'upscaling': 'Upscale',
-    'custom': 'Custom',
-  };
-  const key = String(label || '').toLowerCase();
-  return map[key] || label;
-}
-
-function formatDownloads(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
 
 
 function safeFileName(value: string): string {
@@ -174,94 +116,79 @@ const RECIPE_BADGES: Record<string, string> = {
   'collection.router': 'Router',
 };
 
-type CustomRecipeOption = { value: string; recipe: string; backend?: string; label: string; hint: string };
-type CustomCheckpointExample = { key: string; label: string; checkpoint: string; note: string };
+type CustomRecipeOption = { value: string; recipe: string; label: string };
+type CustomCheckpointExample = { key: string; checkpoint: string };
 
 function supportsVisionProjectorField(capability: CustomModelCapability): boolean {
   return capability === 'chat' || capability === 'omni';
 }
-type CustomRecipeSuggestion = { checkpoint: string; note: string; extraCheckpoints?: CustomCheckpointExample[] };
+type CustomRecipeSuggestion = { checkpoint: string; extraCheckpoints?: CustomCheckpointExample[] };
 
 const CUSTOM_LLM_RECIPE_ORDER = ['llamacpp', 'flm', 'ryzenai-llm', 'vllm'];
 
 const CUSTOM_RECIPE_SUGGESTIONS: Record<string, CustomRecipeSuggestion> = {
   llamacpp: {
     checkpoint: 'unsloth/Qwen3-8B-GGUF:Q4_K_M',
-    note: 'GGUF repo plus quantization suffix; Lemonade can download the selected quantization.',
     extraCheckpoints: [
       {
         key: 'mmproj',
-        label: 'Vision projector (mmproj)',
         checkpoint: 'ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf',
-        note: 'Optional for llama.cpp vision models; leave empty for text-only GGUFs.',
       },
     ],
   },
   vllm: {
     checkpoint: 'Qwen/Qwen3-4B',
-    note: 'Upstream Hugging Face transformer checkpoint; vLLM loads the repo directly.',
   },
   flm: {
     checkpoint: 'qwen3-0.6b-FLM',
-    note: 'FastFlowLM model id or local FastFlowLM artifact path for supported AMD NPU models.',
   },
   'ryzenai-llm': {
     checkpoint: 'amd/Llama-3.2-1B-Instruct-onnx-ryzenai-1.7-hybrid',
-    note: 'RyzenAI-compatible ONNX/HF checkpoint or local path.',
   },
   'sd-cpp': {
     checkpoint: 'unsloth/FLUX.2-klein-9B-GGUF:flux-2-klein-9b-Q8_0.gguf',
-    note: 'Primary diffusion checkpoint. Extra fields below cover multi-file image models.',
     extraCheckpoints: [
       {
         key: 'text_encoder',
-        label: 'Text encoder checkpoint',
         checkpoint: 'unsloth/Qwen3-8B-GGUF:Qwen3-8B-Q8_0.gguf',
-        note: 'Optional text encoder checkpoint for Flux/Qwen-style image pipelines.',
       },
       {
         key: 'vae',
-        label: 'VAE checkpoint',
         checkpoint: 'Comfy-Org/vae-text-encorder-for-flux-klein-9b:split_files/vae/flux2-vae.safetensors',
-        note: 'Optional VAE checkpoint for image models that split the VAE from the main model.',
       },
     ],
   },
   whispercpp: {
     checkpoint: 'ggerganov/whisper.cpp:ggml-base.bin',
-    note: 'Whisper.cpp checkpoint repo plus .bin model file.',
   },
   moonshine: {
     checkpoint: 'UsefulSensors/moonshine-streaming:onnx/tiny',
-    note: 'Moonshine streaming checkpoint repo plus ONNX variant path.',
   },
   kokoro: {
     checkpoint: 'mikkoph/kokoro-onnx',
-    note: 'Kokoro ONNX model repository or local model path.',
   },
   acestep: {
     checkpoint: 'Serveurperso/ACE-Step-1.5-GGUF:acestep-v15-xl-sft-Q8_0.gguf',
-    note: 'ACE-Step checkpoint for music generation.',
   },
   thinksound: {
     checkpoint: 'ilintar/thinksound-gguf',
-    note: 'ThinkSound checkpoint for prompt-driven sound effects.',
   },
   openmoss: {
     checkpoint: 'ilintar/moss-tts-gguf:moss-tts-1.5-q8_0.gguf',
-    note: 'OpenMOSS checkpoint for speech synthesis or voice design.',
   },
   trellis: {
     checkpoint: 'ilintar/trellis2-gguf',
-    note: 'TRELLIS.2 checkpoint for image-to-3D reconstruction.',
   },
 };
 
-const InlineCheckpointExample: React.FC<{ checkpoint: string; note?: string }> = ({ checkpoint, note }) => (
-  <span className="custom-model-form__inline-example" title={note || checkpoint}>
-    Example: <code>{checkpoint}</code>
-  </span>
-);
+const InlineCheckpointExample: React.FC<{ checkpoint: string; note?: string }> = ({ checkpoint, note }) => {
+  const { t } = useI18n('models');
+  return (
+    <span className="custom-model-form__inline-example" title={note || checkpoint}>
+      {t('manager.custom.example')} <code>{checkpoint}</code>
+    </span>
+  );
+};
 
 function optionValue(recipe: string, backend?: string): string {
   return backend ? `${recipe}:${backend}` : recipe;
@@ -271,42 +198,42 @@ function optionRecipe(value: string): string {
   return String(value || '').split(':')[0] || value;
 }
 
-function customRecipeOption(recipe: string, label: string, hint: string, backend?: string): CustomRecipeOption {
-  return { value: optionValue(recipe, backend), recipe, backend, label, hint };
+function customRecipeOption(recipe: string, label: string): CustomRecipeOption {
+  return { value: optionValue(recipe), recipe, label };
 }
 
 const CHAT_RECIPE_OPTIONS: CustomRecipeOption[] = [
-  customRecipeOption('llamacpp', 'llama.cpp', 'Local GGUF / llama.cpp backend'),
-  customRecipeOption('flm', 'FastFlowLM', 'FastFlowLM backend for supported AMD NPU models'),
-  customRecipeOption('ryzenai-llm', 'RyzenAI', 'RyzenAI LLM backend for compatible ONNX/quantized models'),
-  customRecipeOption('vllm', 'vLLM', 'vLLM backend for compatible HF transformer checkpoints'),
+  customRecipeOption('llamacpp', 'llama.cpp'),
+  customRecipeOption('flm', 'FastFlowLM'),
+  customRecipeOption('ryzenai-llm', 'RyzenAI'),
+  customRecipeOption('vllm', 'vLLM'),
 ];
 
 const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]> = {
   chat: CHAT_RECIPE_OPTIONS,
   omni: CHAT_RECIPE_OPTIONS,
-  classification: [customRecipeOption('onnxruntime', 'ONNX Runtime', 'Text classification through /classify')],
-  image: [customRecipeOption('sd-cpp', 'Stable Diffusion', 'Stable Diffusion C++ backend')],
+  classification: [customRecipeOption('onnxruntime', 'ONNX Runtime')],
+  image: [customRecipeOption('sd-cpp', 'Stable Diffusion')],
   audio: [
-    customRecipeOption('whispercpp', 'Whisper', 'Whisper C++ transcription backend'),
-    customRecipeOption('moonshine', 'Moonshine', 'CPU streaming speech-to-text backend'),
+    customRecipeOption('whispercpp', 'Whisper'),
+    customRecipeOption('moonshine', 'Moonshine'),
   ],
   'audio-generation': [
-    customRecipeOption('acestep', 'ACE-Step', 'Music generation backend'),
-    customRecipeOption('thinksound', 'ThinkSound', 'Sound-effect generation backend'),
+    customRecipeOption('acestep', 'ACE-Step'),
+    customRecipeOption('thinksound', 'ThinkSound'),
   ],
   tts: [
-    customRecipeOption('openmoss', 'OpenMOSS TTS', 'OpenMOSS speech and voice-design backend'),
-    customRecipeOption('kokoro', 'Kokoro TTS', 'Kokoro text-to-speech backend'),
+    customRecipeOption('openmoss', 'OpenMOSS TTS'),
+    customRecipeOption('kokoro', 'Kokoro TTS'),
   ],
-  model3d: [customRecipeOption('trellis', 'TRELLIS.2', 'Image-to-3D reconstruction backend')],
-  embedding: [customRecipeOption('llamacpp', 'llama.cpp', 'Embedding through llama.cpp-compatible model')],
-  reranking: [customRecipeOption('llamacpp', 'llama.cpp', 'Reranking through llama.cpp-compatible model')],
+  model3d: [customRecipeOption('trellis', 'TRELLIS.2')],
+  embedding: [customRecipeOption('llamacpp', 'llama.cpp')],
+  reranking: [customRecipeOption('llamacpp', 'llama.cpp')],
 };
 
 function recipeOptionsForCustomDraft(capability: CustomModelCapability, omniSource: 'single' | 'collection'): CustomRecipeOption[] {
   if (capability === 'omni' && omniSource === 'collection') {
-    return [customRecipeOption('collection.omni', 'Omni Collection', 'Virtual wrapper around selected component models')];
+    return [customRecipeOption('collection.omni', 'Omni Collection')];
   }
   return CUSTOM_RECIPE_OPTIONS[capability] || CHAT_RECIPE_OPTIONS;
 }
@@ -392,18 +319,6 @@ function optionSortRank(option: CustomRecipeOption): number {
   return recipeRank === -1 ? 1000 : recipeRank * 100;
 }
 
-function summarizeRecipeAvailability(backends: Array<[string, unknown]>): string {
-  const stateLabels = Array.from(new Set(
-    backends
-      .map(([, info]) => backendState(info))
-      .filter(Boolean)
-      .map(state => state.replace(/_/g, ' '))
-  ));
-  if (stateLabels.length === 0) return 'Available on this Lemonade server.';
-  if (stateLabels.length === 1) return `Available on this Lemonade server (${stateLabels[0]}).`;
-  return `Available on this Lemonade server (${stateLabels.join(', ')}).`;
-}
-
 function recipeOptionsFromSystemInfo(info: Record<string, unknown> | null): Partial<Record<CustomModelCapability, CustomRecipeOption[]>> {
   const entries = systemRecipeEntries(info);
   if (!entries) return {};
@@ -420,11 +335,7 @@ function recipeOptionsFromSystemInfo(info: Record<string, unknown> | null): Part
 
     const backendNames = backends.map(([name]) => name);
     const capabilities = recipeCapabilities(recipe, backendNames);
-    const option = customRecipeOption(
-      recipe,
-      recipeLabel(recipe),
-      summarizeRecipeAvailability(backends),
-    );
+    const option = customRecipeOption(recipe, recipeLabel(recipe));
 
     for (const capability of capabilities) {
       result[capability] = dedupeRecipeOptions([...(result[capability] || []), option]);
@@ -773,39 +684,15 @@ interface OmniComponentOption {
   labels: string[];
 }
 
-const OMNI_COMPONENT_ROLE_CONFIG: Record<OmniComponentRole, { label: string; placeholder: string; help: string; required?: boolean }> = {
-  llm: {
-    label: 'Planner LLM',
-    placeholder: 'Search downloaded, registry, or custom LLMs…',
-    help: 'Required planner model for chat and tool calls.',
-    required: true,
-  },
-  vision: {
-    label: 'Vision',
-    placeholder: 'Search vision/VLM components…',
-    help: 'Optional model used for image analysis.',
-  },
-  image: {
-    label: 'Image generation',
-    placeholder: 'Search image generation components…',
-    help: 'Optional model used to generate images.',
-  },
-  edit: {
-    label: 'Image editing',
-    placeholder: 'Search image edit components…',
-    help: 'Optional model used to edit existing images.',
-  },
-  transcription: {
-    label: 'Transcription',
-    placeholder: 'Search Whisper/Moonshine/audio components…',
-    help: 'Optional speech-to-text model.',
-  },
-  speech: {
-    label: 'Text to speech',
-    placeholder: 'Search TTS/speech components…',
-    help: 'Optional text-to-speech model.',
-  },
+const OMNI_COMPONENT_ROLE_CONFIG: Record<OmniComponentRole, { required?: boolean }> = {
+  llm: { required: true },
+  vision: {},
+  image: {},
+  edit: {},
+  transcription: {},
+  speech: {},
 };
+
 
 function lowerLabels(m: ModelInfo): string[] {
   return (m.labels || []).map(label => label.toLowerCase().trim()).filter(Boolean);
@@ -838,7 +725,11 @@ function isOmniComponentEligible(m: ModelInfo, role: OmniComponentRole): boolean
   }
 }
 
-function omniComponentOptionFromModel(m: ModelInfo): OmniComponentOption {
+function omniComponentOptionFromModel(
+  m: ModelInfo,
+  t: (key: string) => string,
+  tCommon: (key: string) => string,
+): OmniComponentOption {
   const id = modelName(m);
   const downloaded = Boolean((m as any).downloaded);
   const custom = Boolean((m as any).custom);
@@ -846,9 +737,12 @@ function omniComponentOptionFromModel(m: ModelInfo): OmniComponentOption {
   const labels = lowerLabels(m);
   const source: OmniComponentOptionSource = custom ? 'custom' : downloaded ? 'downloaded' : 'registered';
   const detailParts = [
-    custom ? 'custom' : downloaded ? 'downloaded' : 'registered · will download when pulled',
+    custom ? t('manager.custom.picker.details.custom') : downloaded ? t('manager.custom.picker.details.downloaded') : t('manager.custom.picker.details.registered'),
     recipeLabel(recipe),
-    labels.slice(0, 3).map(labelDisplay).join(', '),
+    labels.slice(0, 3).map(label => {
+      const tag = capabilityTagForLabel(label);
+      return tag ? tCommon(`capabilityTags.${tag}`) : label;
+    }).join(', '),
   ].filter(Boolean);
   return {
     id,
@@ -895,7 +789,10 @@ interface OmniComponentPickerProps {
 }
 
 const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, options, onChange, onHuggingFaceSearch }) => {
+  const { t } = useI18n('models');
   const config = OMNI_COMPONENT_ROLE_CONFIG[role];
+  const roleKey = `manager.custom.picker.roles.${role}`;
+  const label = t(`${roleKey}.label`);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -928,9 +825,9 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
   }, [visibleOptions.length]);
 
   const groups: Array<{ source: OmniComponentOptionSource; label: string; options: OmniComponentOption[] }> = [
-    { source: 'custom' as OmniComponentOptionSource, label: 'Custom models', options: visibleOptions.filter(option => option.source === 'custom') },
-    { source: 'downloaded' as OmniComponentOptionSource, label: 'Downloaded locally', options: visibleOptions.filter(option => option.source === 'downloaded') },
-    { source: 'registered' as OmniComponentOptionSource, label: 'Registered registry models', options: visibleOptions.filter(option => option.source === 'registered') },
+    { source: 'custom' as OmniComponentOptionSource, label: t('manager.custom.picker.groups.custom'), options: visibleOptions.filter(option => option.source === 'custom') },
+    { source: 'downloaded' as OmniComponentOptionSource, label: t('manager.custom.picker.groups.downloaded'), options: visibleOptions.filter(option => option.source === 'downloaded') },
+    { source: 'registered' as OmniComponentOptionSource, label: t('manager.custom.picker.groups.registered'), options: visibleOptions.filter(option => option.source === 'registered') },
   ].filter(group => group.options.length > 0);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -969,7 +866,7 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
 
   return (
     <div className="omni-component-picker">
-      <label className="omni-component-picker__label" htmlFor={inputId} title={config.help}>{config.label}{config.required ? ' *' : ''}</label>
+      <label className="omni-component-picker__label" htmlFor={inputId} title={t(`${roleKey}.help`)}>{label}{config.required ? ' *' : ''}</label>
       <div className="omni-component-picker__control">
         <input
           id={inputId}
@@ -983,7 +880,7 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
           onChange={e => { setQuery(e.target.value); setOpen(true); setActiveIndex(-1); }}
           onBlur={() => window.setTimeout(() => { setOpen(false); setActiveIndex(-1); }, 120)}
           onKeyDown={handleKeyDown}
-          placeholder={config.placeholder}
+          placeholder={t(`${roleKey}.placeholder`)}
           autoComplete="off"
         />
         {value && !config.required && (
@@ -992,14 +889,14 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
             className="omni-component-picker__clear"
             onMouseDown={e => e.preventDefault()}
             onClick={() => onChange('')}
-            title={`Clear ${config.label}`}
-            aria-label={`Clear ${config.label}`}
+            title={t('manager.custom.picker.clear', { label })}
+            aria-label={t('manager.custom.picker.clear', { label })}
           >×</button>
         )}
         <span className="omni-component-picker__chevron" aria-hidden="true">⌄</span>
         {open && (
           <div className="omni-component-picker__menu">
-            <div role="listbox" id={listboxId} aria-label={`${config.label} options`}>
+            <div role="listbox" id={listboxId} aria-label={t('manager.custom.picker.options', { label })}>
               {groups.length > 0 ? groups.map(group => (
                 <div className="omni-component-picker__group" key={group.source} role="group" aria-label={group.label}>
                   <div className="omni-component-picker__group-label" aria-hidden="true">{group.label}</div>
@@ -1024,7 +921,7 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
                 </div>
               )) : (
                 <div className="omni-component-picker__empty">
-                  No compatible {config.label.toLowerCase()} model found. Use the main search or HuggingFace zone to download/register one first.
+                  {t('manager.custom.picker.none', { label })}
                 </div>
               )}
             </div>
@@ -1035,7 +932,7 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => { onHuggingFaceSearch(query.trim()); setOpen(false); setActiveIndex(-1); }}
               >
-                Search HuggingFace for "{query.trim()}"
+                {t('manager.custom.picker.searchHf', { query: query.trim() })}
               </button>
             )}
           </div>
@@ -1053,6 +950,9 @@ interface ModelManagerProps {
 }
 
 const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelRequest }) => {
+  const { t, formatNumber } = useI18n('models');
+  const { t: tCommon } = useI18n('common');
+  const { t: tRouter } = useI18n('router');
   useEffect(() => {
     // Direct/deep-linked Models loads must also warm the details/editor modules
     // automatically. Never make selecting a model the event that starts them.
@@ -1635,7 +1535,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (loadingModel) return;
     const name = modelName(model);
     if (activeDownloadForModel(downloadStore.snapshot(), name)) {
-      setLoadError({ modelName: name, message: `${name} is still downloading. Wait for the download to finish before loading it.` });
+      setLoadError({ modelName: name, message: t('manager.load.downloadInProgress', { model: name }) });
       window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
       return;
     }
@@ -1688,7 +1588,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (api.isConnected) {
       await api.deleteModel(name);
     } else {
-      warnings.push(`Removed the local entry for ${name}, but Lemonade is disconnected so the server definition was not deleted.`);
+      warnings.push(tRouter('managerDelete.offlineWarning', { name }));
     }
     try {
       deleteRouterRecord(name);
@@ -1699,7 +1599,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       // recent-router cache cleanup failed.
       console.warn('Router local cache cleanup failed:', cacheError);
       setRouterModels(current => current.filter(model => modelName(model) !== name));
-      warnings.push(`The local recent-router cache for ${name} could not be updated.`);
+      warnings.push(tRouter('managerDelete.cacheWarning', { name }));
     }
     if (selectedDetailModelId === name) setSelectedDetailModelId(null);
     return warnings.length ? warnings.join(' ') : undefined;
@@ -1716,7 +1616,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       if (warning) console.warn(warning);
       setRouterDeleteCandidate(null);
     } catch (err) {
-      setRouterDeleteError(err instanceof Error ? err.message : 'Could not delete router definition.');
+      setRouterDeleteError(err instanceof Error ? err.message : tRouter('managerDelete.error'));
     } finally {
       setDeletingRouterDefinition(false);
     }
@@ -1732,8 +1632,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (modelIsCustom(model)) {
       const displayName = model.display_name || name;
       const message = isCollectionModel(model)
-        ? `Delete Omni collection "${displayName}"? This removes only the collection definition. Component model files will not be removed.`
-        : `Delete custom model "${displayName}"? This removes the model definition and downloaded model files, if present.`;
+        ? t('manager.confirmDeleteCollection', { model: displayName })
+        : t('manager.confirmDeleteCustom', { model: displayName });
       if (!confirm(message)) return;
       try {
         if (api.isConnected) await api.deleteModel(name);
@@ -1745,7 +1645,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       }
       return;
     }
-    if (!confirm(`Delete "${model.display_name || name}"? This removes the downloaded files. If the model is loaded, it will be unloaded first.`)) return;
+    if (!confirm(t('manager.confirmDeleteDownloaded', { model: model.display_name || name }))) return;
     setLoadingModel(name);
     try {
       await api.deleteModel(name);
@@ -2072,7 +1972,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const handleExportCustomModels = () => {
     exportJsonFile('lemonade-custom-models', exportCustomModelsPayload());
-    setCustomJsonNotice('Exported custom model JSON.');
+    setCustomJsonNotice(t('manager.custom.notices.exported'));
     window.setTimeout(() => setCustomJsonNotice(null), 2200);
   };
 
@@ -2083,11 +1983,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const payload = JSON.parse(await file.text());
       const result = importCustomModels(payload);
       reloadCustomModels();
-      setCustomJsonNotice(`Imported ${result.imported} custom model${result.imported === 1 ? '' : 's'}${result.skipped ? `, skipped ${result.skipped}` : ''}.`);
+      setCustomJsonNotice(`${t('manager.custom.notices.imported', { count: result.imported })}${result.skipped ? t('manager.custom.notices.skipped', { count: result.skipped }) : ''}`);
       if (result.errors.length) setCustomError(result.errors.slice(0, 3).join(' '));
       window.setTimeout(() => setCustomJsonNotice(null), 3200);
     } catch (err) {
-      setCustomError(`Could not import JSON: ${err instanceof Error ? err.message : String(err)}`);
+      setCustomError(t('manager.custom.errors.import', { error: err instanceof Error ? err.message : String(err) }));
     } finally {
       if (customJsonInputRef.current) customJsonInputRef.current.value = '';
     }
@@ -2117,10 +2017,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     let pendingCollectionSave: { saved: ReturnType<typeof upsertCustomModel>; previous: CustomModelRecord | null } | null = null;
     try {
       if (!customDraft.displayName.trim()) {
-        throw new Error('Enter a model name.');
+        throw new Error(t('manager.custom.errors.enterName'));
       }
       if (customDraft.capability === 'omni' && customDraft.omniSource === 'collection' && !customDraft.llmComponent.trim()) {
-        throw new Error('Select a planner LLM for the Omni collection.');
+        throw new Error(t('manager.custom.errors.selectPlanner'));
       }
       const isOmniCollection = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
       const componentRoles = {
@@ -2138,25 +2038,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           const hasAnyValue = [tool.name, tool.description, tool.targetModel, tool.systemPrompt, tool.promptTemplate, tool.parametersJson, tool.maxTokens].some(value => String(value || '').trim());
           if (!hasAnyValue) return null;
           const name = sanitizeOmniToolName(tool.name);
-          if (!name) throw new Error(`Custom tool ${index + 1}: enter a tool name.`);
-          if (builtinToolNames.has(name)) throw new Error(`Custom tool ${name} conflicts with a built-in Omni tool.`);
-          if (seenCustomToolNames.has(name.toLowerCase())) throw new Error(`Custom tool ${name} is duplicated.`);
+          if (!name) throw new Error(t('manager.custom.errors.toolName', { index: index + 1 }));
+          if (builtinToolNames.has(name)) throw new Error(t('manager.custom.errors.toolConflict', { name }));
+          if (seenCustomToolNames.has(name.toLowerCase())) throw new Error(t('manager.custom.errors.toolDuplicate', { name }));
           seenCustomToolNames.add(name.toLowerCase());
           const targetModel = tool.targetModel.trim();
-          if (!targetModel) throw new Error(`Custom tool ${name}: select a target model.`);
+          if (!targetModel) throw new Error(t('manager.custom.errors.toolTarget', { name }));
           const configuredTargets = configuredOmniToolTargetIds(customDraft, tool.targetType);
           if (!configuredTargets.some(candidate => candidate.toLowerCase() === targetModel.toLowerCase())) {
-            throw new Error(`Custom tool ${name}: target ${targetModel} is not configured in this Omni collection.`);
+            throw new Error(t('manager.custom.errors.toolTargetMissing', { name, target: targetModel }));
           }
           const description = tool.description.trim();
-          if (!description) throw new Error(`Custom tool ${name}: enter a description so the planner knows when to call it.`);
+          if (!description) throw new Error(t('manager.custom.errors.toolDescription', { name }));
           let parameters: Record<string, unknown>;
           try {
             const parsed = JSON.parse(tool.parametersJson || defaultOmniToolParametersJson(tool.targetType));
-            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('schema must be a JSON object');
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(t('manager.custom.errors.schemaObject'));
             parameters = parsed as Record<string, unknown>;
           } catch (err) {
-            throw new Error(`Custom tool ${name}: invalid JSON parameter schema (${err instanceof Error ? err.message : String(err)}).`);
+            throw new Error(t('manager.custom.errors.toolSchema', { name, error: err instanceof Error ? err.message : String(err) }));
           }
           const maxTokens = Number(tool.maxTokens);
           return {
@@ -2180,7 +2080,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const selectedRecipeOption = availableRecipeOptions.find(option => option.value === customDraft.recipe)
         || availableRecipeOptions[0];
       if (!selectedRecipeOption) {
-        setCustomError('No compatible recipe/backend is available for this capability on the connected Lemonade server.');
+        setCustomError(t('manager.custom.errors.noBackend'));
         return;
       }
       const selectedRecipe = selectedRecipeOption.recipe;
@@ -2287,7 +2187,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           console.error('Failed to roll back local custom collection after server registration failed:', rollbackError);
         }
       }
-      setCustomError(err instanceof Error ? err.message : 'Could not save custom model.');
+      setCustomError(err instanceof Error ? err.message : t('manager.custom.errors.save'));
     }
   };
 
@@ -2340,7 +2240,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     for (const m of allModels) {
       for (const role of Object.keys(roles) as OmniComponentRole[]) {
         if (!isOmniComponentEligible(m, role)) continue;
-        const option = omniComponentOptionFromModel(m);
+        const option = omniComponentOptionFromModel(m, t, tCommon);
         const key = option.id.toLowerCase();
         if (seenByRole[role].has(key)) continue;
         seenByRole[role].add(key);
@@ -2351,17 +2251,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       roles[role].sort(compareOmniComponentOptions);
     }
     return roles;
-  }, [allModels]);
+  }, [allModels, t, tCommon]);
 
   const omniCustomToolTargetOptions = useMemo<Record<CustomOmniToolTargetType, OmniComponentOption[]>>(() => {
     const byId = new Map(allModels.map(model => [modelName(model).toLowerCase(), model] as const));
     const optionsFor = (targetType: CustomOmniToolTargetType): OmniComponentOption[] => configuredOmniToolTargetIds(customDraft, targetType).map(id => {
       const model = byId.get(id.toLowerCase());
-      if (model) return omniComponentOptionFromModel(model);
+      if (model) return omniComponentOptionFromModel(model, t, tCommon);
       return {
         id,
         label: id,
-        detail: 'configured in this collection',
+        detail: t('manager.custom.picker.details.configured'),
         source: 'registered',
         downloaded: false,
         custom: false,
@@ -2374,7 +2274,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       vision: optionsFor('vision'),
       image: optionsFor('image'),
     };
-  }, [allModels, customDraft.llmComponent, customDraft.visionComponent, customDraft.imageComponent]);
+  }, [allModels, customDraft.llmComponent, customDraft.visionComponent, customDraft.imageComponent, t, tCommon]);
 
   const defaultCustomToolTarget = (targetType: CustomOmniToolTargetType): string => {
     const options = omniCustomToolTargetOptions[targetType];
@@ -2595,7 +2495,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const primaryCapability = capabilityFromModelInfo(remoteInfo);
     const secondaryTags = modelCapabilityTags(remoteInfo)
       .filter(tag => tag !== (primaryCapability as string));
-    const reach = `${formatDownloads(result.downloads)} ↓ · ${formatDownloads(result.likes)} ♥`;
+    const downloadCount = formatNumber(result.downloads, { notation: 'compact', maximumFractionDigits: 1 });
+    const likeCount = formatNumber(result.likes, { notation: 'compact', maximumFractionDigits: 1 });
+    const reach = `${downloadCount} ↓ · ${likeCount} ♥`;
 
     const handleSelect = () => {
       setSelectedRemoteModel(result);
@@ -2624,24 +2526,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         glyphs={secondaryTags.map(capabilityTagIconTarget)}
         anchor={recipeBadge || undefined}
         status={isPulling ? 'busy' : undefined}
-        statusText={isPulling ? `Downloading ${pullPercent.toFixed(0)}%` : undefined}
-        statusLabel={isPulling ? `Downloading ${result.id}` : undefined}
+        statusText={isPulling ? t('manager.remote.downloadingPercent', { percent: pullPercent.toFixed(0) }) : undefined}
+        statusLabel={isPulling ? t('manager.remote.downloadingModel', { model: result.id }) : undefined}
         progress={isPulling ? pullPercent : undefined}
         selected={isSelected}
         tabIndex={rovingId === result.id ? 0 : -1}
-        ariaLabel={`${result.id}, ${formatDownloads(result.downloads)} downloads, ${formatDownloads(result.likes)} likes${recipeBadge ? `, ${recipeBadge}` : ''}${isPulling ? `, downloading ${pullPercent.toFixed(0)}%` : ', not downloaded'}`}
+        ariaLabel={t('manager.remote.rowAria', { model: result.id, downloads: t('manager.remote.downloads', { count: downloadCount }), likes: t('manager.remote.likes', { count: likeCount }), recipe: recipeBadge ? t('manager.remote.recipePart', { recipe: recipeBadge }) : '', status: isPulling ? t('manager.remote.downloadingPart', { percent: pullPercent.toFixed(0) }) : t('manager.remote.notDownloadedPart') })}
         onClick={handleSelect}
         action={isPulling
           ? {
             icon: 'x',
-            label: `Cancel download of ${result.id}`,
+            label: t('manager.remote.cancelDownload', { model: result.id }),
             onClick: () => { void handleCancelRemotePull(provider, result.id); },
             // Cancelling a download in flight must stay reachable without hover.
             latched: true,
           }
           : {
             icon: copiedRemoteKey === key ? 'check' : 'copy',
-            label: copiedRemoteKey === key ? 'Copied' : `Copy repository name: ${result.id}`,
+            label: copiedRemoteKey === key ? t('manager.remote.copied') : t('manager.remote.copyRepo', { model: result.id }),
             onClick: () => { void handleCopy(); },
           }}
       />
@@ -2658,7 +2560,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     modelscope: hasModelScopeActivity ? filteredModelScopeResults.length : 0,
   };
   const isCustomOmniCollectionDraft = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
-  const customFormTitle = editingCustomModelName ? 'Edit Omni collection' : (isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model');
+  const customFormTitle = editingCustomModelName ? t('manager.custom.title.editOmni') : (isCustomOmniCollectionDraft ? t('manager.custom.title.customOmni') : t('manager.custom.title.customModel'));
   const customRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
   const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
   const selectedCustomRecipeName = selectedCustomRecipe?.recipe || optionRecipe(customDraft.recipe);
@@ -2721,7 +2623,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     return (
       <section
         className={`zone zone--registry zone--${provider === 'huggingface' ? 'hf' : 'modelscope'}`}
-        aria-label={`${meta.label} search results`}
+        aria-label={t('manager.remote.zoneAria', { provider: meta.label })}
         data-provider={provider}
       >
         <div className="zone__head">
@@ -2733,21 +2635,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         {loading ? (
           <div className="hf-zone__loading" role="status" aria-live="polite">
             <span className="hf-zone__spinner" aria-hidden="true" />
-            <span>Searching {meta.label}…</span>
+            <span>{t('manager.remote.searching', { provider: meta.label })}</span>
           </div>
         ) : error ? (
           <div className="hf-zone__empty hf-zone__empty--error">
             <Icon name="alert" size={16} />
-            <span>{meta.label} search is unavailable: {error}</span>
+            <span>{t('manager.remote.unavailable', { provider: meta.label, error })}</span>
           </div>
         ) : results.length === 0 ? (
           <div className="hf-zone__empty">
             <Icon name="cloud-off" size={16} />
-            <span>No compatible {meta.label} models match the active filters.</span>
+            <span>{t('manager.remote.noMatches', { provider: meta.label })}</span>
           </div>
         ) : (
           <WorkspaceList
-            label={`${meta.label} results`}
+            label={t('manager.remote.results', { provider: meta.label })}
             onRowActivate={id => {
               const match = results.find(item => item.id === id);
               if (!match) return;
@@ -2765,7 +2667,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
   const renderRegistryZones = () => !hasRemoteActivity ? null : (
-    <div className="registry-zones" aria-label="Remote model search results">
+    <div className="registry-zones" aria-label={t('manager.remote.allResults')}>
       {renderProviderZone('huggingface')}
       {renderProviderZone('modelscope')}
     </div>
@@ -2778,7 +2680,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     >
       {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
       <WorkspaceMobileMenuButton
-        menuLabel="Open model filters"
+        menuLabel={t('manager.modelFiltersMenu')}
         panelId="model-nav-rail"
         expanded={mobileRail.isOpen}
         onClick={mobileRail.toggle}
@@ -2792,17 +2694,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           setRouterDeleteCandidate(null);
           setRouterDeleteError(null);
         }}
-        title="Delete router definition?"
+        title={tRouter('managerDelete.title')}
         maxWidth="480px"
       >
         <div className="inspect-modal-body">
-          <p>Delete <strong>{routerDeleteCandidate?.display_name || modelName(routerDeleteCandidate)}</strong>? This removes the saved router definition.</p>
+          <p>{tRouter('managerDelete.message', { name: routerDeleteCandidate?.display_name || modelName(routerDeleteCandidate) })}</p>
           {routerDeleteError && <div className="manager__inline-notice" role="alert">{routerDeleteError}</div>}
         </div>
         <div className="inspect-modal-footer">
-          <WorkspaceActionButton appearance="secondary" disabled={deletingRouterDefinition} onClick={() => { setRouterDeleteCandidate(null); setRouterDeleteError(null); }}>Cancel</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="secondary" disabled={deletingRouterDefinition} onClick={() => { setRouterDeleteCandidate(null); setRouterDeleteError(null); }}>{tRouter('managerDelete.cancel')}</WorkspaceActionButton>
           <WorkspaceActionButton appearance="danger" disabled={deletingRouterDefinition} onClick={() => { void confirmRouterDefinitionDelete(); }}>
-            {deletingRouterDefinition ? 'Deleting…' : 'Delete router'}
+            {deletingRouterDefinition ? tRouter('managerDelete.deleting') : tRouter('managerDelete.confirm')}
           </WorkspaceActionButton>
         </div>
       </Modal>
@@ -2866,7 +2768,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         systemInfo={systemInfo}
       />
 
-      <WorkspacePanelResizer label="Resize model list panel" {...panelResize.resizerProps} />
+      <WorkspacePanelResizer label={t('manager.resizeList')} {...panelResize.resizerProps} />
 
       {/* Right panel: router editor, custom form, or model detail */}
       {showRouterEditor ? (
@@ -2896,12 +2798,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             leading={<Icon name="compose" size={20} aria-hidden="true" />}
             title={<h2 className="workspace-detail-panel__title custom-model-editor__title">{customFormTitle}</h2>}
             metadata={editingCustomModelName ? (
-              <WorkspaceMetadataChip emphasis="medium">Editing saved definition</WorkspaceMetadataChip>
+              <WorkspaceMetadataChip emphasis="medium">{t('manager.custom.metadata.editing')}</WorkspaceMetadataChip>
             ) : undefined}
-            description={<p>Register a model or collection that is not included in the Lemonade catalog.</p>}
+            description={<p>{t('manager.custom.description')}</p>}
             descriptionPlacement="identity"
             actions={(
-              <WorkspaceActionGroup className="custom-model-editor__actions" label={`${customFormTitle} actions`}>
+              <WorkspaceActionGroup className="custom-model-editor__actions" label={t('manager.custom.actions.group', { title: customFormTitle })}>
                 <WorkspaceActionButton
                   appearance="primary"
                   icon="check"
@@ -2909,28 +2811,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                   form="custom-model-editor-form"
                   disabled={customRecipeOptions.length === 0}
                 >
-                  Save
+                  {t('manager.custom.actions.save')}
                 </WorkspaceActionButton>
-                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Close</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>{t('manager.custom.actions.cancel')}</WorkspaceActionButton>
                 <span className="workspace-action-group__spacer" />
-                <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>Export</WorkspaceActionButton>
-                <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>Import</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>{t('manager.custom.actions.export')}</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>{t('manager.custom.actions.import')}</WorkspaceActionButton>
               </WorkspaceActionGroup>
             )}
           >
             <div className="custom-model-form__body">
             <div className="custom-model-form__toolbar">
               {editingCustomModelName ? (
-                <span className="custom-model-form__editing-badge">Editing saved collection</span>
+                <span className="custom-model-form__editing-badge">{t('manager.custom.editingSavedCollection')}</span>
               ) : (
-                <div className="custom-model-form__mode-switch" role="group" aria-label="Custom model type">
+                <div className="custom-model-form__mode-switch" role="group" aria-label={t('manager.custom.typeAria')}>
                   <button
                     type="button"
                     className={!isCustomOmniCollectionDraft ? 'is-active' : ''}
                     aria-pressed={!isCustomOmniCollectionDraft}
                     onClick={() => openCustomForm('model')}
                   >
-                    Custom Model
+                    {t('manager.custom.types.model')}
                   </button>
                   <button
                     type="button"
@@ -2938,27 +2840,27 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                     aria-pressed={isCustomOmniCollectionDraft}
                     onClick={() => openCustomForm('omni-collection')}
                   >
-                    Omni Collection
+                    {t('manager.custom.types.omni')}
                   </button>
                 </div>
               )}
             </div>
             <form id="custom-model-editor-form" className="custom-model-form__grid" onSubmit={handleSaveCustomModel}>
-              <label className="custom-model-form__field">Name
+              <label className="custom-model-form__field">{t('manager.custom.fields.name')}
                 <input
                   className="input"
                   value={customDraft.displayName}
                   onChange={e => handleCustomDraftChange({ displayName: e.target.value })}
-                  placeholder={isCustomOmniCollectionDraft ? 'My Omni collection' : 'My custom model'}
+                  placeholder={isCustomOmniCollectionDraft ? t('manager.custom.fields.nameOmniPlaceholder') : t('manager.custom.fields.nameModelPlaceholder')}
                 />
               </label>
-              <label className="custom-model-form__field">Extra labels
+              <label className="custom-model-form__field">{t('manager.custom.fields.extraLabels')}
                 <input className="input" value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder="tool-calling, reasoning" />
               </label>
 
               {!isCustomOmniCollectionDraft && (
                 <>
-                  <label className="custom-model-form__field">Capability
+                  <label className="custom-model-form__field">{t('manager.custom.fields.capability')}
                     <select className="select" value={customDraft.capability} onChange={e => {
                       const nextCapability = e.target.value as CustomModelCapability;
                       handleCustomDraftChange({
@@ -2967,21 +2869,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                         recipe: defaultRecipeForCapability(nextCapability, 'single'),
                       });
                     }}>
-                      {CUSTOM_CAPABILITIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                      {CUSTOM_CAPABILITIES.map(capability => <option key={capability} value={capability}>{t(`manager.custom.capabilities.${capability}`)}</option>)}
                     </select>
                   </label>
-                  <label className="custom-model-form__field">Recipe/backend
+                  <label className="custom-model-form__field">{t('manager.custom.fields.recipe')}
                     <select className="select" value={selectedCustomRecipe?.value || ''} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} disabled={customRecipeOptions.length === 0}>
                       {customRecipeOptions.length === 0
-                        ? <option value="">No compatible backend available</option>
+                        ? <option value="">{t('manager.custom.fields.noBackend')}</option>
                         : customRecipeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                   </label>
-                  <label className="custom-model-form__field custom-model-form__wide">Checkpoint, Hugging Face repo, or local path
+                  <label className="custom-model-form__field custom-model-form__wide">{t('manager.custom.fields.checkpoint')}
                     {selectedCustomRecipeSuggestion && (
                       <InlineCheckpointExample
                         checkpoint={selectedCustomRecipeSuggestion.checkpoint}
-                        note={selectedCustomRecipeSuggestion.note}
+                        note={t(`manager.custom.suggestions.${selectedCustomRecipeName}.note`)}
                       />
                     )}
                     <input
@@ -2992,43 +2894,43 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                     />
                   </label>
                   {showLlamacppMmprojField && (
-                    <label className="custom-model-form__field custom-model-form__wide">Vision projector (mmproj)
+                    <label className="custom-model-form__field custom-model-form__wide">{t('manager.custom.fields.mmproj')}
                       <InlineCheckpointExample
                         checkpoint={mmprojCheckpointExample?.checkpoint || 'repo/model:mmproj-model-f16.gguf'}
-                        note={mmprojCheckpointExample?.note}
+                        note={mmprojCheckpointExample ? t('manager.custom.suggestions.llamacpp.mmproj') : undefined}
                       />
                       <input
                         className="input"
                         value={customDraft.mmproj}
                         onChange={e => handleCustomDraftChange({ mmproj: e.target.value })}
-                        placeholder="Optional"
+                        placeholder={t('manager.custom.fields.optional')}
                       />
                     </label>
                   )}
                   {showImageExtraCheckpointFields && (
                     <>
-                      <label className="custom-model-form__field">Text encoder checkpoint
+                      <label className="custom-model-form__field">{t('manager.custom.fields.textEncoder')}
                         <InlineCheckpointExample
                           checkpoint={textEncoderCheckpointExample?.checkpoint || 'repo/text-encoder:model.safetensors'}
-                          note={textEncoderCheckpointExample?.note}
+                          note={textEncoderCheckpointExample ? t('manager.custom.suggestions.sd-cpp.text_encoder') : undefined}
                         />
                         <input
                           className="input"
                           value={customDraft.imageTextEncoder}
                           onChange={e => handleCustomDraftChange({ imageTextEncoder: e.target.value })}
-                          placeholder="Optional"
+                          placeholder={t('manager.custom.fields.optional')}
                         />
                       </label>
-                      <label className="custom-model-form__field">VAE checkpoint
+                      <label className="custom-model-form__field">{t('manager.custom.fields.vae')}
                         <InlineCheckpointExample
                           checkpoint={vaeCheckpointExample?.checkpoint || 'repo/vae:model.safetensors'}
-                          note={vaeCheckpointExample?.note}
+                          note={vaeCheckpointExample ? t('manager.custom.suggestions.sd-cpp.vae') : undefined}
                         />
                         <input
                           className="input"
                           value={customDraft.imageVae}
                           onChange={e => handleCustomDraftChange({ imageVae: e.target.value })}
-                          placeholder="Optional"
+                          placeholder={t('manager.custom.fields.optional')}
                         />
                       </label>
                     </>
@@ -3039,7 +2941,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
               {isCustomOmniCollectionDraft && (
                 <>
                   <div className="custom-model-form__hint custom-model-form__wide">
-                    Choose the models that make up this collection. Only the planner LLM is required.
+                    {t('manager.custom.fields.collectionHint')}
                   </div>
                   <OmniComponentPicker role="llm" value={customDraft.llmComponent} options={omniComponentOptions.llm} onChange={value => updateOmniComponent('llm', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
                   <OmniComponentPicker role="vision" value={customDraft.visionComponent} options={omniComponentOptions.vision} onChange={value => updateOmniComponent('vision', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
@@ -3050,11 +2952,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
                   <details className="custom-model-form__advanced custom-model-form__wide">
                     <summary>
-                      <span>Advanced settings</span>
-                      <small>System prompt and custom model tools</small>
+                      <span>{t('manager.custom.advanced.title')}</span>
+                      <small>{t('manager.custom.advanced.subtitle')}</small>
                     </summary>
                     <div className="custom-model-form__advanced-body">
-                      <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field">Omni tool system prompt
+                      <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field">{t('manager.custom.advanced.systemPrompt')}
                         <textarea
                           className="textarea"
                           value={customDraft.omniSystemPrompt}
@@ -3064,23 +2966,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                         />
                       </label>
                       <div className="custom-model-form__prompt-actions custom-model-form__wide">
-                        <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => handleCustomDraftChange({ omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE })}>Reset to default</WorkspaceActionButton>
+                        <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => handleCustomDraftChange({ omniSystemPrompt: DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE })}>{t('manager.custom.advanced.reset')}</WorkspaceActionButton>
                       </div>
                       <div className="custom-model-form__tools custom-model-form__wide">
                         <div className="custom-model-form__section-head">
                           <div>
-                            <strong>Custom model tools</strong>
-                            <span>Add an editable example, choose its endpoint, then select one of the models configured in this collection.</span>
+                            <strong>{t('manager.custom.tools.title')}</strong>
+                            <span>{t('manager.custom.tools.help')}</span>
                           </div>
                           <div className="custom-model-form__section-actions">
-                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('generic')}>LLM example</WorkspaceActionButton>
-                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('vision')}>Vision example</WorkspaceActionButton>
-                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('image')}>Image example</WorkspaceActionButton>
-                            <WorkspaceActionButton size="small" icon="plus" onClick={addCoderReviewerPair}>Coding pair</WorkspaceActionButton>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('generic')}>{t('manager.custom.tools.llmExample')}</WorkspaceActionButton>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('vision')}>{t('manager.custom.tools.visionExample')}</WorkspaceActionButton>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={() => addOmniCustomTool('image')}>{t('manager.custom.tools.imageExample')}</WorkspaceActionButton>
+                            <WorkspaceActionButton size="small" icon="plus" onClick={addCoderReviewerPair}>{t('manager.custom.tools.codingPair')}</WorkspaceActionButton>
                           </div>
                         </div>
                         {customDraft.omniCustomTools.length === 0 ? (
-                          <div className="custom-model-form__empty-tools">No custom model tools configured. The buttons above insert working examples that you can rename and adapt.</div>
+                          <div className="custom-model-form__empty-tools">{t('manager.custom.tools.none')}</div>
                         ) : customDraft.omniCustomTools.map((tool, index) => {
                           const targetOptions = omniCustomToolTargetOptions[tool.targetType];
                           const selectedTarget = targetOptions.find(option => option.id.toLowerCase() === tool.targetModel.trim().toLowerCase())?.id || '';
@@ -3089,12 +2991,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                             <div className="custom-model-form__tool-card" key={tool.id}>
                               <div className="custom-model-form__tool-card-head">
                                 <div>
-                                  <strong>Tool {index + 1}</strong>
-                                  <small>Editable example · {tool.targetType === 'chat' ? 'Chat / LLM' : tool.targetType === 'vision' ? 'Vision' : 'Image generation'}</small>
+                                  <strong>{t('manager.custom.tools.tool', { index: index + 1 })}</strong>
+                                  <small>{t('manager.custom.tools.editable', { type: t(`manager.custom.tools.types.${tool.targetType}`) })}</small>
                                 </div>
-                                <WorkspaceActionButton appearance="danger" size="small" icon="trash" onClick={() => removeOmniCustomTool(tool.id)}>Remove</WorkspaceActionButton>
+                                <WorkspaceActionButton appearance="danger" size="small" icon="trash" onClick={() => removeOmniCustomTool(tool.id)}>{t('manager.custom.tools.remove')}</WorkspaceActionButton>
                               </div>
-                              <label className="custom-model-form__field">Tool name
+                              <label className="custom-model-form__field">{t('manager.custom.tools.name')}
                                 <input
                                   className="input"
                                   value={tool.name}
@@ -3102,43 +3004,43 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                                   placeholder="ask_coder"
                                 />
                               </label>
-                              <label className="custom-model-form__field">Execution type
+                              <label className="custom-model-form__field">{t('manager.custom.tools.executionType')}
                                 <select
                                   className="select"
                                   value={tool.targetType}
                                   onChange={e => changeOmniCustomToolTargetType(tool, e.target.value as CustomOmniToolTargetType)}
                                 >
-                                  <option value="chat">Chat / LLM</option>
-                                  <option value="vision">Vision LLM</option>
-                                  <option value="image">Image generation</option>
+                                  <option value="chat">{t('manager.custom.tools.types.chat')}</option>
+                                  <option value="vision">{t('manager.custom.tools.types.vision')}</option>
+                                  <option value="image">{t('manager.custom.tools.types.image')}</option>
                                 </select>
-                                <small>Selects the Lemonade endpoint used for this model.</small>
+                                <small>{t('manager.custom.tools.endpointHelp')}</small>
                               </label>
-                              <label className="custom-model-form__field custom-model-form__wide">Target model
+                              <label className="custom-model-form__field custom-model-form__wide">{t('manager.custom.tools.targetModel')}
                                 <select
                                   className="select"
                                   value={selectedTarget}
                                   onChange={e => updateOmniCustomTool(tool.id, { targetModel: e.target.value })}
                                   disabled={targetOptions.length === 0}
                                 >
-                                  <option value="">{targetOptions.length ? 'Select a configured target' : 'Configure a compatible collection component first'}</option>
+                                  <option value="">{targetOptions.length ? t('manager.custom.tools.selectTarget') : t('manager.custom.tools.configureTarget')}</option>
                                   {targetOptions.map(option => (
                                     <option key={option.id} value={option.id}>{option.label}</option>
                                   ))}
                                 </select>
-                                <small>Only models configured in this Omni collection are available as targets.</small>
+                                <small>{t('manager.custom.tools.targetHelp')}</small>
                               </label>
-                              <label className="custom-model-form__field custom-model-form__wide">Description
+                              <label className="custom-model-form__field custom-model-form__wide">{t('manager.custom.tools.description')}
                                 <input
                                   className="input"
                                   value={tool.description}
                                   onChange={e => updateOmniCustomTool(tool.id, { description: e.target.value })}
-                                  placeholder="When should the planner use this tool?"
+                                  placeholder={t('manager.custom.tools.descriptionPlaceholder')}
                                 />
                               </label>
                               {promptDriven && (
                                 <>
-                                  <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Target system prompt
+                                  <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">{t('manager.custom.tools.systemPrompt')}
                                     <textarea
                                       className="textarea"
                                       value={tool.systemPrompt}
@@ -3147,7 +3049,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                                       spellCheck={false}
                                     />
                                   </label>
-                                  <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Target user prompt template
+                                  <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">{t('manager.custom.tools.userPrompt')}
                                     <textarea
                                       className="textarea"
                                       value={tool.promptTemplate}
@@ -3158,7 +3060,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                                   </label>
                                 </>
                               )}
-                              <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">Tool argument schema JSON
+                              <label className="custom-model-form__field custom-model-form__wide custom-model-form__textarea-field custom-model-form__textarea-field--compact">{t('manager.custom.tools.schema')}
                                 <textarea
                                   className="textarea"
                                   value={tool.parametersJson}
@@ -3166,16 +3068,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                                   rows={5}
                                   spellCheck={false}
                                 />
-                                <small>This editable schema tells the planner which arguments it may send.</small>
+                                <small>{t('manager.custom.tools.schemaHelp')}</small>
                               </label>
                               {promptDriven && (
-                                <label className="custom-model-form__field">Max tokens
+                                <label className="custom-model-form__field">{t('manager.custom.tools.maxTokens')}
                                   <input
                                     className="input"
                                     value={tool.maxTokens}
                                     inputMode="numeric"
                                     onChange={e => updateOmniCustomTool(tool.id, { maxTokens: e.target.value.replace(/[^0-9]/g, '') })}
-                                    placeholder="Optional"
+                                    placeholder={t('manager.custom.fields.optional')}
                                   />
                                 </label>
                               )}
@@ -3201,14 +3103,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           </WorkspaceDetailPanel>
         </div>
       ) : (!selectedDetailModel && !selectedRemoteModel) ? (
-        <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label="Model detail">
+        <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label={t('manager.emptyDetail.aria')}>
           <div className="model-detail-panel__placeholder">
             <Icon name="model" size={40} aria-hidden="true" />
-            <p>{allModels.length === 0 ? 'Loading model catalog…' : 'No model selected'}</p>
+            <p>{allModels.length === 0 ? t('manager.emptyDetail.loading') : t('manager.emptyDetail.none')}</p>
             <p className="model-detail-panel__placeholder-sub">
               {allModels.length === 0
-                ? 'Downloaded models appear first while the full Lemonade catalog finishes loading.'
-                : 'Select a model from the list to view its details.'}
+                ? t('manager.emptyDetail.loadingHelp')
+                : t('manager.emptyDetail.noneHelp')}
             </p>
           </div>
         </div>

@@ -1,0 +1,143 @@
+{
+  "title": "Inferenz-Backends",
+  "subtitle": "Installiere und aktualisiere die auf diesem Rechner verfügbaren Inferenz-Engines.",
+  "filters": {
+    "railTitle": "Filter",
+    "railLabel": "Backend-Filter",
+    "sidebarLabel": "Backend-Filter",
+    "mobileMenu": "Backend-Filter öffnen",
+    "all": {
+      "label": "Alle Backends",
+      "description": "Vollständige Kompatibilitätsmatrix"
+    },
+    "installed": {
+      "label": "Installiert",
+      "description": "Auf diesem Rechner einsatzbereit"
+    },
+    "available": {
+      "label": "Verfügbar",
+      "description": "Zur Installation bereit"
+    },
+    "updates": {
+      "label": "Updates",
+      "description": "Neuere Laufzeit verfügbar"
+    },
+    "experimental": {
+      "label": "Experimentell",
+      "description": "Vorschau-Integrationen"
+    },
+    "showTechnical": "Technische Details anzeigen",
+    "showUnsupported": "Nicht unterstützte Backends anzeigen",
+    "showLogos": "Logos anzeigen"
+  },
+  "states": {
+    "installed": "Installiert",
+    "installable": "Verfügbar",
+    "updateRequired": "Update erforderlich",
+    "updateAvailable": "Update verfügbar",
+    "actionRequired": "Aktion erforderlich",
+    "unsupported": "Nicht unterstützt"
+  },
+  "capabilities": {
+    "LLM": {
+      "title": "Sprachmodelle",
+      "description": "Laufzeiten für Chat, Completion, Embeddings und Reranking."
+    },
+    "Audio": {
+      "title": "Audio",
+      "description": "Laufzeiten für Transkription und Klangerzeugung."
+    },
+    "Image": {
+      "title": "Bilderzeugung",
+      "description": "Laufzeiten für Bilderzeugung und -bearbeitung."
+    },
+    "TTS": {
+      "title": "Text zu Sprache",
+      "description": "Text-to-Speech-Laufzeiten."
+    },
+    "3D": {
+      "title": "3D-Erzeugung",
+      "description": "Laufzeiten für die Erzeugung von 3D-Assets."
+    }
+  },
+  "args": {
+    "title": "Backend-Argumente",
+    "close": "Backend-Argumente schließen",
+    "description": "Diese Argumente gelten für jedes Modell mit genau diesem Backend. Modell-Tuning und explizite Ladeoptionen haben bei Konflikten Vorrang.",
+    "optimizedNotice": "Diese Backend-Argumente wurden von einem Optimierer gesetzt. Speichern wandelt sie in eine manuelle Überschreibung um.",
+    "label": "Argumente",
+    "hint": "Eine Argumentzeichenfolge im Shell-Stil. Speichern ersetzt den bisherigen Eintrag für dieses Backend.",
+    "actions": "Aktionen für Backend-Argumente",
+    "clear": "Löschen",
+    "cancel": "Abbrechen",
+    "save": "Backend-Argumente speichern",
+    "edit": "Backend-Argumente bearbeiten",
+    "add": "Backend-Argumente hinzufügen",
+    "editAria": "Backend-Argumente für {{engine}} ({{backend}}) bearbeiten",
+    "addAria": "Backend-Argumente für {{engine}} ({{backend}}) hinzufügen",
+    "status": "Argumente · {{source}}",
+    "optimized": "Optimiert",
+    "manual": "Manuell"
+  },
+  "actions": {
+    "install": "Installieren",
+    "installing": "Wird installiert...",
+    "update": "Aktualisieren",
+    "updating": "Wird aktualisiert...",
+    "working": "Wird ausgeführt...",
+    "uninstall": "Deinstallieren",
+    "setupGuide": "Einrichtungsanleitung",
+    "installAria": "{{name}} installieren",
+    "updateAria": "{{name}} aktualisieren",
+    "uninstallAria": "{{name}} deinstallieren",
+    "setupAria": "Einrichtungsanleitung für {{name}} öffnen",
+    "installedRelease": "Release-Seite der installierten Version {{engine}} {{version}} öffnen",
+    "updateRelease": "Update-Release-Seite {{engine}} {{version}} öffnen",
+    "retry": "Erneut versuchen"
+  },
+  "experimental": "experimentell",
+  "empty": {
+    "updatesTitle": "Keine Backend-Updates",
+    "filteredTitle": "Keine Backends für „{{filter}}“",
+    "updatesDescription": "Alles ist auf dem neuesten Stand.",
+    "filteredDescription": "Keine Laufzeiten auf dem verbundenen Rechner entsprechen diesem Filter.",
+    "noData": "Für diesen Lemonade Server sind noch keine Backend-Daten verfügbar."
+  },
+  "messages": {
+    "supportedNotInstalled": "Backend wird unterstützt, ist aber nicht installiert.",
+    "updateRequiredBeforeUse": "Vor der Verwendung ist ein Backend-Update erforderlich.",
+    "automaticInstallDisabled": "Die automatische Backend-Installation ist deaktiviert."
+  },
+  "updates": {
+    "available": {
+      "one": "{{count}} Backend-Update verfügbar",
+      "other": "{{count}} Backend-Updates verfügbar"
+    },
+    "all": "Alle aktualisieren ({{count}})"
+  },
+  "errorLoad": "Backend-Systeminformationen konnten nicht geladen werden: {{error}}",
+  "toast": {
+    "installing": "{{engine}} · {{backend}} wird installiert...",
+    "updating": "{{engine}} · {{backend}} wird aktualisiert...",
+    "progress": "{{action}} {{engine}} · {{backend}}... {{percent}}%",
+    "installingAction": "Installation",
+    "updatingAction": "Aktualisierung",
+    "manual": "{{engine}} · {{backend}} erfordert eine manuelle Einrichtung",
+    "paused": "Installation von {{engine}} · {{backend}} pausiert",
+    "cancelled": "Installation von {{engine}} · {{backend}} abgebrochen",
+    "installed": "{{engine}} · {{backend}} installiert",
+    "updated": "{{engine}} · {{backend}} aktualisiert",
+    "stale": "Download von {{engine}} · {{backend}} abgeschlossen, Lemonade meldet aber weiterhin den vorherigen Backend-Status",
+    "refreshFailed": "Download von {{engine}} · {{backend}} abgeschlossen, der Backend-Status konnte jedoch nicht aktualisiert werden",
+    "actionFailed": "{{action}} fehlgeschlagen: {{error}}",
+    "uninstalled": "{{engine}} · {{backend}} deinstalliert",
+    "uninstallFailed": "Deinstallation fehlgeschlagen: {{error}}",
+    "savedArgs": "Backend-Argumente für {{key}} gespeichert",
+    "clearedArgs": "Backend-Argumente für {{key}} gelöscht",
+    "unknownInstallError": "Unbekannter Fehler bei der Backend-Installation."
+  },
+  "system": {
+    "versionUnknown": "Version unbekannt",
+    "osUnknown": "Betriebssystem unbekannt"
+  }
+}

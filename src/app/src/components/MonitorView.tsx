@@ -2,6 +2,7 @@ import React, { Suspense, useEffect, useRef, useState } from 'react';
 import Dashboard from './Dashboard';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
 import { WORKSPACE_NAVIGATION, type DashboardSection } from '../features/navigation/workspaceNavigation';
+import { useI18n } from '../i18n';
 import {
   InspectViewPreloaded as InspectView,
   LogViewerPreloaded as LogViewer,
@@ -18,11 +19,14 @@ export async function preloadMonitorSections(): Promise<void> {
   await preloadMonitorSecondarySurfaces();
 }
 
-const MonitorSectionFallback = () => (
-  <div className="view-loading" role="status" aria-label="Loading monitor section" aria-live="polite">
-    <span className="spinner" aria-hidden="true" />
-  </div>
-);
+const MonitorSectionFallback = () => {
+  const { t } = useI18n('monitor');
+  return (
+    <div className="view-loading" role="status" aria-label={t('loadingSection')} aria-live="polite">
+      <span className="spinner" aria-hidden="true" />
+    </div>
+  );
+};
 
 export default function MonitorView({
   activeSection,
@@ -30,6 +34,7 @@ export default function MonitorView({
   onSectionChange,
 }: MonitorViewProps) {
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const { t: tNavigation } = useI18n('navigation');
   const mountedSectionsRef = useRef<Set<DashboardSection>>(new Set([activeSection]));
   mountedSectionsRef.current.add(activeSection);
 
@@ -53,13 +58,13 @@ export default function MonitorView({
         collapsed={railCollapsed}
         onCollapsedChange={setRailCollapsed}
         panelId="dashboard-views-panel"
-        railLabel="Monitor navigation"
-        navigationLabel="Monitor sections"
+        railLabel={tNavigation('rail.monitorNavigation')}
+        navigationLabel={tNavigation('rail.monitorSections')}
         railClassName="monitor-rail"
         navClassName="monitor-nav"
-        headerTitle="Views"
-        sidebarLabel="monitor navigation"
-        mobileMenuLabel="Open monitor views"
+        headerTitle={tNavigation('rail.views')}
+        sidebarLabel={tNavigation('rail.monitorSidebar')}
+        mobileMenuLabel={tNavigation('rail.openMonitorViews')}
       />
 
       <div className="monitor-content">

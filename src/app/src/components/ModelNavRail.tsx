@@ -24,6 +24,7 @@ import type { ModelInfo, ModelRegistryProvider, StorageInfo } from '../api';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
+import { useI18n } from '../i18n';
 import {
   listModelName,
   listRecipeBadgeText,
@@ -38,26 +39,26 @@ import {
 
 /* ── Static config ───────────────────────────────────────────── */
 
-const PRIMARY_ITEMS: Array<{ key: PrimaryFilter; label: string; iconName: IconName }> = [
-  { key: 'all', label: 'All Models', iconName: 'library' },
-  { key: 'downloaded', label: 'Downloaded', iconName: 'download' },
-  { key: 'my-models', label: 'My Models', iconName: 'box' },
+const PRIMARY_ITEMS: Array<{ key: PrimaryFilter; labelKey: string; iconName: IconName }> = [
+  { key: 'all', labelKey: 'nav.primary.all', iconName: 'library' },
+  { key: 'downloaded', labelKey: 'nav.primary.downloaded', iconName: 'download' },
+  { key: 'my-models', labelKey: 'nav.primary.myModels', iconName: 'box' },
   // Favorites is a DISTINCT concept from Pinned (#2424): star icon, own store.
-  { key: 'favorites', label: 'Favorites', iconName: 'star' },
+  { key: 'favorites', labelKey: 'nav.primary.favorites', iconName: 'star' },
 ];
 
-const TASK_ITEMS: Array<{ key: FilterTab; label: string; iconName: IconName; color: string }> = [
-  { key: 'all', label: 'All', iconName: 'globe', color: 'var(--text-tertiary)' },
-  { key: 'llm', label: 'Chat', iconName: 'chat', color: 'var(--cap-chat)' },
-  { key: 'omni', label: 'Omni', iconName: 'omni', color: 'var(--cap-omni)' },
-  { key: 'router', label: 'Router', iconName: 'router', color: 'var(--cap-router)' },
-  { key: 'image', label: 'Image', iconName: 'image', color: 'var(--cap-image)' },
-  { key: 'audio', label: 'Audio', iconName: 'audio', color: 'var(--cap-audio)' },
-  { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio', color: 'var(--cap-audio-generation)' },
-  { key: 'tts', label: 'TTS', iconName: 'tts', color: 'var(--cap-tts)' },
-  { key: 'model3d', label: '3D', iconName: 'box', color: 'var(--cap-model3d)' },
-  { key: 'embedding', label: 'Embed', iconName: 'embedding', color: 'var(--cap-embedding)' },
-  { key: 'classification', label: 'Classify', iconName: 'search-check', color: 'var(--cap-classification)' },
+const TASK_ITEMS: Array<{ key: FilterTab; labelKey: string; iconName: IconName; color: string }> = [
+  { key: 'all', labelKey: 'nav.tasks.all', iconName: 'globe', color: 'var(--text-tertiary)' },
+  { key: 'llm', labelKey: 'nav.tasks.llm', iconName: 'chat', color: 'var(--cap-chat)' },
+  { key: 'omni', labelKey: 'nav.tasks.omni', iconName: 'omni', color: 'var(--cap-omni)' },
+  { key: 'router', labelKey: 'nav.tasks.router', iconName: 'router', color: 'var(--cap-router)' },
+  { key: 'image', labelKey: 'nav.tasks.image', iconName: 'image', color: 'var(--cap-image)' },
+  { key: 'audio', labelKey: 'nav.tasks.audio', iconName: 'audio', color: 'var(--cap-audio)' },
+  { key: 'audio-generation', labelKey: 'nav.tasks.audioGeneration', iconName: 'audio', color: 'var(--cap-audio-generation)' },
+  { key: 'tts', labelKey: 'nav.tasks.tts', iconName: 'tts', color: 'var(--cap-tts)' },
+  { key: 'model3d', labelKey: 'nav.tasks.model3d', iconName: 'box', color: 'var(--cap-model3d)' },
+  { key: 'embedding', labelKey: 'nav.tasks.embedding', iconName: 'embedding', color: 'var(--cap-embedding)' },
+  { key: 'classification', labelKey: 'nav.tasks.classification', iconName: 'search-check', color: 'var(--cap-classification)' },
 ];
 
 const MODEL_PROVIDERS: Array<{ key: ModelRegistryProvider; label: string }> = [
@@ -65,6 +66,12 @@ const MODEL_PROVIDERS: Array<{ key: ModelRegistryProvider; label: string }> = [
   { key: 'modelscope', label: 'ModelScope' },
 ];
 
+
+const BUILT_IN_TAG_LABEL_KEYS: Record<string, string> = {
+  Recommended: 'nav.builtInTags.recommended',
+  Hot: 'nav.builtInTags.hot',
+  Small: 'nav.builtInTags.small',
+};
 
 const CUSTOM_TAGS_STORAGE_KEY = 'model_filter_custom_tags_v1';
 
@@ -164,6 +171,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
   onMobileClose,
   railRef,
 }) => {
+  const { t } = useI18n('models');
   const [tasksOpen, setTasksOpen] = useState(true);
   const [backendsOpen, setBackendsOpen] = useState(true);
   const [catalogsOpen, setCatalogsOpen] = useState(true);
@@ -304,13 +312,13 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
       ref={railRef}
       className={`model-nav-rail workspace-rail mobile-context-panel${collapsed && !mobileOpen ? ' is-collapsed' : ''}${mobileOpen ? ' is-mobile-open' : ''}`}
       id={id}
-      aria-label="Model filters"
+      aria-label={t('nav.filters')}
       role={mobileOpen ? 'dialog' : undefined}
       aria-modal={mobileOpen ? true : undefined}
     >
       <WorkspaceRailHeader
-        title="Filters"
-        sidebarLabel="model filters"
+        title={t('nav.title')}
+        sidebarLabel={t('nav.sidebarLabel')}
         purpose="filter"
         collapsed={collapsed && !mobileOpen}
         onToggle={onToggleCollapsed}
@@ -330,9 +338,9 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
                 onClick={() => onPrimaryFilterChange(item.key)}
               >
                 <Icon name={item.iconName} size={14} aria-hidden="true" className="workspace-filter-list__icon model-nav-rail__nav-icon" />
-                <span className="workspace-filter-list__label model-nav-rail__nav-label">{item.label}</span>
+                <span className="workspace-filter-list__label model-nav-rail__nav-label">{t(item.labelKey)}</span>
                 <span className="workspace-filter-list__count model-nav-rail__nav-count" aria-hidden="true">{primaryCounts[item.key]}</span>
-                <span className="sr-only">{`, ${primaryCounts[item.key]} models`}</span>
+                <span className="sr-only">{t('nav.countModels', { count: primaryCounts[item.key] })}</span>
               </button>
             </li>
           );
@@ -351,11 +359,11 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
             onClick={() => setTasksOpen(value => !value)}
           >
             <Icon name={tasksOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
-            <span>{mobileOpen ? 'Categories' : 'Task'}</span>
+            <span>{t(mobileOpen ? 'nav.categories' : 'nav.task')}</span>
           </button>
         </h2>
         {tasksOpen && (
-          <div className="model-nav-rail__chip-list model-nav-rail__task-list" id="nav-tasks" role="group" aria-label="Filter by task">
+          <div className="model-nav-rail__chip-list model-nav-rail__task-list" id="nav-tasks" role="group" aria-label={t('nav.tasks.filter')}>
             {TASK_ITEMS.map(item => {
               const active = item.key === 'all' ? taskFilters.size === 0 : taskFilters.has(item.key);
               return (
@@ -368,9 +376,9 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
                   onClick={() => toggleTask(item.key)}
                 >
                   <Icon name={item.iconName} size={13} aria-hidden="true" className="model-nav-rail__task-icon" />
-                  <span>{item.label}</span>
+                  <span>{t(item.labelKey)}</span>
                   <span className="model-nav-rail__chip-count" aria-hidden="true">{taskCounts[item.key]}</span>
-                  <span className="sr-only">{`, ${taskCounts[item.key]} models`}</span>
+                  <span className="sr-only">{t('nav.countModels', { count: taskCounts[item.key] })}</span>
                 </button>
               );
             })}
@@ -388,11 +396,11 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
             onClick={() => setBackendsOpen(value => !value)}
           >
             <Icon name={backendsOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
-            <span>Backends</span>
+            <span>{t('nav.backends')}</span>
           </button>
         </h2>
         {backendsOpen && (
-          <div className="model-nav-rail__chip-list model-nav-rail__backend-list" id="nav-backends" role="group" aria-label="Filter by backend">
+          <div className="model-nav-rail__chip-list model-nav-rail__backend-list" id="nav-backends" role="group" aria-label={t('nav.filterBackend')}>
             {backends.map(backend => {
               const active = backendFilters.has(backend.value);
               return (
@@ -405,7 +413,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
                 >
                   <span>{backend.label}</span>
                   <span className="model-nav-rail__chip-count" aria-hidden="true">{backend.count}</span>
-                  <span className="sr-only">{`, ${backend.count} models`}</span>
+                  <span className="sr-only">{t('nav.countModels', { count: backend.count })}</span>
                 </button>
               );
             })}
@@ -423,7 +431,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
             onClick={() => setCatalogsOpen(value => !value)}
           >
             <Icon name={catalogsOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
-            <span>Online Catalogs</span>
+            <span>{t('nav.catalogs')}</span>
           </button>
         </h2>
         {catalogsOpen && (
@@ -432,7 +440,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
               const enabled = providerEnabled[provider.key];
               const count = providerCounts[provider.key];
               const showCount = searchActive && primaryFilter === 'all' && enabled;
-              const title = `${provider.label} ${enabled ? 'will be searched' : 'will not be searched'} during online model search`;
+              const title = t(enabled ? 'nav.providerSearchOn' : 'nav.providerSearchOff', { provider: provider.label });
               return (
                 <li key={provider.key}>
                   <label className="backends__toggle model-nav-rail__provider-option" title={title}>
@@ -445,7 +453,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
                     {showCount && (
                       <>
                         <span className="model-nav-rail__nav-count" aria-hidden="true">{count}</span>
-                        <span className="sr-only">{`, ${count} search results`}</span>
+                        <span className="sr-only">{t('nav.searchResults', { count })}</span>
                       </>
                     )}
                   </label>
@@ -466,15 +474,17 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
             onClick={() => setTagsOpen(value => !value)}
           >
             <Icon name={tagsOpen ? 'chevron-down' : 'chevron-right'} size={13} aria-hidden="true" />
-            <span>Tags</span>
+            <span>{t('nav.tags')}</span>
           </button>
         </h2>
         {tagsOpen && (
           <div id="nav-tags">
-            <div className="model-nav-rail__chip-list model-nav-rail__tag-list" role="group" aria-label="Filter by tag">
+            <div className="model-nav-rail__chip-list model-nav-rail__tag-list" role="group" aria-label={t('nav.filterTag')}>
               {allTagChips.map(tag => {
                 const active = tagFilters.has(tag);
                 const isCustom = customTags.some(value => value.toLowerCase() === tag.toLowerCase());
+                const labelKey = BUILT_IN_TAG_LABEL_KEYS[tag];
+                const displayTag = labelKey ? t(labelKey) : tag;
                 return (
                   <span key={tag} className={`model-nav-rail__tag-wrap${isCustom ? ' is-custom' : ''}`}>
                     <button
@@ -483,17 +493,17 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
                       aria-pressed={active}
                       onClick={() => toggleTag(tag)}
                     >
-                      <span>{tag}</span>
+                      <span>{displayTag}</span>
                       <span className="model-nav-rail__chip-count" aria-hidden="true">{tagCounts[tag] || 0}</span>
-                      <span className="sr-only">{`, ${tagCounts[tag] || 0} models`}</span>
+                      <span className="sr-only">{t('nav.countModels', { count: tagCounts[tag] || 0 })}</span>
                     </button>
                     {isCustom && (
                       <button
                         type="button"
                         className="model-nav-rail__custom-tag-remove"
                         onClick={() => removeCustomTag(tag)}
-                        aria-label={`Remove custom tag ${tag}`}
-                        title={`Remove ${tag}`}
+                        aria-label={t('nav.removeCustomTag', { tag })}
+                        title={t('nav.removeTag', { tag })}
                       >
                         <Icon name="x" size={10} aria-hidden="true" />
                       </button>
@@ -503,7 +513,7 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
               })}
             </div>
             <div className="model-nav-rail__custom-tag-entry">
-              <label className="sr-only" htmlFor="nav-custom-tag">Add custom tag</label>
+              <label className="sr-only" htmlFor="nav-custom-tag">{t('nav.addTag')}</label>
               <input
                 id="nav-custom-tag"
                 type="text"
@@ -515,10 +525,10 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
                     addCustomTag();
                   }
                 }}
-                placeholder="Custom tag"
+                placeholder={t('nav.customTag')}
                 autoComplete="off"
               />
-              <button type="button" onClick={addCustomTag} disabled={!customTagDraft.trim()} aria-label="Add custom tag">
+              <button type="button" onClick={addCustomTag} disabled={!customTagDraft.trim()} aria-label={t('nav.addTag')}>
                 <Icon name="plus" size={12} aria-hidden="true" />
               </button>
             </div>
@@ -529,17 +539,17 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
       {/* 5. Storage meter */}
       <div className="model-nav-rail__storage">
         <div className="model-nav-rail__storage-row">
-          <span className="model-nav-rail__storage-label">Storage{storage.real ? '' : ' (est.)'}</span>
-          <span className="model-nav-rail__storage-value">{`${storage.used} GB / ${storage.total} GB`}</span>
+          <span className="model-nav-rail__storage-label">{t(storage.real ? 'nav.storage' : 'nav.storageEstimated')}</span>
+          <span className="model-nav-rail__storage-value">{t('nav.storageValue', { used: storage.used, total: storage.total })}</span>
         </div>
         <div
           className="model-nav-rail__storage-bar"
           role="progressbar"
-          aria-label={storage.real ? 'Model storage used' : 'Model storage used (estimated)'}
+          aria-label={t(storage.real ? 'nav.storageUsed' : 'nav.storageUsedEstimated')}
           aria-valuenow={storage.used}
           aria-valuemin={0}
           aria-valuemax={storage.total}
-          aria-valuetext={`${storage.used} of ${storage.total} gigabytes used${storage.real ? '' : ' (estimated)'}`}
+          aria-valuetext={t('nav.storageValueText', { used: storage.used, total: storage.total, estimated: storage.real ? '' : t('nav.estimatedSuffix') })}
         >
           <span className="model-nav-rail__storage-fill" style={{ width: `${storage.pct}%` }} aria-hidden="true" />
         </div>

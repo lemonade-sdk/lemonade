@@ -1,6 +1,7 @@
 import React from 'react';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
+import { useI18n } from '../i18n';
 
 interface WorkspaceRailHeaderProps {
   title: string;
@@ -20,7 +21,9 @@ const WorkspaceRailHeader: React.FC<WorkspaceRailHeaderProps> = ({
   collapsed,
   onToggle,
   onMobileClose,
-}) => (
+}) => {
+  const { t } = useI18n('common');
+  return (
   <div className={`workspace-rail__header workspace-rail__header--${purpose}`}>
     <span className="workspace-rail__context" aria-hidden="true">
       <Icon name={icon ?? (purpose === 'filter' ? 'funnel' : purpose === 'history' ? 'clock' : 'layers')} size={12} />
@@ -31,8 +34,8 @@ const WorkspaceRailHeader: React.FC<WorkspaceRailHeaderProps> = ({
       className="workspace-rail__toggle"
       onClick={onToggle}
       aria-expanded={!collapsed}
-      aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${sidebarLabel} sidebar`}
-      title={`${collapsed ? 'Expand' : 'Collapse'} ${sidebarLabel} sidebar`}
+      aria-label={t(collapsed ? 'sidebar.expand' : 'sidebar.collapse', { label: sidebarLabel })}
+      title={t(collapsed ? 'sidebar.expand' : 'sidebar.collapse', { label: sidebarLabel })}
     >
       <Icon name={collapsed ? 'panel-left-open' : 'panel-left-close'} size={17} aria-hidden="true" />
     </button>
@@ -41,13 +44,14 @@ const WorkspaceRailHeader: React.FC<WorkspaceRailHeaderProps> = ({
         type="button"
         className="workspace-rail__mobile-close"
         onClick={onMobileClose}
-        aria-label={`Close ${sidebarLabel} panel`}
-        title="Close panel"
+        aria-label={t('sidebar.close', { label: sidebarLabel })}
+        title={t('sidebar.closePanel')}
       >
         <Icon name="x" size={17} aria-hidden="true" />
       </button>
     )}
   </div>
-);
+  );
+};
 
 export default WorkspaceRailHeader;

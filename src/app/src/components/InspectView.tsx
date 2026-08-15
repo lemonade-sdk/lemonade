@@ -15,13 +15,18 @@ import CurlModal from './inspect/CurlModal';
 import { WorkspaceActionButton, WorkspaceDetailEmpty } from './WorkspacePanels';
 import { isMobileLayout } from '../styles/breakpoints';
 import { useServerModelState } from '../features/models/modelState';
+import { useI18n } from '../i18n';
+import { traceStatusLabel } from './inspect/tracePresentation';
+import { inspectToastText } from './inspect/toastPresentation';
 
 interface InspectViewProps {
   embedded?: boolean;
 }
 
 export default function InspectView({ embedded = false }: InspectViewProps) {
+  const { t } = useI18n('inspect');
   const { traces, selectedTraceId, capturing, captureReady, searchQuery, filterKind, toast } = useInspectStore();
+  const toastText = inspectToastText(toast, t);
   const [activeTab, setActiveTab] = useState<'overview' | 'messages' | 'replay' | 'improve'>('overview');
   const [railCollapsed, setRailCollapsed] = useState(false);
 
@@ -117,11 +122,12 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
   };
 
   const handleExportSession = () => {
-    // Export only non-synthetic traces to keep files clean and small
+    // Export only non-synthetic traces to keep files clean and small.
     const exportable = traces.filter(t => !t.synthetic);
     const dataStr = JSON.stringify(exportable, null, 2);
-    navigator.clipboard.writeText(dataStr);
-    inspectStore.showToast(`Session exported (${exportable.length} traces copied)`);
+    void copyToClipboard(dataStr, 'session', { successToast: false }).then(copied => {
+      if (copied) inspectStore.showToast({ code: 'session_exported', count: exportable.length });
+    });
   };
 
   const closeMobileDetail = () => {
@@ -174,8 +180,8 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
         {!selectedTrace ? (
           <WorkspaceDetailEmpty
             icon="scan-eye"
-            title="Select a request"
-            description="Choose a captured request to review its timeline, prompts, metrics, and optimization suggestions."
+            title={t('view.selectRequest')}
+            description={t('view.selectRequestDescription')}
           />
         ) : (
           <>
@@ -188,7 +194,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                 icon="chevron-right"
                 onClick={closeMobileDetail}
               >
-                Requests
+                {t('view.requests')}
               </WorkspaceActionButton>
               <div className="inspect-detail__identity">
                 <span className={`detail-kind-badge ${selectedTrace.kind.toLowerCase()}`}>{selectedTrace.kind}</span>
@@ -199,7 +205,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                 <div className="inspect-detail__status">
                   <span className={`trace-row__status-dot ${selectedTrace.status}`} aria-hidden="true"></span>
                   <span className="trace-row__status-label">
-                    {selectedTrace.status === 'ok' ? 'OK' : selectedTrace.status.charAt(0).toUpperCase() + selectedTrace.status.slice(1)}
+                    {traceStatusLabel(selectedTrace.status, t)}
                   </span>
                 </div>
               </div>
@@ -217,7 +223,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   </span>
                 </div>
                 <div className="metric-card">
-                  <span className="metric-card__label">THROUGHPUT</span>
+                  <span className="metric-card__label">{t('view.metrics.throughput')}</span>
                   <span className="metric-card__val">
                     {selectedTrace.tps ? (
                       <>
@@ -228,7 +234,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   </span>
                 </div>
                 <div className="metric-card">
-                  <span className="metric-card__label">INPUT</span>
+                  <span className="metric-card__label">{t('view.metrics.input')}</span>
                   <span className="metric-card__val">
                     {selectedTrace.prompt !== undefined ? (
                       <>
@@ -239,7 +245,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   </span>
                 </div>
                 <div className="metric-card">
-                  <span className="metric-card__label">OUTPUT</span>
+                  <span className="metric-card__label">{t('view.metrics.output')}</span>
                   <span className="metric-card__val">
                     {selectedTrace.completion !== undefined ? (
                       <>
@@ -250,7 +256,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   </span>
                 </div>
                 <div className="metric-card highlight">
-                  <span className="metric-card__label">TOTAL</span>
+                  <span className="metric-card__label">{t('view.metrics.total')}</span>
                   <span className="metric-card__val">
                     {selectedTrace.prompt !== undefined && selectedTrace.completion !== undefined ? (
                       <>
@@ -261,7 +267,7 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   </span>
                 </div>
                 <div className="metric-card">
-                  <span className="metric-card__label">DURATION</span>
+                  <span className="metric-card__label">{t('view.metrics.duration')}</span>
                   <span className="metric-card__val">
                     {selectedTrace.dur ? (
                       <>
@@ -295,12 +301,12 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
                   >
                     {tab === 'improve' ? (
                       <span className="detail-tab__label">
-                        <Icon name="omni" size={14} /> Improve
+                        <Icon name="omni" size={14} /> {t('tabs.improve')}
                       </span>
                     ) : tab === 'replay' ? (
-                      'Replay & compare'
+                      t('tabs.replay')
                     ) : (
-                      tab.charAt(0).toUpperCase() + tab.slice(1)
+                      t(`tabs.${tab}`)
                     )}
                   </button>
                 ))}
@@ -365,13 +371,13 @@ export default function InspectView({ embedded = false }: InspectViewProps) {
 
       {/* Permanent invisible live region for screen readers */}
       <div className="sr-only" role="status" aria-live="polite">
-        {toast || ''}
+        {toastText}
       </div>
 
       {/* Global Status Toast (Visual only) */}
-      {toast && (
+      {toastText && (
         <div className="inspect-toast-status" aria-hidden="true">
-          {toast}
+          {toastText}
         </div>
       )}
     </div>

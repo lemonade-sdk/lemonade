@@ -1,5 +1,19 @@
 import { useState, useRef, useCallback } from 'react';
 
+export type AudioCaptureErrorCode = 'unavailable' | 'permissionDenied' | 'failed';
+
+export interface AudioCaptureErrorState {
+  code: AudioCaptureErrorCode;
+  detail?: string;
+}
+
+export class AudioCaptureFailure extends Error {
+  constructor(public readonly code: AudioCaptureErrorCode, public readonly detail?: string) {
+    super(detail || code);
+    this.name = 'AudioCaptureFailure';
+  }
+}
+
 /**
  * Capture microphone audio and emit 16 kHz mono PCM16 chunks encoded as base64.
  * Lemonade's realtime transcription WebSocket expects this exact format.
@@ -9,7 +23,7 @@ export function useAudioCapture(
   onAudioLevel?: (level: number) => void,
 ) {
   const [isRecording, setIsRecording] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AudioCaptureErrorState | null>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -48,7 +62,7 @@ export function useAudioCapture(
       stopRecording();
 
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('Microphone capture is not available in this browser.');
+        throw new AudioCaptureFailure('unavailable');
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -108,14 +122,13 @@ export function useAudioCapture(
       setIsRecording(true);
     } catch (err) {
       stopRecording();
-      let message = 'Failed to access microphone.';
-      if (err instanceof Error) {
-        message = err.name === 'NotAllowedError'
-          ? 'Microphone access denied. Allow microphone permission for this site, then try again.'
-          : err.message;
-      }
-      setError(message);
-      throw new Error(message);
+      const failure = err instanceof AudioCaptureFailure
+        ? err
+        : err instanceof Error && err.name === 'NotAllowedError'
+          ? new AudioCaptureFailure('permissionDenied')
+          : new AudioCaptureFailure('failed', err instanceof Error ? err.message : String(err || ''));
+      setError({ code: failure.code, detail: failure.detail });
+      throw failure;
     }
   }, [onAudioChunk, onAudioLevel, stopRecording]);
 

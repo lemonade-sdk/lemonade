@@ -13,6 +13,8 @@ import { WorkspaceCatalogLayout, WorkspaceCatalogSection } from './WorkspaceCata
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspacePaneHeader } from './WorkspacePanels';
+import { useI18n } from '../i18n';
+import type { TranslationParams } from '../i18n/types';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
 
@@ -201,29 +203,14 @@ type BackendCatalogEntry = {
 type BackendCatalogSection = { capability: CapabilityCol; entries: BackendCatalogEntry[] };
 type BackendViewFilter = 'all' | 'installed' | 'available' | 'updates' | 'experimental';
 
-const CAPABILITY_LABELS: Record<CapabilityCol, string> = {
-  LLM: 'Language models',
-  Audio: 'Audio',
-  Image: 'Image generation',
-  TTS: 'Text to speech',
-  '3D': '3D generation',
-};
-
-const CAPABILITY_DESCRIPTIONS: Record<CapabilityCol, string> = {
-  LLM: 'Chat, completion, embedding, and reranking runtimes.',
-  Audio: 'Transcription and sound generation runtimes.',
-  Image: 'Image generation and editing runtimes.',
-  TTS: 'Text-to-speech runtimes.',
-  '3D': '3D asset generation runtimes.',
-};
-
 const BACKEND_VIEW_FILTERS: Array<[BackendViewFilter, string, string, IconName]> = [
-  ['all', 'All Backends', 'Complete compatibility matrix', 'layers'],
-  ['installed', 'Installed', 'Ready on this machine', 'check'],
-  ['available', 'Available', 'Ready to install', 'download'],
-  ['updates', 'Updates', 'Newer runtime available', 'rotate-ccw'],
-  ['experimental', 'Experimental', 'Preview integrations', 'flask-conical'],
+  ['all', 'filters.all.label', 'filters.all.description', 'layers'],
+  ['installed', 'filters.installed.label', 'filters.installed.description', 'check'],
+  ['available', 'filters.available.label', 'filters.available.description', 'download'],
+  ['updates', 'filters.updates.label', 'filters.updates.description', 'rotate-ccw'],
+  ['experimental', 'filters.experimental.label', 'filters.experimental.description', 'flask-conical'],
 ];
+
 
 function backendKey(recipe: string, backend: string): string {
   return `${recipe}:${backend}`;
@@ -395,15 +382,15 @@ function buildBackendCatalog(cells: Map<string, CellEntry[]>): BackendCatalogSec
 
 /* ── Helpers ─────────────────────────────────────────────── */
 
-function stateBadge(state: BackendInfo['state']): { label: string; cls: string } {
+function stateBadge(state: BackendInfo['state'], t: (key: string) => string): { label: string; cls: string } {
   switch (state) {
-    case 'installed':        return { label: 'Installed',         cls: 'cell__badge--ok' };
-    case 'installable':      return { label: 'Available',         cls: 'cell__badge--available' };
-    case 'update_required':  return { label: 'Update required',   cls: 'cell__badge--warn' };
-    case 'update_available': return { label: 'Update available',  cls: 'cell__badge--warn' };
-    case 'action_required':  return { label: 'Action required',   cls: 'cell__badge--warn' };
-    case 'unsupported':      return { label: 'Unsupported',       cls: 'cell__badge--off' };
-    default:                 return { label: state,                cls: '' };
+    case 'installed':        return { label: t('states.installed'),       cls: 'cell__badge--ok' };
+    case 'installable':      return { label: t('states.installable'),     cls: 'cell__badge--available' };
+    case 'update_required':  return { label: t('states.updateRequired'),  cls: 'cell__badge--warn' };
+    case 'update_available': return { label: t('states.updateAvailable'), cls: 'cell__badge--warn' };
+    case 'action_required':  return { label: t('states.actionRequired'),  cls: 'cell__badge--warn' };
+    case 'unsupported':      return { label: t('states.unsupported'),     cls: 'cell__badge--off' };
+    default:                 return { label: state,                        cls: '' };
   }
 }
 
@@ -417,21 +404,84 @@ function asArray<T>(value: T | T[] | undefined | null): T[] {
 }
 
 function cleanString(value: unknown): string {
-  const s = String(value || '').trim();
-  return s && s.toLowerCase() !== 'unknown' ? s : '';
+  const s = String(value ?? '').trim();
+  if (!s) return '';
+  const normalized = s.toLowerCase();
+  return ['unknown', 'null', 'undefined', 'none', 'n/a'].includes(normalized) ? '' : s;
 }
 
-function lemonadeVersion(info: SystemInfoData | null): string {
+/**
+ * /system-info currently exposes some user-facing backend status as English
+ * prose instead of stable message codes. Keep protocol-to-i18n normalization
+ * centralized here so raw server text does not leak into localized UI. Unknown
+ * or diagnostic messages intentionally pass through unchanged.
+ */
+const BACKEND_SERVER_MESSAGE_KEYS: Record<string, string> = {
+  'backend is supported but not installed': 'messages.supportedNotInstalled',
+  'backend update is required before use': 'messages.updateRequiredBeforeUse',
+  'automatic backend install is disabled': 'messages.automaticInstallDisabled',
+};
+
+function localizeBackendServerMessage(message: unknown, t: (key: string) => string): string {
+  const raw = cleanString(message);
+  if (!raw) return '';
+  const normalized = raw.toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+  const key = BACKEND_SERVER_MESSAGE_KEYS[normalized];
+  return key ? t(key) : raw;
+}
+
+function localizeBackendInstallError(message: unknown, t: (key: string) => string): string {
+  const raw = cleanString(message);
+  if (!raw) return t('toast.unknownInstallError');
+  const normalized = raw.toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+  return normalized === 'unknown backend install error'
+    ? t('toast.unknownInstallError')
+    : raw;
+}
+
+type BackendToastParam =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | { translationKey: string }
+  | { backendError: string };
+
+type BackendToast =
+  | { key: string; params?: Record<string, BackendToastParam> }
+  | { text: string };
+
+function backendToastText(
+  message: BackendToast | null,
+  translate: (key: string, params?: TranslationParams) => string,
+): string {
+  if (!message) return '';
+  if ('text' in message) return message.text;
+  const params: TranslationParams = {};
+  for (const [name, value] of Object.entries(message.params || {})) {
+    if (value && typeof value === 'object') {
+      params[name] = 'translationKey' in value
+        ? translate(value.translationKey)
+        : localizeBackendInstallError(value.backendError, translate);
+    } else {
+      params[name] = value;
+    }
+  }
+  return translate(message.key, params);
+}
+
+function lemonadeVersion(info: SystemInfoData | null): string | null {
   return cleanString(info?.lemonade_version)
     || cleanString(info?.version)
     || cleanString(api.healthData?.version)
-    || 'unknown';
+    || null;
 }
 
-function osVersion(info: SystemInfoData | null): string {
+function osVersion(info: SystemInfoData | null): string | null {
   return cleanString(info?.['OS Version'])
     || cleanString(info?.os_version)
-    || 'OS unknown';
+    || null;
 }
 
 function amdGpuDevices(info: SystemInfoData | null): DeviceInfo[] {
@@ -534,6 +584,7 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
   onClear,
   onClose,
 }) => {
+  const { t } = useI18n('backends');
   const [args, setArgs] = useState('');
   const dialogRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -576,20 +627,20 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
       >
         <div className="backend-args-dialog__head">
           <div>
-            <span className="backend-args-dialog__eyebrow">Backend arguments</span>
+            <span className="backend-args-dialog__eyebrow">{t('args.title')}</span>
             <h2 id="backend-args-title">{label}</h2>
           </div>
-          <WorkspaceActionButton size="toolbar" appearance="quiet" icon="x" iconOnly onClick={onClose} aria-label="Close backend arguments" />
+          <WorkspaceActionButton size="toolbar" appearance="quiet" icon="x" iconOnly onClick={onClose} aria-label={t('args.close')} />
         </div>
         <p className="backend-args-dialog__copy">
-          These arguments apply to every model using this exact backend. Model tuning and explicit load options override conflicting values.
+          {t('args.description')}
         </p>
         {tuning?.source === 'optimized' && (
           <p className="backend-args-dialog__notice" role="status">
-            These backend arguments were set by an optimizer. Saving here converts them to a manual override.
+            {t('args.optimizedNotice')}
           </p>
         )}
-        <label className="field__label" htmlFor="backend-args-value">Arguments</label>
+        <label className="field__label" htmlFor="backend-args-value">{t('args.label')}</label>
         <textarea
           ref={inputRef}
           id="backend-args-value"
@@ -603,18 +654,18 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
           data-backend-args-input
         />
         <p className="backend-args-dialog__hint">
-          One shell-style argument string. Saving replaces the previous entry for this backend.
+          {t('args.hint')}
         </p>
-        <WorkspaceActionGroup className="backend-args-dialog__actions" label="Backend argument actions">
+        <WorkspaceActionGroup className="backend-args-dialog__actions" label={t('args.actions')}>
           {hasSavedArgs && (
             <WorkspaceActionButton appearance="danger" icon="trash" onClick={() => onClear(backendKeyValue)} data-backend-args-clear>
-              Clear
+              {t('args.clear')}
             </WorkspaceActionButton>
           )}
           <span className="backend-args-dialog__spacer" />
-          <WorkspaceActionButton onClick={onClose}>Cancel</WorkspaceActionButton>
+          <WorkspaceActionButton onClick={onClose}>{t('args.cancel')}</WorkspaceActionButton>
           <WorkspaceActionButton appearance="primary" icon="check" onClick={() => onSave(backendKeyValue, args)} data-backend-args-save>
-            Save backend args
+            {t('args.save')}
           </WorkspaceActionButton>
         </WorkspaceActionGroup>
       </aside>
@@ -634,6 +685,7 @@ interface BackendManagerProps {
 }
 
 const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
+  const { t } = useI18n('backends');
   const [sysInfo, setSysInfo] = useState<SystemInfoData | null>(() =>
     api.systemInfoData as unknown as SystemInfoData | null
   );
@@ -644,7 +696,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [showLogos, setShowLogos] = useState(true);
   const [viewFilter, setViewFilter] = useState<BackendViewFilter>('all');
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<BackendToast | null>(null);
   const [backendTunings, setBackendTunings] = useState<Record<string, BackendTuning>>(loadBackendTunings);
   const [argsEditorKey, setArgsEditorKey] = useState<string | null>(null);
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
@@ -776,7 +828,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   /* ── Actions ──────────────────────────────────────────── */
 
-  const toast = useCallback((msg: string) => {
+  const toast = useCallback((msg: BackendToast) => {
     if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
     setToastMsg(msg);
     toastTimerRef.current = window.setTimeout(() => {
@@ -792,8 +844,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false) => {
     const key = backendKey(recipe, backend);
     const engineName = RECIPE_LABELS[recipe] || recipe;
-    const actionLabel = isUpdate ? 'Updating' : 'Installing';
-    const doneLabel = isUpdate ? 'updated' : 'installed';
+    const actionKey = isUpdate ? 'toast.updating' : 'toast.installing';
+    const progressActionKey = isUpdate ? 'toast.updatingAction' : 'toast.installingAction';
+    const doneKey = isUpdate ? 'toast.updated' : 'toast.installed';
     const initialInfo = sysInfoRef.current?.recipes?.[recipe]?.backends?.[backend];
     const downloadName = backendDownloadName(recipe, backend);
     const waitController = new AbortController();
@@ -804,7 +857,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       initialVersion: cleanString(initialInfo?.version),
     });
     setInstalling(key);
-    toast(`${actionLabel} ${engineName} · ${backend}…`);
+    toast({ key: actionKey, params: { engine: engineName, backend } });
     downloadStore.markLocal(downloadName, 'downloading', 'backend');
     const terminalDownloadPromise = waitForBackendDownloadTerminal(recipe, backend, waitController.signal);
     // Observe rejection immediately; the original promise is still awaited below,
@@ -836,7 +889,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           }, 'backend');
 
           if (!completed && percent != null) {
-            toast(`${actionLabel} ${engineName} · ${backend}… ${percent}%`);
+            toast({ key: 'toast.progress', params: { action: { translationKey: progressActionKey }, engine: engineName, backend, percent } });
           }
         },
         onComplete: () => {
@@ -859,17 +912,17 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         await terminalDownloadPromise.catch(() => undefined);
         downloadStore.remove(backendDownloadId(recipe, backend));
         window.open(actionUrl, '_blank', 'noopener,noreferrer');
-        toast(`${engineName} · ${backend} requires manual setup`);
+        toast({ key: 'toast.manual', params: { engine: engineName, backend } });
         return;
       }
 
       const terminalDownload = await terminalDownloadPromise;
       if (terminalDownload.status === 'paused') {
-        toast(`${engineName} · ${backend} installation paused`);
+        toast({ key: 'toast.paused', params: { engine: engineName, backend } });
         return;
       }
       if (terminalDownload.status === 'cancelled') {
-        toast(`${engineName} · ${backend} installation cancelled`);
+        toast({ key: 'toast.cancelled', params: { engine: engineName, backend } });
         return;
       }
       if (terminalDownload.status === 'error') {
@@ -878,22 +931,22 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
       const synced = await syncBackendStatus(recipe, backend);
       if (synced.settled) {
-        toast(`${engineName} · ${backend} ${doneLabel}`);
+        toast({ key: doneKey, params: { engine: engineName, backend } });
       } else if (synced.hadResponse) {
-        toast(`${engineName} · ${backend} download completed, but Lemonade still reports the previous backend status`);
+        toast({ key: 'toast.stale', params: { engine: engineName, backend } });
       } else {
-        toast(`${engineName} · ${backend} download completed, but the backend status could not be refreshed`);
+        toast({ key: 'toast.refreshFailed', params: { engine: engineName, backend } });
       }
     } catch (err) {
       if (err instanceof BackendDownloadMissingError) {
         const synced = await syncBackendStatus(recipe, backend);
         if (synced.settled) {
-          toast(`${engineName} · ${backend} ${doneLabel}`);
+          toast({ key: doneKey, params: { engine: engineName, backend } });
           return;
         }
       }
 
-      const message = friendlyErrorMessage(err);
+      const rawError = friendlyErrorMessage(err);
       const current = downloadStore.snapshot()
         .find(download => backendDownloadMatches(download, recipe, backend));
       if (current?.status !== 'error' && current?.status !== 'cancelled' && current?.status !== 'paused') {
@@ -903,10 +956,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           name: downloadName,
           status: 'error',
           running: false,
-          error: message,
+          error: rawError,
         }, 'backend');
       }
-      toast(`${actionLabel} failed: ${message}`);
+      toast({ key: 'toast.actionFailed', params: { action: { translationKey: progressActionKey }, error: { backendError: rawError } } });
       void fetchInfo(false);
     } finally {
       waitController.abort();
@@ -920,10 +973,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     try {
       setInstalling(backendKey(recipe, backend));
       await api.uninstallBackend(recipe, backend);
-      toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} uninstalled`);
+      toast({ key: 'toast.uninstalled', params: { engine: RECIPE_LABELS[recipe] || recipe, backend } });
       void fetchInfo(false);
     } catch (err) {
-      toast(`Uninstall failed: ${friendlyErrorMessage(err)}`);
+      toast({ key: 'toast.uninstallFailed', params: { error: friendlyErrorMessage(err) } });
     } finally {
       setInstalling(null);
     }
@@ -956,16 +1009,14 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     saveBackendTuning(key, args, 'user');
     setBackendTunings(loadBackendTunings());
     closeArgsEditor();
-    toast(args.trim()
-      ? `Saved backend arguments for ${key}`
-      : `Cleared backend arguments for ${key}`);
+    toast({ key: args.trim() ? 'toast.savedArgs' : 'toast.clearedArgs', params: { key } });
   }, [closeArgsEditor, toast]);
 
   const handleClearBackendArgs = useCallback((key: string) => {
     resetBackendTuning(key);
     setBackendTunings(loadBackendTunings());
     closeArgsEditor();
-    toast(`Cleared backend arguments for ${key}`);
+    toast({ key: 'toast.clearedArgs', params: { key } });
   }, [closeArgsEditor, toast]);
 
   /* ── Build the matrix ─────────────────────────────────── */
@@ -1077,7 +1128,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
         <div className="backend-card__variants">
           {variants.map(({ backend, info }) => {
-            const badge = stateBadge(info.state);
+            const badge = stateBadge(info.state, t);
             const cellKey = backendKey(recipe, backend);
             const isInstalling = installing === cellKey;
             const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
@@ -1093,6 +1144,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               ? releaseLinkForVersion(targetReleaseUrl, version)
               : targetReleaseUrl;
             const variantLabel = BACKEND_LABELS[backend] || backend;
+            const backendMessage = localizeBackendServerMessage(info.message, t);
 
             return (
               <div
@@ -1104,7 +1156,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                   <h4 className="backend-card__variant-name">
                     {variantLabel}
                     {info.experimental && (
-                      <span className="cell__experimental-icon" role="img" aria-label="experimental" title="experimental">
+                      <span className="cell__experimental-icon" role="img" aria-label={t('experimental')} title={t('experimental')}>
                         <Icon name="flask-conical" size={13} aria-hidden="true" />
                       </span>
                     )}
@@ -1119,7 +1171,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                       href={installedReleaseUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      title={`Open installed ${engineName} ${version} release page`}
+                      title={t('actions.installedRelease', { engine: engineName, version })}
                     >
                       {version}
                       <Icon name="external-link" size={11} aria-hidden="true" />
@@ -1133,7 +1185,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                       href={targetReleaseUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      title={`Open ${engineName} ${targetVersion} update release page`}
+                      title={t('actions.updateRelease', { engine: engineName, version: targetVersion })}
                     >
                       <Icon name="chevron-right" size={11} aria-hidden="true" />
                       {targetVersion}
@@ -1143,7 +1195,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                   {tuning && (
                     <span className={`cell__args-state cell__args-state--${tuning.source}`} data-cell-backend-args={tuning.source}>
                       <Icon name="terminal-square" size={12} aria-hidden="true" />
-                      Args · {tuning.source === 'optimized' ? 'Optimized' : 'Manual'}
+                      {t('args.status', { source: t(tuning.source === 'optimized' ? 'args.optimized' : 'args.manual') })}
                     </span>
                   )}
                 </div>
@@ -1156,11 +1208,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         appearance="secondary"
                         icon="download"
                         className="cell__swap"
-                        aria-label={`Install ${name}`}
+                        aria-label={t('actions.installAria', { name })}
                         disabled={isInstalling}
                         onClick={() => handleInstall(recipe, backend)}
                       >
-                        {isInstalling ? 'Installing…' : 'Install'}
+                        {isInstalling ? t('actions.installing') : t('actions.install')}
                       </WorkspaceActionButton>
                     )}
                     {(info.state === 'update_required' || info.state === 'update_available') && (
@@ -1169,11 +1221,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         appearance="primary"
                         icon="rotate-ccw"
                         className="cell__swap"
-                        aria-label={`Update ${name}`}
+                        aria-label={t('actions.updateAria', { name })}
                         disabled={isInstalling}
                         onClick={() => handleInstall(recipe, backend, true)}
                       >
-                        {isInstalling ? 'Updating…' : 'Update'}
+                        {isInstalling ? t('actions.updating') : t('actions.update')}
                       </WorkspaceActionButton>
                     )}
                     {info.state === 'action_required' && info.action && (
@@ -1182,10 +1234,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         appearance="secondary"
                         icon="book-open"
                         className="cell__swap"
-                        aria-label={`Open setup guide for ${name}`}
+                        aria-label={t('actions.setupAria', { name })}
                         onClick={() => handleAction(info.action)}
                       >
-                        Setup guide
+                        {t('actions.setupGuide')}
                       </WorkspaceActionButton>
                     )}
                     {canShowUninstall(info) && (
@@ -1194,11 +1246,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         appearance="danger"
                         icon="trash"
                         className="cell__swap cell__swap--danger"
-                        aria-label={`Uninstall ${name}`}
+                        aria-label={t('actions.uninstallAria', { name })}
                         disabled={isInstalling}
                         onClick={() => handleUninstall(recipe, backend)}
                       >
-                        {isInstalling ? 'Working…' : 'Uninstall'}
+                        {isInstalling ? t('actions.working') : t('actions.uninstall')}
                       </WorkspaceActionButton>
                     )}
                     {supportsArgs && info.state !== 'unsupported' && (
@@ -1214,8 +1266,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                           argsTriggerRef.current = event.currentTarget;
                           setArgsEditorKey(cellKey);
                         }}
-                        title={tuning ? 'Edit backend arguments' : 'Add backend arguments'}
-                        aria-label={`${tuning ? 'Edit' : 'Add'} backend arguments for ${engineName} (${backend})`}
+                        title={t(tuning ? 'args.edit' : 'args.add')}
+                        aria-label={t(tuning ? 'args.editAria' : 'args.addAria', { engine: engineName, backend })}
                       />
                     )}
                   </div>
@@ -1231,8 +1283,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                 )}
                 {backendDownload?.status === 'error' && backendDownload.error ? (
                   <p className="backend-card__note backend-card__note--error">{backendDownload.error}</p>
-                ) : ((showTech || info.state === 'update_available' || info.state === 'update_required') && info.message && (
-                  <p className="backend-card__note">{info.message}</p>
+                ) : ((showTech || info.state === 'update_available' || info.state === 'update_required') && backendMessage && (
+                  <p className="backend-card__note">{backendMessage}</p>
                 ))}
               </div>
             );
@@ -1240,7 +1292,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         </div>
       </article>
     );
-  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, showLogos, showTech]);
+  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, showLogos, showTech, t]);
 
 
   const isUpdatesView = viewFilter === 'updates';
@@ -1251,10 +1303,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     description: string;
   } = {
     icon: isUpdatesView ? 'check' : 'box',
-    title: isUpdatesView ? 'No backend updates' : `No ${viewFilter} backends`,
+    title: isUpdatesView ? t('empty.updatesTitle') : t('empty.filteredTitle', { filter: t(`filters.${viewFilter}.label`) }),
     description: isUpdatesView
-      ? 'Everything is up to date.'
-      : 'No runtimes match this filter on the connected machine.',
+      ? t('empty.updatesDescription')
+      : t('empty.filteredDescription'),
   };
 
   /* ── Render ───────────────────────────────────────────── */
@@ -1262,7 +1314,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   if (loading && !sysInfo) {
     return (
       <section className="backends" data-view="backends">
-        <WorkspacePaneHeader className="backends__pane-header" headingLevel={1} title="Inference Backends" />
+        <WorkspacePaneHeader className="backends__pane-header" headingLevel={1} title={t('title')} />
         <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
           <div className="hf-zone__spinner" />
         </div>
@@ -1275,14 +1327,14 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       view="backends"
       className={`backends backends--workspace${showTech ? ' show-tech' : ''}`}
       panelId="backend-filters-panel"
-      railTitle="Filters"
-      railLabel="Backend filters"
-      sidebarLabel="backend filters"
-      mobileMenuLabel="Open backend filters"
+      railTitle={t('filters.railTitle')}
+      railLabel={t('filters.railLabel')}
+      sidebarLabel={t('filters.sidebarLabel')}
+      mobileMenuLabel={t('filters.mobileMenu')}
       filters={BACKEND_VIEW_FILTERS.map(([id, label, description, icon]) => ({
         id,
-        label,
-        description,
+        label: t(label),
+        description: t(description),
         icon,
         count: backendStateCounts[id],
       }))}
@@ -1296,7 +1348,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               checked={showTech}
               onChange={e => setShowTech(e.target.checked)}
             />
-            <span>Show technical details</span>
+            <span>{t('filters.showTechnical')}</span>
           </label>
           <label className="backends__toggle">
             <input
@@ -1305,7 +1357,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               onChange={e => setShowUnsupported(e.target.checked)}
               data-backends-unsupported-toggle
             />
-            <span>Show unsupported backends</span>
+            <span>{t('filters.showUnsupported')}</span>
           </label>
           <label className="backends__toggle">
             <input
@@ -1314,12 +1366,12 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               onChange={e => setShowLogos(e.target.checked)}
               data-backends-logo-toggle
             />
-            <span>Show logos</span>
+            <span>{t('filters.showLogos')}</span>
           </label>
           {sysInfo && (
             <div className="backends__runtime-meta">
-              <strong>Lemonade {lemonadeVersion(sysInfo)}</strong>
-              <small>{osVersion(sysInfo)}</small>
+              <strong>Lemonade {lemonadeVersion(sysInfo) || t('system.versionUnknown')}</strong>
+              <small>{osVersion(sysInfo) || t('system.osUnknown')}</small>
             </div>
           )}
         </div>
@@ -1328,13 +1380,13 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         <WorkspacePaneHeader
           className="backends__pane-header"
           headingLevel={1}
-          title="Inference Backends"
-          subtitle="Install and update the inference engines available on this machine."
+          title={t('title')}
+          subtitle={t('subtitle')}
           actions={updatesAvailable > 0 ? (
             <div className="backends__header-update" data-backends-banner>
-              <span className="sr-only" data-backends-banner-text>{updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available</span>
+              <span className="sr-only" data-backends-banner-text>{t('updates.available', { count: updatesAvailable })}</span>
               <WorkspaceActionButton appearance="primary" icon="rotate-ccw" data-backends-banner-action onClick={handleUpdateAll} disabled={installing !== null}>
-                {installing ? 'Updating…' : `Update all (${updatesAvailable})`}
+                {installing ? t('actions.updating') : t('updates.all', { count: updatesAvailable })}
               </WorkspaceActionButton>
             </div>
           ) : undefined}
@@ -1345,13 +1397,13 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           {error && (
             <div className="banner banner--error" data-backends-error>
               <span className="banner__icon" aria-hidden="true"><Icon name="alert" size={16} /></span>
-              <span className="banner__text">Could not load backend system info: {error}</span>
-              <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => void fetchInfo()} disabled={loading}>Retry</WorkspaceActionButton>
+              <span className="banner__text">{t('errorLoad', { error })}</span>
+              <WorkspaceActionButton size="small" icon="rotate-ccw" onClick={() => void fetchInfo()} disabled={loading}>{t('actions.retry')}</WorkspaceActionButton>
             </div>
           )}
         </div>
         {backendCatalog.length === 0 && (
-          <p className="sr-only" data-backends-matrix-empty>No backend data is available for this Lemonade server yet.</p>
+          <p className="sr-only" data-backends-matrix-empty>{t('empty.noData')}</p>
         )}
         {backendStateCounts[viewFilter] === 0 && (
           <div className="backends__filter-empty">
@@ -1371,9 +1423,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         />
         {/* #2351: always-present polite live region so NVDA announces toast messages */}
         <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-backends-toast-live>
-          {toastMsg || ''}
+          {backendToastText(toastMsg, t)}
         </div>
-        {toastMsg && <div className="backends__toast" data-backends-toast>{toastMsg}</div>}
+        {toastMsg && <div className="backends__toast" data-backends-toast>{backendToastText(toastMsg, t)}</div>}
       </>}
     >
       <div className="workspace-catalog" data-backends-matrix>
@@ -1392,8 +1444,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           return (
             <WorkspaceCatalogSection
               key={capability}
-              title={CAPABILITY_LABELS[capability]}
-              description={CAPABILITY_DESCRIPTIONS[capability]}
+              title={t(`capabilities.${capability}.title`)}
+              description={t(`capabilities.${capability}.description`)}
             >
               {visibleEntries.map(renderBackendCard)}
             </WorkspaceCatalogSection>

@@ -1,0 +1,131 @@
+{
+  "title": "Apps Marketplace",
+  "subtitle": "Lemonade works best as the inference server for applications. Try out this curated list of apps!",
+  "filters": {
+    "title": "Filters",
+    "railLabel": "App categories",
+    "sidebarLabel": "app categories",
+    "mobileMenu": "Open app categories",
+    "all": "All Apps",
+    "loading": "Loading directory",
+    "unavailable": "Directory unavailable",
+    "compatible": "Compatible clients and tools",
+    "count": {
+      "one": "{{count}} compatible app",
+      "other": "{{count}} compatible apps"
+    }
+  },
+  "category": {
+    "other": "Other"
+  },
+  "card": {
+    "noDescription": "No description available.",
+    "links": "Links for {{name}}",
+    "visit": "Visit",
+    "guide": "Guide",
+    "video": "Video"
+  },
+  "loading": "Loading apps...",
+  "error": "Apps unavailable: {{error}}",
+  "unknownError": "Unknown error",
+  "directory": "{{title}} directory",
+  "featured": {
+    "title": "Featured",
+    "description": "Picks from the Lemonade team."
+  },
+  "empty": "No apps are available yet.",
+  "search": {
+    "aria": "Search apps",
+    "openAria": "Open app search",
+    "placeholder": "Search apps"
+  },
+  "marketplace": {
+    "categories": {
+      "agent": null,
+      "code": null,
+      "workflow": null,
+      "productivity": null,
+      "chat": null,
+      "specialized_tool": null,
+      "creative": null,
+      "infrastructure": null
+    },
+    "apps": {
+      "anythingllm": {
+        "description": null
+      },
+      "open_webui": {
+        "description": null
+      },
+      "hermes": {
+        "description": null
+      },
+      "pi": {
+        "description": null
+      },
+      "claude_code": {
+        "description": null
+      },
+      "n8n": {
+        "description": null
+      },
+      "github_copilot": {
+        "description": null
+      },
+      "gaia": {
+        "description": null
+      },
+      "dify": {
+        "description": null
+      },
+      "fx_chatbot": {
+        "description": null
+      },
+      "lemonade_mobile": {
+        "description": null
+      },
+      "infinity_arcade": {
+        "description": null
+      },
+      "openclaw": {
+        "description": null
+      },
+      "listenr": {
+        "description": null
+      },
+      "dream_server": {
+        "description": null
+      },
+      "lemon_zest": {
+        "description": null
+      },
+      "interviewer": {
+        "description": null
+      },
+      "codegpt": {
+        "description": null
+      },
+      "deep_tutor": {
+        "description": null
+      },
+      "hugging_face": {
+        "description": null
+      },
+      "iterate_ai": {
+        "description": null
+      },
+      "ai_toolkit": {
+        "description": null
+      },
+      "morphik": {
+        "description": null
+      },
+      "openhands": {
+        "description": null
+      },
+      "vane": {
+        "description": null
+      }
+    }
+  }
+}

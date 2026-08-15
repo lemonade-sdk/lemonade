@@ -68,6 +68,7 @@ const stylesPath = path.join(root, 'src/styles/styles.css');
 const connectionPath = path.join(root, 'src/features/router/routerConnections.ts');
 const detailPath = path.join(root, 'src/components/ModelDetailPanel.tsx');
 const apiPath = path.join(root, 'src/api.ts');
+const clipboardPath = path.join(root, 'src/clipboard.ts');
 
 const router = loadTypeScriptModule(routerTypesPath);
 const graphUtils = loadTypeScriptModule(graphUtilsPath, { './routerTypes': router });
@@ -83,6 +84,9 @@ const modalSource = fs.readFileSync(modalPath, 'utf8');
 const stylesSource = fs.readFileSync(stylesPath, 'utf8');
 const detailSource = fs.readFileSync(detailPath, 'utf8');
 const apiSource = fs.readFileSync(apiPath, 'utf8');
+const clipboardSource = fs.readFileSync(clipboardPath, 'utf8');
+const routerTranslations = JSON.parse(fs.readFileSync(path.join(root, 'src/i18n/locales/en-US/router.json'), 'utf8'));
+const modelTranslations = JSON.parse(fs.readFileSync(path.join(root, 'src/i18n/locales/en-US/models.json'), 'utf8'));
 
 assertTypeScriptSyntax(editorPath);
 assertTypeScriptSyntax(graphPath);
@@ -91,6 +95,7 @@ assertTypeScriptSyntax(workspacePanelsPath);
 assertTypeScriptSyntax(nodeEditorPath);
 assertTypeScriptSyntax(modalPath);
 assertTypeScriptSyntax(managerPath);
+assertTypeScriptSyntax(clipboardPath);
 
 const draft = {
   name: 'Fast or smart',
@@ -279,7 +284,10 @@ const unary = {
   id: 'group', kind: 'group', operator: 'all',
   children: [{ id: 'leaf', kind: 'leaf', type: 'has_tools', booleanValue: true }],
 };
-assert.equal(router.normalizeRouterNode(unary).kind, 'leaf', 'one-child groups must collapse instead of becoming invalid');
+const normalizedUnary = router.normalizeRouterNode(unary);
+assert.equal(normalizedUnary.kind, 'group', 'one-child AND/OR groups must preserve gate structure');
+assert.equal(normalizedUnary.operator, 'all');
+assert.equal(normalizedUnary.children.length, 1);
 
 const graphRoot = router.createRouterLeaf('has_tools');
 const graphWithSibling = graphUtils.appendRouterNodeAtPath(graphRoot, [], router.createRouterLeaf('has_images'));
@@ -301,7 +309,10 @@ assert.throws(
   'graph drag/drop must not create an invalid multi-child NOT gate',
 );
 assert.equal(graphUtils.isBlankRouterGraphNode(router.createRouterLeaf()), true, 'the seeded empty rule should render as an empty graph canvas');
-assert.equal(graphUtils.removeRouterNodeAtPath(graphWithSibling, [1]).kind, 'leaf', 'removing a sibling should normalize a one-child gate');
+const graphWithOneChild = graphUtils.removeRouterNodeAtPath(graphWithSibling, [1]);
+assert.equal(graphWithOneChild.kind, 'group', 'removing a sibling must preserve the explicit AND/OR gate');
+assert.equal(graphWithOneChild.operator, 'all');
+assert.equal(graphWithOneChild.children.length, 1);
 const notWithChild = graphUtils.appendRouterNodeAtPath(graphUtils.createEmptyRouterGraphGroup('not'), [], router.createRouterLeaf('has_tools'));
 const emptiedNot = graphUtils.removeRouterNodeAtPath(notWithChild, [0]);
 assert.equal(emptiedNot.kind, 'group');
@@ -373,12 +384,17 @@ const collapseCanCreateDuplicate = {
   ],
 };
 assert.equal(graphUtils.routerDuplicateConditionConflict(collapseCanCreateDuplicate), null);
-const collapsedIntoDuplicate = graphUtils.removeRouterNodeAtPath(collapseCanCreateDuplicate, [1, 1]);
-assert.match(
-  graphUtils.routerDuplicateConditionConflict(collapsedIntoDuplicate) || '',
-  /has tools condition is already in this gate/,
-  'normalizing a nested one-child group can surface a duplicate into its parent gate',
+const preservedNestedSingleton = graphUtils.removeRouterNodeAtPath(collapseCanCreateDuplicate, [1, 1]);
+assert.equal(
+  graphUtils.routerDuplicateConditionConflict(preservedNestedSingleton),
+  null,
+  'removing a nested sibling must preserve the singleton gate instead of promoting its child into the parent gate',
 );
+const preservedNestedGate = graphUtils.routerNodeAtPath(preservedNestedSingleton, [1]);
+assert.ok(preservedNestedGate && preservedNestedGate.kind === 'group');
+assert.equal(preservedNestedGate.operator, 'all');
+assert.equal(preservedNestedGate.children.length, 1);
+assert.equal(preservedNestedGate.children[0].type, 'has_tools');
 
 const renamedLabelTree = router.renameClassifierLabelReference(
   draft.rules[1].condition,
@@ -639,16 +655,19 @@ assert.match(listSource, /onOpenRouter && \([\s\S]*?icon="router"/);
 assert.match(managerSource, /<RouterEditorPanel/);
 assert.match(managerSource, /showRouterEditor \?/);
 assert.match(managerSource, /await onRegister|handleRegisterRouter/);
-assert.match(editorSource, /Save & register/);
+assert.match(editorSource, /t\('editor\.save'\)/);
+assert.equal(routerTranslations.editor.save, 'Save');
 assert.match(editorSource, /await onRegister\(nextRequest\)[\s\S]*upsertRouterRecord/, 'local persistence must happen only after server registration succeeds');
-assert.match(editorSource, /Natural-Language Router|Natural-language router/);
+assert.match(editorSource, /editor\.strategy\.natural/);
+assert.ok(routerTranslations.editor.strategy.natural);
 assert.match(editorSource, /addClassifier\('llm'\)/);
 assert.doesNotMatch(editorSource, /issue #2405|remain hidden/i);
 assert.match(nodeEditorSource, /metadataComparator/);
 assert.match(nodeEditorSource, /normalizeRouterNode/);
-assert.match(nodeEditorSource, />AND<|>AND<\/button>/, 'a leaf must be wrappable into a compound rule');
+assert.match(nodeEditorSource, /t\('node\.and'\)/, 'a leaf must be wrappable into a compound rule with a localized operator');
+assert.equal(routerTranslations.node.and, 'AND');
 assert.match(nodeEditorSource, /unusedGroupLeafType/, 'group inspector add/change helpers must seed a condition type that is not already in the gate');
-assert.match(editorSource, /Switching modes clears incompatible configuration after confirmation/);
+assert.match(editorSource, /routerDraftHasRulesProgress|routerDraftHasLlmProgress/);
 assert.doesNotMatch(editorSource, /window\.confirm/, 'router editor confirmations must use GUI3-native dialogs rather than browser confirm');
 assert.match(editorSource, /routerDraftHasRulesProgress\(draft\)[\s\S]*kind: 'switch-llm'/, 'rules-to-LLM mode changes must open a branded warning before clearing meaningful work');
 assert.match(editorSource, /routerDraftHasLlmProgress\(draft\)[\s\S]*kind: 'switch-rules'/, 'LLM-to-rules mode changes must open a branded warning before clearing meaningful work');
@@ -673,14 +692,14 @@ assert.match(editorSource, /<RouterRuleGraph/, 'ordered rules must use the visua
 assert.match(editorSource, /router-editor__rules-workspace[\s\S]*router-editor__rule-list[\s\S]*router-editor__rule-builder/, 'rules must use the GUI2-style compact-list plus selected-canvas pipeline instead of embedding a canvas in every rule');
 assert.match(editorSource, /selectedRuleIndex/, 'the visual pipeline must keep one selected rule bound to the graph canvas');
 assert.match(graphSource, /application\/x-lemonade-router-node/, 'graph builder must use an isolated drag payload type');
-assert.match(graphSource, /draggable[\s\S]*Logic Gates|Logic Gates[\s\S]*draggable/, 'graph toolbox must provide draggable logic gates');
+assert.match(graphSource, /draggable[\s\S]*graph\.logicGates|graph\.logicGates[\s\S]*draggable/, 'graph toolbox must provide draggable localized logic gates');
 assert.match(graphSource, /onDrop=\{event =>/, 'graph canvas must accept drag/drop input');
 assert.match(graphSource, /setPan[\s\S]*setZoom|setZoom[\s\S]*setPan/, 'graph canvas must retain GUI2-style pan and zoom controls');
 assert.match(graphSource, /RouterNodeEditor/, 'selected graph nodes must remain fully editable through the existing validated node editor');
 assert.match(graphSource, /function exactSummary[\s\S]*JSON\.stringify\(raw\)/, 'graph summaries must expose leading/trailing whitespace when it is part of regex or metadata semantics');
 assert.match(graphSource, /className=\{`router-graph__gate[\s\S]*aria-pressed=\{selected\}/, 'graph gates must be keyboard-focusable controls so nested toolbox insertion is a real non-drag alternative');
 assert.match(graphSource, /routerReplacementConflictAtPath/, 'node edits must enforce the same duplicate-condition rule as graph drops');
-assert.match(graphSource, /routerDuplicateConditionConflict\(next\)/, 'node removal must reject normalization that would create a duplicate condition in the parent gate');
+assert.match(graphSource, /const next = removeRouterNodeAtPath\(node, path\)/, 'node removal must use the tested graph transition that preserves explicit singleton gate structure');
 assert.match(editorSource, /router-editor__drag-handle[\s\S]*draggable/, 'ordered rules must be draggable for reordering while keeping keyboard move controls');
 assert.match(stylesSource, /router-editor__classifier-list \{ max-height:[\s\S]*router-editor__rule-list \{ max-height:/, 'classifier and rule lists must be height-capped with internal scrolling');
 assert.match(stylesSource, /router-editor__classifier-list,[\s\S]*router-editor__rule-list[\s\S]*overflow-y: auto/, 'router lists must scroll internally rather than expanding without bound');
@@ -693,12 +712,13 @@ assert.match(workspacePanelsSource, /titleExtras\?: React\.ReactNode/, 'detail p
 assert.match(editorSource, /titleExtras=\{\([\s\S]*router-editor__toolbar/, 'router New/import/export controls must occupy the title-row space freed by the removed generic close button');
 assert.doesNotMatch(editorSource, /onClose=\{onClose\}/, 'router detail must not render the redundant generic close icon when a Close action already exists');
 assert.doesNotMatch(editorSource, /router-editor__backend-note/, 'redundant router backend explainer must stay removed');
-assert.match(editorSource, />JSON Preview</, 'router view labels should use title case');
-assert.match(editorSource, /<h3>Candidate Models<\/h3>/);
-assert.match(editorSource, /<span>Default Model /);
+assert.match(editorSource, /editor\.jsonPreview/, 'router view label must come from the locale catalog');
+assert.equal(routerTranslations.editor.jsonPreview, 'JSON Preview');
+assert.match(editorSource, /editor\.candidates\.title/);
+assert.match(editorSource, /editor\.defaultModel/);
 assert.match(stylesSource, /router-editor__connection-list[\s\S]*max-height:[\s\S]*overflow-y: auto/, 'connected models must show a compact 3-4 row viewport with internal scroll');
-assert.match(editorSource, /title="Remove candidate"[\s\S]*toggleCandidate\(connection\.modelName\)|toggleCandidate\(connection\.modelName\)[\s\S]*title="Remove candidate"/, 'candidate connections need a direct remove affordance using the safe candidate transition');
-assert.match(editorSource, /Removed \${name}; \${updates\.join\('; '\)}/, 'candidate removal must surface automatic default/rule-target repairs instead of changing routing behavior silently');
+assert.match(editorSource, /editor\.connections\.removeCandidate[\s\S]*toggleCandidate\(connection\.modelName\)|toggleCandidate\(connection\.modelName\)[\s\S]*editor\.connections\.removeCandidate/, 'candidate connections need a localized direct remove affordance using the safe candidate transition');
+assert.match(editorSource, /editor\.candidates\.removedWithRepairs/, 'candidate removal must surface automatic default/rule-target repairs through i18n');
 assert.match(editorSource, /toggleRouterDraftCandidate\(current, name\)/, 'all candidate removal entry points must share the tested repair transition');
 assert.doesNotMatch(editorSource, /External endpoints are provider-wide and affect every model from that provider/, 'provider-wide helper copy was explicitly removed by review');
 assert.doesNotMatch(editorSource, /Managed by Lemonade|Local registered model|Routing target/, 'connection rows must not repeat internal/target metadata');
@@ -706,7 +726,7 @@ assert.match(stylesSource, /router-editor__connection-trailing[\s\S]*justify-con
 assert.match(editorSource, /router-editor__concept-list/, 'semantic concepts need their own capped scrolling viewport');
 assert.match(stylesSource, /router-editor__concept-list[\s\S]*max-height:[\s\S]*overflow-y: auto/, 'semantic concepts must not grow the classifier card without bound');
 assert.match(editorSource, /jsonCopied \? 'check' : 'copy'/, 'JSON copy control must replace the icon with an in-place success state');
-assert.match(editorSource, /jsonCopied \? 'Copied' : 'Copy'/, 'JSON copy control must expose the temporary Copied label');
+assert.match(editorSource, /jsonCopied \? t\('editor\.copied'\) : t\('editor\.copy'\)/, 'JSON copy control must expose localized temporary copy state');
 assert.doesNotMatch(editorSource, /JSON copied\./, 'copy feedback must not use the distant global toast');
 assert.match(stylesSource, /router-graph__tool--any \{ color: var\(--success\)/, 'OR gates must be green');
 assert.match(stylesSource, /router-graph__tool--not \{ color: var\(--danger\)/, 'NOT gates must be red');
@@ -723,8 +743,10 @@ assert.match(graphSource, /wrapRouterNode\(current, 'not'\)/, 'changing a multi-
 assert.match(nodeEditorSource, /Negate the complete existing expression[\s\S]*children: \[inner\]/, 'inspector AND\/OR to NOT conversion must preserve the complete existing subtree');
 assert.match(graphSource, /toolboxTargetPath = selectedNode\?\.kind === 'group'/, 'keyboard\/touch toolbox clicks must target a selected nested gate rather than only the root');
 assert.match(nodeEditorSource, /label: undefined/, 'choosing a classifier should continue following default_label instead of freezing the current default into the rule');
-assert.match(nodeEditorSource, /labels\.length > 0 \? 'Select label' : 'Use classifier output'/, 'classifier label picker must not claim a default exists when the classifier has none');
-assert.match(graphSource, /labels\.length > 0 \? 'Select label' : 'classifier output'/, 'graph summary must surface a missing classifier label instead of pretending the first label is the default');
+assert.match(nodeEditorSource, /labels\.length > 0 \? t\('node\.selectLabel'\) : t\('node\.useClassifierOutput'\)/, 'classifier label picker must keep the no-default fallback localized');
+assert.equal(routerTranslations.node.selectLabel, 'Select label');
+assert.equal(routerTranslations.node.useClassifierOutput, 'Use classifier output');
+assert.match(graphSource, /labels\.length > 0 \? t\('node\.selectLabel'\) : t\('node\.useClassifierOutput'\)/, 'graph summary must surface a localized missing-label fallback instead of pretending the first label is the default');
 
 const labelLessClassifierDraft = router.createEmptyRouterDraft();
 labelLessClassifierDraft.name = 'LabelGuard';
@@ -777,29 +799,39 @@ const exactIdentityBuilt = router.buildRouterPullRequest(exactIdentityDraft);
 assert.equal(exactIdentityBuilt.routing.classifiers[0].id, ' risk/topic ', 'imported classifier IDs must retain exact server-side identity');
 assert.equal(exactIdentityBuilt.routing.rules[0].match.all[0].classifier, ' risk/topic ', 'classifier references must not be trimmed independently from classifier IDs');
 assert.equal(exactIdentityBuilt.routing.rules[0].match.all[1].metadata.key, ' task_class ', 'metadata keys are exact strings and must survive import/save without trimming');
-assert.match(nodeEditorSource, /Minimum UTF-8 bytes|Maximum UTF-8 bytes/, 'min_chars\/max_chars UI must describe the server\'s UTF-8-byte semantics accurately');
-assert.match(nodeEditorSource, /One keyword per line/, 'keyword conditions must use a delimiter that preserves commas inside server-valid keywords');
-assert.match(nodeEditorSource, /Values <small>one per line<\/small>/, 'metadata any values must preserve commas by using one value per line');
-assert.match(editorSource, /One reference phrase per line/, 'semantic reference phrases must preserve commas instead of using comma-separated authoring');
-assert.match(editorSource, /Output Labels <small>one per line<\/small>/, 'classifier labels must preserve commas by using one label per line');
+assert.match(nodeEditorSource, /node\.types\.minChars[\s\S]*node\.types\.maxChars/, 'min_chars/max_chars UI must resolve the server UTF-8-byte semantics through i18n');
+assert.equal(routerTranslations.node.types.minChars, 'Minimum UTF-8 bytes');
+assert.equal(routerTranslations.node.types.maxChars, 'Maximum UTF-8 bytes');
+assert.match(nodeEditorSource, /node\.oneKeywordPerLine/, 'keyword conditions must use the localized one-per-line delimiter hint that preserves commas inside server-valid keywords');
+assert.equal(routerTranslations.node.oneKeywordPerLine, 'One keyword per line');
+assert.match(nodeEditorSource, /node\.values[\s\S]*node\.onePerLine/, 'metadata any values must preserve commas through localized one-per-line authoring');
+assert.equal(routerTranslations.node.onePerLine, 'one per line');
+assert.match(editorSource, /editor\.classifiers\.onePhrasePerLine/, 'semantic reference phrases must use the localized one-per-line authoring hint');
+assert.equal(routerTranslations.editor.classifiers.onePhrasePerLine, 'One reference phrase per line');
+assert.match(editorSource, /editor\.classifiers\.outputLabels[\s\S]*node\.onePerLine/, 'classifier labels must preserve commas through localized one-per-line authoring');
+assert.equal(routerTranslations.editor.classifiers.outputLabels, 'Output Labels');
 assert.match(editorSource, /CommittedTextInput[\s\S]*commitClassifierId/, 'classifier IDs must commit atomically rather than rewriting references on every keystroke');
-assert.match(editorSource, /Classifier \${index \+ 1} ID`\} normalize=\{input => input\}/, 'classifier identity fields must preserve exact whitespace instead of normalizing merely on blur');
+assert.match(editorSource, /editor\.classifiers\.idAria[\s\S]{0,220}normalize=\{input => input\}/, 'classifier identity fields must preserve exact whitespace while sourcing their accessible label from i18n');
+assert.equal(routerTranslations.editor.classifiers.idAria, 'Classifier {{index}} ID');
 assert.match(editorSource, /cancelCommitRef[\s\S]*event\.key === 'Escape'[\s\S]*cancelCommitRef\.current = true/, 'Escape in commit-on-blur identity fields must cancel the pending blur commit rather than save discarded text');
-assert.match(editorSource, /const copied = document\.execCommand\('copy'\)[\s\S]*if \(!copied\) throw/, 'clipboard fallback must only report success when the browser accepts the copy operation');
-assert.match(editorSource, /Classifier ID .*already in use/, 'classifier rename commits must reject collisions before rewriting rule references');
+assert.match(editorSource, /copyTextToClipboard\(text\)/, 'router editor copy actions must use the shared clipboard helper');
+assert.match(clipboardSource, /let copied = false;[\s\S]*copied = typeof document\.execCommand === 'function' && document\.execCommand\('copy'\);[\s\S]*if \(!copied\) \{[\s\S]*throw new Error\('Clipboard copy failed'\)/, 'clipboard fallback must only report success when the browser accepts the copy operation');
+assert.match(clipboardSource, /finally \{[\s\S]*textarea\.remove\(\)[\s\S]*activeElement\?\.focus/, 'shared clipboard fallback must restore the invoking UI after the temporary selection');
+assert.match(editorSource, /editor\.errors\.classifierIdUsed/, 'classifier rename commits must reject collisions through the localized error contract before rewriting rule references');
 assert.match(editorSource, /commitSemanticConceptName/, 'semantic concept renames must commit atomically to avoid key-remount and reference corruption');
 assert.match(editorSource, /defaultLabel: classifier\.defaultLabel === concept \? undefined : classifier\.defaultLabel/, 'removing an unrelated semantic concept must not clear a still-valid default label');
 assert.match(editorSource, /normalized\.includes\(classifier\.defaultLabel\)[\s\S]*classifier\.defaultLabel[\s\S]*undefined/, 'editing output labels must preserve a default label while it remains valid');
 assert.doesNotMatch(editorSource, /key=\{`\$\{classifier\.id\}-\$\{index\}`\}/, 'editable classifier IDs must not be used as React keys');
 assert.doesNotMatch(editorSource, /key=\{`\$\{concept\}-\$\{conceptIndex\}`\}/, 'editable concept names must not be used as React keys');
 assert.match(editorSource, /routerDraftFingerprint\(draft\)[\s\S]*const isDirty/, 'editor must track a semantic dirty baseline that ignores generated graph node IDs');
-assert.match(editorSource, /requestClose[\s\S]*Close router editor\?/, 'closing with unsaved changes must require an explicit discard confirmation');
-assert.match(editorSource, /Import router JSON\?[\s\S]*discard the unsaved changes/, 'import must not silently replace an edited draft');
-assert.match(editorSource, /Load another router\?[\s\S]*discard the unsaved changes/, 'saved-router switching must not silently replace an edited draft');
+assert.match(editorSource, /requestClose[\s\S]*editor\.confirm\.close\.title[\s\S]*editor\.confirm\.close\.message/, 'closing with unsaved changes must require the localized discard confirmation');
+assert.match(editorSource, /editor\.confirm\.import\.title[\s\S]*editor\.confirm\.import\.message/, 'import must not silently replace an edited draft and must use localized confirmation copy');
+assert.match(editorSource, /editor\.confirm\.loadAnother\.title[\s\S]*editor\.confirm\.loadAnother\.message/, 'saved-router switching must not silently replace an edited draft and must use localized confirmation copy');
 assert.match(editorSource, /submittedFingerprint[\s\S]*routerDraftFingerprint\(current\) === submittedFingerprint/, 'save completion must preserve edits made while registration is in flight');
 assert.match(editorSource, /server registration already succeeded|server registration already succeeded/i, 'local cache failures after a successful server registration must not be reported as registration failures');
 assert.match(editorSource, /const \[deleting, setDeleting\][\s\S]*pending\.kind === 'delete'[\s\S]*Keep the modal\/focus trap mounted/, 'router deletion must keep its confirmation modal mounted while the server mutation is in flight');
-assert.match(editorSource, /disabled=\{deleting\}[\s\S]*Deleting…/, 'delete confirmation actions must be disabled while deletion is in flight to prevent duplicate mutations');
+assert.match(editorSource, /disabled=\{deleting\}[\s\S]*editor\.deleting/, 'delete confirmation actions must remain disabled while localized deletion status is in flight');
+assert.equal(routerTranslations.editor.deleting, 'Deleting…');
 assert.match(editorSource, /initialModelKeyRef[\s\S]*draftFingerprintRef\.current === baselineAtDetailStart/, 'late model-detail responses must not overwrite edits made while loading');
 assert.match(editorSource, /detailParseError[\s\S]*initialModelKeyRef\.current = null|initialModelKeyRef\.current = null[\s\S]*detailParseError/, 'failed detail parsing must clear the load key so a later model refresh can retry');
 assert.match(modelPickerSource, /closeAndRestoreFocus[\s\S]*triggerRef\.current\?\.focus\(\)/, 'portaled model picker must restore keyboard focus to its trigger after Escape or selection');
@@ -809,9 +841,11 @@ assert.match(modalSource, /document\.activeElement === titleRef\.current[\s\S]*l
 assert.match(editorSource, /const resetDraft = \(\) => \{[\s\S]*Keep the last processed initial-model key/, 'New must preserve the processed opener key so same-router refreshes cannot silently rehydrate it');
 assert.match(editorSource, /baselineFingerprintRef\.current = '__imported-router__';[\s\S]*Preserve the processed initial-model key/, 'Import must preserve the processed opener key so background refreshes cannot replace imported work');
 assert.match(managerSource, /Router local cache cleanup failed[\s\S]*setRouterModels\(current => current\.filter/, 'server-side router deletion must remain truthful even if local cache cleanup fails');
-assert.match(managerSource, /Lemonade is disconnected so the server definition was not deleted/, 'offline router deletion must not pretend the persistent server definition was removed');
+assert.match(managerSource, /managerDelete\.offlineWarning/, 'offline router deletion must surface the localized persistent-server warning');
+assert.match(routerTranslations.managerDelete.offlineWarning, /server definition was not deleted/);
 assert.match(editorSource, /deletionWarning[\s\S]*setSavedRecords\(current => current\.filter/, 'a successful server delete with cache-cleanup failure must not immediately resurrect the stale router in the editor dropdown');
-assert.match(managerSource, /routerDeleteCandidate[\s\S]*<Modal[\s\S]*Delete router definition\?/, 'router deletion from the model list must use the same branded modal surface instead of native confirm');
+assert.match(managerSource, /routerDeleteCandidate[\s\S]*<Modal[\s\S]*managerDelete\.title/, 'router deletion from the model list must use the same branded modal surface with a localized title');
+assert.equal(routerTranslations.managerDelete.title, 'Delete router definition?');
 assert.doesNotMatch(managerSource, /if \(!confirm\(`Delete router definition/, 'router-specific model-list delete must not regress to a browser confirm dialog');
 
 
@@ -843,12 +877,16 @@ assert.equal(connections.validateProviderEndpoint('http://server.example/v1', tr
 assert.match(connections.validateProviderEndpoint('file:///tmp/model') || '', /http/);
 assert.match(connections.validateProviderEndpoint('https://user:secret@example.com/v1') || '', /credentials/);
 
-assert.match(editorSource, /Connected Model Topology/, 'router editor must expose connected model sources');
-assert.match(editorSource, /Edit Endpoint/, 'external provider endpoints must be editable from the router editor');
+assert.match(editorSource, /editor\.connections\.title/, 'router editor must expose localized connected model sources');
+assert.equal(routerTranslations.editor.connections.title, 'Connected Model Topology');
+assert.match(editorSource, /editor\.connections\.editEndpoint/, 'external provider endpoints must expose a localized edit action');
+assert.equal(routerTranslations.editor.connections.editEndpoint, 'Edit Endpoint');
 assert.match(editorSource, /api\.installCloudProvider/, 'endpoint edits must use the provider registry API');
 assert.match(apiSource, /allow_insecure_http: allowInsecureHttp/, 'provider endpoint edits must preserve explicit insecure HTTP policy');
-assert.match(detailSource, /Router settings/, 'saved routers need a router-specific settings summary');
-assert.match(detailSource, /Connected models/, 'saved routers must show connected model topology');
+assert.match(detailSource, /detail\.router\.title/, 'saved routers need a localized router-specific settings summary');
+assert.equal(modelTranslations.detail.router.title, 'Router settings');
+assert.match(detailSource, /detail\.router\.connected/, 'saved routers must show localized connected model topology');
+assert.equal(modelTranslations.detail.router.connected, 'Connected models');
 assert.match(detailSource, /isRouterCollection[\s\S]*collection\.router/, 'router collections must use the persistent settings tab');
 assert.match(managerSource, /openRouterEditor\(model\)/, 'editing a saved router must reopen the router editor');
 

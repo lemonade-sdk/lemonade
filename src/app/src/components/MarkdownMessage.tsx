@@ -7,16 +7,13 @@ import DOMPurify from 'dompurify';
 import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
 import { copyTextToClipboard } from '../clipboard';
+import { useI18n } from '../i18n';
 
 interface MarkdownMessageProps {
   content: string;
   isComplete?: boolean;
   onOptionSelect?: (text: string) => void;
 }
-
-const COPY_LABEL = 'Copy';
-const COPIED_LABEL = 'Copied';
-const COPY_FAILED_LABEL = 'Copy failed';
 
 /* ── Mermaid init ──────────────────────────────────────────── */
 
@@ -67,6 +64,7 @@ const PURIFY_CONFIG: DOMPurify.Config = {
 /* ── Mermaid Block — proper React component with its own SVG state ── */
 
 const MermaidBlock: React.FC<{ source: string; isComplete: boolean }> = ({ source, isComplete }) => {
+  const { t } = useI18n('common');
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [showSource, setShowSource] = useState(false);
@@ -97,8 +95,8 @@ const MermaidBlock: React.FC<{ source: string; isComplete: boolean }> = ({ sourc
 
   return (
     <div className={blockClass}>
-      {!svg && !error && <div className="mermaid-block__loading">Loading diagram…</div>}
-      {error && <div className="mermaid-block__error">Diagram syntax error</div>}
+      {!svg && !error && <div className="mermaid-block__loading">{t('markdown.diagramLoading')}</div>}
+      {error && <div className="mermaid-block__error">{t('markdown.diagramError')}</div>}
       {svg && (
         <div
           className="mermaid-block__diagram"
@@ -111,7 +109,7 @@ const MermaidBlock: React.FC<{ source: string; isComplete: boolean }> = ({ sourc
           className="mermaid-block__toggle"
           onClick={() => setShowSource(s => !s)}
         >
-          {showSource ? 'Show diagram' : 'Show source'}
+          {showSource ? t('markdown.showDiagram') : t('markdown.showSource')}
         </button>
       </div>
       <pre
@@ -134,15 +132,16 @@ interface Segment {
 const MERMAID_FENCE = /```mermaid\s*\n([\s\S]*?)```/gi;
 
 const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete = true, onOptionSelect }) => {
+  const { t } = useI18n('common');
   const containerRef = useRef<HTMLDivElement>(null);
 
   const md = useMemo(() => {
-    const instance = new MarkdownIt({
+    const instance: MarkdownIt = new MarkdownIt({
       html: true,
       linkify: true,
       typographer: true,
       breaks: true,
-      highlight(str: string, lang: string) {
+      highlight(str: string, lang: string): string {
         // Options blocks get rendered as interactive buttons
         if (lang === 'options') {
           try {
@@ -157,7 +156,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
             }
             optHtml += '</div>';
             if (parsed.allowCustom !== false) {
-              optHtml += '<div class="options-block__custom"><input class="options-block__input" placeholder="Or type your own…" /><button class="options-block__submit">Send</button></div>';
+              optHtml += `<div class="options-block__custom"><input class="options-block__input" placeholder="${instance.utils.escapeHtml(t('markdown.customPlaceholder'))}" /><button class="options-block__submit">${instance.utils.escapeHtml(t('markdown.send'))}</button></div>`;
             }
             optHtml += '</div>';
             return optHtml;
@@ -173,7 +172,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         } else {
           highlighted = instance.utils.escapeHtml(str);
         }
-        return `<div class="code-block"><div class="code-block__header"><span class="code-block__lang">${langLabel}</span><button class="code-block__copy" title="Copy" aria-label="Copy code">${COPY_LABEL}</button></div><pre><code>${highlighted}</code></pre></div>`;
+        return `<div class="code-block"><div class="code-block__header"><span class="code-block__lang">${langLabel}</span><button class="code-block__copy" title="${instance.utils.escapeHtml(t('markdown.copy'))}" aria-label="${instance.utils.escapeHtml(t('markdown.copyCode'))}">${instance.utils.escapeHtml(t('markdown.copy'))}</button></div><pre><code>${highlighted}</code></pre></div>`;
       },
     });
 
@@ -183,14 +182,17 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       katexOptions: { throwOnError: false, displayMode: false },
     });
 
-    // Override fence to use our custom highlight wrapper
-    instance.renderer.rules.fence = (tokens, idx) => {
+    // Override fence to use our custom highlight wrapper while preserving
+    // markdown-it's renderer rule types.
+    type FenceRule = NonNullable<typeof instance.renderer.rules.fence>;
+    const fenceRule: FenceRule = (tokens, idx) => {
       const token = tokens[idx];
       return instance.options.highlight!(token.content, token.info.trim(), '') || '';
     };
+    instance.renderer.rules.fence = fenceRule;
 
     return instance;
-  }, []);
+  }, [t]);
 
   // Split content into text and mermaid segments
   const segments = useMemo((): Segment[] => {
@@ -245,19 +247,19 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
 
         const codeText = code.textContent || '';
         void copyTextToClipboard(codeText).then(() => {
-          copyBtn.textContent = COPIED_LABEL;
-          copyBtn.title = COPIED_LABEL;
+          copyBtn.textContent = t('markdown.copied');
+          copyBtn.title = t('markdown.copied');
           copyBtn.classList.add('copied');
           copyBtn.classList.remove('copy-failed');
         }).catch(() => {
-          copyBtn.textContent = COPY_FAILED_LABEL;
-          copyBtn.title = 'Could not copy code to the clipboard';
+          copyBtn.textContent = t('markdown.copyFailed');
+          copyBtn.title = t('markdown.copyFailedTitle');
           copyBtn.classList.add('copy-failed');
           copyBtn.classList.remove('copied');
         }).finally(() => {
           window.setTimeout(() => {
-            copyBtn.textContent = COPY_LABEL;
-            copyBtn.title = COPY_LABEL;
+            copyBtn.textContent = t('markdown.copy');
+            copyBtn.title = t('markdown.copy');
             copyBtn.classList.remove('copied', 'copy-failed');
           }, 2000);
         });
@@ -301,7 +303,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
     };
-  }, [onOptionSelect]);
+  }, [onOptionSelect, t]);
 
   return (
     <div ref={containerRef} className="message__content">

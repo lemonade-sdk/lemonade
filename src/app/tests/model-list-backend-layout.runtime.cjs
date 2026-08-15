@@ -58,11 +58,8 @@ assert.match(component, /export function modelBackendReadiness\(/);
 for (const state of ['installed', 'update_required', 'update_available', 'installable', 'action_required', 'unsupported']) {
   assert.ok(component.includes(`state === '${state}'`), `missing backend readiness handling for ${state}`);
 }
-assert.match(component, /tone: 'attention',[\s\S]*backend is not installed on this server/);
-for (const state of ['missing', 'update_required', 'update_available', 'installable', 'action_required', 'unsupported']) {
-  assert.ok(new RegExp(`${state}: '`).test(component),
-    `every attention state needs a short message for the row's meta line: ${state}`);
-}
+assert.match(component, /list\.readiness\.\$\{backendReadiness\?\.state \|\| 'attention'\}/,
+  'backend attention messages must resolve through the translation catalog');
 
 /* ── The row is the shared component, filled by priority ──────────── */
 
@@ -89,8 +86,8 @@ assert.match(component, /secondaryTags = capTags\.filter\(tag => tag !== \(prima
 
 // Status is transient-only, and never carried by dot colour alone: a row that
 // is doing something says so in words, and a steady row says nothing at all.
-assert.match(component, /Downloading\$\{downloadPct != null \? ` \$\{downloadPct\.toFixed\(0\)\}%` : '…'\}/);
-assert.match(component, /\? backendReadinessMessage\(backendReadiness!\)/);
+assert.match(component, /list\.readiness\.statusDownloading/);
+assert.match(component, /list\.readiness\.\$\{backendReadiness\?\.state \|\| 'attention'\}/);
 assert.match(panels, /export type WorkspaceListRowStatus = 'live' \| 'busy' \| 'attention' \| 'error';/,
   'the status vocabulary is only the states that render; steady states are section facts');
 assert.doesNotMatch(component + manager, /status=\{[^}]*'(absent|ready|unknown)'/,
@@ -104,8 +101,8 @@ assert.match(component, /const meta = model\.size/,
    headings stay true under every sort, not just the status-ranked default. */
 assert.match(component, /const listSections = useMemo/,
   'the catalog groups its rows into labelled sections');
-for (const label of ['Pinned', 'Downloaded', 'Not downloaded']) {
-  assert.ok(component.includes(`label: '${label}'`), `missing catalog section: ${label}`);
+for (const key of ['list.sections.pinned', 'list.sections.downloaded', 'list.sections.available']) {
+  assert.ok(component.includes(`t('${key}')`), `missing localized catalog section: ${key}`);
 }
 assert.match(panels, /<li role="group" aria-label=\{label\}/,
   'a section is a listbox group so its rows stay addressable');
@@ -170,7 +167,7 @@ for (const [name, source] of [
 
 /* ── The chat model picker is a selection list too ───────────────── */
 
-assert.match(chatView, /className="composer__model-results"[\s\S]{0,200}label="Models"/,
+assert.match(chatView, /className="composer__model-results"[\s\S]{0,200}label=\{t\('model\.models'\)\}/,
   'the model picker renders through WorkspaceList');
 assert.doesNotMatch(chatView, /composer__model-option\b|composer__model-option-row/,
   'the picker must not keep a private option row');

@@ -1,0 +1,63 @@
+{
+  "filters": {
+    "aria": "Log filters",
+    "streamTitle": "Stream filters",
+    "close": "Close log filters",
+    "title": "Filters",
+    "sidebar": "log filters",
+    "searchPlaceholder": "Search message, source or severity...",
+    "searchAria": "Filter logs",
+    "visibility": "Visibility",
+    "minimumLevel": "Minimum level",
+    "serverCaptureLevel": "Server capture level",
+    "sources": "Sources",
+    "allSources": "All sources",
+    "hiddenSources": {
+      "one": "{{count}} less active source not shown. Search to find it.",
+      "other": "{{count}} less active sources not shown. Search to find them."
+    },
+    "otherSource": "Other"
+  },
+  "status": {
+    "live": "Live",
+    "connecting": "Connecting...",
+    "error": "Error",
+    "disconnected": "Disconnected"
+  },
+  "counts": {
+    "entries": {
+      "one": "{{count}} entry",
+      "other": "{{count}} entries"
+    },
+    "entriesReceived": {
+      "one": "{{count}} entry received",
+      "other": "{{count}} entries received"
+    },
+    "shown": "{{shown}} of {{total}} entries shown"
+  },
+  "levels": {
+    "trace": "Trace",
+    "debug": "Debug",
+    "info": "Info",
+    "warning": "Warning",
+    "error": "Error",
+    "fatal": "Fatal"
+  },
+  "actions": {
+    "clearTitle": "Clear logs",
+    "clearAria": "Clear log output",
+    "clearOutput": "Clear output",
+    "reconnect": "Reconnect",
+    "reconnectAria": "Reconnect to log stream",
+    "openFilters": "Open log filters",
+    "jumpBottom": "Jump to bottom"
+  },
+  "main": {
+    "title": "Live stream"
+  },
+  "empty": {
+    "waiting": "Waiting for log entries...",
+    "notConnected": "Not connected to log stream",
+    "noMatch": "No entries match \"{{filter}}\" filter"
+  }
+}

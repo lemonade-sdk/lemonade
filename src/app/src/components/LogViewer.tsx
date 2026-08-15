@@ -4,6 +4,7 @@ import { Icon } from './Icon';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { WorkspaceActionButton, WorkspacePaneHeader } from './WorkspacePanels';
 import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
+import { useI18n } from '../i18n';
 
 /* ── Constants ─────────────────────────────────────────────── */
 
@@ -14,6 +15,7 @@ const BOTTOM_THRESHOLD = 60;
 const LINE_HEIGHT = 22;
 const OVERSCAN = 10;
 const BATCH_INTERVAL = 100; // ms — batch incoming entries
+const OTHER_SOURCE_KEY = '__other__';
 
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error', 'fatal'] as const;
 type LogLevel = typeof LOG_LEVELS[number];
@@ -74,6 +76,7 @@ interface LogViewerProps {
 }
 
 const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
+  const { t } = useI18n('logs');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [filterLevel, setFilterLevel] = useState<LogLevel>('info');
   const [serverLevel, setServerLevel] = useState<LogLevel>('info');
@@ -296,7 +299,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
 
   const filteredLogs = useMemo(() => {
     let result = logs.filter(l => (SEVERITY_PRIORITY[l.severity] ?? 2) >= filterPriority);
-    if (tagFilter !== 'all') result = result.filter(l => String(l.tag || 'Other') === tagFilter);
+    if (tagFilter !== 'all') result = result.filter(l => (String(l.tag || '').trim() || OTHER_SOURCE_KEY) === tagFilter);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(l =>
@@ -311,7 +314,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
   const logSources = useMemo(() => {
     const counts = new Map<string, number>();
     logs.forEach(log => {
-      const tag = String(log.tag || 'Other');
+      const tag = String(log.tag || '').trim() || OTHER_SOURCE_KEY;
       counts.set(tag, (counts.get(tag) || 0) + 1);
     });
     const ranked = Array.from(counts.entries())
@@ -380,9 +383,9 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
     connStatus === 'connecting' ? 'logs-status--connecting' :
     connStatus === 'error' ? 'logs-status--error' : 'logs-status--disconnected';
 
-  const statusLabel = connStatus === 'connected' ? 'Live' :
-    connStatus === 'connecting' ? 'Connecting…' :
-    connStatus === 'error' ? 'Error' : 'Disconnected';
+  const statusLabel = connStatus === 'connected' ? t('status.live') :
+    connStatus === 'connecting' ? t('status.connecting') :
+    connStatus === 'error' ? t('status.error') : t('status.disconnected');
 
   /* ── Render ──────────────────────────────────────────────── */
 
@@ -394,7 +397,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
       <aside
         ref={embedded ? mobileFilters.panelRef : undefined}
         className={`${embedded ? 'monitor-subpanel' : 'workspace-rail'} logs-rail${!embedded && railCollapsed ? ' is-collapsed' : ''}${embedded && mobileFilters.isOpen ? ' is-mobile-open' : ''}`}
-        aria-label="Log filters"
+        aria-label={t('filters.aria')}
         role={embedded && mobileFilters.isOpen ? 'dialog' : undefined}
         aria-modal={embedded && mobileFilters.isOpen ? true : undefined}
       >
@@ -402,8 +405,8 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
           <header className="monitor-subpanel__header">
             <div className="monitor-subpanel__title-row">
               <div>
-                <h2>Stream filters</h2>
-                <p>{logs.length} entries received</p>
+                <h2>{t('filters.streamTitle')}</h2>
+                <p>{t('counts.entriesReceived', { count: logs.length })}</p>
               </div>
               <WorkspaceActionButton
                 className="logs-rail__mobile-close"
@@ -411,15 +414,15 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
                 size="toolbar"
                 icon="x"
                 iconOnly
-                aria-label="Close log filters"
+                aria-label={t('filters.close')}
                 onClick={mobileFilters.close}
               />
             </div>
           </header>
         ) : (
           <WorkspaceRailHeader
-            title="Filters"
-            sidebarLabel="log filters"
+            title={t('filters.title')}
+            sidebarLabel={t('filters.sidebar')}
             purpose="filter"
             collapsed={railCollapsed}
             onToggle={() => setRailCollapsed(value => !value)}
@@ -430,37 +433,37 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
           <div className="logs-rail__status">
             <span className={`logs-status__dot ${statusDot}`} />
             <span className="logs-status__label">{statusLabel}</span>
-            <span className="logs-toolbar__count">{logs.length} entries</span>
+            <span className="logs-toolbar__count">{t('counts.entries', { count: logs.length })}</span>
           </div>
 
           <div className="logs-rail__search">
             <input
               type="text"
               className="inspect-search-input logs-search"
-              placeholder="Search message, source or severity…"
+              placeholder={t('filters.searchPlaceholder')}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              aria-label="Filter logs"
+              aria-label={t('filters.searchAria')}
             />
           </div>
 
           <div className="workspace-control-group">
-            <span className="workspace-control-group__label">Visibility</span>
+            <span className="workspace-control-group__label">{t('filters.visibility')}</span>
             <label className="logs-level">
-              <span className="logs-level__label">Minimum level</span>
+              <span className="logs-level__label">{t('filters.minimumLevel')}</span>
               <select
                 className="select logs-level__select"
                 value={filterLevel}
                 onChange={e => setFilterLevel(e.target.value as LogLevel)}
               >
                 {LOG_LEVELS.map(l => (
-                  <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}+</option>
+                  <option key={l} value={l}>{t(`levels.${l}`)}+</option>
                 ))}
               </select>
             </label>
 
             <label className="logs-level">
-              <span className="logs-level__label">Server capture level</span>
+              <span className="logs-level__label">{t('filters.serverCaptureLevel')}</span>
               <select
                 className="select logs-level__select"
                 value={serverLevel}
@@ -468,35 +471,35 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
                 onChange={e => handleServerLevelChange(e.target.value as LogLevel)}
               >
                 {LOG_LEVELS.map(l => (
-                  <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>
+                  <option key={l} value={l}>{t(`levels.${l}`)}</option>
                 ))}
               </select>
             </label>
           </div>
 
           <div className="workspace-control-group workspace-filter-list logs-sources">
-            <span className="workspace-control-group__label">Sources</span>
+            <span className="workspace-control-group__label">{t('filters.sources')}</span>
             <button type="button" className={`workspace-filter-list__item${tagFilter === 'all' ? ' is-active' : ''}`} onClick={() => setTagFilter('all')}>
               <span className="workspace-filter-list__icon"><Icon name="logs" size={14} aria-hidden="true" /></span>
-              <span className="workspace-filter-list__label">All sources</span><small className="workspace-filter-list__count">{logs.length}</small>
+              <span className="workspace-filter-list__label">{t('filters.allSources')}</span><small className="workspace-filter-list__count">{logs.length}</small>
             </button>
             {logSources.sources.map(([tag, count]) => (
               <button key={tag} type="button" className={`workspace-filter-list__item${tagFilter === tag ? ' is-active' : ''}`} onClick={() => setTagFilter(tag)}>
                 <span className="workspace-filter-list__icon"><Icon name="terminal-square" size={14} aria-hidden="true" /></span>
-                <span className="workspace-filter-list__label">{tag}</span><small className="workspace-filter-list__count">{count}</small>
+                <span className="workspace-filter-list__label">{tag === OTHER_SOURCE_KEY ? t('filters.otherSource') : tag}</span><small className="workspace-filter-list__count">{count}</small>
               </button>
             ))}
             {logSources.hiddenCount > 0 && (
-              <p className="workspace-filter-list__note">{logSources.hiddenCount} less active {logSources.hiddenCount === 1 ? 'source' : 'sources'} not shown. Search to find them.</p>
+              <p className="workspace-filter-list__note">{t('filters.hiddenSources', { count: logSources.hiddenCount })}</p>
             )}
           </div>
         </div>
 
         <div className={`${embedded ? 'monitor-subpanel__footer' : 'workspace-rail__footer'} logs-rail__actions`}>
-          <WorkspaceActionButton className="logs-btn" icon="trash" onClick={clearLogs} title="Clear logs" aria-label="Clear log output">Clear output</WorkspaceActionButton>
+          <WorkspaceActionButton className="logs-btn" icon="trash" onClick={clearLogs} title={t('actions.clearTitle')} aria-label={t('actions.clearAria')}>{t('actions.clearOutput')}</WorkspaceActionButton>
 
           {connStatus !== 'connected' && (
-            <WorkspaceActionButton className="logs-btn" appearance="primary" icon="rotate-ccw" onClick={connect} title="Reconnect" aria-label="Reconnect to log stream">Reconnect</WorkspaceActionButton>
+            <WorkspaceActionButton className="logs-btn" appearance="primary" icon="rotate-ccw" onClick={connect} title={t('actions.reconnect')} aria-label={t('actions.reconnectAria')}>{t('actions.reconnect')}</WorkspaceActionButton>
           )}
         </div>
       </aside>
@@ -504,8 +507,8 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
       <div className="workspace-pane logs-main">
         <WorkspacePaneHeader
           className="logs-main__header"
-          title="Live stream"
-          subtitle={`${filteredLogs.length} of ${logs.length} entries shown`}
+          title={t('main.title')}
+          subtitle={t('counts.shown', { shown: filteredLogs.length, total: logs.length })}
           actions={<div className="logs-main__tools">
             {embedded && (
               <WorkspaceActionButton
@@ -515,7 +518,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
                 size="toolbar"
                 icon="funnel"
                 iconOnly
-                aria-label="Open log filters"
+                aria-label={t('actions.openFilters')}
                 aria-expanded={mobileFilters.isOpen}
                 onClick={mobileFilters.toggle}
               />
@@ -532,8 +535,8 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
         {filteredLogs.length === 0 ? (
           <div className="logs-empty">
             {logs.length === 0
-              ? (connStatus === 'connected' ? 'Waiting for log entries…' : 'Not connected to log stream')
-              : `No entries match "${searchQuery || filterLevel}+" filter`}
+              ? (connStatus === 'connected' ? t('empty.waiting') : t('empty.notConnected'))
+              : t('empty.noMatch', { filter: `${searchQuery || filterLevel}+` })}
           </div>
         ) : (
           <div className="logs-virtual" style={{ height: totalHeight, position: 'relative' }}>
@@ -577,7 +580,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
             }
           }}
         >
-          Jump to bottom
+          {t('actions.jumpBottom')}
         </WorkspaceActionButton>
       )}
       </div>

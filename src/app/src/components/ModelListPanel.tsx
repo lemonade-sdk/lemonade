@@ -27,6 +27,7 @@ import {
   type WorkspaceListRowStatus,
 } from './WorkspacePanels';
 import { backendCompactLabel, backendLabel } from '../modelPresentation';
+import { useI18n } from '../i18n';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -55,7 +56,6 @@ type BackendReadinessTone = 'ready' | 'attention' | 'unknown';
 
 export interface ModelBackendReadiness {
   tone: BackendReadinessTone;
-  label: string;
   backend?: string;
   state?: string;
 }
@@ -127,22 +127,21 @@ export function modelBackendReadiness(
 ): ModelBackendReadiness {
   const recipe = normalizedBackend((model as any).recipe);
   if (!recipe) {
-    return { tone: 'unknown', label: 'Model downloaded; backend could not be determined.' };
+    return { tone: 'unknown' };
   }
 
   const recipes = asRecord(systemInfo?.recipes);
   if (!recipes) {
-    return { tone: 'unknown', label: 'Model downloaded; backend status is not available.' };
+    return { tone: 'unknown' };
   }
 
   const recipeInfo = asRecord(recipes[recipe]);
   if (!recipeInfo && !BACKEND_MANAGED_RECIPES.has(recipe)) {
-    return { tone: 'ready', label: 'Model downloaded and ready.' };
+    return { tone: 'ready' };
   }
   if (!recipeInfo) {
     return {
       tone: 'attention',
-      label: `${backendLabel(recipe)} backend is not installed on this server.`,
       state: 'missing',
     };
   }
@@ -151,7 +150,6 @@ export function modelBackendReadiness(
   if (!backends || Object.keys(backends).length === 0) {
     return {
       tone: 'attention',
-      label: `${backendLabel(recipe)} backend must be installed before loading this model.`,
       state: 'missing',
     };
   }
@@ -170,7 +168,6 @@ export function modelBackendReadiness(
         tone: 'attention',
         backend,
         state: 'missing',
-        label: `${backendLabel(recipe)} backend “${backend}” must be installed before loading this model.`,
       };
     }
   } else {
@@ -183,13 +180,11 @@ export function modelBackendReadiness(
   }
 
   const state = normalizedBackend(backendInfo?.state);
-  const backendSuffix = backend ? ` (${backend})` : '';
   if (state === 'installed') {
     return {
       tone: 'ready',
       backend,
       state,
-      label: `${backendLabel(recipe)}${backendSuffix} is installed; model is ready.`,
     };
   }
   if (state === 'update_required') {
@@ -197,7 +192,6 @@ export function modelBackendReadiness(
       tone: 'attention',
       backend,
       state,
-      label: `${backendLabel(recipe)}${backendSuffix} requires an update before use.`,
     };
   }
   if (state === 'update_available') {
@@ -205,7 +199,6 @@ export function modelBackendReadiness(
       tone: 'attention',
       backend,
       state,
-      label: `${backendLabel(recipe)}${backendSuffix} has an update available.`,
     };
   }
   if (state === 'installable') {
@@ -213,7 +206,6 @@ export function modelBackendReadiness(
       tone: 'attention',
       backend,
       state,
-      label: `${backendLabel(recipe)}${backendSuffix} must be downloaded before loading this model.`,
     };
   }
   if (state === 'action_required') {
@@ -221,7 +213,6 @@ export function modelBackendReadiness(
       tone: 'attention',
       backend,
       state,
-      label: `${backendLabel(recipe)}${backendSuffix} needs attention before loading this model.`,
     };
   }
   if (state === 'unsupported') {
@@ -229,7 +220,6 @@ export function modelBackendReadiness(
       tone: 'attention',
       backend,
       state,
-      label: `${backendLabel(recipe)}${backendSuffix} is not supported on this system.`,
     };
   }
 
@@ -237,40 +227,18 @@ export function modelBackendReadiness(
     tone: 'unknown',
     backend,
     state: state || undefined,
-    label: `${backendLabel(recipe)}${backendSuffix} status could not be verified.`,
   };
-}
-
-/** Short enough to ride the row's meta line; `label` keeps the full sentence
-    for the status marker's tooltip and the row's accessible name. */
-const BACKEND_STATE_MESSAGES: Record<string, string> = {
-  missing: 'Engine not installed',
-  update_required: 'Engine update required',
-  update_available: 'Engine update available',
-  installable: 'Engine download required',
-  action_required: 'Engine needs attention',
-  unsupported: 'Engine unsupported',
-};
-
-function backendReadinessMessage(readiness: ModelBackendReadiness): string {
-  return BACKEND_STATE_MESSAGES[readiness.state || ''] || 'Engine needs attention';
 }
 
 type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding' | 'classification';
 
-const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> = [
-  { key: 'all', label: 'All', iconName: 'globe' },
-  { key: 'llm', label: 'Chat', iconName: 'chat' },
-  { key: 'omni', label: 'Omni', iconName: 'omni' },
-  { key: 'router', label: 'Router', iconName: 'router' },
-  { key: 'image', label: 'Image', iconName: 'image' },
-  { key: 'audio', label: 'Audio', iconName: 'audio' },
-  { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio' },
-  { key: 'tts', label: 'TTS', iconName: 'tts' },
-  { key: 'model3d', label: '3D', iconName: 'box' },
-  { key: 'embedding', label: 'Embed', iconName: 'embedding' },
-  { key: 'classification', label: 'Classify', iconName: 'search-check' },
-];
+const FILTER_TAB_I18N_KEYS: Record<FilterTab, string> = {
+  all: 'nav.tasks.all', llm: 'nav.tasks.llm', omni: 'nav.tasks.omni', router: 'nav.tasks.router',
+  image: 'nav.tasks.image', audio: 'nav.tasks.audio', 'audio-generation': 'nav.tasks.audioGeneration',
+  tts: 'nav.tasks.tts', model3d: 'nav.tasks.model3d', embedding: 'nav.tasks.embedding',
+  classification: 'nav.tasks.classification',
+};
+
 
 function modelRecipe(m: ModelInfo): string {
   return String((m as any).recipe || '').trim().toLowerCase();
@@ -497,6 +465,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   registryZoneTop,
   systemInfo = null,
 }) => {
+  const { t } = useI18n('models');
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const listRef = useRef<HTMLUListElement>(null);
   const defaultSearchRef = useRef<HTMLInputElement>(null);
@@ -587,9 +556,9 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
      chosen sort now orders rows within each section. */
   const listSections = useMemo(() => {
     const sections: { key: string; label: string; entries: FlatModelEntry[] }[] = [
-      { key: 'pinned', label: 'Pinned', entries: [] },
-      { key: 'downloaded', label: 'Downloaded', entries: [] },
-      { key: 'available', label: 'Not downloaded', entries: [] },
+      { key: 'pinned', label: t('list.sections.pinned'), entries: [] },
+      { key: 'downloaded', label: t('list.sections.downloaded'), entries: [] },
+      { key: 'available', label: t('list.sections.available'), entries: [] },
     ];
     const byKey = Object.fromEntries(sections.map(s => [s.key, s]));
     for (const entry of flatList) {
@@ -601,7 +570,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       byKey[key].entries.push(entry);
     }
     return sections.filter(section => section.entries.length > 0);
-  }, [flatList]);
+  }, [flatList, t]);
 
   // Arrow/Home/End and Enter/Space live in WorkspaceList; the catalog only adds
   // its own pin shortcut.
@@ -625,13 +594,23 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     const backendReadiness = status === 'downloaded'
       ? modelBackendReadiness(model, systemInfo)
       : null;
+    const backendReadinessText = backendReadiness
+      ? t(backendReadiness.tone === 'ready'
+        ? 'list.readiness.ready'
+        : backendReadiness.tone === 'attention'
+          ? `list.readiness.${backendReadiness?.state || 'attention'}`
+          : 'list.readiness.unknown')
+      : undefined;
+    const backendReadinessLabel = backendReadinessText && backendReadiness?.backend
+      ? t('list.readiness.withBackend', { status: backendReadinessText, backend: backendReadiness.backend })
+      : backendReadinessText;
     const readinessLabel = status === 'running'
-      ? 'Backend active; model is running.'
+      ? t('list.readiness.running')
       : status === 'downloading'
-        ? `Model download in progress${downloadPct != null ? ` (${downloadPct.toFixed(0)}%).` : '.'}`
+        ? t('list.readiness.downloading', { progress: downloadPct != null ? ` (${downloadPct.toFixed(0)}%)` : '' })
         : status === 'available'
-          ? 'Model is available to download.'
-          : backendReadiness?.label;
+          ? t('list.readiness.available')
+          : backendReadinessLabel;
 
     // Only a row doing something, or asking for something, says so. Being
     // downloaded is a fact about the section it sits in, not about the row.
@@ -643,11 +622,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           ? 'attention'
           : undefined;
     const statusText = rowStatus === 'busy'
-      ? `Downloading${downloadPct != null ? ` ${downloadPct.toFixed(0)}%` : '…'}`
+      ? t('list.readiness.statusDownloading', { progress: downloadPct != null ? ` ${downloadPct.toFixed(0)}%` : '…' })
       : rowStatus === 'attention'
-        ? backendReadinessMessage(backendReadiness!)
+        ? backendReadinessLabel
         : rowStatus === 'live'
-          ? 'Running'
+          ? t('list.readiness.statusRunning')
           : undefined;
     const meta = model.size != null && model.size > 0 ? listFmtSize(model.size) : undefined;
     const secondaryTags = capTags.filter(tag => tag !== (primaryCapability as string));
@@ -671,12 +650,18 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         dataAttributes={{ 'data-model-id': mId }}
         className={pinned ? 'workspace-list-row--pinned' : undefined}
         ariaKeyShortcuts={onTogglePin ? 'P' : undefined}
-        ariaLabel={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloading' ? ', downloading' : ''}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
+        ariaLabel={t('list.ariaRow', {
+          name: displayName,
+          pinned: pinned ? t('list.ariaPinned') : '',
+          status: status === 'running' ? t('list.ariaRunning') : status === 'downloading' ? t('list.ariaDownloading') : '',
+          backend: displayedBackend ? t('list.ariaPart', { value: displayedBackend }) : '',
+          readiness: readinessLabel ? t('list.ariaPart', { value: readinessLabel }) : '',
+        })}
         onClick={() => onSelectModel(mId)}
         onKeyDown={e => handleItemKeyDown(e, mId)}
         action={onTogglePin ? {
           icon: 'pin',
-          label: pinned ? `Unpin ${displayName} (P)` : `Pin ${displayName} (P)`,
+          label: pinned ? t('list.unpin', { model: displayName }) : t('list.pin', { model: displayName }),
           onClick: () => onTogglePin(mId),
           // A pinned model's pin outranks its engine as the fact worth showing,
           // and keeps the row's state visible without hovering. The row owns the
@@ -692,10 +677,10 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     <WorkspaceListPanel
       className="model-list-panel"
       headerClassName="manager__title"
-      title="Models"
-      subtitle={`${flatList.length} ${flatList.length === 1 ? 'model' : 'models'}`}
+      title={t('list.title')}
+      subtitle={t('common.model', { count: flatList.length })}
       actions={(
-        <WorkspaceActionGroup label="Model list actions">
+        <WorkspaceActionGroup label={t('list.actions')}>
           {onOpenCustomModels && (
             <WorkspaceActionButton
               appearance="primary"
@@ -703,8 +688,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               icon="compose"
               iconOnly
               onClick={onOpenCustomModels}
-              aria-label="Open custom models"
-              title="Manage custom models"
+              aria-label={t('list.openCustom')}
+              title={t('list.manageCustom')}
             />
           )}
           {onOpenRouter && (
@@ -713,8 +698,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               icon="router"
               iconOnly
               onClick={onOpenRouter}
-              aria-label="Open router editor"
-              title="Create or edit a model router"
+              aria-label={t('list.openRouter')}
+              title={t('list.manageRouter')}
             />
           )}
           {onUpdateAllModels && (
@@ -723,8 +708,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               icon="rotate-ccw"
               iconOnly
               onClick={onUpdateAllModels}
-              aria-label="Update all models"
-              title="Update all downloaded models"
+              aria-label={t('list.updateAll')}
+              title={t('list.updateAllTitle')}
             />
           )}
 
@@ -734,7 +719,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
 
       {/* Search bar */}
       <div className="model-list-panel__search-row">
-        <label htmlFor="model-list-search" className="sr-only">Search models</label>
+        <label htmlFor="model-list-search" className="sr-only">{t('list.search')}</label>
         <div className="model-list-panel__search-wrap">
           <Icon name="search" size={14} aria-hidden="true" className="model-list-panel__search-icon" />
           <input
@@ -743,10 +728,10 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
             role="searchbox"
             type="text"
               className="model-list-panel__search-input manager__search-input"
-            placeholder={onlineSearchEnabled ? 'Search built-in and online catalogs…' : 'Search built-in catalogs…'}
+            placeholder={t(onlineSearchEnabled ? 'list.searchBuiltInOnline' : 'list.searchBuiltIn')}
             value={searchQuery}
             onChange={e => onSearchChange(e.target.value)}
-            aria-label="Search models"
+            aria-label={t('list.search')}
             autoComplete="off"
           />
           {searchQuery && (
@@ -754,7 +739,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               type="button"
               className="model-list-panel__search-clear"
               onClick={() => onSearchChange('')}
-              aria-label="Clear search"
+              aria-label={t('list.clearSearch')}
             >×</button>
           )}
         </div>
@@ -762,24 +747,24 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
 
       {/* Sort control */}
       <div className="model-list-panel__sort-row">
-        <label htmlFor="model-list-sort" className="model-list-panel__sort-label">Sort</label>
+        <label htmlFor="model-list-sort" className="model-list-panel__sort-label">{t('list.sort')}</label>
         <select
           id="model-list-sort"
           className="model-list-panel__sort-select"
           value={sortBy}
           onChange={e => setSortBy(e.target.value as SortBy)}
-          aria-label="Sort models by"
+          aria-label={t('list.sortBy')}
         >
-          <option value="name">Name (A–Z)</option>
-          <option value="size">Size (largest first)</option>
-          <option value="last-used">Last used</option>
-          <option value="downloads">Download count</option>
+          <option value="name">{t('list.sortName')}</option>
+          <option value="size">{t('list.sortSize')}</option>
+          <option value="last-used">{t('list.sortLastUsed')}</option>
+          <option value="downloads">{t('list.sortDownloads')}</option>
         </select>
       </div>
 
       <span className="sr-only model-list-panel__count" aria-live="polite" aria-atomic="true">
-        {flatList.length} model{flatList.length !== 1 ? 's' : ''}
-        {taskFilters && taskFilters.size > 0 && ` (${Array.from(taskFilters).map(task => FILTER_TABS.find(item => item.key === task)?.label || task).join(', ')})`}
+        {t('common.model', { count: flatList.length })}
+        {taskFilters && taskFilters.size > 0 && ` (${Array.from(taskFilters).map(task => t(FILTER_TAB_I18N_KEYS[task] || 'nav.tasks.all')).join(', ')})`}
       </span>
 
       {/* Scrollable area: model list + optional inline registry result zones */}
@@ -790,7 +775,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       <WorkspaceList
         listRef={listRef}
         className="model-list-panel__list"
-        label="Model list"
+        label={t('list.aria')}
         tabIndex={flatList.some(e => e.model && listModelName(e.model) === selectedModelId) ? -1 : 0}
         onRowActivate={onSelectModel}
         activateOnMove
@@ -808,7 +793,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         {flatList.length === 0 && searchQuery && !registryZoneTop && (
           <li className="model-list-panel__empty manager__empty" aria-live="polite">
             <Icon name="search" size={18} aria-hidden="true" />
-            <span>No models match your search.</span>
+            <span>{t('list.noMatches')}</span>
           </li>
         )}
       </WorkspaceList>
