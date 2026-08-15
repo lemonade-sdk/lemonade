@@ -51,7 +51,7 @@ assert.match(list, /export function modelMatchesBackends/);
 assert.match(list, /export function modelMatchesTags/);
 assert.match(list, /if \(filter === 'router'\) return modelIsRouter\(m\);/);
 assert.match(list, /if \(filter === 'omni'\) return modelIsOmni\(m\);/);
-assert.match(list, /if \(filter === 'llm'\) return cap === 'chat' && !modelIsRouter\(m\);/);
+assert.match(list, /if \(filter === 'llm'\) return cap === 'chat' && !modelIsRouter\(m\) && !modelIsOmniCollection\(m\);/);
 assert.match(list, /raw\.recommended === true \|\| raw\.is_recommended === true \|\| raw\.featured === true \|\| raw\.suggested === true/);
 assert.match(list, /TAG_CHIPS: string\[\] = \['Recommended', 'Hot'/);
 assert.match(list, /if \(t === 'hot'\) return modelIsHot\(m\);/);
@@ -159,7 +159,7 @@ function loadListHelpers() {
 
 const helpers = loadListHelpers();
 const chatModel = { id: 'Qwen-Chat', name: 'Qwen-Chat', labels: ['chat'], recipe: 'llamacpp', suggested: true };
-const audioModel = { id: 'Whisper', name: 'Whisper', labels: ['audio'], recipe: 'whispercpp' };
+const audioModel = { id: 'Whisper', name: 'Whisper', labels: ['transcription'], recipe: 'whispercpp' };
 const hotLabelModel = { id: 'Gemma-Hot', name: 'Gemma-4-31B', labels: ['hot', 'tool-calling'], recipe: 'llamacpp', suggested: true };
 const hotCapabilityModel = { id: 'Future-Hot', name: 'Future-Model', capabilities: ['hot'], labels: ['chat'], recipe: 'llamacpp' };
 const hotNameOnlyModel = { id: 'Hotpot-Model', name: 'Hotpot-Model', labels: ['chat'], recipe: 'llamacpp' };

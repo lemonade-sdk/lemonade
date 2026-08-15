@@ -1,7 +1,7 @@
 import React, { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
-import { capabilityFromModelInfo, modelCapabilityTags } from '../modelCapabilities';
+import { capabilityFromModelInfo, modelCapabilityTags, modelSupportsChatImageInput } from '../modelCapabilities';
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomModelRecord, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
@@ -284,6 +284,7 @@ const CHAT_RECIPE_OPTIONS: CustomRecipeOption[] = [
 const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]> = {
   chat: CHAT_RECIPE_OPTIONS,
   omni: CHAT_RECIPE_OPTIONS,
+  classification: [customRecipeOption('onnxruntime', 'ONNX Runtime', 'Text classification through /classify')],
   image: [customRecipeOption('sd-cpp', 'Stable Diffusion', 'Stable Diffusion C++ backend')],
   audio: [
     customRecipeOption('whispercpp', 'Whisper', 'Whisper C++ transcription backend'),
@@ -805,8 +806,6 @@ const OMNI_COMPONENT_ROLE_CONFIG: Record<OmniComponentRole, { label: string; pla
   },
 };
 
-const NON_PLANNER_LABELS = new Set(['image', 'image-generation', 'edit', 'upscaling', 'speech', 'tts', 'text-to-speech', 'transcription', 'audio-generation', 'music', 'music-generation', 'sound-generation', 'sfx', '3d', 'model3d', '3d-generation', 'image-to-3d', 'mesh', 'mesh-generation', 'embeddings', 'embedding', 'reranking', 'reranker']);
-
 function lowerLabels(m: ModelInfo): string[] {
   return (m.labels || []).map(label => label.toLowerCase().trim()).filter(Boolean);
 }
@@ -819,14 +818,12 @@ function hasAnyLabel(m: ModelInfo, labels: string[]): boolean {
 function isOmniComponentEligible(m: ModelInfo, role: OmniComponentRole): boolean {
   if (isCollectionModel(m)) return false;
   const cap = capabilityFromModelInfo(m);
-  const labels = lowerLabels(m);
 
   switch (role) {
     case 'llm':
-      if (cap !== 'unknown') return cap === 'chat' || cap === 'omni';
-      return !labels.some(label => NON_PLANNER_LABELS.has(label));
+      return cap === 'chat';
     case 'vision':
-      return cap === 'omni' || hasAnyLabel(m, ['vision', 'vlm', 'vision-language', 'image-input']);
+      return modelSupportsChatImageInput(m, null);
     case 'image':
       return cap === 'image' || hasAnyLabel(m, ['image', 'image-generation', 'diffusion']);
     case 'edit':

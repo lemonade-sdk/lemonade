@@ -157,7 +157,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     .filter(model => String((model as any).recipe || '').toLowerCase() !== 'collection.router')
     .filter(model => {
       const capability = capabilityFromModelInfo(model);
-      return capability === 'chat' || capability === 'omni' || capability === 'unknown';
+      return capability === 'chat';
     })
     .sort((a, b) => modelLabel(a).localeCompare(modelLabel(b))), [models]);
 

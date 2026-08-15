@@ -678,10 +678,8 @@ const App: React.FC = () => {
     const models = modelHelpers.withVirtualLoadedCollections(rawLoadedModels, knownInfos).map(model => {
       const info = modelHelpers.findModelInfoByName(knownInfos, model.model_name);
       if (!info) return model;
-      const cap = modelHelpers.capabilityFromModelInfo(info);
       return {
         ...model,
-        type: cap === 'unknown' ? model.type : cap,
         recipe: model.recipe || String((info as any).recipe || ''),
         checkpoint: model.checkpoint || String((info as any).checkpoint || ''),
       };
@@ -698,13 +696,13 @@ const App: React.FC = () => {
       const info = modelHelpers.findModelInfoByName(customInfos, name);
       if (!info) return false;
       const cap = modelHelpers.capabilityFromModelInfo(info);
-      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
+      return cap === 'chat' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
     };
     const infoSelectable = (name: string) => {
       const info = modelHelpers.findModelInfoByName(knownInfos, name);
       if (!info) return false;
       const cap = modelHelpers.capabilityFromModelInfo(info);
-      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
+      return cap === 'chat' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
     };
     setCurrentModel(current => {
       if (current && loadedModels.some(m => m.model_name === current && (modelHelpers.canSelectInComposer(m) || customSelectable(m.model_name) || infoSelectable(m.model_name)))) return current;

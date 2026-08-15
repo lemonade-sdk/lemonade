@@ -153,6 +153,8 @@ export function remoteCapabilityEvidence(
   // a vision-language model. It does not depend on the repository name or tags.
   const repositoryOmni = hasUsableGguf && hasMmproj && variants?.recipe === 'llamacpp';
 
+  // A vision-language repository is a chat model that accepts images, so it
+  // resolves to chat and picks up `vision` from providerVision below.
   let primary: ModelCapability = 'unknown';
   let confidence: RemoteCapabilityConfidence = 'unknown';
   if (repositoryReranking) {
@@ -161,13 +163,7 @@ export function remoteCapabilityEvidence(
   } else if (repositoryEmbedding) {
     primary = 'embedding';
     confidence = 'repository';
-  } else if (repositoryOmni) {
-    primary = 'omni';
-    confidence = 'repository';
-  } else if (repositoryChat && providerVision) {
-    primary = 'omni';
-    confidence = 'repository';
-  } else if (repositoryChat) {
+  } else if (repositoryOmni || repositoryChat) {
     primary = 'chat';
     confidence = 'repository';
   } else if (providerReranking) {
@@ -175,9 +171,6 @@ export function remoteCapabilityEvidence(
     confidence = 'provider';
   } else if (providerEmbedding) {
     primary = 'embedding';
-    confidence = 'provider';
-  } else if (providerChat && providerVision) {
-    primary = 'omni';
     confidence = 'provider';
   } else if (providerChat) {
     primary = 'chat';
@@ -192,6 +185,12 @@ export function remoteCapabilityEvidence(
   return { labels: [...labels], primary, confidence };
 }
 
+/**
+ * The only bridge from a remote search row to a ModelInfo. Inference happens
+ * here, once, and the verdict is written into `labels` as a deployment label —
+ * so everything downstream reads a label like any registered model does and
+ * never re-guesses. Registered models never take this path.
+ */
 export function remoteResultAsModelInfo(
   result: HFModelResult,
   variants?: PullVariantsResult,

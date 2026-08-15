@@ -255,7 +255,7 @@ function backendReadinessMessage(readiness: ModelBackendReadiness): string {
   return BACKEND_STATE_MESSAGES[readiness.state || ''] || 'Engine needs attention';
 }
 
-type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
+type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding' | 'classification';
 
 const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> = [
   { key: 'all', label: 'All', iconName: 'globe' },
@@ -268,6 +268,7 @@ const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> 
   { key: 'tts', label: 'TTS', iconName: 'tts' },
   { key: 'model3d', label: '3D', iconName: 'box' },
   { key: 'embedding', label: 'Embed', iconName: 'embedding' },
+  { key: 'classification', label: 'Classify', iconName: 'search-check' },
 ];
 
 function modelRecipe(m: ModelInfo): string {
@@ -286,7 +287,7 @@ export function modelIsOmniCollection(m: ModelInfo): boolean {
 
 /** Omni is a task identity, not a concrete backend identity. */
 export function modelIsOmni(m: ModelInfo): boolean {
-  return modelIsOmniCollection(m) || capabilityFromModelInfo(m) === 'omni';
+  return modelIsOmniCollection(m);
 }
 
 export function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
@@ -296,9 +297,9 @@ export function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
 
   const cap = capabilityFromModelInfo(m);
   if (filter === 'embedding') return cap === 'embedding' || cap === 'reranking';
-  // Router collections intentionally have their own task and must not also be
-  // counted as Chat even though they ultimately route chat-capable models.
-  if (filter === 'llm') return cap === 'chat' && !modelIsRouter(m);
+  // Collections intentionally have their own tasks and must not also be counted
+  // as Chat even though chat is what they ultimately serve.
+  if (filter === 'llm') return cap === 'chat' && !modelIsRouter(m) && !modelIsOmniCollection(m);
   return (cap as string) === filter;
 }
 

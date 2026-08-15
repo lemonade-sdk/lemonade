@@ -37,7 +37,9 @@ import {
   snapshotFromLoaded,
   snapshotFromModelInfo,
   snapshotFromName,
+  snapshotIdentity,
   isRouterRecipe,
+  modelStructure,
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
 import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../features/chatHistory/historySettings';
@@ -1039,10 +1041,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
   }, [currentLoadedModel, currentCustomModelInfo, currentKnownModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
+  // A collection deploys as chat; its Omni surface comes from the recipe.
+  const currentIsOmniCollection = snapshotIdentity(currentModelSnapshot) === 'omni';
   const currentDefaultModel = lemonadeDefaultModel(currentModel);
 
   useEffect(() => {
-    if (!currentLoadedModel || (currentCapability !== 'chat' && currentCapability !== 'omni')) return;
+    if (!currentLoadedModel || currentCapability !== 'chat') return;
     saveLastReadyModelName(currentLoadedModel.model_name);
     setLastReadyModelName(currentLoadedModel.model_name);
   }, [currentCapability, currentLoadedModel]);
@@ -1110,7 +1114,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     }));
   }, [currentCapability, imageGenerationModels]);
   useEffect(() => {
-    const specialCapability = !['chat', 'omni', 'unknown'].includes(currentCapability);
+    const specialCapability = !['chat', 'unknown'].includes(currentCapability);
     if (!modelPickerOpen && !specialCapability) return;
 
     let cancelled = false;
@@ -1201,7 +1205,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   useEffect(() => {
     const keepsAudioAttachments = currentCapability === 'audio'
-      || currentCapability === 'omni'
+      || currentIsOmniCollection
       || modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel);
     if (keepsAudioAttachments) return;
     if (isOpenMossTts && openMossSettings.mode === 'clone') return;
@@ -1227,7 +1231,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     [currentKnownModelInfo, currentLoadedModel],
   );
   const supportsChatImageInput = useMemo(() => {
-    if (currentCapability === 'omni') {
+    if (currentIsOmniCollection) {
       return Boolean(getVisionChatComponent(currentKnownModelInfo, knownModelInfos));
     }
     return currentCapability === 'chat'
@@ -1376,9 +1380,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return filtered.slice(0, 80);
   }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
 
-  const modeSupportsChatCompletions = currentCapability === 'chat' || currentCapability === 'omni';
+  const modeSupportsChatCompletions = currentCapability === 'chat';
   const modeSupportsMcp = modeSupportsChatCompletions;
-  const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
+  const canUseAudioInput = currentIsOmniCollection || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
 
   const persistMcpEnabled = useCallback((next: boolean) => {
     setUseMcp(next);
@@ -3004,7 +3008,7 @@ ${finalText}`
             : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
     ? 'Draft a message. Connect and load a model to send…'
-    : currentCapability === 'omni'
+    : currentIsOmniCollection
       ? `Message ${currentModel} through the Omni collection…`
       : currentCapability === 'chat' && supportsChatImageInput && supportsChatAudioInput
         ? `Message ${currentModel} with text, images, or audio…`
@@ -3036,7 +3040,7 @@ ${finalText}`
     ? (supportsRealtimeAudio
       ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
       : 'Chat + audio mode · attached audio is routed through chat completions')
-    : currentCapability === 'omni'
+    : currentIsOmniCollection
     ? 'Omni collection mode · requests are orchestrated across collection components'
     : currentCapability === 'image'
       ? (imageMode === 'edit' ? 'Image mode · attach one source image and prompt becomes /images/edits' : 'Image mode · prompt becomes /images/generations')
@@ -3315,7 +3319,7 @@ ${finalText}`
                     </div>
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
-                      Working in {capabilityLabel(currentCapability)} mode…
+                      Working in {capabilityLabel(snapshotIdentity(currentModelSnapshot))} mode…
                     </div>
                   </div>
                 </article>
@@ -3421,10 +3425,11 @@ ${finalText}`
                       const isLoading = modelPickerLoading === option.name;
                       const isUnloading = modelPickerUnloading === option.name;
                       const busy = isLoading || isUnloading;
-                      const capability = isRouterRecipe(option.recipe) ? 'router' : option.capability;
+                      const structure = modelStructure(option.recipe);
+                      const capability = structure === 'single' ? option.capability : structure;
                       // Collections route to backends rather than being one, so
                       // they name no engine — same rule as the models catalog.
-                      const isCollection = capability === 'omni' || capability === 'router';
+                      const isCollection = structure !== 'single';
                       // The picker gives its trailing slot to eject, so the
                       // engine joins the facts instead of competing for it.
                       // A loaded row's status owns the whole meta line, so the

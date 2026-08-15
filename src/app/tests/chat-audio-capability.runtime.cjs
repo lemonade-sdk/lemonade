@@ -44,9 +44,10 @@ const apiSource = fs.readFileSync(apiPath, 'utf8');
 const stylesSource = fs.readFileSync(stylesPath, 'utf8');
 
 const {
-  capabilityFromLabels,
+  deploymentKindFromLabels,
   capabilityFromLoaded,
   capabilityFromModelInfo,
+  identityFromModelInfo,
   modelCapabilityTags,
   modelSupportsChatAudioInput,
   modelSupportsChatImageInput,
@@ -59,7 +60,7 @@ const gemmaFlmLoaded = {
   device: 'npu',
   backend_url: '',
   pid: 123,
-  type: 'audio',
+  type: 'llm',
   last_use: Date.now(),
   input_modalities: ['text', 'audio'],
 };
@@ -67,8 +68,7 @@ const gemmaFlmInfo = {
   id: 'Gemma-4-E2B-it-FLM',
   name: 'Gemma-4-E2B-it-FLM',
   recipe: 'flm',
-  type: 'audio',
-  labels: ['tool-calling', 'vision', 'audio'],
+  labels: ['chat', 'tool-calling', 'vision', 'audio'],
   input_modalities: ['text', 'audio'],
 };
 
@@ -99,24 +99,44 @@ assert.deepEqual(
 );
 
 assert.equal(
-  capabilityFromLabels(['tool-calling', 'vision', 'audio']),
+  deploymentKindFromLabels(['chat', 'tool-calling', 'vision', 'audio']),
   'chat',
-  'vision and audio are additional inputs of a chat model, never Omni mode',
+  'vision and audio are additional inputs of a chat model, never a mode of their own',
 );
 assert.equal(
-  capabilityFromModelInfo({ id: 'single-vlm', recipe: 'llamacpp', labels: ['vision', 'multimodal'] }),
+  deploymentKindFromLabels(['chat', 'transcription']),
+  'chat',
+  'chat outranks every other deployment label, as find_deployment_mode does',
+);
+assert.equal(
+  deploymentKindFromLabels(['tool-calling', 'vision']),
+  'unknown',
+  'characteristics alone name no deployment mode',
+);
+assert.equal(
+  capabilityFromModelInfo({ id: 'single-vlm', recipe: 'llamacpp', labels: ['chat', 'vision'] }),
   'chat',
   'single multimodal models remain Chat models',
 );
 assert.equal(
-  capabilityFromModelInfo({ id: 'my-suite', recipe: 'collection.omni', components: ['chat', 'audio'] }),
-  'omni',
-  'Omni remains reserved for collection.omni',
+  capabilityFromModelInfo({ id: 'my-suite', recipe: 'collection.omni', labels: ['chat'], components: ['chat', 'audio'] }),
+  'chat',
+  'a collection deploys as chat, which is what the server labels it',
 );
 assert.equal(
-  capabilityFromModelInfo({ id: 'remote-suite', recipe: 'collection.omni', registry_source: 'huggingface', components: ['chat', 'audio'] }),
+  identityFromModelInfo({ id: 'my-suite', recipe: 'collection.omni', labels: ['chat'], components: ['chat', 'audio'] }),
   'omni',
-  'a registry-backed collection.omni remains Omni after it is registered',
+  'Omni identity comes from the recipe, not from the capability',
+);
+assert.equal(
+  identityFromModelInfo({ id: 'remote-suite', recipe: 'collection.omni', registry_source: 'huggingface', labels: ['chat'], components: ['chat', 'audio'] }),
+  'omni',
+  'a registry_source must not change how a registered collection is identified',
+);
+assert.equal(
+  capabilityFromModelInfo({ id: 'installed-chat', recipe: 'llamacpp', registry_source: 'huggingface', labels: ['chat', 'reasoning'] }),
+  'chat',
+  'an installed model is never mistaken for a remote search row',
 );
 assert.equal(
   modelSupportsChatAudioInput({ id: 'my-suite', recipe: 'collection.omni', labels: ['audio'] }, null),
@@ -124,7 +144,7 @@ assert.equal(
   'Omni collections must not be relabeled as Chat + Audio',
 );
 assert.equal(
-  capabilityFromLabels(['transcription', 'realtime-transcription']),
+  deploymentKindFromLabels(['transcription', 'realtime-transcription']),
   'audio',
   'standalone transcription labels remain Audio mode',
 );
@@ -136,7 +156,7 @@ const whisperLoaded = {
   device: 'cpu',
   backend_url: '',
   pid: 456,
-  type: 'audio',
+  type: 'transcription',
   last_use: Date.now(),
   labels: ['transcription', 'realtime-transcription'],
   input_modalities: ['audio'],
@@ -153,8 +173,10 @@ assert.equal(capabilityFromLoaded(plainFlm), 'chat');
 assert.equal(modelSupportsChatAudioInput(null, plainFlm), false);
 assert.equal(modelSupportsChatImageInput(null, plainFlm), false,
   'a plain text LLM must not expose image attachments');
-assert.equal(modelSupportsChatImageInput({ id: 'llava-next', recipe: 'llamacpp', type: 'llm' }, null), true,
-  'well-known VLM identity patterns remain a fallback when modality metadata is missing');
+assert.equal(modelSupportsChatImageInput({ id: 'llava-next', recipe: 'llamacpp', labels: ['chat'] }, null), false,
+  'a chat model without a vision label gets no image affordance, whatever its name suggests');
+assert.equal(modelSupportsChatImageInput({ id: 'llava-next', recipe: 'llamacpp', labels: ['chat', 'vision'] }, null), true,
+  'the declared vision label is what enables image attachments');
 
 assert.match(apiSource, /input_modalities\?: string\[\]/,
   'health metadata must preserve declared input modalities');

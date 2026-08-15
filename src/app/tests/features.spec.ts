@@ -128,7 +128,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
           id: 'existing-model',
           name: 'Existing Model',
           type: 'llm',
-          labels: ['llm'],
+          labels: ['chat'],
           recipe: 'llamacpp',
           suggested: true,
           downloaded: true,
@@ -197,7 +197,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
           id: 'llama-search-model',
           name: 'Llama Search Model',
           type: 'llm',
-          labels: ['llm'],
+          labels: ['chat'],
           recipe: 'llamacpp',
           suggested: true,
         }],
@@ -730,7 +730,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
           id: 'config-beta-model',
           name: 'config-beta-model',
           display_name: 'Config Beta Model',
-          labels: ['llm'],
+          labels: ['chat'],
           recipe: 'llamacpp',
           downloaded: true,
           max_context_window: 65536,
@@ -743,10 +743,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
           recipe: 'whispercpp',
           downloaded: true,
         }, {
+          // Carries a registry_source, as every served model does, and no
+          // stored ctx_size — so this exercises the context default path.
           id: 'unknown-context-model',
           name: 'unknown-context-model',
           display_name: 'Unknown Context Model',
           registry_source: 'huggingface',
+          labels: ['chat'],
           recipe: 'llamacpp',
           downloaded: true,
           max_context_window: 32768,
@@ -1457,7 +1460,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
         data: [{
           id: modelName,
           name: modelName,
-          labels: ['llm', 'coding'],
+          labels: ['chat', 'coding'],
           recipe: 'llamacpp',
           downloaded: true,
           ctx_size: 4096,
@@ -1517,8 +1520,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.route('**/api/v1/models**', route => route.fulfill({
       json: {
         data: [
-          { id: modelA, name: modelA, labels: ['llm'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
-          { id: modelB, name: modelB, labels: ['llm'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
+          { id: modelA, name: modelA, labels: ['chat'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
+          { id: modelB, name: modelB, labels: ['chat'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
         ],
       },
     }));

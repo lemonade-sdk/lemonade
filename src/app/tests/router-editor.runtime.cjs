@@ -198,7 +198,13 @@ assert.doesNotMatch(editorSource, /issue #2405|remain hidden/i);
 assert.match(nodeEditorSource, /metadataComparator/);
 assert.match(nodeEditorSource, /normalizeRouterNode/);
 assert.match(nodeEditorSource, />AND<|>AND<\/button>/, 'a leaf must be wrappable into a compound rule');
-assert.match(capabilitySource, /collection\.router[^\n]+return 'chat'/);
+const capabilities = loadTypeScriptModule(capabilityPath);
+assert.equal(capabilities.modelStructure('collection.router'), 'router',
+  'a router collection is identified structurally, from its recipe');
+assert.equal(
+  capabilities.capabilityFromModelInfo({ id: 'user.router', recipe: 'collection.router', labels: ['chat'] }),
+  'chat',
+  'a router collection deploys as chat, which is what it serves');
 assert.match(editorSource, /Switching modes keeps the other configuration intact/);
 
 
