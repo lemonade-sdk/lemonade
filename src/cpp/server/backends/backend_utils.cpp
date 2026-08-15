@@ -1532,7 +1532,7 @@ namespace lemon::backends {
 #ifdef _WIN32
                 if (name.rfind("amdhip64", 0) == 0) {
 #else
-                if (name == "libamdhip64.so") {
+                if (name.rfind("libamdhip64.so", 0) == 0) {
 #endif
                     has_hip_runtime = true;
                     break;
