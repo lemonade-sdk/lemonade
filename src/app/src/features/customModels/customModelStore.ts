@@ -2,6 +2,7 @@ import type { ModelInfo } from '../../api';
 import type { ModelCapability } from '../../modelCapabilities';
 import { storageKey } from '../../storage';
 import { COLLECTION_OMNI_RECIPE } from '../collections/collectionModels';
+import { getBackendCatalogSnapshot } from '../backends/backendCatalogStore';
 import { routerRegistrationOptions } from '../router/routerStore';
 
 export type CustomModelCapability = Extract<ModelCapability, 'chat' | 'omni' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding' | 'reranking'>;
@@ -127,18 +128,25 @@ function normalizeCustomTools(value?: CustomOmniToolDefinition[]): CustomOmniToo
   return tools;
 }
 
+/* Which modality serves each capability. The recipe itself is whichever
+ * backend lemond publishes for that modality first, in registry order. */
+const MODALITY_BY_CAPABILITY: Partial<Record<CustomModelCapability, string>> = {
+  image: 'Image generation',
+  audio: 'Speech-to-text',
+  'audio-generation': 'Audio generation',
+  tts: 'Text-to-speech',
+  model3d: '3D generation',
+};
+
 function defaultRecipe(capability: CustomModelCapability, components?: string[]): string {
-  switch (capability) {
-    case 'image': return 'sd-cpp';
-    case 'audio': return 'whispercpp';
-    case 'audio-generation': return 'thinksound';
-    case 'tts': return 'kokoro';
-    case 'model3d': return 'trellis';
-    case 'embedding': return 'llamacpp';
-    case 'reranking': return 'llamacpp';
-    case 'omni': return components && components.length > 0 ? COLLECTION_OMNI_RECIPE : 'llamacpp';
-    default: return 'llamacpp';
+  if (capability === 'omni' && components && components.length > 0) return COLLECTION_OMNI_RECIPE;
+  const modality = MODALITY_BY_CAPABILITY[capability];
+  if (modality) {
+    const match = getBackendCatalogSnapshot().catalog?.recipes.find(entry => entry.modality === modality);
+    if (match) return match.recipe;
   }
+  // chat, omni, embedding and reranking all default to the text-generation path.
+  return 'llamacpp';
 }
 
 function labelsFor(capability: CustomModelCapability, extra: string[] = []): string[] {

@@ -44,9 +44,11 @@ assert.match(installBlock, /const synced = await syncBackendStatus\(recipe, back
 assert.match(source, /BACKEND_STATUS_RETRY_DELAYS_MS/);
 assert.match(source, /backendActionIsReflected/);
 
-// Concurrent refreshes may not overwrite the newest system-info snapshot.
-assert.match(source, /const requestId = \+\+systemInfoRequestRef\.current/);
-assert.match(source, /requestId === systemInfoRequestRef\.current/);
+// System-info ordering is the shared catalog store's job now, and is covered
+// behaviorally by backend-catalog.runtime.cjs. The view must not re-fetch it.
+assert.doesNotMatch(source, /api\.systemInfo\(\)/,
+  'BackendManager reads the shared catalog store, not its own system-info copy');
+assert.match(source, /refreshBackendCatalog\(\)/);
 
 // Regression: never tell the user to remove a binary based on a stale snapshot.
 assert.doesNotMatch(source, /existing binary may need to be removed manually/);

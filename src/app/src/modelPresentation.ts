@@ -1,36 +1,47 @@
-const BACKEND_PRESENTATION: Record<string, { compact: string; label: string; color: string }> = {
-  llamacpp: { compact: 'llama.cpp', label: 'llama.cpp', color: 'var(--backend-llamacpp)' },
-  vllm: { compact: 'vLLM', label: 'vLLM', color: 'var(--backend-vllm)' },
-  flm: { compact: 'FLM', label: 'FastFlowLM', color: 'var(--backend-flm)' },
-  'ryzenai-llm': { compact: 'RyzenAI', label: 'RyzenAI', color: 'var(--backend-ryzenai)' },
-  'sd-cpp': { compact: 'SD.cpp', label: 'Stable Diffusion', color: 'var(--backend-sd-cpp)' },
-  whispercpp: { compact: 'Whisper', label: 'Whisper', color: 'var(--backend-whispercpp)' },
-  moonshine: { compact: 'Moonshine', label: 'Moonshine', color: 'var(--backend-moonshine)' },
-  kokoro: { compact: 'Kokoro', label: 'Kokoro TTS', color: 'var(--backend-kokoro)' },
-  acestep: { compact: 'ACE-Step', label: 'ACE-Step', color: 'var(--backend-acestep)' },
-  thinksound: { compact: 'ThinkSound', label: 'ThinkSound', color: 'var(--backend-thinksound)' },
-  openmoss: { compact: 'OpenMOSS', label: 'OpenMOSS TTS', color: 'var(--backend-openmoss)' },
-  trellis: { compact: 'TRELLIS.2', label: 'TRELLIS.2', color: 'var(--backend-trellis)' },
-  'collection.omni': { compact: 'Omni', label: 'Omni Collection', color: 'var(--backend-collection-omni)' },
-  'collection.router': { compact: 'Router', label: 'Router', color: 'var(--backend-collection-router)' },
-  collection: { compact: 'Collection', label: 'Collection', color: 'var(--backend-collection)' },
+import { getBackendCatalogSnapshot } from './features/backends/backendCatalogStore';
+
+/**
+ * Recipe names come from lemond, and so do their labels: `web_display_name`
+ * falling back to `display_name`. These overrides exist only where the server's
+ * docs-facing vocabulary is wrong for a UI chip — it bakes the device into the
+ * name ("llama.cpp GPU", "Ryzen AI SW NPU") or repeats the experimental flag
+ * ("vLLM ROCm (experimental)") — plus the three `collection*` pseudo-recipes,
+ * which are client-side and have no server counterpart by construction.
+ *
+ * This is an override map, never an allowlist: a recipe that is not listed
+ * still resolves, using the name the server published for it.
+ *
+ * Backend identity is a text label, never a color: see the
+ * model-nav-filter-layout and model-list-backend-layout contracts.
+ */
+const BRAND_OVERRIDES: Record<string, { label?: string; compact?: string }> = {
+  llamacpp: { label: 'llama.cpp', compact: 'llama.cpp' },
+  vllm: { label: 'vLLM', compact: 'vLLM' },
+  flm: { label: 'FastFlowLM', compact: 'FLM' },
+  'ryzenai-llm': { label: 'RyzenAI', compact: 'RyzenAI' },
+  'sd-cpp': { compact: 'SD.cpp' },
+  whispercpp: { compact: 'Whisper' },
+  kokoro: { label: 'Kokoro TTS', compact: 'Kokoro' },
+  openmoss: { compact: 'OpenMOSS' },
+  'collection.omni': { label: 'Omni Collection', compact: 'Omni' },
+  'collection.router': { label: 'Router', compact: 'Router' },
+  collection: { label: 'Collection', compact: 'Collection' },
 };
 
-function backendPresentation(recipe: string) {
-  const normalized = String(recipe || '').toLowerCase();
-  return BACKEND_PRESENTATION[normalized];
-}
-
-export function backendCompactLabel(recipe: string): string {
-  return backendPresentation(recipe)?.compact || recipe || 'Backend';
+function publishedLabel(recipe: string): string {
+  const descriptor = getBackendCatalogSnapshot().catalog?.byRecipe.get(recipe);
+  return descriptor?.webDisplayName || descriptor?.displayName || '';
 }
 
 export function backendLabel(recipe: string): string {
-  return backendPresentation(recipe)?.label || recipe || 'Unknown';
+  const key = String(recipe || '').toLowerCase();
+  return BRAND_OVERRIDES[key]?.label || publishedLabel(key) || recipe || 'Unknown';
 }
 
-export function backendColor(recipe: string): string {
-  return backendPresentation(recipe)?.color || 'var(--backend-other)';
+export function backendCompactLabel(recipe: string): string {
+  const key = String(recipe || '').toLowerCase();
+  const override = BRAND_OVERRIDES[key];
+  return override?.compact || override?.label || publishedLabel(key) || recipe || 'Backend';
 }
 
 /** Capability targets that carry a --cap-* identity token in both themes. */

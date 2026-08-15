@@ -7,6 +7,7 @@ import {
   capabilityFromLoaded,
   capabilityFromModelInfo,
   type ModelCapability,
+  modelSupportsImageEdit,
 } from '../modelCapabilities';
 import { findModelInfoByName } from '../features/collections/collectionModels';
 import type {
@@ -257,24 +258,15 @@ function modelName(model: ModelInfo): string {
 }
 
 function supportsImageEdit(name: string, info: ModelInfo | null): boolean {
-  const labels = (info?.labels || []).map(label => label.toLowerCase().trim());
-  if (labels.some(label => ['edit', 'image-edit', 'image-editing', 'image-to-image', 'img2img'].includes(label))) {
-    return true;
-  }
-  const haystack = [
+  return modelSupportsImageEdit(
+    info?.labels,
     name,
     info?.id,
     info?.name,
     info?.display_name,
-    String((info as Record<string, unknown> | null)?.model_name || ''),
-    String((info as Record<string, unknown> | null)?.checkpoint || ''),
-  ].filter(Boolean).join(' ').toLowerCase();
-  return haystack.includes('flux-2-klein')
-    || haystack.includes('flux_2_klein')
-    || haystack.includes('flux.2.klein')
-    || haystack.includes('flux2-klein')
-    || haystack.includes('qwen-edit')
-    || haystack.includes('image-edit');
+    (info as Record<string, unknown> | null)?.model_name,
+    (info as Record<string, unknown> | null)?.checkpoint,
+  );
 }
 
 async function resolveModel(

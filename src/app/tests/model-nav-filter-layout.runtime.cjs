@@ -74,7 +74,6 @@ assert.doesNotMatch(manager, /capabilityFilter/, 'ModelManager must not retain h
 
 assert.match(styles, /\.model-nav-rail__chip-list\s*\{[^}]*flex-wrap:\s*wrap;/s);
 assert.match(styles, /\.model-nav-rail__task-icon\s*\{[^}]*color:\s*var\(--filter-chip-color\);/s);
-assert.doesNotMatch(nav, /backendColor/, 'backend filters must not receive per-backend identity colors');
 assert.match(styles, /\.model-nav-rail__backend-chip\s*\{[^}]*--filter-chip-color:\s*var\(--text-tertiary\);[^}]*color:\s*var\(--text-secondary\);/s);
 assert.match(styles, /\.model-nav-rail__backend-chip\.is-active\s*\{[^}]*color:\s*var\(--text-primary\);/s);
 assert.doesNotMatch(styles, /\.model-nav-rail__backend-chip::before\s*\{/,
@@ -123,7 +122,12 @@ function loadListHelpers() {
     fileName: capabilitiesPath,
   });
   const capModule = { exports: {} };
-  Function('exports', 'require', 'module', capCompiled.outputText)(capModule.exports, require, capModule);
+  // Capability detection consults the backend catalog; with no server attached
+  // it must still fall back to the name/recipe hints.
+  const capRequire = request => request === './features/backends/backendOptions'
+    ? { descriptorForRecipe: () => undefined }
+    : require(request);
+  Function('exports', 'require', 'module', capCompiled.outputText)(capModule.exports, capRequire, capModule);
 
   const module = { exports: {} };
   const customRequire = request => {
@@ -141,10 +145,10 @@ function loadListHelpers() {
     if (request.includes('downloadStore')) return { activeDownloadForModel() { return undefined; } };
     if (request === './WorkspacePanels') return { WorkspaceActionButton() {}, WorkspaceActionGroup() {}, WorkspaceListPanel() {} };
     if (request === '../modelPresentation') return {
-      backendColor: recipe => `color:${recipe}`,
       backendCompactLabel: recipe => recipe,
       backendLabel: recipe => recipe,
     };
+    if (request === '../modelConfiguration') return { backendFieldForRecipe: () => null };
     throw new Error(`Unexpected dependency while loading ModelListPanel helpers: ${request}`);
   };
   Function('exports', 'require', 'module', '__filename', '__dirname', compiled.outputText)(

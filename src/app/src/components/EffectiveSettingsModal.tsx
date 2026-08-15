@@ -18,30 +18,7 @@ import {
 } from '../modelConfiguration';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
-
-const RECIPE_OPTION_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
-  ctx_size: 'Context size',
-  llamacpp_backend: 'Backend',
-  llamacpp_device: 'Device',
-  llamacpp_args: 'Backend args',
-  vllm_backend: 'Backend',
-  vllm_args: 'Backend args',
-  flm_args: 'Backend args',
-  whispercpp_backend: 'Backend',
-  whispercpp_args: 'Backend args',
-  moonshine_backend: 'Backend',
-  moonshine_args: 'Backend args',
-  sdcpp_args: 'Backend args',
-  'sd-cpp_backend': 'Backend',
-  steps: 'Steps',
-  cfg_scale: 'CFG scale',
-  width: 'Width',
-  height: 'Height',
-  sampling_method: 'Sampling method',
-  flow_shift: 'Flow shift',
-  voice: 'Voice',
-  speed: 'Speed',
-};
+import { optionLabel } from '../features/backends/backendOptions';
 
 const SAMPLING_LABELS: Partial<Record<keyof SamplingParams, string>> = {
   temperature: 'Temperature',
@@ -337,7 +314,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       if (key === 'merge_args' || key === 'mmproj_enabled' || key === 'ctx_size') continue;
       rows.push({
         key: `ro-${key}`,
-        label: RECIPE_OPTION_LABELS[key as keyof RecipeOptions] || key,
+        label: optionLabel(key),
         value: displayValue(value),
         source: resolved.sources.recipe_options[key as keyof RecipeOptions],
       });

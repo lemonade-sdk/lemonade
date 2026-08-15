@@ -11,6 +11,10 @@ import {
 import { Icon, type IconName } from './Icon';
 import { WorkspaceCatalogLayout, WorkspaceCatalogSection } from './WorkspaceCatalogLayout';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import type { BackendCatalog } from '../features/backends/backendCatalog';
+import { refreshBackendCatalog, useBackendCatalog } from '../features/backends/backendCatalogStore';
+import { orderSections, sectionForModality, sectionMeta } from '../features/backends/backendSections';
+import { backendLabel } from '../modelPresentation';
 import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspacePaneHeader } from './WorkspacePanels';
 
@@ -67,23 +71,6 @@ interface SystemInfoData {
 
 /* ── Constants ─────────────────────────────────────────────── */
 
-/** User-facing labels for recipes */
-const RECIPE_LABELS: Record<string, string> = {
-  llamacpp:       'llama.cpp',
-  onnxruntime:    'ONNX Runtime',
-  whispercpp:     'whisper.cpp',
-  moonshine:      'Moonshine',
-  'sd-cpp':       'stable-diffusion.cpp',
-  kokoro:         'Kokoro TTS',
-  flm:            'FastFlowLM',
-  'ryzenai-llm':  'RyzenAI',
-  vllm:           'vLLM',
-  acestep:         'ACE-Step',
-  thinksound:      'ThinkSound',
-  openmoss:        'OpenMOSS TTS',
-  trellis:         'TRELLIS.2',
-};
-
 const ENGINE_LOGO_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/engines/';
 
 /* plate 'dark' matches logos with a baked-in dark background fill; showName
@@ -106,116 +93,23 @@ const ENGINE_LOGOS: Record<string, EngineLogo> = {
   trellis:        { file: 'trellis.png' },
 };
 
-/** User-facing labels for backend variants */
-const BACKEND_LABELS: Record<string, string> = {
-  cpu:      'CPU',
-  system:   'System',
-  vulkan:   'Vulkan',
-  rocm:     'ROCm',
-  cuda:     'CUDA',
-  metal:    'Metal',
-  npu:      'NPU',
-  directml: 'DirectML',
-  dml:      'DirectML',
+/** Backend variant tokens are lowercase on the wire; only the acronyms differ. */
+const BACKEND_TOKEN_CASING: Record<string, string> = {
+  rocm: 'ROCm',
+  cuda: 'CUDA',
+  vulkan: 'Vulkan',
 };
 
-/** Recipe → capability column for the matrix */
-const RECIPE_CAPABILITY: Record<string, string> = {
-  llamacpp:       'LLM',
-  whispercpp:     'Audio',
-  moonshine:      'Audio',
-  'sd-cpp':       'Image',
-  kokoro:         'TTS',
-  flm:            'LLM',
-  'ryzenai-llm':  'LLM',
-  vllm:           'LLM',
-  acestep:         'Audio',
-  thinksound:      'Audio',
-  openmoss:        'TTS',
-  trellis:         '3D',
-};
-
-// Older lemond builds did not expose descriptor.experimental through
-// /system-info yet. Keep a compatibility fallback for the recipes that are
-// declared experimental in the backend descriptor registry. Newer servers
-// remain authoritative through the explicit boolean fields below.
-const EXPERIMENTAL_RECIPE_FALLBACK = new Set([
-  'acestep',
-  'onnxruntime',
-  'openmoss',
-  'thinksound',
-  'trellis',
-  'vllm',
-]);
-
-function isExperimentalBackend(recipe: string, recipeInfo: RecipeInfo, backendInfo: BackendInfo): boolean {
-  const explicit = backendInfo.experimental ?? recipeInfo.experimental;
-  if (explicit !== undefined) return explicit;
-
-  const metadata = [
-    recipeInfo.display_name,
-    recipeInfo.web_display_name,
-    backendInfo.display_name,
-    backendInfo.message,
-  ].filter(Boolean).join(' ').toLowerCase();
-
-  return metadata.includes('experimental') || EXPERIMENTAL_RECIPE_FALLBACK.has(recipe);
+function backendTokenLabel(backend: string): string {
+  if (!backend) return backend;
+  return BACKEND_TOKEN_CASING[backend]
+    ?? (backend.length <= 3 ? backend.toUpperCase() : backend.charAt(0).toUpperCase() + backend.slice(1));
 }
 
-/** Device display order */
-const DEVICE_ORDER = ['cpu', 'nvidia_gpu', 'amd_gpu', 'metal', 'amd_npu', 'gpu', 'accelerator', 'unknown'] as const;
-type DeviceKey = typeof DEVICE_ORDER[number];
-
-/** Backend → fallback row when the server does not expose BackendInfo.devices */
-const BACKEND_DEVICE: Record<string, DeviceKey> = {
-  cpu:            'cpu',
-  system:         'cpu',
-  vulkan:         'gpu',
-  directml:       'gpu',
-  dml:            'gpu',
-  cuda:           'nvidia_gpu',
-  cuda11:         'nvidia_gpu',
-  cuda12:         'nvidia_gpu',
-  'cuda-11':      'nvidia_gpu',
-  'cuda-12':      'nvidia_gpu',
-  nvidia:         'nvidia_gpu',
-  rocm:           'amd_gpu',
-  'rocm-stable':  'amd_gpu',
-  'rocm-nightly': 'amd_gpu',
-  metal:          'metal',
-  npu:            'amd_npu',
-  ryzenai:        'amd_npu',
-};
-
-/** Capability columns */
-const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS', '3D'] as const;
-
-type CapabilityCol = typeof CAPABILITY_COLS[number];
 type CellEntry = { recipe: string; backend: string; info: BackendInfo };
-type BackendCatalogVariant = CellEntry & { devices: DeviceKey[] };
-type BackendCatalogEntry = {
-  recipe: string;
-  variants: BackendCatalogVariant[];
-  devices: DeviceKey[];
-};
-type BackendCatalogSection = { capability: CapabilityCol; entries: BackendCatalogEntry[] };
+type BackendCatalogEntry = { recipe: string; variants: CellEntry[] };
+type BackendCatalogSection = { section: string; entries: BackendCatalogEntry[] };
 type BackendViewFilter = 'all' | 'installed' | 'available' | 'updates' | 'experimental';
-
-const CAPABILITY_LABELS: Record<CapabilityCol, string> = {
-  LLM: 'Language models',
-  Audio: 'Audio',
-  Image: 'Image generation',
-  TTS: 'Text to speech',
-  '3D': '3D generation',
-};
-
-const CAPABILITY_DESCRIPTIONS: Record<CapabilityCol, string> = {
-  LLM: 'Chat, completion, embedding, and reranking runtimes.',
-  Audio: 'Transcription and sound generation runtimes.',
-  Image: 'Image generation and editing runtimes.',
-  TTS: 'Text-to-speech runtimes.',
-  '3D': '3D asset generation runtimes.',
-};
 
 const BACKEND_VIEW_FILTERS: Array<[BackendViewFilter, string, string, IconName]> = [
   ['all', 'All Backends', 'Complete compatibility matrix', 'layers'],
@@ -337,59 +231,65 @@ function waitForBackendDownloadTerminal(
   });
 }
 
-function buildBackendCatalog(cells: Map<string, CellEntry[]>): BackendCatalogSection[] {
-  const byCapability = new Map<CapabilityCol, Map<string, BackendCatalogEntry>>();
+const STATE_RANK: Record<BackendInfo['state'], number> = {
+  update_required: 0,
+  update_available: 1,
+  installed: 2,
+  action_required: 3,
+  installable: 4,
+  unsupported: 5,
+};
 
-  for (const [key, entries] of cells) {
-    const [device, capability] = key.split(':') as [DeviceKey, CapabilityCol];
-    const capabilityEntries = byCapability.get(capability) || new Map<string, BackendCatalogEntry>();
-    byCapability.set(capability, capabilityEntries);
+/**
+ * Group the recipes lemond published into sections, keyed on their declared
+ * modality. Recipe identity, ordering, experimental status, and the backend
+ * variants all come from the catalog, so a backend this build has never heard
+ * of lands in the right section with the right name.
+ */
+function buildBackendCatalog(
+  catalog: BackendCatalog | null,
+  sysInfo: SystemInfoData | null,
+  showUnsupported: boolean,
+): BackendCatalogSection[] {
+  if (!catalog) return [];
+  const bySection = new Map<string, BackendCatalogEntry[]>();
 
-    for (const entry of entries) {
-      const existing = capabilityEntries.get(entry.recipe);
-      if (existing) {
-        if (!existing.devices.includes(device)) existing.devices.push(device);
-        const variant = existing.variants.find(item => item.backend === entry.backend);
-        if (variant) {
-          if (!variant.devices.includes(device)) variant.devices.push(device);
-        } else {
-          existing.variants.push({ ...entry, devices: [device] });
-        }
-      } else {
-        capabilityEntries.set(entry.recipe, {
-          recipe: entry.recipe,
-          variants: [{ ...entry, devices: [device] }],
-          devices: [device],
-        });
-      }
+  for (const descriptor of catalog.recipes) {
+    const variants: CellEntry[] = [];
+    for (const variant of descriptor.backends) {
+      const info = sysInfo?.recipes?.[descriptor.recipe]?.backends?.[variant.backend];
+      if (!info) continue;
+      // Match GUI2: unsupported backends are not useful actions/statuses for
+      // the current system and are hidden unless explicitly requested (#2568).
+      if (!showUnsupported && info.state === 'unsupported') continue;
+      variants.push({
+        recipe: descriptor.recipe,
+        backend: variant.backend,
+        info: { ...info, experimental: descriptor.experimental },
+      });
     }
-  }
+    if (variants.length === 0) continue;
 
-  const stateRank: Record<BackendInfo['state'], number> = {
-    update_required: 0,
-    update_available: 1,
-    installed: 2,
-    action_required: 3,
-    installable: 4,
-    unsupported: 5,
-  };
+    variants.sort((a, b) => (
+      STATE_RANK[a.info.state] - STATE_RANK[b.info.state] || a.backend.localeCompare(b.backend)
+    ));
+
+    const section = sectionForModality(descriptor.modality);
+    const entries = bySection.get(section) || [];
+    entries.push({ recipe: descriptor.recipe, variants });
+    bySection.set(section, entries);
+  }
 
   const experimentalRank = (entry: BackendCatalogEntry): number =>
     entry.variants.every(variant => variant.info.experimental) ? 1 : 0;
 
-  return CAPABILITY_COLS.map(capability => ({
-    capability,
-    entries: [...(byCapability.get(capability)?.values() || [])].sort((a, b) => (
+  return orderSections([...bySection.keys()]).map(section => ({
+    section,
+    entries: (bySection.get(section) || []).sort((a, b) => (
       experimentalRank(a) - experimentalRank(b)
       || b.variants.length - a.variants.length
-      || (RECIPE_LABELS[a.recipe] || a.recipe).localeCompare(RECIPE_LABELS[b.recipe] || b.recipe)
-    )).map(entry => ({
-      ...entry,
-      variants: entry.variants.sort((a, b) => (
-        stateRank[a.info.state] - stateRank[b.info.state]
-        || a.backend.localeCompare(b.backend)
-      )),
-    })),
+      || backendLabel(a.recipe).localeCompare(backendLabel(b.recipe))
+    )),
   })).filter(section => section.entries.length > 0);
 }
 
@@ -405,15 +305,6 @@ function stateBadge(state: BackendInfo['state']): { label: string; cls: string }
     case 'unsupported':      return { label: 'Unsupported',       cls: 'cell__badge--off' };
     default:                 return { label: state,                cls: '' };
   }
-}
-
-function uniq<T>(values: T[]): T[] {
-  return Array.from(new Set(values));
-}
-
-function asArray<T>(value: T | T[] | undefined | null): T[] {
-  if (!value) return [];
-  return Array.isArray(value) ? value : [value];
 }
 
 function cleanString(value: unknown): string {
@@ -432,46 +323,6 @@ function osVersion(info: SystemInfoData | null): string {
   return cleanString(info?.['OS Version'])
     || cleanString(info?.os_version)
     || 'OS unknown';
-}
-
-function amdGpuDevices(info: SystemInfoData | null): DeviceInfo[] {
-  if (!info?.devices) return [];
-  return [
-    ...asArray(info.devices.amd_gpu),
-    ...asArray(info.devices.amd_dgpu),
-    ...asArray(info.devices.amd_igpu),
-  ];
-}
-
-function amdNpuDevice(info: SystemInfoData | null): DeviceInfo | undefined {
-  return info?.devices?.amd_npu || info?.devices?.npu;
-}
-
-function normalizeDeviceToken(token: string): DeviceKey {
-  const t = token.toLowerCase().replace(/[^a-z0-9]+/g, '');
-  if (!t || t === 'unknown') return 'unknown';
-  if (t.includes('cuda') || t.includes('nvidia')) return 'nvidia_gpu';
-  if (t.includes('rocm') || t.includes('amd') || t.includes('radeon')) return 'amd_gpu';
-  if (t.includes('metal') || t.includes('apple')) return 'metal';
-  if (t.includes('npu') || t.includes('ryzenai')) return 'amd_npu';
-  if (t.includes('cpu') || t.includes('system')) return 'cpu';
-  if (t.includes('gpu') || t.includes('vulkan') || t.includes('directml') || t === 'dml') return 'gpu';
-  if (t.includes('accelerator')) return 'accelerator';
-  return 'unknown';
-}
-
-function devicesForBackend(recipe: string, backend: string, info: BackendInfo): DeviceKey[] {
-  // FastFlowLM is the NPU path in Lemonade. Some older system-info
-  // payloads report its backend token as a generic GPU/DirectML backend,
-  // which placed FLM in the wrong matrix row. Keep the prototype UI
-  // aligned with the actual runtime target.
-  if (recipe === 'flm') return ['amd_npu'];
-
-  const fromServer = Array.isArray(info.devices)
-    ? info.devices.map(normalizeDeviceToken).filter(Boolean)
-    : [];
-  if (fromServer.length > 0) return uniq(fromServer);
-  return [BACKEND_DEVICE[backend] || normalizeDeviceToken(backend)];
 }
 
 function canShowUninstall(info: BackendInfo): boolean {
@@ -560,7 +411,7 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
 
   if (!backendKeyValue) return null;
   const [recipe, backend] = backendKeyValue.split(':');
-  const label = `${RECIPE_LABELS[recipe] || recipe} · ${backend || 'default'}`;
+  const label = `${backendLabel(recipe)} · ${backend || 'default'}`;
   const hasSavedArgs = Boolean(tuning?.args);
 
   return (
@@ -634,11 +485,9 @@ interface BackendManagerProps {
 }
 
 const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
-  const [sysInfo, setSysInfo] = useState<SystemInfoData | null>(() =>
-    api.systemInfoData as unknown as SystemInfoData | null
-  );
-  const [loading, setLoading] = useState(() => !api.systemInfoData);
-  const [error, setError] = useState<string | null>(null);
+  const { status: catalogStatus, catalog, error } = useBackendCatalog();
+  const sysInfo = (catalog?.raw ?? null) as SystemInfoData | null;
+  const loading = catalogStatus === 'idle' || catalogStatus === 'loading';
   const [showTech, setShowTech] = useState(false);
   const [showUnsupported, setShowUnsupported] = useState(false);
   const [showLogos, setShowLogos] = useState(true);
@@ -649,16 +498,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [argsEditorKey, setArgsEditorKey] = useState<string | null>(null);
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const terminalBackendRefreshRef = useRef<Set<string>>(new Set());
-  const systemInfoRequestRef = useRef(0);
   const pendingBackendActionsRef = useRef<Map<string, PendingBackendAction>>(new Map());
   const backendSyncPromisesRef = useRef<Map<string, Promise<BackendSyncResult>>>(new Map());
   const toastTimerRef = useRef<number | null>(null);
-  const sysInfoRef = useRef<SystemInfoData | null>(sysInfo);
   const argsTriggerRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    sysInfoRef.current = sysInfo;
-  }, [sysInfo]);
 
   useEffect(() => {
     const reloadTuningState = () => setBackendTunings(loadBackendTunings());
@@ -672,38 +515,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   /* ── Fetch system-info ────────────────────────────────── */
 
-  const loadSystemInfo = useCallback(async (): Promise<SystemInfoData> => {
-    const requestId = ++systemInfoRequestRef.current;
-    let data: SystemInfoData;
-    try {
-      data = await api.systemInfo() as unknown as SystemInfoData;
-    } catch (err) {
-      // A superseded request must not replace a newer successful snapshot with
-      // an error banner merely because its slower network call failed later.
-      if (requestId !== systemInfoRequestRef.current && sysInfoRef.current) {
-        return sysInfoRef.current;
-      }
-      throw err;
-    }
-    if (requestId === systemInfoRequestRef.current) {
-      sysInfoRef.current = data;
-      setSysInfo(data);
-    }
-    return data;
+  const fetchInfo = useCallback(async () => {
+    if (!api.healthData) await api.health().catch(() => null);
+    await refreshBackendCatalog();
   }, []);
-
-  const fetchInfo = useCallback(async (showSpinner = true) => {
-    try {
-      if (showSpinner) setLoading(true);
-      setError(null);
-      if (!api.healthData) await api.health().catch(() => null);
-      await loadSystemInfo();
-    } catch (err) {
-      setError(friendlyErrorMessage(err));
-    } finally {
-      if (showSpinner) setLoading(false);
-    }
-  }, [loadSystemInfo]);
 
   const syncBackendStatus = useCallback((recipe: string, backend: string): Promise<BackendSyncResult> => {
     const key = backendKey(recipe, backend);
@@ -721,18 +536,18 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           await new Promise(resolve => window.setTimeout(resolve, delay));
         }
 
-        try {
-          const freshInfo = await loadSystemInfo();
-          hadResponse = true;
-          const backendInfo = freshInfo.recipes?.[recipe]?.backends?.[backend];
-          state = backendInfo?.state;
-          version = cleanString(backendInfo?.version);
-          if (backendActionIsReflected(backendInfo, action)) {
-            return { state, version, settled: true, hadResponse };
-          }
-        } catch {
-          // The download is already terminal. Keep retrying transient system-info
-          // failures so the user does not need to clear the completed row manually.
+        // The download is already terminal. Keep retrying transient system-info
+        // failures so the user does not need to clear the completed row manually.
+        const freshCatalog = await refreshBackendCatalog();
+        if (!freshCatalog) continue;
+
+        hadResponse = true;
+        const freshInfo = freshCatalog.raw as unknown as SystemInfoData;
+        const backendInfo = freshInfo.recipes?.[recipe]?.backends?.[backend];
+        state = backendInfo?.state;
+        version = cleanString(backendInfo?.version);
+        if (backendActionIsReflected(backendInfo, action)) {
+          return { state, version, settled: true, hadResponse };
         }
       }
 
@@ -743,15 +558,15 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
     backendSyncPromisesRef.current.set(key, task);
     return task;
-  }, [loadSystemInfo]);
+  }, []);
 
   useEffect(() => {
     if (!isActive || pendingBackendActionsRef.current.size > 0) return;
-    void fetchInfo(!sysInfoRef.current);
+    void fetchInfo();
   }, [fetchInfo, isActive]);
 
   useEffect(() => api.onModelsChanged(() => {
-    if (isActive && pendingBackendActionsRef.current.size === 0) void fetchInfo(false);
+    if (isActive && pendingBackendActionsRef.current.size === 0) void fetchInfo();
   }), [fetchInfo, isActive]);
 
   useEffect(() => downloadStore.subscribe((items) => {
@@ -770,7 +585,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       const refreshKey = `${item.id}:${item.status}:${item.terminalAt || item.updatedAt}`;
       if (terminalBackendRefreshRef.current.has(refreshKey)) continue;
       terminalBackendRefreshRef.current.add(refreshKey);
-      void fetchInfo(false);
+      void fetchInfo();
     }
   }), [fetchInfo, isActive]);
 
@@ -791,10 +606,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false) => {
     const key = backendKey(recipe, backend);
-    const engineName = RECIPE_LABELS[recipe] || recipe;
+    const engineName = backendLabel(recipe);
     const actionLabel = isUpdate ? 'Updating' : 'Installing';
     const doneLabel = isUpdate ? 'updated' : 'installed';
-    const initialInfo = sysInfoRef.current?.recipes?.[recipe]?.backends?.[backend];
+    const initialInfo = sysInfo?.recipes?.[recipe]?.backends?.[backend];
     const downloadName = backendDownloadName(recipe, backend);
     const waitController = new AbortController();
     let actionUrl = '';
@@ -907,7 +722,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         }, 'backend');
       }
       toast(`${actionLabel} failed: ${message}`);
-      void fetchInfo(false);
+      void fetchInfo();
     } finally {
       waitController.abort();
       pendingBackendActionsRef.current.delete(key);
@@ -920,8 +735,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     try {
       setInstalling(backendKey(recipe, backend));
       await api.uninstallBackend(recipe, backend);
-      toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} uninstalled`);
-      void fetchInfo(false);
+      toast(`${backendLabel(recipe)} · ${backend} uninstalled`);
+      void fetchInfo();
     } catch (err) {
       toast(`Uninstall failed: ${friendlyErrorMessage(err)}`);
     } finally {
@@ -970,31 +785,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   /* ── Build the matrix ─────────────────────────────────── */
 
-  const matrixCells = useMemo(() => {
-    if (!sysInfo?.recipes) return new Map<string, CellEntry[]>();
-    const cells = new Map<string, CellEntry[]>();
-
-    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
-      const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
-      for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
-        const effectiveInfo: BackendInfo = {
-          ...backendInfo,
-          experimental: isExperimentalBackend(recipe, recipeInfo, backendInfo),
-        };
-        // Match GUI2: unsupported backends are not useful actions/statuses for
-        // the current system and are hidden unless explicitly requested (#2568).
-        if (!showUnsupported && effectiveInfo.state === 'unsupported') continue;
-        for (const device of devicesForBackend(recipe, backend, effectiveInfo)) {
-          const key = `${device}:${cap}`;
-          if (!cells.has(key)) cells.set(key, []);
-          cells.get(key)!.push({ recipe, backend, info: effectiveInfo });
-        }
-      }
-    }
-    return cells;
-  }, [showUnsupported, sysInfo]);
-
-  const backendCatalog = useMemo(() => buildBackendCatalog(matrixCells), [matrixCells]);
+  const backendSections = useMemo(
+    () => buildBackendCatalog(catalog, sysInfo, showUnsupported),
+    [catalog, showUnsupported, sysInfo],
+  );
 
   const updatesAvailable = useMemo(() => {
     if (!sysInfo?.recipes) return 0;
@@ -1009,23 +803,23 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   const backendStateCounts = useMemo(() => {
     const counts = { all: 0, installed: 0, available: 0, updates: 0, experimental: 0 };
-    if (!sysInfo?.recipes) return counts;
-    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
-      for (const backendInfo of Object.values(recipeInfo.backends)) {
-        if (backendInfo.state === 'unsupported' && !showUnsupported) continue;
-        counts.all++;
-        if (
-          backendInfo.state === 'installed'
-          || backendInfo.state === 'update_required'
-          || backendInfo.state === 'update_available'
-        ) counts.installed++;
-        if (backendInfo.state === 'installable') counts.available++;
-        if (backendInfo.state === 'update_required' || backendInfo.state === 'update_available') counts.updates++;
-        if (isExperimentalBackend(recipe, recipeInfo, backendInfo)) counts.experimental++;
+    for (const { entries } of backendSections) {
+      for (const entry of entries) {
+        for (const { info } of entry.variants) {
+          counts.all++;
+          if (
+            info.state === 'installed'
+            || info.state === 'update_required'
+            || info.state === 'update_available'
+          ) counts.installed++;
+          if (info.state === 'installable') counts.available++;
+          if (info.state === 'update_required' || info.state === 'update_available') counts.updates++;
+          if (info.experimental) counts.experimental++;
+        }
       }
     }
     return counts;
-  }, [showUnsupported, sysInfo]);
+  }, [backendSections]);
 
   const backendMatchesView = useCallback((entry: CellEntry) => {
     if (viewFilter === 'all') return true;
@@ -1036,12 +830,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     }
     if (viewFilter === 'available') return entry.info.state === 'installable';
     if (viewFilter === 'updates') return entry.info.state === 'update_required' || entry.info.state === 'update_available';
-    const recipeInfo = sysInfo?.recipes?.[entry.recipe];
-    return recipeInfo ? isExperimentalBackend(entry.recipe, recipeInfo, entry.info) : Boolean(entry.info.experimental);
-  }, [sysInfo, viewFilter]);
+    return Boolean(entry.info.experimental);
+  }, [viewFilter]);
 
   const renderBackendCard = useCallback(({ recipe, variants }: BackendCatalogEntry) => {
-    const engineName = RECIPE_LABELS[recipe] || recipe;
+    const engineName = backendLabel(recipe);
     const supportsArgs = backendSupportsArgs(recipe);
     const logo = ENGINE_LOGOS[recipe];
 
@@ -1092,7 +885,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             const installedReleaseUrl = isUpdate
               ? releaseLinkForVersion(targetReleaseUrl, version)
               : targetReleaseUrl;
-            const variantLabel = BACKEND_LABELS[backend] || backend;
+            const variantLabel = backendTokenLabel(backend);
 
             return (
               <div
@@ -1350,7 +1143,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             </div>
           )}
         </div>
-        {backendCatalog.length === 0 && (
+        {backendSections.length === 0 && (
           <p className="sr-only" data-backends-matrix-empty>No backend data is available for this Lemonade server yet.</p>
         )}
         {backendStateCounts[viewFilter] === 0 && (
@@ -1377,23 +1170,17 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       </>}
     >
       <div className="workspace-catalog" data-backends-matrix>
-        {backendCatalog.map(({ capability, entries }) => {
+        {backendSections.map(({ section, entries }) => {
           const visibleEntries = entries
-            .map(entry => {
-              const variants = entry.variants.filter(backendMatchesView);
-              return {
-                ...entry,
-                variants,
-                devices: uniq(variants.flatMap(variant => variant.devices)),
-              };
-            })
+            .map(entry => ({ ...entry, variants: entry.variants.filter(backendMatchesView) }))
             .filter(entry => entry.variants.length > 0);
           if (visibleEntries.length === 0) return null;
+          const { title, description } = sectionMeta(section);
           return (
             <WorkspaceCatalogSection
-              key={capability}
-              title={CAPABILITY_LABELS[capability]}
-              description={CAPABILITY_DESCRIPTIONS[capability]}
+              key={section}
+              title={title}
+              description={description}
             >
               {visibleEntries.map(renderBackendCard)}
             </WorkspaceCatalogSection>

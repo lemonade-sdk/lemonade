@@ -3,6 +3,7 @@ import type { LoadedModel, ModelInfo } from './api';
 import { Icon } from './components/Icon';
 import ChatView from './components/ChatView';
 import { scheduleIdleWork } from './startupScheduler';
+import { attachBackendCatalog } from './features/backends/backendCatalogStore';
 import { attachServerModelState, useServerModelState } from './features/models/modelState';
 import { preloadInteractionSurfaces } from './interactionPreload';
 const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
@@ -512,6 +513,7 @@ const App: React.FC = () => {
         const { default: api } = await import(/* webpackChunkName: "api-client" */ './api');
         apiClientRef.current = api;
         attachServerModelState(api);
+        attachBackendCatalog(api);
         await tauriReadyPromise;
         if (window.__LEMONADE_STARTUP_METRICS__) {
           window.__LEMONADE_STARTUP_METRICS__.hostBridgeReadyMs = performance.now();
@@ -538,6 +540,7 @@ const App: React.FC = () => {
             .then(async ({ default: api }) => {
               apiClientRef.current = api;
               attachServerModelState(api);
+              attachBackendCatalog(api);
               void api.connect();
               if (routeRef.current.view === 'dashboard') api.stopPolling();
               else api.startPolling(15000);

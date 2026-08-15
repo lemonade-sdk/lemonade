@@ -35,7 +35,9 @@ import {
   savePinnedModelNames,
   type GlobalModelSettings,
 } from '../features/modelSettings/globalModelSettings';
-import { backendLabel } from '../modelPresentation';
+import { backendCompactLabel, backendLabel } from '../modelPresentation';
+import { refreshBackendCatalog, useBackendCatalog } from '../features/backends/backendCatalogStore';
+import { descriptorForRecipe } from '../features/backends/backendOptions';
 import { useServerModelState } from '../features/models/modelState';
 import {
   ModelDetailPanelPreloaded as ModelDetailPanel,
@@ -160,19 +162,6 @@ function implicitCustomModelName(displayName: string, checkpoint: string, fallba
   return checkpointName || fallback;
 }
 
-const RECIPE_BADGES: Record<string, string> = {
-  llamacpp: 'llama.cpp',
-  vllm: 'vLLM',
-  moonshine: 'Moonshine',
-  acestep: 'ACE-Step',
-  thinksound: 'ThinkSound',
-  openmoss: 'OpenMOSS',
-  trellis: 'TRELLIS.2',
-  'ryzenai-llm': 'RyzenAI',
-  'collection.omni': 'Omni Collection',
-  'collection.router': 'Router',
-};
-
 type CustomRecipeOption = { value: string; recipe: string; backend?: string; label: string; hint: string };
 type CustomCheckpointExample = { key: string; label: string; checkpoint: string; note: string };
 
@@ -274,39 +263,13 @@ function customRecipeOption(recipe: string, label: string, hint: string, backend
   return { value: optionValue(recipe, backend), recipe, backend, label, hint };
 }
 
-const CHAT_RECIPE_OPTIONS: CustomRecipeOption[] = [
-  customRecipeOption('llamacpp', 'llama.cpp', 'Local GGUF / llama.cpp backend'),
-  customRecipeOption('flm', 'FastFlowLM', 'FastFlowLM backend for supported AMD NPU models'),
-  customRecipeOption('ryzenai-llm', 'RyzenAI', 'RyzenAI LLM backend for compatible ONNX/quantized models'),
-  customRecipeOption('vllm', 'vLLM', 'vLLM backend for compatible HF transformer checkpoints'),
-];
-
-const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]> = {
-  chat: CHAT_RECIPE_OPTIONS,
-  omni: CHAT_RECIPE_OPTIONS,
-  image: [customRecipeOption('sd-cpp', 'Stable Diffusion', 'Stable Diffusion C++ backend')],
-  audio: [
-    customRecipeOption('whispercpp', 'Whisper', 'Whisper C++ transcription backend'),
-    customRecipeOption('moonshine', 'Moonshine', 'CPU streaming speech-to-text backend'),
-  ],
-  'audio-generation': [
-    customRecipeOption('acestep', 'ACE-Step', 'Music generation backend'),
-    customRecipeOption('thinksound', 'ThinkSound', 'Sound-effect generation backend'),
-  ],
-  tts: [
-    customRecipeOption('openmoss', 'OpenMOSS TTS', 'OpenMOSS speech and voice-design backend'),
-    customRecipeOption('kokoro', 'Kokoro TTS', 'Kokoro text-to-speech backend'),
-  ],
-  model3d: [customRecipeOption('trellis', 'TRELLIS.2', 'Image-to-3D reconstruction backend')],
-  embedding: [customRecipeOption('llamacpp', 'llama.cpp', 'Embedding through llama.cpp-compatible model')],
-  reranking: [customRecipeOption('llamacpp', 'llama.cpp', 'Reranking through llama.cpp-compatible model')],
-};
-
-function recipeOptionsForCustomDraft(capability: CustomModelCapability, omniSource: 'single' | 'collection'): CustomRecipeOption[] {
-  if (capability === 'omni' && omniSource === 'collection') {
-    return [customRecipeOption('collection.omni', 'Omni Collection', 'Virtual wrapper around selected component models')];
-  }
-  return CUSTOM_RECIPE_OPTIONS[capability] || CHAT_RECIPE_OPTIONS;
+/**
+ * The one recipe with no server counterpart: an Omni collection is a
+ * client-side wrapper around component models, not a lemond backend. Every
+ * other option is built from /v1/system-info by recipeOptionsFromSystemInfo.
+ */
+function collectionRecipeOption(): CustomRecipeOption {
+  return customRecipeOption('collection.omni', 'Omni Collection', 'Virtual wrapper around selected component models');
 }
 
 function dedupeRecipeOptions(options: CustomRecipeOption[]): CustomRecipeOption[] {
@@ -321,39 +284,23 @@ function dedupeRecipeOptions(options: CustomRecipeOption[]): CustomRecipeOption[
   return out;
 }
 
-const CUSTOM_RECIPE_CAPABILITIES: Record<string, CustomModelCapability[]> = {
-  llamacpp: ['chat', 'omni', 'embedding', 'reranking'],
-  vllm: ['chat', 'omni'],
-  flm: ['chat', 'omni'],
-  'ryzenai-llm': ['chat', 'omni'],
-  'sd-cpp': ['image'],
-  whispercpp: ['audio'],
-  moonshine: ['audio'],
-  kokoro: ['tts'],
-  openmoss: ['tts'],
-  acestep: ['audio-generation'],
-  thinksound: ['audio-generation'],
-  trellis: ['model3d'],
+const CAPABILITIES_BY_MODALITY: Record<string, CustomModelCapability[]> = {
+  'Text generation': ['chat', 'omni'],
+  'Speech-to-text': ['audio'],
+  'Text-to-speech': ['tts'],
+  'Image generation': ['image'],
+  'Audio generation': ['audio-generation'],
+  '3D generation': ['model3d'],
 };
 
-function recipeCapabilities(recipe: string, backendNames: string[]): CustomModelCapability[] {
-  const explicit = CUSTOM_RECIPE_CAPABILITIES[recipe];
-  if (explicit) return explicit;
-  const key = recipe.toLowerCase();
-  if (key.includes('trellis') || key.includes('3d')) return ['model3d'];
-  if (key.includes('acestep') || key.includes('ace-step') || key.includes('thinksound') || key.includes('sound-generation') || key.includes('music-generation')) return ['audio-generation'];
-  if (key.includes('sd') || key.includes('diffusion') || key.includes('image')) return ['image'];
-  if (key.includes('whisper') || key.includes('moonshine') || key.includes('transcrib') || key.includes('speech-to-text')) return ['audio'];
-  if (key.includes('kokoro') || key.includes('openmoss') || key.includes('tts') || key.includes('text-to-speech')) return ['tts'];
-  if (key.includes('embed')) return ['embedding'];
-  if (key.includes('rerank')) return ['reranking'];
-  const backendText = backendNames.join(' ').toLowerCase();
-  if (backendText.includes('trellis') || backendText.includes('3d')) return ['model3d'];
-  if (backendText.includes('acestep') || backendText.includes('thinksound')) return ['audio-generation'];
-  if (backendText.includes('sd') || backendText.includes('diffusion')) return ['image'];
-  if (backendText.includes('whisper') || backendText.includes('moonshine')) return ['audio'];
-  if (backendText.includes('kokoro') || backendText.includes('openmoss') || backendText.includes('tts')) return ['tts'];
-  return ['chat', 'omni'];
+/* Which backends serve embeddings and reranking is not published: the
+ * capability interfaces exist server-side but never reach /v1/system-info. */
+const EMBEDDING_CAPABLE_RECIPES = new Set(['llamacpp']);
+
+function recipeCapabilities(recipe: string): CustomModelCapability[] {
+  const modality = descriptorForRecipe(recipe)?.modality ?? '';
+  const base = CAPABILITIES_BY_MODALITY[modality] ?? ['chat', 'omni'];
+  return EMBEDDING_CAPABLE_RECIPES.has(recipe) ? [...base, 'embedding', 'reranking'] : base;
 }
 
 function backendState(value: unknown): string {
@@ -416,8 +363,7 @@ function recipeOptionsFromSystemInfo(info: Record<string, unknown> | null): Part
         : [];
     if (!backends.length) continue;
 
-    const backendNames = backends.map(([name]) => name);
-    const capabilities = recipeCapabilities(recipe, backendNames);
+    const capabilities = recipeCapabilities(recipe);
     const option = customRecipeOption(
       recipe,
       recipeLabel(recipe),
@@ -1121,8 +1067,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [customJsonNotice, setCustomJsonNotice] = useState<string | null>(null);
   const [customDraft, setCustomDraft] = useState<CustomModelDraftState>(() => createEmptyCustomDraft());
   const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
-  const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
-  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
+  const { catalog: backendCatalog } = useBackendCatalog();
+  // Backend readiness is only meaningful against a reachable server; a stale
+  // catalog must not keep labelling rows "ready" once the connection drops.
+  const systemInfo = connectionStatus === 'connected' ? (backendCatalog?.raw ?? null) : null;
   const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModelNames());
   const [favoriteModels, setFavoriteModels] = useState<string[]>(() => loadFavoriteModels());
   // Real disk usage for the storage meter (null until/unless lemond exposes it).
@@ -1196,22 +1144,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const refreshCustomRecipeAvailability = useCallback(async () => {
     if (!api.isConnected) {
       setDynamicRecipeOptions({});
-      setCustomRecipeAvailabilityLoaded(false);
-      setSystemInfo(null);
       return;
     }
 
-    try {
-      const info = await api.systemInfo();
-      const hasRecipeData = Boolean(systemRecipeEntries(info));
-      setSystemInfo(info);
-      setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
-      setCustomRecipeAvailabilityLoaded(hasRecipeData);
-    } catch {
-      setSystemInfo(null);
-      setDynamicRecipeOptions({});
-      setCustomRecipeAvailabilityLoaded(false);
-    }
+    const info = (await refreshBackendCatalog())?.raw ?? null;
+    setDynamicRecipeOptions(info && systemRecipeEntries(info) ? recipeOptionsFromSystemInfo(info) : {});
   }, []);
 
   useEffect(() => {
@@ -2022,19 +1959,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const recipeOptionsForDraft = useCallback((capability: CustomModelCapability, omniSource: 'single' | 'collection') => {
     if (capability === 'omni' && omniSource === 'collection') {
-      return recipeOptionsForCustomDraft(capability, omniSource);
+      return [collectionRecipeOption()];
     }
-
-    const dynamic = dynamicRecipeOptions[capability] || [];
-    if (dynamic.length > 0) return dynamic;
-
-    // Fallback only when /system-info is unavailable. If /system-info.recipes
-    // was loaded and has no non-unsupported backend for this capability, keep
-    // the selector empty instead of re-introducing unsupported static options.
-    if (customRecipeAvailabilityLoaded) return [];
-
-    return recipeOptionsForCustomDraft(capability, omniSource);
-  }, [customRecipeAvailabilityLoaded, dynamicRecipeOptions]);
+    // Only lemond knows which recipes exist. Until it has answered, the
+    // selector stays empty rather than offering a guess that may not be
+    // installable here.
+    return dynamicRecipeOptions[capability] || [];
+  }, [dynamicRecipeOptions]);
 
   const defaultRecipeForCapability = (capability: CustomModelCapability, omniSource: 'single' | 'collection' = customDraft.omniSource) => {
     const options = recipeOptionsForDraft(capability, omniSource);
@@ -2555,7 +2486,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const remotePull = activeRemotePull(provider, result.id, variants);
     const pullPercent = remotePull?.percent;
     const isPulling = pullPercent !== undefined;
-    const recipeBadge = variants ? (RECIPE_BADGES[variants.recipe] || variants.recipe) : '';
+    const recipeBadge = variants ? backendCompactLabel(variants.recipe) : '';
     const isSelected = selectedRemoteModel?.id === result.id && selectedRemoteProvider === provider;
 
     // Provider identity stays on the zone header, so the row spends its lead

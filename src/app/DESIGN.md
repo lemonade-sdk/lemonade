@@ -7,7 +7,7 @@ This document is the contract for Lemonade's desktop and web UI. It describes th
 1. **The task determines the layout.** Product tabs use the same rail, list, and detail primitives. A tab may omit a panel when its task does not need one.
 2. **Hierarchy comes from type, spacing, and surface level.** Extra rules, gradients, badges, and headings do not substitute for hierarchy.
 3. **One meaning, one treatment.** Navigation, filtering, actions, metadata, status, and empty states keep the same visual grammar everywhere.
-4. **Color communicates state.** Lemon yellow identifies the product and primary emphasis. Semantic colors are reserved for success, warning, danger, information, capabilities, backends, and charts.
+4. **Color communicates state.** Lemon yellow identifies the product and primary emphasis. Semantic colors are reserved for success, warning, danger, information, capabilities, and charts. Backend identity is a text label, never a color.
 5. **Specialization must earn its place.** A specialized treatment is acceptable when the underlying information is genuinely different, not merely because a tab was implemented separately.
 6. **Desktop and mobile are the same information architecture.** Below 768 px, the contextual left rail becomes a dismissible panel opened by the title-bar menu button. It does not become a different navigation system.
 
@@ -20,7 +20,7 @@ This document is the contract for Lemonade's desktop and web UI. It describes th
 - Shared component classes use the `workspace-*` prefix. Feature classes may refine a shared component but must not redefine its typography, spacing scale, surface hierarchy, focus treatment, or control shape.
 - React implementations of the shared panels and controls live in `src/components/WorkspacePanels.tsx`, `WorkspaceRailHeader.tsx`, and `WorkspaceMobileMenuButton.tsx`.
 - Every list renders `WorkspaceList` + `WorkspaceListRow` (`.workspace-list` / `.workspace-list-row`). A tab supplies the row's content, never its geometry, typography, status idiom, or selection treatment.
-- Dynamic values such as progress percentage, measured resizer position, chart geometry, and backend identity may be passed through inline custom properties. Repeated fixed values use tokens; feature-local geometry stays in its named class.
+- Dynamic values such as progress percentage, measured resizer position, and chart geometry may be passed through inline custom properties. Repeated fixed values use tokens; feature-local geometry stays in its named class.
 
 ### Color
 
@@ -29,16 +29,15 @@ This document is the contract for Lemonade's desktop and web UI. It describes th
 | Layered surfaces | `--surface-base`, `--surface-1`, `--surface-2`, `--surface-3`, `--surface-raised`, `--surface-overlay` | Base is the canvas; higher numbers indicate stronger grouping or interaction. Adjacent panels use borders, not unrelated background colors. |
 | Text | `--text-primary`, `--text-secondary`, `--text-tertiary`, `--text-disabled` | Primary for titles/values, secondary for body copy, tertiary for supporting copy, disabled only for unavailable content. |
 | Product accent | `--accent`, `--accent-hover`, `--accent-fg`, `--accent-on`, `--accent-soft`, `--accent-strong`, `--accent-surface`, `--accent-border`, `--accent-focus` | Primary actions, active navigation, and keyboard focus only. |
-| Semantic state | `--success`, `--warn`, `--danger`, `--info` and `*-soft`; `--danger-on`; compatibility aliases `--status-ok`, `--status-warning`, `--status-error` | Never use a capability or backend color to communicate operational state. |
+| Semantic state | `--success`, `--warn`, `--danger`, `--info` and `*-soft`; `--danger-on`; compatibility aliases `--status-ok`, `--status-warning`, `--status-error` | Never use a capability color to communicate operational state. |
 | Structure | `--border`, `--border-subtle`, `--border-strong` | Subtle separates panels and rows; strong indicates focus or emphasized selection. |
 | Capability identity | `--cap-chat`, `--cap-vision`, `--cap-code`, `--cap-embedding`, `--cap-reranking`, `--cap-image`, `--cap-image-edit`, `--cap-audio`, `--cap-audio-generation`, `--cap-tts`, `--cap-model3d` | Used only for capability glyphs/chips. |
 | Provider identity | `--provider-hugging-face`, `--provider-hugging-face-fg`, `--provider-modelscope`, `--provider-modelscope-fg` | Stable provider marks and compact provider results only; never status or general decoration. |
-| Backend identity | `--backend-*` | Used only for compact backend marks. The backend helper returns these variables; components do not own hex values. |
 | Monitoring data | `--chart-*` | Used only for charts, gauges, and their legends. Series color is stable within a chart. |
 
 Both themes redefine the color roles; component selectors must not contain theme-specific product colors. Brand artwork and user/data-derived colors are the only exceptions.
 
-Identity and chart hues are theme-specific too. A value tuned against the dark canvas typically lands near 2:1 on the light one, so every `--cap-*`, `--backend-*`, `--chart-*`, and provider foreground token carries a darkened light-theme value that clears the 3:1 floor WCAG 1.4.11 sets for non-text UI components. A new identity color is not finished until both themes are declared and measured.
+Identity and chart hues are theme-specific too. A value tuned against the dark canvas typically lands near 2:1 on the light one, so every `--cap-*`, `--chart-*`, and provider foreground token carries a darkened light-theme value that clears the 3:1 floor WCAG 1.4.11 sets for non-text UI components. A new identity color is not finished until both themes are declared and measured.
 
 ### Typography
 

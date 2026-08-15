@@ -30,9 +30,8 @@ jobs:
         working-directory: src/app
         run: npm run typecheck
       - name: Run app regression tests
-        # do not run for GUI3 until there is a proper npm only regression test
-        run: echo "Regression tests skipped for GUI3"
-        # run: node test/app/run-app-regression-tests.cjs
+        working-directory: src/app
+        run: npm run test:ui-regressions
 
   backend-docs-drift:
     # The backend reference doc (docs/dev/backends-reference.md) is generated from

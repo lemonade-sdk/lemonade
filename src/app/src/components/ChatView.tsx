@@ -7,6 +7,8 @@ import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { WorkspaceList, WorkspaceListRow } from './WorkspacePanels';
 import { backendCompactLabel } from '../modelPresentation';
+import { descriptorForRecipe } from '../features/backends/backendOptions';
+import { composerProfile } from '../features/chat/composerProfiles';
 import { scheduleIdleWork } from '../startupScheduler';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
@@ -26,6 +28,7 @@ import {
   capabilityBadge,
   capabilityFromLoaded,
   capabilityFromModelInfo,
+  modelSupportsImageEdit as supportsImageEdit,
   capabilityLabel,
   modelDisplayName,
   modelInitial,
@@ -584,32 +587,25 @@ function imageDefaultsForModel(loadedModel: LoadedModel | null, modelInfo: Model
 }
 
 function modelSupportsImageEdit(modelName: string | null, modelInfo: ModelInfo | null, loadedModel: LoadedModel | null): boolean {
-  const labels = (modelInfo?.labels || []).map(label => label.toLowerCase().trim());
-  if (labels.some(label => ['edit', 'image-edit', 'image-editing', 'image-to-image', 'img2img'].includes(label))) return true;
-
-  const haystack = [
+  return supportsImageEdit(
+    modelInfo?.labels,
     modelName,
     modelInfo?.id,
     modelInfo?.name,
     modelInfo?.display_name,
-    String((modelInfo as any)?.model_name || ''),
+    (modelInfo as any)?.model_name,
     loadedModel?.checkpoint,
-  ].filter(Boolean).join(' ').toLowerCase();
-
-  return haystack.includes('flux-2-klein')
-    || haystack.includes('flux_2_klein')
-    || haystack.includes('flux.2.klein')
-    || haystack.includes('flux2-klein')
-    || haystack.includes('qwen-edit')
-    || haystack.includes('image-edit');
+  );
 }
 
 function modelSupportsRealtimeAudio(modelName: string | null, modelInfo: ModelInfo | null, loadedModel: LoadedModel | null): boolean {
   const labels = (modelInfo?.labels || []).map(label => label.toLowerCase().trim());
   if (labels.some(label => ['realtime-transcription', 'realtime', 'audio-input', 'audio-chat', 'chat-transcription'].includes(label))) return true;
 
+  // Any speech-to-text backend drives the realtime composer, including one
+  // added to lemond after this build shipped.
   const recipe = String((modelInfo as any)?.recipe || loadedModel?.recipe || '').toLowerCase();
-  if (recipe.includes('moonshine') || recipe.includes('whispercpp')) return true;
+  if (descriptorForRecipe(recipe)?.modality === 'Speech-to-text') return true;
 
   const haystack = [
     modelName,
@@ -620,7 +616,7 @@ function modelSupportsRealtimeAudio(modelName: string | null, modelInfo: ModelIn
     loadedModel?.model_name,
     loadedModel?.checkpoint,
   ].filter(Boolean).join(' ').toLowerCase();
-  return haystack.includes('moonshine') || haystack.includes('whisper') || haystack.includes('realtime') || haystack.includes('audio-chat');
+  return haystack.includes('realtime') || haystack.includes('audio-chat');
 }
 
 function canUseMicrophone(): boolean {
@@ -1048,11 +1044,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, [currentCapability, currentLoadedModel]);
 
   const currentRecipe = String(currentModelSnapshot?.recipe || currentKnownModelInfo?.recipe || '').toLowerCase();
+  const composer = composerProfile(currentRecipe);
   const isAceStepAudio = currentCapability === 'audio-generation'
-    && (currentRecipe.includes('acestep') || currentRecipe.includes('ace-step') || (/ace[-_ ]?step/.test(String(currentModel || '').toLowerCase())));
+    && (composer.musicGeneration || /ace[-_ ]?step/.test(String(currentModel || '').toLowerCase()));
   const currentLabels = (currentKnownModelInfo?.labels || []).map(label => String(label).toLowerCase());
   const isOpenMossTts = currentCapability === 'tts'
-    && (currentRecipe.includes('openmoss') || /moss[-_ ]?(tts|voicegen)/i.test(String(currentModel || '')));
+    && (composer.voiceCloning || /moss[-_ ]?(tts|voicegen)/i.test(String(currentModel || '')));
   const currentIsVoiceDesign = currentLabels.includes('voice-design')
     || /voicegen/i.test(String(currentModel || ''));
   const openMossModels = useMemo(() => {

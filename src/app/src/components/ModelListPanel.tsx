@@ -12,6 +12,7 @@ import {
   rowCapability,
   type CapabilityTag,
 } from '../modelCapabilities';
+import { backendFieldForRecipe } from '../modelConfiguration';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
 import type { CapabilityIconTarget } from './Icon';
@@ -59,32 +60,15 @@ export interface ModelBackendReadiness {
   state?: string;
 }
 
-const BACKEND_MANAGED_RECIPES = new Set([
-  'llamacpp',
-  'vllm',
-  'flm',
-  'ryzenai-llm',
-  'sd-cpp',
-  'whispercpp',
-  'moonshine',
-  'kokoro',
-  'acestep',
-  'thinksound',
-  'openmoss',
-  'trellis',
-]);
-
-const BACKEND_OPTION_FIELD: Record<string, string> = {
-  llamacpp: 'llamacpp_backend',
-  vllm: 'vllm_backend',
-  'sd-cpp': 'sd-cpp_backend',
-  whispercpp: 'whispercpp_backend',
-  moonshine: 'moonshine_backend',
-  acestep: 'acestep_backend',
-  thinksound: 'thinksound_backend',
-  openmoss: 'openmoss_backend',
-  trellis: 'trellis_backend',
-};
+/**
+ * Recipes with no local binary to install: `cloud*` runs remotely and
+ * `collection*` is a client-side composition of other models. Every other
+ * recipe - including one this build has never heard of - needs an installed
+ * backend before its models are ready.
+ */
+function needsLocalBackend(recipe: string): boolean {
+  return !recipe.startsWith('cloud') && !recipe.startsWith('collection');
+}
 
 function asRecord(value: unknown): Record<string, any> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -100,7 +84,7 @@ function configuredBackendForModel(model: ModelInfo, recipe: string, recipeInfo:
   const raw = model as any;
   const recipeOptions = asRecord(raw.recipe_options);
   const options = asRecord(raw.options);
-  const field = BACKEND_OPTION_FIELD[recipe];
+  const field = backendFieldForRecipe(recipe);
   const configured = normalizedBackend(
     (field ? recipeOptions?.[field] : undefined)
       ?? recipeOptions?.backend
@@ -135,7 +119,7 @@ export function modelBackendReadiness(
   }
 
   const recipeInfo = asRecord(recipes[recipe]);
-  if (!recipeInfo && !BACKEND_MANAGED_RECIPES.has(recipe)) {
+  if (!recipeInfo && !needsLocalBackend(recipe)) {
     return { tone: 'ready', label: 'Model downloaded and ready.' };
   }
   if (!recipeInfo) {

@@ -10,6 +10,19 @@ import DOMPurify from 'dompurify';
 import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow } from '../api';
 import api from '../api';
 import { copyTextToClipboard } from '../clipboard';
+import { getBackendCatalogSnapshot } from '../features/backends/backendCatalogStore';
+import {
+  descriptorForRecipe,
+  isArgsOption,
+  isBackendOption,
+  isBooleanOption,
+  isDeviceOption,
+  isNumericOption,
+  optionHint,
+  optionLabel,
+} from '../features/backends/backendOptions';
+import { backendLabel } from '../modelPresentation';
+import { refreshBackendCatalog, useBackendCatalog } from '../features/backends/backendCatalogStore';
 import { capabilityFromModelInfo, capabilityLabel } from '../modelCapabilities';
 import {
   modelBaseTuningForModel, loadModelTuning, saveModelTuning, resetModelTuning,
@@ -84,27 +97,6 @@ function fmtDownloads(n: number): string {
   return String(n);
 }
 
-function recipeDisplayLabel(recipe: string): string {
-  const n = String(recipe || '').toLowerCase();
-  switch (n) {
-    case 'llamacpp': return 'llama.cpp';
-    case 'vllm': return 'vLLM';
-    case 'flm': return 'FastFlowLM';
-    case 'ryzenai-llm': return 'RyzenAI';
-    case 'sd-cpp': return 'Stable Diffusion';
-    case 'whispercpp': return 'Whisper';
-    case 'moonshine': return 'Moonshine';
-    case 'kokoro': return 'Kokoro TTS';
-    case 'acestep': return 'ACE-Step';
-    case 'thinksound': return 'ThinkSound';
-    case 'openmoss': return 'OpenMOSS TTS';
-    case 'trellis': return 'TRELLIS.2';
-    case 'collection.omni': return 'Omni Collection';
-    case 'collection.router': return 'Router';
-    case 'collection': return 'Collection';
-    default: return recipe || 'Unknown';
-  }
-}
 
 function activeRecipeForModel(model: ModelInfo | null | undefined): string {
   if (!model) return '';
@@ -220,129 +212,35 @@ function stringRecordEqual(left: Record<string, string>, right: Record<string, s
   return leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key]);
 }
 
-const TUNING_FIELD_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
-  ctx_size: 'Context size',
-  llamacpp_backend: 'Backend',
-  llamacpp_device: 'Device',
-  llamacpp_args: 'Backend args',
-  steps: 'Steps',
-  cfg_scale: 'CFG scale',
-  width: 'Width',
-  height: 'Height',
-  sampling_method: 'Sampling method',
-  flow_shift: 'Flow shift',
-  'sd-cpp_backend': 'Backend',
-  sdcpp_args: 'Backend args',
-  whispercpp_backend: 'Backend',
-  whispercpp_args: 'Backend args',
-  moonshine_backend: 'Backend',
-  moonshine_args: 'Backend args',
-  acestep_backend: 'Backend',
-  thinksound_backend: 'Backend',
-  openmoss_backend: 'Backend',
-  trellis_backend: 'Backend',
-  vllm_backend: 'Backend',
-  vllm_args: 'Backend args',
-  flm_args: 'Backend args',
-  voice: 'Voice',
-  speed: 'Speed',
-};
-
-const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
-  ctx_size: 'Runtime context window for this exact model.',
-  llamacpp_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
-  vllm_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
-  whispercpp_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
-  moonshine_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
-  acestep_backend: 'ACE-Step accelerator backend for music generation.',
-  thinksound_backend: 'ThinkSound accelerator backend for sound-effect generation.',
-  openmoss_backend: 'OpenMOSS accelerator backend for speech generation.',
-  trellis_backend: 'TRELLIS accelerator backend for 3D reconstruction.',
-  'sd-cpp_backend': 'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.',
-  llamacpp_device: 'Optional device selector for the selected backend.',
-  llamacpp_args: 'CLI-style flags for llama-server, applied on Load/Reload. E.g. --gpu-layers 35 --threads 8 --batch-size 512. See llama-server --help for all options.',
-  sdcpp_args: 'Raw backend args for this image model only.',
-  whispercpp_args: 'Raw backend args for this transcription model only.',
-  moonshine_args: 'Raw backend args for this transcription model only.',
-  vllm_args: 'Raw backend args for this model only.',
-  flm_args: 'Raw backend args for this model only.',
-};
-
-const NUMERIC_TUNING_KEYS = new Set<keyof RecipeOptions>(['steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed']);
-const BOOLEAN_TUNING_KEYS = new Set<keyof RecipeOptions>();
-const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'sd-cpp_backend', 'whispercpp_backend', 'moonshine_backend', 'acestep_backend', 'thinksound_backend', 'openmoss_backend', 'trellis_backend']);
-const DEVICE_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_device']);
-const ARGS_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_args', 'sdcpp_args', 'whispercpp_args', 'moonshine_args', 'vllm_args', 'flm_args']);
-const BACKEND_ARGS_KEY: Partial<Record<keyof RecipeOptions, keyof RecipeOptions>> = {
-  llamacpp_backend: 'llamacpp_args',
-  vllm_backend: 'vllm_args',
-  'sd-cpp_backend': 'sdcpp_args',
-  whispercpp_backend: 'whispercpp_args',
-  moonshine_backend: 'moonshine_args',
-};
-
-const LLAMACPP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['llamacpp_backend', 'llamacpp_device', 'llamacpp_args'];
-const VLLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['vllm_backend', 'vllm_args'];
-const FLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['flm_args'];
-const RYZENAI_RECIPE_KEYS: Array<keyof RecipeOptions> = [];
-const IMAGE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['sd-cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args'];
-const WHISPER_RECIPE_KEYS: Array<keyof RecipeOptions> = ['whispercpp_backend', 'whispercpp_args'];
-const MOONSHINE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['moonshine_backend', 'moonshine_args'];
-const TTS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['voice', 'speed'];
-const ACESTEP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['acestep_backend'];
-const THINKSOUND_RECIPE_KEYS: Array<keyof RecipeOptions> = ['thinksound_backend'];
-const OPENMOSS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['openmoss_backend', 'voice', 'speed'];
-const TRELLIS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['trellis_backend'];
-
-
-
 function formatContextSize(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return 'auto';
   if (value >= 1024 && value % 1024 === 0) return `${Math.round(value / 1024)}K`;
   return value.toLocaleString();
 }
 
-function recipeKeysForRecipe(recipe: string): Array<keyof RecipeOptions> | null {
-  switch (recipe) {
-    case 'llamacpp': return LLAMACPP_RECIPE_KEYS;
-    case 'vllm': return VLLM_RECIPE_KEYS;
-    case 'flm': return FLM_RECIPE_KEYS;
-    case 'ryzenai-llm': return RYZENAI_RECIPE_KEYS;
-    case 'sd-cpp': return IMAGE_RECIPE_KEYS;
-    case 'whispercpp': return WHISPER_RECIPE_KEYS;
-    case 'moonshine': return MOONSHINE_RECIPE_KEYS;
-    case 'kokoro': return TTS_RECIPE_KEYS;
-    case 'acestep': return ACESTEP_RECIPE_KEYS;
-    case 'thinksound': return THINKSOUND_RECIPE_KEYS;
-    case 'openmoss': return OPENMOSS_RECIPE_KEYS;
-    case 'trellis': return TRELLIS_RECIPE_KEYS;
-    default: return null;
-  }
+function descriptorForModel(model: ModelInfo) {
+  return descriptorForRecipe(activeRecipeForModel(model));
 }
 
-function tuningKeysForModel(model: ModelInfo): Array<keyof RecipeOptions> {
-  const cap = capabilityFromModelInfo(model);
-  const recipes = recipesForDisplay(model);
-  const activeRecipe = activeRecipeForModel(model);
-  const set = new Set<keyof RecipeOptions>();
-  const add = (keys: Array<keyof RecipeOptions>) => keys.forEach(key => set.add(key));
+/**
+ * Which fields the Configuration tab shows. The recipe's own options come from
+ * the catalog, so a backend this build has never heard of gets a complete form;
+ * the rest are keys the model itself already carries.
+ */
+function tuningKeysForModel(model: ModelInfo): string[] {
+  const descriptor = descriptorForModel(model);
+  const set = new Set<string>();
+  for (const option of descriptor?.options ?? []) set.add(option.name);
 
-  const activeKeys = recipeKeysForRecipe(activeRecipe);
-  if (activeKeys) add(activeKeys);
-  else if (cap === 'chat' || cap === 'omni' || cap === 'unknown') add(LLAMACPP_RECIPE_KEYS);
-  else if (cap === 'image') add(IMAGE_RECIPE_KEYS);
-  else if (cap === 'audio') add(recipes.includes('moonshine') ? MOONSHINE_RECIPE_KEYS : WHISPER_RECIPE_KEYS);
-  else if (cap === 'audio-generation') add(recipes.includes('acestep') ? ACESTEP_RECIPE_KEYS : THINKSOUND_RECIPE_KEYS);
-  else if (cap === 'tts') add(recipes.includes('openmoss') ? OPENMOSS_RECIPE_KEYS : TTS_RECIPE_KEYS);
-  else if (cap === 'model3d') add(TRELLIS_RECIPE_KEYS);
+  const cap = capabilityFromModelInfo(model);
+  if (cap === 'tts' || descriptor?.modality === 'Text-to-speech') {
+    set.add('voice');
+    set.add('speed');
+  }
 
   const base = modelBaseTuningForModel(model).recipe_options;
-  Object.keys(base).forEach(key => {
-    if (key !== 'ctx_size' && key !== 'merge_args' && key !== 'mmproj_enabled') set.add(key as keyof RecipeOptions);
-  });
-  set.delete('ctx_size');
-  set.delete('merge_args');
-  set.delete('mmproj_enabled');
+  Object.keys(base).forEach(key => set.add(key));
+  for (const excluded of ['ctx_size', 'merge_args', 'mmproj_enabled']) set.delete(excluded);
   return [...set];
 }
 
@@ -363,67 +261,38 @@ function backendState(info: unknown): string {
   return String((info as any)?.state || '').trim().toLowerCase();
 }
 
-function backendIsSelectable(recipe: string, backend: string, info: unknown): boolean {
-  if (!backend || backendState(info) === 'unsupported') return false;
-  // llama.cpp has no NPU backend; FLM/RyzenAI own the NPU paths.
-  if (recipe === 'llamacpp' && backend.toLowerCase().includes('npu')) return false;
-  return true;
+function backendIsSelectable(backend: string, info: unknown): boolean {
+  return Boolean(backend) && backendState(info) !== 'unsupported';
 }
 
-function activeRecipeForBackendKey(key: keyof RecipeOptions, model: ModelInfo): string {
-  switch (key) {
-    case 'llamacpp_backend': return 'llamacpp';
-    case 'vllm_backend': return 'vllm';
-    case 'sd-cpp_backend': return 'sd-cpp';
-    case 'whispercpp_backend': return 'whispercpp';
-    case 'moonshine_backend': return 'moonshine';
-    case 'acestep_backend': return 'acestep';
-    case 'thinksound_backend': return 'thinksound';
-    case 'openmoss_backend': return 'openmoss';
-    case 'trellis_backend': return 'trellis';
-    default: return activeRecipeForModel(model);
-  }
-}
-
-function fallbackBackendsForRecipe(recipe: string): string[] {
-  switch (recipe) {
-    case 'vllm': return ['cpu', 'cuda', 'rocm'];
-    case 'whispercpp': return ['cpu', 'cuda', 'vulkan', 'opencl'];
-    case 'moonshine': return ['cpu', 'cuda'];
-    case 'sd-cpp': return ['cpu', 'cuda', 'vulkan', 'rocm'];
-    case 'kokoro': return ['cpu'];
-    case 'acestep':
-    case 'thinksound':
-    case 'openmoss':
-    case 'trellis': return ['cuda', 'rocm', 'vulkan'];
-    case 'llamacpp':
-    default:
-      // Keep fallback conservative: no Metal/NPU unless the server explicitly reports them as selectable.
-      return ['cpu', 'cuda', 'vulkan', 'opencl', 'rocm'];
-  }
+/** The recipe that owns a `<recipe>_backend` option, per the catalog. */
+function recipeForBackendOption(key: string, model: ModelInfo): string {
+  const match = getBackendCatalogSnapshot().catalog?.recipes.find(entry => entry.backendOptionName === key);
+  return match?.recipe ?? activeRecipeForModel(model);
 }
 
 function recipeDefaultBackend(info: SystemInfoLike, recipe: string): string {
   return optionalDisplayValue(systemRecipes(info)?.[recipe]?.default_backend);
 }
 
-function backendOptionsForKey(key: keyof RecipeOptions, current: string | undefined, model: ModelInfo, info: SystemInfoLike): string[] {
-  const recipe = activeRecipeForBackendKey(key, model);
+function backendOptionsForKey(key: string, current: string | undefined, model: ModelInfo, info: SystemInfoLike): string[] {
+  const recipe = recipeForBackendOption(key, model);
   const fromServer = Object.entries(backendMapForRecipe(info, recipe) || {})
-    .filter(([backend, backendInfo]) => backendIsSelectable(recipe, backend, backendInfo) && backendMatchesDetectedHardware(backend, info))
+    .filter(([backend, backendInfo]) => backendIsSelectable(backend, backendInfo) && backendMatchesDetectedHardware(backend, info))
     .map(([backend]) => backend);
-  const rawBase = fromServer.length ? fromServer : fallbackBackendsForRecipe(recipe);
-  const base = rawBase.filter(backend => backendMatchesDetectedHardware(backend, info));
-  const safeBase = Array.from(new Set(['auto', ...(base.length ? base : ['cpu'])]));
   const normalizedCurrent = optionalDisplayValue(current);
-  const options = normalizedCurrent && !safeBase.includes(normalizedCurrent) ? [normalizedCurrent, ...safeBase] : safeBase;
+  // Until the server has answered there is nothing honest to offer but what is
+  // already configured. Inventing a list risks offering a backend that then
+  // disappears under the user's cursor.
+  const base = fromServer.length ? ['auto', ...fromServer] : [normalizedCurrent || 'auto'];
+  const options = normalizedCurrent && !base.includes(normalizedCurrent) ? [normalizedCurrent, ...base] : base;
   return Array.from(new Set(options.filter(Boolean)));
 }
 
-function activeBackendValue(key: keyof RecipeOptions, baseValue: unknown, model: ModelInfo, info: SystemInfoLike): string {
+function activeBackendValue(key: string, baseValue: unknown, model: ModelInfo, info: SystemInfoLike): string {
   const fromModel = optionalDisplayValue(baseValue);
   if (fromModel) return fromModel;
-  const recipe = activeRecipeForBackendKey(key, model);
+  const recipe = recipeForBackendOption(key, model);
   return recipeDefaultBackend(info, recipe) || 'auto';
 }
 
@@ -946,7 +815,7 @@ const HfDetailView: React.FC<{
             <WorkspaceMetadataChip emphasis="medium" tone="accent" className="model-detail-panel__badge--pipeline">{pipelineTag}</WorkspaceMetadataChip>
           )}
           {hfVariants?.recipe && (
-            <WorkspaceMetadataChip emphasis="medium">{recipeDisplayLabel(hfVariants.recipe)}</WorkspaceMetadataChip>
+            <WorkspaceMetadataChip emphasis="medium">{backendLabel(hfVariants.recipe)}</WorkspaceMetadataChip>
           )}
           <WorkspaceMetadataChip emphasis="low">{fmtDownloads(hfModel.downloads)} downloads</WorkspaceMetadataChip>
           <WorkspaceMetadataChip emphasis="low">{fmtDownloads(hfModel.likes)} likes</WorkspaceMetadataChip>
@@ -1057,18 +926,11 @@ const ModelConfigurationTab: React.FC<{
   const name = mdName(model);
   const [notice, setNotice] = useState<string | null>(null);
   const [isReloading, setIsReloading] = useState(false);
-  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
-
+  const { catalog: backendCatalog } = useBackendCatalog();
+  const systemInfo = backendCatalog?.raw ?? null;
 
   useEffect(() => {
-    if (!isActive) return;
-    let alive = true;
-    const cached = api.systemInfoData;
-    if (cached) setSystemInfo(cached);
-    api.systemInfo()
-      .then(info => { if (alive) setSystemInfo(info); })
-      .catch(() => { if (alive) setSystemInfo(api.systemInfoData); });
-    return () => { alive = false; };
+    if (isActive) void refreshBackendCatalog();
   }, [isActive]);
 
   const baseTuning = useMemo(
@@ -1155,17 +1017,17 @@ const ModelConfigurationTab: React.FC<{
     );
     setCtxSizeDraft(String(nextValue));
   };
-  const selectorKeys = recipeKeys.filter(key => BACKEND_TUNING_KEYS.has(key) || DEVICE_TUNING_KEYS.has(key));
-  const argsKeys = recipeKeys.filter(key => ARGS_TUNING_KEYS.has(key));
+  const selectorKeys = recipeKeys.filter(key => isBackendOption(key) || isDeviceOption(key));
+  const argsKeys = recipeKeys.filter(key => isArgsOption(key));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
 
   const buildConfigOptions = (): RecipeOptions => {
     const raw: Partial<RecipeOptions> = {};
     for (const [key, value] of Object.entries(recipeDraft) as Array<[keyof RecipeOptions, string]>) {
       if (!value.trim()) continue;
-      if (BOOLEAN_TUNING_KEYS.has(key)) {
+      if (isBooleanOption(key)) {
         (raw as Record<string, unknown>)[key] = value === 'true';
-      } else if (NUMERIC_TUNING_KEYS.has(key)) {
+      } else if (isNumericOption(key)) {
         const n = parseNumberOrUndefined(value);
         if (n !== undefined) (raw as Record<string, unknown>)[key] = n;
       } else {
@@ -1226,13 +1088,15 @@ const ModelConfigurationTab: React.FC<{
 
   const renderConfigRecipeField = (key: keyof RecipeOptions) => {
     const fieldId = `config-${name}-${String(key)}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-    const label = TUNING_FIELD_LABELS[key] || String(key);
+    const label = optionLabel(key);
     const draftValue = recipeDraft[String(key)] || '';
     const baseValue = baseTuning.recipe_options[key];
 
-    if (BACKEND_TUNING_KEYS.has(key)) {
+    if (isBackendOption(key)) {
       const activeBackend = activeBackendValue(key, baseValue, model, info);
       const options = backendOptionsForKey(key, draftValue || undefined, model, info).filter(opt => opt !== activeBackend);
+      // Present but inert until the server has said which backends exist.
+      const awaitingCatalog = options.length === 0;
       return (
         <label key={String(key)} className="detail-tuning__field detail-configuration__field" htmlFor={fieldId}>
           <span>{label}</span>
@@ -1240,6 +1104,7 @@ const ModelConfigurationTab: React.FC<{
             id={fieldId}
             className="select detail-configuration__select"
             value={draftValue}
+            disabled={awaitingCatalog}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
             <option value="">{activeBackend}</option>
@@ -1249,8 +1114,8 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
-    if (DEVICE_TUNING_KEYS.has(key)) {
-      const backendKey: keyof RecipeOptions = 'llamacpp_backend';
+    if (isDeviceOption(key)) {
+      const backendKey = descriptorForModel(model)?.backendOptionName ?? '';
       const selectedBackend = recipeDraft[String(backendKey)] || activeBackendValue(backendKey, baseTuning.recipe_options[backendKey], model, info);
       const activeDevice = optionalDisplayValue(baseValue) || 'auto';
       const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info).filter(opt => opt !== activeDevice);
@@ -1321,8 +1186,8 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
-    if (ARGS_TUNING_KEYS.has(key)) {
-      const hint = TUNING_FIELD_HINTS[key];
+    if (isArgsOption(key)) {
+      const hint = optionHint(key);
       const defaultPlaceholders: Partial<Record<keyof RecipeOptions, string>> = {
         llamacpp_args: '--gpu-layers 35 --threads 8 --batch-size 512',
         vllm_args: '--tensor-parallel-size 1 --max-model-len 8192',
@@ -1355,7 +1220,7 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
-    if (NUMERIC_TUNING_KEYS.has(key)) {
+    if (isNumericOption(key)) {
       const stepNumericInput = (direction: -1 | 1) => {
         const input = document.getElementById(fieldId);
         if (!(input instanceof HTMLInputElement)) return;
@@ -2125,7 +1990,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const detailMetadata = (
     <>
       {recipe && (
-        <WorkspaceMetadataChip emphasis="medium" tone="accent">{recipeDisplayLabel(recipe)}</WorkspaceMetadataChip>
+        <WorkspaceMetadataChip emphasis="medium" tone="accent">{backendLabel(recipe)}</WorkspaceMetadataChip>
       )}
       {model.size != null && model.size > 0 && (
         <WorkspaceMetadataChip emphasis="low">{fmtSize(model.size)}</WorkspaceMetadataChip>

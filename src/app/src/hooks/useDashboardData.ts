@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import api, { HealthData, StatsData, SystemStatsData, SlotData, LoadedModel, LogStreamHandle, getCacheTokenCount, friendlyErrorMessage } from '../api';
+import { refreshBackendCatalog, useBackendCatalog } from '../features/backends/backendCatalogStore';
 
 /* ── History ring buffer ───────────────────────────────────── */
 
@@ -136,7 +137,8 @@ export function useDashboardData(isActive = true): DashboardData {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [sysStats, setSysStats] = useState<SystemStatsData | null>(null);
-  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
+  const { catalog } = useBackendCatalog();
+  const systemInfo = catalog?.raw ?? null;
   const [slots, setSlots] = useState<SlotData[]>([]);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [slotHistory, setSlotHistory] = useState<Record<number, SlotHistoryPoint[]>>({});
@@ -151,12 +153,7 @@ export function useDashboardData(isActive = true): DashboardData {
   // telemetry poll. The dashboard uses this to distinguish a discrete VRAM
   // budget from an APU's shared RAM/VRAM pool.
   useEffect(() => {
-    if (!isActive) return;
-    let cancelled = false;
-    api.systemInfo()
-      .then(info => { if (!cancelled) setSystemInfo(info); })
-      .catch(() => { if (!cancelled) setSystemInfo(api.systemInfoData); });
-    return () => { cancelled = true; };
+    if (isActive) void refreshBackendCatalog();
   }, [isActive]);
 
   const countersRef = useRef<SessionCounters>(initCounters());

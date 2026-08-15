@@ -4,16 +4,12 @@
 import { test, expect } from '@playwright/test';
 
 /* Every identity and monitoring token, per DESIGN.md's color table. Tokens that
- * alias a text or accent role (--cap-chat, --backend-other) are covered by the
- * roles they point at. */
+ * alias a text or accent role (--cap-chat) are covered by the roles they point
+ * at. */
 const IDENTITY_TOKENS = [
   '--cap-vision', '--cap-code', '--cap-embedding', '--cap-reranking', '--cap-image',
   '--cap-image-edit', '--cap-audio', '--cap-audio-generation', '--cap-tts', '--cap-model3d',
   '--provider-hugging-face-fg', '--provider-modelscope-fg',
-  '--backend-llamacpp', '--backend-vllm', '--backend-flm', '--backend-ryzenai',
-  '--backend-sd-cpp', '--backend-whispercpp', '--backend-moonshine', '--backend-kokoro',
-  '--backend-acestep', '--backend-thinksound', '--backend-openmoss', '--backend-trellis',
-  '--backend-collection-omni', '--backend-collection-router', '--backend-collection',
   '--chart-series-1', '--chart-series-2', '--chart-series-3', '--chart-series-4',
   '--chart-series-5', '--chart-series-6', '--chart-cache',
 ];
@@ -22,10 +18,17 @@ async function contrastFailures(page: import('@playwright/test').Page, tokens: s
   return page.evaluate((names: string[]) => {
     const probe = document.createElement('span');
     document.body.appendChild(probe);
+    /* An undeclared custom property resolves to '', and assigning '' clears the
+     * inline style rather than setting it — so without these guards the probe
+     * keeps its inherited color and every missing token silently passes. */
+    const SENTINEL = 'rgb(1, 2, 3)';
     const parse = (value: string) => {
-      probe.style.color = '';
+      if (!value) return null;
+      probe.style.color = SENTINEL;
       probe.style.color = value;
-      const match = getComputedStyle(probe).color.match(/[\d.]+/g);
+      const computed = getComputedStyle(probe).color;
+      if (computed === SENTINEL && value !== SENTINEL) return null;
+      const match = computed.match(/[\d.]+/g);
       return match ? [Number(match[0]), Number(match[1]), Number(match[2])] : null;
     };
     const luminance = ([r, g, b]: number[]) => {

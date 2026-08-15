@@ -23,9 +23,14 @@ function loadTypeScriptModule(filename) {
     diagnostics.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n'),
   );
   const module = { exports: {} };
+  // Capability detection consults the backend catalog; with no server attached
+  // it must still fall back to the name/recipe hints.
+  const stubbedRequire = request => request === './features/backends/backendOptions'
+    ? { descriptorForRecipe: () => undefined }
+    : require(request);
   Function('exports', 'require', 'module', '__filename', '__dirname', compiled.outputText)(
     module.exports,
-    require,
+    stubbedRequire,
     module,
     filename,
     path.dirname(filename),

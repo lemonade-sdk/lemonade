@@ -1,4 +1,5 @@
 import type { LoadedModel, ModelInfo } from './api';
+import { descriptorForRecipe } from './features/backends/backendOptions';
 
 export type ModelCapability =
   | 'chat'
@@ -46,6 +47,16 @@ const NON_CHAT_RECIPE_HINTS: Array<[string, ModelCapability]> = [
 
 const CHAT_RECIPE_HINTS = new Set(['llamacpp', 'flm', 'ryzenai-llm', 'vllm']);
 
+/** lemond's modality vocabulary, mapped to this app's capability vocabulary. */
+const CAPABILITY_BY_MODALITY: Record<string, ModelCapability> = {
+  'Text generation': 'chat',
+  'Speech-to-text': 'audio',
+  'Text-to-speech': 'tts',
+  'Image generation': 'image',
+  'Audio generation': 'audio-generation',
+  '3D generation': 'model3d',
+};
+
 const MULTIMODAL_CHAT_NAME_PATTERNS = [
   /(^|[._\-/])omni([._\-/]|$)/,
   /(^|[._\-/])multimodal([._\-/]|$)/,
@@ -83,6 +94,15 @@ export function capabilityFromRecipe(recipe?: string | null): ModelCapability {
   if (r === 'collection.omni' || r.startsWith('collection.omni.')) return 'omni';
   if (r === 'collection.router' || r.startsWith('collection.router.')) return 'chat';
   if (r === 'collection') return 'omni';
+
+  // lemond states each backend's modality; the hint tables below only cover
+  // recipes it has not published (a remote registry hit, a stale snapshot).
+  const modality = descriptorForRecipe(r)?.modality;
+  if (modality) {
+    const fromModality = CAPABILITY_BY_MODALITY[modality];
+    if (fromModality) return fromModality;
+  }
+
   for (const [hint, cap] of NON_CHAT_RECIPE_HINTS) {
     if (r === hint || r.includes(hint)) return cap;
   }
@@ -518,4 +538,20 @@ export function modelCapabilityTags(model: ModelInfo): CapabilityTag[] {
 export function modelMatchesCapabilityTags(model: ModelInfo, selected: Set<string>): boolean {
   if (!selected || selected.size === 0) return true;
   return modelCapabilityTags(model).some(tag => selected.has(tag));
+}
+
+const IMAGE_EDIT_LABELS = ['edit', 'image-edit', 'image-editing', 'image-to-image', 'img2img'];
+
+/* Checkpoints whose registry entries carry no image-edit label, so the name is
+ * the only signal available. Drop a token once its models are labelled. */
+const IMAGE_EDIT_NAME_TOKENS = [
+  'flux-2-klein', 'flux_2_klein', 'flux.2.klein', 'flux2-klein', 'qwen-edit', 'image-edit',
+];
+
+/** True when an image model can edit a supplied reference image. */
+export function modelSupportsImageEdit(labels: unknown, ...nameCandidates: unknown[]): boolean {
+  const normalized = (Array.isArray(labels) ? labels : []).map(label => String(label).toLowerCase().trim());
+  if (normalized.some(label => IMAGE_EDIT_LABELS.includes(label))) return true;
+  const haystack = nameCandidates.filter(Boolean).map(String).join(' ').toLowerCase();
+  return IMAGE_EDIT_NAME_TOKENS.some(token => haystack.includes(token));
 }

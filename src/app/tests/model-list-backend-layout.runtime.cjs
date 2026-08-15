@@ -46,8 +46,10 @@ for (const [fileName, source] of [
 /* ── Backend identity stays a text label ─────────────────────────── */
 
 assert.match(component, /import \{ backendCompactLabel, backendLabel \}/);
-assert.doesNotMatch(component, /backendColor|--list-backend-color/,
-  'model rows must not carry backend identity colors');
+assert.doesNotMatch(presentation, /backendColor|--backend-/,
+  'backend identity is a text label; the presentation helper must expose no color');
+assert.doesNotMatch(tokens, /--backend-/,
+  'no per-backend color tokens: adding a backend must not require adding one');
 assert.match(component, /function modelListBackendLabel\(recipe: string\): string \{[\s\S]*return backendCompactLabel\(recipe\);/);
 assert.doesNotMatch(component, /backendCompactLabel\(recipe\)\.toUpperCase\(\)/,
   'backend labels must preserve product casing such as llama.cpp and vLLM');
@@ -178,12 +180,34 @@ assert.match(chatView, /icon: 'eject'/, 'eject occupies the row action slot');
 assert.match(chatView, /const isCollection = capability === 'omni' \|\| capability === 'router'/,
   'the picker suppresses the engine anchor for collections, like the catalog');
 
-assert.match(manager, /const \[systemInfo, setSystemInfo\] = useState<Record<string, unknown> \| null>/);
-assert.match(manager, /setSystemInfo\(info\)/);
+/* One fetch, one shape: every view that used to keep its own system-info copy
+ * now reads the shared catalog store, so a recipe can never be interpreted two
+ * different ways in two panels. */
+for (const [name, relativePath] of [
+  ['ModelListPanel', 'src/components/ModelListPanel.tsx'],
+  ['ModelManager', 'src/components/ModelManager.tsx'],
+  ['BackendManager', 'src/components/BackendManager.tsx'],
+  ['ModelDetailPanel', 'src/components/ModelDetailPanel.tsx'],
+  ['useDashboardData', 'src/hooks/useDashboardData.ts'],
+]) {
+  assert.doesNotMatch(fs.readFileSync(path.join(root, relativePath), 'utf8'), /api\.systemInfo\(\)/,
+    `${name} must read the shared backend catalog store, not fetch system-info itself`);
+}
+assert.match(manager, /useBackendCatalog\(\)/);
 assert.match(manager, /systemInfo=\{systemInfo\}/);
 
-for (const expected of ['llama.cpp', 'vLLM', 'FLM', 'SD.cpp', 'Moonshine', 'OpenMOSS', 'Collection']) {
-  assert.ok(presentation.includes(`compact: '${expected}'`), `missing complete compact backend label: ${expected}`);
+/* Labels come from the catalog. The override map exists only where lemond's
+ * docs vocabulary is wrong for a chip, so it must stay an override map and
+ * never grow back into an allowlist of known recipes. That an unlisted recipe
+ * still resolves is proved in backend-catalog.runtime.cjs. */
+assert.match(presentation, /getBackendCatalogSnapshot/,
+  'labels fall back to the name the server published');
+for (const expected of ['llama.cpp', 'vLLM', 'FLM', 'SD.cpp', 'OpenMOSS', 'Collection']) {
+  assert.ok(presentation.includes(`'${expected}'`), `missing compact backend label override: ${expected}`);
+}
+for (const alreadyCorrect of ['moonshine', 'acestep', 'thinksound', 'trellis', 'onnxruntime']) {
+  assert.doesNotMatch(presentation, new RegExp(`^\\s+'?${alreadyCorrect}'?:`, 'm'),
+    `${alreadyCorrect} needs no override; its published name is already right`);
 }
 
 /* ── Row geometry ────────────────────────────────────────────────── */

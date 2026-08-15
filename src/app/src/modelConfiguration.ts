@@ -1,54 +1,26 @@
 import type { ModelInfo } from './api';
 import { capabilityFromModelInfo, type ModelCapability } from './modelCapabilities';
+import { getBackendCatalogSnapshot } from './features/backends/backendCatalogStore';
 import { storageKey } from './storage';
 
-export type RecipeName =
-  | 'llamacpp'
-  | 'sd-cpp'
-  | 'whispercpp'
-  | 'moonshine'
-  | 'flm'
-  | 'ryzenai-llm'
-  | 'vllm'
-  | 'kokoro'
-  | 'acestep'
-  | 'thinksound'
-  | 'openmoss'
-  | 'trellis'
-  | 'auto';
+/**
+ * Recipe ids belong to lemond, not to a closed client list: a backend the
+ * server publishes but this build has never heard of must still typecheck.
+ * `auto` is the one client-side value, meaning "let the server choose".
+ */
+export type RecipeName = string;
 
 export type ThinkingMode = 'none' | 'normal' | 'smart' | 'smart_extra';
 export type TuningValueSource = 'custom' | 'built_in' | 'generic' | 'optimized';
 
-export interface RecipeOptions {
-  ctx_size?: number;
-  llamacpp_backend?: string;
-  llamacpp_device?: string;
-  llamacpp_args?: string;
-  steps?: number;
-  cfg_scale?: number;
-  width?: number;
-  height?: number;
-  sampling_method?: string;
-  flow_shift?: number;
-  'sd-cpp_backend'?: string;
-  sdcpp_args?: string;
-  whispercpp_backend?: string;
-  whispercpp_args?: string;
-  moonshine_backend?: string;
-  moonshine_args?: string;
-  acestep_backend?: string;
-  thinksound_backend?: string;
-  openmoss_backend?: string;
-  trellis_backend?: string;
-  vllm_backend?: string;
-  vllm_args?: string;
-  flm_args?: string;
-  voice?: string;
-  speed?: number;
-  merge_args?: boolean;
-  mmproj_enabled?: boolean;
-}
+/**
+ * Option keys likewise come from `/v1/system-info` `recipes[].options[]`, so
+ * this is an open record validated at runtime by sanitizeRecipeOptions rather
+ * than a compile-time allowlist. The keys that are NOT in options[] and so
+ * cannot be discovered from the server are named in the RESIDUAL_* sets below.
+ */
+export type RecipeOptionValue = string | number | boolean;
+export type RecipeOptions = Record<string, RecipeOptionValue | undefined>;
 
 export interface SamplingParams {
   temperature?: number;
@@ -97,25 +69,19 @@ const LS_MODEL_TUNINGS = 'model_tunings';
 const LS_MODEL_TUNINGS_MIGRATION_MARKER = 'model_tunings_migrated_v3';
 const LS_STORAGE_MIGRATION_CONFLICTS = 'storage_migration_conflicts_v1';
 
-const BACKEND_ARGS_FIELD_BY_RECIPE: Partial<Record<RecipeName, keyof RecipeOptions>> = {
-  llamacpp: 'llamacpp_args',
-  'sd-cpp': 'sdcpp_args',
-  whispercpp: 'whispercpp_args',
-  moonshine: 'moonshine_args',
-  flm: 'flm_args',
-  vllm: 'vllm_args',
-};
+/**
+ * The option keys lemond does not publish in `options[]`, and so cannot be
+ * discovered: `ctx_size` and `merge_args` are common options living in
+ * src/cpp/server/recipe_options.cpp, `speed` comes from a model's
+ * `sample_params`, and `mmproj_enabled` is a client-side toggle. Every other
+ * key's type is read from the catalog.
+ */
+const RESIDUAL_NUMBER_OPTIONS = new Set(['ctx_size', 'speed']);
+const RESIDUAL_BOOLEAN_OPTIONS = new Set(['merge_args', 'mmproj_enabled']);
 
-const BACKEND_FIELD_BY_RECIPE: Record<string, keyof RecipeOptions> = {
-  llamacpp: 'llamacpp_backend',
-  vllm: 'vllm_backend',
-  whispercpp: 'whispercpp_backend',
-  moonshine: 'moonshine_backend',
-  acestep: 'acestep_backend',
-  thinksound: 'thinksound_backend',
-  openmoss: 'openmoss_backend',
-  trellis: 'trellis_backend',
-};
+function recipeDescriptor(recipe: string) {
+  return getBackendCatalogSnapshot().catalog?.byRecipe.get(String(recipe || '').toLowerCase());
+}
 
 export const THINKING_MODE_LABELS: Record<ThinkingMode, string> = {
   none: 'None',
@@ -134,9 +100,13 @@ function emitModelConfigurationEvent(): void {
   } catch {}
 }
 
-export function backendArgsFieldForRecipe(recipe: string): keyof RecipeOptions | null {
-  const recipeName = normalizeRecipeName(recipe);
-  return recipeName ? BACKEND_ARGS_FIELD_BY_RECIPE[recipeName] || null : null;
+export function backendArgsFieldForRecipe(recipe: string): string | null {
+  return recipeDescriptor(recipe)?.argsOptionName ?? null;
+}
+
+/** The `<recipe>_backend` option, whose name is irregular for sd-cpp. */
+export function backendFieldForRecipe(recipe: string): string | null {
+  return recipeDescriptor(recipe)?.backendOptionName ?? null;
 }
 
 export function backendSupportsArgs(recipe: string): boolean {
@@ -188,21 +158,35 @@ function optionalStringValue(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-const RECIPE_OPTION_NUMBER_KEYS = new Set<keyof RecipeOptions>([
-  'ctx_size', 'steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed',
-]);
+/**
+ * Which option keys are numeric or boolean, from the schema lemond publishes
+ * plus the residue it does not. Used only to coerce values that arrive as
+ * strings; already-typed values pass through untouched.
+ */
+function optionKeysOfType(typeName: string, residue: Set<string>): Set<string> {
+  const keys = new Set(residue);
+  for (const descriptor of getBackendCatalogSnapshot().catalog?.recipes ?? []) {
+    for (const option of descriptor.options) {
+      if (option.typeName === typeName) keys.add(option.name);
+    }
+  }
+  return keys;
+}
 
 export function sanitizeRecipeOptions(options: Partial<RecipeOptions> | null | undefined): RecipeOptions {
   const out: RecipeOptions = {};
   if (!options || typeof options !== 'object') return out;
+  const numberKeys = optionKeysOfType('SIZE', RESIDUAL_NUMBER_OPTIONS);
+  const booleanKeys = optionKeysOfType('BOOL', RESIDUAL_BOOLEAN_OPTIONS);
   for (const [rawKey, value] of Object.entries(options)) {
-    const key = rawKey === 'sd_cpp_backend' ? 'sd-cpp_backend' : rawKey as keyof RecipeOptions;
+    // Legacy spelling in tuning saved by earlier builds.
+    const key = rawKey === 'sd_cpp_backend' ? 'sd-cpp_backend' : rawKey;
     if (isBlankValue(value)) continue;
-    if (key === 'merge_args' || key === 'mmproj_enabled') {
+    if (booleanKeys.has(key)) {
       if (typeof value === 'boolean') (out as Record<string, unknown>)[key] = value;
       continue;
     }
-    if (RECIPE_OPTION_NUMBER_KEYS.has(key)) {
+    if (numberKeys.has(key)) {
       const n = optionalNumberValue(value);
       if (n !== undefined) (out as Record<string, unknown>)[key] = n;
       continue;
@@ -248,11 +232,9 @@ function sanitizeTuningValues(raw: TuningValues | null | undefined): TuningValue
 
 function normalizeRecipeName(value: unknown): RecipeName | undefined {
   const rawName = String(value || '').trim().toLowerCase();
+  // Legacy spellings in tuning saved by earlier builds.
   const name = rawName === 'sd_cpp' ? 'sd-cpp' : rawName === 'ryzenai_llm' ? 'ryzenai-llm' : rawName;
-  return [
-    'auto', 'llamacpp', 'sd-cpp', 'whispercpp', 'moonshine', 'flm',
-    'ryzenai-llm', 'vllm', 'kokoro', 'acestep', 'thinksound', 'openmoss', 'trellis',
-  ].includes(name) ? name as RecipeName : undefined;
+  return name || undefined;
 }
 
 export function sanitizeModelTuning(raw: Partial<ModelTuning> | null | undefined): ModelTuning {
@@ -574,14 +556,12 @@ function activeRecipeName(model: ModelInfo | null | undefined): string {
   return recipeName(recipesForModel(model)[0]);
 }
 
-const CONTEXT_SIZE_RECIPES = new Set(['llamacpp', 'flm', 'ryzenai-llm', 'vllm']);
-
 export function modelSupportsContextSize(model: ModelInfo | null | undefined): boolean {
   if (!model) return false;
   const capability = capabilityFromModelInfo(model);
   if (capability === 'chat') return true;
   if (capability !== 'unknown') return false;
-  return CONTEXT_SIZE_RECIPES.has(activeRecipeName(model));
+  return recipeDescriptor(activeRecipeName(model))?.usesCtxSize === true;
 }
 
 function readNumberFromActiveRecipe(model: ModelInfo | null | undefined, paths: string[][]): number | undefined {
@@ -653,90 +633,56 @@ export function modelDefaultContextSize(model: ModelInfo | null | undefined, fal
   return Math.min(Math.round(configured || Number(fallbackCtxSize) || DEFAULT_CONTEXT_SIZE), modelContextSize(model, fallbackCtxSize));
 }
 
+/**
+ * Where a model may carry an option's value besides its own key. The generic
+ * spellings are per option TYPE and the legacy ones per option NAME - both
+ * describe the model registry's shape, so a new backend adds none of them.
+ */
+const GENERIC_PATHS_BY_TYPE: Record<string, string[][]> = {
+  BACKEND: [['recipe_options', 'backend'], ['options', 'backend'], ['backend'], ['default_backend'], ['recommended_backend']],
+  ARGS: [['args']],
+  DEVICES: [['device']],
+};
+
+const LEGACY_PATHS_BY_OPTION: Record<string, string[][]> = {
+  steps: [['sample_steps']],
+  cfg_scale: [['sample_params', 'guidance', 'txt_cfg'], ['txt_cfg']],
+};
+
+function optionPaths(name: string, typeName: string): string[][] {
+  return [
+    ['recipe_options', name],
+    ['options', name],
+    ['sample_params', name],
+    [name],
+    ...(LEGACY_PATHS_BY_OPTION[name] ?? []),
+    ...(GENERIC_PATHS_BY_TYPE[typeName] ?? []),
+  ];
+}
+
 export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, fallbackCtxSize?: unknown): RecipeOptions {
   if (!model) return {};
-  const recipe = activeRecipeName(model);
   const capability = capabilityFromModelInfo(model);
+  const descriptor = recipeDescriptor(activeRecipeName(model));
   const out: RecipeOptions = {};
-  const ctx = modelDefaultContextSize(model, fallbackCtxSize);
 
-  if (capability === 'chat' || capability === 'omni' || capability === 'unknown') out.ctx_size = ctx;
-
-  const backend = readStringFromModelOrRecipe(model, [
-    ['recipe_options', 'backend'], ['options', 'backend'], ['backend'], ['default_backend'], ['recommended_backend'],
-  ]);
-
-  if (recipe === 'llamacpp' || recipe === '') {
-    out.ctx_size = ctx;
-    out.llamacpp_backend = readStringFromModelOrRecipe(model, [
-      ['recipe_options', 'llamacpp_backend'], ['options', 'llamacpp_backend'], ['llamacpp_backend'],
-    ]) ?? backend;
-    out.llamacpp_device = readStringFromModelOrRecipe(model, [
-      ['recipe_options', 'llamacpp_device'], ['options', 'llamacpp_device'], ['llamacpp_device'], ['device'],
-    ]);
-    out.llamacpp_args = readStringFromModelOrRecipe(model, [
-      ['recipe_options', 'llamacpp_args'], ['options', 'llamacpp_args'], ['llamacpp_args'], ['args'],
-    ]);
-  }
-  if (recipe === 'flm') {
-    out.ctx_size = ctx;
-    out.flm_args = readStringFromModelOrRecipe(model, [
-      ['recipe_options', 'flm_args'], ['options', 'flm_args'], ['flm_args'], ['args'],
-    ]);
-  }
-  if (recipe === 'vllm') {
-    out.ctx_size = ctx;
-    out.vllm_backend = readStringFromModelOrRecipe(model, [
-      ['recipe_options', 'vllm_backend'], ['options', 'vllm_backend'], ['vllm_backend'],
-    ]) ?? backend;
-    out.vllm_args = readStringFromModelOrRecipe(model, [
-      ['recipe_options', 'vllm_args'], ['options', 'vllm_args'], ['vllm_args'], ['args'],
-    ]);
-  }
-  if (recipe === 'ryzenai-llm') out.ctx_size = ctx;
-
-  if (capability === 'image' || recipe === 'sd-cpp') {
-    out['sd-cpp_backend'] = readStringFromModelOrRecipe(model, [
-      ['recipe_options', 'sd-cpp_backend'], ['options', 'sd-cpp_backend'], ['sd-cpp_backend'],
-    ]) ?? backend;
-    out.steps = readNumberFromModelOrRecipe(model, [['recipe_options', 'steps'], ['sample_params', 'steps'], ['sample_steps'], ['steps']]);
-    out.cfg_scale = readNumberFromModelOrRecipe(model, [['recipe_options', 'cfg_scale'], ['sample_params', 'cfg_scale'], ['sample_params', 'guidance', 'txt_cfg'], ['txt_cfg'], ['cfg_scale']]);
-    out.width = readNumberFromModelOrRecipe(model, [['recipe_options', 'width'], ['sample_params', 'width'], ['width']]);
-    out.height = readNumberFromModelOrRecipe(model, [['recipe_options', 'height'], ['sample_params', 'height'], ['height']]);
-    out.sampling_method = readStringFromModelOrRecipe(model, [['recipe_options', 'sampling_method'], ['sample_params', 'sampling_method'], ['sampling_method']]);
-    out.flow_shift = readNumberFromModelOrRecipe(model, [['recipe_options', 'flow_shift'], ['sample_params', 'flow_shift'], ['flow_shift']]);
-    out.sdcpp_args = readStringFromModelOrRecipe(model, [['recipe_options', 'sdcpp_args'], ['options', 'sdcpp_args'], ['sdcpp_args'], ['args']]);
+  // ctx_size is a common option, not a descriptor one: lemond publishes only
+  // whether a recipe takes it. Chat surfaces still default it when the recipe
+  // is not in the catalog.
+  if (descriptor?.usesCtxSize || capability === 'chat' || capability === 'omni' || capability === 'unknown') {
+    out.ctx_size = modelDefaultContextSize(model, fallbackCtxSize);
   }
 
-  if (capability === 'audio' || recipe === 'whispercpp' || recipe === 'moonshine') {
-    if (recipe === 'moonshine') {
-      out.moonshine_backend = readStringFromModelOrRecipe(model, [
-        ['recipe_options', 'moonshine_backend'], ['options', 'moonshine_backend'], ['moonshine_backend'],
-      ]) ?? backend;
-      out.moonshine_args = readStringFromModelOrRecipe(model, [
-        ['recipe_options', 'moonshine_args'], ['options', 'moonshine_args'], ['moonshine_args'], ['args'],
-      ]);
-    } else {
-      out.whispercpp_backend = readStringFromModelOrRecipe(model, [
-        ['recipe_options', 'whispercpp_backend'], ['options', 'whispercpp_backend'], ['whispercpp_backend'],
-      ]) ?? backend;
-      out.whispercpp_args = readStringFromModelOrRecipe(model, [
-        ['recipe_options', 'whispercpp_args'], ['options', 'whispercpp_args'], ['whispercpp_args'], ['args'],
-      ]);
-    }
+  for (const option of descriptor?.options ?? []) {
+    const paths = optionPaths(option.name, option.typeName);
+    const value = option.typeName === 'SIZE'
+      ? readNumberFromModelOrRecipe(model, paths)
+      : readStringFromModelOrRecipe(model, paths);
+    if (value !== undefined) out[option.name] = value;
   }
 
-  if (capability === 'audio-generation' || recipe === 'acestep' || recipe === 'thinksound') {
-    if (recipe === 'acestep') out.acestep_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'acestep_backend'], ['options', 'acestep_backend'], ['acestep_backend']]) ?? backend;
-    if (recipe === 'thinksound') out.thinksound_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'thinksound_backend'], ['options', 'thinksound_backend'], ['thinksound_backend']]) ?? backend;
-  }
-
-  if (capability === 'model3d' || recipe === 'trellis') {
-    out.trellis_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'trellis_backend'], ['options', 'trellis_backend'], ['trellis_backend']]) ?? backend;
-  }
-
-  if (capability === 'tts' || recipe === 'kokoro' || recipe === 'openmoss') {
-    if (recipe === 'openmoss') out.openmoss_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'openmoss_backend'], ['options', 'openmoss_backend'], ['openmoss_backend']]) ?? backend;
+  // voice/speed live in the model's sample_params, not in any descriptor.
+  if (capability === 'tts' || descriptor?.modality === 'Text-to-speech') {
     out.voice = readStringFromModelOrRecipe(model, [['recipe_options', 'voice'], ['sample_params', 'voice'], ['default_voice'], ['voice']]);
     out.speed = readNumberFromModelOrRecipe(model, [['recipe_options', 'speed'], ['sample_params', 'speed'], ['default_speed'], ['speed']]);
   }
@@ -833,34 +779,49 @@ function pickRecipeOptions(options: RecipeOptions, keys: Array<keyof RecipeOptio
   return picked;
 }
 
+/** Which of lemond's modalities serve each UI capability. */
+const MODALITIES_BY_CAPABILITY: Record<string, string[]> = {
+  image: ['Image generation'],
+  audio: ['Speech-to-text'],
+  transcription: ['Speech-to-text'],
+  'audio-generation': ['Audio generation'],
+  tts: ['Text-to-speech'],
+  model3d: ['3D generation'],
+  chat: ['Text generation'],
+  omni: ['Text generation'],
+  vision: ['Text generation'],
+  code: ['Text generation'],
+  embedding: ['Text generation'],
+  reranking: ['Text generation'],
+};
+
+/** Keys lemond does not publish, so they cannot be discovered per capability. */
+const RESIDUAL_KEYS_BY_CAPABILITY: Record<string, string[]> = {
+  tts: ['voice', 'speed'],
+  chat: ['ctx_size', 'mmproj_enabled'],
+  omni: ['ctx_size', 'mmproj_enabled'],
+  vision: ['ctx_size', 'mmproj_enabled'],
+  code: ['ctx_size', 'mmproj_enabled'],
+  embedding: ['ctx_size', 'mmproj_enabled'],
+  reranking: ['ctx_size', 'mmproj_enabled'],
+};
+
 export function recipeOptionsForCapability(
   options: RecipeOptions,
   capability: ModelCapability | 'all' | 'vision' | 'code' | 'transcription',
 ): RecipeOptions {
   if (!options || Object.keys(options).length === 0) return {};
-  switch (capability) {
-    case 'image':
-      return pickRecipeOptions(options, ['sd-cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
-    case 'audio':
-    case 'transcription':
-      return pickRecipeOptions(options, ['whispercpp_backend', 'whispercpp_args', 'moonshine_backend', 'moonshine_args', 'merge_args']);
-    case 'audio-generation':
-      return pickRecipeOptions(options, ['acestep_backend', 'thinksound_backend', 'merge_args']);
-    case 'tts':
-      return pickRecipeOptions(options, ['openmoss_backend', 'voice', 'speed', 'merge_args']);
-    case 'model3d':
-      return pickRecipeOptions(options, ['trellis_backend', 'merge_args']);
-    case 'embedding':
-    case 'reranking':
-    case 'chat':
-    case 'omni':
-    case 'vision':
-    case 'code':
-      return pickRecipeOptions(options, ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'mmproj_enabled', 'flm_args', 'vllm_backend', 'vllm_args', 'merge_args']);
-    case 'all':
-    default:
-      return { ...options };
+  const modalities = MODALITIES_BY_CAPABILITY[capability];
+  if (!modalities) return { ...options };
+
+  // Every option any backend of this modality declares, so a backend added to
+  // lemond keeps its settings instead of having them filtered away.
+  const keys = new Set<string>(['merge_args', ...(RESIDUAL_KEYS_BY_CAPABILITY[capability] ?? [])]);
+  for (const descriptor of getBackendCatalogSnapshot().catalog?.recipes ?? []) {
+    if (!modalities.includes(descriptor.modality)) continue;
+    for (const option of descriptor.options) keys.add(option.name);
   }
+  return pickRecipeOptions(options, [...keys]);
 }
 
 export interface BackendResolutionContext {
@@ -893,7 +854,7 @@ function concreteBackendForRecipe(
   modelOptions: RecipeOptions | null | undefined,
   systemInfo: Record<string, unknown> | null | undefined,
 ): string | undefined {
-  const field = BACKEND_FIELD_BY_RECIPE[recipe];
+  const field = backendFieldForRecipe(recipe);
   return (field ? normalizeBackendValue(explicitOptions?.[field]) : undefined)
     ?? (field ? normalizeBackendValue(modelOptions?.[field]) : undefined)
     ?? recipeDefaultBackend(systemInfo, recipe);

@@ -3,6 +3,8 @@
  * Exposes lemonade server management as OpenAI-compatible function calling tools.
  */
 import api, { searchHuggingFace, HFModelResult, PullVariantsResult } from '../api';
+import { refreshBackendCatalog } from '../features/backends/backendCatalogStore';
+import { backendFieldForRecipe } from '../modelConfiguration';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 
 /* ── Tool schemas (OpenAI function calling format) ─────────────── */
@@ -698,26 +700,11 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
 
         if (recipe) opts.recipe = recipe;
         if (backend) {
-          if (recipe === 'llamacpp' || !recipe) {
-            opts.llamacpp_backend = backend;
-            if (backend === 'cpu') opts.llamacpp_device = 'cpu';
-          } else if (recipe.includes('whisper')) {
-            opts.whispercpp_backend = backend;
-          } else if (recipe.includes('moonshine')) {
-            opts.moonshine_backend = backend;
-          } else if (recipe.includes('vllm')) {
-            opts.vllm_backend = backend;
-          } else if (recipe.includes('sd-cpp')) {
-            opts['sd-cpp_backend'] = backend;
-          } else if (recipe.includes('acestep') || recipe.includes('ace-step')) {
-            opts.acestep_backend = backend;
-          } else if (recipe.includes('thinksound')) {
-            opts.thinksound_backend = backend;
-          } else if (recipe.includes('openmoss')) {
-            opts.openmoss_backend = backend;
-          } else if (recipe.includes('trellis')) {
-            opts.trellis_backend = backend;
-          }
+          // The option name comes from the recipe's own schema, so this works
+          // for a backend added to lemond after this build shipped.
+          const field = backendFieldForRecipe(recipe || 'llamacpp');
+          if (field) opts[field] = backend;
+          if ((recipe === 'llamacpp' || !recipe) && backend === 'cpu') opts.llamacpp_device = 'cpu';
         }
         if (args.n_ctx) opts.n_ctx = args.n_ctx;
         if (args.n_gpu_layers) opts.n_gpu_layers = args.n_gpu_layers;
@@ -886,13 +873,13 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
       }
 
       case 'get_system_info': {
-        const info = await api.systemInfo();
+        const info = (await refreshBackendCatalog())?.raw ?? {};
         const summary = summarizeSystemInfo(info);
         return toolPayload(call, summary, linesForSystemInfo(summary));
       }
 
       case 'list_backends': {
-        const info = await api.systemInfo();
+        const info = (await refreshBackendCatalog())?.raw ?? {};
         const summary = summarizeBackends(info);
         if (Object.keys(summary).length === 0) {
           return toolPayload(call, { error: 'No recipe/backend data available from server', answer_instruction: 'Tell the user recipe/backend data was not available from the server.' }, 'No recipe/backend data available', true);
@@ -917,7 +904,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
             onError: (err) => reject(err),
           });
         });
-        const fresh = await api.systemInfo().catch(() => null);
+        const fresh = (await refreshBackendCatalog())?.raw ?? null;
         const backendState = fresh ? (fresh as any).recipes?.[recipe]?.backends?.[backend]?.state : undefined;
         const result = {
           status: installResult,
