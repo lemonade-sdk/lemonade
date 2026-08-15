@@ -135,7 +135,8 @@ public:
         const std::map<std::string, std::string>& headers = {},
         long timeout_seconds = 300,
         std::function<void(int status_code)> on_status = nullptr,
-        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        std::function<bool()> should_cancel = nullptr);
 
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,

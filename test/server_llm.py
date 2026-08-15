@@ -303,6 +303,16 @@ class LLMTests(ServerTestBase):
         print(f"Response: {response.output[0].content[0].text}")
         self.assertGreater(len(response.output[0].content[0].text), 0)
 
+        # Non-streaming Responses requests record telemetry like chat does.
+        stats = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT).json()
+        self.assertGreater(
+            stats.get("input_tokens", 0),
+            0,
+            f"responses request did not record telemetry: {stats}",
+        )
+        self.assertGreater(stats.get("output_tokens", 0), 0)
+        self.assertIn("cache_tokens", stats)
+
     @skip_if_unsupported("responses_api_streaming")
     def test_008_responses_api_streaming(self):
         """Test the Responses API endpoint with streaming."""
@@ -772,6 +782,30 @@ class LLMTests(ServerTestBase):
             f"Expected food-related documents {expected_top_3} in top 3, got {actual_top_3}",
         )
 
+    @skip_if_unsupported("reranking")
+    def test_018d_reranking_error_is_not_reported_as_success(self):
+        """Test reranking a model that cannot rerank returns an error status."""
+        model = self.get_test_model("llm")
+
+        payload = {
+            "query": "A man is eating pasta.",
+            "documents": ["A man is eating food.", "A man is riding a horse."],
+            "model": model,
+        }
+
+        response = requests.post(
+            f"{self.base_url}/rerank", json=payload, timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+        print(
+            f"/rerank with {model}: HTTP {response.status_code} {response.text[:200]}"
+        )
+        self.assertGreaterEqual(response.status_code, 400, response.text)
+
+        error = response.json().get("error")
+        self.assertIsInstance(error, dict, response.text)
+        self.assertTrue(error.get("message"), response.text)
+
     # =========================================================================
     # MULTI-MODEL TESTS
     # =========================================================================
@@ -983,17 +1017,21 @@ class LLMTests(ServerTestBase):
                     print(f"Slots erase response: {erase_data}")
                     if "id_slot" in erase_data:
                         self.assertEqual(erase_data["id_slot"], slot_id_to_erase)
-                    elif "error" in erase_data:
-                        # Received an error response from the erase endpoint, this may be because the server
-                        # was not started with the --slot-save-path argument
-                        print(
-                            f"Slots erase backend error response: {erase_data['error']}"
-                        )
-                        pass
                     else:
                         self.fail(
                             f"Unexpected response from slots erase endpoint: {erase_data}"
                         )
+                elif erase_response.status_code == 501:
+                    error_data = erase_response.json()
+                    print(f"Slots erase backend error response: {error_data}")
+                    self.assertIn("error", error_data)
+                    self.assertEqual(
+                        error_data["error"].get("type"), "not_supported_error"
+                    )
+                    self.assertIn(
+                        "--slot-save-path",
+                        error_data["error"].get("message", ""),
+                    )
                 else:
                     error_data = erase_response.json()
                     print(f"Slots erase error response: {error_data}")
@@ -1001,11 +1039,57 @@ class LLMTests(ServerTestBase):
                         f"Failed to erase slot with id {slot_id_to_erase}, "
                         f"status code: {erase_response.status_code}"
                     )
-
             else:
                 self.fail("No slot id found to erase in /api/v1/slots response")
         else:
             self.fail("No slots available to test erasure in /api/v1/slots endpoint")
+
+    @skip_if_unsupported("slots")
+    def test_023b_cache_tokens_telemetry(self):
+        """A repeated conversation prefix surfaces cache_tokens in /stats."""
+        client = self.get_openai_client()
+        model = self.get_test_model("llm")
+
+        shared_history = [
+            {
+                "role": "system",
+                "content": "You are a concise assistant. " + "Context filler. " * 60,
+            },
+            {"role": "user", "content": "Reply with the single word: ready."},
+        ]
+        first = client.chat.completions.create(
+            model=model,
+            messages=shared_history,
+            max_completion_tokens=10,
+            stream=False,
+        )
+        followup = shared_history + [
+            {"role": "assistant", "content": first.choices[0].message.content},
+            {"role": "user", "content": "Reply with the single word: again."},
+        ]
+        client.chat.completions.create(
+            model=model,
+            messages=followup,
+            max_completion_tokens=10,
+            stream=False,
+        )
+
+        response = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("cache_tokens", data)
+        self.assertIn("cache_tokens_total", data)
+        self.assertGreater(
+            data["cache_tokens"],
+            0,
+            "second request repeats the first request's prefix, so llama-server "
+            f"should reuse cached prompt tokens (stats: {data})",
+        )
+        self.assertGreater(data["cache_tokens_total"], 0)
+        print(
+            f"[OK] cache telemetry: cache_tokens={data['cache_tokens']}, "
+            f"cache_tokens_total={data['cache_tokens_total']}"
+        )
 
     @skip_if_unsupported("tokenize")
     def test_024_tokenize(self):

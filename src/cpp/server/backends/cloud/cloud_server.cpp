@@ -120,7 +120,7 @@ bool is_chat_model(const json& m) {
 }
 
 std::vector<std::string> chat_labels() {
-    return {"cloud"};
+    return {"cloud", "chat"};
 }
 
 // Detect capability labels (vision / tool-calling / reasoning) from a
@@ -494,11 +494,16 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                                             long timeout_seconds,
                                             TelemetryCallback telemetry_callback) {
     // Telemetry from cloud streaming responses: OpenAI-shape SSE puts the
-    // usage block in the final pre-[DONE] chunk. We don't parse it here —
-    // the Router-level streaming path delivers cleaner numbers than we can
-    // reconstruct from chunked output, and matching local backends here
-    // would only diverge subtly. Passing the callback through preserves the
-    // contract for callers that pass one in.
+    // usage block in the final pre-[DONE] chunk, but only when the request
+    // sets stream_options.include_usage. When the client did not ask for it,
+    // it is injected into the forwarded request and the resulting usage-only
+    // frame is swallowed before the relay, so the client-visible stream is
+    // unchanged while telemetry still gets provider-reported usage.
+    auto error_telemetry = [](const std::string& message) {
+        StreamingProxy::TelemetryData telemetry;
+        telemetry.error_message = message;
+        return telemetry;
+    };
     auto sse_error = [](const std::string& message, const std::string& type,
                         const json& extra = json::object()) {
         json err = {{"error", {{"message", message}, {"type", type}}}};
@@ -513,7 +518,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         sink.write(error_msg.c_str(), error_msg.size());
         sink.done();
         if (telemetry_callback) {
-            telemetry_callback(0, 0, 0.0, 0.0, "Cloud model not loaded");
+            telemetry_callback(error_telemetry("Cloud model not loaded"));
         }
         return;
     }
@@ -531,10 +536,21 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     // a body the client can interpret, which is more informative than
     // refusing locally.
     std::string forwarded_body = request_body;
+    bool injected_usage = false;
     try {
         json req = json::parse(request_body);
         req["model"] = upstream_model_;
         utils::JsonUtils::add_legacy_max_tokens_alias(req);
+        if (sse && (suffix == "/chat/completions" || suffix == "/completions")) {
+            json& stream_options = req["stream_options"];
+            if (!stream_options.is_object()) {
+                stream_options = json::object();
+            }
+            if (!stream_options.value("include_usage", false)) {
+                stream_options["include_usage"] = true;
+                injected_usage = true;
+            }
+        }
         forwarded_body = req.dump();
     } catch (const json::exception&) {
         // Best-effort: forward whatever we got.
@@ -552,7 +568,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         sink.write(error_msg.c_str(), error_msg.size());
         sink.done();
         if (telemetry_callback) {
-            telemetry_callback(0, 0, 0.0, 0.0, "Missing API credentials");
+            telemetry_callback(error_telemetry("Missing API credentials"));
         }
         return;
     }
@@ -581,6 +597,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
             int input_tokens = 0;
             int output_tokens = 0;
+            int cache_tokens = -1;
             double time_to_first_token = 0.0;
             double tokens_per_second = 0.0;
             bool has_first_token = false;
@@ -603,8 +620,40 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                             if (usage.contains("completion_tokens") && usage["completion_tokens"].is_number()) {
                                 output_tokens = usage["completion_tokens"].get<int>();
                             }
+                            if (usage.contains("prompt_tokens_details") &&
+                                usage["prompt_tokens_details"].is_object() &&
+                                usage["prompt_tokens_details"].contains("cached_tokens") &&
+                                usage["prompt_tokens_details"]["cached_tokens"].is_number()) {
+                                cache_tokens = usage["prompt_tokens_details"]["cached_tokens"].get<int>();
+                            }
                         }
                     } catch (...) {}
+                }
+            };
+
+            // A frame that carries usage but no choices content exists only
+            // because include_usage was requested. Swallowing is limited to
+            // that shape: a provider that attaches usage to a content-bearing
+            // final chunk keeps its content (and its usage field) intact.
+            auto is_usage_only_frame = [](const std::string& line) {
+                if (line.rfind("data: ", 0) != 0) {
+                    return false;
+                }
+                std::string json_str = line.substr(6);
+                if (json_str == "[DONE]") {
+                    return false;
+                }
+                try {
+                    auto chunk = json::parse(json_str);
+                    if (!chunk.is_object() || !chunk.contains("usage") || chunk["usage"].is_null()) {
+                        return false;
+                    }
+                    if (!chunk.contains("choices")) {
+                        return true;
+                    }
+                    return chunk["choices"].is_array() && chunk["choices"].empty();
+                } catch (...) {
+                    return false;
                 }
             };
 
@@ -626,17 +675,36 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                             has_done_marker = true;
                         }
 
-                        // Parse SSE lines
-                        sse_line_buffer.append(data, length);
-                        StreamingProxy::process_sse_lines(sse_line_buffer, process_cloud_line);
-
                         if (!has_first_token && std::string_view(data, length).find("data: ") != std::string_view::npos) {
                             has_first_token = true;
                             time_to_first_token = std::chrono::duration<double>(
                                 std::chrono::steady_clock::now() - start_time).count();
                         }
 
-                        return sink.write(data, length);
+                        if (!injected_usage) {
+                            // Parse SSE lines for telemetry; the client asked for
+                            // whatever usage frames arrive, so relay bytes verbatim.
+                            sse_line_buffer.append(data, length);
+                            StreamingProxy::process_sse_lines(sse_line_buffer, process_cloud_line);
+                            return sink.write(data, length);
+                        }
+
+                        // include_usage was injected: relay complete lines and
+                        // drop the usage-only frame the injection added.
+                        bool client_ok = true;
+                        sse_line_buffer.append(data, length);
+                        StreamingProxy::process_sse_lines(
+                            sse_line_buffer, [&](const std::string& line) {
+                                process_cloud_line(line);
+                                if (is_usage_only_frame(line)) {
+                                    return;
+                                }
+                                std::string out = line + "\n";
+                                if (!sink.write(out.data(), out.size())) {
+                                    client_ok = false;
+                                }
+                            });
+                        return client_ok;
                     }
                     body_buffer.append(data, length);
                     return true;
@@ -651,7 +719,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 if (result.curl_code == CURLE_WRITE_ERROR) {
                     LOG(WARNING, "Cloud") << "Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
                     if (telemetry_callback) {
-                        telemetry_callback(0, 0, 0.0, 0.0, "Client disconnected during stream");
+                        telemetry_callback(error_telemetry("Client disconnected during stream"));
                     }
                     return;
                 } else if (result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR) {
@@ -672,7 +740,8 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 sink.write(error_msg.c_str(), error_msg.size());
                 sink.done();
                 if (telemetry_callback) {
-                    telemetry_callback(0, 0, 0.0, 0.0, "cloud (" + provider_ + ") request failed with status " + std::to_string(result.status_code));
+                    telemetry_callback(error_telemetry(
+                        "cloud (" + provider_ + ") request failed with status " + std::to_string(result.status_code)));
                 }
                 return;
             }
@@ -680,6 +749,15 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             // 200 OK: if streaming_mode is true we've already flushed everything.
             // If we somehow buffered on a 200 (provider sent non-SSE success),
             // flush the buffer now so the client at least sees the payload.
+            if (injected_usage && !sse_line_buffer.empty()) {
+                // Line-mode relay held back a trailing fragment with no final
+                // newline; deliver it unless it is the injected usage frame.
+                process_cloud_line(sse_line_buffer);
+                if (!is_usage_only_frame(sse_line_buffer)) {
+                    sink.write(sse_line_buffer.data(), sse_line_buffer.size());
+                }
+                sse_line_buffer.clear();
+            }
             if (!body_buffer.empty()) {
                 sink.write(body_buffer.data(), body_buffer.size());
             }
@@ -697,7 +775,13 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                         tokens_per_second = output_tokens / generation_duration;
                     }
                 }
-                telemetry_callback(input_tokens, output_tokens, time_to_first_token, tokens_per_second, "");
+                StreamingProxy::TelemetryData telemetry;
+                telemetry.input_tokens = input_tokens;
+                telemetry.output_tokens = output_tokens;
+                telemetry.cache_tokens = cache_tokens;
+                telemetry.time_to_first_token = time_to_first_token;
+                telemetry.tokens_per_second = tokens_per_second;
+                telemetry_callback(telemetry);
             }
         } else {
             utils::HttpResponse result = utils::HttpClient::post_stream(
@@ -715,7 +799,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 if (result.curl_code == CURLE_WRITE_ERROR) {
                     LOG(WARNING, "Cloud") << "Client disconnected during stream: CURL error: " << result.curl_error << std::endl;
                     if (telemetry_callback) {
-                        telemetry_callback(0, 0, 0.0, 0.0, "Client disconnected during stream");
+                        telemetry_callback(error_telemetry("Client disconnected during stream"));
                     }
                     return;
                 } else {
@@ -725,11 +809,11 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             if (result.status_code != 200) {
                 LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code << std::endl;
                 if (telemetry_callback) {
-                    telemetry_callback(0, 0, 0.0, 0.0, "status_code " + std::to_string(result.status_code));
+                    telemetry_callback(error_telemetry("status_code " + std::to_string(result.status_code)));
                 }
             } else {
                 if (telemetry_callback) {
-                    telemetry_callback(0, 0, 0.0, 0.0, "");
+                    telemetry_callback(StreamingProxy::TelemetryData{});
                 }
             }
             sink.done();
@@ -737,7 +821,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     } catch (const std::exception& e) {
         LOG(ERROR, "Cloud") << "Streaming request failed: " << e.what() << std::endl;
         if (telemetry_callback) {
-            telemetry_callback(0, 0, 0.0, 0.0, e.what());
+            telemetry_callback(error_telemetry(e.what()));
         }
         try {
             std::string error_msg = sse_error(e.what(), "streaming_error");

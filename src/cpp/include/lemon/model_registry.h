@@ -73,6 +73,36 @@ std::string remote_registry_source_name(RemoteRegistrySource source);
 std::string remote_registry_display_name(RemoteRegistrySource source);
 bool is_remote_registry_source(const std::string& source);
 
+// Detects a Hugging Face or ModelScope model URL. On a match returns true, sets
+// `out_source` to the registry and `out_repo_id` to the `owner/repo` the URL
+// points at (query string, fragment and any deeper path are dropped). Non-URL
+// inputs return false and leave the outputs untouched. Shared by the CLI and
+// the server so both resolve provider URLs the same way.
+bool detect_registry_url(const std::string& value,
+                         RemoteRegistrySource& out_source,
+                         std::string& out_repo_id);
+
+// True when a checkpoint is an `owner/repo` registry id (optionally with a
+// `:variant` suffix). Self-managed backend identifiers such as FLM tags
+// (`gemma3:4b`) have no owner segment and return false.
+bool checkpoint_looks_like_repo_id(const std::string& checkpoint);
+
+// Applies the default-source policy to a /pull request body in place. The
+// primary checkpoint follows the ModelManager precedence (`checkpoints.main`
+// when a `checkpoints` object is present, otherwise `checkpoint`):
+//   * A provider URL in any checkpoint is normalized to `owner/repo` and its
+//     registry recorded as `source` (unless the caller already named one). Every
+//     registry-backed checkpoint is normalized and must resolve to one registry.
+//   * An unqualified, registry-backed primary checkpoint inherits
+//     `default_source`.
+// Explicit `source`/`registry_source`, local imports, self-managed recipes
+// (`flm`, `cloud`), and non-registry checkpoints are left untouched, so a
+// registry source is only ever persisted for genuinely registry-backed pulls.
+// Throws std::invalid_argument when a provider URL conflicts with an explicit
+// source or when checkpoints disagree on the registry (callers map this to 400).
+void apply_default_pull_source(nlohmann::json& request_json,
+                               const std::string& default_source);
+
 // Normalize one provider-specific model-list entry into Lemonade's registry contract.
 // Exposed so fixture tests and future clients share the same field mapping.
 RegistrySearchResult normalize_registry_search_result(

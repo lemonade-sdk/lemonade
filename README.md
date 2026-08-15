@@ -98,6 +98,17 @@ lemonade list
 lemonade pull Gemma-4-E2B-it-GGUF
 ```
 
+To manage model aliases for environment-independent naming and active-standby failover:
+
+```
+lemonade alias add production-llm Gemma-4-E2B-it-GGUF
+lemonade alias list
+
+# Instant active-standby failover to a different model target
+lemonade alias add production-llm Qwen3-0.6B-GGUF
+lemonade alias remove production-llm
+```
+
 To see the backends available on your PC:
 
 ```
@@ -159,7 +170,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     </tr>
     <tr>
       <td><code>rocm</code></td>
-      <td>Supported AMD ROCm iGPU/dGPU families, incl. AMD Instinct MI300X (gfx942) and MI350X (gfx950, Linux + stable only)*</td>
+      <td>AMD GPUs supported by ROCm</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
@@ -280,7 +291,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td rowspan="5"><strong>Image generation</strong></td>
+      <td rowspan="6"><strong>Image generation</strong></td>
       <td rowspan="5"><code>sd-cpp</code></td>
       <td><code>metal</code></td>
       <td>Apple Silicon GPU</td>
@@ -305,6 +316,12 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU</td>
       <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="1"><code>thenoise</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Supported AMD ROCm iGPU families</td>
+      <td>Linux</td>
     </tr>
     <tr>
       <td rowspan="3"><strong>3D generation</strong></td>

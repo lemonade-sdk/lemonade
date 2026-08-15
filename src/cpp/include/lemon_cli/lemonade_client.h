@@ -94,6 +94,11 @@ public:
     nlohmann::json get_model_info(const std::string& model_name) const;
     int launch_model(const std::string& model_name, const nlohmann::json& recipe_options, const std::string& agent);
 
+    // Alias management commands
+    int alias_add(const std::string& alias, const std::string& target_model) const;
+    int alias_remove(const std::string& alias) const;
+    int alias_list() const;
+
     // Status commands
     int status(int display_port = 0) const;
     std::vector<ModelInfo> get_models(bool show_all) const;

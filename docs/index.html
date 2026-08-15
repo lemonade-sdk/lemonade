@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lemonade: Local AI for Text, Images, and Speech</title>
   <link rel="icon" href="./favicon.ico">
-  <link rel="stylesheet" href="assets/website-styles.css?v=responsive-polish-3">
+  <link rel="stylesheet" href="assets/website-styles.css?v=ticker-loop-fix">
   <link rel="stylesheet" href="assets/persona-demo.css?v=responsive-polish-3">
   <link rel="stylesheet" href="assets/flowchart.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -314,14 +314,20 @@
         switch (gsPlatform) {
           case 'windows':
             html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi">' +
-              '<span class="material-symbols-outlined">desktop_windows</span> Download for Windows (.msi)</a>';
+              '<span class="material-symbols-outlined">desktop_windows</span> Download for Windows (.msi)</a>' +
+              '<div class="gs-install-block">' +
+                gsConsoleHtml(['winget install --id AMD.LemonadeServer -e']) +
+              '</div>';
             break;
           case 'apple':
-            html = v
+            html = (v
               ? '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade-' + v + '-Darwin.pkg">' +
                 '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>'
               : '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest">' +
-                '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>';
+                '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>') +
+              '<div class="gs-install-block">' +
+                gsConsoleHtml(['brew install --cask lemonade-server']) +
+              '</div>';
             break;
           case 'docker':
             html = gsConsoleHtml([
@@ -728,14 +734,19 @@
         var logos = [
           { href: 'https://github.com/ggml-org/llama.cpp', img: 'llama_cpp.png', alt: 'llama.cpp' },
           { href: 'https://github.com/microsoft/onnxruntime', img: 'onnx_runtime.png', alt: 'ONNX Runtime' },
-          { href: 'https://github.com/FastFlowLM/FastFlowLM', img: 'fastflowlm.png', alt: 'FastFlowLM' },
+          { href: 'https://github.com/ROCm/FastFlowLM', img: 'fastflowlm.png', alt: 'FastFlowLM' },
           { href: 'https://github.com/amd/RyzenAI-SW', img: 'ryzen_ai_sw.png', alt: 'Ryzen AI SW' },
           { href: 'https://rocm.docs.amd.com/', img: 'rocm.png', alt: 'ROCm' },
           { href: 'https://huggingface.co/', img: 'hugging_face.png', alt: 'Hugging Face' },
           { href: 'https://www.vulkan.org/', img: 'vulkan.png', alt: 'Vulkan' },
           { href: 'https://github.com/ggml-org/whisper.cpp', img: 'whisper_cpp.png', alt: 'whisper.cpp' },
           { href: 'https://github.com/leejet/stable-diffusion.cpp', img: 'stable_diffusion_cpp.png', alt: 'stable-diffusion.cpp' },
-          { href: 'https://github.com/lucasjinreal/Kokoros', img: 'kokoros.png', alt: 'Kokoros' }
+          { href: 'https://github.com/lucasjinreal/Kokoros', img: 'kokoros.png', alt: 'Kokoros' },
+          { href: 'https://github.com/vllm-project/vllm', img: 'vllm.png', alt: 'vLLM' },
+          { href: 'https://github.com/moonshine-ai/moonshine', img: 'moonshine.png', alt: 'Moonshine' },
+          { href: 'https://github.com/OpenMOSS/MOSS-TTSD', img: 'openmoss.png', alt: 'OpenMOSS' },
+          { href: 'https://github.com/microsoft/TRELLIS', img: 'trellis.png', alt: 'TRELLIS' },
+          { href: 'https://github.com/ace-step/ACE-Step', img: 'ace_step.png', alt: 'ACE-Step' }
         ];
         var html = logos.map(function(l) {
           return '<a href="' + l.href + '" title="' + l.alt + '" target="_blank" rel="noopener" class="hp-logo-chip">' +

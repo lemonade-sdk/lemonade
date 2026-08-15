@@ -571,23 +571,14 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
         }
     }
 
-    Telemetry telemetry;
+    StreamingProxy::TelemetryData telemetry;
     bool has_telemetry = false;
-    std::string telemetry_error = "";
 
     WrappedServer::forward_streaming_request(
         endpoint, body, sink, sse, timeout_seconds,
-        [&telemetry, &has_telemetry, &telemetry_error](int input_tokens,
-                                     int output_tokens,
-                                     double time_to_first_token,
-                                     double tokens_per_second,
-                                     const std::string& error_message) {
+        [&telemetry, &has_telemetry](const StreamingProxy::TelemetryData& reported) {
             has_telemetry = true;
-            telemetry.input_tokens = input_tokens;
-            telemetry.output_tokens = output_tokens;
-            telemetry.time_to_first_token = time_to_first_token;
-            telemetry.tokens_per_second = tokens_per_second;
-            telemetry_error = error_message;
+            telemetry = reported;
         });
 
     if (has_telemetry) {
@@ -602,11 +593,7 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
         }
 
         if (telemetry_callback) {
-            telemetry_callback(telemetry.input_tokens,
-                               telemetry.output_tokens,
-                               telemetry.time_to_first_token,
-                               telemetry.tokens_per_second,
-                               telemetry_error);
+            telemetry_callback(telemetry);
         }
     }
 }
