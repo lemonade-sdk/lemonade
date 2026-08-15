@@ -10,7 +10,13 @@ Remote provenance is stored separately from local origin:
 - `ModelInfo::registry_source` identifies the remote registry: `huggingface` or `modelscope`.
 - The public registration field is `source`. For a remote model it is canonicalized and persisted as the registry name. `registry_source` is also accepted in exported/internal records.
 
-Hugging Face is the default for backward compatibility. A model and all of its checkpoints have one registry source. Collection components inherit the collection source unless an inline component definition explicitly declares another source.
+Hugging Face is the shipped default for backward compatibility, but the effective default for source-less pulls is the `default_model_source` config key (see [Default source policy](#default-source-policy) below). A model and all of its checkpoints have one registry source. Collection components inherit the collection source unless an inline component definition explicitly declares another source.
+
+## Default source policy
+
+When a pull request names no registry — no `--source`, no `source`/`registry_source` field, and no provider URL — lemond falls back to the `default_model_source` config key (`huggingface` or `modelscope`, default `huggingface`). Resolution is server-side and authoritative so every client (CLI, desktop, web, Ollama-compatible endpoints) inherits the same policy, per the many-clients-one-server contract. The resolution happens once, up front in the `/pull` handler, so the chosen registry is persisted with the model and stays consistent across download, cache layout, and later refresh. A bare `pull <registered-name>` refresh carries no checkpoint and keeps its recorded provenance rather than re-applying the default. `GET /pull/variants` echoes the resolved `source` so the CLI's interactive flow records the same registry the weights came from.
+
+Provider URL detection is shared code (`detect_registry_url`) applied server-side in `apply_default_pull_source`, not only in the CLI. A provider URL is authoritative for its registry: every registry-backed checkpoint in the body (primary and secondary entries such as `mmproj`, `vae`, or `text_encoder`) is normalized to `owner/repo`, and the whole model must resolve to a single registry. The primary checkpoint follows the same precedence as model registration — `checkpoints.main` when a `checkpoints` object is present, otherwise `checkpoint`. A `source`/`registry_source` that conflicts with a checkpoint's provider URL, or checkpoints that disagree on the registry, are rejected with `400`, matching the CLI.
 
 ## Registry interface
 

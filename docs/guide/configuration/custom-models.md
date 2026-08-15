@@ -6,7 +6,7 @@ This guide explains every supported way to add a custom model to Lemonade Server
 
 ### Pull from Hugging Face or ModelScope
 
-Hugging Face remains the default registry, so existing commands keep working unchanged:
+A source-less pull uses the server's configured `default_model_source` (shipped default: Hugging Face), so existing commands keep working unchanged:
 
 ```bash
 lemonade pull org/repo
@@ -32,7 +32,7 @@ For supported repository layouts, Lemonade lists GGUF quantizations and sharded 
 Examples:
 
 ```bash
-# Hugging Face (default)
+# Hugging Face (shipped default source)
 lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
 # ModelScope
@@ -85,10 +85,10 @@ Supported registration flags:
 
 | Flag | Description |
 |------|-------------|
-| `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` (default) or `modelscope`. |
+| `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. |
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
 | `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
-| `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
+| `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `chat`, `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. When no [deployment label](../../api/openai.md#model-labels) is given, the recipe's default is added — `chat` for `llamacpp`, `flm`, `ryzenai-llm` and `vllm`; `transcription` for `whispercpp`; `image` for `sd-cpp`; and so on. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
 ### Register an omni collection
@@ -195,7 +195,7 @@ Example collection file:
 
 ### Register via API
 
-The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` (the default) or `modelscope`; the server canonicalizes and persists it for later update checks. Use this when integrating Lemonade into another app or script:
+The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
 
 ```bash
 curl -X POST http://localhost:13305/v1/pull \
@@ -378,7 +378,7 @@ This file contains a JSON object where each key is a model name and each value d
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `source` | No | String | Remote registry: `huggingface` (default) or `modelscope`. Persisted and used for variants, downloads, cache paths, links, and update checks. |
+| `source` | No | String | Remote registry: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A `source`/`registry_source` that conflicts with a provider URL in the checkpoint is rejected with 400. |
 | `checkpoint` | Yes* | String | Registry checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
 | `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |
@@ -466,7 +466,7 @@ For `sd-cpp` recipe models, you can specify default image generation parameters:
 
 - In `user_models.json`, store model names **without** the `user.` prefix (e.g., `MyCustomModel`).
 - When referencing the model in API calls, CLI commands, or `recipe_options.json`, use the **full prefixed name** (e.g., `user.MyCustomModel`).
-- Labels like `custom` are added automatically. Additional labels (`reasoning`, `vision`, `embeddings`, `reranking`) can be set via the `pull` CLI/API flags, or by including a `labels` array in the JSON entry.
+- Labels like `custom` are added automatically, as is the recipe's default deployment label when the entry names none of its own (`chat` for a `llamacpp` entry, `image` for an `sd-cpp` one). Additional labels (`reasoning`, `vision`, `embeddings`, `reranking`) can be set via the `pull` CLI/API flags, or by including a `labels` array in the JSON entry.
 
 ## `recipe_options.json` Reference
 
