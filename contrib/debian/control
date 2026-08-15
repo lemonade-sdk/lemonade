@@ -53,6 +53,7 @@ Depends:
  unzip,
  libatomic1,
  libgomp1,
+ libomp1,
 Description: Local LLM serving with GPU and NPU acceleration server
  Lemonade helps users run local LLMs with the highest performance by
  configuring state-of-the-art inference engines for their NPUs and GPUs.
