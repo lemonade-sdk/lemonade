@@ -1,13 +1,12 @@
 import type { LoadedModel, ModelInfo } from './api';
 
 /**
- * What a model is offered for. This mirrors the server's deployment modes
- * one-for-one — see the "Deployment labels" table in docs/api/openai.md and
- * find_deployment_mode() in src/cpp/include/lemon/model_types.h.
+ * Mirrors the server's deployment modes one-for-one — see the "Deployment
+ * labels" table in docs/api/openai.md and find_deployment_mode() in
+ * src/cpp/include/lemon/model_types.h.
  *
  * Being a collection is not a capability: an Omni or Router collection serves
- * chat, and says so with the `chat` label. Its collection-ness is structure,
- * read from the recipe by modelStructure().
+ * chat and says so with the `chat` label, so its collection-ness is structure.
  */
 export type ModelCapability =
   | 'chat'
@@ -21,10 +20,8 @@ export type ModelCapability =
   | 'classification'
   | 'unknown';
 
-/** Whether a model is one backend or a collection routing to several. */
 export type ModelStructure = 'single' | 'omni' | 'router';
 
-/** What a row or badge leads with: a collection shows itself, not what it serves. */
 export type ModelIdentity = ModelCapability | 'omni' | 'router';
 
 export interface ModelSnapshot {
@@ -37,12 +34,9 @@ export interface ModelSnapshot {
 }
 
 /**
- * The nine deployment labels, and the two spellings the server also accepts.
- * A model declares exactly one of these; the server stamps a recipe default
- * when a registration names none, so anything served carries one.
- *
- * Keep in sync with docs/api/openai.md — tests/model-kind-classification.runtime.cjs
- * fails if this drifts from the documented set.
+ * A model declares exactly one of these; the server stamps a recipe default when
+ * a registration names none, so anything served carries one. Keep in sync with
+ * docs/api/openai.md — model-kind-classification.runtime.cjs fails on drift.
  */
 export const DEPLOYMENT_LABEL_KIND: Record<string, ModelCapability> = {
   chat: 'chat',
@@ -76,12 +70,10 @@ const OMNI_COLLECTION_PREFIX = `${OMNI_COLLECTION_RECIPE}.`;
 const ROUTER_COLLECTION_RECIPE = 'collection.router';
 const ROUTER_COLLECTION_PREFIX = `${ROUTER_COLLECTION_RECIPE}.`;
 
-/** Audio as an input modality of a chat model, not a deployment mode of its own. */
 const AUDIO_INPUT_LABELS = new Set([
   'audio-input', 'audio-chat', 'chat-transcription', 'speech-input',
 ]);
 
-/** Image/vision as an input modality of a chat model. */
 export const IMAGE_INPUT_LABELS = new Set([
   'vision', 'image-input', 'vision-language', 'vlm', 'image-text-to-text',
   'multimodal', 'multi-modal',
@@ -100,13 +92,9 @@ function normalizedStringList(value: unknown): string[] {
 }
 
 /**
- * Resolve a label set to the mode it deploys in.
- *
  * `chat` is tested first so an omni model that also declares a mode it could
  * serve standalone still resolves to chat, exactly as find_deployment_mode()
- * does server-side. Input modalities (`vision`, `chat-transcription`) and
- * characteristics (`reasoning`, `tool-calling`) never name a mode and are
- * ignored here — they decorate a surface rather than choosing one.
+ * does. Input modalities and characteristics name no mode and are ignored.
  */
 export function deploymentKindFromLabels(labels?: readonly string[] | null): ModelCapability {
   const lower = normalizedStringList(labels);
@@ -139,8 +127,7 @@ export function capabilityFromModelInfo(model: ModelInfo): ModelCapability {
 
 export function capabilityFromLoaded(model?: LoadedModel | null): ModelCapability {
   if (!model) return 'unknown';
-  // The router reports the mode it actually launched the subprocess for, which
-  // is the strongest evidence available for a running model.
+  // The router reports the mode it actually launched the subprocess for.
   const fromType = LOADED_TYPE_KIND[normalizeModelType(model.type)];
   if (fromType) return fromType;
   const labelled = deploymentKindFromLabels(model.labels);
@@ -150,10 +137,7 @@ export function capabilityFromLoaded(model?: LoadedModel | null): ModelCapabilit
   return isCollectionRecipe(model.recipe) ? 'chat' : 'unknown';
 }
 
-/**
- * The identity a row or badge leads with. A collection routes to backends
- * rather than being one, so it shows itself rather than the chat it serves.
- */
+/** A collection routes to backends rather than being one, so it shows itself. */
 export function identityFor(capability: ModelCapability, recipe?: string | null): ModelIdentity {
   const structure = modelStructure(recipe);
   return structure === 'single' ? capability : structure;
@@ -203,10 +187,7 @@ export function modelSupportsChatAudioInput(
     .some(value => AUDIO_INPUT_LABELS.has(value));
 }
 
-/**
- * True when image input is an input modality of a chat model. A plain LLM stays
- * in Chat mode but must not expose the image attachment affordance.
- */
+/** Image input as a modality of a chat model, never a mode of its own. */
 export function modelSupportsChatImageInput(
   modelInfo?: ModelInfo | null,
   loadedModel?: LoadedModel | null,
@@ -226,7 +207,6 @@ const COMPOSER_CAPABILITIES: ReadonlySet<ModelCapability> = new Set<ModelCapabil
   'chat', 'image', 'audio', 'audio-generation', 'tts', 'model3d',
 ]);
 
-/** Capabilities the chat composer can drive directly. */
 export function isComposerSelectableCapability(capability: ModelCapability): boolean {
   return COMPOSER_CAPABILITIES.has(capability);
 }

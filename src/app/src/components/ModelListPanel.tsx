@@ -286,8 +286,7 @@ export function modelIsOmniCollection(m: ModelInfo): boolean {
 
 export function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
   if (filter === 'all') return true;
-  // A collection has its own task and is never also counted as Chat, so the
-  // identity — which resolves a collection structurally — answers every tab.
+  // A collection has its own task and is never also counted as Chat.
   const identity = identityFromModelInfo(m);
   if (filter === 'embedding') return identity === 'embedding' || identity === 'reranking';
   if (filter === 'llm') return identity === 'chat';

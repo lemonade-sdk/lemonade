@@ -174,7 +174,6 @@ function labelsFor(capability: CustomModelCapability, extra: string[] = []): str
   return [...new Set([...base, ...extra.map(l => l.trim().toLowerCase()).filter(Boolean)])];
 }
 
-/** The machine-written half of a record's labels, for a given capability. */
 export function generatedLabelsFor(capability: CustomModelCapability): Set<string> {
   return new Set(labelsFor(capability));
 }
@@ -425,7 +424,7 @@ const IMPORTED_TYPE_KIND: Record<string, ModelCapability> = {
   reranker: 'reranking', rerank: 'reranking',
 };
 
-/** The shared image-input vocabulary, plus the editor's own Omni shorthand. */
+/** The shared vocabulary plus the editor's own `omni` shorthand. */
 function indicatesImageInput(label: string): boolean {
   return IMAGE_INPUT_LABELS.has(label) || label === 'omni';
 }
