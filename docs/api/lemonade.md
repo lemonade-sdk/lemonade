@@ -23,6 +23,9 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh (GLB) from an image |
 | `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
+| `GET` | [`/v1/models/{id}/options`](#get-v1modelsidoptions) | Read a model's saved, effective, and default recipe options |
+| `POST` | [`/v1/models/{id}/options`](#post-v1modelsidoptions) | Save recipe options for a model without loading it |
+| `DELETE` | [`/v1/models/{id}/options`](#delete-v1modelsidoptions) | Reset a model's recipe options to defaults |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
@@ -222,6 +225,135 @@ When `include_paths=true` is supplied, each file entry also includes `path`:
 | `files[].role` | Checkpoint role, for example `main`, `mmproj`, or another recipe-specific role. |
 | `files[].size_bytes` | File size in bytes. Directories are summed recursively. Missing files report `0`. |
 | `files[].exists` | Whether the resolved path currently exists on disk. |
+
+## `GET /v1/models/{id}/options`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Read a model's recipe options, separated by layer, without loading it. With `POST` and `DELETE` on the same path, this manages per-model options independently of [`/v1/load`](#post-v1load).
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
+```
+
+### Response format
+
+`effective` is the exact request body a [`POST /v1/load`](#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get. For `llamacpp`, with `--no-mmap` saved and the context size left automatic:
+
+```json
+{
+  "model_name": "Qwen3-0.6B-GGUF",
+  "recipe": "llamacpp",
+  "saved": {
+    "llamacpp_args": "--no-mmap"
+  },
+  "effective": {
+    "auto_evict": null,
+    "ctx_size": -1,
+    "downsize_idle_timeout": 60,
+    "evict_idle_timeout": 300,
+    "evict_weight_factor": 1.0,
+    "llamacpp_args": "--no-mmap",
+    "llamacpp_backend": "vulkan",
+    "llamacpp_device": "",
+    "merge_args": true,
+    "model_name": "Qwen3-0.6B-GGUF"
+  },
+  "defaults": {
+    "auto_evict": null,
+    "ctx_size": -1,
+    "downsize_idle_timeout": 60,
+    "evict_idle_timeout": 300,
+    "evict_weight_factor": 1.0,
+    "llamacpp_args": "",
+    "llamacpp_backend": "vulkan",
+    "llamacpp_device": "",
+    "merge_args": true,
+    "model_name": "Qwen3-0.6B-GGUF"
+  },
+  "resolved_ctx_size": 32768,
+  "load_command": "curl -X POST $LEMONADE_BASE_URL/v1/load -H \"Content-Type: application/json\" -d '{\"ctx_size\":-1, ...}'"
+}
+```
+
+`load_command` is `effective` posted to [`/v1/load`](#post-v1load): the exact load the model would get right now, as a command.
+
+The base URL is left as `$LEMONADE_BASE_URL`, and the API key, when the server requires one, as `$LEMONADE_API_KEY`. The server cannot fill either in: it always listens over plain HTTP, so a client that reached it through a TLS-terminating proxy is on `https` without the server ever knowing, and the `Host` header is only the caller's own claim about where it sent the request. Export the variables to run the command as-is:
+
+```bash
+export LEMONADE_BASE_URL=http://localhost:13305
+```
+
+A client that already knows its base URL — every GUI and CLI does — can substitute the two tokens before displaying the command.
+
+The quoting is for POSIX shells: bash, zsh, and PowerShell 7.3 and newer, which is where PowerShell began passing arguments to native commands unchanged. `cmd.exe` does not treat `'` as a quote character at all. In either of those, build the request from `effective` rather than pasting the command.
+
+| Field | Description |
+|-------|-------------|
+| `model_name` | The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body. |
+| `recipe` | The recipe the option names belong to. |
+| `saved` | The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`. |
+| `effective` | The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. |
+| `defaults` | What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically. |
+| `resolved_ctx_size` | The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. |
+| `load_command` | The curl command that reproduces the load: `effective` posted to `/v1/load`, with `$LEMONADE_BASE_URL` (and `$LEMONADE_API_KEY` on a key-protected server) left for the caller to fill in. |
+
+> Note: per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
+
+## `POST /v1/models/{id}/options`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Save recipe options for a model without loading it. The request body is a flat object of the same recipe options [`/v1/load`](#post-v1load) accepts. The URL identifies the model; a `model_name` in the body is ignored.
+
+The request merges into the model's saved entry, so keys you don't mention are left alone. `null` removes an option, and the model falls back to the next layer of the [priority chain](#post-v1load). [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
+
+`dry_run: true` validates and resolves the request identically but persists nothing: `effective`, `resolved_ctx_size`, and `load_command` describe the state the save would produce, while `saved` keeps reporting the entry on disk. Use it to preview a change before committing it.
+
+`ctx_size` takes a positive whole number, or `-1` to pin the model to automatic sizing even when the server-wide `ctx_size` is a specific number.
+
+A `400` reports an unrecognized option name, an option from a different recipe, a value of the wrong type, or an invalid `ctx_size`, and nothing from that request is saved.
+
+Saving never loads or reloads the model, so a model that is already running keeps its current options until it is next loaded.
+
+> Note: `pinned` is not settable here and is omitted from `effective` and `defaults`. It belongs to [`/v1/load`](#post-v1load) and `/internal/pin`.
+
+### Example requests
+
+Save a context size without loading the model:
+
+```bash
+curl -X POST http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options \
+  -H "Content-Type: application/json" \
+  -d '{"ctx_size": 8192, "llamacpp_backend": "vulkan"}'
+```
+
+Set the context size back to automatic, leaving the backend choice saved:
+
+```bash
+curl -X POST http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options \
+  -H "Content-Type: application/json" \
+  -d '{"ctx_size": -1}'
+```
+
+### Response format
+
+Same as [`GET /v1/models/{id}/options`](#get-v1modelsidoptions), reflecting the state after the write.
+
+## `DELETE /v1/models/{id}/options`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Reset a model to its defaults by erasing its `recipe_options.json` entry entirely. The model keeps the defaults that come from its registry entry and from the server's global configuration; only the user's saved overrides are removed.
+
+### Example request
+
+```bash
+curl -X DELETE http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
+```
+
+### Response format
+
+Same as [`GET /v1/models/{id}/options`](#get-v1modelsidoptions), with `saved` now `{}`.
 
 ## `POST /v1/models/register`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -841,8 +973,8 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 |-----------|----------|------------|-------------|
 | `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
 | `pinned` | No | All | Boolean. If true, pins the loaded model to prevent LRU eviction. Defaults to `false`. |
-| `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
-| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
+| `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. To save options without loading, or to change one option without resending the rest, use [`POST /v1/models/{id}/options`](#post-v1modelsidoptions) instead. |
+| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. Pass `-1` to size it automatically instead of using a saved value; omit it to use the saved value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux. Default is `npu` if supported. |

@@ -125,6 +125,18 @@ private:
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
+    void handle_model_options_get(const httplib::Request& req, httplib::Response& res);
+    void handle_model_options_post(const httplib::Request& req, httplib::Response& res);
+    void handle_model_options_delete(const httplib::Request& req, httplib::Response& res);
+    // Shared body of the three model-options handlers: resolves the model from
+    // the path, applies `mutation` (skipped when null), and writes the
+    // saved/effective/defaults response. The mutation owns updating `info` to
+    // the state the response should describe; one that returns false has
+    // already written its own error response.
+    void respond_with_model_options(
+        const httplib::Request& req, httplib::Response& res,
+        const std::function<bool(const std::string& model_key, ModelInfo& info,
+                                 httplib::Response& res)>& mutation);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
     // Log and atomically record one non-streaming response's telemetry
     // (usage/timings, cached tokens) against the serving model.
