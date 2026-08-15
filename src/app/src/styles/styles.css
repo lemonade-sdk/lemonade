@@ -553,7 +553,6 @@ input[type="checkbox"]:disabled {
   grid-template-areas:
     "rail main"
     "rail composer";
-  position: relative;
   height: 100%;
   transition: grid-template-columns var(--duration-base) var(--ease-out);
 }
@@ -1621,6 +1620,8 @@ input[type="checkbox"]:disabled {
 .composer__entry--with-settings {
   max-width: var(--max-content-width);
   margin: 0 auto;
+  container-type: inline-size;
+  container-name: composer-settings;
   background: var(--surface-1);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
@@ -5293,6 +5294,33 @@ optgroup {
   }
 }
 
+/* Split-pane chat can be narrow even on a wide desktop viewport. Reflow image
+   controls from the width of the composer shell itself, not window width. */
+@container composer-settings (max-width: 700px) {
+  .composer__image-settings {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-1-5);
+    padding: var(--space-2);
+  }
+}
+
+@container composer-settings (max-width: 460px) {
+  .composer__image-settings {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .composer__image-setting input,
+  .composer__image-setting select {
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
+  }
+
+  .composer__image-setting select {
+    padding-right: 24px;
+    background-position: right 8px center;
+  }
+}
+
 /* Live realtime transcription in audio mode */
 .composer__mic {
   width: 36px;
@@ -5456,63 +5484,67 @@ optgroup {
 }
 
 .chat--with-logs {
-  /* Keep logs out of the grid so changing panel width cannot move either
-     the conversation or the composer. */
-  grid-template-columns: var(--rail-collapsed) minmax(0, 1fr);
+  /* Logs are a real split pane between History and chat. The separator owns
+     its grid column so LogViewer content cannot cover or clip the drag target. */
+  grid-template-columns: var(--rail-collapsed) var(--chat-logs-width, 640px) var(--chat-logs-resizer-width, 12px) minmax(0, 1fr);
   grid-template-areas:
-    "rail main"
-    "rail composer";
+    "rail logs logs-resizer main"
+    "rail logs logs-resizer composer";
 }
 
 .chat--with-logs.rail-expanded {
-  grid-template-columns: var(--rail-expanded) minmax(0, 1fr);
+  grid-template-columns: var(--rail-expanded) var(--chat-logs-width, 640px) var(--chat-logs-resizer-width, 12px) minmax(0, 1fr);
+}
+
+/* Reclaim a little horizontal room while logs are open. The content remains
+   aligned, but the narrower chat pane does not spend 48 px on outer gutters. */
+.chat--with-logs .chat__inner {
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+}
+
+.chat--with-logs .composer {
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
 }
 
 .chat__logs {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: var(--chat-logs-width, 640px);
-  max-width: max(340px, calc(100% - var(--rail-collapsed) - 160px));
+  grid-area: logs;
+  position: relative;
   min-width: 0;
-  z-index: 60;
-  border-left: 1px solid var(--border-strong);
-  background: var(--surface-base);
-  box-shadow: var(--shadow-lg);
+  min-height: 0;
+  background: color-mix(in srgb, var(--surface-1) 90%, transparent);
   overflow: hidden;
 }
 
-.chat.rail-expanded .chat__logs {
-  max-width: max(340px, calc(100% - var(--rail-expanded) - 160px));
-}
-
 .chat__logs-resizer {
-  position: absolute;
-  left: -5px;
-  top: 0;
-  bottom: 0;
-  width: 10px;
+  grid-area: logs-resizer;
+  position: relative;
+  align-self: stretch;
+  min-width: var(--chat-logs-resizer-width, 12px);
   cursor: col-resize;
-  z-index: 3;
+  z-index: 5;
   touch-action: none;
 }
 
 .chat__logs-resizer::after {
   content: "";
   position: absolute;
-  left: 4px;
+  left: 50%;
   top: var(--space-3);
   bottom: var(--space-3);
-  width: 2px;
+  width: 1px;
+  transform: translateX(-50%);
   border-radius: var(--radius-pill);
-  background: transparent;
-  transition: background var(--duration-fast) var(--ease-out);
+  background: var(--border-subtle);
+  transition: background var(--duration-fast) var(--ease-out),
+              width var(--duration-fast) var(--ease-out);
 }
 
 .chat__logs-resizer:hover::after,
 .chat__logs-resizer:focus-visible::after,
 .is-resizing-chat-logs .chat__logs-resizer::after {
+  width: 2px;
   background: var(--accent-fg);
 }
 
@@ -5521,34 +5553,13 @@ optgroup {
   outline-offset: -2px;
 }
 
-.chat__logs-close {
-  position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
-  z-index: 4;
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-raised);
-  color: var(--text-secondary);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-}
-
-.chat__logs-close:hover {
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-  background: var(--surface-2);
-}
-
 .is-resizing-chat-logs {
   cursor: col-resize;
   user-select: none;
+}
+
+.is-resizing-chat-logs .chat {
+  transition: none;
 }
 
 .chat__logs .logs-view {
@@ -5811,17 +5822,24 @@ optgroup {
   z-index: 3;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 768px) {
+  .chat.chat--with-logs.rail-expanded,
+  .chat.chat--with-logs:not(.rail-expanded) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(220px, 40%) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "logs"
+      "main"
+      "composer";
+  }
+
+  .chat__logs {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
   .chat__logs-resizer {
     display: none;
-  }
-}
-
-@media (max-width: 768px) {
-  .chat__logs,
-  .chat.rail-expanded .chat__logs {
-    width: min(var(--chat-logs-width, 640px), calc(100% - var(--space-3)));
-    max-width: max(340px, calc(100% - 160px));
   }
 }
 
@@ -10290,6 +10308,50 @@ optgroup {
   .composer__audio-lyrics { grid-column: 1 / -1; }
   .model3d-viewer { height: 320px; min-height: 320px; }
   .model3d-viewer canvas { min-height: 320px; }
+}
+
+/* Generated-audio and 3D settings can become narrow while the desktop
+   viewport stays wide when the logs splitter moves right. Reflow from the
+   composer shell itself, just like image mode, so controls never overflow. */
+@container composer-settings (max-width: 760px) {
+  .composer__capability-settings,
+  .composer__audio-generation-settings,
+  .composer__model3d-settings {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-1-5);
+    padding: var(--space-2);
+  }
+
+  .composer__openmoss-settings {
+    grid-template-columns: minmax(120px, 0.8fr) minmax(0, 2fr);
+    gap: var(--space-1-5);
+    padding: var(--space-2);
+  }
+}
+
+@container composer-settings (max-width: 500px) {
+  .composer__capability-settings,
+  .composer__audio-generation-settings,
+  .composer__openmoss-settings,
+  .composer__model3d-settings {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .composer__image-setting--model,
+  .composer__openmoss-description,
+  .composer__audio-lyrics {
+    grid-column: 1 / -1;
+  }
+}
+
+@container composer-settings (max-width: 360px) {
+  .composer__openmoss-settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .composer__openmoss-description {
+    grid-column: 1;
+  }
 }
 
 .message__audio-download {
