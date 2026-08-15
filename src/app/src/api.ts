@@ -228,13 +228,15 @@ export interface LoadedModel {
   recipe_options?: Record<string, unknown>;
 }
 
-export interface EffectiveLoadCommand {
+/** Response shape of GET/POST/DELETE /api/v1/models/{id}/options. */
+export interface ModelOptions {
   model_name: string;
   recipe: string;
-  backend: string;
-  options: Record<string, unknown>;
-  args: string[];
-  ctx_size_auto_resolved?: boolean;
+  saved: Record<string, unknown>;
+  effective: Record<string, unknown>;
+  defaults: Record<string, unknown>;
+  resolved_ctx_size: number;
+  load_command: string;
 }
 
 export interface ModelInfo {
@@ -1391,15 +1393,39 @@ class LemonadeAPI {
     return result;
   }
 
-  async effectiveLoadCommand(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<EffectiveLoadCommand> {
+  async effectiveModelOptions(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<ModelOptions> {
+    const path = `/api/v1/models/${encodeURIComponent(modelName)}/options`;
+    const current = await this._json<ModelOptions>(path);
+
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
     const { recipeOptionsForModel } = await import(
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
-    const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
-    return this._json<EffectiveLoadCommand>('/api/v1/load/command', { method: 'POST', body });
+
+    // Options staged in this client are not on the server, so only a dry run
+    // reports the load this app would actually send. `defaults` names exactly
+    // what the model's recipe accepts: the staged set spans every recipe, and
+    // a name from another one is a 400.
+    const overrides: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries({ ...stagedOptions, ...recipeOptions })) {
+      if (value !== undefined && key in current.defaults
+          && JSON.stringify(value) !== JSON.stringify(current.effective[key])) {
+        overrides[key] = value;
+      }
+    }
+    if (Object.keys(overrides).length === 0) return this._resolveLoadCommand(current);
+    const preview = await this._json<ModelOptions>(path, { method: 'POST', body: { ...overrides, dry_run: true } });
+    return this._resolveLoadCommand(preview);
+  }
+
+  private _resolveLoadCommand(result: ModelOptions): ModelOptions {
+    if (!result?.load_command) return result;
+    // The API key stays a variable reference: this command is rendered for the
+    // user to copy, which is not somewhere a live credential belongs.
+    const base = this.baseUrl.replace(/\/+$/, '');
+    return { ...result, load_command: result.load_command.split('$LEMONADE_BASE_URL').join(base) };
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {

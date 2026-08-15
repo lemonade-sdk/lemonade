@@ -45,26 +45,6 @@ static const json& get_defaults() {
     return defaults;
 }
 
-// Flat option name -> CLI flag, for to_cli_options(). ctx_size/merge_args are
-// the common flags; the rest come from descriptor options that declare a flag.
-static const std::map<std::string, std::string>& get_option_to_cli_flag() {
-    static const std::map<std::string, std::string> mapping = [] {
-        std::map<std::string, std::string> m{
-            {"ctx_size", "--ctx-size"},
-            {"merge_args", "--merge-args"},
-        };
-        for (const auto* desc : lemon::backends::all_descriptors()) {
-            for (const auto& opt : desc->options) {
-                if (!opt.cli_flag.empty()) {
-                    m[opt.name] = opt.cli_flag;
-                }
-            }
-        }
-        return m;
-    }();
-    return mapping;
-}
-
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     std::vector<std::string> keys;
     if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
@@ -139,32 +119,6 @@ static bool try_get_backend_options(const std::string& opt_name, SystemInfo::Sup
     return is_backend_option;
 }
 #endif
-
-std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) {
-    std::vector<std::string> cli;
-
-    for (auto& [opt_name, cli_flag] : get_option_to_cli_flag()) {
-        if (raw_options.contains(opt_name)) {
-            auto val = raw_options[opt_name];
-            if (!val.is_null() && val != "") {
-                if (val.is_boolean()) {
-                    cli.push_back(val.get<bool>() ? cli_flag : lemon::utils::negate_flag(cli_flag));
-                } else {
-                    cli.push_back(cli_flag);
-                    if (val.is_number_float()) {
-                        cli.push_back(std::to_string((double) val));
-                    } else if (val.is_number_integer()) {
-                        cli.push_back(std::to_string((int) val));
-                    } else {
-                        cli.push_back(val);
-                    }
-                }
-            }
-        }
-    }
-
-    return cli;
-}
 
 std::vector<std::string> RecipeOptions::known_keys() {
     std::vector<std::string> keys;

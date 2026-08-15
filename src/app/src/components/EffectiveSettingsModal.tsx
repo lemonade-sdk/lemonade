@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import api, { type ModelInfo, type EffectiveLoadCommand, type LoadedModel, friendlyErrorMessage } from '../api';
+import api, { type ModelInfo, type ModelOptions, type LoadedModel, friendlyErrorMessage } from '../api';
 import {
   type RecipeOptions,
   type SamplingParams,
@@ -85,17 +85,6 @@ function isAutoContextSize(value: unknown): boolean {
   return value === 'auto' || Number(value) === -1;
 }
 
-function shellQuote(token: string): string {
-  if (token === '') return "''";
-  if (/^[A-Za-z0-9_\-./:=@]+$/.test(token)) return token;
-  return `'${token.replace(/'/g, `'\\''`)}'`;
-}
-
-function formatCommand(modelName: string, args: string[]): string {
-  const parts = ['lemonade', 'load', shellQuote(modelName), ...args.map(shellQuote)];
-  return parts.join(' ');
-}
-
 interface SourceRow {
   key: string;
   label: string;
@@ -124,13 +113,13 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   const argsField = backendArgsFieldForRecipe(recipe);
   const canEditArgs = backendSupportsArgs(recipe) && !!argsField;
 
-  const [effective, setEffective] = useState<EffectiveLoadCommand | null>(null);
+  const [effective, setEffective] = useState<ModelOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [unlocked, setUnlocked] = useState(false);
   const [draft, setDraft] = useState('');
-  const [preview, setPreview] = useState<EffectiveLoadCommand | null>(null);
+  const [preview, setPreview] = useState<ModelOptions | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -160,9 +149,9 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const result = await api.effectiveLoadCommand(modelName, undefined, modelInfo);
+      const result = await api.effectiveModelOptions(modelName, undefined, modelInfo);
       setEffective(result);
-      const committed = argsField ? result.options[argsField] : undefined;
+      const committed = argsField ? result.effective[argsField] : undefined;
       setDraft(typeof committed === 'string' ? committed : '');
     } catch (err) {
       setError(friendlyErrorMessage(err));
@@ -223,7 +212,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     const handle = setTimeout(async () => {
       setPreviewError(null);
       try {
-        const result = await api.effectiveLoadCommand(modelName, { [argsField]: draft, merge_args: false }, modelInfo);
+        const result = await api.effectiveModelOptions(modelName, { [argsField]: draft, merge_args: false }, modelInfo);
         if (!cancelled) setPreview(result);
       } catch (err) {
         if (!cancelled) { setPreview(null); setPreviewError(friendlyErrorMessage(err)); }
@@ -313,7 +302,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       return { value: runtimeContext.toLocaleString(), source: 'Runtime' };
     }
 
-    const effectiveContext = positiveContextSize(effective?.options?.ctx_size);
+    const effectiveContext = positiveContextSize(effective?.resolved_ctx_size);
     if (effectiveContext !== null) {
       return { value: effectiveContext.toLocaleString(), source: 'Effective load' };
     }
@@ -373,8 +362,10 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
 
   if (!open) return null;
 
-  const previewArgs = preview?.args ?? effective?.args ?? [];
-  const backendLabel = effective?.backend || '—';
+  const shown = preview ?? effective;
+  const loadCommand = shown?.load_command ?? '';
+  const backend = shown ? shown.effective[`${shown.recipe}_backend`] : undefined;
+  const backendLabel = typeof backend === 'string' && backend ? backend : '—';
 
   const body = (
     <div className="inspect-modal-overlay effective-settings-overlay" onClick={onClose}>
@@ -501,7 +492,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             {error && <p className="effective-settings__error">{error}</p>}
             {!loading && !error && (
               <>
-                <pre className="effective-settings__command"><code>{formatCommand(modelName, previewArgs)}</code></pre>
+                <pre className="effective-settings__command"><code>{loadCommand}</code></pre>
                 <p className="effective-settings__note">
                   <Icon name="info" size={12} /> Fixed launch flags (model path, port, chat template, metrics) are added by the server at load time and are not shown here.
                 </p>
