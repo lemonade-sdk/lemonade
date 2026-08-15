@@ -277,9 +277,10 @@ form. The chosen candidate's own cost is still surfaced on
 `route_to` — cost reporting and cost selection compose.
 
 A candidate that's missing either per-million price (most local GGUF models
-have no cloud pricing at all) is excluded from ranking rather than treated as
-free. If **no** candidate in the list has cost data, the router falls back to
-the first-listed candidate, not `default_model` — so candidate order matters
-when nothing is priced. `routing.router.type` must be `"llm"` or
-`"cost_select"`, and the block remains **mutually exclusive** with
-`routing.rules` and `routing.classifiers`.
+have no cloud pricing at all), or reports a negative/non-finite price, is
+excluded from ranking rather than treated as free. If **no** candidate in the
+list has cost data, the router falls open to `default_model` — the same
+fail-open contract as the `"llm"` router when it can't use a reply.
+`routing.router.type` must be `"llm"` or `"cost_select"`, and the block
+remains **mutually exclusive** with `routing.rules` and
+`routing.classifiers`.

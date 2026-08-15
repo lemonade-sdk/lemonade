@@ -4,9 +4,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <iomanip>
+#include <locale>
 #include <mutex>
 #include <regex>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -444,12 +447,31 @@ private:
 // score; a model's two prices are set or unset together in practice (cloud
 // auto-discovery sets both, providers that don't publish pricing set
 // neither), so a partial resolution is treated as "no data" rather than
-// scored on one field alone.
+// scored on one field alone. A negative, NaN, or infinite price (a malformed
+// catalog entry) is likewise treated as "no data" rather than allowed to win
+// as spuriously cheapest.
 std::optional<double> compute_cost_score(const CostInfo& info) {
     if (!info.cost_input_per_million || !info.cost_output_per_million) {
         return std::nullopt;
     }
-    return *info.cost_input_per_million + *info.cost_output_per_million;
+    const double input = *info.cost_input_per_million;
+    const double output = *info.cost_output_per_million;
+    if (!std::isfinite(input) || input < 0.0 || !std::isfinite(output) || output < 0.0) {
+        return std::nullopt;
+    }
+    return input + output;
+}
+
+// Locale-independent, fixed-precision rendering of a per-million cost figure
+// for the classifier's trace rationale. std::to_string(double) emits a fixed
+// 6 decimals and follows the global locale (e.g. "0,300000" under a
+// comma-decimal locale), neither of which is desired in a machine-oriented
+// trace field.
+std::string format_cost(double value) {
+    std::ostringstream oss;
+    oss.imbue(std::locale::classic());
+    oss << std::fixed << std::setprecision(4) << value;
+    return oss.str();
 }
 
 // The deterministic "cost" classifier / L0(b) on-ramp. Given `labels` = the
@@ -462,13 +484,22 @@ std::optional<double> compute_cost_score(const CostInfo& info) {
 // A candidate whose cost_of throws, or whose CostInfo doesn't resolve to a
 // score, is excluded from ranking rather than failing the classifier — same
 // treatment attach_estimated_cost() gives a throwing cost_of. If NO candidate
-// has cost data, the winner is candidates[0] (first-authored-order fallback);
-// this falls out naturally from initializing best_index to 0 and only
-// overwriting it on a strictly lower score, which also makes exact-tie
-// resolution first-occurrence-wins. Only a totally unset cost_services.cost_of
-// (the services object itself wasn't wired) is a classifier-level failure
-// (Score::ok = false), matching how the other classifiers treat their unset
-// service function.
+// has cost data, the classifier reports an empty Score (ok=true, no labels):
+// no identity rule matches on 0.0 against the required 1.0 band, so the
+// engine falls through to `default_model` — mirroring how the `llm`
+// classifier fails open on a reply it can't use. Only a totally unset
+// cost_services.cost_of (the services object itself wasn't wired) is a
+// classifier-level failure (Score::ok = false), matching how the other
+// classifiers treat their unset service function.
+//
+// The ranking is request-independent: it depends only on `labels` and the
+// injected `cost_services`, both fixed for the classifier's lifetime (one
+// instance per compiled RoutingPolicyEngine, itself swapped wholesale on
+// hot-reload rather than mutated). So the result is computed once, lazily, on
+// the first evaluate() call and reused for every subsequent request —
+// avoiding an O(N) cost_of ranking pass on every routed request. Same
+// lazy-cache-behind-a-mutex shape as SemanticSimilarityClassifier's
+// reference_embeddings() below.
 class CostClassifier final : public Classifier {
 public:
     CostClassifier(std::string id, std::string type, OnError on_error,
@@ -485,6 +516,11 @@ public:
     Score evaluate(const ClassifierContext& ctx) const override {
         if (!ctx.cost_services.cost_of) {
             return failed_score();
+        }
+
+        std::lock_guard<std::mutex> lock(cache_mutex_);
+        if (cached_result_.has_value()) {
+            return *cached_result_;
         }
 
         const auto& candidates = labels();
@@ -512,17 +548,23 @@ public:
 
         Score result;
         result.ok = true;
-        result.labels[candidates[best_index]] = 1.0;
         if (best_score.has_value()) {
-            result.rationale = "lowest estimated cost ($" + std::to_string(*best_score) +
-                                "/M tokens) among " + std::to_string(candidates.size()) +
-                                " candidates";
+            result.labels[candidates[best_index]] = 1.0;
+            result.rationale = "cheapest by input+output per-M sum ($" +
+                                format_cost(*best_score) + ") among " +
+                                std::to_string(candidates.size()) + " candidates";
         } else {
             result.rationale = "no cost data available for any candidate; "
-                                "falling back to the first-listed candidate";
+                                "falling open to default_model";
         }
+
+        cached_result_ = result;
         return result;
     }
+
+private:
+    mutable std::mutex cache_mutex_;
+    mutable std::optional<Score> cached_result_;
 };
 
 class SemanticSimilarityClassifier final : public Classifier {

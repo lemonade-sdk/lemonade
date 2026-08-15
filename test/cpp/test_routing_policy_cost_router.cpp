@@ -6,12 +6,14 @@
 //
 // Covers: the cost classifier reports the cheapest candidate
 // (cost_input_per_million + cost_output_per_million) as label (score 1.0);
-// a candidate missing either price, or whose cost_of throws, is excluded from
-// ranking rather than failing the classifier; when no candidate has any cost
-// data the classifier falls back to the first-listed candidate; only a
-// wholly unset CostServices is a classifier-level failure; the parser
-// desugars routing.router.type "cost_select" into one cost classifier +
-// identity rules (mirroring the "llm" sugar); and the full engine routes a
+// a candidate missing either price, reporting a negative/non-finite price, or
+// whose cost_of throws, is excluded from ranking rather than failing the
+// classifier; when no candidate has any cost data the classifier reports no
+// winning label so the engine falls open to default_model; the ranking is
+// computed once and memoized across evaluate() calls; only a wholly unset
+// CostServices is a classifier-level failure; the parser desugars
+// routing.router.type "cost_select" into one cost classifier + identity
+// rules (mirroring the "llm" sugar); and the full engine routes a
 // cost_select policy end-to-end, with attach_estimated_cost still reporting
 // the winning candidate's own cost exactly as it would for any other
 // route_to.
@@ -26,8 +28,11 @@
 #include "lemon/routing_policy.h"
 #include "lemon/routing_policy_parser.h"
 
+#include <cmath>
 #include <cstdio>
+#include <limits>
 #include <map>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -148,12 +153,12 @@ static void test_tie_break_first_in_order() {
           s.ok && s.score_of("Mid-GGUF") == 1.0);
 }
 
-static void test_fallback_to_first_candidate_no_data_anywhere() {
+static void test_fallback_no_data_anywhere_yields_no_label() {
     auto cost = make_cost({"Cheap-GGUF", "Mid-GGUF", "cloud.expensive"});
     CostServices services = fake_cost_services({});  // no candidate has data
     Score s = cost->evaluate(ClassifierContext{make_route("hi"), ClassifierServices{}, services});
-    check("cost: no data anywhere falls back to the first-listed candidate",
-          s.ok && s.score_of("Cheap-GGUF") == 1.0);
+    check("cost: no data anywhere yields an empty Score (fails open, no winning label)",
+          s.ok && s.labels.empty());
 }
 
 static void test_mixed_priced_and_unpriced_candidates() {
@@ -199,6 +204,68 @@ static void test_throwing_candidate_excluded_not_a_failure() {
     Score s = cost->evaluate(ClassifierContext{make_route("hi"), ClassifierServices{}, services});
     check("cost: a throwing candidate is excluded from ranking, not a classifier failure",
           s.ok && s.score_of("Mid-GGUF") == 1.0);
+}
+
+static void test_negative_or_nonfinite_price_excluded_from_ranking() {
+    auto cost = make_cost({"Bad-Negative", "Bad-NaN", "Bad-Inf", "Mid-GGUF"});
+    CostServices services;
+    services.cost_of = [](const std::string& candidate) -> CostInfo {
+        CostInfo info;
+        if (candidate == "Bad-Negative") {
+            info.cost_input_per_million = -1.0;   // invalid: negative
+            info.cost_output_per_million = 0.5;
+        } else if (candidate == "Bad-NaN") {
+            info.cost_input_per_million = std::nan("");  // invalid: NaN
+            info.cost_output_per_million = 0.5;
+        } else if (candidate == "Bad-Inf") {
+            info.cost_input_per_million = std::numeric_limits<double>::infinity();  // invalid: inf
+            info.cost_output_per_million = 0.5;
+        } else if (candidate == "Mid-GGUF") {
+            info.cost_input_per_million = 1.0;
+            info.cost_output_per_million = 2.0;  // sum 3.0, the only valid price
+        }
+        return info;
+    };
+    Score s = cost->evaluate(ClassifierContext{make_route("hi"), ClassifierServices{}, services});
+    check("cost: negative/NaN/inf prices are excluded from ranking, not treated as cheapest",
+          s.ok && s.score_of("Mid-GGUF") == 1.0);
+}
+
+static void test_ranking_is_memoized_across_evaluate_calls() {
+    auto cost = make_cost({"Cheap-GGUF", "Mid-GGUF"});
+    auto call_count = std::make_shared<int>(0);
+    CostServices services;
+    services.cost_of = [call_count](const std::string& candidate) -> CostInfo {
+        ++*call_count;
+        CostInfo info;
+        if (candidate == "Cheap-GGUF") {
+            info.cost_input_per_million = 0.1;
+            info.cost_output_per_million = 0.2;
+        } else if (candidate == "Mid-GGUF") {
+            info.cost_input_per_million = 1.0;
+            info.cost_output_per_million = 2.0;
+        }
+        return info;
+    };
+    ClassifierContext ctx{make_route("hi"), ClassifierServices{}, services};
+    Score s1 = cost->evaluate(ctx);
+    Score s2 = cost->evaluate(ctx);
+    Score s3 = cost->evaluate(ctx);
+    check("cost: repeated evaluate() calls reuse the memoized ranking (cost_of called once per candidate)",
+          *call_count == 2 && s1.score_of("Cheap-GGUF") == 1.0 &&
+          s2.score_of("Cheap-GGUF") == 1.0 && s3.score_of("Cheap-GGUF") == 1.0);
+}
+
+static void test_rationale_uses_locale_independent_formatting() {
+    auto cost = make_cost({"Cheap-GGUF", "Mid-GGUF"});
+    CostServices services = fake_cost_services({
+        {"Cheap-GGUF", {0.10, 0.20}},  // sum 0.30
+        {"Mid-GGUF", {1.0, 2.0}},
+    });
+    Score s = cost->evaluate(ClassifierContext{make_route("hi"), ClassifierServices{}, services});
+    check("cost: rationale renders the cost figure without to_string(double)'s 6-decimal padding",
+          s.ok && s.rationale.find("0.3000") != std::string::npos &&
+          s.rationale.find("0.300000") == std::string::npos);
 }
 
 static void test_unset_cost_services_is_classifier_failure() {
@@ -326,25 +393,28 @@ static void test_e2e_routes_to_cheapest_and_reports_its_own_cost() {
     check("e2e(cost_select): trace identifies the winning candidate", saw_router_trace);
 }
 
-static void test_e2e_no_data_falls_back_to_first_candidate() {
-    // default_model is "Mid-GGUF" (the second candidate) so this is only a
-    // meaningful assertion if the winner is candidates[0], not default_model.
+static void test_e2e_no_data_falls_open_to_default_model() {
+    // default_model is "Mid-GGUF". With no candidate priced, the cost
+    // classifier reports no winning label, so no identity rule matches and
+    // the engine falls through to default_model.
     RoutePolicy policy = parse_l0b(l0b_collection());
     CostServices services = fake_cost_services({});  // no candidate has data
     RoutingPolicyEngine engine(std::move(policy), ClassifierServices{}, services);
     Decision d = engine.route(make_route("anything"), /*want_trace=*/false);
 
-    check("e2e(cost_select): no cost data anywhere falls back to the first candidate, "
-          "not default_model",
-          d.route_to == "Cheap-GGUF" && !d.default_used);
+    check("e2e(cost_select): no cost data anywhere falls open to default_model",
+          d.route_to == "Mid-GGUF" && d.default_used);
 }
 
 int main() {
     test_cheapest_wins_all_priced();
     test_tie_break_first_in_order();
-    test_fallback_to_first_candidate_no_data_anywhere();
+    test_fallback_no_data_anywhere_yields_no_label();
     test_mixed_priced_and_unpriced_candidates();
     test_partial_price_data_treated_as_no_data();
+    test_negative_or_nonfinite_price_excluded_from_ranking();
+    test_ranking_is_memoized_across_evaluate_calls();
+    test_rationale_uses_locale_independent_formatting();
     test_throwing_candidate_excluded_not_a_failure();
     test_unset_cost_services_is_classifier_failure();
     test_make_classifier_rejects_cost_without_labels();
@@ -354,7 +424,7 @@ int main() {
     test_desugar_rejects_model_or_prompt();
     test_desugar_rejects_unknown_router_type();
     test_e2e_routes_to_cheapest_and_reports_its_own_cost();
-    test_e2e_no_data_falls_back_to_first_candidate();
+    test_e2e_no_data_falls_open_to_default_model();
 
     if (g_failures == 0) {
         std::printf("All cost router tests passed.\n");

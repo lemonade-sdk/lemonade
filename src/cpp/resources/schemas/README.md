@@ -85,7 +85,7 @@ v1** (pinned in the schema field descriptions):
 | multi-key leaf object | interpreted as implicit **`all`**; e.g. `{"keywords_any":[...],"max_chars":1000}` means both leaves must match |
 | `on_error` (omitted) | default **`match_false`** (fail-open) |
 | `routing.router` desugaring | `type: "llm"` expands to one `llm` classifier + identity rules; `type: "cost_select"` expands to one `cost` classifier + identity rules. Both are deterministic and behavior-equivalent across versions |
-| `cost` classifier ranking | sum of `cost_input_per_million + cost_output_per_million`; a candidate resolving only one of the two fields is unranked (treated as no data); ties resolve to the first-listed candidate; if no candidate has any cost data, the winner is the first-listed candidate |
+| `cost` classifier ranking | sum of `cost_input_per_million + cost_output_per_million`; a candidate resolving only one of the two fields, or a negative/non-finite price, is unranked (treated as no data); ties resolve to the first-listed candidate; if no candidate has any cost data, the classifier fails open (no winning label) and the engine falls through to `default_model` |
 
 Anything fancier (token/BM25 keyword matching, a different regex engine,
 token-based length) ships as a new, separately named op — never by changing one
@@ -148,9 +148,9 @@ cost_output_per_million` sum shown above and routes to the cheapest. The
 chosen candidate's own cost is still reported via `outputs.estimated_cost`
 exactly as for any other route_to — Phase A's reporting and Phase B's
 selection compose, they don't replace each other. The ranking metric, the
-tie-break (first-listed candidate wins), and the no-data fallback
-(first-listed candidate) are frozen v1 behavior alongside the other semantics
-in the table above; changing any of them later needs a new major, per this
+tie-break (first-listed candidate wins), and the no-data fallback (fail open
+to `default_model`) are frozen v1 behavior alongside the other semantics in
+the table above; changing any of them later needs a new major, per this
 file's own evolution rule.
 
 Phase C (spend/budget tracking) remains deferred.

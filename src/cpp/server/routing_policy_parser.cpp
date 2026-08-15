@@ -571,8 +571,8 @@ const std::set<std::string>& routing_metadata_match_keys() {
 //     author's model + prompt and must pick one candidate by name.
 //   - "cost_select" (L0(b)): the classifier is a deterministic `cost`
 //     classifier with no model/prompt — it ranks candidates via CostServices
-//     and picks the cheapest, falling back to the first-listed candidate when
-//     no candidate has cost data.
+//     and picks the cheapest, falling open to `default_model` when no
+//     candidate has cost data.
 //
 // Names: the synthesized classifier labels and rule match.labels use the
 // AUTHORED candidate names (read from routing.candidates verbatim), because
