@@ -1184,8 +1184,8 @@ const App: React.FC = () => {
                 className="titlebar__window-btn titlebar__window-btn--close"
                 data-tauri-drag-region="false"
                 onClick={() => window.api?.closeWindow?.()}
-                aria-label="Close"
-                title="Close"
+                aria-label="Cancel"
+                title="Cancel"
               >
                 <Icon name="x" size={14} />
               </button>

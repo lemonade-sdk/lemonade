@@ -727,6 +727,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               title="Update all downloaded models"
             />
           )}
+
         </WorkspaceActionGroup>
       )}
     >

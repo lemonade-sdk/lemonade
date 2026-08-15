@@ -232,9 +232,7 @@ const GraphNode: React.FC<GraphNodeProps> = ({
               <button type="button" className={node.operator === 'any' ? 'is-active' : ''} onClick={() => onChangeOperator(path, 'any')}>OR</button>
             </>
           )}
-          {path.length > 0 && (
-            <button type="button" aria-label="Remove gate" title="Remove gate" onClick={() => onRemove(path)}><Icon name="x" size={11} /></button>
-          )}
+          <button type="button" aria-label="Remove gate" title="Remove gate" onClick={() => onRemove(path)}><Icon name="x" size={11} /></button>
         </div>
       </div>
       <div className="router-graph__children">
@@ -264,9 +262,19 @@ interface RouterRuleGraphProps {
   classifiers: RouterClassifier[];
   onChange: (node: RouterNode) => void;
   onExpand?: () => void;
+  // Full-modal layout: workspace and inspector sit side by side and the
+  // divider between them becomes draggable.
+  expanded?: boolean;
+  // Allows a freshly-mounted expanded instance to inherit committed state from
+  // the inline instance. Without this, a blank keywords_any node (textValue='')
+  // looks identical to the initial empty graph and would be hidden on expand.
+  initialCommitted?: boolean;
 }
 
-export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifiers, onChange, onExpand }) => {
+const INSPECTOR_MIN_WIDTH = 320;
+const WORKSPACE_MIN_WIDTH = 360;
+
+export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifiers, onChange, onExpand, expanded = false, initialCommitted }) => {
   const [toolboxCollapsed, setToolboxCollapsed] = useState(false);
   const [toolboxSearch, setToolboxSearch] = useState('');
   const [selectedPath, setSelectedPath] = useState<RouterNodePath | null>(null);
@@ -274,20 +282,39 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   const [pan, setPan] = useState({ x: 18, y: 18 });
   const [panning, setPanning] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
+  const [inspectorWidth, setInspectorWidth] = useState<number | null>(null);
+  const [resizing, setResizing] = useState(false);
+  const graphRef = useRef<HTMLDivElement>(null);
+  const resizeStateRef = useRef<{ pointerId: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const panStateRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const historyRef = useRef<RouterNode[]>([]);
   const futureRef = useRef<RouterNode[]>([]);
   const lastEmittedNodeRef = useRef<RouterNode | null>(null);
+  // True once the user has explicitly dropped or committed a node. Prevents a
+  // freshly-dropped blank keywords_any (textValue='') from being hidden by the
+  // isBlankRouterGraphNode check, which also matches the initial default state.
+  // initialCommitted lets the expanded modal inherit committed state from the
+  // inline instance for nodes that look blank but were explicitly placed.
+  const hasCommittedRef = useRef(initialCommitted ?? !isBlankRouterGraphNode(node));
+  const isMountedRef = useRef(false);
 
   const selectedNode = selectedPath ? routerNodeAtPath(node, selectedPath) : null;
-  const blank = isBlankRouterGraphNode(node);
+  const blank = isBlankRouterGraphNode(node) && !hasCommittedRef.current;
 
   useEffect(() => {
     if (selectedPath && !routerNodeAtPath(node, selectedPath)) setSelectedPath(null);
   }, [node, selectedPath]);
 
   useEffect(() => {
+    // Skip on initial mount — hasCommittedRef is correctly seeded by useRef
+    // (using initialCommitted when provided, otherwise derived from the node).
+    // Running on mount would overwrite that with a stale isBlankRouterGraphNode
+    // check and drop a committed-but-empty keywords_any node on the canvas.
+    if (!isMountedRef.current) {
+      isMountedRef.current = true;
+      return;
+    }
     // Inline and expanded builders may edit the same rule. If this instance
     // receives a node it did not emit itself, its undo/redo snapshots belong to
     // an older tree and must not be allowed to overwrite the external change.
@@ -297,6 +324,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
     }
     historyRef.current = [];
     futureRef.current = [];
+    hasCommittedRef.current = !isBlankRouterGraphNode(node);
     setSelectedPath(null);
   }, [node]);
 
@@ -308,6 +336,7 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   const commit = useCallback((next: RouterNode) => {
     historyRef.current = [...historyRef.current.slice(-29), node];
     futureRef.current = [];
+    hasCommittedRef.current = true;
     emitChange(next);
   }, [emitChange, node]);
 
@@ -339,15 +368,19 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
 
   const removeAtPath = useCallback((path: RouterNodePath) => {
     const next = removeRouterNodeAtPath(node, path);
-    const currentConflict = routerDuplicateConditionConflict(node);
-    const nextConflict = routerDuplicateConditionConflict(next);
-    if (!currentConflict && nextConflict) {
-      reject(nextConflict);
+    if (isBlankRouterGraphNode(next)) {
+      // Removal produced the canonical blank leaf — treat as a full reset so
+      // the canvas returns to the empty-state placeholder.
+      historyRef.current = [...historyRef.current.slice(-29), node];
+      futureRef.current = [];
+      hasCommittedRef.current = false;
+      setSelectedPath(null);
+      emitChange(next);
       return;
     }
     commit(next);
     setSelectedPath(null);
-  }, [commit, node, reject]);
+  }, [commit, emitChange, node]);
 
   const changeOperator = useCallback((path: RouterNodePath, operator: RouterGroupOperator) => {
     const current = routerNodeAtPath(node, path);
@@ -441,8 +474,33 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
     setPanning(false);
   };
 
+  const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    resizeStateRef.current = { pointerId: event.pointerId };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setResizing(true);
+  };
+
+  const onResizeMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const state = resizeStateRef.current;
+    if (!state || state.pointerId !== event.pointerId || !graphRef.current) return;
+    const rect = graphRef.current.getBoundingClientRect();
+    const max = Math.max(INSPECTOR_MIN_WIDTH, rect.width - WORKSPACE_MIN_WIDTH);
+    const next = rect.right - event.clientX;
+    setInspectorWidth(Math.round(Math.min(max, Math.max(INSPECTOR_MIN_WIDTH, next))));
+  };
+
+  const stopResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (resizeStateRef.current?.pointerId === event.pointerId && event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    resizeStateRef.current = null;
+    setResizing(false);
+  };
+
   return (
-    <div className="router-graph">
+    <div className={`router-graph ${resizing ? 'is-resizing' : ''}`} ref={graphRef}>
       <div className={`router-graph__workspace ${toolboxCollapsed ? 'is-toolbox-collapsed' : ''}`}>
         <aside className={`router-graph__toolbox ${toolboxCollapsed ? 'is-collapsed' : ''}`} aria-label="Router condition toolbox">
           <button type="button" className="router-graph__toolbox-toggle" onClick={() => setToolboxCollapsed(current => !current)} aria-expanded={!toolboxCollapsed}>
@@ -529,7 +587,13 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
           <div className="router-graph__toolbar">
             <button type="button" disabled={historyRef.current.length === 0} onClick={undo}>Undo</button>
             <button type="button" disabled={futureRef.current.length === 0} onClick={redo}>Redo</button>
-            {!blank && <button type="button" className="is-danger" onClick={() => { commit(createRouterLeaf()); setSelectedPath(null); }}>Clear</button>}
+            {!blank && <button type="button" className="is-danger" onClick={() => {
+              historyRef.current = [...historyRef.current.slice(-29), node];
+              futureRef.current = [];
+              hasCommittedRef.current = false;
+              setSelectedPath(null);
+              emitChange(createRouterLeaf());
+            }}>Clear</button>}
             {rejection && <span className="router-graph__rejection" role="status"><Icon name="alert" size={12} /> {rejection}</span>}
             <span className="router-graph__toolbar-hint">Drag items from the toolbox. Select a gate and click a toolbox item to add there. Ctrl/⌘ + wheel zooms.</span>
             <span className="router-graph__toolbar-spacer" />
@@ -583,8 +647,53 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
         </div>
       </div>
 
+      {selectedNode && expanded && (
+        <div
+          className="router-graph__resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize node inspector"
+          aria-valuemin={INSPECTOR_MIN_WIDTH}
+          aria-valuemax={INSPECTOR_MIN_WIDTH + (graphRef.current ? Math.max(0, graphRef.current.offsetWidth - WORKSPACE_MIN_WIDTH - INSPECTOR_MIN_WIDTH) : 400)}
+          aria-valuenow={inspectorWidth ?? INSPECTOR_MIN_WIDTH}
+          tabIndex={0}
+          title="Drag to resize · double-click to reset"
+          onPointerDown={startResize}
+          onPointerMove={onResizeMove}
+          onPointerUp={stopResize}
+          onPointerCancel={stopResize}
+          onDoubleClick={() => setInspectorWidth(null)}
+          onKeyDown={e => {
+            const STEP = 20;
+            if (e.key === 'ArrowLeft') {
+              e.preventDefault();
+              if (!graphRef.current) return;
+              const rect = graphRef.current.getBoundingClientRect();
+              const max = Math.max(INSPECTOR_MIN_WIDTH, rect.width - WORKSPACE_MIN_WIDTH);
+              setInspectorWidth(w => Math.round(Math.min(max, Math.max(INSPECTOR_MIN_WIDTH, (w ?? INSPECTOR_MIN_WIDTH) + STEP))));
+            } else if (e.key === 'ArrowRight') {
+              e.preventDefault();
+              setInspectorWidth(w => Math.round(Math.max(INSPECTOR_MIN_WIDTH, (w ?? INSPECTOR_MIN_WIDTH) - STEP)));
+            } else if (e.key === 'Home') {
+              e.preventDefault();
+              setInspectorWidth(null);
+            }
+          }}
+        >
+          <span className="router-graph__resizer-grip" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="9" cy="5" r="1.4" /><circle cx="9" cy="12" r="1.4" /><circle cx="9" cy="19" r="1.4" />
+              <circle cx="15" cy="5" r="1.4" /><circle cx="15" cy="12" r="1.4" /><circle cx="15" cy="19" r="1.4" />
+            </svg>
+          </span>
+        </div>
+      )}
+
       {selectedNode && (
-        <div className="router-graph__inspector">
+        <div
+          className="router-graph__inspector"
+          style={expanded && inspectorWidth != null ? { flex: `0 0 ${inspectorWidth}px` } : undefined}
+        >
           <div className="router-graph__inspector-head">
             <div>
               <strong>Node Inspector</strong>

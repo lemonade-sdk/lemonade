@@ -8,6 +8,7 @@ interface ModalProps {
   children: React.ReactNode;
   maxWidth?: string;
   ariaLabelledBy?: string;
+  className?: string;
 }
 
 export default function Modal({
@@ -16,7 +17,8 @@ export default function Modal({
   title,
   children,
   maxWidth = '600px',
-  ariaLabelledBy
+  ariaLabelledBy,
+  className,
 }: ModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -83,7 +85,7 @@ export default function Modal({
       aria-labelledby={titleId}
     >
       <div
-        className="inspect-modal-content flex-col"
+        className={`inspect-modal-content flex-col${className ? ` ${className}` : ''}`}
         onClick={(e) => e.stopPropagation()}
         style={{ maxWidth }}
       >

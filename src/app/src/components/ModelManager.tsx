@@ -2895,15 +2895,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             ariaLabel={customFormTitle}
             leading={<Icon name="compose" size={20} aria-hidden="true" />}
             title={<h2 className="workspace-detail-panel__title custom-model-editor__title">{customFormTitle}</h2>}
-            metadata={(
-              <>
-                <WorkspaceMetadataChip emphasis="high" tone="accent">
-                  {isCustomOmniCollectionDraft ? 'Omni collection' : 'Custom model'}
-                </WorkspaceMetadataChip>
-                {editingCustomModelName && <WorkspaceMetadataChip emphasis="medium">Editing saved definition</WorkspaceMetadataChip>}
-              </>
-            )}
+            metadata={editingCustomModelName ? (
+              <WorkspaceMetadataChip emphasis="medium">Editing saved definition</WorkspaceMetadataChip>
+            ) : undefined}
             description={<p>Register a model or collection that is not included in the Lemonade catalog.</p>}
+            descriptionPlacement="identity"
             actions={(
               <WorkspaceActionGroup className="custom-model-editor__actions" label={`${customFormTitle} actions`}>
                 <WorkspaceActionButton
@@ -2915,13 +2911,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                 >
                   Save
                 </WorkspaceActionButton>
-                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Cancel</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Close</WorkspaceActionButton>
+                <span className="workspace-action-group__spacer" />
                 <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>Export</WorkspaceActionButton>
                 <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>Import</WorkspaceActionButton>
               </WorkspaceActionGroup>
             )}
-            onClose={closeCustomForm}
-            closeLabel="Close custom model editor"
           >
             <div className="custom-model-form__body">
             <div className="custom-model-form__toolbar">
@@ -2935,7 +2930,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                     aria-pressed={!isCustomOmniCollectionDraft}
                     onClick={() => openCustomForm('model')}
                   >
-                    Custom model
+                    Custom Model
                   </button>
                   <button
                     type="button"
@@ -2943,7 +2938,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                     aria-pressed={isCustomOmniCollectionDraft}
                     onClick={() => openCustomForm('omni-collection')}
                   >
-                    Omni collection
+                    Omni Collection
                   </button>
                 </div>
               )}
