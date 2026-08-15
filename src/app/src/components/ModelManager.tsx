@@ -22,6 +22,7 @@ import { useWorkspacePanelResize } from '../hooks/useWorkspacePanelResize';
 import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
 import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
 import {WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, WorkspaceList, WorkspaceListRow, WorkspaceMetadataChip, WorkspacePanelResizer } from './WorkspacePanels';
+import Modal from './inspect/Modal';
 
 import { ROUTER_RECIPE, type RouterPullRequest } from '../features/router/routerTypes';
 import { deleteRouterRecord, loadRouterRecords, routerRecordToModelInfo } from '../features/router/routerStore';
@@ -1112,6 +1113,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [routerModels, setRouterModels] = useState<ModelInfo[]>(() => loadRouterRecords().map(routerRecordToModelInfo));
   const [showRouterEditor, setShowRouterEditor] = useState(false);
   const [routerEditorModel, setRouterEditorModel] = useState<ModelInfo | null>(null);
+  const [routerDeleteCandidate, setRouterDeleteCandidate] = useState<ModelInfo | null>(null);
+  const [routerDeleteError, setRouterDeleteError] = useState<string | null>(null);
+  const [deletingRouterDefinition, setDeletingRouterDefinition] = useState(false);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [editingCustomModelName, setEditingCustomModelName] = useState<string | null>(null);
   const [customError, setCustomError] = useState<string | null>(null);
@@ -1679,22 +1683,50 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     await refresh();
   };
 
-  const handleDeleteRouterDefinition = async (name: string): Promise<void> => {
-    if (api.isConnected) await api.deleteModel(name);
-    deleteRouterRecord(name);
-    reloadRouterModels();
+  const handleDeleteRouterDefinition = async (name: string): Promise<string | void> => {
+    const warnings: string[] = [];
+    if (api.isConnected) {
+      await api.deleteModel(name);
+    } else {
+      warnings.push(`Removed the local entry for ${name}, but Lemonade is disconnected so the server definition was not deleted.`);
+    }
+    try {
+      deleteRouterRecord(name);
+      reloadRouterModels();
+    } catch (cacheError) {
+      // A completed server mutation (or an explicitly offline local removal)
+      // must not be turned into a false generic delete failure because only the
+      // recent-router cache cleanup failed.
+      console.warn('Router local cache cleanup failed:', cacheError);
+      setRouterModels(current => current.filter(model => modelName(model) !== name));
+      warnings.push(`The local recent-router cache for ${name} could not be updated.`);
+    }
     if (selectedDetailModelId === name) setSelectedDetailModelId(null);
+    return warnings.length ? warnings.join(' ') : undefined;
+  };
+
+  const confirmRouterDefinitionDelete = async () => {
+    const candidate = routerDeleteCandidate;
+    if (!candidate || deletingRouterDefinition) return;
+    const name = modelName(candidate);
+    setDeletingRouterDefinition(true);
+    setRouterDeleteError(null);
+    try {
+      const warning = await handleDeleteRouterDefinition(name);
+      if (warning) console.warn(warning);
+      setRouterDeleteCandidate(null);
+    } catch (err) {
+      setRouterDeleteError(err instanceof Error ? err.message : 'Could not delete router definition.');
+    } finally {
+      setDeletingRouterDefinition(false);
+    }
   };
 
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
     if (modelIsCustom(model) && String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) {
-      if (!confirm(`Delete router definition "${model.display_name || name}"?`)) return;
-      try {
-        await handleDeleteRouterDefinition(name);
-      } catch (err) {
-        console.error('Router delete failed:', err);
-      }
+      setRouterDeleteError(null);
+      setRouterDeleteCandidate(model);
       return;
     }
     if (modelIsCustom(model)) {
@@ -2753,6 +2785,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         triggerRef={mobileRail.triggerRef}
       />
 
+      <Modal
+        isOpen={routerDeleteCandidate != null}
+        onClose={() => {
+          if (deletingRouterDefinition) return;
+          setRouterDeleteCandidate(null);
+          setRouterDeleteError(null);
+        }}
+        title="Delete router definition?"
+        maxWidth="480px"
+      >
+        <div className="inspect-modal-body">
+          <p>Delete <strong>{routerDeleteCandidate?.display_name || modelName(routerDeleteCandidate)}</strong>? This removes the saved router definition.</p>
+          {routerDeleteError && <div className="manager__inline-notice" role="alert">{routerDeleteError}</div>}
+        </div>
+        <div className="inspect-modal-footer">
+          <WorkspaceActionButton appearance="secondary" disabled={deletingRouterDefinition} onClick={() => { setRouterDeleteCandidate(null); setRouterDeleteError(null); }}>Cancel</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="danger" disabled={deletingRouterDefinition} onClick={() => { void confirmRouterDefinitionDelete(); }}>
+            {deletingRouterDefinition ? 'Deleting…' : 'Delete router'}
+          </WorkspaceActionButton>
+        </div>
+      </Modal>
+
       {/* Left rail: navigation / filter dimensions */}
       <ModelNavRail
         allModels={allModels}
@@ -2841,15 +2895,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             ariaLabel={customFormTitle}
             leading={<Icon name="compose" size={20} aria-hidden="true" />}
             title={<h2 className="workspace-detail-panel__title custom-model-editor__title">{customFormTitle}</h2>}
-            metadata={(
-              <>
-                <WorkspaceMetadataChip emphasis="high" tone="accent">
-                  {isCustomOmniCollectionDraft ? 'Omni collection' : 'Custom model'}
-                </WorkspaceMetadataChip>
-                {editingCustomModelName && <WorkspaceMetadataChip emphasis="medium">Editing saved definition</WorkspaceMetadataChip>}
-              </>
-            )}
+            metadata={editingCustomModelName ? (
+              <WorkspaceMetadataChip emphasis="medium">Editing saved definition</WorkspaceMetadataChip>
+            ) : undefined}
             description={<p>Register a model or collection that is not included in the Lemonade catalog.</p>}
+            descriptionPlacement="identity"
             actions={(
               <WorkspaceActionGroup className="custom-model-editor__actions" label={`${customFormTitle} actions`}>
                 <WorkspaceActionButton
@@ -2861,13 +2911,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                 >
                   Save
                 </WorkspaceActionButton>
-                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Cancel</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Close</WorkspaceActionButton>
+                <span className="workspace-action-group__spacer" />
                 <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>Export</WorkspaceActionButton>
                 <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>Import</WorkspaceActionButton>
               </WorkspaceActionGroup>
             )}
-            onClose={closeCustomForm}
-            closeLabel="Close custom model editor"
           >
             <div className="custom-model-form__body">
             <div className="custom-model-form__toolbar">
@@ -2881,7 +2930,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                     aria-pressed={!isCustomOmniCollectionDraft}
                     onClick={() => openCustomForm('model')}
                   >
-                    Custom model
+                    Custom Model
                   </button>
                   <button
                     type="button"
@@ -2889,7 +2938,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                     aria-pressed={isCustomOmniCollectionDraft}
                     onClick={() => openCustomForm('omni-collection')}
                   >
-                    Omni collection
+                    Omni Collection
                   </button>
                 </div>
               )}

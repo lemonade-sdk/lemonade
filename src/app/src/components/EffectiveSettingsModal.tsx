@@ -395,8 +395,8 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             iconOnly
             className="close-modal-btn"
             onClick={onClose}
-            aria-label="Close"
-            title="Close"
+            aria-label="Cancel"
+            title="Cancel"
           />
         </div>
 
