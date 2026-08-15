@@ -37,7 +37,11 @@ import {
   snapshotFromLoaded,
   snapshotFromModelInfo,
   snapshotFromName,
+  snapshotIdentity,
+  identityFor,
+  isComposerSelectableCapability,
   isRouterRecipe,
+  modelStructure,
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
 import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../features/chatHistory/historySettings';
@@ -330,7 +334,7 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
 }
 
 function modelModeBadge(capability: ModelCapability, recipe?: string | null): string {
-  return isRouterRecipe(recipe) ? 'router' : capabilityBadge(capability);
+  return capabilityBadge(identityFor(capability, recipe));
 }
 
 const ModelModeIcons: React.FC<{
@@ -339,8 +343,9 @@ const ModelModeIcons: React.FC<{
   audioInput?: boolean;
   size?: number;
 }> = ({ capability, recipe, audioInput = false, size = 14 }) => {
-  if (isRouterRecipe(recipe)) {
-    return <Icon name="router" size={size} aria-hidden="true" />;
+  const identity = identityFor(capability, recipe);
+  if (identity !== capability) {
+    return <CapabilityIcon capability={identity} size={size} aria-hidden="true" />;
   }
   const showAudio = audioInput && capability === 'chat';
   return (
@@ -358,7 +363,8 @@ function modelModeLabel(capability: ModelCapability, audioInput = false): string
 }
 
 function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, recipe?: string | null): string {
-  return isRouterRecipe(recipe) ? 'Router' : modelModeLabel(capability, audioInput);
+  const identity = identityFor(capability, recipe);
+  return identity === capability ? modelModeLabel(capability, audioInput) : capabilityLabel(identity);
 }
 
 function deriveTitle(messages: Message[]): string {
@@ -1039,10 +1045,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
   }, [currentLoadedModel, currentCustomModelInfo, currentKnownModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
+  // A collection deploys as chat; its Omni surface comes from the recipe.
+  const currentIsOmniCollection = snapshotIdentity(currentModelSnapshot) === 'omni';
   const currentDefaultModel = lemonadeDefaultModel(currentModel);
 
   useEffect(() => {
-    if (!currentLoadedModel || (currentCapability !== 'chat' && currentCapability !== 'omni')) return;
+    if (!currentLoadedModel || currentCapability !== 'chat') return;
     saveLastReadyModelName(currentLoadedModel.model_name);
     setLastReadyModelName(currentLoadedModel.model_name);
   }, [currentCapability, currentLoadedModel]);
@@ -1110,7 +1118,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     }));
   }, [currentCapability, imageGenerationModels]);
   useEffect(() => {
-    const specialCapability = !['chat', 'omni', 'unknown'].includes(currentCapability);
+    const specialCapability = !['chat', 'unknown'].includes(currentCapability);
     if (!modelPickerOpen && !specialCapability) return;
 
     let cancelled = false;
@@ -1201,7 +1209,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   useEffect(() => {
     const keepsAudioAttachments = currentCapability === 'audio'
-      || currentCapability === 'omni'
+      || currentIsOmniCollection
       || modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel);
     if (keepsAudioAttachments) return;
     if (isOpenMossTts && openMossSettings.mode === 'clone') return;
@@ -1227,7 +1235,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     [currentKnownModelInfo, currentLoadedModel],
   );
   const supportsChatImageInput = useMemo(() => {
-    if (currentCapability === 'omni') {
+    if (currentIsOmniCollection) {
       return Boolean(getVisionChatComponent(currentKnownModelInfo, knownModelInfos));
     }
     return currentCapability === 'chat'
@@ -1296,7 +1304,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return modelSupportsChatAudioInput(info, model);
   }, [knownModelInfos]);
   const selectableModels = useMemo(
-    () => loadedModels.filter(m => canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(capabilityForLoaded(m))),
+    () => loadedModels.filter(m => canSelectInComposer(m) || isComposerSelectableCapability(capabilityForLoaded(m))),
     [loadedModels, capabilityForLoaded],
   );
   type ModelPickerOption = {
@@ -1320,7 +1328,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     const addOption = (option: ModelPickerOption) => {
       const key = option.name.toLowerCase();
       if (!option.name || seen.has(key)) return;
-      if (!['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(option.capability)) return;
+      if (!isComposerSelectableCapability(option.capability)) return;
       const configuredDefault = lemonadeDefaultModel(option.name);
       seen.add(key);
       options.push(configuredDefault ? {
@@ -1376,9 +1384,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return filtered.slice(0, 80);
   }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
 
-  const modeSupportsChatCompletions = currentCapability === 'chat' || currentCapability === 'omni';
+  const modeSupportsChatCompletions = currentCapability === 'chat';
   const modeSupportsMcp = modeSupportsChatCompletions;
-  const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
+  const canUseAudioInput = currentIsOmniCollection || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
 
   const persistMcpEnabled = useCallback((next: boolean) => {
     setUseMcp(next);
@@ -3004,7 +3012,7 @@ ${finalText}`
             : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
     ? 'Draft a message. Connect and load a model to send…'
-    : currentCapability === 'omni'
+    : currentIsOmniCollection
       ? `Message ${currentModel} through the Omni collection…`
       : currentCapability === 'chat' && supportsChatImageInput && supportsChatAudioInput
         ? `Message ${currentModel} with text, images, or audio…`
@@ -3036,7 +3044,7 @@ ${finalText}`
     ? (supportsRealtimeAudio
       ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
       : 'Chat + audio mode · attached audio is routed through chat completions')
-    : currentCapability === 'omni'
+    : currentIsOmniCollection
     ? 'Omni collection mode · requests are orchestrated across collection components'
     : currentCapability === 'image'
       ? (imageMode === 'edit' ? 'Image mode · attach one source image and prompt becomes /images/edits' : 'Image mode · prompt becomes /images/generations')
@@ -3087,7 +3095,7 @@ ${finalText}`
         key={c.id}
         id={`${idPrefix}-conv-${c.id}`}
         rowId={c.id}
-        capability={isRouterRecipe(c.model?.recipe) ? 'router' : capability}
+        capability={identityFor(capability, c.model?.recipe)}
         title={convTitle}
         meta={c.model?.name || undefined}
         anchor={timeAgo(c.updatedAt)}
@@ -3315,7 +3323,7 @@ ${finalText}`
                     </div>
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
-                      Working in {capabilityLabel(currentCapability)} mode…
+                      Working in {capabilityLabel(snapshotIdentity(currentModelSnapshot))} mode…
                     </div>
                   </div>
                 </article>
@@ -3360,17 +3368,10 @@ ${finalText}`
                 aria-expanded={modelPickerOpen}
               >
                 {currentLoadedModel ? (
-                  isRouterRecipe(currentRecipe) ? (
-                    <span className="composer__model-mode composer__model-mode--router">
-                      <Icon name="router" size={14} aria-hidden="true" />
-                      <span>Router</span>
-                    </span>
-                  ) : (
-                    <span className={`composer__model-mode composer__model-mode--${capabilityBadge(currentCapability)}`}>
-                      <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={14} />
-                      <span>{modelModeLabel(currentCapability, supportsChatAudioInput)}</span>
-                    </span>
-                  )
+                  <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
+                    <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
+                    <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
+                  </span>
                 ) : (
                   <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
                 )}
@@ -3421,10 +3422,11 @@ ${finalText}`
                       const isLoading = modelPickerLoading === option.name;
                       const isUnloading = modelPickerUnloading === option.name;
                       const busy = isLoading || isUnloading;
-                      const capability = isRouterRecipe(option.recipe) ? 'router' : option.capability;
+                      const structure = modelStructure(option.recipe);
+                      const capability = structure === 'single' ? option.capability : structure;
                       // Collections route to backends rather than being one, so
                       // they name no engine — same rule as the models catalog.
-                      const isCollection = capability === 'omni' || capability === 'router';
+                      const isCollection = structure !== 'single';
                       // The picker gives its trailing slot to eject, so the
                       // engine joins the facts instead of competing for it.
                       // A loaded row's status owns the whole meta line, so the
@@ -4158,7 +4160,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
             const audioInput = modelSupportsChatAudioInput(customInfo || null, m);
             const modeLabel = modelModeDisplayLabel(cap, audioInput, m.recipe);
             const modeBadge = modelModeBadge(cap, m.recipe);
-            const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
+            const selectable = canSelectInComposer(m) || isComposerSelectableCapability(cap);
             const isActive = currentModel === m.model_name;
             return (
               <article className="active-card" key={m.model_name}>

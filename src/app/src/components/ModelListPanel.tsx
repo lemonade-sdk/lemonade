@@ -7,9 +7,10 @@
 import React, { useCallback, useRef, useMemo, useState } from 'react';
 import type { ModelInfo, LoadedModel } from '../api';
 import {
-  capabilityFromModelInfo,
+  isCollectionRecipe,
+  modelStructure,
   modelCapabilityTags,
-  rowCapability,
+  identityFromModelInfo,
   type CapabilityTag,
 } from '../modelCapabilities';
 import { Icon } from './Icon';
@@ -255,7 +256,7 @@ function backendReadinessMessage(readiness: ModelBackendReadiness): string {
   return BACKEND_STATE_MESSAGES[readiness.state || ''] || 'Engine needs attention';
 }
 
-type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
+type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding' | 'classification';
 
 const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> = [
   { key: 'all', label: 'All', iconName: 'globe' },
@@ -268,6 +269,7 @@ const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> 
   { key: 'tts', label: 'TTS', iconName: 'tts' },
   { key: 'model3d', label: '3D', iconName: 'box' },
   { key: 'embedding', label: 'Embed', iconName: 'embedding' },
+  { key: 'classification', label: 'Classify', iconName: 'search-check' },
 ];
 
 function modelRecipe(m: ModelInfo): string {
@@ -275,31 +277,20 @@ function modelRecipe(m: ModelInfo): string {
 }
 
 export function modelIsRouter(m: ModelInfo): boolean {
-  const recipe = modelRecipe(m);
-  return recipe === 'collection.router' || recipe.startsWith('collection.router.');
+  return modelStructure(modelRecipe(m)) === 'router';
 }
 
 export function modelIsOmniCollection(m: ModelInfo): boolean {
-  const recipe = modelRecipe(m);
-  return recipe === 'collection.omni' || recipe.startsWith('collection.omni.') || recipe === 'collection';
-}
-
-/** Omni is a task identity, not a concrete backend identity. */
-export function modelIsOmni(m: ModelInfo): boolean {
-  return modelIsOmniCollection(m) || capabilityFromModelInfo(m) === 'omni';
+  return modelStructure(modelRecipe(m)) === 'omni';
 }
 
 export function modelMatchesFilter(m: ModelInfo, filter: FilterTab): boolean {
   if (filter === 'all') return true;
-  if (filter === 'router') return modelIsRouter(m);
-  if (filter === 'omni') return modelIsOmni(m);
-
-  const cap = capabilityFromModelInfo(m);
-  if (filter === 'embedding') return cap === 'embedding' || cap === 'reranking';
-  // Router collections intentionally have their own task and must not also be
-  // counted as Chat even though they ultimately route chat-capable models.
-  if (filter === 'llm') return cap === 'chat' && !modelIsRouter(m);
-  return (cap as string) === filter;
+  // A collection has its own task and is never also counted as Chat.
+  const identity = identityFromModelInfo(m);
+  if (filter === 'embedding') return identity === 'embedding' || identity === 'reranking';
+  if (filter === 'llm') return identity === 'chat';
+  return (identity as string) === filter;
 }
 
 /** Empty task selection means "all". Multiple selected tasks are OR-ed. */
@@ -362,7 +353,7 @@ export function capabilityTagIconTarget(tag: CapabilityTag): CapabilityIconTarge
 
 /** A backend group is not meaningful for virtual Omni/Router collections. */
 export function modelHasFilterableBackend(m: ModelInfo): boolean {
-  return !modelIsOmni(m) && !modelIsRouter(m) && Boolean(modelRecipe(m));
+  return !isCollectionRecipe(modelRecipe(m)) && Boolean(modelRecipe(m));
 }
 
 /** Empty backend selection means "all". Multiple selected backends are OR-ed. */
@@ -624,10 +615,10 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     const mId = listModelName(model);
     const displayName = listModelDisplayName(model);
     const recipe = String((model as any).recipe || '');
-    const primaryCapability = rowCapability(model);
+    const primaryCapability = identityFromModelInfo(model);
     // A collection routes to backends rather than being one, so it has no
     // engine to name on the meta line.
-    const neutralCollectionGuide = primaryCapability === 'omni' || primaryCapability === 'router';
+    const neutralCollectionGuide = isCollectionRecipe(recipe);
     const displayedBackend = recipe && !neutralCollectionGuide ? modelListBackendLabel(recipe) : '';
     const isSelected = mId === selectedModelId;
     const capTags = modelCapabilityTags(model);

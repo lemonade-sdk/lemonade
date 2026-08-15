@@ -574,14 +574,9 @@ function activeRecipeName(model: ModelInfo | null | undefined): string {
   return recipeName(recipesForModel(model)[0]);
 }
 
-const CONTEXT_SIZE_RECIPES = new Set(['llamacpp', 'flm', 'ryzenai-llm', 'vllm']);
-
 export function modelSupportsContextSize(model: ModelInfo | null | undefined): boolean {
   if (!model) return false;
-  const capability = capabilityFromModelInfo(model);
-  if (capability === 'chat') return true;
-  if (capability !== 'unknown') return false;
-  return CONTEXT_SIZE_RECIPES.has(activeRecipeName(model));
+  return capabilityFromModelInfo(model) === 'chat';
 }
 
 function readNumberFromActiveRecipe(model: ModelInfo | null | undefined, paths: string[][]): number | undefined {
@@ -660,7 +655,7 @@ export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, f
   const out: RecipeOptions = {};
   const ctx = modelDefaultContextSize(model, fallbackCtxSize);
 
-  if (capability === 'chat' || capability === 'omni' || capability === 'unknown') out.ctx_size = ctx;
+  if (capability === 'chat') out.ctx_size = ctx;
 
   const backend = readStringFromModelOrRecipe(model, [
     ['recipe_options', 'backend'], ['options', 'backend'], ['backend'], ['default_backend'], ['recommended_backend'],
@@ -853,7 +848,6 @@ export function recipeOptionsForCapability(
     case 'embedding':
     case 'reranking':
     case 'chat':
-    case 'omni':
     case 'vision':
     case 'code':
       return pickRecipeOptions(options, ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'mmproj_enabled', 'flm_args', 'vllm_backend', 'vllm_args', 'merge_args']);

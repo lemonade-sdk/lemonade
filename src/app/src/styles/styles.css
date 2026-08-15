@@ -920,6 +920,7 @@ input[type="checkbox"]:disabled {
 .cap-badge--audio  { background: color-mix(in srgb, var(--cap-audio) 18%, transparent); color: var(--cap-audio); }
 .cap-badge--tts    { background: color-mix(in srgb, var(--cap-tts) 18%, transparent); color: var(--cap-tts); }
 .cap-badge--image  { background: color-mix(in srgb, var(--cap-image) 18%, transparent); color: var(--cap-image); }
+.cap-badge--classify { background: color-mix(in srgb, var(--cap-classification) 18%, transparent); color: var(--cap-classification); }
 
 /* ---------- Conversation thread ---------- */
 .thread {
@@ -5574,7 +5575,7 @@ optgroup {
 .composer__model-mode--audio-gen { color: var(--cap-audio-generation); }
 .composer__model-mode--model3d { color: color-mix(in srgb, var(--cap-model3d) 75%, var(--text-primary)); }
 .composer__model-mode--embed { color: var(--cap-embedding); }
-.composer__model-mode--rank { color: var(--cap-reranking); }
+.composer__model-mode--rank { color: var(--cap-reranking); } .composer__model-mode--classify { color: var(--cap-classification); }
 .composer__model-mode--model { color: var(--text-tertiary); }
 
 .composer__model-mode svg {

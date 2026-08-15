@@ -1,5 +1,5 @@
 import React from 'react';
-import { ModelCapability } from '../modelCapabilities';
+import { ModelIdentity } from '../modelCapabilities';
 import { LOCAL_ICON_DEFINITIONS, LocalIcon } from './localIcons';
 
 /**
@@ -51,7 +51,7 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
   );
 };
 
-export type CapabilityIconTarget = ModelCapability | 'all' | 'vision' | 'code' | 'transcription' | 'hot' | 'popular' | 'tool' | 'tools' | 'reasoning' | 'mtp' | 'router';
+export type CapabilityIconTarget = ModelIdentity | 'all' | 'vision' | 'code' | 'transcription' | 'hot' | 'popular' | 'tool' | 'tools' | 'reasoning' | 'mtp';
 
 export function capabilityIconName(capability: CapabilityIconTarget): IconName {
   switch (capability) {
@@ -73,6 +73,7 @@ export function capabilityIconName(capability: CapabilityIconTarget): IconName {
     case 'model3d': return 'box';
     case 'embedding': return 'embedding';
     case 'reranking': return 'reranking';
+    case 'classification': return 'search-check';
     case 'vision': return 'vision';
     case 'code': return 'code';
     default: return 'model';

@@ -894,8 +894,8 @@ test.describe('Accessibility — model row action qualified names (#2341)', () =
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
-            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['chat'], recipe: 'llamacpp', downloaded: true },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['chat'], recipe: 'llamacpp', downloaded: false },
           ],
         }),
       }),
@@ -1701,8 +1701,8 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
-            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['chat'], recipe: 'llamacpp', downloaded: true },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['chat'], recipe: 'llamacpp', downloaded: false },
           ],
         }),
       }),
@@ -1941,9 +1941,9 @@ test.describe('Accessibility — #2355 Slice 1 reconciliation (fl0rianr clarific
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true,
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['chat'], recipe: 'llamacpp', downloaded: true,
               checkpoint: 'gguf-community/Llama-3.1-8B-Instruct:Q4_K_M.gguf' },
-            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['chat'], recipe: 'llamacpp', downloaded: false },
           ],
         }),
       }),
@@ -2073,7 +2073,7 @@ test.describe('Accessibility — model README raw-HTML rendering (#2355)', () =>
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true,
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['chat'], recipe: 'llamacpp', downloaded: true,
               checkpoint: 'gguf-community/Llama-3.1-8B-Instruct:Q4_K_M.gguf' },
           ],
         }),
@@ -2180,8 +2180,8 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
-            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['chat'], recipe: 'llamacpp', downloaded: true },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['chat'], recipe: 'llamacpp', downloaded: false },
           ],
         }),
       }),
@@ -2316,9 +2316,9 @@ test.describe('Accessibility — left navigation rail (#2355 three-pane)', () =>
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools', 'hot'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
-            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
-            { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['chat', 'tools', 'hot'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['chat'], recipe: 'llamacpp', downloaded: false, size: 7 },
+            { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['transcription'], recipe: 'whispercpp', downloaded: true, size: 3 },
             { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },
           ],
         }),
@@ -2571,9 +2571,9 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm', 'tools'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
-            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['llm'], recipe: 'llamacpp', downloaded: false, size: 7 },
-            { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['audio'], recipe: 'whispercpp', downloaded: true, size: 3 },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['chat', 'tools'], recipe: 'llamacpp', suggested: true, downloaded: true, size: 8 },
+            { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['chat'], recipe: 'llamacpp', downloaded: false, size: 7 },
+            { id: 'Whisper-Large-v3', name: 'Whisper-Large-v3', labels: ['transcription'], recipe: 'whispercpp', downloaded: true, size: 3 },
             { id: 'SDXL-Turbo', name: 'SDXL-Turbo', labels: ['image'], recipe: 'sd-cpp', downloaded: false, size: 6 },
           ],
         }),
@@ -2889,7 +2889,7 @@ test.describe('Accessibility — model-detail Files tab (#2428)', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+            { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['chat'], recipe: 'llamacpp', downloaded: true },
           ],
         }),
       }),
@@ -2991,7 +2991,7 @@ test.describe('Chat toolbar accessibility', () => {
               pid: 1234,
               type: 'llm',
               last_use: Date.now(),
-              labels: ['llm'],
+              labels: ['chat'],
               capabilities: ['chat'],
               input_modalities: inputModalities,
             },
@@ -3007,7 +3007,7 @@ test.describe('Chat toolbar accessibility', () => {
             {
               id: 'Llama-3.1-8B-Instruct',
               name: 'Llama-3.1-8B-Instruct',
-              labels: ['llm'],
+              labels: ['chat'],
               recipe: 'llamacpp',
               downloaded: true,
               input_modalities: inputModalities,
@@ -3125,13 +3125,13 @@ test.describe('Chat toolbar accessibility', () => {
       pid: 1234,
       type: 'llm',
       last_use: Date.now(),
-      labels: ['llm'],
+      labels: ['chat'],
       capabilities: ['chat'],
     }));
     const modelInfos = names.map(name => ({
       id: name,
       name,
-      labels: ['llm'],
+      labels: ['chat'],
       recipe: 'llamacpp',
       downloaded: true,
     }));
@@ -3251,7 +3251,7 @@ test.describe('Effective Settings modal accessibility', () => {
               pid: 1234,
               type: 'llm',
               last_use: Date.now(),
-              labels: ['llm'],
+              labels: ['chat'],
               capabilities: ['chat'],
             },
           ],
@@ -3263,7 +3263,7 @@ test.describe('Effective Settings modal accessibility', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
-            { id: 'Llama-3.1-8B-Instruct', name: 'Llama-3.1-8B-Instruct', labels: ['llm'], recipe: 'llamacpp', downloaded: true },
+            { id: 'Llama-3.1-8B-Instruct', name: 'Llama-3.1-8B-Instruct', labels: ['chat'], recipe: 'llamacpp', downloaded: true },
           ],
         }),
       }),

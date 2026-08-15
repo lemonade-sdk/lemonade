@@ -110,7 +110,7 @@ export function modelIsDownloaded(info: ModelInfo | null | undefined): boolean {
 export function modelCanAnswerChat(info: ModelInfo | null | undefined): boolean {
   if (!info) return false;
   const capability = capabilityFromModelInfo(info);
-  return capability === 'chat' || capability === 'omni';
+  return capability === 'chat';
 }
 
 function lastUsedValue(info: ModelInfo): number {

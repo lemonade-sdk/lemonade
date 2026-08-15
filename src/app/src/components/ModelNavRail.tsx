@@ -57,6 +57,7 @@ const TASK_ITEMS: Array<{ key: FilterTab; label: string; iconName: IconName; col
   { key: 'tts', label: 'TTS', iconName: 'tts', color: 'var(--cap-tts)' },
   { key: 'model3d', label: '3D', iconName: 'box', color: 'var(--cap-model3d)' },
   { key: 'embedding', label: 'Embed', iconName: 'embedding', color: 'var(--cap-embedding)' },
+  { key: 'classification', label: 'Classify', iconName: 'search-check', color: 'var(--cap-classification)' },
 ];
 
 const MODEL_PROVIDERS: Array<{ key: ModelRegistryProvider; label: string }> = [

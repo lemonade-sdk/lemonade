@@ -73,13 +73,15 @@ assert.match(component, /capability=\{primaryCapability\}/,
 // The lead-glyph rule is shared, not restated per list.
 const capabilities = fs.readFileSync(path.join(root, 'src/modelCapabilities.ts'), 'utf8');
 assert.match(capabilities, /export function isRouterRecipe\(/);
-assert.match(capabilities, /export function rowCapability\(model: ModelInfo\): ModelCapability \| 'router'/,
+assert.match(capabilities, /export function identityFromModelInfo\(model: ModelInfo\): ModelIdentity/,
   'collections lead with their task identity, not a backend one');
+assert.match(capabilities, /export type ModelIdentity = ModelCapability \| 'omni' \| 'router'/,
+  'omni and router are structural identities, not capabilities');
 assert.doesNotMatch(component, /function modelPrimaryCapability/,
   'the per-list copy of the lead-glyph rule is replaced by rowCapability');
-assert.match(component, /const primaryCapability = rowCapability\(model\);/);
-assert.match(component, /const neutralCollectionGuide = primaryCapability === 'omni' \|\| primaryCapability === 'router';/,
-  'the collection check reuses the capability already computed for the row');
+assert.match(component, /const primaryCapability = identityFromModelInfo\(model\);/);
+assert.match(component, /const neutralCollectionGuide = isCollectionRecipe\(recipe\);/,
+  'the collection check reuses the shared structural predicate');
 assert.match(component, /anchor=\{recipe && !neutralCollectionGuide \? displayedBackend : undefined\}/,
   'the engine is the meta-anchor and collections have none');
 assert.match(component, /secondaryTags = capTags\.filter\(tag => tag !== \(primaryCapability as string\)\)/,
@@ -175,7 +177,7 @@ assert.doesNotMatch(chatView, /composer__model-option\b|composer__model-option-r
 assert.doesNotMatch(styles, /\.composer__model-option/,
   'the picker option styles are replaced by the shared row');
 assert.match(chatView, /icon: 'eject'/, 'eject occupies the row action slot');
-assert.match(chatView, /const isCollection = capability === 'omni' \|\| capability === 'router'/,
+assert.match(chatView, /const isCollection = structure !== 'single'/,
   'the picker suppresses the engine anchor for collections, like the catalog');
 
 assert.match(manager, /const \[systemInfo, setSystemInfo\] = useState<Record<string, unknown> \| null>/);

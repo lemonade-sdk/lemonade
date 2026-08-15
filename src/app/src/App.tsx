@@ -341,7 +341,7 @@ function loadSavedRoute(): AppRoute {
   return { view: 'chat' };
 }
 
-type ModelHelpers = Pick<typeof import('./modelCapabilities'), 'canSelectInComposer' | 'capabilityFromModelInfo' | 'selectPreferredLoadedModel'>
+type ModelHelpers = Pick<typeof import('./modelCapabilities'), 'canSelectInComposer' | 'capabilityFromModelInfo' | 'isComposerSelectableCapability' | 'selectPreferredLoadedModel'>
   & Pick<typeof import('./features/collections/collectionModels'), 'findModelInfoByName' | 'isCollectionFullyLoaded' | 'isCollectionModel' | 'withVirtualLoadedCollections'>;
 type AppApiClient = (typeof import('./api'))['default'];
 
@@ -646,6 +646,7 @@ const App: React.FC = () => {
       if (!cancelled) setModelHelpers({
         canSelectInComposer: capabilities.canSelectInComposer,
         capabilityFromModelInfo: capabilities.capabilityFromModelInfo,
+        isComposerSelectableCapability: capabilities.isComposerSelectableCapability,
         selectPreferredLoadedModel: capabilities.selectPreferredLoadedModel,
         findModelInfoByName: collections.findModelInfoByName,
         isCollectionFullyLoaded: collections.isCollectionFullyLoaded,
@@ -678,10 +679,8 @@ const App: React.FC = () => {
     const models = modelHelpers.withVirtualLoadedCollections(rawLoadedModels, knownInfos).map(model => {
       const info = modelHelpers.findModelInfoByName(knownInfos, model.model_name);
       if (!info) return model;
-      const cap = modelHelpers.capabilityFromModelInfo(info);
       return {
         ...model,
-        type: cap === 'unknown' ? model.type : cap,
         recipe: model.recipe || String((info as any).recipe || ''),
         checkpoint: model.checkpoint || String((info as any).checkpoint || ''),
       };
@@ -694,20 +693,14 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!modelHelpers) return;
     const { customInfos, knownInfos } = loadedModelViewState;
-    const customSelectable = (name: string) => {
-      const info = modelHelpers.findModelInfoByName(customInfos, name);
-      if (!info) return false;
-      const cap = modelHelpers.capabilityFromModelInfo(info);
-      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
-    };
     const infoSelectable = (name: string) => {
       const info = modelHelpers.findModelInfoByName(knownInfos, name);
-      if (!info) return false;
-      const cap = modelHelpers.capabilityFromModelInfo(info);
-      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'audio-generation' || cap === 'tts' || cap === 'model3d';
+      return Boolean(info) && modelHelpers.isComposerSelectableCapability(
+        modelHelpers.capabilityFromModelInfo(info!),
+      );
     };
     setCurrentModel(current => {
-      if (current && loadedModels.some(m => m.model_name === current && (modelHelpers.canSelectInComposer(m) || customSelectable(m.model_name) || infoSelectable(m.model_name)))) return current;
+      if (current && loadedModels.some(m => m.model_name === current && (modelHelpers.canSelectInComposer(m) || infoSelectable(m.model_name)))) return current;
       if (current) {
         const info = modelHelpers.findModelInfoByName(knownInfos, current);
         if (info && modelHelpers.isCollectionModel(info) && modelHelpers.isCollectionFullyLoaded(info, rawLoadedModels)) return current;
@@ -718,7 +711,7 @@ const App: React.FC = () => {
       });
       return virtualOmni?.model_name
         || modelHelpers.selectPreferredLoadedModel(loadedModels)?.model_name
-        || loadedModels.find(m => customSelectable(m.model_name) || infoSelectable(m.model_name))?.model_name
+        || loadedModels.find(m => infoSelectable(m.model_name))?.model_name
         || null;
     });
   }, [loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);

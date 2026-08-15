@@ -20,6 +20,7 @@
     "test:a11y": "npx playwright test tests/a11y.spec.ts",
     "test:model-providers": "node tests/model-provider-search.runtime.cjs",
     "test:chat-audio": "node tests/chat-audio-capability.runtime.cjs",
+    "test:model-kinds": "node tests/model-kind-classification.runtime.cjs",
     "test:mcp-external": "node scripts/test-external-mcp.mjs",
     "test:mcp-mock": "node tests/mock-mcp-server.runtime.cjs",
     "test:mcp-runtime": "node tests/mcp-runtime.runtime.cjs",
