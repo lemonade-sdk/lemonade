@@ -44,7 +44,7 @@ export interface ModelSnapshot {
  * Keep in sync with docs/api/openai.md — tests/model-kind-classification.runtime.cjs
  * fails if this drifts from the documented set.
  */
-const DEPLOYMENT_LABEL_KIND: Record<string, ModelCapability> = {
+export const DEPLOYMENT_LABEL_KIND: Record<string, ModelCapability> = {
   chat: 'chat',
   transcription: 'audio',
   embeddings: 'embedding',
@@ -72,7 +72,9 @@ const LOADED_TYPE_KIND: Record<string, ModelCapability> = {
 };
 
 const OMNI_COLLECTION_RECIPE = 'collection.omni';
+const OMNI_COLLECTION_PREFIX = `${OMNI_COLLECTION_RECIPE}.`;
 const ROUTER_COLLECTION_RECIPE = 'collection.router';
+const ROUTER_COLLECTION_PREFIX = `${ROUTER_COLLECTION_RECIPE}.`;
 
 /** Audio as an input modality of a chat model, not a deployment mode of its own. */
 const AUDIO_INPUT_LABELS = new Set([
@@ -80,7 +82,7 @@ const AUDIO_INPUT_LABELS = new Set([
 ]);
 
 /** Image/vision as an input modality of a chat model. */
-const IMAGE_INPUT_LABELS = new Set([
+export const IMAGE_INPUT_LABELS = new Set([
   'vision', 'image-input', 'vision-language', 'vlm', 'image-text-to-text',
   'multimodal', 'multi-modal',
 ]);
@@ -118,8 +120,8 @@ export function deploymentKindFromLabels(labels?: readonly string[] | null): Mod
 
 export function modelStructure(recipe?: string | null): ModelStructure {
   const r = normalizeModelType(recipe);
-  if (r === OMNI_COLLECTION_RECIPE || r.startsWith(`${OMNI_COLLECTION_RECIPE}.`) || r === 'collection') return 'omni';
-  if (r === ROUTER_COLLECTION_RECIPE || r.startsWith(`${ROUTER_COLLECTION_RECIPE}.`)) return 'router';
+  if (r === OMNI_COLLECTION_RECIPE || r.startsWith(OMNI_COLLECTION_PREFIX) || r === 'collection') return 'omni';
+  if (r === ROUTER_COLLECTION_RECIPE || r.startsWith(ROUTER_COLLECTION_PREFIX)) return 'router';
   return 'single';
 }
 
@@ -141,20 +143,24 @@ export function capabilityFromLoaded(model?: LoadedModel | null): ModelCapabilit
   // is the strongest evidence available for a running model.
   const fromType = LOADED_TYPE_KIND[normalizeModelType(model.type)];
   if (fromType) return fromType;
-  return deploymentKindFromLabels(model.labels);
-}
-
-export function identityFromModelInfo(model: ModelInfo): ModelIdentity {
-  const structure = modelStructure((model as any)?.recipe);
-  return structure === 'single' ? capabilityFromModelInfo(model) : structure;
+  const labelled = deploymentKindFromLabels(model.labels);
+  if (labelled !== 'unknown') return labelled;
+  // A loaded collection is synthesized client-side from its components, so it
+  // carries neither a router ModelType nor labels — only the recipe.
+  return isCollectionRecipe(model.recipe) ? 'chat' : 'unknown';
 }
 
 /**
- * The identity a selection row leads with. A collection routes to backends
+ * The identity a row or badge leads with. A collection routes to backends
  * rather than being one, so it shows itself rather than the chat it serves.
  */
-export function rowCapability(model: ModelInfo): ModelIdentity {
-  return identityFromModelInfo(model);
+export function identityFor(capability: ModelCapability, recipe?: string | null): ModelIdentity {
+  const structure = modelStructure(recipe);
+  return structure === 'single' ? capability : structure;
+}
+
+export function identityFromModelInfo(model: ModelInfo): ModelIdentity {
+  return identityFor(capabilityFromModelInfo(model), (model as any)?.recipe);
 }
 
 function descriptorLabels(model?: ModelInfo | LoadedModel | null): string[] {
@@ -216,9 +222,17 @@ export function canUseChatCompletions(model?: LoadedModel | null): boolean {
   return capabilityFromLoaded(model) === 'chat';
 }
 
+const COMPOSER_CAPABILITIES: ReadonlySet<ModelCapability> = new Set<ModelCapability>([
+  'chat', 'image', 'audio', 'audio-generation', 'tts', 'model3d',
+]);
+
+/** Capabilities the chat composer can drive directly. */
+export function isComposerSelectableCapability(capability: ModelCapability): boolean {
+  return COMPOSER_CAPABILITIES.has(capability);
+}
+
 export function canSelectInComposer(model?: LoadedModel | null): boolean {
-  const cap = capabilityFromLoaded(model);
-  return ['chat', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
+  return isComposerSelectableCapability(capabilityFromLoaded(model));
 }
 
 export function capabilityLabel(capability: ModelIdentity): string {
@@ -255,32 +269,9 @@ export function capabilityBadge(capability: ModelIdentity): string {
   }
 }
 
-export function capabilityIcon(capability: ModelIdentity | 'all' | 'vision' | 'code' | 'transcription'): string {
-  switch (capability) {
-    case 'all': return 'All';
-    case 'chat': return 'Chat';
-    case 'omni': return 'Omni';
-    case 'router': return 'Router';
-    case 'image': return 'Image';
-    case 'audio': return 'Audio';
-    case 'audio-generation': return 'Audio';
-    case 'transcription': return 'Audio';
-    case 'tts': return 'TTS';
-    case 'model3d': return '3D';
-    case 'embedding': return 'Emb';
-    case 'reranking': return 'Rank';
-    case 'classification': return 'Classify';
-    case 'vision': return 'Vision';
-    case 'code': return 'Code';
-    default: return 'Model';
-  }
-}
-
-/** A snapshot's row identity. Structure is derived from the recipe it carries. */
 export function snapshotIdentity(snapshot?: ModelSnapshot | null): ModelIdentity {
   if (!snapshot) return 'unknown';
-  const structure = modelStructure(snapshot.recipe);
-  return structure === 'single' ? snapshot.capability : structure;
+  return identityFor(snapshot.capability, snapshot.recipe);
 }
 
 export function snapshotFromLoaded(model?: LoadedModel | null): ModelSnapshot | null {

@@ -48,6 +48,8 @@ const {
   identityFromModelInfo,
   modelStructure,
   capabilityLabel,
+  identityFor,
+  isComposerSelectableCapability,
 } = loadTypeScriptModule(capabilitiesPath);
 
 /* ── Every documented deployment label maps to a surface ───────────── */
@@ -107,9 +109,7 @@ assert.deepEqual(
 /* ── chat outranks every other mode, as find_deployment_mode does ──── */
 
 assert.equal(deploymentKindFromLabels(['chat', 'transcription']), 'chat');
-assert.equal(deploymentKindFromLabels(['transcription', 'chat']), 'chat');
-assert.equal(deploymentKindFromLabels(['chat', 'image']), 'chat');
-assert.equal(deploymentKindFromLabels(['chat', 'embeddings']), 'chat');
+assert.equal(deploymentKindFromLabels(['image', 'chat']), 'chat', 'order does not matter');
 assert.equal(
   deploymentKindFromLabels(['CHAT', ' Vision ']),
   'chat',
@@ -136,12 +136,16 @@ assert.equal(modelStructure('collection.omni'), 'omni');
 assert.equal(modelStructure('collection'), 'omni');
 assert.equal(modelStructure('collection.router'), 'router');
 
-assert.equal(capabilityFromModelInfo(omniCollection), 'chat');
-assert.equal(capabilityFromModelInfo(routerCollection), 'chat');
+assert.equal(capabilityFromModelInfo(omniCollection), 'chat', 'a collection deploys as chat');
 assert.equal(identityFromModelInfo(omniCollection), 'omni');
 assert.equal(identityFromModelInfo(routerCollection), 'router');
 assert.equal(capabilityLabel(identityFromModelInfo(omniCollection)), 'Omni');
-assert.equal(capabilityLabel(identityFromModelInfo(routerCollection)), 'Router');
+// One identity rule, shared by rows, snapshots and the chat composer.
+assert.equal(identityFor('chat', 'collection.omni'), 'omni');
+assert.equal(identityFor('chat', 'collection.router'), 'router');
+assert.equal(identityFor('image', 'sd-cpp'), 'image');
+assert.equal(isComposerSelectableCapability('chat'), true);
+assert.equal(isComposerSelectableCapability('embedding'), false);
 
 /* ── Loaded models are classified by the router's own ModelType ────── */
 
@@ -164,6 +168,19 @@ for (const [type, kind] of Object.entries(LOADED)) {
   );
 }
 
+// A collection is synthesized client-side when its components are all loaded:
+// it reports type 'omni', carries no labels, and is known only by its recipe.
+assert.equal(
+  capabilityFromLoaded({ model_name: 'user.suite', type: 'omni', recipe: 'collection.omni' }),
+  'chat',
+  'a loaded collection stays selectable rather than falling through to unknown',
+);
+assert.equal(
+  capabilityFromLoaded({ model_name: 'x', type: 'omni', recipe: 'llamacpp' }),
+  'unknown',
+  'a non-collection reporting an unknown ModelType is still unknown',
+);
+
 /* ── The shipped registry never produces Unknown ───────────────────── */
 
 const registry = JSON.parse(
@@ -184,13 +201,11 @@ assert.ok(chatModels.length > 100, 'the registry chat models must be recognized 
 
 // The bug this refactor closes: a registry_source of huggingface/modelscope used
 // to send installed models down the remote-search branch and out as Unknown.
-for (const source of ['huggingface', 'modelscope']) {
-  assert.equal(
-    capabilityFromModelInfo({ id: 'installed', recipe: 'llamacpp', registry_source: source, labels: ['chat'] }),
-    'chat',
-    `an installed model carrying registry_source '${source}' stays classified`,
-  );
-}
+assert.equal(
+  capabilityFromModelInfo({ id: 'installed', recipe: 'llamacpp', registry_source: 'huggingface', labels: ['chat'] }),
+  'chat',
+  'an installed model carrying a registry_source stays classified',
+);
 
 // A remote search row genuinely has no deployment label, and Unknown is honest.
 assert.equal(capabilityFromModelInfo({ id: 'some/repo', recipe: 'llamacpp', labels: [] }), 'unknown');

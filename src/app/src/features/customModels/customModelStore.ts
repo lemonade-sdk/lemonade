@@ -1,6 +1,6 @@
 import type { ModelInfo } from '../../api';
 import type { ModelCapability } from '../../modelCapabilities';
-import { deploymentKindFromLabels } from '../../modelCapabilities';
+import { DEPLOYMENT_LABEL_KIND, IMAGE_INPUT_LABELS, deploymentKindFromLabels } from '../../modelCapabilities';
 import { storageKey } from '../../storage';
 import { COLLECTION_OMNI_RECIPE } from '../collections/collectionModels';
 import { routerRegistrationOptions } from '../router/routerStore';
@@ -174,6 +174,22 @@ function labelsFor(capability: CustomModelCapability, extra: string[] = []): str
   return [...new Set([...base, ...extra.map(l => l.trim().toLowerCase()).filter(Boolean)])];
 }
 
+/** The machine-written half of a record's labels, for a given capability. */
+export function generatedLabelsFor(capability: CustomModelCapability): Set<string> {
+  return new Set(labelsFor(capability));
+}
+
+/**
+ * Records written before the deployment-label contract carry only descriptive
+ * labels. Their stored authoring capability still says how they deploy, so the
+ * label set is repaired on read rather than rewritten on disk.
+ */
+export function recordLabels(record: CustomModelRecord): string[] {
+  const stored = record.labels || [];
+  if (deploymentKindFromLabels(stored) !== 'unknown') return stored;
+  return labelsFor(record.type, stored);
+}
+
 function isRecord(value: unknown): value is CustomModelRecord {
   if (!value || typeof value !== 'object') return false;
   const obj = value as Record<string, unknown>;
@@ -275,7 +291,7 @@ export function customModelToModelInfo(record: CustomModelRecord): ModelInfo {
     mmproj: record.mmproj,
     recipe: record.recipe,
     type: record.type,
-    labels: record.labels,
+    labels: recordLabels(record),
     downloaded: true,
     custom: true,
     max_context_window: record.max_context_window,
@@ -396,25 +412,23 @@ function valueStringArray(value: unknown): string[] {
  * one deployment-label lookup — no substring scanning.
  */
 const IMPORTED_TYPE_KIND: Record<string, ModelCapability> = {
-  llm: 'chat', chat: 'chat', text: 'chat', language: 'chat',
+  ...DEPLOYMENT_LABEL_KIND,
+  llm: 'chat', text: 'chat', language: 'chat',
   vlm: 'chat', omni: 'chat', multimodal: 'chat', vision: 'chat',
-  image: 'image', diffusion: 'image', 'image-generation': 'image',
-  audio: 'audio', transcription: 'audio', asr: 'audio', stt: 'audio',
-  'audio-generation': 'audio-generation', 'music-generation': 'audio-generation',
-  'sound-generation': 'audio-generation', sfx: 'audio-generation',
-  tts: 'tts', speech: 'tts', 'text-to-speech': 'tts',
-  '3d': 'model3d', model3d: 'model3d', '3d-generation': 'model3d',
-  'image-to-3d': 'model3d', mesh: 'model3d',
-  embedding: 'embedding', embeddings: 'embedding',
-  reranking: 'reranking', reranker: 'reranking', rerank: 'reranking',
-  classification: 'classification', classifier: 'classification',
+  diffusion: 'image', 'image-generation': 'image',
+  audio: 'audio', asr: 'audio', stt: 'audio',
+  'music-generation': 'audio-generation', 'sound-generation': 'audio-generation',
+  sfx: 'audio-generation',
+  speech: 'tts', 'text-to-speech': 'tts',
+  model3d: 'model3d', '3d-generation': 'model3d', 'image-to-3d': 'model3d',
+  mesh: 'model3d',
+  reranker: 'reranking', rerank: 'reranking',
 };
 
-/** Label spellings that make an imported chat model the editor's Omni choice. */
-const IMPORTED_IMAGE_INPUT_LABELS = new Set([
-  'vision', 'vlm', 'vision-language', 'image-input', 'image-text-to-text',
-  'omni', 'multimodal', 'multi-modal',
-]);
+/** The shared image-input vocabulary, plus the editor's own Omni shorthand. */
+function indicatesImageInput(label: string): boolean {
+  return IMAGE_INPUT_LABELS.has(label) || label === 'omni';
+}
 
 function normalizeImportedCapability(raw: string, labels: string[]): CustomModelCapability {
   const lowerLabels = labels.map(label => label.toLowerCase().trim()).filter(Boolean);
@@ -423,21 +437,9 @@ function normalizeImportedCapability(raw: string, labels: string[]): CustomModel
     ? declared
     : IMPORTED_TYPE_KIND[raw.toLowerCase().trim()] || 'chat';
 
-  switch (kind) {
-    case 'image': return 'image';
-    case 'audio': return 'audio';
-    case 'audio-generation': return 'audio-generation';
-    case 'tts': return 'tts';
-    case 'model3d': return 'model3d';
-    case 'embedding': return 'embedding';
-    case 'reranking': return 'reranking';
-    case 'classification': return 'classification';
-    default:
-      return lowerLabels.some(label => IMPORTED_IMAGE_INPUT_LABELS.has(label))
-        || IMPORTED_IMAGE_INPUT_LABELS.has(raw.toLowerCase().trim())
-        ? 'omni'
-        : 'chat';
-  }
+  if (kind !== 'chat' && kind !== 'unknown') return kind;
+  // The editor's Omni choice covers a chat model that also takes images.
+  return [...lowerLabels, raw.toLowerCase().trim()].some(indicatesImageInput) ? 'omni' : 'chat';
 }
 
 function normalizeImportedRecord(raw: unknown, index: number): CustomModelDraft | null {

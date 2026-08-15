@@ -38,6 +38,8 @@ import {
   snapshotFromModelInfo,
   snapshotFromName,
   snapshotIdentity,
+  identityFor,
+  isComposerSelectableCapability,
   isRouterRecipe,
   modelStructure,
 } from '../modelCapabilities';
@@ -332,7 +334,7 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
 }
 
 function modelModeBadge(capability: ModelCapability, recipe?: string | null): string {
-  return isRouterRecipe(recipe) ? 'router' : capabilityBadge(capability);
+  return capabilityBadge(identityFor(capability, recipe));
 }
 
 const ModelModeIcons: React.FC<{
@@ -341,8 +343,9 @@ const ModelModeIcons: React.FC<{
   audioInput?: boolean;
   size?: number;
 }> = ({ capability, recipe, audioInput = false, size = 14 }) => {
-  if (isRouterRecipe(recipe)) {
-    return <Icon name="router" size={size} aria-hidden="true" />;
+  const identity = identityFor(capability, recipe);
+  if (identity !== capability) {
+    return <CapabilityIcon capability={identity} size={size} aria-hidden="true" />;
   }
   const showAudio = audioInput && capability === 'chat';
   return (
@@ -360,7 +363,8 @@ function modelModeLabel(capability: ModelCapability, audioInput = false): string
 }
 
 function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, recipe?: string | null): string {
-  return isRouterRecipe(recipe) ? 'Router' : modelModeLabel(capability, audioInput);
+  const identity = identityFor(capability, recipe);
+  return identity === capability ? modelModeLabel(capability, audioInput) : capabilityLabel(identity);
 }
 
 function deriveTitle(messages: Message[]): string {
@@ -1300,7 +1304,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return modelSupportsChatAudioInput(info, model);
   }, [knownModelInfos]);
   const selectableModels = useMemo(
-    () => loadedModels.filter(m => canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(capabilityForLoaded(m))),
+    () => loadedModels.filter(m => canSelectInComposer(m) || isComposerSelectableCapability(capabilityForLoaded(m))),
     [loadedModels, capabilityForLoaded],
   );
   type ModelPickerOption = {
@@ -1324,7 +1328,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     const addOption = (option: ModelPickerOption) => {
       const key = option.name.toLowerCase();
       if (!option.name || seen.has(key)) return;
-      if (!['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(option.capability)) return;
+      if (!isComposerSelectableCapability(option.capability)) return;
       const configuredDefault = lemonadeDefaultModel(option.name);
       seen.add(key);
       options.push(configuredDefault ? {
@@ -3091,7 +3095,7 @@ ${finalText}`
         key={c.id}
         id={`${idPrefix}-conv-${c.id}`}
         rowId={c.id}
-        capability={isRouterRecipe(c.model?.recipe) ? 'router' : capability}
+        capability={identityFor(capability, c.model?.recipe)}
         title={convTitle}
         meta={c.model?.name || undefined}
         anchor={timeAgo(c.updatedAt)}
@@ -3364,17 +3368,10 @@ ${finalText}`
                 aria-expanded={modelPickerOpen}
               >
                 {currentLoadedModel ? (
-                  isRouterRecipe(currentRecipe) ? (
-                    <span className="composer__model-mode composer__model-mode--router">
-                      <Icon name="router" size={14} aria-hidden="true" />
-                      <span>Router</span>
-                    </span>
-                  ) : (
-                    <span className={`composer__model-mode composer__model-mode--${capabilityBadge(currentCapability)}`}>
-                      <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={14} />
-                      <span>{modelModeLabel(currentCapability, supportsChatAudioInput)}</span>
-                    </span>
-                  )
+                  <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
+                    <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
+                    <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
+                  </span>
                 ) : (
                   <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
                 )}
@@ -4163,7 +4160,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
             const audioInput = modelSupportsChatAudioInput(customInfo || null, m);
             const modeLabel = modelModeDisplayLabel(cap, audioInput, m.recipe);
             const modeBadge = modelModeBadge(cap, m.recipe);
-            const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
+            const selectable = canSelectInComposer(m) || isComposerSelectableCapability(cap);
             const isActive = currentModel === m.model_name;
             return (
               <article className="active-card" key={m.model_name}>

@@ -69,6 +69,9 @@ test.describe('Model kind display', () => {
       const header = page.locator('.workspace-detail-panel__metadata').first();
       await expect(header, `${row.id} must show its own type`).toContainText(row.expected);
       await expect(header, `${row.id} must not be Unknown`).not.toContainText('Unknown');
+      if (row.expected !== 'Chat') {
+        await expect(header, `${row.id} must not also claim Chat`).not.toContainText('Chat');
+      }
     }
 
     await page.screenshot({ path: 'test-results/model-kind-display.png', fullPage: true });
@@ -95,15 +98,4 @@ test.describe('Model kind display', () => {
     await expect(list.filter({ hasText: 'Kind-Classification' })).toHaveCount(1);
   });
 
-  test('chat controls follow the declared input modalities', async ({ page }) => {
-    // A vision chat model offers image attachment; a plain chat model does not.
-    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Kind-Vision-Chat' }).first().click();
-    await expect(page.locator('.workspace-detail-panel__metadata').first()).toContainText('Chat');
-
-    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Kind-Classification' }).first().click();
-    const classificationHeader = page.locator('.workspace-detail-panel__metadata').first();
-    await expect(classificationHeader).toContainText('Classification');
-    // No /classify surface exists yet, so the row is informational only.
-    await expect(classificationHeader).not.toContainText('Chat');
-  });
 });

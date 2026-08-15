@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api, { type CloudProviderRow, type ModelInfo } from '../api';
-import { capabilityFromModelInfo } from '../modelCapabilities';
+import { capabilityFromModelInfo, isRouterRecipe } from '../modelCapabilities';
 import { Icon } from './Icon';
 import RouterNodeEditor from './RouterNodeEditor';
 import {
@@ -154,7 +154,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   }, [initialModel]);
 
   const candidateModels = useMemo(() => models
-    .filter(model => String((model as any).recipe || '').toLowerCase() !== 'collection.router')
+    .filter(model => !isRouterRecipe((model as any).recipe))
     .filter(model => {
       const capability = capabilityFromModelInfo(model);
       return capability === 'chat';
@@ -173,7 +173,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       return capabilityFromModelInfo(model) === 'embedding' || labels.includes('embedding') || labels.includes('embeddings');
     });
     return (explicit.length ? explicit : models)
-      .filter(model => String((model as any).recipe || '').toLowerCase() !== 'collection.router')
+      .filter(model => !isRouterRecipe((model as any).recipe))
       .sort((a, b) => modelLabel(a).localeCompare(modelLabel(b)));
   }, [models]);
 
@@ -657,7 +657,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                         <div className="router-editor__form-grid router-editor__form-grid--classifier">
                           <label><span>ID</span><input className="input" value={classifier.id} onChange={event => updateClassifier(index, { id: event.target.value })} /></label>
                           <label><span>Type</span><select className="select" value={classifier.type} onChange={event => updateClassifier(index, { ...createRouterClassifier(index, event.target.value as RouterClassifier['type']), id: classifier.id })}><option value="classifier">classifier</option><option value="semantic_similarity">semantic_similarity</option><option value="llm">llm</option></select></label>
-                          <label className="router-editor__wide"><span>Model</span><select className="select" value={classifier.model} onChange={event => updateClassifier(index, { model: event.target.value })}><option value="">Select model</option>{(classifier.type === 'semantic_similarity' ? embeddingModels : classifier.type === 'llm' ? candidateModels : models).filter(model => String((model as any).recipe || '').toLowerCase() !== 'collection.router').map(model => <option key={modelName(model)} value={modelName(model)}>{modelLabel(model)} · {modelName(model)}</option>)}</select></label>
+                          <label className="router-editor__wide"><span>Model</span><select className="select" value={classifier.model} onChange={event => updateClassifier(index, { model: event.target.value })}><option value="">Select model</option>{(classifier.type === 'semantic_similarity' ? embeddingModels : classifier.type === 'llm' ? candidateModels : models).filter(model => !isRouterRecipe((model as any).recipe)).map(model => <option key={modelName(model)} value={modelName(model)}>{modelLabel(model)} · {modelName(model)}</option>)}</select></label>
                           {classifier.type === 'semantic_similarity' ? (
                             <div className="router-editor__wide router-editor__concepts">
                               <div className="router-editor__mini-head"><span>Concepts and reference phrases</span><WorkspaceActionButton size="small" icon="plus" onClick={() => updateClassifier(index, { referencePhrases: { ...classifier.referencePhrases, [nextConceptName(classifier.referencePhrases)]: ['example phrase'] } })}>Concept</WorkspaceActionButton></div>

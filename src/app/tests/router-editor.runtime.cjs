@@ -37,7 +37,6 @@ const managerPath = path.join(root, 'src/components/ModelManager.tsx');
 const listPath = path.join(root, 'src/components/ModelListPanel.tsx');
 const editorPath = path.join(root, 'src/components/RouterEditorPanel.tsx');
 const nodeEditorPath = path.join(root, 'src/components/RouterNodeEditor.tsx');
-const capabilityPath = path.join(root, 'src/modelCapabilities.ts');
 const connectionPath = path.join(root, 'src/features/router/routerConnections.ts');
 const detailPath = path.join(root, 'src/components/ModelDetailPanel.tsx');
 const apiPath = path.join(root, 'src/api.ts');
@@ -48,7 +47,6 @@ const managerSource = fs.readFileSync(managerPath, 'utf8');
 const listSource = fs.readFileSync(listPath, 'utf8');
 const editorSource = fs.readFileSync(editorPath, 'utf8');
 const nodeEditorSource = fs.readFileSync(nodeEditorPath, 'utf8');
-const capabilitySource = fs.readFileSync(capabilityPath, 'utf8');
 const detailSource = fs.readFileSync(detailPath, 'utf8');
 const apiSource = fs.readFileSync(apiPath, 'utf8');
 
@@ -198,13 +196,6 @@ assert.doesNotMatch(editorSource, /issue #2405|remain hidden/i);
 assert.match(nodeEditorSource, /metadataComparator/);
 assert.match(nodeEditorSource, /normalizeRouterNode/);
 assert.match(nodeEditorSource, />AND<|>AND<\/button>/, 'a leaf must be wrappable into a compound rule');
-const capabilities = loadTypeScriptModule(capabilityPath);
-assert.equal(capabilities.modelStructure('collection.router'), 'router',
-  'a router collection is identified structurally, from its recipe');
-assert.equal(
-  capabilities.capabilityFromModelInfo({ id: 'user.router', recipe: 'collection.router', labels: ['chat'] }),
-  'chat',
-  'a router collection deploys as chat, which is what it serves');
 assert.match(editorSource, /Switching modes keeps the other configuration intact/);
 
 

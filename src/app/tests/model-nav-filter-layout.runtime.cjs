@@ -49,9 +49,7 @@ assert.doesNotMatch(nav, /\+ Recommended \+/);
 assert.match(list, /export function modelMatchesTasks/);
 assert.match(list, /export function modelMatchesBackends/);
 assert.match(list, /export function modelMatchesTags/);
-assert.match(list, /if \(filter === 'router'\) return modelIsRouter\(m\);/);
-assert.match(list, /if \(filter === 'omni'\) return modelIsOmni\(m\);/);
-assert.match(list, /if \(filter === 'llm'\) return cap === 'chat' && !modelIsRouter\(m\) && !modelIsOmniCollection\(m\);/);
+assert.match(list, /export function modelMatchesFilter/);
 assert.match(list, /raw\.recommended === true \|\| raw\.is_recommended === true \|\| raw\.featured === true \|\| raw\.suggested === true/);
 assert.match(list, /TAG_CHIPS: string\[\] = \['Recommended', 'Hot'/);
 assert.match(list, /if \(t === 'hot'\) return modelIsHot\(m\);/);
@@ -181,6 +179,13 @@ assert.doesNotThrow(() => helpers.ModelListPanel({
   tagFilters: new Set(),
 }), 'selecting a left-rail task must render the model list without throwing');
 
+assert.equal(helpers.modelMatchesFilter(routerModel, 'router'), true);
+assert.equal(helpers.modelMatchesFilter(omniModel, 'omni'), true);
+assert.equal(helpers.modelMatchesFilter(routerModel, 'llm'), false,
+  'a router collection has its own task and is not also Chat');
+assert.equal(helpers.modelMatchesFilter(omniModel, 'llm'), false,
+  'an omni collection has its own task and is not also Chat');
+assert.equal(helpers.modelMatchesFilter(chatModel, 'llm'), true);
 assert.equal(helpers.modelMatchesTasks(routerModel, new Set(['router'])), true);
 assert.equal(helpers.modelMatchesTasks(routerModel, new Set(['llm'])), false, 'Router must not double-count as Chat');
 assert.equal(helpers.modelMatchesTasks(chatModel, new Set(['llm', 'audio'])), true);

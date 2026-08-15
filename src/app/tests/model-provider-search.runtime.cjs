@@ -117,10 +117,8 @@ assert.doesNotMatch(capabilitiesSource, /registry_source/,
   'an installed model must not be classified by which registry it came from');
 assert.match(remoteCapabilitiesSource, /Repository IDs, display names and the user's search query are deliberately\n \* excluded/,
   'remote registry rows must avoid name guessing');
-assert.match(listPanelSource, /if \(filter === 'llm'\) return cap === 'chat' && !modelIsRouter\(m\) && !modelIsOmniCollection\(m\);/,
-  'Unknown capability rows and Router collections must not leak into the Chat task filter');
-assert.match(listPanelSource, /if \(filter === 'omni'\) return modelIsOmni\(m\);/,
-  'Omni models must match the dedicated Omni task filter');
+assert.match(listPanelSource, /const identity = identityFromModelInfo\(m\);/,
+  'task filtering asks for the identity rather than re-deriving collection rules');
 
 assert.match(nav, /const \[catalogsOpen, setCatalogsOpen\] = useState\(true\)/, 'Online Catalogs must be independently collapsible');
 assert.match(nav, /aria-expanded=\{catalogsOpen\}[\s\S]*aria-controls="nav-online-catalogs"[\s\S]*setCatalogsOpen/, 'Online Catalogs must use the standard collapsible section header');
