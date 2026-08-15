@@ -265,12 +265,16 @@ interface RouterRuleGraphProps {
   // Full-modal layout: workspace and inspector sit side by side and the
   // divider between them becomes draggable.
   expanded?: boolean;
+  // Allows a freshly-mounted expanded instance to inherit committed state from
+  // the inline instance. Without this, a blank keywords_any node (textValue='')
+  // looks identical to the initial empty graph and would be hidden on expand.
+  initialCommitted?: boolean;
 }
 
 const INSPECTOR_MIN_WIDTH = 320;
 const WORKSPACE_MIN_WIDTH = 360;
 
-export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifiers, onChange, onExpand, expanded = false }) => {
+export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifiers, onChange, onExpand, expanded = false, initialCommitted }) => {
   const [toolboxCollapsed, setToolboxCollapsed] = useState(false);
   const [toolboxSearch, setToolboxSearch] = useState('');
   const [selectedPath, setSelectedPath] = useState<RouterNodePath | null>(null);
@@ -290,8 +294,10 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   // True once the user has explicitly dropped or committed a node. Prevents a
   // freshly-dropped blank keywords_any (textValue='') from being hidden by the
   // isBlankRouterGraphNode check, which also matches the initial default state.
-  // Initialized from the node so inline↔expanded instances agree on first render.
-  const hasCommittedRef = useRef(!isBlankRouterGraphNode(node));
+  // initialCommitted lets the expanded modal inherit committed state from the
+  // inline instance for nodes that look blank but were explicitly placed.
+  const hasCommittedRef = useRef(initialCommitted ?? !isBlankRouterGraphNode(node));
+  const isMountedRef = useRef(false);
 
   const selectedNode = selectedPath ? routerNodeAtPath(node, selectedPath) : null;
   const blank = isBlankRouterGraphNode(node) && !hasCommittedRef.current;
@@ -301,6 +307,14 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   }, [node, selectedPath]);
 
   useEffect(() => {
+    // Skip on initial mount — hasCommittedRef is correctly seeded by useRef
+    // (using initialCommitted when provided, otherwise derived from the node).
+    // Running on mount would overwrite that with a stale isBlankRouterGraphNode
+    // check and drop a committed-but-empty keywords_any node on the canvas.
+    if (!isMountedRef.current) {
+      isMountedRef.current = true;
+      return;
+    }
     // Inline and expanded builders may edit the same rule. If this instance
     // receives a node it did not emit itself, its undo/redo snapshots belong to
     // an older tree and must not be allowed to overwrite the external change.
@@ -310,8 +324,6 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
     }
     historyRef.current = [];
     futureRef.current = [];
-    // Derive committed state from the node itself so that switching between
-    // inline and expanded instances always agrees: a non-blank node is committed.
     hasCommittedRef.current = !isBlankRouterGraphNode(node);
     setSelectedPath(null);
   }, [node]);

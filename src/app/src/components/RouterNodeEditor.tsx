@@ -42,7 +42,11 @@ export const RouterSelect: React.FC<RouterSelectProps> = ({ value, options, onCh
 
   useEffect(() => {
     if (!open) return;
-    const closeOnScroll = () => setOpen(false);
+    const closeOnScroll = (e: Event) => {
+      const t = e.target as Node;
+      if (popoverRef.current?.contains(t)) return;
+      setOpen(false);
+    };
     window.addEventListener('scroll', closeOnScroll, { capture: true, passive: true });
     window.addEventListener('resize', reposition, { passive: true });
     return () => {

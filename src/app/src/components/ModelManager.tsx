@@ -1085,7 +1085,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [tagFilters, setTagFilters] = useState<Set<string>>(() => new Set());
   const mobileRail = useWorkspaceMobileRail();
   const [navRailCollapsed, setNavRailCollapsed] = useState(false);
-  const [listPanelCollapsed, setListPanelCollapsed] = useState(false);
   const panelResize = useWorkspacePanelResize<HTMLDivElement>({
     storageKey: 'lemonade_workspace_models_list_width_v2',
     railCollapsed: navRailCollapsed,
@@ -2777,8 +2776,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   return (
     <div
       ref={panelResize.containerRef}
-      className={`manager manager--detail workspace-three-panel${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}${mobileRail.isOpen ? ' manager--nav-open' : ''}${navRailCollapsed ? ' workspace--rail-collapsed' : ''}${listPanelCollapsed ? ' workspace--list-collapsed' : ''}`}
-      style={listPanelCollapsed ? undefined : panelResize.style}
+      className={`manager manager--detail workspace-three-panel${mobileDetailOpen ? ' manager--detail-mobile-open' : ''}${mobileRail.isOpen ? ' manager--nav-open' : ''}${navRailCollapsed ? ' workspace--rail-collapsed' : ''}`}
+      style={panelResize.style}
     >
       {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
       <WorkspaceMobileMenuButton
@@ -2862,8 +2861,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         onOpenRouter={() => openRouterEditor(selectedDetailModel)}
         onUpdateAllModels={() => { void handleUpdateAllModels(); }}
         onOpenCustomModels={() => openCustomForm('model')}
-        onToggleListPanel={() => setListPanelCollapsed(v => !v)}
-        listPanelCollapsed={listPanelCollapsed}
         pinnedNames={pinnedNameSet}
         onTogglePin={togglePinnedModel}
         favoriteNames={favoriteNameSet}

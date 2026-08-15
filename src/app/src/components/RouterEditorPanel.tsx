@@ -218,6 +218,10 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   const [dragRuleIndex, setDragRuleIndex] = useState<number | null>(null);
   const [selectedRuleIndex, setSelectedRuleIndex] = useState(0);
   const [expandedRuleIndex, setExpandedRuleIndex] = useState<number | null>(null);
+  // Tracks rule indices whose graph has been committed at least once. Needed to
+  // pass initialCommitted=true to the expanded RouterRuleGraph so a blank
+  // keywords_any node (textValue='') isn't mistaken for the initial empty state.
+  const committedRuleIndicesRef = useRef<Set<number>>(new Set());
   const [cloudProviders, setCloudProviders] = useState<CloudProviderRow[]>([]);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
@@ -1323,7 +1327,10 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
                         key={`rule-${selectedRuleIndex}`}
                         node={selectedRule.condition}
                         classifiers={draft.classifiers}
-                        onChange={condition => setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, condition } : item) })}
+                        onChange={condition => {
+                          committedRuleIndicesRef.current.add(selectedRuleIndex);
+                          setPatch({ rules: draft.rules.map((item, itemIndex) => itemIndex === selectedRuleIndex ? { ...item, condition } : item) });
+                        }}
                         onExpand={() => setExpandedRuleIndex(selectedRuleIndex)}
                       />
                       <details className="router-editor__outputs">
@@ -1378,6 +1385,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
               node={expandedRule.condition}
               classifiers={draft.classifiers}
               expanded
+              initialCommitted={committedRuleIndicesRef.current.has(expandedRuleIndex)}
               onChange={condition => setPatch({
                 rules: draft.rules.map((item, itemIndex) => itemIndex === expandedRuleIndex ? { ...item, condition } : item),
               })}
