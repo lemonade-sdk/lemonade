@@ -7,6 +7,7 @@
 #include <lemon_cli/agent_config_file.h>
 #include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
+#include <lemon/model_registry.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
 #include <lemon_cli/opencode_profile.h>
@@ -49,7 +50,9 @@
 #include "lemon/utils/aixlog.hpp"
 
 static const std::vector<std::string> VALID_LABELS = {
+    "chat",
     "coding",
+    "dflash",
     "embeddings",
     "hot",
     "mtp",
@@ -150,7 +153,7 @@ struct CliConfig {
     std::string list_filter;
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
-    std::string model_source = "huggingface";
+    std::string model_source;  // empty means defer to lemond's default_model_source
     bool model_source_explicit = false;
     std::vector<std::string> labels;
     std::vector<std::string> components;
@@ -335,23 +338,6 @@ static int handle_import_command(lemonade::LemonadeClient& client, const CliConf
                                            config.skip_prompt, config.yes, nullptr, true);
 }
 
-static std::optional<std::string> explicit_registry_source_from_url(const std::string& value) {
-    if (value.rfind("https://huggingface.co/", 0) == 0 ||
-        value.rfind("http://huggingface.co/", 0) == 0) {
-        return "huggingface";
-    }
-    for (const char* prefix : {
-             "https://modelscope.cn/models/",
-             "https://www.modelscope.cn/models/",
-             "http://modelscope.cn/models/",
-             "http://www.modelscope.cn/models/",
-             "https://modelscope.ai/models/",
-             "https://www.modelscope.ai/models/"}) {
-        if (value.rfind(prefix, 0) == 0) return "modelscope";
-    }
-    return std::nullopt;
-}
-
 static int handle_manual_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     nlohmann::json model_data;
 
@@ -366,29 +352,37 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
             std::string detected_source;
             checkpoints[type] = lemon_cli::normalize_registry_checkpoint_arg(
                 checkpoint, config.model_source, &detected_source);
-
-            if (auto source_from_url = explicit_registry_source_from_url(checkpoint)) {
+            lemon::RemoteRegistrySource detected;
+            std::string repo_id;
+            if (lemon::detect_registry_url(checkpoint, detected, repo_id)) {
+                std::string url_source = lemon::remote_registry_source_name(detected);
                 if (config.model_source_explicit &&
-                    config.model_source != *source_from_url) {
+                    config.model_source != url_source) {
                     std::cerr
-                        << "Error: checkpoint URL uses " << *source_from_url
+                        << "Error: checkpoint URL uses " << url_source
                         << " but --source was set to " << config.model_source
                         << "." << std::endl;
                     return 1;
                 }
-
-                if (explicit_source && *explicit_source != *source_from_url) {
+                if (explicit_source && *explicit_source != url_source) {
                     std::cerr << "Error: all checkpoints in one model must use the same "
                                  "remote registry." << std::endl;
                     return 1;
                 }
-                explicit_source = *source_from_url;
+                explicit_source = url_source;
             }
         }
         model_data["checkpoints"] = std::move(checkpoints);
     }
 
-    model_data["source"] = explicit_source.value_or(config.model_source);
+    // Only pin a registry when one was actually chosen (a checkpoint URL or
+    // --source). Otherwise leave it unset so lemond applies its configured
+    // default_model_source and persists that provenance.
+    if (explicit_source) {
+        model_data["source"] = *explicit_source;
+    } else if (config.model_source_explicit) {
+        model_data["source"] = config.model_source;
+    }
 
     if (!config.components.empty()) {
         model_data["components"] = config.components;
@@ -432,7 +426,22 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
         return handle_manual_pull_command(client, config);
     }
 
+    // Detect the URL source before normalization so we can reject mismatches
+    // with --source before normalize_registry_checkpoint_arg silently converts
+    // the user's value or lets the URL win.
+    lemon::RemoteRegistrySource detected;
+    std::string url_repo_id;
     std::string detected_source;
+    if (lemon::detect_registry_url(config.model, detected, url_repo_id)) {
+        std::string url_source = lemon::remote_registry_source_name(detected);
+        if (config.model_source_explicit && config.model_source != url_source) {
+            std::cerr << "Error: model URL uses " << url_source
+                      << " but --source was set to " << config.model_source << "."
+                      << std::endl;
+            return 1;
+        }
+        detected_source = url_source;
+    }
     std::string normalized_model = lemon_cli::normalize_registry_checkpoint_arg(
         config.model, config.model_source, &detected_source);
 
@@ -597,16 +606,6 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     lemonade::LemonadeClient& client,
     int context_window) {
-    static const std::unordered_set<std::string> non_llm_labels = {
-        "embeddings",
-        "reranking",
-        "transcription",
-        "image",
-        "tts",
-        "upscaling",
-        "edit"
-    };
-
     std::vector<lemon_cli::AgentModelEntry> models;
 
     try {
@@ -623,17 +622,17 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
                 continue;
             }
 
-            bool is_llm = true;
-            if (model.contains("labels") && model["labels"].is_array()) {
-                for (const auto& label : model["labels"]) {
-                    if (label.is_string() && non_llm_labels.count(label.get<std::string>()) > 0) {
-                        is_llm = false;
+            bool is_chat = false;
+            const auto labels = model.find("labels");
+            if (labels != model.end() && labels->is_array()) {
+                for (const auto& label : *labels) {
+                    if (label.is_string() && label.get<std::string>() == "chat") {
+                        is_chat = true;
                         break;
                     }
                 }
             }
-
-            if (!is_llm) {
+            if (!is_chat) {
                 continue;
             }
 
@@ -1330,7 +1329,8 @@ int main(int argc, char* argv[]) {
         ->type_name("MODEL_OR_CHECKPOINT");
     CLI::Option* pull_source_opt =
         pull_cmd->add_option("--source", config.model_source,
-            "Remote registry for checkpoint pulls: huggingface or modelscope")
+            "Remote registry for checkpoint pulls: huggingface or modelscope "
+            "(default: the server's configured default_model_source)")
             ->type_name("SOURCE")
             ->check(CLI::IsMember({"huggingface", "modelscope"}));
     pull_cmd->add_option("--checkpoint", config.checkpoints,

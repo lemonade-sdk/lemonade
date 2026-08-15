@@ -206,7 +206,66 @@ class EndpointTests(ServerTestBase):
                     f"Endpoint {endpoint} is not registered on {version}",
                 )
 
+        # POST-only routes should be probed with their actual method. httplib does
+        # not synthesize HEAD responses for POST handlers.
+        for endpoint in ["models/register"]:
+            for version in ["v0", "v1"]:
+                url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
+                response = session.post(url, json={}, timeout=TIMEOUT_DEFAULT)
+                self.assertNotEqual(
+                    response.status_code,
+                    404,
+                    f"POST endpoint {endpoint} is not registered on {version}",
+                )
+
         session.close()
+
+    def test_000a_register_model_definition_without_pull(self):
+        """Register a user model definition without downloading its checkpoint."""
+        canonical_name = f"user.RegisterEndpoint-{uuid.uuid4().hex[:8]}"
+        checkpoint = "example/register-endpoint-test:Q4_K_M"
+        try:
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "llamacpp",
+                    "checkpoint": checkpoint,
+                    "labels": ["test-register-endpoint"],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            body = response.json()
+            self.assertEqual(body.get("status"), "success")
+            self.assertEqual(body.get("canonical_model_name"), canonical_name)
+            public_name = body.get("model_name")
+            self.assertIsInstance(public_name, str)
+            self.assertTrue(public_name)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200, models_response.text)
+            entry = next(
+                model
+                for model in models_response.json()["data"]
+                if model["id"] == public_name
+            )
+            self.assertEqual(entry.get("checkpoint"), checkpoint)
+            self.assertEqual(entry.get("recipe"), "llamacpp")
+            self.assertFalse(entry.get("downloaded"))
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
@@ -490,6 +549,36 @@ class EndpointTests(ServerTestBase):
             "Loaded model should be exposed in lemonade_model_info",
         )
         print("[OK] /metrics returned Prometheus text with loaded model samples")
+
+    def test_002b_cache_and_routing_metrics_series(self):
+        """Cache-effectiveness and route-stability series exist in /metrics and /stats."""
+        response = requests.get(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.text
+        self.assertIn("# HELP lemonade_model_cache_tokens ", body)
+        self.assertIn("# HELP lemonade_model_cache_tokens_total ", body)
+
+        samples = self._parse_prometheus_text(body)
+        for series in (
+            "lemonade_cache_tokens_total",
+            "lemonade_routing_decisions_total",
+            "lemonade_routing_switches_total",
+        ):
+            self.assertIn(series, samples, f"{series} missing from /metrics")
+
+        stats_response = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(stats_response.status_code, 200)
+        stats = stats_response.json()
+        for key in (
+            "cache_tokens",
+            "cache_tokens_total",
+            "routing_decisions_total",
+            "routing_switches_total",
+        ):
+            self.assertIn(key, stats, f"{key} missing from /stats")
+        print("[OK] cache and routing telemetry series present in /metrics and /stats")
 
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""
@@ -6736,13 +6825,281 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
-    def test_037_model_update_check_lifecycle(self):
-        """A successful re-pull clears a staged per-model update marker.
+    def test_051_default_model_source_policy(self):
+        """default_model_source validates and drives source-less variant lookups."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
 
-        The production fix stores the processed upstream snapshot per model
-        selection in .lemonade_registry.json. Staging only that value as stale
-        exercises the regression without moving refs/main or model files that
-        may be shared by sibling variants in the same repository.
+        prior = (
+            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+            .json()
+            .get("default_model_source", "huggingface")
+        )
+        try:
+            # Ships defaulting to Hugging Face.
+            self.assertIn(prior, ("huggingface", "modelscope"))
+
+            # An unsupported registry name is rejected by config validation.
+            bad = requests.post(
+                set_url,
+                json={"default_model_source": "nexus"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(bad.status_code, 400, bad.text)
+
+            # Switching the policy round-trips.
+            resp = requests.post(
+                set_url,
+                json={"default_model_source": "modelscope"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            read_back = (
+                requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+                .json()
+                .get("default_model_source")
+            )
+            self.assertEqual(read_back, "modelscope")
+
+            # A source-less variant lookup now resolves to ModelScope: the 404
+            # message names the registry the server actually contacted, proving
+            # the policy drove the choice without a per-request source.
+            variants = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={"checkpoint": "lemonade/definitely-not-a-real-repo"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(variants.status_code, 404, variants.text)
+            self.assertIn("ModelScope", variants.text)
+
+            # An explicit source always overrides the configured default.
+            override = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={
+                    "checkpoint": "lemonade/definitely-not-a-real-repo",
+                    "source": "huggingface",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(override.status_code, 404, override.text)
+            self.assertIn("Hugging Face", override.text)
+
+            # A provider URL is detected server-side and beats the configured
+            # policy: even with the default set to ModelScope, a Hugging Face URL
+            # is normalized and contacts Hugging Face.
+            url_lookup = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={
+                    "checkpoint": (
+                        "https://huggingface.co/lemonade/definitely-not-a-real-repo"
+                    )
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(url_lookup.status_code, 404, url_lookup.text)
+            self.assertIn("Hugging Face", url_lookup.text)
+        finally:
+            requests.post(
+                set_url,
+                json={"default_model_source": prior},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def test_052_default_source_pull_persistence(self):
+        """A source-less /pull persists the configured default as the model's
+        registry provenance; an explicit source is recorded verbatim."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        prior = (
+            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+            .json()
+            .get("default_model_source", "huggingface")
+        )
+        default_name = f"user.DefaultSource-{uuid.uuid4().hex[:8]}"
+        explicit_name = f"user.ExplicitSource-{uuid.uuid4().hex[:8]}"
+
+        def persisted_source(model_name):
+            info = requests.get(
+                f"{self.base_url}/models/{model_name}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            return info.get("registry_source") or info.get("source")
+
+        try:
+            # Force the shipped default so the source-less pull resolves to a
+            # registry that actually hosts the tiny test checkpoint.
+            requests.post(
+                set_url,
+                json={"default_model_source": "huggingface"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+            # Source-less pull: persisted provenance is the configured default.
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": default_name,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertEqual(persisted_source(default_name), "huggingface")
+
+            # Explicit source is recorded even when it matches the default.
+            resp2 = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": explicit_name,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "source": "huggingface",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp2.status_code, 200, resp2.text)
+            self.assertEqual(persisted_source(explicit_name), "huggingface")
+
+            print("[OK] source-less /pull persists default_model_source provenance")
+        finally:
+            for name in (default_name, explicit_name):
+                try:
+                    requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+            requests.post(
+                set_url,
+                json={"default_model_source": prior},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def test_053_pull_source_url_conflict_returns_400(self):
+        """A provider URL that contradicts an explicit source/registry_source is
+        rejected up front with 400, matching the CLI, before any download."""
+        name = f"user.Conflict-{uuid.uuid4().hex[:8]}"
+        try:
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://huggingface.co/owner/repo",
+                    "recipe": "llamacpp",
+                    "source": "modelscope",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, resp.text)
+
+            resp2 = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://modelscope.cn/models/owner/repo",
+                    "recipe": "llamacpp",
+                    "registry_source": "huggingface",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp2.status_code, 400, resp2.text)
+            print("[OK] conflicting /pull source vs provider URL returns 400")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_054_pull_variants_url_source_conflict_returns_400(self):
+        """GET /pull/variants with a --source param that contradicts the
+        detected URL registry is rejected with 400 (matching /pull and CLI)."""
+        # HF URL with --source modelscope should be rejected
+        resp = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://huggingface.co/fredmagg/Phi-4-mini-instruct-GGUF",
+                "source": "modelscope",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+        self.assertIn("checkpoint URL uses", resp.json()["error"])
+        self.assertIn("but source was set to", resp.json()["error"])
+
+        # MS URL with --source huggingface should also be rejected
+        resp2 = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://modelscope.cn/models/owner/repo",
+                "source": "huggingface",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp2.status_code, 400, resp2.text)
+
+        # An invalid source with a URL should also be rejected
+        resp3 = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://huggingface.co/owner/repo",
+                "source": "nexus",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp3.status_code, 400, resp3.text)
+        print("[OK] /pull/variants rejects URL vs --source mismatches")
+
+    def test_055_pull_invalid_source_rejected(self):
+        """Invalid source values (not huggingface/modelscope/local_*) are
+        rejected before URL normalization, not silently overwritten."""
+        name = f"user.InvalidSrc-{uuid.uuid4().hex[:8]}"
+        try:
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://huggingface.co/owner/repo",
+                    "recipe": "llamacpp",
+                    "source": "nexus",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, resp.text)
+            self.assertIn("Unsupported model source", resp.json()["error"])
+            print("[OK] invalid source rejected before URL normalization")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_037_model_update_check_lifecycle(self):
+        """A staged stale provenance snapshot must not flag a false update.
+
+        The processed-at-pull snapshot recorded in .lemonade_registry.json can
+        name a commit whose snapshot was never materialized locally (pull keeps
+        refs/main on an older snapshot when the selected artifacts are
+        unchanged). The update check compares against the on-disk snapshot,
+        never that recorded sha, so staging only it as stale must not report an
+        "Update available". Regression for the false-positive cycle on restart.
         """
         pull_response = requests.post(
             f"{self.base_url}/pull",
@@ -6808,7 +7165,12 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(stale_response.status_code, 200, stale_response.text)
             stale_result = stale_response.json()
             self.assertEqual(stale_result.get("status"), "success")
-            self.assertIn(ENDPOINT_TEST_MODEL, stale_result.get("models", []))
+            self.assertNotIn(
+                ENDPOINT_TEST_MODEL,
+                stale_result.get("models", []),
+                "A stale provenance snapshot must not raise a false update flag "
+                "while the on-disk snapshot is unchanged",
+            )
 
             repull_response = requests.post(
                 f"{self.base_url}/pull",
@@ -6835,7 +7197,7 @@ class EndpointTests(ServerTestBase):
             with open(provenance_path, "w", encoding="utf-8") as provenance_file:
                 provenance_file.write(original_provenance)
 
-        print("[OK] /models/check-updates lifecycle clears after re-pull")
+        print("[OK] /models/check-updates ignores stale provenance snapshots")
 
 
 if __name__ == "__main__":

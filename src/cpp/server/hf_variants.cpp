@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/model_types.h"
 #include "lemon/model_registry.h"
 #include "lemon/utils/http_client.h"
@@ -33,6 +34,14 @@ bool ends_with(const std::string& s, const std::string& suffix) {
 
 bool contains_ci(const std::string& s, const std::string& needle) {
     return to_lower(s).find(to_lower(needle)) != std::string::npos;
+}
+
+bool is_draft_companion(const std::string& path) {
+    std::string filename = to_lower(path);
+    size_t slash = filename.find_last_of('/');
+    if (slash != std::string::npos) filename = filename.substr(slash + 1);
+    return filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf" ||
+           filename.rfind("mtp-", 0) == 0;
 }
 
 // Quant token extractor. Recognizes the variants we actually see in
@@ -79,12 +88,6 @@ int quant_priority(const std::string& q) {
     return it == priority.end() ? 100 : it->second;
 }
 
-void add_label(std::vector<std::string>& labels, const std::string& label) {
-    if (std::find(labels.begin(), labels.end(), label) == labels.end()) {
-        labels.push_back(label);
-    }
-}
-
 }  // namespace
 
 GgufVariantSet enumerate_gguf_variants(
@@ -101,19 +104,23 @@ GgufVariantSet enumerate_gguf_variants(
         return it == size_by_file.end() ? 0 : it->second;
     };
 
-    // Partition into mmproj vs regular gguf files.
+    // Companion GGUFs must not become selectable main-model variants.
     std::vector<std::string> gguf_files;
     for (const auto& f : repo_files) {
         std::string f_lower = to_lower(f);
         if (!ends_with(f_lower, ".gguf")) continue;
+        size_t slash = f.find_last_of('/');
+        std::string bare = slash == std::string::npos ? f : f.substr(slash + 1);
         if (f_lower.find("mmproj") != std::string::npos) {
-            size_t slash = f.find_last_of('/');
-            result.mmproj_files.push_back(slash == std::string::npos ? f : f.substr(slash + 1));
+            result.mmproj_files.push_back(bare);
+        } else if (is_draft_companion(f)) {
+            result.draft_files.push_back(bare);
         } else {
             gguf_files.push_back(f);
         }
     }
     std::sort(result.mmproj_files.begin(), result.mmproj_files.end());
+    std::sort(result.draft_files.begin(), result.draft_files.end());
 
     // Group by top-level folder vs root files.
     std::map<std::string, std::vector<std::string>> folder_groups;
@@ -281,14 +288,18 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         vj["sharded"] = repo_files.size() > 1;
         vj["size_bytes"] = total_repo_size;
 
+        std::vector<std::string> labels;
+        backends::ensure_deployment_label(labels, "ryzenai-llm");
+
         nlohmann::json out;
         out["checkpoint"] = checkpoint;
         out["source"] = remote_registry_source_name(source);
         out["recipe"] = "ryzenai-llm";
         out["repo_kind"] = "onnx-ryzenai";
         out["suggested_name"] = suggested_name;
-        out["suggested_labels"] = nlohmann::json::array();
+        out["suggested_labels"] = labels;
         out["mmproj_files"] = nlohmann::json::array();
+        out["draft_files"] = nlohmann::json::array();
         out["variants"] = nlohmann::json::array({vj});
         return out;
     }
@@ -343,6 +354,9 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
                 "array, and a 'models' array)");
         }
 
+        std::vector<std::string> labels;
+        backends::ensure_deployment_label(labels, "collection.omni");
+
         // Inspection result only: what it is, its name, and (for the CLI's
         // display line) its size and component count. The manifest content is
         // deliberately omitted — /pull re-downloads it to disk.
@@ -352,8 +366,9 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         out["recipe"] = "collection.omni";
         out["repo_kind"] = "collection";
         out["suggested_name"] = suggested_name;
-        out["suggested_labels"] = nlohmann::json::array();
+        out["suggested_labels"] = labels;
         out["mmproj_files"] = nlohmann::json::array();
+        out["draft_files"] = nlohmann::json::array();
         out["variants"] = nlohmann::json::array();
         if (manifest.contains("size") && manifest["size"].is_number()) {
             out["size"] = manifest["size"];
@@ -371,14 +386,17 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
             "' manifest exported by 'lemonade export')");
     }
 
-    // Suggested labels.
+    // Suggested labels. These are what the client previews before confirming
+    // the pull, so they run through the same stamper that /pull applies at
+    // registration; otherwise the preview and the registered model disagree.
     std::vector<std::string> labels;
-    if (!vset.mmproj_files.empty()) add_label(labels, "vision");
+    if (!vset.mmproj_files.empty()) add_label_once(labels, "vision");
     {
         std::string id_lower = to_lower(checkpoint);
-        if (id_lower.find("embed") != std::string::npos) add_label(labels, "embeddings");
-        if (id_lower.find("rerank") != std::string::npos) add_label(labels, "reranking");
+        if (id_lower.find("embed") != std::string::npos) add_label_once(labels, "embeddings");
+        if (id_lower.find("rerank") != std::string::npos) add_label_once(labels, "reranking");
     }
+    backends::ensure_deployment_label(labels, "llamacpp");
 
     nlohmann::json out;
     out["checkpoint"] = checkpoint;
@@ -388,6 +406,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     out["suggested_name"] = suggested_name;
     out["suggested_labels"] = labels;
     out["mmproj_files"] = vset.mmproj_files;
+    out["draft_files"] = vset.draft_files;
 
     nlohmann::json variants_json = nlohmann::json::array();
     for (const auto& v : vset.variants) {

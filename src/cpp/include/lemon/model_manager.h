@@ -40,6 +40,19 @@ public:
 };
 constexpr const char* kUnknownModelErrorCode = "unknown_model";
 
+// Thrown when a definition names a deployment mode its recipe's backend cannot
+// serve. Registering it would list the model as something it is not and then
+// fail at inference time. A definition naming *no* mode is not an error: the
+// recipe's default is stamped instead.
+//
+// CONTRACT: the /pull HTTP handler catches this type and returns 400. Loading an
+// already-persisted entry does not go through registration, so an entry written
+// by an older version is still normalized rather than blocking startup.
+class InvalidModelDefinitionError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 // Progress information for download operations
 struct DownloadProgress {
     std::string file;           // Current file being downloaded
@@ -210,6 +223,13 @@ public:
                             const json& model_data,
                             const std::string& source = "");
 
+    // Register or validate a model definition without downloading its files.
+    // Uses the same registration path as download_model.
+    void register_model(const std::string& model_name,
+                       const json& model_data,
+                       bool allow_missing_checkpoint = false,
+                       bool replace_existing = false);
+
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,
                        const json& model_data,
@@ -315,7 +335,10 @@ private:
                        const json& model_data,
                        bool do_not_upgrade,
                        DownloadProgressCallback progress_callback,
-                       std::set<std::string>& visited);
+                       std::set<std::string>& visited,
+                       bool register_only,
+                       bool allow_missing_checkpoint,
+                       bool replace_existing);
 
     json load_server_models();
     json load_architecture_defaults();
