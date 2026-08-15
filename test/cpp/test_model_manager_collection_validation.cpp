@@ -216,23 +216,74 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
           error_contains(manager.validate_collection_request("user.RouterKit", kokoro_clf),
                          "cannot serve as a classifier"));
 
-    // The inverse: /v1/classify is served only by onnxruntime. A `classification`
-    // label on llamacpp (which cannot classify) must NOT type it CLASSIFICATION,
-    // or run_classifier would call Router::classify() and fail. It stays LLM and
-    // is accepted as an LLM-as-classifier via the chat path.
-    manager.register_user_model(
-        "user.LlamaClf",
-        json{{"model_name", "user.LlamaClf"}, {"recipe", "llamacpp"},
-             {"checkpoint", "example/x:Q4_K_M"}, {"labels", {"classification"}}});
-    check("llamacpp + labels:[classification] stays LLM, not CLASSIFICATION",
-          manager.get_model_info("user.LlamaClf").type == lemon::ModelType::LLM);
+    // The inverse: /v1/classify is served only by onnxruntime, so a
+    // `classification` label on a chat backend names a mode it cannot serve.
+    // Registration refuses it rather than registering a model that would fail
+    // when run_classifier reached Router::classify().
+    bool rejected = false;
+    try {
+        manager.register_user_model(
+            "user.LlamaClf",
+            json{{"model_name", "user.LlamaClf"}, {"recipe", "llamacpp"},
+                 {"checkpoint", "example/x:Q4_K_M"}, {"labels", {"classification"}}});
+    } catch (const lemon::InvalidModelDefinitionError&) {
+        rejected = true;
+    }
+    check("llamacpp + labels:[classification] rejected at registration", rejected);
+    check("rejected registration persists nothing",
+          !manager.model_exists("user.LlamaClf"));
 
+    // Collection import refuses the same definition up front, so validation and
+    // registration cannot disagree about whether the import is legal.
     json llama_clf_label = router_with_classifier(
         "classifier",
         json{{"model_name", "xclf"}, {"recipe", "llamacpp"},
              {"checkpoint", "example/xclf:Q4_K_M"}, {"labels", {"classification"}}});
-    check("llamacpp + labels:[classification] accepted as classifier via LLM chat path",
-          !manager.validate_collection_request("user.RouterKit", llama_clf_label).has_value());
+    check("llamacpp + labels:[classification] rejected as an inline component",
+          error_contains(manager.validate_collection_request("user.RouterKit", llama_clf_label),
+                         "cannot serve"));
+
+    // llamacpp serves chat and embeddings, but llama-server is spawned for one
+    // of them, so a model claiming both would advertise /embeddings while loaded
+    // for chat. Both mode claims are servable here — it is having two that is
+    // refused.
+    bool two_modes_rejected = false;
+    try {
+        manager.register_user_model(
+            "user.LlamaBoth",
+            json{{"model_name", "user.LlamaBoth"}, {"recipe", "llamacpp"},
+                 {"checkpoint", "example/y:Q4_K_M"}, {"labels", {"chat", "embeddings"}}});
+    } catch (const lemon::InvalidModelDefinitionError&) {
+        two_modes_rejected = true;
+    }
+    check("llamacpp + labels:[chat, embeddings] rejected at registration",
+          two_modes_rejected);
+    check("rejected two-mode registration persists nothing",
+          !manager.model_exists("user.LlamaBoth"));
+
+    // The legacy capability flags are the same claim by another spelling, so the
+    // rule cannot be sidestepped by writing `embedding: true` beside `chat`.
+    bool flag_rejected = false;
+    try {
+        manager.register_user_model(
+            "user.LlamaFlag",
+            json{{"model_name", "user.LlamaFlag"}, {"recipe", "llamacpp"},
+                 {"checkpoint", "example/z:Q4_K_M"}, {"labels", {"chat"}},
+                 {"embedding", true}});
+    } catch (const lemon::InvalidModelDefinitionError&) {
+        flag_rejected = true;
+    }
+    check("llamacpp + labels:[chat] + embedding:true rejected at registration",
+          flag_rejected);
+
+    // An LLM used as a router classifier needs no label of its own: the plain
+    // chat model is a valid classifier.
+    json llama_clf_bare = router_with_classifier(
+        "classifier",
+        json{{"model_name", "xclf2"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/xclf2:Q4_K_M"}});
+    check("label-less llamacpp accepted as classifier via LLM chat path",
+          !manager.validate_collection_request("user.RouterKit", llama_clf_bare).has_value());
 }
 
 static void test_register_preserves_routing(ModelManager& manager) {

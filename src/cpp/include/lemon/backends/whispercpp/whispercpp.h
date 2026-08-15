@@ -36,9 +36,9 @@ inline const BackendDescriptor descriptor = {
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
     },
-    /*default_labels*/  {"transcription", "realtime-transcription"},
+    /*supported_modes*/ {"transcription"},
     /*required_checkpoints*/ {"main"},  // npu_cache validated in load() (npu variant only)
-    /*modality*/        "Speech-to-text",
+    /*default_capabilities*/ {"realtime-transcription"},
     /*experimental*/    false,
     /*web_display_name*/ "whisper.cpp",
     /*rocm_channels*/   {},
