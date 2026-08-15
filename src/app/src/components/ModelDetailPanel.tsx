@@ -835,51 +835,72 @@ const HfOverviewTab: React.FC<{
   isPulling: boolean;
   isActive: boolean;
 }> = ({ hfModel, hfVariants, onHfPull, isPulling, isActive }) => {
+  const [selectedVariantName, setSelectedVariantName] = useState('');
+  const selectedVariant = hfVariants?.variants.find(v => v.name === selectedVariantName)
+    ?? hfVariants?.variants[0];
+
   if (!isActive) return null;
   return (
     <div className="detail-tab-content hf-detail__overview">
       {hfVariants ? (
         <>
-          {hfVariants.suggested_labels.length > 0 && (
+          {hfVariants.mmproj_files.length > 0 && (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Capabilities</span>
-              <div className="hf-detail__overview-value">{hfVariants.suggested_labels.join(', ')}</div>
+              <span className="hf-detail__overview-label">Included components</span>
+              <div className="hf-detail__overview-value">Vision projector (MMProj)</div>
             </div>
           )}
           {hfVariants.variants.length > 0 ? (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Variants — pick one to download</span>
-              <div className="hf-detail__gguf-list">
-                {hfVariants.variants.map(v => (
-                  <button
-                    key={v.name}
-                    className="hf-detail__gguf-btn"
-                    aria-label={`Download ${v.name} from ${hfModel.id}`}
+              <span className="hf-detail__overview-label">Variants (select one)</span>
+              {selectedVariant && (
+                <div className="hf-detail__gguf-primary-action">
+                  <WorkspaceActionButton
+                    appearance="primary"
+                    icon="download"
                     disabled={isPulling}
-                    onClick={() => onHfPull?.(hfModel.id, v.name, hfVariants.recipe)}
+                    onClick={() => onHfPull?.(hfModel.id, selectedVariant.name, hfVariants.recipe)}
+                    aria-label={`Download ${selectedVariant.name} from ${hfModel.id}`}
                   >
-                    <span className="hf-detail__gguf-name">
-                      {v.name}{v.sharded ? ' (sharded)' : ''}
-                    </span>
-                    <span className="hf-detail__gguf-size">{fmtBytes(v.size_bytes)}</span>
-                    <span className="hf-detail__gguf-action">Download</span>
-                  </button>
-                ))}
+                    Download {selectedVariant.name}
+                  </WorkspaceActionButton>
+                </div>
+              )}
+              <div className="hf-detail__gguf-list" role="radiogroup" aria-label={`Variants for ${hfModel.id}`}>
+                {hfVariants.variants.map(v => {
+                  const isSelected = selectedVariant?.name === v.name;
+                  return (
+                    <button
+                      key={v.name}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      className={`hf-detail__gguf-btn${isSelected ? ' hf-detail__gguf-btn--selected' : ''}`}
+                      disabled={isPulling}
+                      onClick={() => setSelectedVariantName(v.name)}
+                    >
+                      <span className="hf-detail__gguf-name">
+                        {v.name}{v.sharded ? ' (sharded)' : ''}
+                      </span>
+                      <span className="hf-detail__gguf-size">{fmtBytes(v.size_bytes)}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : hfVariants.recipe !== 'llamacpp' ? (
             <div className="hf-detail__overview-section">
               <span className="hf-detail__overview-label">Repository download</span>
-              <div className="hf-detail__gguf-list">
-                <button
-                  className="hf-detail__gguf-btn"
-                  aria-label={`Download ${hfModel.id}`}
+              <div className="hf-detail__gguf-primary-action">
+                <WorkspaceActionButton
+                  appearance="primary"
+                  icon="download"
                   disabled={isPulling}
                   onClick={() => onHfPull?.(hfModel.id, '', hfVariants.recipe)}
+                  aria-label={`Download ${hfModel.id}`}
                 >
-                  <span className="hf-detail__gguf-name">{hfModel.id}</span>
-                  <span className="hf-detail__gguf-action">Download</span>
-                </button>
+                  Download model
+                </WorkspaceActionButton>
               </div>
             </div>
           ) : (
@@ -2176,6 +2197,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const isPulling = pulling[name] !== undefined;
   const pullPct = pulling[name] ?? 0;
   const isDownloaded = Boolean((model as any).downloaded) && !isPulling;
+  const isCustom = modelIsCustom(model);
   const cap = capabilityFromModelInfo(model);
 
   const detailMetadata = (
@@ -2292,14 +2314,14 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           {isFavorite ? 'Favorited' : 'Favorite'}
         </WorkspaceActionButton>
       )}
-      {(isDownloaded || isLoaded) && (
+      {!isPulling && (isCustom || isDownloaded || isLoaded) && (
         <WorkspaceActionButton
           appearance="secondary"
           icon="trash"
           onClick={() => onDelete(model)}
           disabled={isLoadingThis}
-          aria-label={(model as any).custom ? `Delete custom model definition for ${name}` : `Delete downloaded files for ${name}`}
-          title={(model as any).custom ? 'Delete model definition' : 'Delete downloaded files'}
+          aria-label={isCustom ? `Delete custom model definition for ${name}` : `Delete downloaded files for ${name}`}
+          title={isCustom ? 'Delete model definition' : 'Delete downloaded files'}
         >
           Delete
         </WorkspaceActionButton>

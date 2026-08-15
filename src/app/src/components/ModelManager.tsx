@@ -1,10 +1,10 @@
 import React, { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, ModelRegistryProvider, searchHuggingFace, searchModelScope, friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
-import { capabilityFromModelInfo } from '../modelCapabilities';
+import { capabilityFromModelInfo, modelCapabilityTags } from '../modelCapabilities';
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel, type CustomModelRecord, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import {
   detectHuggingFaceBackend,
@@ -13,7 +13,7 @@ import {
 } from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
-import { ModelListPanel, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
+import { ModelListPanel, capabilityTagIconTarget, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
 import type { FilterTab, PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
@@ -21,7 +21,8 @@ import { useWorkspaceMobileRail } from '../hooks/useWorkspaceMobileRail';
 import { useWorkspacePanelResize } from '../hooks/useWorkspacePanelResize';
 import { DEFAULT_OMNI_SYSTEM_PROMPT_TEMPLATE } from '../tools/omniTools';
 import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
-import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, WorkspaceMetadataChip, WorkspacePanelResizer } from './WorkspacePanels';
+import {WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, WorkspaceList, WorkspaceListRow, WorkspaceMetadataChip, WorkspacePanelResizer } from './WorkspacePanels';
+
 import { ROUTER_RECIPE, type RouterPullRequest } from '../features/router/routerTypes';
 import { deleteRouterRecord, loadRouterRecords, routerRecordToModelInfo } from '../features/router/routerStore';
 import {
@@ -57,6 +58,12 @@ function modelName(m: ModelInfo | null | undefined): string {
   return String(raw).trim();
 }
 
+function canonicalCustomModelName(m: ModelInfo | null | undefined): string {
+  const name = modelName(m);
+  if (!name || !m || !modelIsCustom(m) || name.toLowerCase().startsWith('user.')) return name;
+  return `user.${name}`;
+}
+
 function objectRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -85,7 +92,7 @@ function labelDisplay(label: string): string {
     'reasoning': 'Reasoning',
     'coding': 'Code',
     'code': 'Code',
-    'hot': 'Popular',
+    'hot': 'Hot',
     'popular': 'Popular',
     'mtp': 'MTP',
     'embedding': 'Embedding',
@@ -128,13 +135,6 @@ function formatDownloads(n: number): string {
   return String(n);
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
-  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(0)} KB`;
-  return `${bytes} B`;
-}
-
 
 
 function safeFileName(value: string): string {
@@ -159,32 +159,6 @@ function implicitCustomModelName(displayName: string, checkpoint: string, fallba
   const checkpointName = checkpoint.trim().split(/[\\/]/).pop()?.split(':')[0]?.trim();
   return checkpointName || fallback;
 }
-
-const CopyInlineButton: React.FC<{ text: string; title?: string }> = ({ text, title = 'Copy model name' }) => {
-  const [copied, setCopied] = useState(false);
-  const handleClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    try {
-      await copyTextToClipboard(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    } catch {
-      setCopied(false);
-    }
-  };
-  return (
-    <button
-      type="button"
-      className={`copy-inline${copied ? ' copy-inline--copied' : ''}`}
-      onClick={handleClick}
-      title={copied ? 'Copied' : title}
-      aria-label={copied ? 'Copied' : title}
-    >
-      {copied ? <Icon name="check" size={13} /> : <Icon name="copy" size={13} />}
-    </button>
-  );
-};
 
 const RECIPE_BADGES: Record<string, string> = {
   llamacpp: 'llama.cpp',
@@ -1122,13 +1096,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     huggingface: true,
     modelscope: true,
   });
+  const [copiedRemoteKey, setCopiedRemoteKey] = useState<string | null>(null);
   const [hfResults, setHfResults] = useState<HFModelResult[]>([]);
   const [hfLoading, setHfLoading] = useState(false);
   const [hfError, setHfError] = useState<string | null>(null);
   const [modelScopeResults, setModelScopeResults] = useState<HFModelResult[]>([]);
   const [modelScopeLoading, setModelScopeLoading] = useState(false);
   const [modelScopeError, setModelScopeError] = useState<string | null>(null);
-  const [expandedRemoteModel, setExpandedRemoteModel] = useState<string | null>(null);
   const [selectedRemoteModel, setSelectedRemoteModel] = useState<HFModelResult | null>(null);
   const [selectedRemoteProvider, setSelectedRemoteProvider] = useState<ModelRegistryProvider>('huggingface');
   const [pullingRemote, setPullingRemote] = useState<Record<string, { percent: number; modelName: string; checkpoint: string }>>({});
@@ -1472,7 +1446,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   }, [hfResults, providerEnabled.huggingface]);
 
   useEffect(() => {
-    setExpandedRemoteModel(null);
     setSelectedRemoteModel(null);
   }, [searchQuery]);
 
@@ -1481,7 +1454,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const key = providerKey('huggingface', selectedRemoteModel.id);
     if (!Object.prototype.hasOwnProperty.call(hfDetectedRecipes, key)
       || isCompatibleHuggingFaceRecipe(hfDetectedRecipes[key])) return;
-    setExpandedRemoteModel(null);
     setSelectedRemoteModel(null);
     setMobileDetailOpen(false);
   }, [hfDetectedRecipes, selectedRemoteModel, selectedRemoteProvider]);
@@ -1489,8 +1461,30 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   /* ── Actions ─────────────────────────────────────────────── */
 
   const findCurrentModel = (name: string): ModelInfo | null => {
-    const target = name.toLowerCase();
-    return allModels.find(mi => modelName(mi).toLowerCase() === target) || null;
+    const target = name.trim().toLowerCase();
+    if (!target) return null;
+    const targetBare = target.startsWith('user.') ? target.slice('user.'.length) : target;
+    const matchesName = (candidateName: string, custom: boolean): boolean => {
+      const candidate = candidateName.toLowerCase();
+      if (candidate === target) return true;
+      if (!custom) return false;
+      const candidateBare = candidate.startsWith('user.') ? candidate.slice('user.'.length) : candidate;
+      return candidateBare === targetBare;
+    };
+    const current = allModels.find(mi => matchesName(modelName(mi), modelIsCustom(mi)));
+    if (current) return current;
+
+    // Legacy custom records may still carry a bare name in localStorage even
+    // though lemond requires user.* for any definition with checkpoint/recipe.
+    const local = loadCustomModels().find(record => matchesName(record.name, true));
+    return local ? customModelToModelInfo(local) : null;
+  };
+
+  const canonicalComponentName = (name: string): string => {
+    const trimmed = name.trim();
+    if (!trimmed) return '';
+    const info = findCurrentModel(trimmed);
+    return info && modelIsCustom(info) ? canonicalCustomModelName(info) : trimmed;
   };
 
   const modelCheckpoint = (model: ModelInfo | null | undefined): string => {
@@ -1710,7 +1704,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       return;
     }
     if (modelIsCustom(model)) {
-      if (!confirm(`Delete custom model definition "${model.display_name || name}"? This does not remove external model files.`)) return;
+      const displayName = model.display_name || name;
+      const message = isCollectionModel(model)
+        ? `Delete Omni collection "${displayName}"? This removes only the collection definition. Component model files will not be removed.`
+        : `Delete custom model "${displayName}"? This removes the model definition and downloaded model files, if present.`;
+      if (!confirm(message)) return;
       try {
         if (api.isConnected) await api.deleteModel(name);
         deleteCustomModel(String((model as any).id || name));
@@ -2090,6 +2088,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const handleSaveCustomModel = async (e: React.FormEvent) => {
     e.preventDefault();
     setCustomError(null);
+    let pendingCollectionSave: { saved: ReturnType<typeof upsertCustomModel>; previous: CustomModelRecord | null } | null = null;
     try {
       if (!customDraft.displayName.trim()) {
         throw new Error('Enter a model name.');
@@ -2099,12 +2098,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       }
       const isOmniCollection = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
       const componentRoles = {
-        llm: customDraft.llmComponent,
-        vision: customDraft.visionComponent,
-        image: customDraft.imageComponent,
-        edit: customDraft.editComponent,
-        transcription: customDraft.transcriptionComponent,
-        speech: customDraft.speechComponent,
+        llm: canonicalComponentName(customDraft.llmComponent),
+        vision: canonicalComponentName(customDraft.visionComponent),
+        image: canonicalComponentName(customDraft.imageComponent),
+        edit: canonicalComponentName(customDraft.editComponent),
+        transcription: canonicalComponentName(customDraft.transcriptionComponent),
+        speech: canonicalComponentName(customDraft.speechComponent),
       };
       const builtinToolNames = new Set(['generate_image', 'edit_image', 'text_to_speech', 'transcribe_audio', 'analyze_image']);
       const seenCustomToolNames = new Set<string>();
@@ -2138,7 +2137,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             id: tool.id,
             name,
             description,
-            target_model: targetModel,
+            target_model: canonicalComponentName(targetModel),
             target_type: tool.targetType,
             system_prompt: tool.systemPrompt.trim() || undefined,
             prompt_template: tool.promptTemplate.trim() || undefined,
@@ -2171,8 +2170,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const checkpoints = checkpoint && Object.keys(extraCheckpoints).length > 0
         ? { main: checkpoint, ...extraCheckpoints }
         : undefined;
+      const saveName = editingCustomModelName || implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model');
+      const previousCustomModel = isOmniCollection
+        ? loadCustomModels().find(record => record.name.toLowerCase() === saveName.toLowerCase()) || null
+        : null;
       const saved = upsertCustomModel({
-        name: editingCustomModelName || implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model'),
+        name: saveName,
         displayName: customDraft.displayName,
         checkpoint,
         checkpoints,
@@ -2189,7 +2192,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         componentRoles,
         customTools,
       });
-      reloadCustomModels();
+      if (isOmniCollection) {
+        pendingCollectionSave = { saved, previous: previousCustomModel };
+      } else {
+        reloadCustomModels();
+      }
 
       // A custom collection is a server model definition, not merely UI state.
       // Register custom component definitions first, then synchronously persist
@@ -2199,8 +2206,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         const savedInfo = customModelToModelInfo(saved);
         for (const componentName of getCollectionComponents(savedInfo)) {
           const componentInfo = findCurrentModel(componentName);
-          if (componentInfo && (componentInfo as any).custom) {
-            await api.registerModelDefinition(modelName(componentInfo), customRegistrationOptions(componentInfo));
+          if (componentInfo && modelIsCustom(componentInfo)) {
+            await api.registerModelDefinition(canonicalCustomModelName(componentInfo), customRegistrationOptions(componentInfo));
           }
         }
         await api.registerModelDefinition(saved.name, customRegistrationOptions(savedInfo));
@@ -2209,6 +2216,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         if (!persisted) {
           throw new Error(`Lemond acknowledged the collection but did not expose ${saved.name} through /api/v1/models.`);
         }
+        // Only expose the local collection after lemond confirms persistence.
+        // Until this point a failed /pull is rolled back below and never becomes
+        // a ghost entry in the model list.
+        pendingCollectionSave = null;
+        reloadCustomModels();
         await refresh();
       }
 
@@ -2220,6 +2232,35 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       setMobileDetailOpen(true);
       setCustomDraft(createEmptyCustomDraft());
     } catch (err) {
+      if (pendingCollectionSave) {
+        const { saved, previous } = pendingCollectionSave;
+        try {
+          if (previous) {
+            upsertCustomModel({
+              name: previous.name,
+              displayName: previous.display_name,
+              checkpoint: previous.checkpoint,
+              checkpoints: previous.checkpoints,
+              mmproj: previous.mmproj,
+              recipe: previous.recipe,
+              capability: previous.type,
+              maxContextWindow: previous.max_context_window,
+              labels: previous.labels,
+              components: previous.components,
+              componentRoles: previous.component_roles,
+              recipeOptions: previous.recipe_options,
+              system_prompt: previous.system_prompt,
+              customTools: previous.custom_tools,
+            });
+          } else {
+            deleteCustomModel(saved.id || saved.name);
+          }
+          reloadCustomModels();
+          if (selectedDetailModelId === saved.name) setSelectedDetailModelId(null);
+        } catch (rollbackError) {
+          console.error('Failed to roll back local custom collection after server registration failed:', rollbackError);
+        }
+      }
       setCustomError(err instanceof Error ? err.message : 'Could not save custom model.');
     }
   };
@@ -2500,189 +2541,92 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
 
-  const renderRemoteRow = (provider: ModelRegistryProvider, result: HFModelResult) => {
+  /* One row per results list is the list's tab stop. Keying it off selection alone
+     would leave a freshly returned list unreachable by Tab, since nothing is
+     selected until the user picks something — so the first result stands in. */
+  const remoteRovingId = (provider: ModelRegistryProvider, results: HFModelResult[]) => {
+    const selected = selectedRemoteProvider === provider
+      && results.some(item => item.id === selectedRemoteModel?.id)
+      ? selectedRemoteModel?.id
+      : null;
+    return selected ?? results[0]?.id ?? null;
+  };
+
+  const renderRemoteRow = (provider: ModelRegistryProvider, result: HFModelResult, rovingId: string | null) => {
     const key = providerKey(provider, result.id);
-    const providerMeta = PROVIDER_META[provider];
-    const isExpanded = expandedRemoteModel === key;
-    const pipelineTag = result.pipeline_tag || '';
     const variants = remoteVariants[key];
-    const displayTags = Array.from(new Set([
-      ...(result.tags || []),
-      ...(variants?.suggested_labels || []),
-    ]))
-      .filter(tag => !['gguf', 'transformers', 'pytorch', 'safetensors'].includes(tag.toLowerCase()))
-      .slice(0, 6);
     const remotePull = activeRemotePull(provider, result.id, variants);
     const pullPercent = remotePull?.percent;
     const isPulling = pullPercent !== undefined;
-    const isLoadingVariants = remoteVariantsLoading[key] || false;
     const recipeBadge = variants ? (RECIPE_BADGES[variants.recipe] || variants.recipe) : '';
+    const isSelected = selectedRemoteModel?.id === result.id && selectedRemoteProvider === provider;
 
-    const handleExpand = () => {
-      const next = isExpanded ? null : key;
-      setExpandedRemoteModel(next);
-      if (next) void fetchRemoteVariants(provider, result.id);
+    // Provider identity stays on the zone header, so the row spends its lead
+    // slot on modality — the same question the built-in catalog answers there.
+    // Going through ModelInfo derives the capability evidence once and then
+    // reads it back the same way the built-in catalog rows do.
+    const remoteInfo = remoteResultAsModelInfo(result, variants);
+    const primaryCapability = capabilityFromModelInfo(remoteInfo);
+    const secondaryTags = modelCapabilityTags(remoteInfo)
+      .filter(tag => tag !== (primaryCapability as string));
+    const reach = `${formatDownloads(result.downloads)} ↓ · ${formatDownloads(result.likes)} ♥`;
+
+    const handleSelect = () => {
       setSelectedRemoteModel(result);
       setSelectedRemoteProvider(provider);
       setSelectedDetailModelId(null);
       setMobileDetailOpen(true);
     };
 
-    return (
-      <div className={`row row--remote row--${provider} row--${provider === 'huggingface' ? 'hf' : 'modelscope'}${isExpanded ? ' row--expanded' : ''}`} key={key}>
-        <div className="row__summary">
-          <button type="button" className="row__content" onClick={handleExpand} aria-expanded={isExpanded}>
-            <div className="row__main">
-              <div className={`row__icon row__icon--${provider}`}><Icon name="cloud" size={18} /></div>
-              <div className="row__text">
-                <span className="row__name-wrap"><span className="row__name">{result.id}</span></span>
-                <span className="row__sub">
-                  {recipeBadge ? `${recipeBadge} · ` : ''}{pipelineTag && `${pipelineTag} · `}
-                  {formatDownloads(result.downloads)} downloads · {formatDownloads(result.likes)} likes
-                </span>
-                {displayTags.length > 0 && (
-                  <div className="row__labels">
-                    {displayTags.map(tag => (
-                      <span key={tag} className={`row__label row__label--${provider}`}>{tag}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <span className="row__expand">{isExpanded ? '▾' : '▸'}</span>
-          </button>
-          <div className="row__right">
-            <CopyInlineButton text={result.id} title={`Copy repository name: ${result.id}`} />
-            {isPulling ? (
-              <div className="row__progress">
-                <div className="row__progress-bar">
-                  <div className="row__progress-fill" style={{ width: `${pullPercent}%` }} />
-                </div>
-                <span className="row__progress-text">{pullPercent.toFixed(0)}%</span>
-                <button
-                  className="row__action row__action--cancel"
-                  onClick={(event) => { event.stopPropagation(); void handleCancelRemotePull(provider, result.id); }}
-                  title={`Cancel download of ${result.id}`}
-                  aria-label={`Cancel download of ${result.id}`}
-                ><Icon name="x" size={13} /></button>
-              </div>
-            ) : (
-              <button
-                className="row__action row__action--download"
-                aria-label={`Download ${result.id}`}
-                onClick={(event) => { event.stopPropagation(); handleExpand(); }}
-                title={variants?.variants.length === 0 && variants.recipe !== 'llamacpp'
-                  ? 'Expand to download repository'
-                  : 'Expand to pick a variant to download'}
-              >
-                <Icon name="download" size={13} /> Download
-              </button>
-            )}
-            <a
-              className="row__action row__action--hf-link"
-              href={providerMeta.url(result.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={event => event.stopPropagation()}
-            >
-              View
-            </a>
-          </div>
-        </div>
+    const handleCopy = async () => {
+      try {
+        await copyTextToClipboard(result.id);
+        setCopiedRemoteKey(key);
+        window.setTimeout(() => setCopiedRemoteKey(current => (current === key ? null : current)), 1200);
+      } catch {
+        setCopiedRemoteKey(null);
+      }
+    };
 
-        {isExpanded && (
-          <div className={`row__detail row__detail--remote row__detail--${provider}`}>
-            <div className="detail__grid">
-              <div className="detail__meta">
-                <div className="detail__field">
-                  <span className="detail__label">Provider</span>
-                  <span className="detail__value">{providerMeta.label}</span>
-                </div>
-                <div className="detail__field">
-                  <span className="detail__label">Repository</span>
-                  <span className="detail__value detail__value--mono">{result.id}</span>
-                </div>
-                {pipelineTag && (
-                  <div className="detail__field">
-                    <span className="detail__label">Pipeline</span>
-                    <span className="detail__value">{pipelineTag}</span>
-                  </div>
-                )}
-                {variants && (
-                  <>
-                    <div className="detail__field">
-                      <span className="detail__label">Backend</span>
-                      <span className="detail__value">{RECIPE_BADGES[variants.recipe] || variants.recipe}</span>
-                    </div>
-                    {variants.suggested_labels.length > 0 && (
-                      <div className="detail__field">
-                        <span className="detail__label">Capabilities</span>
-                        <span className="detail__value">{variants.suggested_labels.join(', ')}</span>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-              <div className="detail__source">
-                {isLoadingVariants && (
-                  <div className="detail__field"><span className="detail__label">Loading variants…</span></div>
-                )}
-                {variants && variants.variants.length > 0 && (
-                  <div className="detail__field">
-                    <span className="detail__label">Variants — pick one to download</span>
-                    <div className="hf-detail__gguf-list">
-                      {variants.variants.map(variant => (
-                        <button
-                          key={variant.name}
-                          className="hf-detail__gguf-btn"
-                          aria-label={`Download ${variant.name} from ${result.id}`}
-                          disabled={isPulling}
-                          onClick={() => void handleRemotePull(provider, result.id, variant.name, variants.recipe)}
-                        >
-                          <span className="hf-detail__gguf-name">
-                            {variant.name}{variant.sharded ? ' (sharded)' : ''}
-                          </span>
-                          <span className="hf-detail__gguf-size">{formatBytes(variant.size_bytes)}</span>
-                          <span className="hf-detail__gguf-action">Download</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {variants && variants.variants.length === 0 && variants.recipe !== 'llamacpp' && (
-                  <div className="detail__field">
-                    <span className="detail__label">Repository download</span>
-                    <div className="hf-detail__gguf-list">
-                      <button
-                        className="hf-detail__gguf-btn"
-                        aria-label={`Download ${result.id}`}
-                        disabled={isPulling}
-                        onClick={() => void handleRemotePull(provider, result.id, '', variants.recipe)}
-                      >
-                        <span className="hf-detail__gguf-name">{result.id}</span>
-                        <span className="hf-detail__gguf-action">Download</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <a className="detail__hf-link" href={providerMeta.url(result.id)} target="_blank" rel="noopener noreferrer">
-                  View on {providerMeta.label}
-                </a>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+    return (
+      <WorkspaceListRow
+        key={key}
+        rowId={result.id}
+        capability={primaryCapability}
+        title={result.id}
+        meta={reach}
+        glyphs={secondaryTags.map(capabilityTagIconTarget)}
+        anchor={recipeBadge || undefined}
+        status={isPulling ? 'busy' : undefined}
+        statusText={isPulling ? `Downloading ${pullPercent.toFixed(0)}%` : undefined}
+        statusLabel={isPulling ? `Downloading ${result.id}` : undefined}
+        progress={isPulling ? pullPercent : undefined}
+        selected={isSelected}
+        tabIndex={rovingId === result.id ? 0 : -1}
+        ariaLabel={`${result.id}, ${formatDownloads(result.downloads)} downloads, ${formatDownloads(result.likes)} likes${recipeBadge ? `, ${recipeBadge}` : ''}${isPulling ? `, downloading ${pullPercent.toFixed(0)}%` : ', not downloaded'}`}
+        onClick={handleSelect}
+        action={isPulling
+          ? {
+            icon: 'x',
+            label: `Cancel download of ${result.id}`,
+            onClick: () => { void handleCancelRemotePull(provider, result.id); },
+            // Cancelling a download in flight must stay reachable without hover.
+            latched: true,
+          }
+          : {
+            icon: copiedRemoteKey === key ? 'check' : 'copy',
+            label: copiedRemoteKey === key ? 'Copied' : `Copy repository name: ${result.id}`,
+            onClick: () => { void handleCopy(); },
+          }}
+      />
     );
   };
-
 
   /* ── Stats ───────────────────────────────────────────────── */
   const searchActive = searchQuery.trim().length >= 2;
   const hasHuggingFaceActivity = searchActive && primaryFilter === 'all' && providerEnabled.huggingface;
   const hasModelScopeActivity = searchActive && primaryFilter === 'all' && providerEnabled.modelscope;
   const hasRemoteActivity = hasHuggingFaceActivity || hasModelScopeActivity;
-  const remoteResultCount = filteredHfResults.length + filteredModelScopeResults.length;
   const providerCounts: Record<ModelRegistryProvider, number> = {
     huggingface: hasHuggingFaceActivity ? filteredHfResults.length : 0,
     modelscope: hasModelScopeActivity ? filteredModelScopeResults.length : 0,
@@ -2736,7 +2680,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setProviderEnabled(prev => ({ ...prev, [provider]: !prev[provider] }));
     if (selectedRemoteModel && selectedRemoteProvider === provider) {
       setSelectedRemoteModel(null);
-      setExpandedRemoteModel(null);
       setMobileDetailOpen(false);
     }
   };
@@ -2748,6 +2691,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const results = provider === 'huggingface' ? filteredHfResults : filteredModelScopeResults;
     const enabled = providerEnabled[provider];
     if (!searchActive || !enabled) return null;
+    const rovingId = remoteRovingId(provider, results);
     return (
       <section
         className={`zone zone--registry zone--${provider === 'huggingface' ? 'hf' : 'modelscope'}`}
@@ -2776,7 +2720,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             <span>No compatible {meta.label} models match the active filters.</span>
           </div>
         ) : (
-          results.map(result => renderRemoteRow(provider, result))
+          <WorkspaceList
+            label={`${meta.label} results`}
+            onRowActivate={id => {
+              const match = results.find(item => item.id === id);
+              if (!match) return;
+              setSelectedRemoteModel(match);
+              setSelectedRemoteProvider(provider);
+              setSelectedDetailModelId(null);
+              setMobileDetailOpen(true);
+            }}
+          >
+            {results.map(result => renderRemoteRow(provider, result, rovingId))}
+          </WorkspaceList>
         )}
       </section>
     );
@@ -2859,7 +2815,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         favoriteNames={favoriteNameSet}
         registryZoneTop={hasRemoteActivity && !hasLocalMatches ? renderRegistryZones() : undefined}
         registryZone={hasRemoteActivity && hasLocalMatches ? renderRegistryZones() : undefined}
-        registryResultCount={remoteResultCount}
         systemInfo={systemInfo}
       />
 

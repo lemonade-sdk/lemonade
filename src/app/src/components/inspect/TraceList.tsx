@@ -1,8 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { type Trace, inspectStore } from '../../inspectStore';
-import { Icon } from '../Icon';
+import { Icon, type CapabilityIconTarget } from '../Icon';
 import WorkspaceRailHeader from '../WorkspaceRailHeader';
-import { WorkspaceActionButton } from '../WorkspacePanels';
+import {
+  WorkspaceActionButton,
+  WorkspaceList,
+  WorkspaceListRow,
+  type WorkspaceListRowStatus,
+} from '../WorkspacePanels';
 
 interface TraceListProps {
   traces: Trace[];
@@ -27,6 +32,20 @@ const TRACE_FILTERS = [
   ['RERANKER', 'Rerank', 'reranking', 'var(--cap-reranking)'],
   ['Errors', 'Errors', 'alert', 'var(--danger)'],
 ] as const;
+
+const TRACE_KIND_CAPABILITY: Record<Trace['kind'], CapabilityIconTarget> = {
+  LLM: 'chat',
+  EMBEDDING: 'embedding',
+  RERANKER: 'reranking',
+};
+
+/* A successful request has nothing in flight and nothing to warn about, so it
+   shows no status at all — its metrics stand on their own. */
+const TRACE_STATUS: Record<Trace['status'], WorkspaceListRowStatus | undefined> = {
+  ok: undefined,
+  slow: 'attention',
+  error: 'error',
+};
 
 export function getRelativeTimeAgo(startTimeMs: number): string {
   const diffSeconds = Math.max(0, Math.floor((Date.now() - startTimeMs) / 1000));
@@ -54,7 +73,7 @@ export default function TraceList({
   onToggleCollapsed,
   embedded = false,
 }: TraceListProps) {
-  const listboxRef = useRef<HTMLDivElement>(null);
+  const listboxRef = useRef<HTMLUListElement>(null);
   const [activeTraceId, setActiveTraceId] = useState<string | null>(selectedTraceId);
 
   // Sync activeTraceId when selectedTraceId changes
@@ -65,47 +84,6 @@ export default function TraceList({
   const currentActiveId = activeTraceId && filteredTraces.some((t) => t.id === activeTraceId)
     ? activeTraceId
     : (filteredTraces[0]?.id || null);
-
-  const handleListboxKeyDown = (e: React.KeyboardEvent) => {
-    const options = listboxRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
-    if (!options?.length) return;
-
-    const focusedEl = document.activeElement as HTMLElement;
-    const items = Array.from(options);
-    const currentIdx = items.indexOf(focusedEl);
-
-    let next = -1;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      next = currentIdx < 0 ? 0 : Math.min(currentIdx + 1, items.length - 1);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      next = currentIdx <= 0 ? 0 : currentIdx - 1;
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      next = 0;
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      next = items.length - 1;
-    } else if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      if (currentIdx >= 0) {
-        const traceId = items[currentIdx].getAttribute('data-trace-id');
-        if (traceId) {
-          inspectStore.selectTrace(traceId);
-        }
-      }
-      return;
-    }
-
-    if (next >= 0) {
-      items[next].focus();
-      const traceId = items[next].getAttribute('data-trace-id');
-      if (traceId) {
-        setActiveTraceId(traceId);
-      }
-    }
-  };
 
   // Ensure that listbox roving focus behaves correctly
   useEffect(() => {
@@ -151,7 +129,7 @@ export default function TraceList({
         <div className="inspect-rail__capture-group-row">
           <div className="inspect-rail__capture-label-group">
             <span className="inspect-rail__capture-label">Auto-capture inferences</span>
-            <span className="inspect-rail__capture-sublabel">Enables OTel on demand — no server-side storage</span>
+            <span className="inspect-rail__capture-sublabel">Enables OTel on demand, with no server-side storage</span>
             <span className={`capture-badge ${getBadgeClass()}`}>
               <span className="capture-badge__dot"></span>
               {getBadgeLabel()}
@@ -208,15 +186,8 @@ export default function TraceList({
         </nav>
       </div>
 
-      <div
-        ref={listboxRef}
-        className="inspect-rail__list"
-        role="listbox"
-        aria-label="Trace runs"
-        tabIndex={-1}
-        onKeyDown={handleListboxKeyDown}
-      >
-        {filteredTraces.length === 0 ? (
+      {filteredTraces.length === 0 ? (
+        <div className="inspect-rail__list">
           <div className="inspect-empty-state">
             <span className="inspect-empty-state__glyph">
               <Icon name="search-check" size={32} />
@@ -226,8 +197,17 @@ export default function TraceList({
               Run prompts in the Chat view to capture live requests here.
             </span>
           </div>
-        ) : (
-          filteredTraces.map((t) => {
+        </div>
+      ) : (
+        <WorkspaceList
+          listRef={listboxRef}
+          className="inspect-rail__list"
+          label="Trace runs"
+          tabIndex={-1}
+          onRowFocus={setActiveTraceId}
+          onRowActivate={id => inspectStore.selectTrace(id)}
+        >
+          {filteredTraces.map((t) => {
             const statusLabel = t.status === 'ok' ? 'OK' : t.status.charAt(0).toUpperCase() + t.status.slice(1);
             const durationFormatted = t.kind === 'LLM'
               ? (t.ttft ? `${Math.round(t.ttft)}ms` : '—')
@@ -237,18 +217,35 @@ export default function TraceList({
               : formatTokens(t.prompt ?? 0);
 
             const timeStr = getRelativeTimeAgo(t.startTimeMs);
+            const metrics = t.kind === 'LLM'
+              ? `${durationFormatted} · ${tokensFormatted}`
+              : `${tokensFormatted} · ${durationFormatted}`;
+
+            // A captured request that succeeded has nothing to report beyond
+            // its metrics, and DESIGN.md rules out a redundant "OK" here. A slow
+            // one keeps its metrics in the status line — they are the evidence,
+            // and that is exactly when they matter most.
+            const statusText = t.status === 'error'
+              ? `Failed${t.diag?.title ? ` · ${t.diag.title}` : ''}`
+              : t.status === 'slow' ? `Slow · ${metrics}` : undefined;
+            const meta = [t.synthetic && 'mock', metrics].filter(Boolean);
 
             return (
-              <button
+              <WorkspaceListRow
                 key={t.id}
-                type="button"
-                role="option"
-                data-trace-id={t.id}
+                rowId={t.id}
+                capability={TRACE_KIND_CAPABILITY[t.kind]}
+                title={t.model}
+                meta={meta}
+                metaMono
+                anchor={timeStr}
+                status={TRACE_STATUS[t.status]}
+                statusText={statusText}
+                statusLabel={`Status ${statusLabel}`}
+                selected={selectedTraceId === t.id}
                 tabIndex={currentActiveId === t.id ? 0 : -1}
-                aria-selected={selectedTraceId === t.id}
-                aria-current={selectedTraceId === t.id ? 'true' : undefined}
-                aria-label={`Trace: ${t.model}, ${t.kind}, status ${statusLabel}, duration ${durationFormatted}, tokens ${tokensFormatted}, captured ${timeStr}`}
-                className={`trace-row ${selectedTraceId === t.id ? 'selected' : ''} ${t.status}`}
+                dataAttributes={{ 'data-trace-id': t.id }}
+                ariaLabel={`Trace: ${t.model}, ${t.kind}, status ${statusLabel}, duration ${durationFormatted}, tokens ${tokensFormatted}, captured ${timeStr}`}
                 onClick={() => {
                   setActiveTraceId(t.id);
                   inspectStore.selectTrace(t.id);
@@ -256,43 +253,16 @@ export default function TraceList({
                 onFocus={() => {
                   setActiveTraceId(t.id);
                 }}
-              >
-                <div className="trace-row__meta">
-                  <span className="trace-row__model" title={t.model}>
-                    {t.model}
-                  </span>
-                  <span className="trace-row__time">{timeStr}</span>
-                </div>
-                <div className="trace-row__details">
-                  <div className="trace-row__kind-badge-group">
-                    <span className={`trace-row__kind ${t.kind.toLowerCase()}`}>
-                      {t.kind}
-                    </span>
-                    {t.synthetic && (
-                      <span className="mock-badge">
-                        Mock
-                      </span>
-                    )}
-                    <span className={`trace-row__status-dot ${t.status}`} aria-hidden="true"></span>
-                    <span className="trace-row__status-label">{statusLabel}</span>
-                  </div>
-                  <span className="trace-row__metrics">
-                    {t.kind === 'LLM' ? (
-                      <>
-                        {t.ttft ? `${Math.round(t.ttft)}ms` : '—'} · {formatTokens(t.completion ?? 0)}
-                      </>
-                    ) : (
-                      <>
-                        {formatTokens(t.prompt ?? 0)} · {t.dur}ms
-                      </>
-                    )}
-                  </span>
-                </div>
-              </button>
+                action={{
+                  icon: 'trash',
+                  label: `Delete request: ${t.model}, captured ${timeStr}`,
+                  onClick: () => inspectStore.removeTrace(t.id),
+                }}
+              />
             );
-          })
-        )}
-      </div>
+          })}
+        </WorkspaceList>
+      )}
 
       <div className="inspect-rail__footer">
         <WorkspaceActionButton

@@ -21,7 +21,7 @@ New endpoints, commands, and backends need at least one test that exercises them
 
 ### A test that isn't in CI doesn't exist
 
-A committed test file that no workflow runs is an incomplete contribution. New Python suites must be added to a CI job; new C++ tests must be registered with `register_cpp_ci_test()` in `CMakeLists.txt` so the `cpp-ci` CTest label picks them up.
+A committed test file that no workflow runs is an incomplete contribution. New Python suites must be added to a CI job; new C++ tests must be declared with `add_cpp_ci_test(<Name> CI ON COMMAND <target>)` in `CMakeLists.txt` so the `cpp-ci` CTest label picks them up. Guard the block with `if(BUILD_TESTING AND ...)` — distro packaging configures with `BUILD_TESTING=OFF` to avoid building test binaries it discards, and an unguarded declaration fails that build at configure time.
 
 Most suites join the existing endpoint/CLI or hardware-matrix jobs in `cpp_server_build_test_release.yml`. A dedicated workflow is appropriate only when the suite has environment needs the existing jobs can't meet (real network downloads, a container, path-filtered smoke tests).
 
@@ -68,7 +68,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Changes streaming error handling | `test/server_streaming_errors.py` |
 | Changes model downloads or registry search | `test/server_downloads.py` |
 | Changes API key authentication | `test/server_cli_apikey.py`, `test/server_websocket_auth.py` |
-| Adds pure C++ logic (parsers, arg resolvers, utilities) | `test/cpp/test_<thing>.cpp`, registered via `register_cpp_ci_test()` in `CMakeLists.txt` |
+| Adds pure C++ logic (parsers, arg resolvers, utilities) | `test/cpp/test_<thing>.cpp`, declared via `add_cpp_ci_test()` in `CMakeLists.txt` |
 | Changes `server_models.json` | Update `test/utils/test_models.py` and `test/utils/capabilities.py` if tests reference the affected models |
 | Changes the desktop or web UI | `npm run typecheck` must pass; add a `test/app/app-regression/*.test.cjs` regression test where practical |
 | Fixes a bug | A numbered regression test in whichever suite above owns the surface |
@@ -149,7 +149,7 @@ Packaging, distro, PPA, backend-validation, self-hosted inference and most macOS
 
 | Group | Gate check | Opt in on a PR with |
 |---|---|---|
-| Fedora RPM, Debian 13, Arch, openSUSE, Launchpad PPA | `Packaging builds`, `Linux distro builds`, `Launchpad PPA builds` | `ci:distros` |
+| Fedora RPM, Debian 13, Arch, openSUSE, Launchpad PPA, `Build Lemonade Desktop Installer` | `Packaging builds`, `Linux distro builds`, `Launchpad PPA builds` | `ci:distros` |
 | macOS `.dmg`, `Test CLI/Endpoints (macos-latest)`, `Test Embeddable (macOS)`, `Test .dmg - macOS inference` | `macOS builds` | `ci:macos` |
 | llama.cpp, vLLM, stable-diffusion.cpp validation | `llama.cpp validation`, `vLLM validation`, `stable-diffusion.cpp validation` | `ci:upgrades` |
 | `Test .exe - *` and `Test .deb - *` inference suites on the self-hosted rigs | `Inference backend tests` | `ci:backends` |
@@ -177,7 +177,7 @@ The macOS `.pkg` suites run against an installed package, whether or not Apple s
 | Assertions coupled to model output length or wording | Assert non-empty output |
 | New API surface added only for testability | Configure the model or server through existing options in the test |
 | A new test file for a device variant | A flag on the existing suite |
-| Committing a test no CI workflow runs | Wire it into a workflow or `register_cpp_ci_test()` in the same PR |
+| Committing a test no CI workflow runs | Wire it into a workflow or `add_cpp_ci_test()` in the same PR |
 | Touching a merge-queue-gated surface and shipping on a green unlabeled PR | Apply the matching label from the [deferred-groups table](#what-defers-to-the-merge-queue) so the gated jobs actually run |
 | Large models in CI jobs that download fresh every run | Use a sub-1 GB model and note the substitution in a comment |
 | Negative tests that don't reset state (env vars, loaded models) | `self.addCleanup(...)`; verify the test still tests what it claims |

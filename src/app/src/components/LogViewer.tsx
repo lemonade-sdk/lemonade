@@ -487,7 +487,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ embedded = false }) => {
               </button>
             ))}
             {logSources.hiddenCount > 0 && (
-              <p className="workspace-filter-list__note">{logSources.hiddenCount} less active {logSources.hiddenCount === 1 ? 'source' : 'sources'} not shown — search to find them.</p>
+              <p className="workspace-filter-list__note">{logSources.hiddenCount} less active {logSources.hiddenCount === 1 ? 'source' : 'sources'} not shown. Search to find them.</p>
             )}
           </div>
         </div>

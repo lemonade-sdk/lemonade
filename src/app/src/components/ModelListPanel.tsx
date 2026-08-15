@@ -9,14 +9,22 @@ import type { ModelInfo, LoadedModel } from '../api';
 import {
   capabilityFromModelInfo,
   modelCapabilityTags,
-  CAPABILITY_TAG_LABELS,
+  rowCapability,
   type CapabilityTag,
 } from '../modelCapabilities';
-import { Icon, CapabilityIcon } from './Icon';
+import { Icon } from './Icon';
 import type { IconName } from './Icon';
 import type { CapabilityIconTarget } from './Icon';
 import { activeDownloadForModel, type DownloadListItem } from '../features/downloadManager/downloadStore';
-import { WorkspaceActionButton, WorkspaceActionGroup, WorkspaceListPanel } from './WorkspacePanels';
+import {
+  WorkspaceActionButton,
+  WorkspaceActionGroup,
+  WorkspaceList,
+  WorkspaceListPanel,
+  WorkspaceListGroup,
+  WorkspaceListRow,
+  type WorkspaceListRowStatus,
+} from './WorkspacePanels';
 import { backendCompactLabel, backendLabel } from '../modelPresentation';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -232,6 +240,21 @@ export function modelBackendReadiness(
   };
 }
 
+/** Short enough to ride the row's meta line; `label` keeps the full sentence
+    for the status marker's tooltip and the row's accessible name. */
+const BACKEND_STATE_MESSAGES: Record<string, string> = {
+  missing: 'Engine not installed',
+  update_required: 'Engine update required',
+  update_available: 'Engine update available',
+  installable: 'Engine download required',
+  action_required: 'Engine needs attention',
+  unsupported: 'Engine unsupported',
+};
+
+function backendReadinessMessage(readiness: ModelBackendReadiness): string {
+  return BACKEND_STATE_MESSAGES[readiness.state || ''] || 'Engine needs attention';
+}
+
 type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding';
 
 const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> = [
@@ -354,7 +377,7 @@ export function modelMatchesBackend(m: ModelInfo, backend: string): boolean {
 }
 
 /** Curated tag chips (model families + size hints) shown in the left rail. */
-export const TAG_CHIPS: string[] = ['Recommended', 'Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
+export const TAG_CHIPS: string[] = ['Recommended', 'Hot', 'Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
 
 export function modelIsRecommended(m: ModelInfo): boolean {
   const raw = m as any;
@@ -366,12 +389,29 @@ export function modelIsRecommended(m: ModelInfo): boolean {
   return labels.some(label => ['recommended', 'featured', 'suggested'].includes(label));
 }
 
+/**
+ * Hot is server metadata, not a fuzzy family/name tag. Current lemond builds
+ * expose it as a label; capability-aware sources may expose it through the
+ * capabilities array. Match both exact metadata forms so a model named
+ * something like "hotpot" does not become Hot accidentally.
+ */
+export function modelIsHot(m: ModelInfo): boolean {
+  const raw = m as any;
+  const metadata = [
+    ...(Array.isArray(raw.capabilities) ? raw.capabilities : []),
+    ...(Array.isArray(raw.labels) ? raw.labels : []),
+    ...(Array.isArray(raw.tags) ? raw.tags : []),
+  ].map(value => String(value).trim().toLowerCase());
+  return metadata.includes('hot');
+}
+
 /** A tag matches model metadata, labels, or its name/family. */
 export function modelMatchesTag(m: ModelInfo, tag: string | null): boolean {
   if (!tag) return true;
   const t = tag.trim().toLowerCase();
   if (!t) return true;
   if (t === 'recommended') return modelIsRecommended(m);
+  if (t === 'hot') return modelIsHot(m);
   const labels = [
     ...(Array.isArray(m.labels) ? m.labels : []),
     ...(Array.isArray((m as any).tags) ? (m as any).tags : []),
@@ -435,8 +475,6 @@ export interface ModelListPanelProps {
   registryZone?: React.ReactNode;
   /** Elevated remote-provider results rendered above the list when no local results match. */
   registryZoneTop?: React.ReactNode;
-  /** Total visible remote-provider results for the anchor bar. */
-  registryResultCount?: number;
   /** Latest /system-info snapshot used to join model and backend readiness. */
   systemInfo?: Record<string, unknown> | null;
 }
@@ -466,7 +504,6 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   favoriteNames,
   registryZone,
   registryZoneTop,
-  registryResultCount = 0,
   systemInfo = null,
 }) => {
   const [sortBy, setSortBy] = useState<SortBy>('name');
@@ -549,43 +586,116 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       });
     }
 
-    // Pinned models always float to the top, preserving the chosen sort order
-    // within the pinned and unpinned groups. Client-local only; distinct from
-    // favorites (which is a separate filter/count, not a sort).
-    if (pinnedNames && pinnedNames.size > 0) {
-      result.sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false));
-    }
-
     return result;
   }, [allModels, loadedNames, pulling, downloadItems, searchQuery, taskFilters, sortBy, pinnedNames, favoriteNames, primaryFilter, backendFilters, tagFilters]);
 
-  // Keyboard navigation on the list (ArrowUp/Down/Home/End)
-  const handleListKeyDown = useCallback((e: React.KeyboardEvent) => {
-    const options = listRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
-    if (!options?.length) return;
-
-    const focusedEl = document.activeElement as HTMLElement;
-    const items = Array.from(options);
-    const currentIdx = items.indexOf(focusedEl);
-
-    let next = -1;
-    if (e.key === 'ArrowDown') { e.preventDefault(); next = currentIdx < 0 ? 0 : Math.min(currentIdx + 1, items.length - 1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); next = currentIdx <= 0 ? 0 : currentIdx - 1; }
-    else if (e.key === 'Home') { e.preventDefault(); next = 0; }
-    else if (e.key === 'End') { e.preventDefault(); next = items.length - 1; }
-
-    if (next >= 0) {
-      items[next].focus();
-      // Single-select listbox: arrow key navigation also selects (ARIA APG)
-      const modelId = items[next].getAttribute('data-model-id');
-      if (modelId) onSelectModel(modelId);
+  /* Whether a model is on this machine is the first thing someone new to local
+     AI needs, and it used to be repeated as a status on every single row. As a
+     section it reads once. Grouping is structural rather than a by-product of
+     the default sort, so the headings stay true under every sort order — the
+     chosen sort now orders rows within each section. */
+  const listSections = useMemo(() => {
+    const sections: { key: string; label: string; entries: FlatModelEntry[] }[] = [
+      { key: 'pinned', label: 'Pinned', entries: [] },
+      { key: 'downloaded', label: 'Downloaded', entries: [] },
+      { key: 'available', label: 'Not downloaded', entries: [] },
+    ];
+    const byKey = Object.fromEntries(sections.map(s => [s.key, s]));
+    for (const entry of flatList) {
+      /* A download in flight has not arrived yet, so it stays with the rows that
+         are not on this machine; its own busy status and progress hairline are
+         what say it is on the way. */
+      const onThisMachine = entry.status !== 'available' && entry.status !== 'downloading';
+      const key = entry.pinned ? 'pinned' : onThisMachine ? 'downloaded' : 'available';
+      byKey[key].entries.push(entry);
     }
-  }, [onSelectModel]);
+    return sections.filter(section => section.entries.length > 0);
+  }, [flatList]);
 
+  // Arrow/Home/End and Enter/Space live in WorkspaceList; the catalog only adds
+  // its own pin shortcut.
   const handleItemKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>, modelId: string) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectModel(modelId); }
-    else if ((e.key === 'p' || e.key === 'P') && onTogglePin) { e.preventDefault(); onTogglePin(modelId); }
-  }, [onSelectModel, onTogglePin]);
+    if ((e.key === 'p' || e.key === 'P') && onTogglePin) { e.preventDefault(); onTogglePin(modelId); }
+  }, [onTogglePin]);
+
+  /* One catalog row. Hoisted out of the section map so the body reads at its
+     own indentation rather than three levels in. */
+  const renderModelRow = ({ model, status, downloadPct, pinned }: FlatModelEntry) => {
+    const mId = listModelName(model);
+    const displayName = listModelDisplayName(model);
+    const recipe = String((model as any).recipe || '');
+    const primaryCapability = rowCapability(model);
+    // A collection routes to backends rather than being one, so it has no
+    // engine to name on the meta line.
+    const neutralCollectionGuide = primaryCapability === 'omni' || primaryCapability === 'router';
+    const displayedBackend = recipe && !neutralCollectionGuide ? modelListBackendLabel(recipe) : '';
+    const isSelected = mId === selectedModelId;
+    const capTags = modelCapabilityTags(model);
+    const backendReadiness = status === 'downloaded'
+      ? modelBackendReadiness(model, systemInfo)
+      : null;
+    const readinessLabel = status === 'running'
+      ? 'Backend active; model is running.'
+      : status === 'downloading'
+        ? `Model download in progress${downloadPct != null ? ` (${downloadPct.toFixed(0)}%).` : '.'}`
+        : status === 'available'
+          ? 'Model is available to download.'
+          : backendReadiness?.label;
+
+    // Only a row doing something, or asking for something, says so. Being
+    // downloaded is a fact about the section it sits in, not about the row.
+    const rowStatus: WorkspaceListRowStatus | undefined = status === 'running'
+      ? 'live'
+      : status === 'downloading'
+        ? 'busy'
+        : backendReadiness?.tone === 'attention'
+          ? 'attention'
+          : undefined;
+    const statusText = rowStatus === 'busy'
+      ? `Downloading${downloadPct != null ? ` ${downloadPct.toFixed(0)}%` : '…'}`
+      : rowStatus === 'attention'
+        ? backendReadinessMessage(backendReadiness!)
+        : rowStatus === 'live'
+          ? 'Running'
+          : undefined;
+    const meta = model.size != null && model.size > 0 ? listFmtSize(model.size) : undefined;
+    const secondaryTags = capTags.filter(tag => tag !== (primaryCapability as string));
+
+    return (
+      <WorkspaceListRow
+        key={mId}
+        rowId={mId}
+        capability={primaryCapability}
+        title={displayName}
+        meta={meta}
+        glyphs={secondaryTags.map(capabilityTagIconTarget)}
+        anchor={recipe && !neutralCollectionGuide ? displayedBackend : undefined}
+        anchorTitle={recipe ? backendLabel(recipe) : undefined}
+        status={rowStatus}
+        statusText={statusText}
+        statusLabel={readinessLabel}
+        progress={status === 'downloading' ? downloadPct : undefined}
+        selected={isSelected}
+        tabIndex={isSelected ? 0 : -1}
+        dataAttributes={{ 'data-model-id': mId }}
+        className={pinned ? 'workspace-list-row--pinned' : undefined}
+        ariaKeyShortcuts={onTogglePin ? 'P' : undefined}
+        ariaLabel={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloading' ? ', downloading' : ''}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
+        onClick={() => onSelectModel(mId)}
+        onKeyDown={e => handleItemKeyDown(e, mId)}
+        action={onTogglePin ? {
+          icon: 'pin',
+          label: pinned ? `Unpin ${displayName} (P)` : `Pin ${displayName} (P)`,
+          onClick: () => onTogglePin(mId),
+          // A pinned model's pin outranks its engine as the fact worth showing,
+          // and keeps the row's state visible without hovering. The row owns the
+          // advertised P keyboard shortcut, so the nested affordance is pointer-only.
+          pointerOnly: true,
+          latched: pinned,
+        } : undefined}
+      />
+    );
+  };
 
   return (
     <WorkspaceListPanel
@@ -685,110 +795,19 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       {/* Elevated registry zones: shown above the list when no local results match */}
       {registryZoneTop}
       {/* Model list */}
-      <ul
-        ref={listRef}
+      <WorkspaceList
+        listRef={listRef}
         className="model-list-panel__list"
-        role="listbox"
-        aria-label="Model list"
-        aria-multiselectable="false"
+        label="Model list"
         tabIndex={flatList.some(e => e.model && listModelName(e.model) === selectedModelId) ? -1 : 0}
-        onKeyDown={handleListKeyDown}
+        onRowActivate={onSelectModel}
+        activateOnMove
       >
-        {flatList.map(({ model, status, downloadPct, pinned }) => {
-          const mId = listModelName(model);
-          const displayName = listModelDisplayName(model);
-          const recipe = String((model as any).recipe || '');
-          const neutralCollectionGuide = modelIsOmni(model) || modelIsRouter(model);
-          const displayedBackend = recipe && !neutralCollectionGuide ? modelListBackendLabel(recipe) : '';
-          const isSelected = mId === selectedModelId;
-          const capTags = modelCapabilityTags(model);
-          const backendReadiness = status === 'downloaded'
-            ? modelBackendReadiness(model, systemInfo)
-            : null;
-          const readinessLabel = status === 'running'
-            ? 'Backend active; model is running.'
-            : status === 'downloading'
-              ? `Model download in progress${downloadPct != null ? ` (${downloadPct.toFixed(0)}%).` : '.'}`
-              : status === 'available'
-                ? 'Model is available to download.'
-                : backendReadiness?.label;
-          const statusTone = status === 'running'
-            ? 'running'
-            : status === 'downloading'
-              ? 'downloading'
-              : status === 'downloaded'
-                ? backendReadiness?.tone || 'unknown'
-                : 'available';
-
-          return (
-            <li
-              key={mId}
-              role="option"
-              tabIndex={isSelected ? 0 : -1}
-              aria-selected={isSelected}
-              data-model-id={mId}
-              aria-keyshortcuts={onTogglePin ? 'P' : undefined}
-              className={`model-list-item${isSelected ? ' model-list-item--selected' : ''}${pinned ? ' model-list-item--pinned' : ''}${neutralCollectionGuide ? ' model-list-item--neutral-guide' : ''} model-list-item--${status}`}
-              onClick={() => onSelectModel(mId)}
-              onKeyDown={e => handleItemKeyDown(e, mId)}
-              aria-label={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloaded' ? ', downloaded' : status === 'downloading' ? ', downloading' : ', available'}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
-            >
-              {/* Name + meta stay left-aligned across every row. */}
-              <span className="model-list-item__body">
-                <span className="model-list-item__name">{displayName}</span>
-                <span className="model-list-item__meta">
-                  {model.size != null && model.size > 0 && (
-                    <span className="model-list-item__size">{listFmtSize(model.size)}</span>
-                  )}
-                  <span className="model-list-item__caps" role="img" aria-label={`Capabilities: ${capTags.map(t => CAPABILITY_TAG_LABELS[t]).join(', ')}`}>
-                    {capTags.map(tag => (
-                      <span key={tag} className="model-list-item__cap" title={CAPABILITY_TAG_LABELS[tag]}>
-                        <CapabilityIcon capability={capabilityTagIconTarget(tag) as any} size={12} aria-hidden="true" />
-                      </span>
-                    ))}
-                  </span>
-                </span>
-              </span>
-
-              {/* The backend identity lives on the lower guide line. A hollow
-                  marker means remote/available; every concrete readiness state
-                  replaces that ring with one solid status point. */}
-              <span className="model-list-item__footer" aria-hidden="true">
-                <span className="model-list-item__footer-info">
-                  {status === 'downloading' && downloadPct != null && (
-                    <span className="model-list-item__pct">{downloadPct.toFixed(0)}%</span>
-                  )}
-                  {recipe && !neutralCollectionGuide && (
-                    <span
-                      className="model-list-item__backend"
-                      title={backendLabel(recipe)}
-                    >
-                      {displayedBackend}
-                    </span>
-                  )}
-                </span>
-                <span
-                  className={`model-list-item__status model-list-item__status--${statusTone}`}
-                  title={readinessLabel}
-                  data-backend-state={backendReadiness?.state || statusTone}
-                />
-              </span>
-
-              {/* Pointer users click the compact pin above the status terminus;
-                  keyboard and assistive-technology users retain the P shortcut. */}
-              {onTogglePin && (
-                <span
-                  className={`model-list-item__pin row__pin${pinned ? ' row__pin--active model-list-item__pin--active' : ''}`}
-                  onClick={e => { e.stopPropagation(); onTogglePin(mId); }}
-                  aria-hidden="true"
-                  title={pinned ? `Unpin ${displayName} (P)` : `Pin ${displayName} (P)`}
-                >
-                  <Icon name="pin" size={12} aria-hidden="true" />
-                </span>
-              )}
-            </li>
-          );
-        })}
+        {listSections.map(section => (
+          <WorkspaceListGroup key={section.key} label={section.label} count={section.entries.length}>
+            {section.entries.map(renderModelRow)}
+          </WorkspaceListGroup>
+        ))}
 
         {/* Search-no-match feedback stays in the middle list. The "no model
             selected" / empty-registry placeholder now lives in the RIGHT detail
@@ -800,19 +819,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
             <span>No models match your search.</span>
           </li>
         )}
-      </ul>
-      {registryZone && registryResultCount > 0 && flatList.length > 0 && (
-        <button
-          type="button"
-          className="hf-zone-anchor"
-          onClick={() => {
-            document.querySelector(".zone--registry")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-          aria-label={`Scroll to ${registryResultCount} remote model result${registryResultCount !== 1 ? "s" : ""}`}
-        >
-          ↓ {registryResultCount} remote result{registryResultCount !== 1 ? "s" : ""}
-        </button>
-      )}
+      </WorkspaceList>
       {registryZone}
       </div>
     </WorkspaceListPanel>

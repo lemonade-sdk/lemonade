@@ -515,7 +515,7 @@ void VLLMServer::load(const std::string& model_name,
         // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
         // any GPU dispatch hang or fault. Point users to the docs in that case.
         if (needs_gfx1151_cwsr_fix()) {
-            err += ". Your kernel may be missing the gfx1151 CWSR fix — "
+            err += ". Your kernel may be missing the gfx1151 CWSR fix; "
                    "see https://lemonade-server.ai/gfx1151_linux.html";
         }
         throw std::runtime_error(err);
@@ -571,23 +571,14 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
         }
     }
 
-    Telemetry telemetry;
+    StreamingProxy::TelemetryData telemetry;
     bool has_telemetry = false;
-    std::string telemetry_error = "";
 
     WrappedServer::forward_streaming_request(
         endpoint, body, sink, sse, timeout_seconds,
-        [&telemetry, &has_telemetry, &telemetry_error](int input_tokens,
-                                     int output_tokens,
-                                     double time_to_first_token,
-                                     double tokens_per_second,
-                                     const std::string& error_message) {
+        [&telemetry, &has_telemetry](const StreamingProxy::TelemetryData& reported) {
             has_telemetry = true;
-            telemetry.input_tokens = input_tokens;
-            telemetry.output_tokens = output_tokens;
-            telemetry.time_to_first_token = time_to_first_token;
-            telemetry.tokens_per_second = tokens_per_second;
-            telemetry_error = error_message;
+            telemetry = reported;
         });
 
     if (has_telemetry) {
@@ -602,11 +593,7 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
         }
 
         if (telemetry_callback) {
-            telemetry_callback(telemetry.input_tokens,
-                               telemetry.output_tokens,
-                               telemetry.time_to_first_token,
-                               telemetry.tokens_per_second,
-                               telemetry_error);
+            telemetry_callback(telemetry);
         }
     }
 }

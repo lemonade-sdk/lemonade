@@ -1,8 +1,10 @@
-import React, { lazy, Suspense, useMemo } from 'react';
-import { LoadedModel } from '../api';
+import React, { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
+import { api, LoadedModel } from '../api';
+import { capabilityFromLoaded } from '../modelCapabilities';
+import { backendCompactLabel } from '../modelPresentation';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { dashboardMemoryTopology } from '../features/dashboard/memoryTopology';
-import { WorkspaceActionButton, WorkspacePaneHeader } from './WorkspacePanels';
+import { WorkspaceActionButton, WorkspaceList, WorkspaceListRow, WorkspacePaneHeader } from './WorkspacePanels';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -153,19 +155,42 @@ const SmoothChart = React.memo<{
 
 /* ── Model row ─────────────────────────────────────────────── */
 
-const ModelRow = React.memo<{ model: LoadedModel }>(({ model }) => (
-  <div className="dash2-model">
-    <span className="dash2-model__icon">{typeIcon(model.type)}</span>
-    <div className="dash2-model__info">
-      <span className="dash2-model__name">{model.model_name}</span>
-      <span className="dash2-model__meta">
-        {model.recipe} · {model.device} · PID {model.pid}
-      </span>
-    </div>
-    <span className="dash2-model__badge" data-type={model.type}>{model.type}</span>
-    <span className="dash2-model__time">{relativeTime(model.last_use)}</span>
-  </div>
-));
+/**
+ * The same loaded-model row the composer's picker renders. A monitoring view
+ * showing what is resident, and a picker showing what you can switch to, are
+ * looking at one list — so they use one row, eject included.
+ */
+const ModelRow = React.memo<{ model: LoadedModel; onEject: (name: string) => void; ejecting: boolean }>(
+  ({ model, onEject, ejecting }) => {
+    const facts = [
+      model.recipe && backendCompactLabel(model.recipe),
+      model.device,
+      model.pid != null && `PID ${model.pid}`,
+      relativeTime(model.last_use),
+    ].filter(Boolean) as string[];
+
+    return (
+    <WorkspaceListRow
+      selectable={false}
+      capability={capabilityFromLoaded(model)}
+      title={model.model_name}
+      // Every row in this card is loaded, so the card heading carries that and
+      // no row repeats it. Only an eject in flight is a state worth a dot.
+      status={ejecting ? 'busy' : undefined}
+      statusText={ejecting ? 'Ejecting…' : undefined}
+      meta={facts}
+      disabled={ejecting}
+      ariaLabel={`${model.model_name}, ${facts.join(', ')}`}
+      action={{
+        icon: 'eject',
+        label: `Eject model ${model.model_name}`,
+        onClick: () => onEject(model.model_name),
+        latched: true,
+      }}
+    />
+    );
+  },
+);
 
 /* ══════════════════════════════════════════════════════════════
    ██  MAIN DASHBOARD
@@ -179,11 +204,28 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
   const {
     health, stats, sysStats, systemInfo, slots, slotLive,
     lastError, slotsUnsupported, slotStatus, paused, setPaused,
-    counters, getSlotTarget, loadedModels,
+    counters, getSlotTarget, loadedModels, refresh,
     latestTps, latestPP, activeSlotCount, overallCacheUtil,
     hasGpu, hasNpu, modelsByType,
     aggChartData, slotChartData, sysChartData, cacheChartData,
   } = useDashboardData(isActive);
+
+  const [ejecting, setEjecting] = useState<string | null>(null);
+  const ejectingRef = useRef<string | null>(null);
+  const handleEject = useCallback((modelName: string) => {
+    if (ejectingRef.current) return;
+    ejectingRef.current = modelName;
+    setEjecting(modelName);
+    void (async () => {
+      try {
+        await api.unloadModel(modelName);
+        await refresh();
+      } finally {
+        ejectingRef.current = null;
+        setEjecting(null);
+      }
+    })();
+  }, [refresh]);
 
   const memoryTopology = useMemo(() => dashboardMemoryTopology(systemInfo), [systemInfo]);
   const ramUsedGb = sysStats?.memory_gb ?? null;
@@ -408,7 +450,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
           ) : (
             <div className="dash2-card">
               <h2 className="dash2-card__h">Last Inference</h2>
-              <div className="dash2-empty">No inference data yet — send a request to see stats</div>
+              <div className="dash2-empty">No inference data yet. Send a request to see stats.</div>
             </div>
           )}
         </div>
@@ -423,9 +465,16 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
             {loadedModels.length === 0 ? (
               <div className="dash2-empty">No models loaded</div>
             ) : (
-              <div className="dash2-models">
-                {loadedModels.map(m => <ModelRow key={m.model_name} model={m} />)}
-              </div>
+              <WorkspaceList className="dash2-models" label="Loaded models" selectable={false}>
+                {loadedModels.map(m => (
+                  <ModelRow
+                    key={m.model_name}
+                    model={m}
+                    onEject={handleEject}
+                    ejecting={ejecting === m.model_name}
+                  />
+                ))}
+              </WorkspaceList>
             )}
           </div>
 

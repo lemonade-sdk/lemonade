@@ -81,7 +81,7 @@ export function WorkspaceCatalogLayout<Id extends string>({
               aria-current={activeFilter === filter.id ? 'true' : undefined}
               aria-label={filter.label}
               aria-describedby={filter.description ? `${panelId}-${filter.id}-description` : undefined}
-              title={filter.description ? `${filter.label} — ${filter.description}` : filter.label}
+              title={filter.description ? `${filter.label}: ${filter.description}` : filter.label}
               onClick={() => { onFilterChange(filter.id); mobileRail.close(); }}
             >
               <Icon className="workspace-filter-list__icon" name={filter.icon} size={14} />

@@ -115,6 +115,78 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
   });
 
+  test('01b1 — Model storage save feedback is scoped and directory errors surface', async ({ page }) => {
+    let runtimeConfig = { models_dir: 'auto', extra_models_dir: '' };
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: {
+        object: 'list',
+        data: [{
+          id: 'existing-model',
+          name: 'Existing Model',
+          type: 'llm',
+          labels: ['llm'],
+          recipe: 'llamacpp',
+          suggested: true,
+          downloaded: true,
+        }],
+      },
+    }));
+    await page.route('**/internal/config**', route => route.fulfill({ json: runtimeConfig }));
+    await page.route('**/internal/set**', async route => {
+      const body = route.request().postDataJSON() as { models_dir?: string; extra_models_dir?: string };
+      if (body.extra_models_dir === '/restricted/models') {
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: "'extra_models_dir' is not readable by the Lemonade server: /restricted/models (Permission denied)",
+          }),
+        });
+        return;
+      }
+      runtimeConfig = {
+        models_dir: body.models_dir ?? runtimeConfig.models_dir,
+        extra_models_dir: body.extra_models_dir ?? runtimeConfig.extra_models_dir,
+      };
+      await route.fulfill({ json: { status: 'success', updated: body } });
+    });
+
+    await page.goto('/#/connect/model-storage');
+    await page.waitForSelector('[data-view="connect"]');
+
+    const externalDirectory = page.getByLabel('External custom models directory');
+    await externalDirectory.fill('/tmp/models');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveText('Directory settings saved.');
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Models', exact: true }).click();
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+
+    const connectSections = page.getByRole('navigation', { name: 'Connect sections' });
+    await externalDirectory.fill('/tmp/models-2');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveText('Directory settings saved.');
+    await connectSections.getByRole('button', { name: 'Server', exact: true }).click();
+    await connectSections.getByRole('button', { name: 'Model storage', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+
+    await externalDirectory.fill('/tmp/models-3');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveText('Directory settings saved.');
+    await externalDirectory.fill('/tmp/models-4');
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+
+    await externalDirectory.fill('/restricted/models');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__error')).toContainText('not readable by the Lemonade server');
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+  });
+
   test('01c — Apps is a standalone workspace with category rail navigation', async ({ page }) => {
     await page.route('**/api/v1/health**', route => route.fulfill({
       json: { status: 'ok', version: 'test', all_models_loaded: [] },
@@ -361,7 +433,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const hfVisible = await hfZone.isVisible().catch(() => false);
     console.log(`HuggingFace zone visible: ${hfVisible}`);
     if (hfVisible) {
-      const hfRows = await page.locator('.row--hf').count();
+      const hfRows = await page.locator('.zone--hf .workspace-list-row').count();
       console.log(`HuggingFace results: ${hfRows}`);
       await page.screenshot({ path: 'screenshots/07b2-models-hf-zone.png', fullPage: true });
     }
@@ -685,7 +757,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(page.locator('.titlebar__status-dot--brand')).toHaveClass(/titlebar__status-dot--connected/);
-    await page.locator('.model-list-item').filter({ hasText: 'Config Beta Model' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Config Beta Model' }).click();
     await page.getByRole('tab', { name: 'Configuration' }).click();
 
     const panel = page.locator('#detail-panel-config');
@@ -736,13 +808,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.getByRole('button', { name: 'Delete downloaded files for config-beta-model' }))
       .toHaveClass(/workspace-action-button--secondary/);
 
-    await page.locator('.model-list-item').filter({ hasText: 'Speech Beta Model' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Speech Beta Model' }).click();
     await page.getByRole('tab', { name: 'Configuration' }).click();
     const speechPanel = page.locator('#detail-panel-config');
     await expect(speechPanel.getByRole('checkbox', { name: 'Auto tune context size' })).toHaveCount(0);
     await expect(speechPanel.getByLabel('Context size tokens')).toHaveCount(0);
 
-    await page.locator('.model-list-item').filter({ hasText: 'Unknown Context Model' }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Unknown Context Model' }).click();
     await page.getByRole('tab', { name: 'Configuration' }).click();
     const unknownPanel = page.locator('#detail-panel-config');
     const unknownAutoTune = unknownPanel.getByRole('checkbox', { name: 'Auto tune context size' });
@@ -1128,22 +1200,26 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.chat');
 
-    // Verify the streaming badge CSS class exists in the stylesheet
-    const hasBadgeStyle = await page.evaluate(() => {
+    // Streaming moved from a rail-specific badge to the shared list-row live
+    // status. Verify the marker keeps both its state color and pulse animation.
+    const hasStreamingStatusStyle = await page.evaluate(() => {
+      let hasLiveColor = false;
+      let hasLivePulse = false;
       const sheets = document.styleSheets;
       for (let i = 0; i < sheets.length; i++) {
         try {
           const rules = sheets[i].cssRules;
           for (let j = 0; j < rules.length; j++) {
-            if ((rules[j] as CSSStyleRule).selectorText?.includes('rail__streaming-badge')) {
-              return true;
-            }
+            const rule = rules[j] as CSSStyleRule;
+            if (!rule.selectorText?.includes('.workspace-list-row__status--live::before')) continue;
+            if (rule.style.background) hasLiveColor = true;
+            if (rule.style.animation) hasLivePulse = true;
           }
         } catch { /* cross-origin */ }
       }
-      return false;
+      return hasLiveColor && hasLivePulse;
     });
-    expect(hasBadgeStyle).toBeTruthy();
+    expect(hasStreamingStatusStyle).toBeTruthy();
 
     await page.screenshot({ path: 'screenshots/19-streaming-badge-style.png', fullPage: true });
   });
@@ -1493,8 +1569,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await page.locator('.titlebar__nav').getByText('Models').click();
-    await page.waitForSelector('.model-list-item', { timeout: 5000 });
-    await page.locator('.model-list-item').first().click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
     await page.locator('#detail-tab-config').click();
 
     const autoTune = page.getByRole('checkbox', { name: 'Auto tune context size' });
@@ -1549,10 +1625,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.goto('/');
     await page.locator('.titlebar__nav').getByText('Models').click();
-    await page.waitForSelector('.model-list-item', { timeout: 5000 });
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
 
     // Select model A and open Configuration tab
-    await page.locator('.model-list-item').filter({ hasText: modelA }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelA }).click();
     await page.locator('#detail-tab-config').click();
     const panel = page.locator('#detail-panel-config');
     await expect(panel).toBeVisible();
@@ -1563,7 +1639,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel.locator('.detail-tuning__notice')).toContainText('Saved for future loads');
 
     // Switch to model B — stale notice must be gone
-    await page.locator('.model-list-item').filter({ hasText: modelB }).click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelB }).click();
     await expect(panel.locator('.detail-tuning__notice')).toHaveCount(0);
   });
 

@@ -439,7 +439,7 @@ function linesForSystemInfo(summary: Record<string, any>): string {
   const devices = summary.devices || {};
   for (const [kind, items] of Object.entries(devices)) {
     const labels = Array.isArray(items)
-      ? items.map((item: any) => `${item.name}${item.available === false ? ' (unavailable)' : ''}${Array.isArray(item.details) && item.details.length ? ` — ${item.details.join(', ')}` : ''}`)
+      ? items.map((item: any) => `${item.name}${item.available === false ? ' (unavailable)' : ''}${Array.isArray(item.details) && item.details.length ? `: ${item.details.join(', ')}` : ''}`)
       : [];
     if (labels.length) lines.push(`${kind}: ${labels.join('; ')}`);
   }
@@ -663,12 +663,12 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
             : 'Answer the user with the model status, capability, size/context, checkpoint, and recipe/backend options. If they asked to load it, call load_model next.',
         };
         const display = [
-          `${summary.name || summary.id} — ${summary.status}, ${summary.capability}`,
+          `${summary.name || summary.id}: ${summary.status}, ${summary.capability}`,
           summary.size ? `Size: ${summary.size}` : '',
           result.context_window ? `Context: ${result.context_window}` : '',
           result.checkpoint ? `Checkpoint: ${result.checkpoint}` : '',
           Array.isArray(summary.recipes) && summary.recipes.length ? `Recipes: ${summary.recipes.join(', ')}` : '',
-          componentSummaries.length ? `Components:\n${componentSummaries.map(component => `- ${component.name || component.id} — ${component.status}, ${component.capability}`).join('\n')}` : '',
+          componentSummaries.length ? `Components:\n${componentSummaries.map(component => `- ${component.name || component.id}: ${component.status}, ${component.capability}`).join('\n')}` : '',
         ].filter(Boolean).join('\n');
         return toolPayload(call, result, display || 'Model info retrieved');
       }
@@ -753,7 +753,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
           answer_instruction: 'List the currently loaded model names with recipe/device/type. If none are loaded, say none are loaded.',
         };
         const display = loaded.length
-          ? loaded.map(m => `${m.model} — ${m.recipe || 'recipe unknown'}${m.device ? ` on ${m.device}` : ''} (${m.type || 'type unknown'})`).join('\n')
+          ? loaded.map(m => `${m.model}: ${m.recipe || 'recipe unknown'}${m.device ? ` on ${m.device}` : ''} (${m.type || 'type unknown'})`).join('\n')
           : 'No models are currently loaded';
         return toolPayload(call, result, display);
       }
@@ -771,7 +771,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         const display = [
           `Server: ${h.status} (${h.version})`,
           `Loaded: ${h.all_models_loaded.length}`,
-          ...h.all_models_loaded.slice(0, 6).map(m => `${m.model_name} — ${m.recipe || 'recipe unknown'}${m.device ? ` on ${m.device}` : ''}`),
+          ...h.all_models_loaded.slice(0, 6).map(m => `${m.model_name}: ${m.recipe || 'recipe unknown'}${m.device ? ` on ${m.device}` : ''}`),
         ].join('\n');
         return toolPayload(call, result, display);
       }
@@ -799,7 +799,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
               candidates,
               answer_instruction: 'Ask the user which Hugging Face checkpoint to download. Use ask_question with the candidate ids as choices.',
             };
-            return toolPayload(call, result, candidates.length ? `Choose a Hugging Face checkpoint:\n${candidates.map(c => `${c.id} — ${c.downloads || 0} downloads`).join('\n')}` : `No Hugging Face GGUF checkpoints found for "${query}"`, candidates.length === 0);
+            return toolPayload(call, result, candidates.length ? `Choose a Hugging Face checkpoint:\n${candidates.map(c => `${c.id}: ${c.downloads || 0} downloads`).join('\n')}` : `No Hugging Face GGUF checkpoints found for "${query}"`, candidates.length === 0);
           }
           const variants = await api.pullVariants(hfCheckpoint);
           const chosen = chooseHfVariant(variants, variant);
@@ -814,7 +814,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
               variants: choices,
               answer_instruction: 'Ask the user which GGUF variant/file to download. Use ask_question with the variant names as choices.',
             };
-            return toolPayload(call, result, choices.length ? `Choose a GGUF variant for ${hfCheckpoint}:\n${choices.map(c => `${c.name} — ${c.file}`).join('\n')}` : `No downloadable variants found for ${hfCheckpoint}`, choices.length === 0);
+            return toolPayload(call, result, choices.length ? `Choose a GGUF variant for ${hfCheckpoint}:\n${choices.map(c => `${c.name}: ${c.file}`).join('\n')}` : `No downloadable variants found for ${hfCheckpoint}`, choices.length === 0);
           }
           const localName = requested && !requested.includes('/') ? requested : defaultHfLocalName(variants, hfCheckpoint);
           const pullResult = await pullWithProgress(localName, { checkpoint: `${hfCheckpoint}:${chosen.name}`, recipe });
@@ -874,7 +874,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
           candidates,
           answer_instruction: 'No registry match was found. Ask the user which Hugging Face GGUF checkpoint to download. Use ask_question with the candidate ids as choices.',
         };
-        return toolPayload(call, result, candidates.length ? `No registry match. Hugging Face candidates:\n${candidates.map(c => `${c.id} — ${c.downloads || 0} downloads`).join('\n')}` : `No registry or Hugging Face GGUF candidates found for "${query}"`, candidates.length === 0);
+        return toolPayload(call, result, candidates.length ? `No registry match. Hugging Face candidates:\n${candidates.map(c => `${c.id}: ${c.downloads || 0} downloads`).join('\n')}` : `No registry or Hugging Face GGUF candidates found for "${query}"`, candidates.length === 0);
       }
 
       case 'delete_model': {

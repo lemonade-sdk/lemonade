@@ -10,6 +10,7 @@ const api = fs.readFileSync(path.join(root, 'src/api.ts'), 'utf8');
 const capabilitiesSource = fs.readFileSync(path.join(root, 'src/modelCapabilities.ts'), 'utf8');
 const remoteCapabilitiesSource = fs.readFileSync(path.join(root, 'src/remoteModelCapabilities.ts'), 'utf8');
 const listPanelSource = fs.readFileSync(path.join(root, 'src/components/ModelListPanel.tsx'), 'utf8');
+const detailPanelSource = fs.readFileSync(path.join(root, 'src/components/ModelDetailPanel.tsx'), 'utf8');
 const styles = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
 const huggingFaceSearchPath = path.join(root, 'src/features/models/huggingFaceSearch.ts');
 
@@ -89,6 +90,24 @@ assert.doesNotMatch(remoteCapabilitiesSource, /pipeline\.includes\(/,
   'remote capability matching must not be broad substring guessing');
 assert.ok(manager.indexOf("renderProviderZone('huggingface')") < manager.indexOf("renderProviderZone('modelscope')"),
   'ModelScope results must be rendered below Hugging Face');
+assert.doesNotMatch(manager, /expandedRemoteModel|row__detail row__detail--remote|row__expand/,
+  'remote registry rows must select the detail pane instead of expanding duplicate inline details');
+assert.doesNotMatch(manager, /row__action--download|row__action--hf-link/,
+  'remote registry rows must not duplicate download or provider-link actions from the detail pane');
+assert.match(styles, /\.hf-detail__gguf-list \{[\s\S]*?display: flex;[\s\S]*?flex-direction: column;/,
+  'remote variants must remain one vertical list at every detail-pane width');
+assert.match(detailPanelSource, /role="radiogroup"[\s\S]*?onClick=\{\(\) => setSelectedVariantName\(v\.name\)\}/,
+  'variant rows must select a quantization instead of starting a download');
+assert.match(detailPanelSource, /appearance="primary"[\s\S]*?onClick=\{\(\) => onHfPull\?\.\(hfModel\.id, selectedVariant\.name, hfVariants\.recipe\)\}/,
+  'the selected quantization must have one explicit primary download action');
+assert.ok(detailPanelSource.indexOf('hf-detail__gguf-primary-action') < detailPanelSource.indexOf('role="radiogroup"'),
+  'the primary download action must stay above the variant list so long lists cannot hide it');
+assert.match(detailPanelSource, /hfVariants\.mmproj_files\.length > 0[\s\S]*?Included components[\s\S]*?Vision projector \(MMProj\)/,
+  'remote details must describe a detected mmproj as an included component');
+assert.doesNotMatch(detailPanelSource, /hfVariants\.suggested_labels\.length > 0[\s\S]*?>Capabilities<\/span>/,
+  'provider capability labels must not create a duplicate Capabilities block in remote details');
+assert.doesNotMatch(detailPanelSource, /hf-detail__gguf-action/,
+  'variant rows must not repeat a Download action for every quantization');
 
 assert.doesNotMatch(capabilitiesSource, /found\.size === 0\) found\.add\('chat'\)/,
   'unknown capability must not silently become Chat');

@@ -551,11 +551,11 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await page.waitForTimeout(200);
 
     // Check trace rows are visible
-    const traceRows = page.locator('.trace-row');
+    const traceRows = page.locator('.inspect-rail__list .workspace-list-row');
     await expect(traceRows).toHaveCount(3);
 
     // Get the first item (which should have tabIndex=0 and be mock-trace-3)
-    const firstOption = page.locator('button[role="option"][data-trace-id="mock-trace-3"]');
+    const firstOption = page.locator('[role="option"][data-trace-id="mock-trace-3"]');
     await expect(firstOption).toBeVisible();
     await firstOption.focus();
     await expect(firstOption).toBeFocused();
@@ -568,7 +568,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(100);
 
-    const secondOption = page.locator('button[role="option"][data-trace-id="mock-trace-2"]');
+    const secondOption = page.locator('[role="option"][data-trace-id="mock-trace-2"]');
     await expect(secondOption).toBeFocused();
 
     // Verify selectedTraceId is STILL mock-trace-3 (decoupled)
@@ -581,7 +581,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(100);
 
-    const thirdOption = page.locator('button[role="option"][data-trace-id="mock-trace-1"]');
+    const thirdOption = page.locator('[role="option"][data-trace-id="mock-trace-1"]');
     await expect(thirdOption).toBeFocused();
 
     // Verify selectedTraceId is STILL mock-trace-3
@@ -776,7 +776,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await page.waitForTimeout(500);
 
     // Ensure trace was captured and added from WebSocket
-    const traceRows = page.locator('.trace-row');
+    const traceRows = page.locator('.inspect-rail__list .workspace-list-row');
     const count = await traceRows.count();
     expect(count).toBeGreaterThan(0);
 
@@ -902,7 +902,7 @@ Followed by some normal text.`;
     await page.waitForTimeout(500);
 
     // Select the first trace
-    await page.locator('.trace-row').last().click(); // newest is first, so trace 1 is last
+    await page.locator('.inspect-rail__list .workspace-list-row').last().click(); // newest is first, so trace 1 is last
     await page.waitForTimeout(200);
 
     // Click on the Messages tab
@@ -968,7 +968,7 @@ Followed by some normal text.`;
     expect(parsedClipboard[2].thinking).toBe('This is the leading thinking block.');
 
     // F. REGRESSION TEST: Select the second trace and verify that the card rendering state resets to default 'raw'
-    await page.locator('.trace-row').first().click(); // Trace B is the first row
+    await page.locator('.inspect-rail__list .workspace-list-row').first().click(); // Trace B is the first row
     await page.waitForTimeout(200);
 
     // Click on the Messages tab again (as changing selectedTraceId resets activeTab to 'overview')

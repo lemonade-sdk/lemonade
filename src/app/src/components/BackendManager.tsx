@@ -1243,6 +1243,20 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, showLogos, showTech]);
 
 
+  const isUpdatesView = viewFilter === 'updates';
+
+  const emptyState: {
+    icon: IconName;
+    title: string;
+    description: string;
+  } = {
+    icon: isUpdatesView ? 'check' : 'box',
+    title: isUpdatesView ? 'No backend updates' : `No ${viewFilter} backends`,
+    description: isUpdatesView
+      ? 'Everything is up to date.'
+      : 'No runtimes match this filter on the connected machine.',
+  };
+
   /* ── Render ───────────────────────────────────────────── */
 
   if (loading && !sysInfo) {
@@ -1341,9 +1355,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         )}
         {backendStateCounts[viewFilter] === 0 && (
           <div className="backends__filter-empty">
-            <Icon name={viewFilter === 'updates' ? 'check' : 'box'} size={24} />
-            <strong>No {viewFilter} backends</strong>
-            <span>{viewFilter === 'updates' ? 'Every installed backend is current.' : 'No runtimes match this filter on the connected machine.'}</span>
+            <Icon name={emptyState.icon} size={24} />
+            <strong>{emptyState.title}</strong>
+            <span>{emptyState.description}</span>
           </div>
         )}
       </>}

@@ -1,4 +1,6 @@
 #include "lemon/server.h"
+#include "lemon/audio_types.h"
+#include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
 #include <optional>
 #include "lemon/auto_tune.h"
@@ -18,8 +20,10 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
+#include "lemon/utils/conversation_fingerprint.h"
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/model_name_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
@@ -377,6 +381,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         }
     }
 
+    alias_manager_ = std::make_unique<AliasManager>(cache_dir_);
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
     model_manager_->set_cloud_registry(cloud_registry_.get());
 
@@ -387,6 +392,24 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                                        model_manager_.get(),
                                        backend_manager_.get());
     router_->set_cloud_registry(cloud_registry_.get());
+
+    // When a router collection is added, edited, or removed (via the API or an
+    // on-disk edit), reclaim any routing helper no remaining policy references.
+    model_manager_->set_models_changed_callback([this](uint64_t generation) {
+        router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
+    });
+
+    // Seed the router's needed-helper set from policies already present at
+    // startup so a helper loaded before the first policy change still validates
+    // against an authoritative set (see Router::load_model). Reserve the
+    // generation BEFORE snapshotting the policies: the directory watcher may
+    // already be publishing newer snapshots, and evaluating next_notify_generation()
+    // after computing the snapshot (argument evaluation order is unspecified in
+    // C++) could stamp this stale snapshot with a newer generation and clobber
+    // the watcher's authoritative state.
+    const uint64_t seed_generation = model_manager_->next_notify_generation();
+    const std::set<std::string> seed_needed = active_policy_helper_models();
+    router_->reconcile_routing_helpers(seed_needed, seed_generation);
 
     {
         lemon::jobs::OpProviders providers;
@@ -1058,6 +1081,21 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_model_files(req, res);
     });
 
+    // Per-model recipe options. Same ordering constraint as /files above: must
+    // precede the generic /models/(.+) route.
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        const std::string route = std::string(prefix) + R"(/models/(.+)/options)";
+        web_server.Get(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_get(req, res);
+        });
+        web_server.Post(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_post(req, res);
+        });
+        web_server.Delete(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_delete(req, res);
+        });
+    }
+
     // Model by ID (need to register for both versions with regex, with and without /api prefix)
     web_server.Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
@@ -1161,6 +1199,10 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
 
     // Model management endpoints
+    register_post("models/register", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_register(req, res);
+    });
+
     register_post("pull", [this](const httplib::Request& req, httplib::Response& res) {
         handle_pull(req, res);
     });
@@ -1306,6 +1348,16 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
         handle_simulate_vram_pressure(req, res);
+    });
+
+    web_server.Get("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_get(req, res);
+    });
+    web_server.Post("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_add(req, res);
+    });
+    web_server.Delete(R"(/internal/aliases/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_aliases_remove(req, res);
     });
 
     // Server-side MCP client host foundation (admin-gated through the existing
@@ -2523,7 +2575,259 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
         response["data"].push_back(model_info_to_json(model_id, model_info));
     }
 
+    if (alias_manager_) {
+        auto all_aliases = alias_manager_->get_all_aliases();
+        for (const auto& [alias_id, target_name] : all_aliases) {
+            if (models.count(alias_id) > 0) {
+                continue;
+            }
+            std::string ultimate_target = target_name;
+            if (auto resolved = alias_manager_->resolve_alias(alias_id)) {
+                ultimate_target = *resolved;
+            }
+            std::string canonical_target = model_manager_->resolve_model_name(ultimate_target);
+            if (models.count(canonical_target) > 0) {
+                response["data"].push_back(model_info_to_json(alias_id, models.at(canonical_target)));
+            } else if (models.count(ultimate_target) > 0) {
+                response["data"].push_back(model_info_to_json(alias_id, models.at(ultimate_target)));
+            }
+        }
+    }
+
     res.set_content(response.dump(), "application/json");
+}
+
+void Server::validate_model_registration_name(const std::string& model_name,
+                                             bool require_user_namespace) {
+    if (lemon::is_reserved_registration_name(model_name)) {
+        throw std::invalid_argument(
+            "Model names with 'extra.' / 'builtin.' prefixes are reserved, "
+            "including as bare-name parts of a 'user.' alias. Received: " + model_name);
+    }
+
+    if (require_user_namespace &&
+        (model_name.size() <= 5 || model_name.rfind("user.", 0) != 0)) {
+        throw std::invalid_argument(
+            "Registered model definitions must use a non-empty `user.*` name, "
+            "for example `user.Phi-4-Mini-GGUF`. Received: " + model_name);
+    }
+}
+
+void Server::normalize_model_registration_source(nlohmann::json& request_json,
+                                                 bool local_import) {
+    if (!request_json.contains("source") && !request_json.contains("registry_source")) {
+        return;
+    }
+
+    std::optional<std::string> normalized_registry;
+    if (request_json.contains("registry_source")) {
+        if (!request_json["registry_source"].is_string()) {
+            throw std::invalid_argument("`registry_source` must be a string when provided");
+        }
+        normalized_registry = remote_registry_source_name(
+            parse_remote_registry_source(
+                request_json["registry_source"].get<std::string>()));
+    }
+
+    if (request_json.contains("source")) {
+        if (!request_json["source"].is_string()) {
+            throw std::invalid_argument("`source` must be a string when provided");
+        }
+        const std::string public_source = request_json["source"].get<std::string>();
+        if (is_remote_registry_source(public_source)) {
+            const std::string normalized_public = remote_registry_source_name(
+                parse_remote_registry_source(public_source));
+            if (normalized_registry && *normalized_registry != normalized_public) {
+                throw std::invalid_argument(
+                    "`source` and `registry_source` must identify the same registry");
+            }
+            normalized_registry = normalized_public;
+            request_json["source"] = normalized_public;
+        } else if (!local_import && public_source != "local_upload" &&
+                   public_source != "local_path" &&
+                   public_source != "extra_models_dir") {
+            throw std::invalid_argument(
+                "Unsupported model source '" + public_source +
+                "' (expected 'huggingface', 'modelscope', or a local source)");
+        }
+    }
+
+    if (normalized_registry) {
+        if (!request_json.contains("source") ||
+            is_remote_registry_source(request_json["source"].get<std::string>())) {
+            request_json["source"] = *normalized_registry;
+        }
+        request_json["registry_source"] = *normalized_registry;
+    }
+}
+
+void Server::validate_and_canonicalize_collection_registration(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool allow_embedded_models) {
+    const std::string recipe = request_json.value("recipe", std::string());
+    if (!is_model_collection_recipe(recipe)) {
+        return;
+    }
+
+    if (request_json.contains("models") && !allow_embedded_models) {
+        throw std::invalid_argument(
+            "`models` embeds additional model definitions and is not accepted by "
+            "the single-model registration endpoint; register components first");
+    }
+
+    if (request_json.contains("components")) {
+        if (!request_json["components"].is_array()) {
+            throw std::invalid_argument("`components` must be an array when provided");
+        }
+        for (const auto& component : request_json["components"]) {
+            if (!component.is_string()) {
+                throw std::invalid_argument(
+                    "Every collection component must be a string model name");
+            }
+        }
+    }
+
+    if (auto err = model_manager_->validate_collection_request(model_name, request_json)) {
+        throw std::invalid_argument(*err);
+    }
+
+    // Single-definition collections reference models already present in the
+    // registry. Exported bundles keep their raw component names because their
+    // embedded definitions are resolved by the collection import/download path.
+    if (request_json.contains("components") && request_json["components"].is_array() &&
+        (!request_json.contains("models") || !request_json["models"].is_array())) {
+        for (auto& component : request_json["components"]) {
+            component = model_manager_->resolve_model_name(component.get<std::string>());
+        }
+    }
+}
+
+std::string Server::register_model_definition_internal(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool require_definition,
+        bool allow_embedded_models,
+        bool local_import) {
+    if (!request_json.is_object()) {
+        throw std::invalid_argument("Request body must be a JSON object");
+    }
+
+    if (request_json.contains("recipe") && !request_json["recipe"].is_string()) {
+        throw std::invalid_argument("`recipe` must be a string when provided");
+    }
+    const std::string recipe = request_json.value("recipe", std::string());
+    if (require_definition && recipe.empty()) {
+        throw std::invalid_argument("A non-empty string `recipe` is required");
+    }
+
+    if (request_json.contains("checkpoint") && !request_json["checkpoint"].is_string()) {
+        throw std::invalid_argument("`checkpoint` must be a string when provided");
+    }
+    if (request_json.contains("checkpoints")) {
+        const auto& checkpoints = request_json["checkpoints"];
+        if (!checkpoints.is_object() || !checkpoints.contains("main")) {
+            throw std::invalid_argument(
+                "If present, `checkpoints` must be an object containing `main`");
+        }
+        for (const auto& [role, checkpoint] : checkpoints.items()) {
+            if (!checkpoint.is_string()) {
+                throw std::invalid_argument(
+                    "Every `checkpoints` value must be a string; invalid role: " + role);
+            }
+        }
+    }
+
+    const bool has_definition =
+        require_definition || !recipe.empty() || request_json.contains("checkpoint") ||
+        request_json.contains("checkpoints") || request_json.contains("components") ||
+        request_json.contains("models");
+    validate_model_registration_name(model_name, has_definition);
+
+    if (request_json.contains("models") && !allow_embedded_models) {
+        throw std::invalid_argument(
+            "`models` embeds additional model definitions and is not accepted by "
+            "the single-model registration endpoint; register components first");
+    }
+
+    normalize_model_registration_source(request_json, local_import);
+    validate_and_canonicalize_collection_registration(
+        model_name, request_json, allow_embedded_models);
+
+
+    if (!has_definition && !local_import) {
+        return model_name;
+    }
+
+    if (local_import) {
+        std::string hf_cache = model_manager_->get_hf_cache_dir();
+        std::string model_name_clean = model_name.substr(5);
+        std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
+        std::string dest_path = hf_cache + "/models--" + model_name_clean;
+
+        LOG(INFO, "Server") << "Local import mode - resolving files in: "
+                            << dest_path << std::endl;
+        resolve_and_register_local_model(dest_path, model_name, request_json, hf_cache);
+    } else {
+        model_manager_->register_model(
+            model_name,
+            request_json,
+            /*allow_missing_checkpoint=*/require_definition,
+            /*replace_existing=*/require_definition);
+    }
+
+    return model_manager_->get_public_model_name(model_name);
+}
+
+void Server::handle_model_register(const httplib::Request& req, httplib::Response& res) {
+    auto bad_request = [&res](const std::string& message) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", message}}.dump(), "application/json");
+    };
+
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
+    try {
+        if (!request_json.is_object()) {
+            bad_request("Request body must be a JSON object");
+            return;
+        }
+        if (!request_json.contains("model_name") || !request_json["model_name"].is_string()) {
+            bad_request("A string `model_name` is required");
+            return;
+        }
+
+        const std::string model_name = request_json["model_name"].get<std::string>();
+        const std::string public_name = register_model_definition_internal(
+            model_name,
+            request_json,
+            /*require_definition=*/true,
+            /*allow_embedded_models=*/false,
+            /*local_import=*/false);
+
+        nlohmann::json response = {
+            {"status", "success"},
+            {"model_name", public_name},
+            {"canonical_model_name", model_name},
+        };
+
+        const auto models = model_manager_->get_supported_models();
+        auto model_it = models.find(public_name);
+        if (model_it != models.end()) {
+            response["model"] = model_info_to_json(public_name, model_it->second);
+        }
+
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        bad_request(e.what());
+    } catch (const nlohmann::json::exception& e) {
+        bad_request(e.what());
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_model_register: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
 }
 
 // Maximum collection-component nesting depth embedded in "models" arrays.
@@ -2655,15 +2959,33 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 }
 
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
-    std::string model_id = req.matches[1];
+    std::string model_id = utils::normalize_model_name(req.matches[1]);
 
     if (model_manager_->model_exists(model_id)) {
         auto info = model_manager_->get_model_info(model_id);
-        // Emit the wire-format id (bare for the precedence-winner, canonical-prefixed
-        // for shadowed sources), regardless of which form the client requested.
         std::string canonical_cache_key = model_manager_->resolve_model_name(model_id);
         std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
+        if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+            wire_id = model_id;
+        }
         res.set_content(model_info_to_json(wire_id, info).dump(), "application/json");
+    } else if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+        auto resolved_target = alias_manager_->resolve_alias(model_id);
+        if (resolved_target) {
+            std::string canonical_target = model_manager_->resolve_model_name(*resolved_target);
+            if (model_manager_->model_exists(canonical_target)) {
+                auto info = model_manager_->get_model_info(canonical_target);
+                res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
+                return;
+            } else if (model_manager_->model_exists(*resolved_target)) {
+                auto info = model_manager_->get_model_info(*resolved_target);
+                res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
+                return;
+            }
+        }
+        res.status = 404;
+        auto error_response = create_model_error(model_id, "Model not found");
+        res.set_content(error_response.dump(), "application/json");
     } else {
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
@@ -2713,6 +3035,265 @@ void Server::handle_model_files(const httplib::Request& req, httplib::Response& 
         auto error_response = create_model_error(model_id, "Model not found");
         res.set_content(error_response.dump(), "application/json");
     }
+}
+
+// `pinned` is live-process state: Router::load_model keeps a running server's
+// own pin rather than the resolved one, so a value saved here would not reach a
+// model that is already up. /v1/load and /internal/pin own it, and this endpoint
+// neither reports it in effective/defaults nor accepts it.
+static bool is_live_process_option(const std::string& key) {
+    return key == "pinned";
+}
+
+static std::string shell_single_quote(const std::string& s) {
+    std::string quoted = "'";
+    for (char c : s) {
+        if (c == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted += c;
+        }
+    }
+    return quoted + "'";
+}
+
+// Fill in every option the recipe accepts, resolving unset keys through the
+// default chain, so a client can render a complete form from one response.
+static nlohmann::json resolve_all_recipe_options(const RecipeOptions& options) {
+    nlohmann::json resolved = options.to_resolved_json();
+    resolved.erase("pinned");
+    return resolved;
+}
+
+static bool option_type_matches(const nlohmann::json& expected, const nlohmann::json& value) {
+    if (expected.is_number()) return value.is_number();
+    if (expected.is_string()) return value.is_string();
+    // Booleans, and the tri-state options whose default is null to mean "follow
+    // the global setting", both only ever hold a boolean once set.
+    return value.is_boolean();
+}
+
+// Reject values that pass the type check but would break the load they are
+// saved for. Returns an error message, or empty when the value is usable.
+static std::string validate_option_value(const std::string& key,
+                                         const nlohmann::json& expected,
+                                         const nlohmann::json& value) {
+    if (key == "ctx_size") {
+        // A literal above INT64_MAX parses as an unsigned and wraps on the way
+        // to int64_t, so 2^64-1 would arrive as -1 and read as "size it
+        // automatically". Rule it out before the conversion.
+        const bool fits_int64 = value.is_number_integer() &&
+            (!value.is_number_unsigned() ||
+             value.get<uint64_t>() <= static_cast<uint64_t>(INT64_MAX));
+        // 0 is not a shorthand for anything here: only -1 auto-resolves, so a 0
+        // reaches the backend verbatim and FastFlowLM and vLLM both reject it.
+        if (!fits_int64 || value.get<int64_t>() < -1 || value == 0) {
+            return "'ctx_size' must be a positive whole number, "
+                   "or -1 to size it automatically";
+        }
+        return "";
+    }
+
+    // A fractional value for a whole-number option is silently ignored by the
+    // consumers that read it, so refuse it.
+    if (expected.is_number_integer() && !value.is_number_integer()) {
+        return "'" + key + "' must be a whole number";
+    }
+    return "";
+}
+
+void Server::respond_with_model_options(
+    const httplib::Request& req, httplib::Response& res,
+    const std::function<bool(const std::string&, ModelInfo&, httplib::Response&)>& mutation) {
+    const std::string model_id = utils::normalize_model_name(req.matches[1]);
+    std::string model_key = model_id;
+
+    if (!model_manager_->model_exists(model_key)) {
+        std::optional<std::string> target;
+        if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+            target = alias_manager_->resolve_alias(model_id);
+        }
+        std::string canonical_target = target ? model_manager_->resolve_model_name(*target) : "";
+        if (target && model_manager_->model_exists(canonical_target)) {
+            model_key = canonical_target;
+        } else if (target && model_manager_->model_exists(*target)) {
+            model_key = *target;
+        } else {
+            res.status = 404;
+            res.set_content(create_model_error(model_id, "Model not found").dump(), "application/json");
+            return;
+        }
+    }
+
+    // Work in canonical names from here on: a user model's requested id is its
+    // bare public name, which not every downstream lookup resolves for itself.
+    model_key = model_manager_->resolve_model_name(model_key);
+
+    try {
+        ModelInfo info = model_manager_->get_model_info(model_key);
+        if (mutation && !mutation(model_key, info, res)) return;
+
+        const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
+        RecipeOptions effective = router_->resolve_effective_options(info, no_request_options);
+
+        ModelInfo without_saved = info;
+        without_saved.recipe_options = model_manager_->get_model_default_options(info);
+        RecipeOptions defaults = router_->resolve_effective_options(without_saved, no_request_options);
+
+        // `effective` and `defaults` double as replayable /v1/load bodies.
+        nlohmann::json effective_json = resolve_all_recipe_options(effective);
+        nlohmann::json defaults_json = resolve_all_recipe_options(defaults);
+        effective_json["model_name"] = model_id;
+        defaults_json["model_name"] = model_id;
+
+        const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
+        const nlohmann::json effective_ctx = effective.get_option("ctx_size");
+        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
+            : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+
+        // The load command, with the two things only the caller knows left as
+        // environment references. lemond always listens in the clear, so a
+        // client that reached it through a TLS-terminating proxy is on https
+        // and this process cannot tell; the Host header is a guess of the same
+        // kind, supplied by the caller.
+        std::string load_command =
+            "curl -X POST $LEMONADE_BASE_URL/v1/load -H \"Content-Type: application/json\"";
+        if (!api_key_.empty()) {
+            load_command += " -H \"Authorization: Bearer $LEMONADE_API_KEY\"";
+        }
+        load_command += " -d " + shell_single_quote(effective_json.dump());
+
+        nlohmann::json response = {
+            {"model_name", model_id},
+            {"recipe", info.recipe},
+            {"saved", model_manager_->get_saved_model_options(model_key)},
+            {"effective", effective_json},
+            {"defaults", defaults_json},
+            {"resolved_ctx_size", resolved_ctx},
+            {"load_command", load_command}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Failed to handle options for '" << model_id
+                             << "': " << e.what() << std::endl;
+        if (!model_manager_->model_exists(model_key)) {
+            // The model went away between the existence check and the read.
+            res.status = 404;
+            res.set_content(create_model_error(model_key, e.what()).dump(), "application/json");
+            return;
+        }
+        // Anything else is a server-side failure, most often the options file
+        // being unwritable. Reporting it through create_model_error would call
+        // it a load failure, which this endpoint never performs.
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", "Failed to read or update options for '" + model_id + "': " + e.what()},
+            {"type", "server_error"},
+            {"code", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_model_options_get(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res, nullptr);
+}
+
+void Server::handle_model_options_post(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res,
+        [this, &req](const std::string& model_key, ModelInfo& info, httplib::Response& r) {
+            nlohmann::json body;
+            if (!parse_required_json_body(req, r, body)) return false;
+            if (!body.is_object()) {
+                r.status = 400;
+                r.set_content(nlohmann::json{{"error", "Request body must be a JSON object of recipe options"}}
+                                  .dump(), "application/json");
+                return false;
+            }
+
+            bool dry_run = false;
+            if (body.contains("dry_run")) {
+                if (!body["dry_run"].is_boolean()) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "'dry_run' must be a boolean"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                dry_run = body["dry_run"].get<bool>();
+                body.erase("dry_run");
+            }
+
+            const auto keys = RecipeOptions::keys_for_recipe(info.recipe);
+            const std::set<std::string> allowed(keys.begin(), keys.end());
+            const RecipeOptions unset(info.recipe, nlohmann::json::object());
+
+            // Validate everything before writing anything, and express each
+            // change as set-or-erase so the merge can happen atomically.
+            nlohmann::json changes = nlohmann::json::object();
+            for (const auto& [key, value] : body.items()) {
+                // The URL names the model; tolerate the body's copy so the
+                // `effective` object (a /v1/load body) can be posted back here.
+                if (key == "model_name") continue;
+                if (!allowed.count(key)) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "Unknown option '" + key +
+                                                           "' for recipe '" + info.recipe + "'"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                if (is_live_process_option(key)) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "'" + key + "' applies to a running "
+                        "model; use /v1/load or /internal/pin"}}.dump(), "application/json");
+                    return false;
+                }
+                // null removes the key. The other values the option system
+                // reads as "not set" ("", -1, "auto") still clear every option
+                // except ctx_size, where -1 is a value and a malformed size is
+                // an error rather than an absence.
+                const bool clears = value.is_null() ||
+                    (key != "ctx_size" && RecipeOptions::is_default_sentinel(key, value));
+                if (clears) {
+                    changes[key] = nullptr;
+                    continue;
+                }
+                const nlohmann::json expected = unset.get_option(key);
+                if (!option_type_matches(expected, value)) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "Invalid type for option '" + key + "'"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                const std::string invalid = validate_option_value(key, expected, value);
+                if (!invalid.empty()) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", invalid}}.dump(), "application/json");
+                    return false;
+                }
+                changes[key] = value;
+            }
+
+            if (dry_run) {
+                info.recipe_options = model_manager_->preview_saved_model_options(info, changes);
+                return true;
+            }
+            if (!changes.empty()) {
+                model_manager_->update_saved_model_options(model_key, changes);
+            }
+            info = model_manager_->get_model_info(model_key);
+            return true;
+        });
+}
+
+void Server::handle_model_options_delete(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res,
+        [this](const std::string& model_key, ModelInfo& info, httplib::Response&) {
+            if (!model_manager_->get_saved_model_options(model_key).empty()) {
+                model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
+            }
+            info = model_manager_->get_model_info(model_key);
+            return true;
+        });
 }
 
 void Server::handle_collection_chat_completions(const nlohmann::json& request_json,
@@ -2794,7 +3375,9 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
             auto_load_model_if_needed(m, json::object(),
                                       LoadPurpose::RoutingDependency);
         });
-    RoutingPolicyEngine engine(std::move(policy), std::move(services));
+    CostServices cost_services = make_router_cost_services(*router_);
+    RoutingPolicyEngine engine(std::move(policy), std::move(services),
+                               std::move(cost_services));
 
     RouteContext ctx = build_route_context(request_json, collection_info.model_name);
     const bool want_trace = request_json.value("route_trace", false);
@@ -2803,6 +3386,8 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
     result.requested_model = collection_info.model_name;
     result.selected_model = decision.route_to;
     result.decision = std::move(decision);
+    router_->note_route_decision(utils::conversation_fingerprint(request_json),
+                                 result.selected_model);
     return result;
 }
 
@@ -2950,6 +3535,40 @@ std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
     return std::nullopt;
 }
 
+std::set<std::string> Server::active_policy_helper_models() {
+    std::set<std::string> needed;
+    for (const auto& [name, info] : model_manager_->get_supported_models()) {
+        (void)name;
+        if (!info.route_policy) {
+            continue;
+        }
+        for (const auto& helper : info.route_policy->helper_models) {
+            needed.insert(helper);
+        }
+    }
+    return needed;
+}
+
+void Server::record_response_telemetry(const nlohmann::json& response,
+                                       const nlohmann::json& request_json) {
+    if (!response.is_object() ||
+        (!response.contains("timings") && !response.contains("usage"))) {
+        return;
+    }
+
+    StreamingProxy::TelemetryData telemetry = StreamingProxy::extract_telemetry(response);
+    std::string model_name = request_json.value("model", "");
+    LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                           << ", tokens=" << (telemetry.input_tokens + telemetry.output_tokens)
+                           << " (in=" << telemetry.input_tokens
+                           << ", out=" << telemetry.output_tokens << ")"
+                           << ", ttft=" << std::fixed << std::setprecision(2)
+                           << telemetry.time_to_first_token << "s"
+                           << ", tps=" << telemetry.tokens_per_second << std::endl;
+
+    router_->update_request_telemetry(model_name, telemetry);
+}
+
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
@@ -2959,6 +3578,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
@@ -3125,97 +3745,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
             res.set_content(response.dump(), "application/json");
 
-            // Print and save telemetry for non-streaming
-            // llama-server includes timing data in the response under "timings" field
-            if (response.contains("timings")) {
-                auto timings = response["timings"];
-                int input_tokens = 0;
-                int output_tokens = 0;
-                double ttft_seconds = 0.0;
-                double tps = 0.0;
-
-                if (timings.contains("prompt_n")) {
-                    input_tokens = timings["prompt_n"].get<int>();
-                }
-                if (timings.contains("predicted_n")) {
-                    output_tokens = timings["predicted_n"].get<int>();
-                }
-                if (timings.contains("prompt_ms")) {
-                    ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                }
-                if (timings.contains("predicted_per_second")) {
-                    tps = timings["predicted_per_second"].get<double>();
-                }
-
-                std::string model_name = request_json.value("model", "");
-                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
-                                       << ", tokens=" << (input_tokens + output_tokens)
-                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
-                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
-                                       << ", tps=" << tps << std::endl;
-
-                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
-                                        << "Model:         " << model_name << "\n"
-                                        << "Input tokens:  " << input_tokens << "\n"
-                                        << "Output tokens: " << output_tokens << "\n"
-                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
-                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
-                                        << "=================" << std::endl;
-
-                // Save telemetry to router
-                router_->update_telemetry(model_name, input_tokens, output_tokens,
-                                          ttft_seconds, tps);
-            } else if (response.contains("usage")) {
-                // OpenAI format uses "usage" field
-                auto usage = response["usage"];
-                int input_tokens = 0;
-                int output_tokens = 0;
-                double ttft_seconds = 0.0;
-                double tps = 0.0;
-
-                if (usage.contains("prompt_tokens")) {
-                    input_tokens = usage["prompt_tokens"].get<int>();
-                }
-                if (usage.contains("completion_tokens")) {
-                    output_tokens = usage["completion_tokens"].get<int>();
-                }
-
-                // FLM format may include timing data
-                if (usage.contains("prefill_duration_ttft")) {
-                    ttft_seconds = usage["prefill_duration_ttft"].get<double>();
-                }
-                if (usage.contains("decoding_speed_tps")) {
-                    tps = usage["decoding_speed_tps"].get<double>();
-                }
-
-                std::string model_name = request_json.value("model", "");
-                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
-                                       << ", tokens=" << (input_tokens + output_tokens)
-                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
-                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
-                                       << ", tps=" << tps << std::endl;
-
-                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
-                                        << "Model:         " << model_name << "\n"
-                                        << "Input tokens:  " << input_tokens << "\n"
-                                        << "Output tokens: " << output_tokens << "\n"
-                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
-                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
-                                        << "=================" << std::endl;
-
-                // Save telemetry to router
-                router_->update_telemetry(model_name, input_tokens, output_tokens,
-                                          ttft_seconds, tps);
-            }
-
-            // Capture prompt_tokens from usage if available
-            if (response.contains("usage")) {
-                auto usage = response["usage"];
-                if (usage.contains("prompt_tokens")) {
-                    int prompt_tokens = usage["prompt_tokens"].get<int>();
-                    router_->update_prompt_tokens(request_json.value("model", ""), prompt_tokens);
-                }
-            }
+            record_response_telemetry(response, request_json);
 
 
         }
@@ -3236,6 +3766,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
@@ -3345,95 +3876,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
             attach_route_decision(response, res, route_dispatch);
             res.set_content(response.dump(), "application/json");
 
-            // Print and save telemetry for non-streaming completions
-            if (response.contains("timings")) {
-                auto timings = response["timings"];
-                int input_tokens = 0;
-                int output_tokens = 0;
-                double ttft_seconds = 0.0;
-                double tps = 0.0;
-
-                if (timings.contains("prompt_n")) {
-                    input_tokens = timings["prompt_n"].get<int>();
-                }
-                if (timings.contains("predicted_n")) {
-                    output_tokens = timings["predicted_n"].get<int>();
-                }
-                if (timings.contains("prompt_ms")) {
-                    ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                }
-                if (timings.contains("predicted_per_second")) {
-                    tps = timings["predicted_per_second"].get<double>();
-                }
-
-                std::string model_name = request_json.value("model", "");
-                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
-                                       << ", tokens=" << (input_tokens + output_tokens)
-                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
-                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
-                                       << ", tps=" << tps << std::endl;
-
-                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
-                                        << "Model:         " << model_name << "\n"
-                                        << "Input tokens:  " << input_tokens << "\n"
-                                        << "Output tokens: " << output_tokens << "\n"
-                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
-                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
-                                        << "=================" << std::endl;
-
-                // Save telemetry to router
-                router_->update_telemetry(model_name, input_tokens, output_tokens,
-                                          ttft_seconds, tps);
-            } else if (response.contains("usage")) {
-                auto usage = response["usage"];
-                int input_tokens = 0;
-                int output_tokens = 0;
-                double ttft_seconds = 0.0;
-                double tps = 0.0;
-
-                if (usage.contains("prompt_tokens")) {
-                    input_tokens = usage["prompt_tokens"].get<int>();
-                }
-                if (usage.contains("completion_tokens")) {
-                    output_tokens = usage["completion_tokens"].get<int>();
-                }
-
-                // FLM format may include timing data
-                if (usage.contains("prefill_duration_ttft")) {
-                    ttft_seconds = usage["prefill_duration_ttft"].get<double>();
-                }
-                if (usage.contains("decoding_speed_tps")) {
-                    tps = usage["decoding_speed_tps"].get<double>();
-                }
-
-                std::string model_name = request_json.value("model", "");
-                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
-                                       << ", tokens=" << (input_tokens + output_tokens)
-                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
-                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
-                                       << ", tps=" << tps << std::endl;
-
-                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
-                                        << "Model:         " << model_name << "\n"
-                                        << "Input tokens:  " << input_tokens << "\n"
-                                        << "Output tokens: " << output_tokens << "\n"
-                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
-                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
-                                        << "=================" << std::endl;
-
-                // Save telemetry to router
-                router_->update_telemetry(model_name, input_tokens, output_tokens,
-                                          ttft_seconds, tps);
-            }
-
-            // Capture prompt_tokens from usage if available
-            if (response.contains("usage")) {
-                auto usage = response["usage"];
-                if (usage.contains("prompt_tokens")) {
-                    int prompt_tokens = usage["prompt_tokens"].get<int>();
-                    router_->update_prompt_tokens(request_json.value("model", ""), prompt_tokens);
-                }
-            }
+            record_response_telemetry(response, request_json);
         }
 
     } catch (const RouterResidencyConflictException& e) {
@@ -3451,6 +3894,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 void Server::handle_embeddings(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         std::string requested_model;
         if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -3553,6 +3998,11 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
 
         // Call router's reranking method
         auto response = router_->reranking(request_json);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3576,6 +4026,9 @@ void Server::handle_classify(const httplib::Request& req, httplib::Response& res
             res.set_content(error.dump(), "application/json");
             return;
         }
+
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Reject malformed requests before any model gets loaded.
         std::string validation_error;
@@ -3721,6 +4174,11 @@ void Server::handle_slots(const httplib::Request& req, httplib::Response& res) {
 
         // Call router's get_slots method
         auto response = router_->get_slots();
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3788,6 +4246,11 @@ void Server::handle_slots_by_id(const httplib::Request& req, httplib::Response& 
 
         // Call router's slots_action method with slot ID, action, and request body
         auto response = router_->slots_action(slot_id, action_param, request_body);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3835,6 +4298,11 @@ void Server::handle_tokenize(const httplib::Request& req, httplib::Response& res
 
         // Forward request to router
         auto response = router_->tokenize(request_body);
+        if (response.contains("error")) {
+            set_error_response(response, res);
+            return;
+        }
+
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
@@ -3861,12 +4329,14 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         }
 
         // Build request JSON for router
-        nlohmann::json request_json;
+        nlohmann::json request_json = nlohmann::json::object();
 
         // Extract form fields
         if (req.form.has_field("model")) {
             request_json["model"] = req.form.get_field("model");
         }
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
         if (req.form.has_field("language")) {
             request_json["language"] = req.form.get_field("language");
         }
@@ -3878,6 +4348,20 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         }
         if (req.form.has_field("temperature")) {
             request_json["temperature"] = std::stod(req.form.get_field("temperature"));
+        }
+
+        // Validate response format early
+        std::string response_format =
+            request_json.value("response_format", lemon::audio::ResponseFormat::JSON);
+
+        if (!lemon::audio::is_supported_response_format(response_format)) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Unsupported response_format: " + response_format},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
         }
 
         // Extract audio file
@@ -3931,9 +4415,15 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         // Forward to router
         auto response = router_->audio_transcriptions(request_json);
 
-        // Check for error in response
         if (response.contains("error")) {
             set_error_response(response, res, 500);
+            return;
+        }
+
+        if (lemon::audio::is_plain_text_format(response_format) &&
+            response.contains("text") &&
+            response["text"].is_string()) {
+            res.set_content(response["text"].get<std::string>(), "text/plain");
             return;
         }
 
@@ -3953,6 +4443,8 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
 void Server::handle_audio_speech(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Handle model loading
         if (request_json.contains("model")) {
@@ -3994,7 +4486,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             if (request_json["stream_format"] != "audio") {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
-                    {"message", "Only pcm audio streaming format is supported"},
+                    {"message", "Only 'audio' is supported for stream_format"},
                     {"type", "invalid_request_error"}
                 }}};
                 res.set_content(error.dump(), "application/json");
@@ -4002,15 +4494,32 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
-        const auto supported_formats =
-            router_->audio_speech_supported_formats(request_json["model"].get<std::string>());
-        std::string response_format = "mp3";
+        const std::string speech_model = request_json["model"].get<std::string>();
+        // A backend's streaming encoder is often narrower than its buffered one, so
+        // which constraint applies depends on the transport in play.
+        auto supported_formats = router_->audio_speech_supported_formats(speech_model);
         if (is_streaming) {
-            response_format = "pcm";
-        } else if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
+            auto streaming_formats = router_->audio_speech_supported_streaming_formats(speech_model);
+            if (!streaming_formats.empty()) {
+                supported_formats = std::move(streaming_formats);
+            }
+        }
+        // Streaming and encoding are orthogonal: stream_format picks the transport,
+        // response_format the container. An explicit response_format therefore wins
+        // even when streaming, and is rejected below rather than silently swapped if
+        // the backend can't emit it. Only the implicit default differs by transport,
+        // and it yields to whatever the backend declares.
+        std::string response_format;
+        if (request_json.contains("response_format") && request_json["response_format"].is_string()) {
             response_format = request_json["response_format"].get<std::string>();
-        } else if (!supported_formats.empty()) {
-            response_format = supported_formats.front();
+        } else {
+            response_format = is_streaming ? "pcm" : "mp3";
+            const bool default_supported = supported_formats.empty() ||
+                std::find(supported_formats.begin(), supported_formats.end(),
+                          response_format) != supported_formats.end();
+            if (!default_supported) {
+                response_format = supported_formats.front();
+            }
         }
         if (!MIME_TYPES.contains(response_format)) {
             res.status = 400;
@@ -4040,6 +4549,10 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             return;
         }
         std::string mime_type = MIME_TYPES[response_format];
+        // The backend has to encode what the Content-Type above promises. Without
+        // this it would receive whatever the client sent -- nothing, when the
+        // format came from a default -- and fall back to its own choice.
+        request_json["response_format"] = response_format;
 
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
@@ -4125,14 +4638,7 @@ void Server::serve_media_or_error(httplib::Response& res, const std::string& mim
         return;
     }
     if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
-        res.status = 500;
-        const auto& err = error_payload["error"];
-        if (err.is_object() && err.contains("status") && err["status"].is_number_integer()) {
-            const int status = err["status"].get<int>();
-            if (status >= 400 && status <= 599) {
-                res.status = status;
-            }
-        }
+        res.status = get_error_status_code(error_payload, 500);
         res.set_content(error_payload.dump(), "application/json");
         return;
     }
@@ -4325,6 +4831,8 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         LOG(INFO, "Server") << "POST /api/v1/images/generations" << std::endl;
 
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // Validate required fields
         if (!request_json.contains("prompt")) {
@@ -4842,6 +5350,8 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
@@ -4905,6 +5415,8 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             attach_route_decision(response, res, route_dispatch);
             LOG(INFO, "Server") << "200 OK" << std::endl;
             res.set_content(response.dump(), "application/json");
+
+            record_response_telemetry(response, request_json);
         }
 
     } catch (const RouterResidencyConflictException& e) {
@@ -4930,7 +5442,9 @@ bool Server::parse_required_json_body(const httplib::Request& req,
     try {
         out = nlohmann::json::parse(req.body);
         return true;
-    } catch (const nlohmann::json::parse_error& e) {
+    } catch (const nlohmann::json::exception& e) {
+        // Not just parse_error: a numeric literal too large for a double raises
+        // out_of_range, which is a sibling type and would otherwise escape as a 500.
         res.status = 400;
         nlohmann::json error = {{"error", std::string("Invalid JSON in request body: ") + e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -4962,50 +5476,20 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         bool subscribe = request_json.value("subscribe", true);
         bool local_import = request_json.value("local_import", false);
 
-        // Validate and canonicalize remote-registry provenance before anything is
-        // persisted. `source` remains backward-compatible with local origins, while
-        // remote registrations store a canonical huggingface/modelscope value.
-        if (request_json.contains("source") || request_json.contains("registry_source")) {
-            try {
-                std::optional<std::string> normalized_registry;
-                if (request_json.contains("registry_source")) {
-                    normalized_registry = remote_registry_source_name(
-                        parse_remote_registry_source(
-                            request_json["registry_source"].get<std::string>()));
-                }
-
-                if (request_json.contains("source")) {
-                    const std::string public_source = request_json["source"].get<std::string>();
-                    if (is_remote_registry_source(public_source)) {
-                        const std::string normalized_public = remote_registry_source_name(
-                            parse_remote_registry_source(public_source));
-                        if (normalized_registry && *normalized_registry != normalized_public) {
-                            bad_request("'source' and 'registry_source' must identify the same registry");
-                            return;
-                        }
-                        normalized_registry = normalized_public;
-                        request_json["source"] = normalized_public;
-                    } else if (!local_import && public_source != "local_upload" &&
-                               public_source != "local_path" &&
-                               public_source != "extra_models_dir") {
-                        bad_request("Unsupported model source '" + public_source +
-                                    "' (expected 'huggingface' or 'modelscope')");
-                        return;
-                    }
-                }
-
-                if (normalized_registry) {
-                    if (!request_json.contains("source") ||
-                        is_remote_registry_source(request_json["source"].get<std::string>())) {
-                        request_json["source"] = *normalized_registry;
-                    }
-                    request_json["registry_source"] = *normalized_registry;
-                }
-            } catch (const std::exception& e) {
-                bad_request(e.what());
-                return;
-            }
+        // Resolve the pull's registry provenance once, up front, so download,
+        // cache layout, and later refresh stay consistent. A registry-backed
+        // checkpoint that names no source inherits the configured default; a
+        // provider URL is normalized to owner/repo and its registry adopted.
+        // Self-managed backends (flm/cloud), non-registry checkpoints, explicit
+        // sources, and bare `pull <registered-name>` refreshes are left as-is.
+        try {
+            lemon::apply_default_pull_source(request_json, config_->default_model_source());
+        } catch (const std::invalid_argument& e) {
+            bad_request(e.what());
+            return;
         }
+        // The helper may have rewritten a provider URL into an owner/repo id.
+        checkpoint = request_json.value("checkpoint", "");
 
         LOG(INFO, "Server") << "Pulling model: " << model_name << std::endl;
         if (!checkpoint.empty()) {
@@ -5015,66 +5499,24 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             LOG(INFO, "Server") << "   recipe: " << recipe << std::endl;
         }
 
-        // Reject reserved prefixes — extra.* / builtin.* cannot be created via
-        // /pull, and user.extra.* / user.builtin.* are also rejected because
-        // their bare-name part ("extra.X" / "builtin.X") would otherwise hijack
-        // the corresponding canonical alias slot. Then enforce the existing rule
-        // that explicit checkpoint/recipe requires the user.* prefix.
-        if (lemon::is_reserved_registration_name(model_name)) {
-            res.status = 400;
-            nlohmann::json error = {{"error",
-                "Model names with 'extra.' / 'builtin.' prefixes are reserved, "
-                "including as bare-name parts of a 'user.' alias. "
-                "Use 'user.<name>' for registration where <name> does not begin "
-                "with 'extra.' or 'builtin.'. Received: " + model_name}};
-            res.set_content(error.dump(), "application/json");
+        // Both API operations always enter the same registration path.
+        // /pull continues with installation after this; /models/register returns.
+        const bool collection_file_import =
+            request_json.contains("models") && request_json["models"].is_array();
+
+        try {
+            register_model_definition_internal(
+                model_name,
+                request_json,
+                /*require_definition=*/false,
+                /*allow_embedded_models=*/true,
+                local_import);
+        } catch (const std::invalid_argument& e) {
+            bad_request(e.what());
             return;
         }
-        if (!checkpoint.empty() || !recipe.empty()) {
-            if (model_name.substr(0, 5) != "user.") {
-                bad_request(
-                    "When providing 'checkpoint' or 'recipe', the model name must include the "
-                    "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + model_name);
-                return;
-            }
-        }
 
-        if (is_model_collection_recipe(recipe)) {
-            if (auto err = model_manager_->validate_collection_request(model_name, request_json)) {
-                bad_request(*err);
-                return;
-            }
-            // A body carrying a `models` array is a collection file import: its
-            // components may not be registered yet (download_model registers them
-            // from the embedded definitions and canonicalizes the list itself).
-            // A pointer body (registry-backed collection) has no `components` at all —
-            // they come from the downloaded manifest. Only pre-canonicalize an
-            // inline `components` list whose entries must already exist.
-            if (request_json.contains("components") && request_json["components"].is_array() &&
-                (!request_json.contains("models") || !request_json["models"].is_array())) {
-                // Canonicalize components so downstream cache lookups
-                // (check_component_downloaded, update_model_in_cache) succeed
-                // even when the client passed a public alias (bare name) rather
-                // than the canonical `user.X` / `builtin.X` form.
-                for (auto& c : request_json["components"]) {
-                    c = model_manager_->resolve_model_name(c.get<std::string>());
-                }
-            }
-        }
-
-        // Local import mode: CLI has already copied files to HF cache, just resolve and register
         if (local_import) {
-            std::string hf_cache = model_manager_->get_hf_cache_dir();
-            std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
-            std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
-            std::string dest_path = hf_cache + "/models--" + model_name_clean;
-
-            LOG(INFO, "Server") << "Local import mode - resolving files in: " << dest_path << std::endl;
-
-            resolve_and_register_local_model(
-                dest_path, model_name, request_json, hf_cache
-            );
-
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
@@ -5091,9 +5533,13 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             return;
         }
 
+        nlohmann::json download_request = collection_file_import
+            ? request_json
+            : nlohmann::json::object();
+
         if (stream) {
-            auto operation = [this, model_name, request_json, do_not_upgrade](DownloadProgressCallback progress_cb) {
-                model_manager_->download_model(model_name, request_json, do_not_upgrade, progress_cb);
+            auto operation = [this, model_name, download_request, do_not_upgrade](DownloadProgressCallback progress_cb) {
+                model_manager_->download_model(model_name, download_request, do_not_upgrade, progress_cb);
             };
 
             if (!subscribe) {
@@ -5117,7 +5563,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             stream_download_operation(res, operation);
         } else {
             // Legacy synchronous mode - blocks until complete
-            model_manager_->download_model(model_name, request_json, do_not_upgrade);
+            model_manager_->download_model(model_name, download_request, do_not_upgrade);
 
             nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
             res.set_content(response.dump(), "application/json");
@@ -5127,6 +5573,11 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
         res.status = 400;
         nlohmann::json error = {{"error", e.what()}, {"code", lemon::kUnknownModelErrorCode}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const lemon::InvalidModelDefinitionError& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
@@ -5242,6 +5693,11 @@ void Server::handle_registry_search(const httplib::Request& req, httplib::Respon
 }
 
 void Server::handle_pull_variants(const httplib::Request& req, httplib::Response& res) {
+    auto bad_request = [&res](const std::string& message) {
+        res.status = 400;
+        nlohmann::json error = {{"error", message}};
+        res.set_content(error.dump(), "application/json");
+    };
     try {
         std::string checkpoint = req.get_param_value("checkpoint");
         if (checkpoint.empty()) {
@@ -5250,6 +5706,44 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
+        // Detect the URL provider upfront so we can reject mismatches with
+        // an explicit `--source` param (just like /pull and the CLI do).
+        lemon::RemoteRegistrySource url_source;
+        std::string url_repo_id;
+        bool has_url = lemon::detect_registry_url(checkpoint, url_source, url_repo_id);
+
+        // Explicit `--source` was provided (or not).  Capture the raw param
+        // now while checkpoint still holds the URL for error messages.
+        std::string raw_source;
+        if (req.has_param("source")) {
+            raw_source = req.get_param_value("source");
+        }
+
+        // Reject mismatches between explicit source and detected URL source.
+        // Canonicalize the raw param first so accepted aliases (e.g. `hf`) are
+        // not rejected against the URL's canonical registry name.
+        if (has_url && !raw_source.empty()) {
+            if (parse_remote_registry_source(raw_source) != url_source) {
+                bad_request(
+                    "checkpoint URL uses " + remote_registry_source_name(url_source) +
+                    " but source was set to '" + raw_source + "'");
+                return;
+            }
+        }
+
+        // A provider URL is authoritative: normalize it to owner/repo and adopt
+        // its registry. Otherwise honor an explicit source param, falling back
+        // to the server's configured default when none is given.
+        if (has_url) {
+            checkpoint = url_repo_id;
+        }
+        std::string source;
+        if (has_url) {
+            source = remote_registry_source_name(url_source);
+        } else {
+            source = req.has_param("source")
+                ? req.get_param_value("source") : config_->default_model_source();
+        }
         if (checkpoint.find('/') == std::string::npos) {
             res.status = 400;
             nlohmann::json error = {{"error",
@@ -5257,8 +5751,6 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
-        const std::string source = req.has_param("source")
-            ? req.get_param_value("source") : "huggingface";
         const auto parsed_source = parse_remote_registry_source(source);
         if (config_->offline()) {
             res.status = 400;
@@ -5267,14 +5759,18 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             return;
         }
         bool not_found = false;
+        const std::string resolved_source = remote_registry_source_name(parsed_source);
         nlohmann::json body = lemon::fetch_pull_variants(
-            checkpoint, remote_registry_source_name(parsed_source), not_found);
+            checkpoint, resolved_source, not_found);
         if (not_found) {
             res.status = 404;
             nlohmann::json error = {{"error", "Checkpoint '" + checkpoint + "' not found on " +
                 remote_registry_display_name(parsed_source)}};
             res.set_content(error.dump(), "application/json");
             return;
+        }
+        if (body.is_object()) {
+            body["source"] = resolved_source;
         }
         res.set_content(body.dump(), "application/json");
     } catch (const std::invalid_argument& e) {
@@ -5298,6 +5794,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
+    normalize_and_resolve_request_model(request_json);
 
     try {
         model_name = request_json["model_name"];
@@ -5319,7 +5816,9 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
         auto info = model_manager_->get_model_info(model_name);
 
-        // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
+        // Extract optional per-model settings. An omitted or empty option falls
+        // through to the Router defaults; an explicit ctx_size of -1 requests
+        // automatic sizing for this load.
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         bool save_options = request_json.value("save_options", false);
         std::optional<bool> pinned_opt = std::nullopt;
@@ -5331,10 +5830,12 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
-        // Persist request options to model info if requested
+        // Persist request options to model info if requested. Re-read so this
+        // load still sees the model's own registry-level options rather than
+        // just the request's.
         if (save_options) {
-            info.recipe_options = options;
-            model_manager_->save_model_options(info);
+            model_manager_->set_saved_model_options(model_name, options.to_json());
+            info = model_manager_->get_model_info(model_name);
         }
 
         // Download model if needed (first-time use or missing files). Collections have no
@@ -5469,6 +5970,8 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
         if (!req.body.empty()) {
             try {
                 auto request_json = nlohmann::json::parse(req.body);
+                normalize_client_model_name(request_json);
+                normalize_and_resolve_request_model(request_json);
                 if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
                     model_name = request_json["model_name"].get<std::string>();
                 } else if (request_json.contains("model") && request_json["model"].is_string()) {
@@ -5661,6 +6164,154 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
         res.status = 500;
         auto error_response = create_model_error("", e.what());
         res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+// Alias failures are not model-lookup failures. create_model_error() rewrites its
+// message whenever the name is absent from the registry, which is always true for a
+// new alias, so routing these through it would report "model not found" instead of
+// the actual reason.
+static nlohmann::json create_alias_error(const std::string& message, const std::string& code,
+                                         const std::string& type = "invalid_request_error") {
+    return nlohmann::json{{"error", {
+        {"message", message},
+        {"type", type},
+        {"param", "alias"},
+        {"code", code}
+    }}};
+}
+
+void Server::handle_aliases_get(const httplib::Request& req, httplib::Response& res) {
+    try {
+        nlohmann::json alias_list = nlohmann::json::array();
+        if (alias_manager_) {
+            for (const auto& [alias, target] : alias_manager_->get_all_aliases()) {
+                bool downloaded = false;
+                std::string recipe = "llamacpp";
+                try {
+                    if (model_manager_->model_exists(target)) {
+                        std::string canonical = model_manager_->resolve_model_name(target);
+                        downloaded = model_manager_->is_model_downloaded(canonical);
+                        ModelInfo info = model_manager_->get_model_info(canonical);
+                        recipe = info.recipe;
+                    }
+                } catch (...) {}
+                alias_list.push_back({
+                    {"alias", alias},
+                    {"target", target},
+                    {"downloaded", downloaded},
+                    {"recipe", recipe}
+                });
+            }
+        }
+        res.set_content(nlohmann::json{{"aliases", alias_list}}.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(create_alias_error(e.what(), "internal_error", "server_error").dump(), "application/json");
+    }
+}
+
+void Server::handle_aliases_add(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto req_json = nlohmann::json::parse(req.body);
+        std::string alias = utils::normalize_model_name(req_json.value("alias", ""));
+        std::string target = utils::normalize_model_name(req_json.value("target", req_json.value("model", "")));
+
+        if (alias.empty() || target.empty()) {
+            res.status = 400;
+            res.set_content(create_alias_error("Alias and target fields are required", "invalid_request").dump(), "application/json");
+            return;
+        }
+
+        if (alias == target) {
+            res.status = 400;
+            res.set_content(create_alias_error("Alias cannot point to itself", "invalid_alias").dump(), "application/json");
+            return;
+        }
+
+        if (alias.rfind("user.", 0) == 0 || alias.rfind("extra.", 0) == 0 || alias.rfind("builtin.", 0) == 0) {
+            res.status = 400;
+            res.set_content(create_alias_error("Alias name cannot use reserved prefixes (user., extra., builtin.)", "invalid_alias").dump(), "application/json");
+            return;
+        }
+
+        if (model_manager_->model_exists(alias)) {
+            std::string canonical = model_manager_->resolve_model_name(alias);
+            if (canonical == alias || canonical == "user." + alias || canonical == "builtin." + alias) {
+                res.status = 409;
+                res.set_content(create_alias_error("Cannot create alias '" + alias + "': Name conflicts with an existing canonical model", "alias_conflict").dump(), "application/json");
+                return;
+            }
+        }
+
+        if (!alias_manager_) {
+            res.status = 500;
+            res.set_content(create_alias_error("AliasManager uninitialized", "internal_error", "server_error").dump(), "application/json");
+            return;
+        }
+
+        std::string err_msg;
+        if (!alias_manager_->set_alias(alias, target, err_msg)) {
+            res.status = 409;
+            res.set_content(create_alias_error(err_msg, "alias_conflict").dump(), "application/json");
+            return;
+        }
+
+        nlohmann::json response = {
+            {"status", "ok"},
+            {"alias", alias},
+            {"target", target}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(create_alias_error(e.what(), "invalid_request").dump(), "application/json");
+    }
+}
+
+void Server::handle_aliases_remove(const httplib::Request& req, httplib::Response& res) {
+    std::string alias = utils::normalize_model_name(req.matches[1]);
+    try {
+        if (!alias_manager_ || !alias_manager_->remove_alias(alias)) {
+            res.status = 404;
+            res.set_content(create_alias_error("Alias not found: " + alias, "alias_not_found").dump(), "application/json");
+            return;
+        }
+        nlohmann::json response = {
+            {"status", "deleted"},
+            {"alias", alias}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(create_alias_error(e.what(), "internal_error", "server_error").dump(), "application/json");
+    }
+}
+
+std::string Server::resolve_alias_target(const std::string& model_name) const {
+    if (alias_manager_) {
+        auto resolved = alias_manager_->resolve_alias(model_name);
+        if (resolved.has_value()) {
+            return resolved.value();
+        }
+    }
+    return model_name;
+}
+
+void Server::normalize_and_resolve_request_model(nlohmann::json& request_json) const {
+    if (request_json.contains("model") && request_json["model"].is_string()) {
+        std::string raw_name = request_json["model"].get<std::string>();
+        std::string resolved = resolve_alias_target(raw_name);
+        if (resolved != raw_name) {
+            request_json["model"] = resolved;
+        }
+    }
+    if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
+        std::string raw_name = request_json["model_name"].get<std::string>();
+        std::string resolved = resolve_alias_target(raw_name);
+        if (resolved != raw_name) {
+            request_json["model_name"] = resolved;
+        }
     }
 }
 
