@@ -50,6 +50,7 @@
 #include "lemon/utils/aixlog.hpp"
 
 static const std::vector<std::string> VALID_LABELS = {
+    "chat",
     "coding",
     "dflash",
     "embeddings",
@@ -607,16 +608,6 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     lemonade::LemonadeClient& client,
     int context_window) {
-    static const std::unordered_set<std::string> non_llm_labels = {
-        "embeddings",
-        "reranking",
-        "transcription",
-        "image",
-        "tts",
-        "upscaling",
-        "edit"
-    };
-
     std::vector<lemon_cli::AgentModelEntry> models;
 
     try {
@@ -633,17 +624,17 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
                 continue;
             }
 
-            bool is_llm = true;
-            if (model.contains("labels") && model["labels"].is_array()) {
-                for (const auto& label : model["labels"]) {
-                    if (label.is_string() && non_llm_labels.count(label.get<std::string>()) > 0) {
-                        is_llm = false;
+            bool is_chat = false;
+            const auto labels = model.find("labels");
+            if (labels != model.end() && labels->is_array()) {
+                for (const auto& label : *labels) {
+                    if (label.is_string() && label.get<std::string>() == "chat") {
+                        is_chat = true;
                         break;
                     }
                 }
             }
-
-            if (!is_llm) {
+            if (!is_chat) {
                 continue;
             }
 

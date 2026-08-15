@@ -102,21 +102,21 @@ class WhisperTests(ServerTestBase):
         """Load the configured Whisper model before positive transcription tests."""
         model = _get_whisper_model()
         whispercpp_backend = _get_whispercpp_backend()
-    
+
         load_payload = {"model_name": model}
-    
+
         if whispercpp_backend:
             print(f"[INFO] Loading model with {whispercpp_backend} backend")
             load_payload["whispercpp_backend"] = whispercpp_backend
         else:
             print(f"[INFO] Loading model {model}")
-    
+
         load_response = requests.post(
             f"{self.base_url}/load",
             json=load_payload,
             timeout=TIMEOUT_MODEL_OPERATION,
         )
-    
+
         backend_description = (
             f" with {whispercpp_backend} backend" if whispercpp_backend else ""
         )
@@ -128,7 +128,7 @@ class WhisperTests(ServerTestBase):
                 f"{load_response.text}"
             ),
         )
-    
+
         return model
 
     def test_001_transcription_basic(self):
@@ -206,6 +206,140 @@ class WhisperTests(ServerTestBase):
 
         print(f"[OK] Transcription with language=en: {result['text']}")
 
+    def test_002b_transcription_response_formats(self):
+        """Test audio transcription response_format handling."""
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
+
+        model = _get_whisper_model()
+        # FLM ignores response_format and always answers with compact
+        # {model, text} JSON, so it cannot produce timestamped subtitles.
+        # Those formats are rejected up front and covered by
+        # test_002d_transcription_subtitle_formats_unsupported_on_flm.
+        is_flm = get_config().get("wrapped_server") == "flm"
+        formats = ["json", "verbose_json", "text"]
+        if not is_flm:
+            formats += ["srt", "vtt"]
+
+        for response_format in formats:
+            with self.subTest(response_format=response_format):
+                with open(self._test_audio_path, "rb") as audio_file:
+                    files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
+                    data = {
+                        "model": model,
+                        "response_format": response_format,
+                    }
+
+                    response = requests.post(
+                        f"{self.base_url}/audio/transcriptions",
+                        files=files,
+                        data=data,
+                        timeout=TIMEOUT_MODEL_OPERATION,
+                    )
+
+                self.assertEqual(
+                    response.status_code,
+                    200,
+                    f"Transcription failed for {response_format}: {response.text}",
+                )
+
+                # Verify that the response body matches the requested format.
+                # Standard formats should return parsed JSON, while raw text and subtitles are returned as plain text.
+                if response_format in ["json", "verbose_json"]:
+                    self.assertTrue(
+                        response.headers.get("Content-Type", "").startswith(
+                            "application/json"
+                        )
+                    )
+                else:
+                    self.assertTrue(
+                        response.headers.get("Content-Type", "").startswith(
+                            "text/plain"
+                        )
+                    )
+
+                if response_format == "json":
+                    result = response.json()
+                    self.assertIn("text", result)
+                    self.assertIsInstance(result["text"], str)
+                    self.assertGreater(len(result["text"]), 0)
+                elif response_format == "verbose_json":
+                    result = response.json()
+                    self.assertIn("text", result)
+                    # Segment-level metadata is optional: FLM has none to
+                    # report, and some whisper.cpp builds also return the
+                    # compact shape. Validate it only when present.
+                    if "segments" in result:
+                        self.assertIsInstance(result["segments"], list)
+                elif response_format == "text":
+                    self.assertFalse(response.text.lstrip().startswith("{"))
+                    self.assertGreater(len(response.text.strip()), 0)
+                elif response_format == "srt":
+                    self.assertFalse(response.text.lstrip().startswith("{"))
+                    self.assertGreater(len(response.text.strip()), 0)
+                    self.assertIn("-->", response.text)
+                elif response_format == "vtt":
+                    self.assertFalse(response.text.lstrip().startswith("{"))
+                    self.assertGreater(len(response.text.strip()), 0)
+                    self.assertIn("WEBVTT", response.text)
+                    self.assertIn("-->", response.text)
+
+                print(f"[OK] Verified response_format={response_format}")
+
+    def test_002d_transcription_subtitle_formats_unsupported_on_flm(self):
+        """Test SRT/VTT are rejected on FLM rather than returning plain text."""
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
+
+        if get_config().get("wrapped_server") != "flm":
+            self.skipTest("Subtitle formats are supported on this backend")
+
+        for response_format in ["srt", "vtt"]:
+            with self.subTest(response_format=response_format):
+                with open(self._test_audio_path, "rb") as audio_file:
+                    response = requests.post(
+                        f"{self.base_url}/audio/transcriptions",
+                        files={"file": ("test_speech.wav", audio_file, "audio/wav")},
+                        data={
+                            "model": _get_whisper_model(),
+                            "response_format": response_format,
+                        },
+                        timeout=TIMEOUT_MODEL_OPERATION,
+                    )
+
+                self.assertEqual(
+                    response.status_code,
+                    400,
+                    f"Expected 400 for {response_format} on FLM, "
+                    f"got {response.status_code}: {response.text}",
+                )
+                result = response.json()
+                self.assertIn("error", result)
+                self.assertIn(response_format, result["error"]["message"])
+                print(f"[OK] FLM correctly rejected response_format={response_format}")
+
+    def test_002c_transcription_unsupported_response_format(self):
+        """Test unsupported audio transcription response_format is rejected."""
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
+
+        with open(self._test_audio_path, "rb") as audio_file:
+            response = requests.post(
+                f"{self.base_url}/audio/transcriptions",
+                files={"file": ("test_speech.wav", audio_file, "audio/wav")},
+                data={
+                    "model": _get_whisper_model(),
+                    "response_format": "xml",
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+
+        self.assertEqual(response.status_code, 400)
+        result = response.json()
+        self.assertIn("error", result)
+        self.assertEqual(result["error"]["type"], "invalid_request_error")
+        self.assertIn("response_format", result["error"]["message"])
+        print(
+            f"[OK] Correctly rejected unsupported response format: {response.status_code}"
+        )
+
     def test_003_transcription_missing_file_error(self):
         """Test error handling when file is missing."""
         model = _get_whisper_model()
@@ -240,7 +374,7 @@ class WhisperTests(ServerTestBase):
         self.assertIn(
             response.status_code,
             [400, 422],
-            f"Expected 400 or 422 for missing model, got {response.status_code}",
+            f"Expected 400 or 422 for missing model, got {response.status_code}. Response: {response.text}",
         )
         print(f"[OK] Correctly rejected request without model: {response.status_code}")
 

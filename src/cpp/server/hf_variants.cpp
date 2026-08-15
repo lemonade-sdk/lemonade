@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/model_types.h"
 #include "lemon/model_registry.h"
 #include "lemon/utils/http_client.h"
@@ -85,12 +86,6 @@ int quant_priority(const std::string& q) {
     };
     auto it = priority.find(q);
     return it == priority.end() ? 100 : it->second;
-}
-
-void add_label(std::vector<std::string>& labels, const std::string& label) {
-    if (std::find(labels.begin(), labels.end(), label) == labels.end()) {
-        labels.push_back(label);
-    }
 }
 
 }  // namespace
@@ -293,13 +288,16 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         vj["sharded"] = repo_files.size() > 1;
         vj["size_bytes"] = total_repo_size;
 
+        std::vector<std::string> labels;
+        backends::ensure_deployment_label(labels, "ryzenai-llm");
+
         nlohmann::json out;
         out["checkpoint"] = checkpoint;
         out["source"] = remote_registry_source_name(source);
         out["recipe"] = "ryzenai-llm";
         out["repo_kind"] = "onnx-ryzenai";
         out["suggested_name"] = suggested_name;
-        out["suggested_labels"] = nlohmann::json::array();
+        out["suggested_labels"] = labels;
         out["mmproj_files"] = nlohmann::json::array();
         out["draft_files"] = nlohmann::json::array();
         out["variants"] = nlohmann::json::array({vj});
@@ -356,6 +354,9 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
                 "array, and a 'models' array)");
         }
 
+        std::vector<std::string> labels;
+        backends::ensure_deployment_label(labels, "collection.omni");
+
         // Inspection result only: what it is, its name, and (for the CLI's
         // display line) its size and component count. The manifest content is
         // deliberately omitted — /pull re-downloads it to disk.
@@ -365,7 +366,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         out["recipe"] = "collection.omni";
         out["repo_kind"] = "collection";
         out["suggested_name"] = suggested_name;
-        out["suggested_labels"] = nlohmann::json::array();
+        out["suggested_labels"] = labels;
         out["mmproj_files"] = nlohmann::json::array();
         out["draft_files"] = nlohmann::json::array();
         out["variants"] = nlohmann::json::array();
@@ -385,14 +386,17 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
             "' manifest exported by 'lemonade export')");
     }
 
-    // Suggested labels.
+    // Suggested labels. These are what the client previews before confirming
+    // the pull, so they run through the same stamper that /pull applies at
+    // registration; otherwise the preview and the registered model disagree.
     std::vector<std::string> labels;
-    if (!vset.mmproj_files.empty()) add_label(labels, "vision");
+    if (!vset.mmproj_files.empty()) add_label_once(labels, "vision");
     {
         std::string id_lower = to_lower(checkpoint);
-        if (id_lower.find("embed") != std::string::npos) add_label(labels, "embeddings");
-        if (id_lower.find("rerank") != std::string::npos) add_label(labels, "reranking");
+        if (id_lower.find("embed") != std::string::npos) add_label_once(labels, "embeddings");
+        if (id_lower.find("rerank") != std::string::npos) add_label_once(labels, "reranking");
     }
+    backends::ensure_deployment_label(labels, "llamacpp");
 
     nlohmann::json out;
     out["checkpoint"] = checkpoint;

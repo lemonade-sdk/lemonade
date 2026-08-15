@@ -22,7 +22,7 @@ Lemonade is a local LLM server providing GPU and NPU acceleration for running la
 | Backend | Class | Capabilities | Device | Purpose |
 |---------|-------|-------------|--------|---------|
 | llama.cpp | `LlamaCppServer` | Completion, Embeddings, Reranking | GPU | LLM inference — CPU/GPU (Vulkan, ROCm, Metal) |
-| FastFlowLM | `FastFlowLMServer` | Completion, Embeddings, Reranking, Audio | NPU | NPU inference (multi-modal: LLM, ASR, embeddings, reranking) |
+| FastFlowLM | `FastFlowLMServer` | Completion, Embeddings, Audio | NPU | NPU inference (multi-modal: LLM, ASR, embeddings) |
 | RyzenAI | `RyzenAIServer` | Completion | NPU | Hybrid NPU inference |
 | vLLM | `VLLMServer` | Completion | GPU | LLM inference — ROCm on AMD iGPU/dGPU (Linux). **Experimental**, validated only on gfx1151 (Strix Halo). |
 | whisper.cpp | `WhisperServer` | Audio | CPU | Audio transcription |
