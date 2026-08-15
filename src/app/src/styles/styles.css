@@ -12635,7 +12635,8 @@ a.backend-card__version:focus-visible {
   border-radius: var(--radius-lg);
   background: var(--surface-raised);
   box-shadow: var(--shadow-lg);
-  overflow: hidden;
+  overflow-y: auto;
+  max-height: min(320px, 40vh);
   padding: var(--space-1);
 }
 .router-select__option {
@@ -12842,8 +12843,13 @@ a.backend-card__version:focus-visible {
   border-end-end-radius: var(--radius-md);
   background: transparent;
   color: var(--text-tertiary);
+  visibility: hidden;
   transition: color var(--duration-fast) var(--ease-out),
               background var(--duration-fast) var(--ease-out);
+}
+.router-editor__rule-summary:hover .router-editor__rule-remove,
+.router-editor__rule-summary:focus-within .router-editor__rule-remove {
+  visibility: visible;
 }
 .router-editor__rule-actions .router-editor__rule-remove:hover:not(:disabled) {
   color: var(--text-primary);

@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
@@ -18,18 +18,38 @@ interface RouterSelectProps {
   disabled?: boolean;
 }
 
+function computeCoords(trigger: HTMLButtonElement) {
+  const r = trigger.getBoundingClientRect();
+  return { top: r.bottom + 4, left: r.left, width: r.width };
+}
+
 export const RouterSelect: React.FC<RouterSelectProps> = ({ value, options, onChange, ariaLabel, className, disabled }) => {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const selected = options.find(o => o.value === value);
+
+  const reposition = useCallback(() => {
+    if (triggerRef.current) setCoords(computeCoords(triggerRef.current));
+  }, []);
 
   useLayoutEffect(() => {
     if (!open || !triggerRef.current) return;
-    const r = triggerRef.current.getBoundingClientRect();
-    setCoords({ top: r.bottom + window.scrollY + 4, left: r.left + window.scrollX, width: r.width });
+    setCoords(computeCoords(triggerRef.current));
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnScroll = () => setOpen(false);
+    window.addEventListener('scroll', closeOnScroll, { capture: true, passive: true });
+    window.addEventListener('resize', reposition, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', closeOnScroll, { capture: true });
+      window.removeEventListener('resize', reposition);
+    };
+  }, [open, reposition]);
 
   useEffect(() => {
     if (!open) return;
@@ -41,10 +61,60 @@ export const RouterSelect: React.FC<RouterSelectProps> = ({ value, options, onCh
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const pick = (val: string, disabled?: boolean) => {
-    if (disabled) return;
+  const close = useCallback(() => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  }, []);
+
+  const pick = useCallback((val: string, isDisabled?: boolean) => {
+    if (isDisabled) return;
     onChange(val);
     setOpen(false);
+    triggerRef.current?.focus();
+  }, [onChange]);
+
+  const onTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) {
+        setOpen(true);
+        // Focus first (ArrowDown) or last (ArrowUp) enabled option after open
+        window.setTimeout(() => {
+          const enabled = optionRefs.current.filter(Boolean) as HTMLButtonElement[];
+          const target = e.key === 'ArrowDown' ? enabled[0] : enabled[enabled.length - 1];
+          target?.focus();
+        }, 0);
+      } else {
+        const enabled = optionRefs.current.filter(Boolean) as HTMLButtonElement[];
+        const target = e.key === 'ArrowDown' ? enabled[0] : enabled[enabled.length - 1];
+        target?.focus();
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+    }
+  };
+
+  const onOptionKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number, opt: RouterSelectOption) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = optionRefs.current.slice(index + 1).find(Boolean) as HTMLButtonElement | undefined;
+      next?.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = optionRefs.current.slice(0, index).reverse().find(Boolean) as HTMLButtonElement | undefined;
+      if (prev) prev.focus(); else close();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      pick(opt.value, opt.disabled);
+    } else if (e.key === 'Tab') {
+      close();
+    }
   };
 
   return (
@@ -58,6 +128,7 @@ export const RouterSelect: React.FC<RouterSelectProps> = ({ value, options, onCh
         aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => setOpen(v => !v)}
+        onKeyDown={onTriggerKeyDown}
       >
         <span className={selected ? undefined : 'is-placeholder'}>{selected?.label ?? value}</span>
         <Icon name="chevron-down" size={12} />
@@ -70,15 +141,18 @@ export const RouterSelect: React.FC<RouterSelectProps> = ({ value, options, onCh
           aria-label={ariaLabel}
           style={{ top: coords.top, left: coords.left, minWidth: coords.width }}
         >
-          {options.map(opt => (
+          {options.map((opt, index) => (
             <button
+              ref={el => { optionRefs.current[index] = el; }}
               type="button"
               key={opt.value}
               role="option"
               aria-selected={opt.value === value}
               aria-disabled={opt.disabled}
+              tabIndex={-1}
               className={`router-select__option${opt.value === value ? ' is-selected' : ''}${opt.disabled ? ' is-disabled' : ''}`}
               onClick={() => pick(opt.value, opt.disabled)}
+              onKeyDown={e => onOptionKeyDown(e, index, opt)}
             >
               {opt.label}
             </button>

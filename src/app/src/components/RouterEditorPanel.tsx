@@ -914,7 +914,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
           {draft.modelName && (
             <WorkspaceActionButton appearance="danger" icon="trash" disabled={saving || deleting || savingProvider} onClick={requestDeleteCurrent}>Delete</WorkspaceActionButton>
           )}
-          <WorkspaceActionButton appearance="secondary" icon="x" disabled={saving || deleting || savingProvider} onClick={requestClose}>Cancel</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="secondary" icon="x" disabled={saving || deleting || savingProvider} onClick={requestClose}>Close</WorkspaceActionButton>
           <span className="workspace-action-group__spacer" />
           <WorkspaceActionButton appearance="quiet" icon="file" disabled={!request} onClick={() => request && downloadJson(routerDisplayName(request.model_name), request)}>Export</WorkspaceActionButton>
           <WorkspaceActionButton appearance="quiet" icon="file-up" disabled={saving} onClick={() => importRef.current?.click()}>Import</WorkspaceActionButton>
@@ -1398,7 +1398,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
           <p>{confirmation?.message}</p>
         </div>
         <div className="inspect-modal-footer">
-          <WorkspaceActionButton appearance="secondary" disabled={deleting} onClick={dismissConfirmation}>Cancel</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="secondary" disabled={deleting} onClick={dismissConfirmation}>Close</WorkspaceActionButton>
           <WorkspaceActionButton appearance={confirmation?.tone || 'primary'} disabled={deleting} onClick={confirmPendingAction}>
             {deleting && confirmation?.kind === 'delete' ? 'Deleting…' : (confirmation?.confirmLabel || 'Continue')}
           </WorkspaceActionButton>

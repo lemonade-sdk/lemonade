@@ -2917,7 +2917,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                 >
                   Save
                 </WorkspaceActionButton>
-                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Cancel</WorkspaceActionButton>
+                <WorkspaceActionButton appearance="secondary" icon="x" onClick={closeCustomForm}>Close</WorkspaceActionButton>
                 <span className="workspace-action-group__spacer" />
                 <WorkspaceActionButton appearance="quiet" icon="file" onClick={handleExportCustomModels}>Export</WorkspaceActionButton>
                 <WorkspaceActionButton appearance="quiet" icon="file-up" onClick={() => customJsonInputRef.current?.click()}>Import</WorkspaceActionButton>

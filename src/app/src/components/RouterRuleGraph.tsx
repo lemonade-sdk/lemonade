@@ -287,10 +287,11 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
   const historyRef = useRef<RouterNode[]>([]);
   const futureRef = useRef<RouterNode[]>([]);
   const lastEmittedNodeRef = useRef<RouterNode | null>(null);
-  // True once the user has explicitly dropped or committed a node in this
-  // session. Prevents a freshly-dropped blank keywords_any from being hidden
-  // by the isBlankRouterGraphNode check (which also matches the initial state).
-  const hasCommittedRef = useRef(false);
+  // True once the user has explicitly dropped or committed a node. Prevents a
+  // freshly-dropped blank keywords_any (textValue='') from being hidden by the
+  // isBlankRouterGraphNode check, which also matches the initial default state.
+  // Initialized from the node so inline↔expanded instances agree on first render.
+  const hasCommittedRef = useRef(!isBlankRouterGraphNode(node));
 
   const selectedNode = selectedPath ? routerNodeAtPath(node, selectedPath) : null;
   const blank = isBlankRouterGraphNode(node) && !hasCommittedRef.current;
@@ -309,7 +310,9 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
     }
     historyRef.current = [];
     futureRef.current = [];
-    hasCommittedRef.current = false;
+    // Derive committed state from the node itself so that switching between
+    // inline and expanded instances always agrees: a non-blank node is committed.
+    hasCommittedRef.current = !isBlankRouterGraphNode(node);
     setSelectedPath(null);
   }, [node]);
 
@@ -638,12 +641,32 @@ export const RouterRuleGraph: React.FC<RouterRuleGraphProps> = ({ node, classifi
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize node inspector"
+          aria-valuemin={INSPECTOR_MIN_WIDTH}
+          aria-valuemax={INSPECTOR_MIN_WIDTH + (graphRef.current ? Math.max(0, graphRef.current.offsetWidth - WORKSPACE_MIN_WIDTH - INSPECTOR_MIN_WIDTH) : 400)}
+          aria-valuenow={inspectorWidth ?? INSPECTOR_MIN_WIDTH}
+          tabIndex={0}
           title="Drag to resize · double-click to reset"
           onPointerDown={startResize}
           onPointerMove={onResizeMove}
           onPointerUp={stopResize}
           onPointerCancel={stopResize}
           onDoubleClick={() => setInspectorWidth(null)}
+          onKeyDown={e => {
+            const STEP = 20;
+            if (e.key === 'ArrowLeft') {
+              e.preventDefault();
+              if (!graphRef.current) return;
+              const rect = graphRef.current.getBoundingClientRect();
+              const max = Math.max(INSPECTOR_MIN_WIDTH, rect.width - WORKSPACE_MIN_WIDTH);
+              setInspectorWidth(w => Math.round(Math.min(max, Math.max(INSPECTOR_MIN_WIDTH, (w ?? INSPECTOR_MIN_WIDTH) + STEP))));
+            } else if (e.key === 'ArrowRight') {
+              e.preventDefault();
+              setInspectorWidth(w => Math.round(Math.max(INSPECTOR_MIN_WIDTH, (w ?? INSPECTOR_MIN_WIDTH) - STEP)));
+            } else if (e.key === 'Home') {
+              e.preventDefault();
+              setInspectorWidth(null);
+            }
+          }}
         >
           <span className="router-graph__resizer-grip" aria-hidden="true">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
