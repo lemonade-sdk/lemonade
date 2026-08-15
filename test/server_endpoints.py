@@ -853,6 +853,8 @@ class EndpointTests(ServerTestBase):
 
     def test_012_load_uses_saved_options(self):
         """Test that load reads previously saved options from recipe_options.json."""
+        self._snapshot_options()
+
         # First, save options with a specific ctx_size
         custom_ctx_size = 3072
         requests.post(
@@ -1050,6 +1052,23 @@ class EndpointTests(ServerTestBase):
     def _reset_options(self, model=ENDPOINT_TEST_MODEL):
         """Erase the model's recipe_options.json entry and return the response."""
         return requests.delete(self._options_url(model), timeout=TIMEOUT_DEFAULT)
+
+    def _snapshot_options(self, model=ENDPOINT_TEST_MODEL):
+        """Register a cleanup restoring the model's saved options as they are now.
+
+        Saved options outlive the test that wrote them, and outlive this whole
+        suite: several suites share one server, so a test that persists an
+        option has to put it back.
+        """
+        saved = requests.get(self._options_url(model), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
+        self.addCleanup(self._restore_options, saved, model)
+
+    def _restore_options(self, saved, model=ENDPOINT_TEST_MODEL):
+        self._reset_options(model)
+        if saved:
+            requests.post(self._options_url(model), json=saved, timeout=TIMEOUT_DEFAULT)
 
     def _set_global_ctx_size(self, ctx_size):
         """Set the server-wide default context size."""
