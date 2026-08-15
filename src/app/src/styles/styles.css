@@ -1666,8 +1666,11 @@ input[type="checkbox"]:disabled {
 }
 
 .composer__input {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   resize: none;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   font-size: var(--text-base);
   line-height: var(--leading-normal);
   padding: 8px var(--space-2);

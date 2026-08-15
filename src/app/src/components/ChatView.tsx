@@ -121,6 +121,8 @@ function getDownloadStoreModule(): Promise<typeof import('../features/downloadMa
 
 const CHAT_LOGS_WIDTH_KEY = 'chat_logs_panel_width';
 const CHAT_THINKING_MODE_KEY = 'chat_thinking_mode';
+const CHAT_COMPOSER_INPUT_MIN_HEIGHT = 40;
+const CHAT_COMPOSER_INPUT_MAX_HEIGHT = 200;
 const CHAT_LOGS_DEFAULT_WIDTH = 520;
 const CHAT_LOGS_MIN_WIDTH = 340;
 const CHAT_LOGS_MAX_WIDTH = 920;
@@ -189,6 +191,22 @@ function saveChatThinkingMode(mode: ChatThinkingMode): void {
   } catch {
     // Non-critical UI preference persistence.
   }
+}
+
+function resizeChatComposerInput(textarea: HTMLTextAreaElement | null): void {
+  if (!textarea) return;
+
+  // Measure from the content each time so the field can both grow and shrink.
+  // This JS path is intentional instead of field-sizing: content so WebKit/Safari
+  // gets the same behavior as Chromium.
+  textarea.style.height = 'auto';
+  const contentHeight = textarea.scrollHeight;
+  const height = Math.min(
+    CHAT_COMPOSER_INPUT_MAX_HEIGHT,
+    Math.max(CHAT_COMPOSER_INPUT_MIN_HEIGHT, contentHeight),
+  );
+  textarea.style.height = `${height}px`;
+  textarea.style.overflowY = contentHeight > CHAT_COMPOSER_INPUT_MAX_HEIGHT ? 'auto' : 'hidden';
 }
 
 function loadPersistencePreference(): boolean {
@@ -3090,6 +3108,49 @@ ${finalText}`
             : currentCapability === 'tts'
               ? (isOpenMossCloneMode ? 'Type text to speak, then attach a WAV voice sample…' : `Text to speak with ${currentModel}…`)
               : `Message ${currentModel}…`;
+
+  useEffect(() => {
+    resizeChatComposerInput(inputRef.current);
+  }, [composerPlaceholder, inputValue]);
+
+  useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+
+    let animationFrame = 0;
+    let lastObservedWidth = textarea.clientWidth;
+    const scheduleResize = () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(() => resizeChatComposerInput(inputRef.current));
+    };
+
+    // Width changes can come from the viewport, side panels, or the controls
+    // beside the textarea. Observe the field itself and ignore height-only
+    // notifications to avoid a resize loop when auto-sizing it.
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(entries => {
+        const width = entries[0]?.contentRect.width ?? textarea.clientWidth;
+        if (Math.abs(width - lastObservedWidth) < 0.5) return;
+        lastObservedWidth = width;
+        scheduleResize();
+      })
+      : null;
+    resizeObserver?.observe(textarea);
+
+    // Window is the fallback for older WebViews. visualViewport catches iOS
+    // Safari viewport changes such as rotation and the on-screen keyboard.
+    window.addEventListener('resize', scheduleResize);
+    const visualViewport = window.visualViewport;
+    visualViewport?.addEventListener('resize', scheduleResize);
+
+    return () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', scheduleResize);
+      visualViewport?.removeEventListener('resize', scheduleResize);
+    };
+  }, []);
+
   const hasComposerSettings = currentCapability === 'image'
     || currentCapability === 'audio-generation'
     || currentCapability === 'model3d'
