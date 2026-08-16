@@ -1780,9 +1780,16 @@ void Server::setup_cors(httplib::Server &web_server) {
         });
 
     // Handle preflight OPTIONS requests. The post-routing handler above attaches
-    // the CORS headers when (and only when) the Origin is allowed; a disallowed
-    // Origin gets a bare 204 and the browser blocks the follow-up request.
-    web_server.Options(".*", [](const httplib::Request&, httplib::Response& res) {
+    // the CORS headers when (and only when) the Origin is allowed.
+    web_server.Options(".*", [this](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_header("Origin")) {
+            const std::string origin = req.get_header_value("Origin");
+            if (!is_origin_allowed(origin)) {
+                res.status = 403;
+                res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
+                return;
+            }
+        }
         res.status = 204;
     });
 
@@ -6445,9 +6452,8 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
     try {
         auto body = nlohmann::json::parse(req.body);
 
-        // Delegate to RuntimeConfig — accepts all known recipe option keys.
-        // allow_privileged_keys=false: this is the unauthenticated-by-default HTTP
-        // surface, so backend *_bin / args overrides are rejected.
+        // Delegate to RuntimeConfig with allow_privileged_keys=false (see
+        // runtime_config.h).
         auto result = config_->set(body, [this](const json& applied) {
             apply_config_side_effects(applied);
         }, /*allow_privileged_keys=*/false);

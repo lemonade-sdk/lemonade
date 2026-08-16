@@ -19,17 +19,17 @@ bool is_origin_allowed(const std::string& origin,
         return true;
     }
 
-    // Loopback origins on any port (local browser tooling / web-app dev server).
-    // A remote attacker's page cannot forge these: the browser stamps Origin with
-    // its own resolved host, and DNS rebinding still yields the attacker's
-    // hostname, not a loopback literal.
     auto scheme_end = origin.find("://");
     if (scheme_end == std::string::npos) {
         return false;
     }
     const std::string scheme = origin.substr(0, scheme_end);
-    if (scheme != "http" && scheme != "https") {
-        return false;
+
+    // Non-web schemes (file://, app://, jan://, etc.) require local filesystem
+    // access or a desktop wrapper, so a remote page can't forge them.
+    if (!scheme.empty() && scheme != "http" && scheme != "https" &&
+        scheme != "ws" && scheme != "wss") {
+        return true;
     }
     std::string host = origin.substr(scheme_end + 3);
     if (!host.empty() && host.front() == '[') {
