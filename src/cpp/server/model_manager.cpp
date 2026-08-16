@@ -2518,7 +2518,7 @@ void ModelManager::build_cache() {
 
     for (auto& [name, info] : all_models) {
         populate_model_metadata(info);
-        if (info.downloaded) {
+        if (info.downloaded && !backend_self_manages_downloads(info.recipe)) {
             refresh_on_disk_size(info);
         }
         models_cache_[name] = info;
