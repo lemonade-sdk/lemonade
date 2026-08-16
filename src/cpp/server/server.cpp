@@ -5793,10 +5793,18 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
         auto info = model_manager_->get_model_info(model_name);
 
-        // Extract optional per-model settings. An omitted or empty option falls
-        // through to the Router defaults; an explicit ctx_size of -1 requests
-        // automatic sizing for this load.
+        // Extract optional per-model settings. Omitted options keep using the
+        // saved per-model layer. Explicit null is a transient tombstone: skip
+        // only that saved key for this load, then fall through to lower layers.
+        // ctx_size=-1 remains an explicit request for automatic sizing.
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
+        std::set<std::string> transient_saved_option_tombstones;
+        for (const auto& key : RecipeOptions::keys_for_recipe(info.recipe)) {
+            if (request_json.contains(key) && request_json[key].is_null()) {
+                transient_saved_option_tombstones.insert(key);
+            }
+        }
+
         bool save_options = request_json.value("save_options", false);
         std::optional<bool> pinned_opt = std::nullopt;
         if (request_json.contains("pinned") && request_json["pinned"].is_boolean()) {
@@ -5807,22 +5815,46 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
-        // Persist request options to model info if requested. Re-read so this
-        // load still sees the model's own registry-level options rather than
-        // just the request's.
+        // Persist concrete request options if requested. A null tombstone is
+        // load-scoped, so preserve the existing saved value for that key.
         if (save_options) {
-            model_manager_->set_saved_model_options(model_name, options.to_json());
+            json saved_for_write = options.to_json();
+            if (!transient_saved_option_tombstones.empty()) {
+                const json existing_saved = model_manager_->get_saved_model_options(model_name);
+                for (const auto& key : transient_saved_option_tombstones) {
+                    auto it = existing_saved.find(key);
+                    if (it != existing_saved.end()) {
+                        saved_for_write[key] = *it;
+                    }
+                }
+            }
+            model_manager_->set_saved_model_options(model_name, saved_for_write);
             info = model_manager_->get_model_info(model_name);
         }
 
-        // Download model if needed (first-time use or missing files). Collections have no
-        // checkpoint of their own, so skip the generic HF download path here
-        // and let the per-component branch below cascade any missing pieces.
         if (!model_manager_->is_model_downloaded(model_name) && !is_model_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
         }
+
+        // ModelInfo::recipe_options contains the model-level defaults plus the
+        // recipe_options.json overlay. Rebuild that local copy with only the
+        // explicitly tombstoned saved keys removed. This changes this load only;
+        // the persistent recipe_options.json entry remains untouched.
+        if (!transient_saved_option_tombstones.empty()) {
+            json per_model_options = model_manager_->get_model_default_options(info).to_json();
+            const json saved = model_manager_->get_saved_model_options(model_name);
+            if (saved.is_object()) {
+                for (const auto& [key, value] : saved.items()) {
+                    if (transient_saved_option_tombstones.count(key) == 0) {
+                        per_model_options[key] = value;
+                    }
+                }
+            }
+            info.recipe_options = RecipeOptions(info.recipe, per_model_options);
+        }
+
 
         // Collection models: load each component instead
         if (is_omni_collection_recipe(info.recipe) && !info.components.empty()) {
