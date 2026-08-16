@@ -1,11 +1,13 @@
 // Unit tests for the Lemonade Router deterministic leaf conditions (#2380).
 //
-// Covers keywords_any/keywords_all, regex, min_chars/max_chars, has_tools/
-// has_images, and metadata against the frozen v1 semantics in
-// route_policy.schema.json: case-insensitive (ASCII) substring, ECMAScript
-// regex, inclusive UTF-8-byte length bounds, and metadata equals/any/exists
-// (scalar vs comma-encoded list, missing-key => exists:false). Also exercises
-// malformed-config rejection and the registry's multi-key implicit-all wiring.
+// Covers keywords_any/keywords_all, regex, min_chars/max_chars, min_turns/
+// max_turns, has_tools/has_images, and metadata against the frozen v1
+// semantics in route_policy.schema.json: case-insensitive (ASCII) substring,
+// ECMAScript regex, inclusive UTF-8-byte length bounds, conversation-depth
+// bounds, and metadata equals/any/exists/gte/lte (scalar vs comma-encoded
+// list, missing-key => exists:false, non-numeric value => gte/lte never
+// match). Also exercises malformed-config rejection and the registry's
+// multi-key implicit-all wiring.
 //
 // Compile (standalone):
 //   g++ -std=c++17 -I src/cpp/include -I build/_deps/json-src/include \
@@ -14,6 +16,7 @@
 
 #include "lemon/routing_policy.h"
 
+#include <cmath>
 #include <cstdio>
 #include <map>
 #include <memory>
@@ -137,6 +140,15 @@ void test_chars_utf8_bytes() {
     check("max_chars counts UTF-8 bytes (<=4 false)", !eval_leaf("max_chars", 4, req));
 }
 
+void test_turns() {
+    RouteContext req = make_request("hi");
+    req.params.turn_count = 3;
+    check("min_turns inclusive lower boundary", eval_leaf("min_turns", 3, req));
+    check("min_turns below threshold", !eval_leaf("min_turns", 4, req));
+    check("max_turns inclusive upper boundary", eval_leaf("max_turns", 3, req));
+    check("max_turns above threshold", !eval_leaf("max_turns", 2, req));
+}
+
 void test_has_features() {
     RouteContext req = make_request("hi");
     req.params.has_tools = true;
@@ -203,6 +215,40 @@ void test_metadata_exists() {
           !eval_leaf("metadata", json{{"key", "consent"}, {"exists", true}}, blank));
 }
 
+void test_metadata_gte_lte() {
+    RouteContext req = make_request("x");
+    req.metadata["tool_error_streak"] = "3";
+    check("metadata gte below-or-equal threshold matches",
+          eval_leaf("metadata", json{{"key", "tool_error_streak"}, {"gte", 2}}, req));
+    check("metadata gte exact boundary matches",
+          eval_leaf("metadata", json{{"key", "tool_error_streak"}, {"gte", 3}}, req));
+    check("metadata gte above value does not match",
+          !eval_leaf("metadata", json{{"key", "tool_error_streak"}, {"gte", 4}}, req));
+    check("metadata lte exact boundary matches",
+          eval_leaf("metadata", json{{"key", "tool_error_streak"}, {"lte", 3}}, req));
+    check("metadata lte below value does not match",
+          !eval_leaf("metadata", json{{"key", "tool_error_streak"}, {"lte", 2}}, req));
+
+    RouteContext whitespace = make_request("x");
+    whitespace.metadata["n"] = " 5 ";  // surrounding whitespace tolerated
+    check("metadata gte tolerates surrounding whitespace",
+          eval_leaf("metadata", json{{"key", "n"}, {"gte", 5}}, whitespace));
+
+    RouteContext non_numeric = make_request("x");
+    non_numeric.metadata["n"] = "abc";
+    check("metadata gte non-numeric value never matches",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, non_numeric));
+
+    RouteContext partial = make_request("x");
+    partial.metadata["n"] = "3abc";  // not entirely numeric
+    check("metadata gte partially-numeric value never matches",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, partial));
+
+    RouteContext absent = make_request("x");
+    check("metadata gte missing key never matches",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, absent));
+}
+
 void test_rejections() {
     check("empty keywords_any rejected", throws_invalid("keywords_any", json::array()));
     check("empty keywords_all rejected", throws_invalid("keywords_all", json::array()));
@@ -214,6 +260,8 @@ void test_rejections() {
     check("non-string regex rejected", throws_invalid("regex", 5));
     check("negative min_chars rejected", throws_invalid("min_chars", -1));
     check("non-integer max_chars rejected", throws_invalid("max_chars", 1.5));
+    check("negative min_turns rejected", throws_invalid("min_turns", -1));
+    check("non-integer max_turns rejected", throws_invalid("max_turns", 1.5));
     check("non-bool has_tools rejected", throws_invalid("has_tools", "yes"));
     check("metadata missing key rejected",
           throws_invalid("metadata", json{{"equals", "code"}}));
@@ -222,12 +270,18 @@ void test_rejections() {
     check("metadata two comparators rejected",
           throws_invalid("metadata",
                          json{{"key", "k"}, {"equals", "a"}, {"exists", true}}));
+    check("metadata gte + lte together rejected",
+          throws_invalid("metadata", json{{"key", "k"}, {"gte", 1}, {"lte", 2}}));
     check("metadata empty any rejected",
           throws_invalid("metadata", json{{"key", "k"}, {"any", json::array()}}));
     check("metadata empty key rejected",
           throws_invalid("metadata", json{{"key", ""}, {"exists", true}}));
     check("metadata empty any item rejected",
           throws_invalid("metadata", json{{"key", "k"}, {"any", json::array({""})}}));
+    check("metadata non-numeric gte rejected",
+          throws_invalid("metadata", json{{"key", "k"}, {"gte", "not-a-number"}}));
+    check("metadata NaN gte rejected",
+          throws_invalid("metadata", json{{"key", "k"}, {"gte", std::nan("")}}));
 }
 
 void test_regex_redos_rejected() {
@@ -305,10 +359,12 @@ int main() {
     test_regex_input_cap();
     test_chars();
     test_chars_utf8_bytes();
+    test_turns();
     test_has_features();
     test_metadata_equals();
     test_metadata_any();
     test_metadata_exists();
+    test_metadata_gte_lte();
     test_rejections();
     test_regex_redos_rejected();
     test_trace_emitted();

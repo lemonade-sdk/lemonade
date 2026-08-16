@@ -3,6 +3,7 @@
 #include "lemon/model_types.h"
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -225,10 +226,12 @@ void validate_metadata_match(const json& spec, const std::string& path) {
     required_string(spec, "key", path);
     const int comparators = static_cast<int>(spec.contains("equals")) +
                             static_cast<int>(spec.contains("any")) +
-                            static_cast<int>(spec.contains("exists"));
+                            static_cast<int>(spec.contains("exists")) +
+                            static_cast<int>(spec.contains("gte")) +
+                            static_cast<int>(spec.contains("lte"));
     if (comparators != 1) {
         throw std::invalid_argument(
-            path + " must contain exactly one comparator: equals, any, or exists");
+            path + " must contain exactly one comparator: equals, any, exists, gte, or lte");
     }
     if (spec.contains("equals") && !spec.at("equals").is_string()) {
         throw std::invalid_argument(path + ".equals must be a string");
@@ -238,6 +241,17 @@ void validate_metadata_match(const json& spec, const std::string& path) {
     }
     if (spec.contains("exists") && !spec.at("exists").is_boolean()) {
         throw std::invalid_argument(path + ".exists must be a boolean");
+    }
+    for (const char* op : {"gte", "lte"}) {
+        if (!spec.contains(op)) {
+            continue;
+        }
+        if (!spec.at(op).is_number()) {
+            throw std::invalid_argument(path + "." + op + " must be a number");
+        }
+        if (!std::isfinite(spec.at(op).get<double>())) {
+            throw std::invalid_argument(path + "." + op + " must be a finite number");
+        }
     }
 }
 
@@ -300,7 +314,7 @@ void validate_leaf(const json& leaf,
             throw std::invalid_argument(path + ".regex must be a non-empty string");
         }
     }
-    for (const char* op : {"min_chars", "max_chars"}) {
+    for (const char* op : {"min_chars", "max_chars", "min_turns", "max_turns"}) {
         if (leaf.contains(op)) {
             ++condition_count;
             if (!leaf.at(op).is_number_integer() || leaf.at(op).get<long long>() < 0) {
@@ -551,12 +565,12 @@ const std::set<std::string>& routing_match_expr_keys() {
     static const std::set<std::string> keys = {
         "any", "all", "not", "classifier", "label", "min_score", "max_score",
         "keywords_any", "keywords_all", "regex", "min_chars", "max_chars",
-        "has_tools", "has_images", "metadata"};
+        "min_turns", "max_turns", "has_tools", "has_images", "metadata"};
     return keys;
 }
 
 const std::set<std::string>& routing_metadata_match_keys() {
-    static const std::set<std::string> keys = {"key", "equals", "any", "exists"};
+    static const std::set<std::string> keys = {"key", "equals", "any", "exists", "gte", "lte"};
     return keys;
 }
 
