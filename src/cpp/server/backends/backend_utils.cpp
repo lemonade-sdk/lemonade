@@ -1126,7 +1126,7 @@ namespace lemon::backends {
                 "else (list(getattr(mod,'__path__',[]))[:1] or [''])[0]\n"
                 "    if not root:\n"
                 "        continue\n"
-                "    for s in ('lib',os.path.join('llvm','lib')):\n"
+                "    for s in ('lib',os.path.join('lib','llvm','lib')):\n"
                 "        print(os.path.join(root,s))\n";
 #endif
 
@@ -1772,6 +1772,11 @@ namespace lemon::backends {
                 std::ifstream pf(paths_file);
                 std::string line;
                 std::vector<std::string> lib_paths;
+                auto add_dir = [&lib_paths](const std::string& dir) {
+                    if (std::find(lib_paths.begin(), lib_paths.end(), dir) == lib_paths.end()) {
+                        lib_paths.push_back(dir);
+                    }
+                };
                 while (std::getline(pf, line)) {
                     if (!line.empty() && line.back() == '\r') {
                         line.pop_back();
@@ -1781,8 +1786,23 @@ namespace lemon::backends {
                     }
                     std::error_code dir_ec;
                     // Decode UTF-8 so non-ASCII Windows profile paths aren't dropped.
-                    if (fs::is_directory(utils::path_from_utf8(line), dir_ec)) {
-                        lib_paths.push_back(line);
+                    const fs::path dir = utils::path_from_utf8(line);
+                    if (fs::is_directory(dir, dir_ec)) {
+                        add_dir(line);
+                        // libomp lives in the LLVM runtime subdir, which older
+                        // installs left out of runtime_paths.txt. Derive it from
+                        // each recorded dir so a stale file still resolves OpenMP
+                        // without a reinstall; the fixed probe records it too, so
+                        // add_dir dedupes.
+#ifdef _WIN32
+                        const fs::path llvm = dir / "llvm" / "bin";
+#else
+                        const fs::path llvm = dir / "llvm" / "lib";
+#endif
+                        std::error_code llvm_ec;
+                        if (fs::is_directory(llvm, llvm_ec) && !llvm_ec) {
+                            add_dir(utils::path_to_utf8(llvm));
+                        }
                     }
                 }
                 if (!lib_paths.empty()) {
