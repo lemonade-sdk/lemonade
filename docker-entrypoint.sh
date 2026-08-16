@@ -40,7 +40,7 @@ if [ "$(id -u)" = "0" ]; then
     add_device_group /dev/dri
     add_device_group /dev/kfd
 
-    for dev in /dev/accel/* /dev/dri/renderD*; do
+    for dev in /dev/accel/* /dev/dri/renderD* /dev/dri/card*; do
         add_device_group "$dev"
     done
 
