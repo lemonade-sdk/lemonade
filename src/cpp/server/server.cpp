@@ -5832,6 +5832,12 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             info = model_manager_->get_model_info(model_name);
         }
 
+        if (!model_manager_->is_model_downloaded(model_name) && !is_model_collection_recipe(info.recipe)) {
+            LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
+            model_manager_->download_registered_model(info);
+            info = model_manager_->get_model_info(model_name);
+        }
+
         // ModelInfo::recipe_options contains the model-level defaults plus the
         // recipe_options.json overlay. Rebuild that local copy with only the
         // explicitly tombstoned saved keys removed. This changes this load only;
@@ -5849,14 +5855,6 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             info.recipe_options = RecipeOptions(info.recipe, per_model_options);
         }
 
-        // Download model if needed (first-time use or missing files). Collections have no
-        // checkpoint of their own, so skip the generic HF download path here
-        // and let the per-component branch below cascade any missing pieces.
-        if (!model_manager_->is_model_downloaded(model_name) && !is_model_collection_recipe(info.recipe)) {
-            LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
-            model_manager_->download_registered_model(info);
-            info = model_manager_->get_model_info(model_name);
-        }
 
         // Collection models: load each component instead
         if (is_omni_collection_recipe(info.recipe) && !info.components.empty()) {
