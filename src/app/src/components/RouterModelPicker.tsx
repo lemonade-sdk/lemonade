@@ -2,6 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type ModelInfo } from '../api';
 import { Icon } from './Icon';
+import { useI18n } from '../i18n';
 
 function pickerModelName(model: ModelInfo): string {
   return String((model as any).model_name ?? model.name ?? model.id ?? '').trim();
@@ -25,11 +26,16 @@ export const RouterModelPicker: React.FC<RouterModelPickerProps> = ({
   models,
   value,
   onChange,
-  placeholder = 'Select model',
-  searchPlaceholder = 'Search models',
-  emptyMessage = 'No compatible models match this search.',
-  ariaLabel = 'Select model',
+  placeholder,
+  searchPlaceholder,
+  emptyMessage,
+  ariaLabel,
 }) => {
+  const { t } = useI18n('router');
+  const pickerPlaceholder = placeholder ?? t('picker.selectModel');
+  const pickerSearchPlaceholder = searchPlaceholder ?? t('picker.searchModels');
+  const pickerEmptyMessage = emptyMessage ?? t('picker.noMatches');
+  const pickerAriaLabel = ariaLabel ?? t('picker.selectModel');
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -154,14 +160,14 @@ export const RouterModelPicker: React.FC<RouterModelPickerProps> = ({
         ref={triggerRef}
         type="button"
         className={`router-model-picker__trigger ${open ? 'is-open' : ''}`}
-        aria-label={ariaLabel}
+        aria-label={pickerAriaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
         onClick={() => setOpen(current => !current)}
       >
         <span className={value ? '' : 'is-placeholder'} title={value || undefined}>
-          {selected ? `${selected.label} · ${selected.name}` : value || placeholder}
+          {selected ? `${selected.label} · ${selected.name}` : value || pickerPlaceholder}
         </span>
         <Icon name="chevron-down" size={14} aria-hidden="true" />
       </button>
@@ -174,9 +180,9 @@ export const RouterModelPicker: React.FC<RouterModelPickerProps> = ({
               ref={searchRef}
               type="search"
               value={query}
-              placeholder={searchPlaceholder}
+              placeholder={pickerSearchPlaceholder}
               role="combobox"
-              aria-label={searchPlaceholder}
+              aria-label={pickerSearchPlaceholder}
               aria-autocomplete="list"
               aria-expanded="true"
               aria-controls={listboxId}
@@ -185,7 +191,7 @@ export const RouterModelPicker: React.FC<RouterModelPickerProps> = ({
               onKeyDown={onSearchKeyDown}
             />
           </div>
-          <div className="router-model-picker__options" id={listboxId} role="listbox" aria-label={ariaLabel}>
+          <div className="router-model-picker__options" id={listboxId} role="listbox" aria-label={pickerAriaLabel}>
             {filtered.map((option, index) => (
               <button
                 type="button"
@@ -204,11 +210,11 @@ export const RouterModelPicker: React.FC<RouterModelPickerProps> = ({
                 {option.name === value && <Icon name="check" size={14} aria-hidden="true" />}
               </button>
             ))}
-            {filtered.length === 0 && <div className="router-model-picker__empty">{emptyMessage}</div>}
+            {filtered.length === 0 && <div className="router-model-picker__empty">{pickerEmptyMessage}</div>}
           </div>
           {value && !selected && (
             <div className="router-model-picker__stale" role="note">
-              Current value <code>{value}</code> is not in the compatible model list. Choose another model to replace it.
+              {t('picker.staleValue', { value })}
             </div>
           )}
         </div>,

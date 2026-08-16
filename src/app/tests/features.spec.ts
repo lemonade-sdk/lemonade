@@ -91,6 +91,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
       ['Server', 'server'],
       ['Chat', 'chat'],
       ['Memory', 'memory'],
+      ['Language', 'language'],
       ['Model storage', 'model-storage'],
       ['Cloud providers', 'cloud-providers'],
       ['MCP gateway', 'mcp-gateway'],
@@ -113,6 +114,37 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goBack();
     await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
     await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
+  });
+
+  test('01c — interface language switches live and persists by locale tag', async ({ page }) => {
+    await page.goto('/#/connect/language');
+    await page.waitForSelector('[data-view="connect"]');
+
+    const languageSelect = page.locator('#interface-language');
+    await expect(languageSelect).toHaveValue('');
+
+    await languageSelect.selectOption('de-DE');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+    await expect(page.locator('.titlebar__nav').getByRole('button', { name: 'Einstellungen', exact: true })).toBeVisible();
+    await expect(page.locator('#connect-pane-title')).toHaveText('Sprache');
+    await expect(page.getByRole('navigation', { name: 'Einstellungsbereiche' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('lemonade:locale'))).toBe('de-DE');
+
+    await page.reload();
+    await page.waitForSelector('[data-view="connect"]');
+    await expect(languageSelect).toHaveValue('de-DE');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE');
+    await expect(page.locator('#connect-pane-title')).toHaveText('Sprache');
+
+    await languageSelect.selectOption('en-US');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en-US');
+    await expect(page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('lemonade:locale'))).toBe('en-US');
+
+    await languageSelect.selectOption('');
+    await expect(languageSelect).toHaveValue('');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('lemonade:locale'))).toBeNull();
   });
 
   test('01b1 — Model storage save feedback is scoped and directory errors surface', async ({ page }) => {

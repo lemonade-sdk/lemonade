@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api, { type ChatMessage } from '../../api';
 import { type Trace } from '../../inspectStore';
 import { Icon } from '../Icon';
+import { useI18n } from '../../i18n';
 
 interface ReplayTabProps {
   selectedTrace: Trace;
@@ -33,6 +34,7 @@ export default function ReplayTab({
   replayMaxTokens,
   setReplayMaxTokens
 }: ReplayTabProps) {
+  const { t } = useI18n('inspect');
   const [replayOutput, setReplayOutput] = useState('');
   const [replayStats, setReplayStats] = useState<{ ttft: number | null; tps: number | null } | null>(null);
   const [replayRunning, setReplayRunning] = useState(false);
@@ -95,12 +97,12 @@ export default function ReplayTab({
       <div className="replay-header-params">
         {/* System prompt box */}
         <div className="replay-prompt-box flex-col gap-4">
-          <label className="input-label" htmlFor="replay-system-prompt">System prompt</label>
+          <label className="input-label" htmlFor="replay-system-prompt">{t('replay.systemPrompt')}</label>
           <textarea
             id="replay-system-prompt"
             value={replaySystemPrompt}
             onChange={(e) => setReplaySystemPrompt(e.target.value)}
-            placeholder="Define system prompt..."
+            placeholder={t('replay.systemPromptPlaceholder')}
             rows={5}
             className="system-prompt-textarea"
           />
@@ -110,7 +112,7 @@ export default function ReplayTab({
         <div className="replay-sliders-grid">
           <div className="slider-row-compact">
             <div className="slider-label-row">
-              <label htmlFor="replay-temp">Temperature</label>
+              <label htmlFor="replay-temp">{t('replay.temperature')}</label>
               <span className="val-display">{replayTemp.toFixed(2)}</span>
             </div>
             <input
@@ -158,7 +160,7 @@ export default function ReplayTab({
 
           <div className="slider-row-compact">
             <div className="slider-label-row">
-              <label htmlFor="replay-max-tokens">Max tokens</label>
+              <label htmlFor="replay-max-tokens">{t('replay.maxTokens')}</label>
               <span className="val-display">{replayMaxTokens}</span>
             </div>
             <input
@@ -182,7 +184,7 @@ export default function ReplayTab({
             onClick={handleRunReplay}
             style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
           >
-            <Icon name="play" size={14} /> Replay
+            <Icon name="play" size={14} /> {t('replay.run')}
           </button>
           <div className="replay-actions-subrow">
             <button
@@ -200,13 +202,13 @@ export default function ReplayTab({
                 setReplayStats(null);
               }}
             >
-              Reset
+              {t('replay.reset')}
             </button>
             <button
               type="button"
               className="replay-btn outline"
               onClick={() => setCurlModalOpen(true)}
-              title="View local cURL request command"
+              title={t('replay.curlTitle')}
             >
               cURL
             </button>
@@ -220,7 +222,7 @@ export default function ReplayTab({
           {/* Column 1: Original */}
           <div className="comparison-col">
             <div className="comparison-col__header">
-              <h5>ORIGINAL</h5>
+              <h5>{t('replay.original')}</h5>
               <div className="metric-ministrip">
                 <span className="metric-badge">
                   {selectedTrace.ttft ? (
@@ -256,7 +258,7 @@ export default function ReplayTab({
           {/* Column 2: Replay */}
           <div className="comparison-col">
             <div className="comparison-col__header">
-              <h5>REPLAY</h5>
+              <h5>{t('replay.replay')}</h5>
               {replayStats && (
                 <div className="metric-ministrip">
                   <span className="metric-badge">
@@ -269,7 +271,7 @@ export default function ReplayTab({
                     {selectedTrace.ttft && replayStats.ttft !== null && (
                       <span
                         className={`delta-chip ${replayStats.ttft < selectedTrace.ttft ? 'better' : 'worse'}`}
-                        aria-label={`${Math.abs(replayStats.ttft - selectedTrace.ttft)}ms ${replayStats.ttft < selectedTrace.ttft ? 'faster' : 'slower'}`}
+                        aria-label={t(replayStats.ttft < selectedTrace.ttft ? 'replay.deltaFasterMs' : 'replay.deltaSlowerMs', { value: Math.abs(replayStats.ttft - selectedTrace.ttft) })}
                       >
                         {replayStats.ttft < selectedTrace.ttft ? '▼' : '▲'} {Math.abs(replayStats.ttft - selectedTrace.ttft)}ms
                       </span>
@@ -285,7 +287,7 @@ export default function ReplayTab({
                     {selectedTrace.tps && replayStats.tps !== null && (
                       <span
                         className={`delta-chip ${Number(replayStats.tps) > Number(selectedTrace.tps) ? 'better' : 'worse'}`}
-                        aria-label={`${Math.abs(Number(replayStats.tps) - Number(selectedTrace.tps)).toFixed(1)} tokens per second ${Number(replayStats.tps) > Number(selectedTrace.tps) ? 'faster' : 'slower'}`}
+                        aria-label={t(Number(replayStats.tps) > Number(selectedTrace.tps) ? 'replay.deltaFasterTps' : 'replay.deltaSlowerTps', { value: Math.abs(Number(replayStats.tps) - Number(selectedTrace.tps)).toFixed(1) })}
                       >
                         {Number(replayStats.tps) > Number(selectedTrace.tps) ? '▲' : '▼'} {Math.abs(Number(replayStats.tps) - Number(selectedTrace.tps)).toFixed(1)}
                         <span className="metric-card__unit"> tok/s</span>
@@ -304,16 +306,16 @@ export default function ReplayTab({
               ) : replayRunning ? (
                 <div className="replay-loading">
                   <span className="spinner"></span>
-                  Generating output...
+                  {t('replay.generating')}
                 </div>
               ) : (
                 <div className="replay-empty-state">
                   <span className="replay-empty-state__icon" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Icon name="rotate-ccw" size={24} />
                   </span>
-                  <strong className="replay-empty-state__title">Adjust parameters and run</strong>
+                  <strong className="replay-empty-state__title">{t('replay.emptyTitle')}</strong>
                   <p className="replay-empty-state__desc">
-                    The replay re-runs this exact prompt locally and diffs the metrics against the original.
+                    {t('replay.emptyDescription')}
                   </p>
                 </div>
               )}

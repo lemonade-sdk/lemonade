@@ -26,7 +26,7 @@ export function backendCompactLabel(recipe: string): string {
 }
 
 export function backendLabel(recipe: string): string {
-  return backendPresentation(recipe)?.label || recipe || 'Unknown';
+  return backendPresentation(recipe)?.label || recipe || '';
 }
 
 export function backendColor(recipe: string): string {

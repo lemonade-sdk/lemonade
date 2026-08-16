@@ -628,7 +628,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await page.waitForTimeout(500);
 
     // Locate the search input
-    const input = page.locator('input[placeholder="Search model..."]').first();
+    const input = page.getByRole('dialog').locator('.model-search-wrapper').getByRole('combobox');
     await expect(input).toBeVisible();
 
     // Select the model

@@ -52,6 +52,19 @@ export interface OtelSpan {
   status?: OtelSpanStatus;
 }
 
+export type TraceDiagnosticCode = 'execution_error' | 'high_latency';
+
+export interface TraceDiagnostic {
+  level: 'warn' | 'danger' | 'info';
+  code?: TraceDiagnosticCode;
+  /** Raw backend/server error detail. This is data, not interface copy. */
+  message?: string;
+  durationMs?: number;
+  /** Legacy fields kept only so older persisted traces can still be displayed. */
+  title?: string;
+  detail?: string;
+}
+
 export interface Trace {
   id: string;
   traceId: string;
@@ -92,9 +105,34 @@ export interface Trace {
   checkpoint?: string;
 
   // diagnostics / improve
-  diag?: { level: 'warn' | 'danger' | 'info'; title: string; detail: string };
+  diag?: TraceDiagnostic;
   improveData?: OptimizedPromptData | null;
   improveRawOutput?: string;
+}
+
+export type InspectToastCode =
+  | 'capture_unsupported'
+  | 'capture_enabled'
+  | 'capture_paused'
+  | 'session_cleared'
+  | 'request_deleted'
+  | 'authentication_failed'
+  | 'session_exported'
+  | 'copied'
+  | 'copy_failed'
+  | 'prompt_analysis_complete'
+  | 'select_model'
+  | 'select_test_model'
+  | 'test_execution_completed'
+  | 'completion_succeeded'
+  | 'request_failed';
+
+export interface InspectToast {
+  code?: InspectToastCode;
+  count?: number;
+  label?: string;
+  /** Raw server/backend detail. It is appended to localized interface copy. */
+  message?: string;
 }
 
 export interface InspectState {
@@ -104,7 +142,7 @@ export interface InspectState {
   selectedTraceId: string | null;
   searchQuery: string;
   filterKind: 'All' | 'LLM' | 'EMBEDDING' | 'RERANKER' | 'Errors';
-  toast: string | null;
+  toast: InspectToast | null;
 }
 
 // LocalStorage keys and helper functions
@@ -130,6 +168,42 @@ function safeRemoveLocalStorage(key: string): void {
   try {
     if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
   } catch {}
+}
+
+function normalizeStoredDiagnostic(raw: unknown, durationMs: number): TraceDiagnostic | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const value = raw as Record<string, unknown>;
+  const rawLevel = value.level;
+  const level: TraceDiagnostic['level'] = rawLevel === 'danger' || rawLevel === 'info' ? rawLevel : 'warn';
+  const rawCode = value.code;
+  if (rawCode === 'execution_error' || rawCode === 'high_latency') {
+    return {
+      level,
+      code: rawCode,
+      message: typeof value.message === 'string' ? value.message : undefined,
+      durationMs: typeof value.durationMs === 'number' ? value.durationMs : undefined,
+    };
+  }
+
+  // Migrate diagnostics persisted by the pre-i18n implementation. Known UI
+  // copy becomes a semantic code so switching languages also updates old traces.
+  if (value.title === 'Execution Error') {
+    const legacyDetail = typeof value.detail === 'string' ? value.detail : undefined;
+    return {
+      level: 'danger',
+      code: 'execution_error',
+      message: legacyDetail && legacyDetail !== 'Unknown error occurred during inference' ? legacyDetail : undefined,
+    };
+  }
+  if (value.title === 'High Latency') {
+    return { level: 'warn', code: 'high_latency', durationMs };
+  }
+
+  return {
+    level,
+    title: typeof value.title === 'string' ? value.title : undefined,
+    detail: typeof value.detail === 'string' ? value.detail : undefined,
+  };
 }
 
 // Global store with LocalStorage persistence
@@ -166,7 +240,7 @@ class InspectStoreClass {
         this.setState({ captureReady: 'unsupported' });
         api.sessionHeadersEnabled = false;
         this.disconnect();
-        this.showToast('Capture mode is unsupported by this server/proxy');
+        this.showToast({ code: 'capture_unsupported' });
       }
     };
   }
@@ -230,7 +304,7 @@ class InspectStoreClass {
               backend: t.backend,
               device: t.device,
               checkpoint: t.checkpoint,
-              diag: t.diag,
+              diag: normalizeStoredDiagnostic(t.diag, typeof t.dur === 'number' ? t.dur : 0),
               improveData: t.improveData,
               improveRawOutput: t.improveRawOutput
             }));
@@ -297,10 +371,13 @@ class InspectStoreClass {
     this.listeners.forEach((l) => l());
   }
 
-  showToast(message: string) {
-    this.setState({ toast: message });
+  showToast(toast: InspectToast | string) {
+    // String input is retained for compatibility with callers that intentionally
+    // surface raw data. New interface copy should use a semantic toast code.
+    const nextToast: InspectToast = typeof toast === 'string' ? { message: toast } : toast;
+    this.setState({ toast: nextToast });
     setTimeout(() => {
-      if (this.state.toast === message) {
+      if (this.state.toast === nextToast) {
         this.setState({ toast: null });
       }
     }, 2400);
@@ -309,12 +386,12 @@ class InspectStoreClass {
   toggleCapture() {
     const nextVal = !this.state.capturing;
     this.setState({ capturing: nextVal });
-    this.showToast(nextVal ? 'Auto-capture enabled' : 'Auto-capture paused');
+    this.showToast({ code: nextVal ? 'capture_enabled' : 'capture_paused' });
   }
 
   clearSession() {
     this.setState({ traces: [], selectedTraceId: null });
-    this.showToast('Session cleared');
+    this.showToast({ code: 'session_cleared' });
   }
 
   removeTrace(id: string) {
@@ -330,7 +407,7 @@ class InspectStoreClass {
       : this.state.selectedTraceId;
 
     this.setState({ traces, selectedTraceId });
-    this.showToast('Request deleted');
+    this.showToast({ code: 'request_deleted' });
   }
 
   selectTrace(id: string | null) {
@@ -439,7 +516,7 @@ class InspectStoreClass {
           const raw = JSON.parse(event.data);
           if (raw && raw.type === 'error') {
             console.error('Inspect WebSocket auth/connection error:', raw.error?.message || raw);
-            this.showToast(raw.error?.message || 'Authentication failed');
+            this.showToast({ code: 'authentication_failed', message: raw.error?.message || undefined });
             return;
           }
           if (raw && raw.type === 'auth.ok') {
@@ -648,15 +725,15 @@ function parseOtelSpan(span: OtelSpan): Trace | null {
     status = 'error';
     diag = {
       level: 'danger',
-      title: 'Execution Error',
-      detail: span.status.message || 'Unknown error occurred during inference'
+      code: 'execution_error',
+      message: span.status.message || undefined,
     };
   } else if (durationMs > 10000) {
     status = 'slow';
     diag = {
       level: 'warn',
-      title: 'High Latency',
-      detail: `Request took ${Math.round(durationMs / 1000)}s to complete.`
+      code: 'high_latency',
+      durationMs: Math.round(durationMs),
     };
   }
 

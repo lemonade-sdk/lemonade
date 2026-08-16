@@ -3,13 +3,9 @@ import { capabilityFromModelInfo } from '../modelCapabilities';
 import { storageKey } from '../storage';
 
 export type LemonadeDefaultModelTier = 'tiny' | 'quality';
-export type LemonadeDefaultModelIcon = 'minimize-2' | 'gem';
-
 export interface LemonadeDefaultChatModel {
   name: string;
   tier: LemonadeDefaultModelTier;
-  label: string;
-  description: string;
 }
 
 /**
@@ -20,14 +16,10 @@ export const LEMONADE_DEFAULT_CHAT_MODELS: readonly LemonadeDefaultChatModel[] =
   {
     name: 'Bonsai-8B-gguf',
     tier: 'tiny',
-    label: 'default tiny',
-    description: 'Smaller Lemonade default · downloads when first used',
   },
   {
     name: 'Qwen3.5-4B-GGUF',
     tier: 'quality',
-    label: 'default quality',
-    description: 'Higher-quality Lemonade default · downloads when first used',
   },
 ] as const;
 

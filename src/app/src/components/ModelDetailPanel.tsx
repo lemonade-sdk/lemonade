@@ -10,7 +10,7 @@ import DOMPurify from 'dompurify';
 import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow } from '../api';
 import api from '../api';
 import { copyTextToClipboard } from '../clipboard';
-import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo } from '../modelCapabilities';
+import { capabilityFromModelInfo, identityFromModelInfo, type ModelIdentity } from '../modelCapabilities';
 import {
   modelBaseTuningForModel, loadModelTuning, saveModelTuning, resetModelTuning,
   modelSupportsContextSize, sanitizeRecipeOptions,
@@ -32,6 +32,7 @@ import {
   providerEndpointNeedsInsecureOptIn,
   validateProviderEndpoint,
 } from '../features/router/routerConnections';
+import { useI18n } from '../i18n';
 
 /* ── Helpers (local copies to keep component self-contained) ──── */
 
@@ -41,6 +42,7 @@ function mdName(m: ModelInfo | null | undefined): string {
 }
 
 const CopyModelNameButton: React.FC<{ modelName: string }> = ({ modelName }) => {
+  const { t } = useI18n('models');
   const [copied, setCopied] = useState(false);
 
   const handleClick = async () => {
@@ -53,7 +55,7 @@ const CopyModelNameButton: React.FC<{ modelName: string }> = ({ modelName }) => 
     }
   };
 
-  const label = copied ? `Copied model name: ${modelName}` : `Copy model name: ${modelName}`;
+  const label = t(copied ? 'detail.copiedName' : 'detail.copyName', { model: modelName });
   return (
     <button
       type="button"
@@ -84,7 +86,7 @@ function fmtDownloads(n: number): string {
   return String(n);
 }
 
-function recipeDisplayLabel(recipe: string): string {
+function recipeDisplayLabel(recipe: string, t: (key: string) => string): string {
   const n = String(recipe || '').toLowerCase();
   switch (n) {
     case 'llamacpp': return 'llama.cpp';
@@ -99,11 +101,28 @@ function recipeDisplayLabel(recipe: string): string {
     case 'thinksound': return 'ThinkSound';
     case 'openmoss': return 'OpenMOSS TTS';
     case 'trellis': return 'TRELLIS.2';
-    case 'collection.omni': return 'Omni Collection';
-    case 'collection.router': return 'Router';
-    case 'collection': return 'Collection';
-    default: return recipe || 'Unknown';
+    case 'collection.omni': return t('detail.main.recipeOmniCollection');
+    case 'collection.router': return t('detail.main.recipeRouter');
+    case 'collection': return t('detail.main.recipeCollection');
+    default: return recipe || t('detail.main.recipeUnknown');
   }
+}
+
+function modelCapabilityLabel(capability: ModelIdentity, t: (key: string) => string): string {
+  const keys: Record<string, string> = {
+    chat: 'manager.custom.capabilities.chat',
+    omni: 'manager.custom.capabilities.omni',
+    image: 'manager.custom.capabilities.image',
+    audio: 'manager.custom.capabilities.audio',
+    'audio-generation': 'manager.custom.capabilities.audio-generation',
+    tts: 'manager.custom.capabilities.tts',
+    model3d: 'manager.custom.capabilities.model3d',
+    embedding: 'manager.custom.capabilities.embedding',
+    reranking: 'manager.custom.capabilities.reranking',
+    classification: 'detail.main.capabilityClassification',
+    router: 'detail.main.recipeRouter',
+  };
+  return t(keys[capability] || 'detail.main.capabilityUnknown');
 }
 
 function activeRecipeForModel(model: ModelInfo | null | undefined): string {
@@ -199,8 +218,10 @@ function tuningValue(value: unknown): string {
 
 function optionalDisplayValue(value: unknown): string {
   const text = String(value ?? '').trim();
-  return text && text.toLowerCase() !== 'unknown' ? text : '';
+  if (!text) return '';
+  return ['unknown', 'null', 'undefined', 'none', 'n/a'].includes(text.toLowerCase()) ? '' : text;
 }
+
 
 function fieldValue(value: unknown): string {
   if (value === undefined || value === null) return '';
@@ -220,52 +241,32 @@ function stringRecordEqual(left: Record<string, string>, right: Record<string, s
   return leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key]);
 }
 
-const TUNING_FIELD_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
-  ctx_size: 'Context size',
-  llamacpp_backend: 'Backend',
-  llamacpp_device: 'Device',
-  llamacpp_args: 'Backend args',
-  steps: 'Steps',
-  cfg_scale: 'CFG scale',
-  width: 'Width',
-  height: 'Height',
-  sampling_method: 'Sampling method',
-  flow_shift: 'Flow shift',
-  'sd-cpp_backend': 'Backend',
-  sdcpp_args: 'Backend args',
-  whispercpp_backend: 'Backend',
-  whispercpp_args: 'Backend args',
-  moonshine_backend: 'Backend',
-  moonshine_args: 'Backend args',
-  acestep_backend: 'Backend',
-  thinksound_backend: 'Backend',
-  openmoss_backend: 'Backend',
-  trellis_backend: 'Backend',
-  vllm_backend: 'Backend',
-  vllm_args: 'Backend args',
-  flm_args: 'Backend args',
-  voice: 'Voice',
-  speed: 'Speed',
-};
-
-const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
-  ctx_size: 'Runtime context window for this exact model.',
-  llamacpp_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
-  vllm_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
-  whispercpp_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
-  moonshine_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
-  acestep_backend: 'ACE-Step accelerator backend for music generation.',
-  thinksound_backend: 'ThinkSound accelerator backend for sound-effect generation.',
-  openmoss_backend: 'OpenMOSS accelerator backend for speech generation.',
-  trellis_backend: 'TRELLIS accelerator backend for 3D reconstruction.',
-  'sd-cpp_backend': 'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.',
-  llamacpp_device: 'Optional device selector for the selected backend.',
-  llamacpp_args: 'CLI-style flags for llama-server, applied on Load/Reload. E.g. --gpu-layers 35 --threads 8 --batch-size 512. See llama-server --help for all options.',
-  sdcpp_args: 'Raw backend args for this image model only.',
-  whispercpp_args: 'Raw backend args for this transcription model only.',
-  moonshine_args: 'Raw backend args for this transcription model only.',
-  vllm_args: 'Raw backend args for this model only.',
-  flm_args: 'Raw backend args for this model only.',
+const TUNING_FIELD_I18N_KEYS: Partial<Record<keyof RecipeOptions, string>> = {
+  ctx_size: 'detail.config.labels.context',
+  llamacpp_backend: 'detail.config.labels.backend',
+  llamacpp_device: 'detail.config.labels.device',
+  llamacpp_args: 'detail.config.labels.backendArgs',
+  steps: 'detail.config.labels.steps',
+  cfg_scale: 'detail.config.labels.cfgScale',
+  width: 'detail.config.labels.width',
+  height: 'detail.config.labels.height',
+  sampling_method: 'detail.config.labels.samplingMethod',
+  flow_shift: 'detail.config.labels.flowShift',
+  'sd-cpp_backend': 'detail.config.labels.backend',
+  sdcpp_args: 'detail.config.labels.backendArgs',
+  whispercpp_backend: 'detail.config.labels.backend',
+  whispercpp_args: 'detail.config.labels.backendArgs',
+  moonshine_backend: 'detail.config.labels.backend',
+  moonshine_args: 'detail.config.labels.backendArgs',
+  acestep_backend: 'detail.config.labels.backend',
+  thinksound_backend: 'detail.config.labels.backend',
+  openmoss_backend: 'detail.config.labels.backend',
+  trellis_backend: 'detail.config.labels.backend',
+  vllm_backend: 'detail.config.labels.backend',
+  vllm_args: 'detail.config.labels.backendArgs',
+  flm_args: 'detail.config.labels.backendArgs',
+  voice: 'detail.config.labels.voice',
+  speed: 'detail.config.labels.speed',
 };
 
 const NUMERIC_TUNING_KEYS = new Set<keyof RecipeOptions>(['steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed']);
@@ -604,10 +605,6 @@ function renderHfReadmeHtml(source: string, repo: string): string {
       if (assetFailed) {
         image.setAttribute('data-readme-asset-failed', 'true');
         image.classList.add('detail-readme__asset--failed');
-        const fallback = parsed.createElement('span');
-        fallback.className = 'detail-readme__asset-fallback';
-        fallback.textContent = image.alt ? `Image unavailable: ${image.alt}` : 'README image unavailable';
-        image.insertAdjacentElement('afterend', fallback);
       } else {
         image.setAttribute('src', src);
       }
@@ -647,28 +644,45 @@ function renderHfReadmeHtml(source: string, repo: string): string {
 }
 
 const ReadmeContent: React.FC<{ readme: string; hfRepo: string }> = ({ readme, hfRepo }) => {
+  const { t } = useI18n('models');
   const ref = useRef<HTMLDivElement>(null);
   const html = useMemo(() => renderHfReadmeHtml(readme, hfRepo), [readme, hfRepo]);
 
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
+
+    const ensureAssetFallback = (target: HTMLImageElement) => {
+      const text = target.alt
+        ? `${t('detail.readmeImageUnavailable')}: ${target.alt}`
+        : t('detail.readmeImageUnavailable');
+      const sibling = target.nextElementSibling;
+      if (sibling instanceof HTMLSpanElement && sibling.classList.contains('detail-readme__asset-fallback')) {
+        sibling.textContent = text;
+        return;
+      }
+      const fallback = document.createElement('span');
+      fallback.className = 'detail-readme__asset-fallback';
+      fallback.textContent = text;
+      target.insertAdjacentElement('afterend', fallback);
+    };
+
+    node.querySelectorAll<HTMLImageElement>('img[data-readme-asset-failed="true"]').forEach(ensureAssetFallback);
+
     const handleAssetError = (event: Event) => {
       const target = event.target;
       if (!(target instanceof HTMLImageElement)) return;
-      if (target.dataset.readmeAssetFailed === 'true') return;
-      const failedUrl = target.currentSrc || target.src || target.getAttribute('src') || '';
-      if (failedUrl) failedReadmeAssets.add(failedUrl);
-      target.dataset.readmeAssetFailed = 'true';
-      target.classList.add('detail-readme__asset--failed');
-      const fallback = document.createElement('span');
-      fallback.className = 'detail-readme__asset-fallback';
-      fallback.textContent = target.alt ? `Image unavailable: ${target.alt}` : 'README image unavailable';
-      target.insertAdjacentElement('afterend', fallback);
+      if (target.dataset.readmeAssetFailed !== 'true') {
+        const failedUrl = target.currentSrc || target.src || target.getAttribute('src') || '';
+        if (failedUrl) failedReadmeAssets.add(failedUrl);
+        target.dataset.readmeAssetFailed = 'true';
+        target.classList.add('detail-readme__asset--failed');
+      }
+      ensureAssetFallback(target);
     };
     node.addEventListener('error', handleAssetError, true);
     return () => node.removeEventListener('error', handleAssetError, true);
-  }, [html]);
+  }, [html, t]);
 
   return <div ref={ref} className="detail-tab-content detail-readme" dangerouslySetInnerHTML={{ __html: html }} />;
 };
@@ -676,6 +690,7 @@ const ReadmeContent: React.FC<{ readme: string; hfRepo: string }> = ({ readme, h
 /* ── README tab ──────────────────────────────────────────────── */
 
 const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: boolean }> = ({ model, isActive }) => {
+  const { t } = useI18n('models');
   const checkpoint = model ? String((model as any).checkpoint || '') : '';
   const checkpoints = model ? ((model as any).checkpoints as Record<string, string> | null ?? null) : null;
   const hfRepo = deriveHFRepo(checkpoint || null, checkpoints);
@@ -712,7 +727,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
   if (loading) {
     return (
       <div className="detail-tab-content detail-readme detail-readme--loading" aria-live="polite" aria-busy="true">
-        <span>Loading README…</span>
+        <span>{t('detail.readmeLoading')}</span>
       </div>
     );
   }
@@ -721,7 +736,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
     return (
       <div className="detail-tab-content detail-readme detail-readme--empty">
         <Icon name="book-open" size={32} aria-hidden="true" />
-        <p>README unavailable for this model.</p>
+        <p>{t('detail.readmeUnavailable')}</p>
       </div>
     );
   }
@@ -732,6 +747,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
 /* ── HF README tab ────────────────────────────────────────────── */
 
 const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isActive }) => {
+  const { t } = useI18n('models');
   const readmeUrl = `https://huggingface.co/${hfId}/raw/main/README.md`;
   const [readme, setReadme] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -760,7 +776,7 @@ const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isAc
   if (loading) {
     return (
       <div className="detail-tab-content detail-readme detail-readme--loading" aria-live="polite" aria-busy="true">
-        <span>Loading README…</span>
+        <span>{t('detail.readmeLoading')}</span>
       </div>
     );
   }
@@ -768,7 +784,7 @@ const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isAc
     return (
       <div className="detail-tab-content detail-readme detail-readme--empty">
         <Icon name="book-open" size={32} aria-hidden="true" />
-        <p>README unavailable for this model.</p>
+        <p>{t('detail.readmeUnavailable')}</p>
       </div>
     );
   }
@@ -784,6 +800,7 @@ const HfOverviewTab: React.FC<{
   isPulling: boolean;
   isActive: boolean;
 }> = ({ hfModel, hfVariants, onHfPull, isPulling, isActive }) => {
+  const { t } = useI18n('models');
   const [selectedVariantName, setSelectedVariantName] = useState('');
   const selectedVariant = hfVariants?.variants.find(v => v.name === selectedVariantName)
     ?? hfVariants?.variants[0];
@@ -795,13 +812,13 @@ const HfOverviewTab: React.FC<{
         <>
           {hfVariants.mmproj_files.length > 0 && (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Included components</span>
-              <div className="hf-detail__overview-value">Vision projector (MMProj)</div>
+              <span className="hf-detail__overview-label">{t('detail.hf.included')}</span>
+              <div className="hf-detail__overview-value">{t('detail.hf.visionProjector')}</div>
             </div>
           )}
           {hfVariants.variants.length > 0 ? (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Variants (select one)</span>
+              <span className="hf-detail__overview-label">{t('detail.hf.variants')}</span>
               {selectedVariant && (
                 <div className="hf-detail__gguf-primary-action">
                   <WorkspaceActionButton
@@ -809,13 +826,13 @@ const HfOverviewTab: React.FC<{
                     icon="download"
                     disabled={isPulling}
                     onClick={() => onHfPull?.(hfModel.id, selectedVariant.name, hfVariants.recipe)}
-                    aria-label={`Download ${selectedVariant.name} from ${hfModel.id}`}
+                    aria-label={t('detail.hf.downloadVariantAria', { variant: selectedVariant.name, model: hfModel.id })}
                   >
-                    Download {selectedVariant.name}
+                    {t('detail.hf.downloadVariant', { variant: selectedVariant.name })}
                   </WorkspaceActionButton>
                 </div>
               )}
-              <div className="hf-detail__gguf-list" role="radiogroup" aria-label={`Variants for ${hfModel.id}`}>
+              <div className="hf-detail__gguf-list" role="radiogroup" aria-label={t('detail.hf.variantsAria', { model: hfModel.id })}>
                 {hfVariants.variants.map(v => {
                   const isSelected = selectedVariant?.name === v.name;
                   return (
@@ -829,7 +846,7 @@ const HfOverviewTab: React.FC<{
                       onClick={() => setSelectedVariantName(v.name)}
                     >
                       <span className="hf-detail__gguf-name">
-                        {v.name}{v.sharded ? ' (sharded)' : ''}
+                        {v.name}{v.sharded ? ` (${t('detail.hf.sharded')})` : ''}
                       </span>
                       <span className="hf-detail__gguf-size">{fmtBytes(v.size_bytes)}</span>
                     </button>
@@ -839,28 +856,28 @@ const HfOverviewTab: React.FC<{
             </div>
           ) : hfVariants.recipe !== 'llamacpp' ? (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-label">Repository download</span>
+              <span className="hf-detail__overview-label">{t('detail.hf.repositoryDownload')}</span>
               <div className="hf-detail__gguf-primary-action">
                 <WorkspaceActionButton
                   appearance="primary"
                   icon="download"
                   disabled={isPulling}
                   onClick={() => onHfPull?.(hfModel.id, '', hfVariants.recipe)}
-                  aria-label={`Download ${hfModel.id}`}
+                  aria-label={t('detail.hf.downloadModelAria', { model: hfModel.id })}
                 >
-                  Download model
+                  {t('detail.hf.downloadModel')}
                 </WorkspaceActionButton>
               </div>
             </div>
           ) : (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-value hf-detail__overview-value--muted">No downloadable variants found for this repository.</span>
+              <span className="hf-detail__overview-value hf-detail__overview-value--muted">{t('detail.hf.noVariants')}</span>
             </div>
           )}
         </>
       ) : (
         <div className="hf-detail__overview-section">
-          <span className="hf-detail__overview-value hf-detail__overview-value--muted">Loading variant information…</span>
+          <span className="hf-detail__overview-value hf-detail__overview-value--muted">{t('detail.hf.loadingVariants')}</span>
         </div>
       )}
     </div>
@@ -871,9 +888,9 @@ const HfOverviewTab: React.FC<{
 
 type HfDetailTab = 'overview' | 'readme';
 
-const HF_DETAIL_TABS: Array<{ id: HfDetailTab; label: string }> = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'readme', label: 'README' },
+const HF_DETAIL_TABS: Array<{ id: HfDetailTab; labelKey: string }> = [
+  { id: 'overview', labelKey: 'detail.hf.overview' },
+  { id: 'readme', labelKey: 'detail.hf.readme' },
 ];
 
 const REMOTE_PROVIDER_META: Record<ModelRegistryProvider, { label: string; url: (id: string) => string }> = {
@@ -892,6 +909,7 @@ const HfDetailView: React.FC<{
   onBack?: () => void;
   onClose?: () => void;
 }> = ({ hfModel, provider, hfVariants, onFetchHfVariants, onHfPull, pullingHf, onCancelHfPull, onBack, onClose }) => {
+  const { t, formatDate } = useI18n('models');
   const [activeTab, setActiveTab] = useState<HfDetailTab>('overview');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -933,7 +951,7 @@ const HfDetailView: React.FC<{
   return (
     <WorkspaceDetailPanel
       className={`model-detail-panel model-detail-panel--hf model-detail-panel--${provider}`}
-      ariaLabel={`${providerMeta.label} model: ${repoName}`}
+      ariaLabel={t('detail.hf.providerModelAria', { provider: providerMeta.label, model: repoName })}
       title={(
         <h2 className="workspace-detail-panel__title model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
           {repoName}
@@ -946,18 +964,18 @@ const HfDetailView: React.FC<{
             <WorkspaceMetadataChip emphasis="medium" tone="accent" className="model-detail-panel__badge--pipeline">{pipelineTag}</WorkspaceMetadataChip>
           )}
           {hfVariants?.recipe && (
-            <WorkspaceMetadataChip emphasis="medium">{recipeDisplayLabel(hfVariants.recipe)}</WorkspaceMetadataChip>
+            <WorkspaceMetadataChip emphasis="medium">{recipeDisplayLabel(hfVariants.recipe, t)}</WorkspaceMetadataChip>
           )}
-          <WorkspaceMetadataChip emphasis="low">{fmtDownloads(hfModel.downloads)} downloads</WorkspaceMetadataChip>
-          <WorkspaceMetadataChip emphasis="low">{fmtDownloads(hfModel.likes)} likes</WorkspaceMetadataChip>
+          <WorkspaceMetadataChip emphasis="low">{t('detail.hf.downloads', { count: fmtDownloads(hfModel.downloads) })}</WorkspaceMetadataChip>
+          <WorkspaceMetadataChip emphasis="low">{t('detail.hf.likes', { count: fmtDownloads(hfModel.likes) })}</WorkspaceMetadataChip>
           {hfModel.createdAt && (
-            <WorkspaceMetadataChip emphasis="low">{new Date(hfModel.createdAt).toLocaleDateString()}</WorkspaceMetadataChip>
+            <WorkspaceMetadataChip emphasis="low">{formatDate(hfModel.createdAt)}</WorkspaceMetadataChip>
           )}
           {displayTags.map(tag => <WorkspaceMetadataChip key={tag} emphasis="low">{tag}</WorkspaceMetadataChip>)}
         </>
       )}
       actions={(
-        <WorkspaceActionGroup className="model-detail-panel__actions" label={`Actions for ${repoName}`}>
+        <WorkspaceActionGroup className="model-detail-panel__actions" label={t('detail.main.actions', { model: repoName })}>
           {isPulling && (
             <>
               <div className="row__progress">
@@ -967,8 +985,8 @@ const HfDetailView: React.FC<{
                 <span className="row__progress-text">{pullPct.toFixed(0)}%</span>
               </div>
               {onCancelHfPull && (
-                <WorkspaceActionButton appearance="secondary" onClick={() => onCancelHfPull(hfModel.id)} aria-label={`Cancel download of ${repoName}`}>
-                  Cancel
+                <WorkspaceActionButton appearance="secondary" onClick={() => onCancelHfPull(hfModel.id)} aria-label={t('detail.main.cancelDownload', { model: repoName })}>
+                  {t('detail.hf.cancel')}
                 </WorkspaceActionButton>
               )}
             </>
@@ -979,14 +997,14 @@ const HfDetailView: React.FC<{
             href={providerMeta.url(repoName)}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`View ${repoName} on ${providerMeta.label} (opens in new tab)`}
+            aria-label={t('detail.hf.viewOnProvider', { model: repoName, provider: providerMeta.label })}
           >
-            Open on {providerMeta.label}
+            {t('detail.hf.openOn', { provider: providerMeta.label })}
           </WorkspaceActionLink>
         </WorkspaceActionGroup>
       )}
       onBack={onBack}
-      backLabel="Back to models"
+      backLabel={t('detail.main.back')}
       backClassName="model-detail-panel__back-btn"
       onClose={onClose}
       closeClassName="model-detail-panel__close-btn"
@@ -995,7 +1013,7 @@ const HfDetailView: React.FC<{
       <div
         className="detail-tabs__tablist"
         role="tablist"
-        aria-label="Model details sections"
+        aria-label={t('detail.main.sections')}
         aria-labelledby="detail-panel-heading"
       >
         {remoteDetailTabs.map((tab, i) => (
@@ -1011,7 +1029,7 @@ const HfDetailView: React.FC<{
             onClick={() => setActiveTab(tab.id)}
             onKeyDown={e => handleTabKeyDown(e, i)}
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </button>
         ))}
       </div>
@@ -1054,8 +1072,16 @@ const ModelConfigurationTab: React.FC<{
   onReloadModel?: (model: LoadedModel, recipeOptions?: Record<string, unknown>) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
 }> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onReloadModel, onDirtyChange }) => {
+  const { t, formatNumber } = useI18n('models');
   const name = mdName(model);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [noticeKey, setNoticeKey] = useState<
+    | 'detail.config.saved'
+    | 'detail.config.resetNotice'
+    | 'detail.config.discardNotice'
+    | 'detail.config.reloadSuccess'
+    | 'detail.config.reloadFailed'
+    | null
+  >(null);
   const [isReloading, setIsReloading] = useState(false);
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
 
@@ -1109,7 +1135,7 @@ const ModelConfigurationTab: React.FC<{
   }, [knownVoiceIds, loadSettingsDraftFromStore]);
 
   useEffect(() => { loadFromStore(); }, [loadFromStore]);
-  useEffect(() => { setNotice(null); }, [name]);
+  useEffect(() => { setNoticeKey(null); }, [name]);
 
   const savedLoadSettings = loadSettingsDraftFromStore();
   const hasLoadSettingChanges = ctxSizeDraft !== savedLoadSettings.ctxSize
@@ -1120,8 +1146,8 @@ const ModelConfigurationTab: React.FC<{
   }, [hasLoadSettingChanges, onDirtyChange]);
 
   useEffect(() => {
-    if (hasLoadSettingChanges && notice === 'Saved for future loads') setNotice(null);
-  }, [hasLoadSettingChanges, notice]);
+    if (hasLoadSettingChanges && noticeKey === 'detail.config.saved') setNoticeKey(null);
+  }, [hasLoadSettingChanges, noticeKey]);
 
   const ctxSizeId = `config-${name}-ctx_size`.replace(/[^a-zA-Z0-9_-]/g, '-');
   const ctxSliderId = `${ctxSizeId}-slider`;
@@ -1140,8 +1166,8 @@ const ModelConfigurationTab: React.FC<{
   const isAutoTuning = ctxSizeDraft === '-1';
   const currentCtxSize = positiveCtxValue(ctxSizeDraft) ?? baseCtxSize;
   const autoTuneTooltip = isAutoTuning
-    ? 'Lemonade estimates the context size from available memory when the model loads. Uncheck to use a fixed value.'
-    : `Context size is fixed at ${currentCtxSize.toLocaleString()} tokens. Check Auto tune context size to let Lemonade estimate it from available memory at load time.`;
+    ? t('detail.config.autoTooltip')
+    : t('detail.config.fixedTooltip', { count: formatNumber(currentCtxSize) });
   const ctxMax = Math.max(
     ctxMin,
     currentCtxSize,
@@ -1184,7 +1210,7 @@ const ModelConfigurationTab: React.FC<{
       recipe_options: buildConfigOptions(),
       sampling: existingTuning?.sampling || {},
     });
-    if (showNotice) setNotice('Saved for future loads');
+    if (showNotice) setNoticeKey('detail.config.saved');
   };
 
   const resetConfig = () => {
@@ -1201,13 +1227,13 @@ const ModelConfigurationTab: React.FC<{
     setCtxSizeDraft('-1');
     setRecipeDraft({});
     setCustomVoiceMode(false);
-    setNotice('Load settings reset to built-in defaults.');
+    setNoticeKey('detail.config.resetNotice');
   };
 
   const discardConfig = () => {
     loadFromStore();
     onDirtyChange?.(false);
-    setNotice('Unsaved load setting changes discarded.');
+    setNoticeKey('detail.config.discardNotice');
   };
 
   const reloadViaPanel = async () => {
@@ -1216,9 +1242,9 @@ const ModelConfigurationTab: React.FC<{
     setIsReloading(true);
     try {
       await onReloadModel(loadedModel, buildConfigOptions() as Record<string, unknown>);
-      setNotice('Model reloaded with current configuration.');
+      setNoticeKey('detail.config.reloadSuccess');
     } catch {
-      setNotice('Reload failed. Check the server logs.');
+      setNoticeKey('detail.config.reloadFailed');
     } finally {
       setIsReloading(false);
     }
@@ -1226,7 +1252,8 @@ const ModelConfigurationTab: React.FC<{
 
   const renderConfigRecipeField = (key: keyof RecipeOptions) => {
     const fieldId = `config-${name}-${String(key)}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-    const label = TUNING_FIELD_LABELS[key] || String(key);
+    const labelKey = TUNING_FIELD_I18N_KEYS[key];
+    const label = labelKey ? t(labelKey) : String(key);
     const draftValue = recipeDraft[String(key)] || '';
     const baseValue = baseTuning.recipe_options[key];
 
@@ -1299,11 +1326,11 @@ const ModelConfigurationTab: React.FC<{
               setRecipeDraft(previous => ({ ...previous, [String(key)]: value }));
             }}
           >
-            <option value="">{defaultVoice ? `Model default (${defaultVoice})` : 'Model default'}</option>
+            <option value="">{defaultVoice ? t('detail.config.modelDefaultValue', { value: defaultVoice }) : t('detail.config.modelDefault')}</option>
             {knownVoiceOptions.map(option => (
               <option key={option.id} value={option.id}>{option.label}</option>
             ))}
-            <option value={customVoiceSentinel}>Custom voice…</option>
+            <option value={customVoiceSentinel}>{t('detail.config.customVoice')}</option>
           </select>
           {showCustomVoice && (
             <input
@@ -1311,18 +1338,17 @@ const ModelConfigurationTab: React.FC<{
               className="input detail-configuration__voice-custom"
               type="text"
               value={isUnknownDraft ? draftValue : ''}
-              placeholder="Enter custom voice ID"
-              aria-label="Custom voice ID"
+              placeholder={t('detail.config.customVoicePlaceholder')}
+              aria-label={t('detail.config.customVoiceAria')}
               onChange={event => setRecipeDraft(previous => ({ ...previous, [String(key)]: event.target.value }))}
             />
           )}
-          <small>Choose a known voice, or use a custom voice ID when the backend supports one.</small>
+          <small>{t('detail.config.voiceHelp')}</small>
         </div>
       );
     }
 
     if (ARGS_TUNING_KEYS.has(key)) {
-      const hint = TUNING_FIELD_HINTS[key];
       const defaultPlaceholders: Partial<Record<keyof RecipeOptions, string>> = {
         llamacpp_args: '--gpu-layers 35 --threads 8 --batch-size 512',
         vllm_args: '--tensor-parallel-size 1 --max-model-len 8192',
@@ -1334,7 +1360,7 @@ const ModelConfigurationTab: React.FC<{
       const draftKey = String(key);
       const hasDraftValue = Object.prototype.hasOwnProperty.call(recipeDraft, draftKey);
       const effectiveArgsValue = (hasDraftValue ? draftValue : optionalDisplayValue(baseValue)) || '';
-      const argsPlaceholder = defaultPlaceholders[key] || 'Space-separated CLI flags';
+      const argsPlaceholder = defaultPlaceholders[key] || t('detail.config.argsPlaceholder');
       return (
         <label key={String(key)} className="detail-tuning__field detail-tuning__field--wide detail-configuration__field detail-configuration__args-field" htmlFor={fieldId}>
           <span>{label}</span>
@@ -1348,8 +1374,8 @@ const ModelConfigurationTab: React.FC<{
           />
           <small>
             {hasDraftValue && draftValue.trim()
-              ? 'Custom args saved for this model.'
-              : 'Using the current backend args. Edit to customize load/reload flags.'}
+              ? t('detail.config.customArgs')
+              : t('detail.config.currentArgs')}
           </small>
         </label>
       );
@@ -1378,10 +1404,10 @@ const ModelConfigurationTab: React.FC<{
               onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
             />
             <span className="detail-configuration__context-stepper">
-              <button type="button" onClick={() => stepNumericInput(1)} aria-label={`Increase ${label}`}>
+              <button type="button" onClick={() => stepNumericInput(1)} aria-label={t('detail.config.increase', { label })}>
                 <Icon name="chevron-up" size={11} aria-hidden="true" />
               </button>
-              <button type="button" onClick={() => stepNumericInput(-1)} aria-label={`Decrease ${label}`}>
+              <button type="button" onClick={() => stepNumericInput(-1)} aria-label={t('detail.config.decrease', { label })}>
                 <Icon name="chevron-down" size={11} aria-hidden="true" />
               </button>
             </span>
@@ -1407,16 +1433,16 @@ const ModelConfigurationTab: React.FC<{
 
   return (
     <div className="detail-tab-content detail-configuration">
-      <section className="detail-configuration__section" aria-label="Load settings">
+      <section className="detail-configuration__section" aria-label={t('detail.config.loadAria')}>
         <div className="detail-configuration__section-head">
           <div>
-            <h3 className="detail-configuration__section-heading">Load settings</h3>
+            <h3 className="detail-configuration__section-heading">{t('detail.config.loadTitle')}</h3>
             <p className="detail-configuration__section-copy">
-              Settings used when this model loads or reloads.
+              {t('detail.config.loadHelp')}
             </p>
           </div>
           {loadedModel && (
-            <span className="detail-configuration__status is-loaded">Loaded now</span>
+            <span className="detail-configuration__status is-loaded">{t('detail.config.loadedNow')}</span>
           )}
         </div>
 
@@ -1424,7 +1450,7 @@ const ModelConfigurationTab: React.FC<{
           {supportsContextSize && (
             <div className="detail-configuration__context-card">
               <div className="detail-configuration__control-head">
-                <label htmlFor={ctxSliderId}>Context size</label>
+                <label htmlFor={ctxSliderId}>{t('detail.config.contextSize')}</label>
                 {!isAutoTuning && (
                   <div className="detail-configuration__context-number">
                     <input
@@ -1437,14 +1463,14 @@ const ModelConfigurationTab: React.FC<{
                       value={ctxSizeDraft}
                       placeholder={String(baseCtxSize)}
                       onChange={e => setCtxSizeDraft(e.target.value)}
-                      aria-label="Context size tokens"
+                      aria-label={t('detail.config.contextAria')}
                     />
                     <span className="detail-configuration__context-stepper">
                       <button
                         type="button"
                         onClick={() => stepContextSize(1)}
                         disabled={currentCtxSize >= ctxMax}
-                        aria-label={`Increase context size by ${ctxStep} tokens`}
+                        aria-label={t('detail.config.increaseContext', { count: ctxStep })}
                       >
                         <Icon name="chevron-up" size={11} aria-hidden="true" />
                       </button>
@@ -1452,7 +1478,7 @@ const ModelConfigurationTab: React.FC<{
                         type="button"
                         onClick={() => stepContextSize(-1)}
                         disabled={currentCtxSize <= ctxMin}
-                        aria-label={`Decrease context size by ${ctxStep} tokens`}
+                        aria-label={t('detail.config.decreaseContext', { count: ctxStep })}
                       >
                         <Icon name="chevron-down" size={11} aria-hidden="true" />
                       </button>
@@ -1469,7 +1495,7 @@ const ModelConfigurationTab: React.FC<{
                   checked={isAutoTuning}
                   onChange={e => setCtxSizeDraft(e.target.checked ? '-1' : String(currentCtxSize))}
                 />
-                <span>Auto tune context size</span>
+                <span>{t('detail.config.autoTune')}</span>
                 <Icon name="info" size={14} aria-hidden="true" />
               </label>
               {!isAutoTuning && (
@@ -1519,18 +1545,18 @@ const ModelConfigurationTab: React.FC<{
               disabled={isReloading || isLoadingThis}
               aria-busy={isReloading}
             >
-              <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading\u2026' : 'Reload model'}
+              <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? t('detail.config.reloading') : t('detail.config.reload')}
             </button>
           )}
-          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()}>Save</button>
+          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()}>{t('detail.config.save')}</button>
           {hasLoadSettingChanges && (
-            <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>Discard changes</button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>{t('detail.config.discard')}</button>
           )}
-          <button type="button" className="btn btn--ghost btn--sm" onClick={resetConfig}>Reset to defaults</button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={resetConfig}>{t('detail.config.reset')}</button>
         </div>
 
-        {notice && (
-          <p className="detail-tuning__notice" role="status">{notice}</p>
+        {noticeKey && (
+          <p className="detail-tuning__notice" role="status">{t(noticeKey)}</p>
         )}
       </section>
     </div>
@@ -1554,15 +1580,16 @@ function fmtBytes(bytes: number): string {
 }
 
 /** Title-case a role slug for display (e.g. "mmproj" → "Mmproj", "main" → "Main", "flash_attn" → "Flash Attn"). */
-function roleLabel(role: string): string {
+function roleLabel(role: string, fallback: string): string {
   const r = String(role || '').trim();
-  if (!r) return 'File';
+  if (!r) return fallback;
   return r
     .replace(/[_-]+/g, ' ')
     .replace(/\b\w/g, ch => ch.toUpperCase());
 }
 
 const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: boolean }> = ({ model, isActive }) => {
+  const { t } = useI18n('models');
   const modelId = model ? String(model.id || '') : '';
   const [files, setFiles] = useState<ModelFileInfo[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1590,7 +1617,7 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
   if (loading) {
     return (
       <div className="detail-tab-content detail-files detail-files--loading" aria-live="polite" aria-busy="true">
-        <span>Loading files…</span>
+        <span>{t('detail.files.loading')}</span>
       </div>
     );
   }
@@ -1599,7 +1626,7 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
     return (
       <div className="detail-tab-content detail-files detail-files--empty">
         <Icon name="hard-drive" size={32} aria-hidden="true" />
-        <p>Unable to load files for this model.</p>
+        <p>{t('detail.files.unable')}</p>
       </div>
     );
   }
@@ -1608,8 +1635,8 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
     return (
       <div className="detail-tab-content detail-files detail-files--empty">
         <Icon name="hard-drive" size={32} aria-hidden="true" />
-        <p>No files found for this model.</p>
-        <small>Files appear here once the model has been downloaded.</small>
+        <p>{t('detail.files.none')}</p>
+        <small>{t('detail.files.noneHelp')}</small>
       </div>
     );
   }
@@ -1617,13 +1644,13 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
   return (
     <div className="detail-tab-content detail-files">
       <table className="detail-files__table">
-        <caption className="sr-only">Files backing {mdName(model) || modelId}</caption>
+        <caption className="sr-only">{t('detail.files.backing', { model: mdName(model) || modelId })}</caption>
         <thead>
           <tr>
-            <th scope="col">File</th>
-            <th scope="col">Role</th>
-            <th scope="col" className="detail-files__col-size">Size</th>
-            <th scope="col">Status</th>
+            <th scope="col">{t('detail.files.file')}</th>
+            <th scope="col">{t('detail.files.role')}</th>
+            <th scope="col" className="detail-files__col-size">{t('detail.files.size')}</th>
+            <th scope="col">{t('detail.files.status')}</th>
           </tr>
         </thead>
         <tbody>
@@ -1634,19 +1661,19 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
                 <span title={file.name}>{file.name}</span>
               </td>
               <td>
-                <span className="detail-files__role-badge">{roleLabel(file.role)}</span>
+                <span className="detail-files__role-badge">{roleLabel(file.role, t('detail.files.fallbackRole'))}</span>
               </td>
               <td className="detail-files__col-size">{fmtBytes(file.size_bytes)}</td>
               <td>
                 {file.exists ? (
                   <span className="detail-files__status detail-files__status--present">
                     <Icon name="check" size={14} aria-hidden="true" />
-                    <span>Downloaded</span>
+                    <span>{t('detail.files.downloaded')}</span>
                   </span>
                 ) : (
                   <span className="detail-files__status detail-files__status--missing">
                     <Icon name="download" size={14} aria-hidden="true" />
-                    <span>Not downloaded</span>
+                    <span>{t('detail.files.notDownloaded')}</span>
                   </span>
                 )}
               </td>
@@ -1658,13 +1685,13 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
   );
 };
 
-const COLLECTION_ROLE_LABELS: Record<string, string> = {
-  llm: 'Planner LLM',
-  vision: 'Vision',
-  image: 'Image generation',
-  edit: 'Image editing',
-  transcription: 'Transcription',
-  speech: 'Text to speech',
+const COLLECTION_ROLE_I18N_KEYS: Record<string, string> = {
+  llm: 'detail.collection.roles.llm',
+  vision: 'detail.collection.roles.vision',
+  image: 'detail.collection.roles.image',
+  edit: 'detail.collection.roles.edit',
+  transcription: 'detail.collection.roles.transcription',
+  speech: 'detail.collection.roles.speech',
 };
 
 function recordValue(value: unknown): Record<string, unknown> {
@@ -1678,7 +1705,10 @@ const RouterCollectionSettingsTab: React.FC<{
   models: ModelInfo[];
   onEdit?: (model: ModelInfo) => void;
 }> = ({ model, models, onEdit }) => {
+  const { t } = useI18n('models');
   const [providers, setProviders] = useState<CloudProviderRow[]>([]);
+  const routerCollectionTranslateRef = useRef(t);
+  routerCollectionTranslateRef.current = t;
   const [providerError, setProviderError] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [editingConnectionModel, setEditingConnectionModel] = useState<string | null>(null);
@@ -1691,7 +1721,7 @@ const RouterCollectionSettingsTab: React.FC<{
       setProviders(await api.cloudProviders());
       setProviderError(null);
     } catch (error) {
-      setProviderError(error instanceof Error ? error.message : 'Could not load external providers.');
+      setProviderError(error instanceof Error ? error.message : routerCollectionTranslateRef.current('detail.router.loadProvidersFailed'));
     }
   }, []);
 
@@ -1716,17 +1746,17 @@ const RouterCollectionSettingsTab: React.FC<{
     if (!current.includes(role)) current.push(role);
     connectedRoles.set(name, current);
   };
-  candidates.forEach(name => addRole(name, 'Routing target'));
+  candidates.forEach(name => addRole(name, t('detail.router.routingTarget')));
   if (String(nlRouter.type || '').toLowerCase() === 'llm') {
-    addRole(nlRouter.model, 'Natural-language router');
+    addRole(nlRouter.model, t('detail.router.naturalLanguageRouter'));
   }
-  classifiers.forEach(classifier => addRole(classifier.model, `Classifier · ${String(classifier.id || classifier.type || 'model')}`));
-  getCollectionComponents(model).forEach(name => addRole(name, 'Collection component'));
+  classifiers.forEach(classifier => addRole(classifier.model, t('detail.router.classifier', { name: String(classifier.id || classifier.type || 'model') })));
+  getCollectionComponents(model).forEach(name => addRole(name, t('detail.router.collectionComponent')));
 
   const connections = [...connectedRoles.keys()].map(name =>
     describeRouterModelConnection(name, models, providers)
   );
-  const mode = Object.keys(nlRouter).length ? 'Natural-language router' : 'Ordered rules';
+  const mode = Object.keys(nlRouter).length ? t('detail.router.naturalLanguageRouter') : t('detail.router.orderedRules');
 
   const saveEndpoint = async () => {
     if (!editingProvider) return;
@@ -1746,7 +1776,7 @@ const RouterCollectionSettingsTab: React.FC<{
       setEndpointDraft('');
       setAllowInsecureDraft(false);
     } catch (error) {
-      setProviderError(error instanceof Error ? error.message : 'Could not update provider endpoint.');
+      setProviderError(error instanceof Error ? error.message : t('detail.router.updateProviderFailed'));
     } finally {
       setSavingProvider(false);
     }
@@ -1756,15 +1786,15 @@ const RouterCollectionSettingsTab: React.FC<{
     <div className="detail-tab-content custom-collection-settings router-collection-settings">
       <div className="custom-collection-settings__intro">
         <div>
-          <h3>Router settings</h3>
-          <p>Review every model connected to this virtual model, including provider endpoints used by external candidates.</p>
+          <h3>{t('detail.router.title')}</h3>
+          <p>{t('detail.router.help')}</p>
         </div>
         {onEdit && (
           <button
             type="button"
             className="btn btn--primary btn--sm custom-collection-settings__edit-button"
-            aria-label="Edit router settings"
-            title="Edit router settings"
+            aria-label={t('detail.router.editAria')}
+            title={t('detail.router.editAria')}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -1772,39 +1802,39 @@ const RouterCollectionSettingsTab: React.FC<{
             }}
           >
             <Icon name="edit" size={13} aria-hidden="true" />
-            <span>Edit router</span>
+            <span>{t('detail.router.edit')}</span>
           </button>
         )}
       </div>
 
-      <section className="custom-collection-settings__section" aria-label="Router strategy summary">
-        <h4>Routing</h4>
+      <section className="custom-collection-settings__section" aria-label={t('detail.router.summaryAria')}>
+        <h4>{t('detail.router.routing')}</h4>
         <div className="custom-collection-settings__summary">
-          <span>Strategy</span><strong>{mode}</strong>
-          <span>Default model</span><strong>{defaultModel || 'Not set'}</strong>
-          <span>Routing targets</span><strong>{candidates.length}</strong>
+          <span>{t('detail.router.strategy')}</span><strong>{mode}</strong>
+          <span>{t('detail.router.defaultModel')}</span><strong>{defaultModel || t('detail.router.notSet')}</strong>
+          <span>{t('detail.router.targets')}</span><strong>{candidates.length}</strong>
         </div>
       </section>
 
-      <section className="custom-collection-settings__section" aria-label="Connected router models">
-        <h4>Connected models</h4>
-        <p className="router-collection-settings__scope-note">Endpoint changes are provider-wide and apply to all models registered through that provider.</p>
+      <section className="custom-collection-settings__section" aria-label={t('detail.router.connectedAria')}>
+        <h4>{t('detail.router.connected')}</h4>
+        <p className="router-collection-settings__scope-note">{t('detail.router.providerHelp')}</p>
         <div className="router-collection-settings__connections">
           {connections.map(connection => (
             <article className="router-collection-settings__connection" key={connection.modelName}>
               <div className="router-collection-settings__identity">
                 <div>
                   <strong>{connection.displayName}</strong>
-                  {connection.modelName === defaultModel && <span className="router-editor__default-badge">Default</span>}
+                  {connection.modelName === defaultModel && <span className="router-editor__default-badge">{t('detail.router.default')}</span>}
                 </div>
                 <small>{connection.modelName}</small>
                 <small>{(connectedRoles.get(connection.modelName) || []).join(' · ')}</small>
               </div>
               <div className="router-collection-settings__source">
                 <span className={`router-editor__source-badge router-editor__source-badge--${connection.kind}`}>
-                  {connection.kind === 'external' ? 'External' : connection.kind === 'internal' ? 'Internal' : 'Unresolved'}
+                  {connection.kind === 'external' ? t('detail.router.external') : connection.kind === 'internal' ? t('detail.router.internal') : t('detail.router.unresolved')}
                 </span>
-                <small>{connection.kind === 'external' ? (connection.provider || 'Unknown provider') : (connection.backend || connection.recipe || 'Local model')}</small>
+                <small>{connection.kind === 'external' ? (connection.provider || t('detail.router.unknownProvider')) : (connection.backend || connection.recipe || t('detail.router.localModel'))}</small>
               </div>
               <div className="router-collection-settings__endpoint">
                 {connection.kind === 'external' ? (
@@ -1813,38 +1843,38 @@ const RouterCollectionSettingsTab: React.FC<{
                       <input
                         className="input"
                         value={endpointDraft}
-                        aria-label={`${connection.provider} endpoint`}
+                        aria-label={t('detail.router.endpointAria', { provider: connection.provider || '' })}
                         onChange={event => setEndpointDraft(event.target.value)}
                       />
                       {providerEndpointNeedsInsecureOptIn(endpointDraft) && (
                         <label className="router-editor__insecure-opt-in">
                           <input type="checkbox" checked={allowInsecureDraft} onChange={event => setAllowInsecureDraft(event.target.checked)} />
-                          <span>Allow insecure HTTP</span>
+                          <span>{t('detail.router.allowHttp')}</span>
                         </label>
                       )}
                       <WorkspaceActionButton appearance="primary" size="small" disabled={savingProvider} onClick={() => { void saveEndpoint(); }}>
-                        {savingProvider ? 'Saving…' : 'Save'}
+                        {savingProvider ? t('detail.router.saving') : t('detail.router.save')}
                       </WorkspaceActionButton>
-                      <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setAllowInsecureDraft(false); setProviderError(null); }}>Cancel</WorkspaceActionButton>
+                      <WorkspaceActionButton size="small" onClick={() => { setEditingProvider(null); setEditingConnectionModel(null); setAllowInsecureDraft(false); setProviderError(null); }}>{t('detail.router.cancel')}</WorkspaceActionButton>
                     </div>
                   ) : (
                     <>
-                      <span title={connection.endpoint || 'Endpoint unavailable'}>{connection.endpoint || 'Endpoint not configured'}</span>
-                      <small>{connection.authConfigured ? 'Authentication configured' : 'Authentication required'}</small>
+                      <span title={connection.endpoint || t('detail.router.endpointUnavailable')}>{connection.endpoint || t('detail.router.endpointNotConfigured')}</span>
+                      <small>{connection.authConfigured ? t('detail.router.authConfigured') : t('detail.router.authRequired')}</small>
                       {connection.provider && (
                         <WorkspaceActionButton size="small" icon="edit" onClick={() => { setEditingProvider(connection.provider); setEditingConnectionModel(connection.modelName); setEndpointDraft(connection.endpoint); setAllowInsecureDraft(connection.allowInsecureHttp); setProviderError(null); }}>
-                          Edit endpoint
+                          {t('detail.router.editEndpoint')}
                         </WorkspaceActionButton>
                       )}
                     </>
                   )
                 ) : (
-                  <><span>Managed by Lemonade</span><small>Local registered model</small></>
+                  <><span>{t('detail.router.managed')}</span><small>{t('detail.router.local')}</small></>
                 )}
               </div>
             </article>
           ))}
-          {connections.length === 0 && <div className="router-editor__empty">No connected models were found in this router definition.</div>}
+          {connections.length === 0 && <div className="router-editor__empty">{t('detail.router.none')}</div>}
         </div>
         {providerError && connections.some(connection => connection.kind === 'external') && <div className="router-editor__message router-editor__message--error"><Icon name="alert" size={14} /> {providerError}</div>}
       </section>
@@ -1857,6 +1887,7 @@ const CustomCollectionSettingsTab: React.FC<{
   models: ModelInfo[];
   onEdit?: (model: ModelInfo) => void;
 }> = ({ model, models, onEdit }) => {
+  const { t } = useI18n('models');
   if (activeRecipeForModel(model) === 'collection.router') {
     return <RouterCollectionSettingsTab model={model} models={models} onEdit={onEdit} />;
   }
@@ -1873,15 +1904,15 @@ const CustomCollectionSettingsTab: React.FC<{
     <div className="detail-tab-content custom-collection-settings">
       <div className="custom-collection-settings__intro">
         <div>
-          <h3>Collection settings</h3>
-          <p>Components stay editable after the collection has been saved or downloaded.</p>
+          <h3>{t('detail.collection.title')}</h3>
+          <p>{t('detail.collection.help')}</p>
         </div>
         {onEdit && (
           <button
             type="button"
             className="btn btn--primary btn--sm custom-collection-settings__edit-button"
-            aria-label="Edit collection settings"
-            title="Edit collection settings"
+            aria-label={t('detail.collection.editAria')}
+            title={t('detail.collection.editAria')}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -1889,35 +1920,35 @@ const CustomCollectionSettingsTab: React.FC<{
             }}
           >
             <Icon name="edit" size={13} aria-hidden="true" />
-            <span>Edit settings</span>
+            <span>{t('detail.collection.edit')}</span>
           </button>
         )}
       </div>
 
-      <section className="custom-collection-settings__section" aria-label="Collection components">
-        <h4>Components</h4>
+      <section className="custom-collection-settings__section" aria-label={t('detail.collection.componentsAria')}>
+        <h4>{t('detail.collection.components')}</h4>
         <div className="custom-collection-settings__components">
-          {Object.entries(COLLECTION_ROLE_LABELS).map(([role, label]) => (
+          {Object.entries(COLLECTION_ROLE_I18N_KEYS).map(([role, labelKey]) => (
             <div className="custom-collection-settings__component" key={role}>
-              <span>{label}</span>
-              <strong>{displayRoles[role] || 'Not set'}</strong>
+              <span>{t(labelKey)}</span>
+              <strong>{displayRoles[role] || t('detail.collection.notSet')}</strong>
             </div>
           ))}
           {unassigned.map(component => (
             <div className="custom-collection-settings__component" key={component}>
-              <span>Tool model</span>
+              <span>{t('detail.collection.toolModel')}</span>
               <strong>{component}</strong>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="custom-collection-settings__section" aria-label="Advanced collection settings summary">
-        <h4>Advanced</h4>
+      <section className="custom-collection-settings__section" aria-label={t('detail.collection.advancedAria')}>
+        <h4>{t('detail.collection.advanced')}</h4>
         <div className="custom-collection-settings__summary">
-          <span>System prompt</span>
-          <strong>{hasCustomPrompt ? 'Customized' : 'Default'}</strong>
-          <span>Custom model tools</span>
+          <span>{t('detail.collection.systemPrompt')}</span>
+          <strong>{hasCustomPrompt ? t('detail.collection.customized') : t('detail.collection.default')}</strong>
+          <span>{t('detail.collection.customTools')}</span>
           <strong>{tools.length}</strong>
         </div>
       </section>
@@ -1982,18 +2013,18 @@ export interface ModelDetailPanelProps {
 
 type DetailTab = 'settings' | 'readme' | 'config' | 'files';
 
-const TABS: Array<{ id: DetailTab; label: string }> = [
-  { id: 'config', label: 'Configuration' },
-  { id: 'readme', label: 'README' },
-  { id: 'files', label: 'Files' },
+const TABS: Array<{ id: DetailTab; labelKey: string }> = [
+  { id: 'config', labelKey: 'detail.tabs.configuration' },
+  { id: 'readme', labelKey: 'detail.tabs.readme' },
+  { id: 'files', labelKey: 'detail.tabs.files' },
 ];
 
-const CUSTOM_COLLECTION_TABS: Array<{ id: DetailTab; label: string }> = [
-  { id: 'settings', label: 'Settings' },
-  { id: 'files', label: 'Files' },
+const CUSTOM_COLLECTION_TABS: Array<{ id: DetailTab; labelKey: string }> = [
+  { id: 'settings', labelKey: 'detail.tabs.settings' },
+  { id: 'files', labelKey: 'detail.tabs.files' },
 ];
 
-const IMAGE_MODEL_TABS: Array<{ id: DetailTab; label: string }> = TABS;
+const IMAGE_MODEL_TABS: Array<{ id: DetailTab; labelKey: string }> = TABS;
 
 export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   model,
@@ -2026,6 +2057,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   pullingHf,
   onCancelHfPull,
 }) => {
+  const { t } = useI18n('models');
   const [activeTab, setActiveTab] = useState<DetailTab>('config');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -2045,8 +2077,8 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   }, [detailName, isCustomCollection, imageOnly]);
 
   const confirmDiscardLoadSettings = useCallback(() => (
-    !configHasUnsavedChanges || window.confirm('Discard unsaved load setting changes?')
-  ), [configHasUnsavedChanges]);
+    !configHasUnsavedChanges || window.confirm(t('detail.config.discardConfirm'))
+  ), [configHasUnsavedChanges, t]);
 
   const handleDetailClose = useCallback(() => {
     if (!confirmDiscardLoadSettings()) return;
@@ -2085,24 +2117,24 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   if (!model) {
     return (
-      <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label="Model detail">
+      <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label={t('detail.main.aria')}>
         {onBack && (
           <button
             type="button"
             className="model-detail-panel__back-btn"
             onClick={onBack}
-            aria-label="Back to models list"
+            aria-label={t('detail.main.backAria')}
           >
-            ← Back to models
+            ← {t('detail.main.back')}
           </button>
         )}
         <div className="model-detail-panel__placeholder">
           <Icon name="model" size={40} aria-hidden="true" />
-          <p>{noModelsAvailable ? 'No models found' : 'No model selected'}</p>
+          <p>{noModelsAvailable ? t('detail.main.noModels') : t('detail.main.noSelection')}</p>
           <p className="model-detail-panel__placeholder-sub">
             {noModelsAvailable
-              ? 'No models are available in the registry yet. Pull a model or adjust your filters to get started.'
-              : 'Select a model from the list to view its details.'}
+              ? t('detail.main.noModelsHelp')
+              : t('detail.main.noSelectionHelp')}
           </p>
         </div>
       </div>
@@ -2125,7 +2157,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const detailMetadata = (
     <>
       {recipe && (
-        <WorkspaceMetadataChip emphasis="medium" tone="accent">{recipeDisplayLabel(recipe)}</WorkspaceMetadataChip>
+        <WorkspaceMetadataChip emphasis="medium" tone="accent">{recipeDisplayLabel(recipe, t)}</WorkspaceMetadataChip>
       )}
       {model.size != null && model.size > 0 && (
         <WorkspaceMetadataChip emphasis="low">{fmtSize(model.size)}</WorkspaceMetadataChip>
@@ -2133,16 +2165,16 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       {cap && (
         <WorkspaceMetadataChip emphasis="medium">
           <CapabilityIcon capability={cap} size={12} aria-hidden="true" />
-          {capabilityLabel(cap)}
+          {modelCapabilityLabel(cap, t)}
         </WorkspaceMetadataChip>
       )}
       {isLoaded && (
         <WorkspaceMetadataChip emphasis="high" tone="success">
-          <span className="row__pulse" aria-hidden="true" /> Running
+          <span className="row__pulse" aria-hidden="true" /> {t('detail.main.running')}
         </WorkspaceMetadataChip>
       )}
       {isDownloaded && !isLoaded && (
-        <WorkspaceMetadataChip emphasis="high" tone="success">Ready</WorkspaceMetadataChip>
+        <WorkspaceMetadataChip emphasis="high" tone="success">{t('detail.main.ready')}</WorkspaceMetadataChip>
       )}
       {hfRepo && (
         <WorkspaceMetadataChip
@@ -2151,7 +2183,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           href={`https://huggingface.co/${hfRepo}`}
           target="_blank"
           rel="noopener noreferrer"
-          title={`View ${name} on Hugging Face`}
+          title={t('detail.main.viewOnHf', { model: name })}
         >
           Hugging Face
         </WorkspaceMetadataChip>
@@ -2160,7 +2192,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   );
 
   const detailActions = (
-    <WorkspaceActionGroup className="model-detail-panel__actions" label={`Actions for ${name}`}>
+    <WorkspaceActionGroup className="model-detail-panel__actions" label={t('detail.main.actions', { model: name })}>
       {isPulling ? (
         <>
           <div className="row__progress">
@@ -2169,8 +2201,8 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             </div>
             <span className="row__progress-text">{pullPct.toFixed(0)}%</span>
           </div>
-          <WorkspaceActionButton appearance="secondary" icon="x" onClick={() => onCancelPull(name)} aria-label={`Cancel download of ${name}`}>
-            Cancel
+          <WorkspaceActionButton appearance="secondary" icon="x" onClick={() => onCancelPull(name)} aria-label={t('detail.main.cancelDownload', { model: name })}>
+            {t('detail.main.cancel')}
           </WorkspaceActionButton>
         </>
       ) : isLoaded ? (
@@ -2180,9 +2212,9 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             icon="eject"
             onClick={() => onUnload(loadedModel!)}
             disabled={isLoadingThis}
-            aria-label={isLoadingThis ? `Working on ${name}…` : `Unload ${name}`}
+            aria-label={isLoadingThis ? t('detail.main.workingAria', { model: name }) : t('detail.main.unloadAria', { model: name })}
           >
-            {isLoadingThis ? 'Working…' : 'Unload'}
+            {isLoadingThis ? t('detail.main.working') : t('detail.main.unload')}
           </WorkspaceActionButton>
         </>
       ) : isDownloaded ? (
@@ -2191,17 +2223,17 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           icon="play"
           onClick={() => onLoad(model)}
           disabled={isLoadingThis}
-          aria-label={isLoadingThis ? `Loading ${name}…` : `Load ${name}`}
+          aria-label={isLoadingThis ? t('detail.main.loadingAria', { model: name }) : t('detail.main.loadAria', { model: name })}
         >
-          {isLoadingThis ? 'Loading…' : 'Load'}
+          {isLoadingThis ? t('detail.main.loading') : t('detail.main.load')}
         </WorkspaceActionButton>
       ) : (
         <>
-          <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPullAndLoad(model)} aria-label={`Get and load ${name}`}>
-            Get & Load
+          <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPullAndLoad(model)} aria-label={t('detail.main.getLoadAria', { model: name })}>
+            {t('detail.main.getLoad')}
           </WorkspaceActionButton>
-          <WorkspaceActionButton appearance="secondary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
-            Download
+          <WorkspaceActionButton appearance="secondary" icon="download" onClick={() => onPull(model)} aria-label={t('detail.main.downloadAria', { model: name })}>
+            {t('detail.main.download')}
           </WorkspaceActionButton>
         </>
       )}
@@ -2212,10 +2244,10 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           icon="pin"
           onClick={() => onTogglePin(name)}
           aria-pressed={isPinned}
-          aria-label={isPinned ? `Unpin ${name}` : `Pin ${name}`}
-          title={isPinned ? 'Unpin model' : 'Pin model'}
+          aria-label={isPinned ? t('detail.main.unpinAria', { model: name }) : t('detail.main.pinAria', { model: name })}
+          title={isPinned ? t('detail.main.unpinTitle') : t('detail.main.pinTitle')}
         >
-          {isPinned ? 'Pinned' : 'Pin'}
+          {isPinned ? t('detail.main.pinned') : t('detail.main.pin')}
         </WorkspaceActionButton>
       )}
       {onToggleFavorite && (
@@ -2225,10 +2257,10 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           icon="star"
           onClick={() => onToggleFavorite(name)}
           aria-pressed={isFavorite}
-          aria-label={isFavorite ? `Remove ${name} from favorites` : `Add ${name} to favorites`}
-          title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          aria-label={isFavorite ? t('detail.main.removeFavoriteAria', { model: name }) : t('detail.main.addFavoriteAria', { model: name })}
+          title={isFavorite ? t('detail.main.removeFavoriteTitle') : t('detail.main.addFavoriteTitle')}
         >
-          {isFavorite ? 'Favorited' : 'Favorite'}
+          {isFavorite ? t('detail.main.favorited') : t('detail.main.favorite')}
         </WorkspaceActionButton>
       )}
       {!isPulling && (isCustom || isDownloaded || isLoaded) && (
@@ -2237,10 +2269,10 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           icon="trash"
           onClick={() => onDelete(model)}
           disabled={isLoadingThis}
-          aria-label={isCustom ? `Delete custom model definition for ${name}` : `Delete downloaded files for ${name}`}
-          title={isCustom ? 'Delete model definition' : 'Delete downloaded files'}
+          aria-label={isCustom ? t('detail.main.deleteCustomAria', { model: name }) : t('detail.main.deleteFilesAria', { model: name })}
+          title={isCustom ? t('detail.main.deleteDefinition') : t('detail.main.deleteFiles')}
         >
-          Delete
+          {t('detail.main.delete')}
         </WorkspaceActionButton>
       )}
     </WorkspaceActionGroup>
@@ -2259,7 +2291,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   return (
     <WorkspaceDetailPanel
       className="model-detail-panel"
-      ariaLabel={`Model details: ${name}`}
+      ariaLabel={t('detail.main.detailsAria', { model: name })}
       title={(
         <div className="model-detail-panel__title-line">
           <h2 className="workspace-detail-panel__title model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
@@ -2272,7 +2304,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       actions={detailActions}
       headerExtras={detailHeaderExtras}
       onBack={onBack}
-      backLabel="Back to models"
+      backLabel={t('detail.main.back')}
       backClassName="model-detail-panel__back-btn"
       onClose={onClose ? handleDetailClose : undefined}
       closeClassName="model-detail-panel__close-btn"
@@ -2282,7 +2314,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       <div
         className="detail-tabs__tablist"
         role="tablist"
-        aria-label="Model details sections"
+        aria-label={t('detail.main.sections')}
         aria-labelledby="detail-panel-heading"
       >
         {detailTabs.map((tab, i) => (
@@ -2298,7 +2330,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             onClick={() => setActiveTab(tab.id)}
             onKeyDown={e => handleTabKeyDown(e, i)}
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </button>
         ))}
       </div>

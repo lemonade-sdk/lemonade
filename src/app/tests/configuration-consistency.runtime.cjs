@@ -76,12 +76,12 @@ assert.match(detailSource, /const baseCtxSize = loadedCtxSize/);
 assert.match(detailSource, /const stepContextSize = \(direction: -1 \| 1\) =>/);
 assert.match(detailSource, /className="detail-configuration__context-number"/);
 assert.match(detailSource, /className="detail-configuration__context-stepper"/);
-assert.match(detailSource, /aria-label=\{`Increase context size by \$\{ctxStep\} tokens`\}/);
-assert.match(detailSource, /aria-label=\{`Decrease context size by \$\{ctxStep\} tokens`\}/);
+assert.match(detailSource, /aria-label=\{t\('detail\.config\.increaseContext', \{ count: ctxStep \}\)\}/);
+assert.match(detailSource, /aria-label=\{t\('detail\.config\.decreaseContext', \{ count: ctxStep \}\)\}/);
 assert.match(detailSource, /import \{ TTS_VOICES \}/);
 assert.match(detailSource, /knownVoiceOptionsForModel/);
-assert.match(detailSource, /<option value=\{customVoiceSentinel\}>Custom voice…<\/option>/);
-assert.match(detailSource, /placeholder="Enter custom voice ID"/);
+assert.match(detailSource, /<option value=\{customVoiceSentinel\}>\{t\('detail\.config\.customVoice'\)\}<\/option>/);
+assert.match(detailSource, /placeholder=\{t\('detail\.config\.customVoicePlaceholder'\)\}/);
 
 assert.match(apiSource, /const body: Record<string, unknown> = \{[\s\S]*model_name: modelName,[\s\S]*save_options: true,[\s\S]*\.\.\.recipeOptions,[\s\S]*\};/);
 const saveDefaultPosition = apiSource.indexOf('save_options: true');

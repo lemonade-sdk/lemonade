@@ -1,0 +1,131 @@
+{
+  "title": "Apps-Marktplatz",
+  "subtitle": "Lemonade funktioniert besonders gut als Inferenzserver für Anwendungen. Probiere diese kuratierte App-Auswahl aus!",
+  "filters": {
+    "title": "Filter",
+    "railLabel": "App-Kategorien",
+    "sidebarLabel": "App-Kategorien",
+    "mobileMenu": "App-Kategorien öffnen",
+    "all": "Alle Apps",
+    "loading": "Verzeichnis wird geladen",
+    "unavailable": "Verzeichnis nicht verfügbar",
+    "compatible": "Kompatible Clients und Tools",
+    "count": {
+      "one": "{{count}} kompatible App",
+      "other": "{{count}} kompatible Apps"
+    }
+  },
+  "category": {
+    "other": "Sonstige"
+  },
+  "card": {
+    "noDescription": "Keine Beschreibung verfügbar.",
+    "links": "Links für {{name}}",
+    "visit": "Öffnen",
+    "guide": "Anleitung",
+    "video": "Video"
+  },
+  "loading": "Apps werden geladen...",
+  "error": "Apps nicht verfügbar: {{error}}",
+  "unknownError": "Unbekannter Fehler",
+  "directory": "Verzeichnis: {{title}}",
+  "featured": {
+    "title": "Empfohlen",
+    "description": "Auswahl des Lemonade-Teams."
+  },
+  "empty": "Noch keine Apps verfügbar.",
+  "search": {
+    "aria": "Apps durchsuchen",
+    "openAria": "App-Suche öffnen",
+    "placeholder": "Apps durchsuchen"
+  },
+  "marketplace": {
+    "categories": {
+      "agent": "Agent",
+      "code": "Programmierung",
+      "workflow": "Workflow",
+      "productivity": "Produktivität",
+      "chat": "Chat",
+      "specialized_tool": "Spezialwerkzeug",
+      "creative": "Kreativ",
+      "infrastructure": "Infrastruktur"
+    },
+    "apps": {
+      "anythingllm": {
+        "description": "All-in-one-KI-Anwendung für Produktivität mit Modellen direkt auf dem Gerät."
+      },
+      "open_webui": {
+        "description": "Funktionsreiche Weboberfläche zum lokalen Chatten mit LLMs."
+      },
+      "hermes": {
+        "description": "Selbstverbessernder autonomer Agent mit persistentem Speicher und geplanten Automatisierungen."
+      },
+      "pi": {
+        "description": "Minimaler terminalbasierter Coding-Agent, der lokale Modelle über Lemonade nutzt."
+      },
+      "claude_code": {
+        "description": "Agentisches Coding-Tool, das deine Codebasis liest, Dateien bearbeitet, Befehle ausführt und sich in deine Entwicklungswerkzeuge integriert."
+      },
+      "n8n": {
+        "description": "Workflow-Automatisierungsplattform mit nativer Lemonade-Integration für KI-gestützte Automatisierungen."
+      },
+      "github_copilot": {
+        "description": "VS-Code-Copilot-Erweiterung für lokale KI-Unterstützung beim Programmieren."
+      },
+      "gaia": {
+        "description": "SDK zum Entwickeln von Local-First-Agenten."
+      },
+      "dify": {
+        "description": "Node-basierte KI-Agenten und RAG-Workflows erstellen."
+      },
+      "fx_chatbot": {
+        "description": "Lemonade direkt im Firefox-Browser verwenden."
+      },
+      "lemonade_mobile": {
+        "description": "iOS- und Android-Chat-App für deinen selbst gehosteten Lemonade-Server."
+      },
+      "infinity_arcade": {
+        "description": "Unendlich viele Remixe von Arcade-Spielen im Retro-Stil generieren und spielen."
+      },
+      "openclaw": {
+        "description": "Autonomer Agent, der Code schreibt und ausführt, Dateien verwaltet und mehrstufige Aufgaben erledigt."
+      },
+      "listenr": {
+        "description": "Eigene Audiomodelle lokal aufnehmen, transkribieren und feinabstimmen – mit Lemonade."
+      },
+      "dream_server": {
+        "description": "Privater lokaler KI-Server für Chat, Agenten, RAG, Workflows und selbst gehostete Apps mit AMD-Inferenz über Lemonade."
+      },
+      "lemon_zest": {
+        "description": "Open-Source-Bildeditor mit einem lokalen Stable-Diffusion-Modell."
+      },
+      "interviewer": {
+        "description": "KI-gestützte Anwendung zum Üben von Vorstellungsgesprächen mit sprachfähigen Probesitzungen."
+      },
+      "codegpt": {
+        "description": "KI-Coding-Assistent für VS Code mit Unterstützung lokaler LLMs."
+      },
+      "deep_tutor": {
+        "description": "KI-gestützte Lernplattform für personalisierte Lernerfahrungen."
+      },
+      "hugging_face": {
+        "description": "Mit Lemonade kompatible Modelle im Hugging Face Hub durchsuchen und entdecken."
+      },
+      "iterate_ai": {
+        "description": "Enterprise-KI-Plattform zum Erstellen und Bereitstellen von KI-Lösungen."
+      },
+      "ai_toolkit": {
+        "description": "Mit LLMs in einer VS-Code-Erweiterung in großem Maßstab experimentieren."
+      },
+      "morphik": {
+        "description": "Unternehmenswissen zentralisieren und zuverlässige KI-Agenten zur Aufgabenautomatisierung entwickeln."
+      },
+      "openhands": {
+        "description": "KI-gestützter Softwareentwicklungs-Agent, der Code schreiben, Fehler beheben und weitere Aufgaben übernehmen kann."
+      },
+      "vane": {
+        "description": "Open-Source-KI-Suchmaschine mit Unterstützung lokaler LLMs."
+      }
+    }
+  }
+}

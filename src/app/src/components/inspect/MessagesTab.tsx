@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { type Trace } from '../../inspectStore';
 import MarkdownMessage from '../MarkdownMessage';
 import { Icon } from '../Icon';
+import { useI18n } from '../../i18n';
 
 interface MessagesTabProps {
   selectedTrace: Trace;
@@ -22,6 +23,7 @@ function stripLeadingThinking(content: string): string {
 }
 
 function MessageCard({ m, idx, formatTokens, handleCopyFull }: MessageCardProps) {
+  const { t } = useI18n('inspect');
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [cardRenderMode, setCardRenderMode] = useState<'rendered' | 'raw'>('raw');
   const [thinkingCollapsed, setThinkingCollapsed] = useState(true);
@@ -41,7 +43,7 @@ function MessageCard({ m, idx, formatTokens, handleCopyFull }: MessageCardProps)
           <span className={`message-card__role ${m.role}`}>
             {m.role.toUpperCase()}
           </span>
-          {m.redacted && <span className="redacted-pill">REDACTED</span>}
+          {m.redacted && <span className="redacted-pill">{t('messages.redacted')}</span>}
           {m.tokens && <span className="tokens-badge">{formatTokens(m.tokens)}</span>}
         </button>
 
@@ -52,14 +54,14 @@ function MessageCard({ m, idx, formatTokens, handleCopyFull }: MessageCardProps)
               className={cardRenderMode === 'rendered' ? 'active' : ''}
               onClick={() => setCardRenderMode('rendered')}
             >
-              Rendered
+              {t('messages.rendered')}
             </button>
             <button
               type="button"
               className={cardRenderMode === 'raw' ? 'active' : ''}
               onClick={() => setCardRenderMode('raw')}
             >
-              Raw
+              {t('messages.raw')}
             </button>
           </div>
         )}
@@ -68,10 +70,10 @@ function MessageCard({ m, idx, formatTokens, handleCopyFull }: MessageCardProps)
           type="button"
           className="message-card__copy-btn"
           onClick={() => {
-            handleCopyFull(m.content, 'Message text');
+            handleCopyFull(m.content, t('messages.messageText'));
           }}
-          title="Copy message text"
-          aria-label={`Copy message ${idx + 1} (${m.role}) content`}
+          title={t('messages.copyMessage')}
+          aria-label={t('messages.copyMessageAria', { index: idx + 1, role: m.role })}
         >
           <Icon name="copy" size={13} />
         </button>
@@ -98,7 +100,7 @@ function MessageCard({ m, idx, formatTokens, handleCopyFull }: MessageCardProps)
                 <span className={`reasoning-block__chevron${thinkingCollapsed ? ' is-collapsed' : ''}`}>
                   <Icon name="chevron-down" size={10} />
                 </span>
-                <span>Reasoning Output</span>
+                <span>{t('messages.reasoningOutput')}</span>
               </button>
               {!thinkingCollapsed && (
                 <div className="reasoning-block__body fade-in">
@@ -118,6 +120,7 @@ export default function MessagesTab({
   formatTokens,
   handleCopyFull
 }: MessagesTabProps) {
+  const { t } = useI18n('inspect');
   const [viewMode, setViewMode] = useState<'rendered' | 'raw'>('rendered');
   const [copyDropdownOpen, setCopyDropdownOpen] = useState(false);
   const [copyFormat, setCopyFormat] = useState<'messages' | 'openinference'>('messages');
@@ -132,7 +135,7 @@ export default function MessagesTab({
         content: m.content,
         ...(m.thinking ? { thinking: m.thinking } : {})
       }));
-      handleCopyFull(JSON.stringify(payload, null, 2), 'Messages JSON');
+      handleCopyFull(JSON.stringify(payload, null, 2), t('messages.messagesJson'));
     } else {
       const payload = {
         input: {
@@ -152,7 +155,7 @@ export default function MessagesTab({
         },
         output: { value: selectedTrace.output }
       };
-      handleCopyFull(JSON.stringify(payload, null, 2), 'OpenInference JSON');
+      handleCopyFull(JSON.stringify(payload, null, 2), t('messages.openInferenceJson'));
     }
   };
 
@@ -160,7 +163,7 @@ export default function MessagesTab({
     <div id="panel-messages" role="tabpanel" aria-labelledby="tab-messages" className="tab-pane fade-in flex-col gap-12">
       <div className="messages-toolbar">
         <div className="messages-toolbar__left">
-          <span className="messages-toolbar__title">CONVERSATION</span>
+          <span className="messages-toolbar__title">{t('messages.conversation')}</span>
           <div className="toolbar-segmented">
             <button
               type="button"
@@ -168,7 +171,7 @@ export default function MessagesTab({
               className={viewMode === 'rendered' ? 'active' : ''}
               onClick={() => setViewMode('rendered')}
             >
-              Rendered
+              {t('messages.rendered')}
             </button>
             <button
               type="button"
@@ -176,7 +179,7 @@ export default function MessagesTab({
               className={viewMode === 'raw' ? 'active' : ''}
               onClick={() => setViewMode('raw')}
             >
-              Raw
+              {t('messages.raw')}
             </button>
           </div>
         </div>
@@ -187,13 +190,13 @@ export default function MessagesTab({
             className="split-button__action"
             onClick={() => copyFormattedPayload(copyFormat)}
           >
-            {copyFormat === 'messages' ? 'Copy - messages[]' : 'Copy - OpenInference'}
+            {copyFormat === 'messages' ? t('messages.copyMessages') : t('messages.copyOpenInference')}
           </button>
           <button
             type="button"
             className="split-button__caret"
             onClick={() => setCopyDropdownOpen(!copyDropdownOpen)}
-            aria-label="Select copy format"
+            aria-label={t('messages.selectCopyFormat')}
             aria-haspopup="menu"
             aria-expanded={copyDropdownOpen}
           >
@@ -206,14 +209,14 @@ export default function MessagesTab({
                 className={`dropdown-item ${copyFormat === 'messages' ? 'selected' : ''}`}
                 onClick={() => copyFormattedPayload('messages')}
               >
-                Copy Messages JSON
+                {t('messages.copyMessagesJson')}
               </button>
               <button
                 type="button"
                 className={`dropdown-item ${copyFormat === 'openinference' ? 'selected' : ''}`}
                 onClick={() => copyFormattedPayload('openinference')}
               >
-                Copy OpenInference JSON
+                {t('messages.copyOpenInferenceJson')}
               </button>
             </div>
           )}

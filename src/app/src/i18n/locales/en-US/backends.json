@@ -1,0 +1,143 @@
+{
+  "title": "Inference Backends",
+  "subtitle": "Install and update the inference engines available on this machine.",
+  "filters": {
+    "railTitle": "Filters",
+    "railLabel": "Backend filters",
+    "sidebarLabel": "backend filters",
+    "mobileMenu": "Open backend filters",
+    "all": {
+      "label": "All Backends",
+      "description": "Complete compatibility matrix"
+    },
+    "installed": {
+      "label": "Installed",
+      "description": "Ready on this machine"
+    },
+    "available": {
+      "label": "Available",
+      "description": "Ready to install"
+    },
+    "updates": {
+      "label": "Updates",
+      "description": "Newer runtime available"
+    },
+    "experimental": {
+      "label": "Experimental",
+      "description": "Preview integrations"
+    },
+    "showTechnical": "Show technical details",
+    "showUnsupported": "Show unsupported backends",
+    "showLogos": "Show logos"
+  },
+  "states": {
+    "installed": "Installed",
+    "installable": "Available",
+    "updateRequired": "Update required",
+    "updateAvailable": "Update available",
+    "actionRequired": "Action required",
+    "unsupported": "Unsupported"
+  },
+  "capabilities": {
+    "LLM": {
+      "title": "Language models",
+      "description": "Chat, completion, embedding, and reranking runtimes."
+    },
+    "Audio": {
+      "title": "Audio",
+      "description": "Transcription and sound generation runtimes."
+    },
+    "Image": {
+      "title": "Image generation",
+      "description": "Image generation and editing runtimes."
+    },
+    "TTS": {
+      "title": "Text to speech",
+      "description": "Text-to-speech runtimes."
+    },
+    "3D": {
+      "title": "3D generation",
+      "description": "3D asset generation runtimes."
+    }
+  },
+  "args": {
+    "title": "Backend arguments",
+    "close": "Close backend arguments",
+    "description": "These arguments apply to every model using this exact backend. Model tuning and explicit load options override conflicting values.",
+    "optimizedNotice": "These backend arguments were set by an optimizer. Saving here converts them to a manual override.",
+    "label": "Arguments",
+    "hint": "One shell-style argument string. Saving replaces the previous entry for this backend.",
+    "actions": "Backend argument actions",
+    "clear": "Clear",
+    "cancel": "Cancel",
+    "save": "Save backend args",
+    "edit": "Edit backend arguments",
+    "add": "Add backend arguments",
+    "editAria": "Edit backend arguments for {{engine}} ({{backend}})",
+    "addAria": "Add backend arguments for {{engine}} ({{backend}})",
+    "status": "Args · {{source}}",
+    "optimized": "Optimized",
+    "manual": "Manual"
+  },
+  "actions": {
+    "install": "Install",
+    "installing": "Installing...",
+    "update": "Update",
+    "updating": "Updating...",
+    "working": "Working...",
+    "uninstall": "Uninstall",
+    "setupGuide": "Setup guide",
+    "installAria": "Install {{name}}",
+    "updateAria": "Update {{name}}",
+    "uninstallAria": "Uninstall {{name}}",
+    "setupAria": "Open setup guide for {{name}}",
+    "installedRelease": "Open installed {{engine}} {{version}} release page",
+    "updateRelease": "Open {{engine}} {{version}} update release page",
+    "retry": "Retry"
+  },
+  "experimental": "experimental",
+  "empty": {
+    "updatesTitle": "No backend updates",
+    "filteredTitle": "No {{filter}} backends",
+    "updatesDescription": "Everything is up to date.",
+    "filteredDescription": "No runtimes match this filter on the connected machine.",
+    "noData": "No backend data is available for this Lemonade server yet."
+  },
+  "messages": {
+    "supportedNotInstalled": "Backend is supported but not installed.",
+    "updateRequiredBeforeUse": "Backend update is required before use.",
+    "automaticInstallDisabled": "Automatic backend installation is disabled."
+  },
+  "updates": {
+    "available": {
+      "one": "{{count}} backend update available",
+      "other": "{{count}} backend updates available"
+    },
+    "all": "Update all ({{count}})"
+  },
+  "errorLoad": "Could not load backend system info: {{error}}",
+  "toast": {
+    "installing": "Installing {{engine}} · {{backend}}...",
+    "updating": "Updating {{engine}} · {{backend}}...",
+    "progress": "{{action}} {{engine}} · {{backend}}... {{percent}}%",
+    "installingAction": "Installing",
+    "updatingAction": "Updating",
+    "manual": "{{engine}} · {{backend}} requires manual setup",
+    "paused": "{{engine}} · {{backend}} installation paused",
+    "cancelled": "{{engine}} · {{backend}} installation cancelled",
+    "installed": "{{engine}} · {{backend}} installed",
+    "updated": "{{engine}} · {{backend}} updated",
+    "stale": "{{engine}} · {{backend}} download completed, but Lemonade still reports the previous backend status",
+    "refreshFailed": "{{engine}} · {{backend}} download completed, but the backend status could not be refreshed",
+    "actionFailed": "{{action}} failed: {{error}}",
+    "uninstalled": "{{engine}} · {{backend}} uninstalled",
+    "uninstallFailed": "Uninstall failed: {{error}}",
+    "savedArgs": "Saved backend arguments for {{key}}",
+    "clearedArgs": "Cleared backend arguments for {{key}}",
+    "unknownInstallError": "Unknown backend installation error."
+  },
+  "system": {
+    "versionUnknown": "version unknown",
+    "osUnknown": "OS unknown"
+  }
+}

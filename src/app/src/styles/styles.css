@@ -5331,6 +5331,17 @@ optgroup {
   color: var(--text-primary);
 }
 
+.message__action--copied {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 42%, var(--border-subtle));
+  background: var(--success-soft);
+}
+
+.message__action--copy-failed {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border-subtle));
+}
+
 .message__action:disabled {
   opacity: 0.35;
   cursor: default;
@@ -8981,10 +8992,10 @@ optgroup {
   gap: var(--space-1);
 }
 
-.attribute-card__key {
-  font-size: var(--type-overline-size);
+.attribute-card__label {
+  font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 .attribute-card__val {

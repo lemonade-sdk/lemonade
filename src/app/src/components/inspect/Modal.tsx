@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef } from 'react';
 import { Icon } from '../Icon';
+import { useI18n } from '../../i18n';
 
 interface ModalProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ export default function Modal({
   ariaLabelledBy,
   className,
 }: ModalProps) {
+  const { t } = useI18n('inspect');
   const containerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -97,7 +99,7 @@ export default function Modal({
             type="button"
             className="close-modal-btn"
             onClick={onClose}
-            aria-label="Close modal"
+            aria-label={t('common.closeModal')}
           >
             <Icon name="x" size={14} />
           </button>

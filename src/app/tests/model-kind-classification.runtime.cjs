@@ -47,7 +47,6 @@ const {
   deploymentKindFromLabels,
   identityFromModelInfo,
   modelStructure,
-  capabilityLabel,
   identityFor,
   isComposerSelectableCapability,
 } = loadTypeScriptModule(capabilitiesPath);
@@ -139,7 +138,6 @@ assert.equal(modelStructure('collection.router'), 'router');
 assert.equal(capabilityFromModelInfo(omniCollection), 'chat', 'a collection deploys as chat');
 assert.equal(identityFromModelInfo(omniCollection), 'omni');
 assert.equal(identityFromModelInfo(routerCollection), 'router');
-assert.equal(capabilityLabel(identityFromModelInfo(omniCollection)), 'Omni');
 // One identity rule, shared by rows, snapshots and the chat composer.
 assert.equal(identityFor('chat', 'collection.omni'), 'omni');
 assert.equal(identityFor('chat', 'collection.router'), 'router');

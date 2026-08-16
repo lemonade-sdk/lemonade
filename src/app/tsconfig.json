@@ -2,7 +2,12 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2020",
+      "ES2021.Intl",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "jsx": "react",
     "outDir": "./dist",
     "rootDir": "./src",
@@ -14,6 +19,11 @@
     "moduleResolution": "node",
     "sourceMap": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

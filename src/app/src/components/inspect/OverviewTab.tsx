@@ -1,6 +1,8 @@
 import React from 'react';
+import { useI18n } from '../../i18n';
 import { type Trace } from '../../inspectStore';
 import { Icon } from '../Icon';
+import { traceDiagnosticText } from './tracePresentation';
 
 interface OverviewTabProps {
   selectedTrace: Trace;
@@ -8,6 +10,8 @@ interface OverviewTabProps {
 }
 
 export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTabProps) {
+  const { t } = useI18n('inspect');
+  const diagnosticText = traceDiagnosticText(selectedTrace.diag, selectedTrace.dur, t);
   // Guard duration to avoid NaN% or Infinity% on sub-ms or zero-duration spans
   const safeDur = selectedTrace.dur > 0 ? selectedTrace.dur : 1;
   const queueVal = selectedTrace.queue || 0;
@@ -28,11 +32,11 @@ export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTab
             {selectedTrace.diag.level === 'danger' ? <Icon name="x" size={16} /> : <Icon name="alert" size={16} />}
           </span>
           <div className="health-banner__text">
-            <strong>{selectedTrace.diag.title}</strong>
-            <p>{selectedTrace.diag.detail}</p>
+            <strong>{diagnosticText?.title}</strong>
+            <p>{diagnosticText?.detail}</p>
           </div>
           <button className="health-banner__cta" onClick={() => setActiveTab('improve')}>
-            Improve <Icon name="chevron-right" size={12} />
+            {t('tabs.improve')} <Icon name="chevron-right" size={12} />
           </button>
         </div>
       )}
@@ -43,22 +47,22 @@ export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTab
             <Icon name="check" size={16} />
           </span>
           <div className="health-banner__text">
-            <strong>No issues detected</strong>
-            <p>TTFT, throughput and context size are within the normal range for this session.</p>
+            <strong>{t('overview.noIssues')}</strong>
+            <p>{t('overview.noIssuesDescription')}</p>
           </div>
           <button className="health-banner__cta" onClick={() => setActiveTab('improve')}>
-            Improve <Icon name="chevron-right" size={12} />
+            {t('tabs.improve')} <Icon name="chevron-right" size={12} />
           </button>
         </div>
       )}
 
       {/* Latency Waterfall */}
       <div className="overview-section">
-        <h4>SPAN TIMELINE</h4>
+        <h4>{t('overview.timeline')}</h4>
         <div className="waterfall-container">
           {/* Queue Segment */}
           <div className="waterfall-row">
-            <span className="waterfall-row__label">Queue</span>
+            <span className="waterfall-row__label">{t('overview.queue')}</span>
             <div className="waterfall-bar-track">
               <div
                 className="waterfall-bar queue"
@@ -73,7 +77,7 @@ export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTab
 
           {/* Prefill/TTFT Segment */}
           <div className="waterfall-row">
-            <span className="waterfall-row__label">Prefill (TTFT)</span>
+            <span className="waterfall-row__label">{t('overview.prefill')}</span>
             <div className="waterfall-bar-track">
               <div
                 className="waterfall-bar prefill"
@@ -92,7 +96,7 @@ export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTab
 
           {/* Decode Segment */}
           <div className="waterfall-row">
-            <span className="waterfall-row__label">Decode</span>
+            <span className="waterfall-row__label">{t('overview.decode')}</span>
             <div className="waterfall-bar-track">
               <div
                 className="waterfall-bar decode"
@@ -113,43 +117,43 @@ export default function OverviewTab({ selectedTrace, setActiveTab }: OverviewTab
 
       {/* Span Attributes Cards Grid */}
       <div className="overview-section">
-        <h4>SPAN ATTRIBUTES</h4>
+        <h4>{t('overview.attributes')}</h4>
         <div className="attributes-grid">
-          <div className="attribute-card">
-            <span className="attribute-card__key">llm.model_name</span>
+          <div className="attribute-card" data-attribute-key="llm.model_name">
+            <span className="attribute-card__label">{t('overview.attributeLabels.model')}</span>
             <span className="attribute-card__val mono">{selectedTrace.model}</span>
           </div>
-          <div className="attribute-card">
-            <span className="attribute-card__key">gen_ai.operation.name</span>
+          <div className="attribute-card" data-attribute-key="gen_ai.operation.name">
+            <span className="attribute-card__label">{t('overview.attributeLabels.operation')}</span>
             <span className="attribute-card__val mono">{selectedTrace.operation}</span>
           </div>
-          <div className="attribute-card">
-            <span className="attribute-card__key">openinference.span.kind</span>
+          <div className="attribute-card" data-attribute-key="openinference.span.kind">
+            <span className="attribute-card__label">{t('overview.attributeLabels.spanKind')}</span>
             <span className="attribute-card__val mono">{selectedTrace.kind}</span>
           </div>
-          <div className="attribute-card">
-            <span className="attribute-card__key">gen_ai.provider.name</span>
+          <div className="attribute-card" data-attribute-key="gen_ai.provider.name">
+            <span className="attribute-card__label">{t('overview.attributeLabels.provider')}</span>
             <span className="attribute-card__val mono">{selectedTrace.backend || 'lemonade'}</span>
           </div>
           {selectedTrace.sessionId && (
-            <div className="attribute-card">
-              <span className="attribute-card__key">openinference.session.id</span>
+            <div className="attribute-card" data-attribute-key="openinference.session.id">
+              <span className="attribute-card__label">{t('overview.attributeLabels.sessionId')}</span>
               <span className="attribute-card__val mono">{selectedTrace.sessionId}</span>
             </div>
           )}
           {selectedTrace.userId && (
-            <div className="attribute-card">
-              <span className="attribute-card__key">openinference.user.id</span>
+            <div className="attribute-card" data-attribute-key="openinference.user.id">
+              <span className="attribute-card__label">{t('overview.attributeLabels.userId')}</span>
               <span className="attribute-card__val mono">{selectedTrace.userId}</span>
             </div>
           )}
-          <div className="attribute-card">
-            <span className="attribute-card__key">semantic.conventions</span>
+          <div className="attribute-card" data-attribute-key="semantic.conventions">
+            <span className="attribute-card__label">{t('overview.attributeLabels.semanticConventions')}</span>
             <span className="attribute-card__val mono">openinference, otel_genai</span>
           </div>
           {selectedTrace.prompt !== undefined && selectedTrace.completion !== undefined && (
-            <div className="attribute-card">
-              <span className="attribute-card__key">llm.usage.total_tokens</span>
+            <div className="attribute-card" data-attribute-key="llm.usage.total_tokens">
+              <span className="attribute-card__label">{t('overview.attributeLabels.totalTokens')}</span>
               <span className="attribute-card__val mono">{selectedTrace.prompt + selectedTrace.completion}</span>
             </div>
           )}

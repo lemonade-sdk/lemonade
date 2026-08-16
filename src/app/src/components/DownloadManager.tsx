@@ -2,30 +2,48 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import api, { friendlyErrorMessage } from '../api';
 import { Icon } from './Icon';
 import { DownloadListItem, DownloadStatus, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
+import { useI18n } from '../i18n';
 
 interface DownloadManagerProps {
   isVisible: boolean;
   onClose: () => void;
 }
 
-function formatBytes(bytes: number): string {
+const DOWNLOAD_STATUS_I18N_KEYS: Record<DownloadStatus, string> = {
+  downloading: 'downloads.statuses.downloading',
+  paused: 'downloads.statuses.paused',
+  completed: 'downloads.statuses.completed',
+  error: 'downloads.statuses.error',
+  cancelled: 'downloads.statuses.cancelled',
+  deleting: 'downloads.statuses.deleting',
+};
+
+type NumberFormatter = (value: number, options?: Intl.NumberFormatOptions) => string;
+type DownloadAnnouncement = {
+  key: string;
+  model: string;
+  rawError?: string;
+  downloadType?: DownloadListItem['downloadType'];
+};
+
+function formatBytes(bytes: number, formatNumber: NumberFormatter): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.min(Math.max(Math.floor(Math.log(bytes) / Math.log(k)), 0), sizes.length - 1);
-  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+  return `${formatNumber(bytes / Math.pow(k, i), { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${sizes[i]}`;
 }
 
-function formatTotalBytes(download: DownloadListItem): string {
-  if (download.bytesTotalIsLowerBound && download.bytesTotal > 0) return `${formatBytes(download.bytesTotal)}+`;
-  return formatBytes(download.bytesTotal);
+function formatTotalBytes(download: DownloadListItem, formatNumber: NumberFormatter): string {
+  if (download.bytesTotalIsLowerBound && download.bytesTotal > 0) return `${formatBytes(download.bytesTotal, formatNumber)}+`;
+  return formatBytes(download.bytesTotal, formatNumber);
 }
 
-function formatSpeed(download: DownloadListItem): string {
+function formatSpeed(download: DownloadListItem, formatNumber: NumberFormatter): string {
   const speed = calculateSpeed(download);
   if (!Number.isFinite(speed) || speed <= 0) return '--';
   if (speed < 1) return '<1 B/s';
-  return `${formatBytes(speed)}/s`;
+  return `${formatBytes(speed, formatNumber)}/s`;
 }
 
 function displayName(modelName: string): string {
@@ -80,11 +98,22 @@ async function removeDownload(download: DownloadListItem): Promise<void> {
 }
 
 const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose }) => {
+  const { t, formatNumber } = useI18n('models');
+  const { t: tBackends } = useI18n('backends');
+  const localizeDownloadError = useCallback((download: Pick<DownloadListItem, 'downloadType' | 'error'>): string => {
+    const raw = String(download.error || '').trim();
+    if (!raw) return t('downloads.unknownError');
+    if (download.downloadType === 'backend') {
+      const normalized = raw.toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+      if (normalized === 'unknown backend install error') return tBackends('toast.unknownInstallError');
+    }
+    return raw;
+  }, [t, tBackends]);
   const [downloads, setDownloads] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
   const prevStatusRef = useRef<Map<string, Pick<DownloadListItem, 'status' | 'running'>> | null>(null);
-  const [statusAnnouncement, setStatusAnnouncement] = useState('');
+  const [statusAnnouncement, setStatusAnnouncement] = useState<DownloadAnnouncement | null>(null);
 
   useEffect(() => downloadStore.subscribe(setDownloads), []);
 
@@ -100,50 +129,50 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
       return;
     }
     const prev = prevStatusRef.current;
-    let message = '';
+    let announcement: DownloadAnnouncement | null = null;
     for (const d of downloads) {
       const previous = prev.get(d.id);
       const prevStatus = previous?.status;
       const name = displayName(d.modelName);
       if (!prevStatus && d.status === 'downloading') {
-        message = `Downloading ${name} started`;
+        announcement = { key: 'downloads.announcements.started', model: name };
       } else if (
         d.status === 'completed'
         && d.running !== true
         && (prevStatus !== 'completed' || previous?.running === true)
       ) {
-        message = `${name} download complete`;
+        announcement = { key: 'downloads.announcements.complete', model: name };
       } else if (
         d.status === 'error'
         && d.running !== true
         && (prevStatus !== 'error' || previous?.running === true)
       ) {
-        message = `${name} download failed${d.error ? ': ' + d.error : ''}`;
+        announcement = { key: 'downloads.announcements.failed', model: name, rawError: d.error, downloadType: d.downloadType };
       } else if (
         d.status === 'cancelled'
         && d.running !== true
         && (prevStatus !== 'cancelled' || previous?.running === true)
       ) {
-        message = `${name} download cancelled`;
+        announcement = { key: 'downloads.announcements.cancelled', model: name };
       } else if (
         d.status === 'paused'
         && d.running !== true
         && (prevStatus !== 'paused' || previous?.running === true)
       ) {
-        message = `${name} download paused`;
+        announcement = { key: 'downloads.announcements.paused', model: name };
       } else if (prevStatus === 'paused' && d.status === 'downloading') {
-        message = `${name} download resumed`;
+        announcement = { key: 'downloads.announcements.resumed', model: name };
       }
     }
     const next = new Map<string, Pick<DownloadListItem, 'status' | 'running'>>();
     for (const d of downloads) next.set(d.id, { status: d.status, running: d.running });
     prevStatusRef.current = next;
-    if (message) setStatusAnnouncement(message);
+    if (announcement) setStatusAnnouncement(announcement);
   }, [downloads]);
 
   // Clear the announcement when the panel closes so stale text is not re-read on reopen.
   useEffect(() => {
-    if (!isVisible) setStatusAnnouncement('');
+    if (!isVisible) setStatusAnnouncement(null);
   }, [isVisible]);
 
   useEffect(() => {
@@ -270,34 +299,39 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   if (!isVisible) return null;
 
   return (
-    <div className="download-manager" role="dialog" aria-modal="false" aria-label="Download manager" onClick={onClose}>
+    <div className="download-manager" role="dialog" aria-modal="false" aria-label={t('downloads.aria')} onClick={onClose}>
       <div className="download-manager__panel" onClick={event => event.stopPropagation()}>
         <div className="download-manager__header">
           <div>
-            <div className="download-manager__eyebrow">Download Manager</div>
-            <div className="download-manager__counts">{activeDownloads} active · {completedDownloads} completed</div>
+            <div className="download-manager__eyebrow">{t('downloads.title')}</div>
+            <div className="download-manager__counts">{t('downloads.counts', { active: activeDownloads, completed: completedDownloads })}</div>
           </div>
-          <button type="button" className="download-manager__close" onClick={onClose} aria-label="Close download manager">
+          <button type="button" className="download-manager__close" onClick={onClose} aria-label={t('downloads.close')}>
             <Icon name="x" size={15} />
           </button>
         </div>
 
         {/* sr-only live region: announces status transitions without spamming every percent tick */}
-        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{statusAnnouncement}</div>
+        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{statusAnnouncement ? t(statusAnnouncement.key, {
+          model: statusAnnouncement.model,
+          error: statusAnnouncement.rawError
+            ? `: ${localizeDownloadError({ downloadType: statusAnnouncement.downloadType || 'model', error: statusAnnouncement.rawError })}`
+            : '',
+        }) : ''}</div>
 
         <div className="download-manager__body">
           {downloads.length === 0 ? (
             <div className="download-manager__empty">
               <Icon name="download" size={26} />
-              <strong>No downloads yet</strong>
-              <span>Download models from the Model Manager to see them here.</span>
+              <strong>{t('downloads.emptyTitle')}</strong>
+              <span>{t('downloads.emptyBody')}</span>
             </div>
           ) : (
             downloads.map(download => {
               const itemExpanded = expanded.has(download.id);
               const finalizing = isFinalizing(download);
               const busy = busyIds.has(download.id);
-              const eta = finalizing ? 'finalizing...' : calculateETA(download);
+              const eta = finalizing ? t('downloads.finalizing') : calculateETA(download);
               const canRemove = download.running !== true && !busy;
               return (
                 <div className={`download-item download-item--${download.status}`} key={download.id}>
@@ -310,17 +344,17 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                     >
                       <Icon name={itemExpanded ? 'chevron-down' : 'chevron-right'} size={14} />
                       <span className="download-item__names">
-                        <strong>{download.collectionComponents?.length ? `Setting up ${displayName(download.modelName)}` : displayName(download.modelName)}</strong>
+                        <strong>{download.collectionComponents?.length ? t('downloads.settingUp', { model: displayName(download.modelName) }) : displayName(download.modelName)}</strong>
                         {download.collectionComponents?.length ? (
-                          <span>{download.collectionComponents.length} models: {download.collectionComponents.map(displayName).join(', ')}</span>
+                          <span>{t('downloads.componentModels', { count: download.collectionComponents.length, models: download.collectionComponents.map(displayName).join(', ') })}</span>
                         ) : (
                           <span>
-                            {download.status === 'downloading' && <>File {download.fileIndex}/{download.totalFiles} · {formatBytes(download.bytesDownloaded)} / {formatTotalBytes(download)}</>}
-                            {download.status === 'paused' && <>{download.running === true ? 'Pausing' : 'Paused'} · File {download.fileIndex}/{download.totalFiles} · {formatBytes(download.bytesDownloaded)} / {formatTotalBytes(download)}</>}
-                            {download.status === 'completed' && <>{download.running === true ? 'Finalizing' : 'Completed'} · {formatTotalBytes(download)}</>}
-                            {download.status === 'error' && <>Error: {download.error || 'Unknown error'}</>}
-                            {download.status === 'cancelled' && <>Cancelled</>}
-                            {download.status === 'deleting' && <>Deleting files...</>}
+                            {download.status === 'downloading' && <>{t('downloads.fileProgress', { index: download.fileIndex, total: download.totalFiles, downloaded: formatBytes(download.bytesDownloaded, formatNumber), size: formatTotalBytes(download, formatNumber) })}</>}
+                            {download.status === 'paused' && <>{download.running === true ? t('downloads.pausing') : t('downloads.paused')} · {t('downloads.fileProgress', { index: download.fileIndex, total: download.totalFiles, downloaded: formatBytes(download.bytesDownloaded, formatNumber), size: formatTotalBytes(download, formatNumber) })}</>}
+                            {download.status === 'completed' && <>{download.running === true ? t('downloads.finalizingStatus') : t('downloads.completed')} · {formatTotalBytes(download, formatNumber)}</>}
+                            {download.status === 'error' && <>{t('downloads.error', { error: localizeDownloadError(download) })}</>}
+                            {download.status === 'cancelled' && <>{t('downloads.cancelled')}</>}
+                            {download.status === 'deleting' && <>{t('downloads.deletingFiles')}</>}
                           </span>
                         )}
                       </span>
@@ -329,34 +363,34 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                     <div className="download-item__actions">
                       {download.status === 'downloading' && (
                         <>
-                          {!finalizing && <span className="download-item__metric">{formatSpeed(download)}</span>}
+                          {!finalizing && <span className="download-item__metric">{formatSpeed(download, formatNumber)}</span>}
                           <span className="download-item__metric">{eta}</span>
-                          <button type="button" onClick={() => handlePause(download)} disabled={busy} title="Pause download" aria-label="Pause download"><Icon name="pause" size={13} /></button>
-                          <button type="button" onClick={() => handleCancel(download)} disabled={busy} title="Cancel download and delete files" aria-label="Cancel download"><Icon name="x" size={13} /></button>
+                          <button type="button" onClick={() => handlePause(download)} disabled={busy} title={t('downloads.pause')} aria-label={t('downloads.pause')}><Icon name="pause" size={13} /></button>
+                          <button type="button" onClick={() => handleCancel(download)} disabled={busy} title={t('downloads.cancelDelete')} aria-label={t('downloads.cancel')}><Icon name="x" size={13} /></button>
                         </>
                       )}
                       {download.status === 'paused' && (
                         <>
-                          {download.running === true && <span className="download-item__metric">Pausing...</span>}
-                          <button type="button" onClick={() => handleResume(download)} disabled={busy || download.running === true} title="Resume download" aria-label="Resume download"><Icon name="play" size={13} /></button>
-                          <button type="button" onClick={() => handleDeletePartial(download)} disabled={!canRemove} title="Delete partial download" aria-label="Delete partial download"><Icon name="trash" size={13} /></button>
-                          <button type="button" onClick={() => handleRemove(download)} disabled={!canRemove} title="Remove from list" aria-label="Remove from list"><Icon name="x" size={13} /></button>
+                          {download.running === true && <span className="download-item__metric">{t('downloads.pausing')}</span>}
+                          <button type="button" onClick={() => handleResume(download)} disabled={busy || download.running === true} title={t('downloads.resume')} aria-label={t('downloads.resume')}><Icon name="play" size={13} /></button>
+                          <button type="button" onClick={() => handleDeletePartial(download)} disabled={!canRemove} title={t('downloads.deletePartial')} aria-label={t('downloads.deletePartial')}><Icon name="trash" size={13} /></button>
+                          <button type="button" onClick={() => handleRemove(download)} disabled={!canRemove} title={t('downloads.remove')} aria-label={t('downloads.remove')}><Icon name="x" size={13} /></button>
                         </>
                       )}
-                      {download.status === 'deleting' && <span className="download-item__metric">Deleting...</span>}
+                      {download.status === 'deleting' && <span className="download-item__metric">{t('downloads.deleting')}</span>}
                       {download.status === 'cancelled' && (
-                        download.running === true ? <span className="download-item__metric">Cancelling...</span> : (
+                        download.running === true ? <span className="download-item__metric">{t('downloads.cancelling')}</span> : (
                           <>
-                            <button type="button" onClick={() => handleRetry(download)} disabled={busy} title="Retry download" aria-label="Retry download"><Icon name="rotate-ccw" size={13} /></button>
-                            <button type="button" onClick={() => handleDeletePartial(download)} disabled={busy} title="Delete partial download" aria-label="Delete partial download"><Icon name="trash" size={13} /></button>
-                            <button type="button" onClick={() => handleRemove(download)} disabled={busy} title="Remove from list" aria-label="Remove from list"><Icon name="x" size={13} /></button>
+                            <button type="button" onClick={() => handleRetry(download)} disabled={busy} title={t('downloads.retry')} aria-label={t('downloads.retry')}><Icon name="rotate-ccw" size={13} /></button>
+                            <button type="button" onClick={() => handleDeletePartial(download)} disabled={busy} title={t('downloads.deletePartial')} aria-label={t('downloads.deletePartial')}><Icon name="trash" size={13} /></button>
+                            <button type="button" onClick={() => handleRemove(download)} disabled={busy} title={t('downloads.remove')} aria-label={t('downloads.remove')}><Icon name="x" size={13} /></button>
                           </>
                         )
                       )}
                       {(download.status === 'completed' || download.status === 'error') && (
                         download.running === true
-                          ? <span className="download-item__metric">Finalizing...</span>
-                          : <button type="button" onClick={() => handleRemove(download)} disabled={!canRemove} title="Remove from list" aria-label="Remove from list"><Icon name="x" size={13} /></button>
+                          ? <span className="download-item__metric">{t('downloads.finalizing')}</span>
+                          : <button type="button" onClick={() => handleRemove(download)} disabled={!canRemove} title={t('downloads.remove')} aria-label={t('downloads.remove')}><Icon name="x" size={13} /></button>
                       )}
                     </div>
                   </div>
@@ -368,23 +402,23 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                       aria-valuenow={Math.round(download.percent)}
                       aria-valuemin={0}
                       aria-valuemax={100}
-                      aria-label={`Downloading ${displayName(download.modelName)}: ${Math.round(download.percent)}%`}
+                      aria-label={t('downloads.progressAria', { model: displayName(download.modelName), percent: Math.round(download.percent) })}
                     >
                       <div className="download-item__progress-track"><div className="download-item__progress-fill" style={{ width: `${download.percent}%` }} /></div>
-                      <span aria-hidden="true">{download.percent.toFixed(0)}%</span>
+                      <span aria-hidden="true">{formatNumber(download.percent, { maximumFractionDigits: 0 })}%</span>
                     </div>
                   )}
 
                   {itemExpanded && (
                     <div className="download-item__details">
-                      <span>Status: {download.status}</span>
-                      <span>Current file: {download.fileName || '—'}</span>
-                      <span>Files: {download.fileIndex} of {download.totalFiles}</span>
+                      <span>{t('downloads.status')} {t(DOWNLOAD_STATUS_I18N_KEYS[download.status])}</span>
+                      <span>{t('downloads.currentFile')} {download.fileName || '—'}</span>
+                      <span>{t('downloads.files')} {download.fileIndex} {t('downloads.of')} {download.totalFiles}</span>
                       {download.status === 'downloading' && (
                         <>
-                          <span>Downloaded: {formatBytes(download.bytesDownloaded)}</span>
-                          <span>Total size: {formatTotalBytes(download)}</span>
-                          {!finalizing && <span>Speed: {formatSpeed(download)}</span>}
+                          <span>{t('downloads.downloaded')} {formatBytes(download.bytesDownloaded, formatNumber)}</span>
+                          <span>{t('downloads.totalSize')} {formatTotalBytes(download, formatNumber)}</span>
+                          {!finalizing && <span>{t('downloads.speed')} {formatSpeed(download, formatNumber)}</span>}
                         </>
                       )}
                     </div>
@@ -396,7 +430,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
         </div>
 
         {removableTerminalDownloads.length > 0 && (
-          <button type="button" className="download-manager__clear" onClick={handleClearCompleted}>Clear completed</button>
+          <button type="button" className="download-manager__clear" onClick={handleClearCompleted}>{t('downloads.clearCompleted')}</button>
         )}
       </div>
     </div>

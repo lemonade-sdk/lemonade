@@ -1,28 +1,15 @@
 import type { IconName } from '../../components/Icon';
 
-const ROUTE_ACRONYMS: Record<string, string> = {
-  mcp: 'MCP',
-};
-
-/* Sentence case throughout: only the first word and known acronyms are
- * capitalized, so "Model storage" and "MCP gateway" read as one set. */
-export function workspaceRouteLabel(routeSegment: string): string {
-  const parts = routeSegment.split('-').filter(Boolean);
-  return parts
-    .map((part, index) => {
-      if (part === 'and') return '&';
-      if (ROUTE_ACRONYMS[part]) return ROUTE_ACRONYMS[part];
-      return index === 0 ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : part;
-    })
-    .join(' ');
-}
-
 function defineSection<Id extends string>(
   id: Id,
-  description: string,
   icon: IconName,
 ) {
-  return { id, label: workspaceRouteLabel(id), description, icon };
+  return {
+    id,
+    labelKey: `sections.${id}.label`,
+    descriptionKey: `sections.${id}.description`,
+    icon,
+  } as const;
 }
 
 type DefinedSection = ReturnType<typeof defineSection>;
@@ -30,15 +17,15 @@ type DefinedSection = ReturnType<typeof defineSection>;
 function defineWorkspace<
   Id extends string,
   Sections extends readonly DefinedSection[],
->(id: Id, sections: Sections, label?: string): {
+>(id: Id, sections: Sections): {
   id: Id;
-  label: string;
+  labelKey: `workspaces.${Id}.label`;
   defaultSection: Sections[0]['id'];
   sections: Sections;
 } {
   return {
     id,
-    label: label ?? workspaceRouteLabel(id),
+    labelKey: `workspaces.${id}.label`,
     defaultSection: sections[0].id as Sections[0]['id'],
     sections,
   };
@@ -46,19 +33,20 @@ function defineWorkspace<
 
 export const WORKSPACE_NAVIGATION = {
   dashboard: defineWorkspace('dashboard', [
-    defineSection('performance', 'Health and throughput', 'gauge'),
-    defineSection('telemetry', 'Traces, replay and tuning', 'search-check'),
-    defineSection('logs', 'Live server output', 'logs'),
-  ] as const, 'Monitor'),
+    defineSection('performance', 'gauge'),
+    defineSection('telemetry', 'search-check'),
+    defineSection('logs', 'logs'),
+  ] as const),
   connect: defineWorkspace('connect', [
-    defineSection('server', 'Endpoint and authentication', 'plug'),
-    defineSection('chat', 'History, reasoning, and speech', 'chat'),
-    defineSection('memory', 'Budget, Loading and eviction', 'gauge'),
-    defineSection('model-storage', 'Cache and custom directories', 'hard-drive'),
-    defineSection('cloud-providers', 'OpenAI-compatible services', 'cloud'),
-    defineSection('mcp-gateway', 'Tools and external servers', 'tools'),
-    defineSection('help-and-support', 'Docs, releases and community', 'book-open'),
-  ] as const, 'Settings'),
+    defineSection('server', 'plug'),
+    defineSection('chat', 'chat'),
+    defineSection('memory', 'gauge'),
+    defineSection('language', 'globe'),
+    defineSection('model-storage', 'hard-drive'),
+    defineSection('cloud-providers', 'cloud'),
+    defineSection('mcp-gateway', 'tools'),
+    defineSection('help-and-support', 'book-open'),
+  ] as const),
 } as const;
 
 export type RoutedWorkspace = keyof typeof WORKSPACE_NAVIGATION;

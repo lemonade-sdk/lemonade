@@ -199,3 +199,6 @@ For beta stabilization and final integration:
 - Custom Omni collections can be created from named text, vision, image, transcription, and speech components and are sent to Lemonade as `collection.omni` plus `components`, not as pseudo-checkpoint registrations.
 - Account popovers use an opaque raised surface so labels remain readable over the model grid.
 - Backend summary now falls back from `/system-info` `lemonade_version` to `/health` `version`, so Linux builds no longer show `Lemonade unknown ...` when system-info omits the version.
+## Localization
+
+The renderer has a data-driven BCP-47 localization layer with English and German catalogs. Open **Settings → Language** to switch at runtime. Developer documentation for adding and maintaining locales lives in [`docs/INTERNATIONALIZATION.md`](docs/INTERNATIONALIZATION.md).

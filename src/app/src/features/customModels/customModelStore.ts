@@ -360,16 +360,16 @@ export function customLoadOptions(model: ModelInfo): Record<string, unknown> | u
   return opts;
 }
 
-export const CUSTOM_CAPABILITIES: Array<{ value: CustomModelCapability; label: string; hint: string }> = [
-  { value: 'chat', label: 'Chat', hint: 'Text chat through /chat/completions' },
-  { value: 'omni', label: 'Omni', hint: 'Multimodal model or Omni collection of existing text/vision/audio models' },
-  { value: 'image', label: 'Image', hint: 'Image generation endpoint' },
-  { value: 'audio', label: 'Transcription', hint: 'Audio transcription endpoint' },
-  { value: 'audio-generation', label: 'Audio generation', hint: 'Music or sound effects through /audio/generations' },
-  { value: 'tts', label: 'TTS', hint: 'Text-to-speech endpoint' },
-  { value: 'model3d', label: '3D', hint: 'Image-to-3D reconstruction through /3d/generations' },
-  { value: 'embedding', label: 'Embedding', hint: 'Utility model; not selectable in composer' },
-  { value: 'reranking', label: 'Reranking', hint: 'Utility model; not selectable in composer' },
+export const CUSTOM_CAPABILITIES: readonly CustomModelCapability[] = [
+  'chat',
+  'omni',
+  'image',
+  'audio',
+  'audio-generation',
+  'tts',
+  'model3d',
+  'embedding',
+  'reranking',
 ];
 
 export interface CustomModelImportResult {

@@ -8,6 +8,7 @@ import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { WorkspaceList, WorkspaceListRow } from './WorkspacePanels';
 import { backendCompactLabel } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
+import { useI18n, type TranslationParams } from '../i18n';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
@@ -18,15 +19,14 @@ const MarkdownMessage: React.FC<React.ComponentProps<typeof LazyMarkdownMessage>
     <LazyMarkdownMessage {...props} />
   </Suspense>
 );
-import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact, type ChatThinkingMode } from '../hooks/useChatStreaming';
-import { useAudioCapture } from '../hooks/useAudioCapture';
+import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact, type ChatThinkingMode, TOOL_LABEL_KEYS, toolResultText } from '../hooks/useChatStreaming';
+import { AudioCaptureFailure, useAudioCapture, type AudioCaptureErrorState } from '../hooks/useAudioCapture';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   canSelectInComposer,
   capabilityBadge,
   capabilityFromLoaded,
   capabilityFromModelInfo,
-  capabilityLabel,
   modelDisplayName,
   modelInitial,
   modelSupportsChatAudioInput,
@@ -40,7 +40,6 @@ import {
   snapshotIdentity,
   identityFor,
   isComposerSelectableCapability,
-  isRouterRecipe,
   modelStructure,
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
@@ -72,6 +71,7 @@ import {
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  contentKind?: 'live-microphone';
   images?: string[];  // transient base64 data URLs for user messages with images
   generatedImages?: string[]; // transient generated image data URLs
   audioUrl?: string; // transient object URL for TTS output
@@ -85,9 +85,13 @@ interface Message {
   isError?: boolean;
 }
 
+type ConversationTitleKind = 'new' | 'image' | 'audio' | 'live-microphone';
+
 interface Conversation {
   id: string;
   title: string;
+  titleKind?: ConversationTitleKind;
+  titleArg?: string;
   model: ModelSnapshot | null;
   messages: Message[];
   updatedAt: number;
@@ -96,7 +100,7 @@ interface Conversation {
 
 const STORAGE_KEY = 'conversations';
 const ACTIVE_KEY = 'active_conversation';
-const STORAGE_VERSION = 3;
+const STORAGE_VERSION = 4;
 
 // Keep aligned with modelConfiguration.ts without pulling that feature module into the cold chat chunk.
 const DEFAULT_CONTEXT_SIZE = 4096;
@@ -295,15 +299,43 @@ function normalizeConversation(raw: unknown): Conversation | null {
     .map(m => ({
       role: m.role === 'assistant' ? 'assistant' as const : 'user' as const,
       content: typeof m.content === 'string' ? m.content : '',
+      contentKind: m.contentKind === 'live-microphone' ? 'live-microphone' as const : undefined,
       thinking: typeof m.thinking === 'string' ? m.thinking : undefined,
       stats: m.stats as ChatCompletionStats | undefined,
       toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls as ToolCallEntry[] : undefined,
       model: normalizeSnapshot(m.model),
       isError: m.isError === true || (typeof m.content === 'string' && /^Error:/i.test(m.content)),
     }));
+  const storedTitle = typeof obj.title === 'string' ? obj.title : '';
+  const storedTitleKind = obj.titleKind === 'new' || obj.titleKind === 'image' || obj.titleKind === 'audio' || obj.titleKind === 'live-microphone'
+    ? obj.titleKind as ConversationTitleKind
+    : undefined;
+  const storedTitleArg = typeof obj.titleArg === 'string' ? obj.titleArg : undefined;
+  let titleData: ConversationTitle = storedTitleKind
+    ? { title: storedTitle, titleKind: storedTitleKind, titleArg: storedTitleArg }
+    : storedTitle.trim()
+      ? { title: storedTitle }
+      : deriveTitle(messages);
+
+  // Migrate the synthetic English titles written by schema <= 3 without
+  // mistaking ordinary user-authored titles for presentation strings.
+  const legacySchema = typeof obj.schemaVersion === 'number' ? obj.schemaVersion : 0;
+  const firstUser = messages.find(message => message.role === 'user');
+  if (!storedTitleKind && legacySchema < 4) {
+    if (storedTitle === 'Image conversation' && firstUser?.content === '[image prompt not persisted]') {
+      titleData = { title: '', titleKind: 'image' };
+    } else {
+      const audioMatch = /^Audio: (.+)$/.exec(storedTitle);
+      const contentMatch = /^Audio file: (.+)$/.exec(firstUser?.content || '');
+      if (audioMatch && contentMatch && audioMatch[1] === contentMatch[1]) {
+        titleData = { title: '', titleKind: 'audio', titleArg: audioMatch[1] };
+      }
+    }
+  }
+
   return {
     id,
-    title: typeof obj.title === 'string' && obj.title.trim() ? obj.title : deriveTitle(messages),
+    ...titleData,
     model: normalizeSnapshot(obj.model),
     messages,
     updatedAt: typeof obj.updatedAt === 'number' ? obj.updatedAt : Date.now(),
@@ -405,12 +437,37 @@ function chatBlockingDownloadsKey(downloads: DownloadListItem[]): string {
     .join('|');
 }
 
-function titleFromInput(text: string, hasImages: boolean, audioFiles: File[] = []): string {
+type ConversationTitle = Pick<Conversation, 'title' | 'titleKind' | 'titleArg'>;
+
+function titleFromInput(text: string, hasImages: boolean, audioFiles: File[] = []): ConversationTitle {
   const clean = text.trim();
-  if (clean) return clean.slice(0, 50) + (clean.length > 50 ? '…' : '');
-  if (audioFiles.length > 0) return `Audio: ${audioFiles[0].name}`.slice(0, 50);
-  if (hasImages) return 'Image conversation';
-  return 'New conversation';
+  if (clean) return { title: clean.slice(0, 50) + (clean.length > 50 ? '…' : '') };
+  if (audioFiles.length > 0) return { title: '', titleKind: 'audio', titleArg: audioFiles[0].name };
+  if (hasImages) return { title: '', titleKind: 'image' };
+  return { title: '', titleKind: 'new' };
+}
+
+function conversationTitleText(conversation: Conversation, t: ChatTranslate): string {
+  let localized: string;
+  switch (conversation.titleKind) {
+    case 'audio':
+      localized = t('history.audioConversation', { file: conversation.titleArg || t('history.audioFile') });
+      break;
+    case 'image':
+      localized = t('history.imageConversation');
+      break;
+    case 'live-microphone':
+      localized = t('history.liveMicrophoneRecording');
+      break;
+    case 'new':
+      localized = t('history.newConversation');
+      break;
+    default:
+      localized = conversation.title;
+      break;
+  }
+  const clean = localized.trim();
+  return clean.length > 50 ? `${clean.slice(0, 50)}…` : clean || t('history.newConversation');
 }
 
 function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: string[]): string[] {
@@ -443,20 +500,40 @@ const ModelModeIcons: React.FC<{
   );
 };
 
-function modelModeLabel(capability: ModelCapability, audioInput = false): string {
-  return audioInput && capability === 'chat'
-    ? 'Chat + Audio'
-    : capabilityLabel(capability);
+function modelModeLabel(capability: ModelCapability, audioInput: boolean, t: ChatTranslate): string {
+  if (audioInput && capability === 'chat') return t('model.modes.chatAudio');
+  const keyByCapability: Partial<Record<ModelCapability, string>> = {
+    chat: 'model.modes.chat',
+    image: 'model.modes.image',
+    audio: 'model.modes.audio',
+    'audio-generation': 'model.modes.audioGeneration',
+    tts: 'model.modes.tts',
+    model3d: 'model.modes.model3d',
+    embedding: 'model.modes.embedding',
+    reranking: 'model.modes.reranking',
+    classification: 'model.modes.classification',
+    unknown: 'model.modes.unknown',
+  };
+  const key = keyByCapability[capability] || 'model.modes.unknown';
+  return t(key);
 }
 
-function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, recipe?: string | null): string {
+function modelModeDisplayLabel(
+  capability: ModelCapability,
+  audioInput: boolean,
+  recipe: string | null | undefined,
+  t: ChatTranslate,
+): string {
   const identity = identityFor(capability, recipe);
-  return identity === capability ? modelModeLabel(capability, audioInput) : capabilityLabel(identity);
+  if (identity === 'router') return t('model.router');
+  if (identity === 'omni') return t('model.modes.omni');
+  return modelModeLabel(identity, audioInput, t);
 }
 
-function deriveTitle(messages: Message[]): string {
+function deriveTitle(messages: Message[]): ConversationTitle {
   const first = messages.find(m => m.role === 'user');
-  if (!first) return 'New conversation';
+  if (!first) return { title: '', titleKind: 'new' };
+  if (first.contentKind === 'live-microphone') return { title: '', titleKind: 'live-microphone' };
   return titleFromInput(first.content, !!first.images?.length);
 }
 
@@ -477,20 +554,29 @@ function formatDurationMs(ms: number | null | undefined): string | null {
   return `${minutes}m ${remainder}s`;
 }
 
-function reasoningSummary(stats: Pick<ChatCompletionStats, 'reasoningTokens' | 'reasoningElapsedMs'> | null | undefined): string {
+function reasoningSummary(
+  stats: Pick<ChatCompletionStats, 'reasoningTokens' | 'reasoningElapsedMs'> | null | undefined,
+  t: ChatTranslate,
+): string {
   const parts: string[] = [];
-  if (stats?.reasoningTokens) parts.push(`${stats.reasoningTokens} tokens`);
+  if (stats?.reasoningTokens) parts.push(t('message.tokens', { count: stats.reasoningTokens }));
   const duration = formatDurationMs(stats?.reasoningElapsedMs);
   if (duration) parts.push(duration);
   return parts.length ? ` · ${parts.join(' · ')}` : '';
 }
 
-function timeAgo(ts: number): string {
-  const diff = Date.now() - ts;
-  if (diff < 60000) return 'just now';
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return `${Math.floor(diff / 86400000)}d ago`;
+type RelativeTimeFormatter = (
+  value: number,
+  unit: Intl.RelativeTimeFormatUnit,
+  options?: Intl.RelativeTimeFormatOptions,
+) => string;
+
+function timeAgo(ts: number, formatRelativeTime: RelativeTimeFormatter): string {
+  const diff = Math.max(0, Date.now() - ts);
+  if (diff < 60_000) return formatRelativeTime(0, 'second', { numeric: 'auto' });
+  if (diff < 3_600_000) return formatRelativeTime(-Math.floor(diff / 60_000), 'minute', { numeric: 'auto' });
+  if (diff < 86_400_000) return formatRelativeTime(-Math.floor(diff / 3_600_000), 'hour', { numeric: 'auto' });
+  return formatRelativeTime(-Math.floor(diff / 86_400_000), 'day', { numeric: 'auto' });
 }
 
 interface ChatViewProps {
@@ -727,15 +813,21 @@ function collectToolArtifacts(toolCalls?: ToolCallEntry[]): ToolArtifact[] {
   return (toolCalls || []).flatMap(call => call.artifacts || []);
 }
 
-function summarizeToolOnlyResponse(toolCalls?: ToolCallEntry[]): string {
+type ChatTranslate = (key: string, params?: TranslationParams) => string;
+
+function summarizeToolOnlyResponse(toolCalls: ToolCallEntry[] | undefined, t: ChatTranslate): string {
   const finished = (toolCalls || []).filter(call => call.status === 'done' || call.status === 'error');
   if (finished.length === 0) return '';
   const lines = finished.slice(0, 6).map(call => {
-    const label = TOOL_LABELS[call.name] || call.name;
-    const result = (call.result || '').trim();
-    return result ? `**${label}**\n${result}` : `**${label}** ${call.status === 'error' ? 'failed.' : 'completed.'}`;
+    const labelKey = TOOL_LABEL_KEYS[call.name];
+    const label = labelKey ? t(labelKey) : call.name;
+    const result = toolResultText(call, t).trim();
+    return result
+      ? `**${label}**\n${result}`
+      : `**${label}** ${t(call.status === 'error' ? 'toolSummary.failed' : 'toolSummary.completed')}`;
   });
-  const suffix = finished.length > lines.length ? `\n\n…and ${finished.length - lines.length} more tool call(s).` : '';
+  const remaining = finished.length - lines.length;
+  const suffix = remaining > 0 ? `\n\n${t('toolSummary.more', { count: remaining })}` : '';
   return `${lines.join('\n\n')}${suffix}`;
 }
 
@@ -811,17 +903,17 @@ async function fileToBase64(file: Blob): Promise<string> {
   return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
 }
 
-async function wavVoiceSampleToBase64(file: File): Promise<string> {
+async function wavVoiceSampleToBase64(file: File, t: ChatTranslate): Promise<string> {
   const maxBytes = 10 * 1024 * 1024;
   if (file.size > maxBytes) {
-    throw new Error(`'${file.name}' is too large (max 10 MB). A few seconds of clean speech is enough.`);
+    throw new Error(t('errors.voiceSampleTooLarge', { file: file.name }));
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
   const hasMagic = (offset: number, text: string) =>
     bytes.length >= offset + text.length
     && [...text].every((character, index) => bytes[offset + index] === character.charCodeAt(0));
   if (!hasMagic(0, 'RIFF') || !hasMagic(8, 'WAVE')) {
-    throw new Error(`'${file.name}' is not a WAV file. Voice samples must use WAV audio.`);
+    throw new Error(t('errors.voiceSampleNotWav', { file: file.name }));
   }
   let binary = '';
   const chunkSize = 0x8000;
@@ -839,16 +931,28 @@ function friendlyErrorMessage(error: unknown): string {
     if (typeof value.userMessage === 'string' && value.userMessage) return value.userMessage;
     if (typeof value.message === 'string' && value.message) return value.message;
   }
-  return String(error || 'Unknown error');
+  return String(error || '');
 }
 
-function friendlyChatError(message: string): string {
+
+function audioCaptureErrorText(error: AudioCaptureErrorState | AudioCaptureFailure, t: ChatTranslate): string {
+  const code = error.code;
+  const detail = 'detail' in error ? error.detail : undefined;
+  if (code === 'unavailable') return t('composer.live.errors.unavailable');
+  if (code === 'permissionDenied') return t('composer.live.errors.permissionDenied');
+  return detail
+    ? t('composer.live.errors.failedDetail', { detail })
+    : t('composer.live.errors.failed');
+}
+function friendlyChatError(message: string, t: ChatTranslate): string {
   const cleaned = message.replace(/^Error:\s*/i, '').trim();
-  if (!cleaned) return "I couldn't complete that request. Please check the server logs for details.";
-  return `I couldn't complete that request.\n\n${cleaned}`;
+  return cleaned
+    ? t('errors.requestFailedDetail', { message: cleaned })
+    : t('errors.requestFailed');
 }
 
 const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, serverModels, connectionStatus, onModelSelect, onOpenModelDetails, onRefresh }) => {
+  const { t, formatRelativeTime } = useI18n('chat');
   const [fallbackModelOverride, setFallbackModelOverride] = useState<string | null>(null);
   const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName());
   const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName());
@@ -1169,7 +1273,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
   }, [currentLoadedModel, currentCustomModelInfo, currentKnownModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
-  // A collection deploys as chat; its Omni surface comes from the recipe.
+  // Collections deploy as chat; Omni is their structural identity.
   const currentIsOmniCollection = snapshotIdentity(currentModelSnapshot) === 'omni';
   const currentDefaultModel = lemonadeDefaultModel(currentModel);
 
@@ -1242,7 +1346,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     }));
   }, [currentCapability, imageGenerationModels]);
   useEffect(() => {
-    const specialCapability = !['chat', 'unknown'].includes(currentCapability);
+    const specialCapability = !['chat', 'omni', 'unknown'].includes(currentCapability);
     if (!modelPickerOpen && !specialCapability) return;
 
     let cancelled = false;
@@ -1340,6 +1444,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     setPendingAudioFiles([]);
   }, [
     currentCapability,
+    currentIsOmniCollection,
     currentKnownModelInfo,
     currentLoadedModel,
     isOpenMossTts,
@@ -1364,7 +1469,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     }
     return currentCapability === 'chat'
       && modelSupportsChatImageInput(currentKnownModelInfo, currentLoadedModel);
-  }, [currentCapability, currentKnownModelInfo, currentLoadedModel, knownModelInfos]);
+  }, [currentCapability, currentIsOmniCollection, currentKnownModelInfo, currentLoadedModel, knownModelInfos]);
 
   const defaultImageSettings = useMemo(
     () => imageDefaultsForModel(
@@ -1458,7 +1563,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       options.push(configuredDefault ? {
         ...option,
         defaultTier: configuredDefault.tier,
-        defaultLabel: configuredDefault.label,
+        defaultLabel: t(`model.defaults.${configuredDefault.tier}.label`),
       } : option);
     };
 
@@ -1469,7 +1574,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       loaded: true,
       downloaded: true,
       audioInput: audioInputForLoaded(model),
-      detail: `Loaded${model.device ? ` · ${model.device}` : ''}`,
+      detail: t('model.loadedDetail', { device: model.device ? ` · ${model.device}` : '' }),
     }));
 
     knownModelInfos.forEach(info => {
@@ -1485,7 +1590,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         downloaded: true,
         audioInput: modelSupportsChatAudioInput(info, null),
         info,
-        detail: configuredDefault ? 'Downloaded · loads when you send' : 'Downloaded · click to load',
+        detail: configuredDefault ? t('model.downloadedDeferred') : t('model.downloadedLoad'),
         deferredUntilSend: Boolean(configuredDefault),
       });
     });
@@ -1497,16 +1602,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       downloaded: false,
       audioInput: false,
       info: findModelInfoByName(knownModelInfos, model.name) || lemonadeDefaultModelInfo(model),
-      detail: model.description,
+      detail: t(`model.defaults.${model.tier}.description`),
       deferredUntilSend: true,
     }));
 
     const q = modelPickerQuery.trim().toLowerCase();
     const filtered = q
-      ? options.filter(option => `${option.name} ${option.defaultLabel || ''} ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe)} ${option.detail}`.toLowerCase().includes(q))
+      ? options.filter(option => `${option.name} ${option.defaultLabel || ''} ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe, t)} ${option.detail}`.toLowerCase().includes(q))
       : options;
     return filtered.slice(0, 80);
-  }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
+  }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels, t]);
 
   const modeSupportsChatCompletions = currentCapability === 'chat';
   const modeSupportsMcp = modeSupportsChatCompletions;
@@ -1678,6 +1783,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, []);
 
   const { startRecording, stopRecording, error: micError } = useAudioCapture(handleAudioChunk, handleAudioLevel);
+  const micErrorText = micError ? audioCaptureErrorText(micError, t) : '';
 
   useEffect(() => {
     if (!modelPickerOpen) return;
@@ -1758,7 +1864,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       if (active) {
         sawDownload = true;
         if (active.status === 'paused') {
-          throw new Error(`Download for ${modelName} is paused. Resume it in Downloads, then send again.`);
+          throw new Error(t('errors.downloadPaused', { model: modelName }));
         }
         setModelPreparations(prev => ({
           ...prev,
@@ -1781,20 +1887,20 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       if (!sawDownload) return false;
       if (terminal?.status === 'completed') return true;
       if (terminal?.status === 'error') {
-        throw new Error(terminal.error || `Download failed for ${modelName}.`);
+        throw new Error(terminal.error || t('errors.downloadFailed', { model: modelName }));
       }
       if (terminal?.status === 'cancelled') {
-        throw new Error(`Download for ${modelName} was cancelled.`);
+        throw new Error(t('errors.downloadCancelled', { model: modelName }));
       }
 
       const freshModels = await api.models(true).catch(() => ({ data: [] as ModelInfo[] }));
       const freshInfo = findModelInfoByName(freshModels.data, modelName);
       if (modelIsDownloaded(freshInfo)) return true;
-      throw new Error(`Download for ${modelName} disappeared before it became ready.`);
+      throw new Error(t('errors.downloadDisappeared', { model: modelName }));
     }
 
-    throw new Error(`Download for ${modelName} did not finish.`);
-  }, []);
+    throw new Error(t('errors.downloadTimeout', { model: modelName }));
+  }, [t]);
 
   const ensureChatModelReady = useCallback(async (
     modelName: string,
@@ -1862,7 +1968,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       freshModels = await api.models(true).catch(() => freshModels);
       info = findModelInfoByName(freshModels.data, modelName) || info;
       if (!pullCompleted && !modelIsDownloaded(info)) {
-        throw new Error(`Lemonade could not finish downloading ${modelName}.`);
+        throw new Error(t('errors.downloadIncomplete', { model: modelName }));
       }
     }
 
@@ -1871,7 +1977,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     await Promise.resolve(onRefresh());
     health = await api.health();
     loaded = loadedFrom(health.all_models_loaded || []);
-    if (!loaded) throw new Error(`${modelName} was downloaded but did not become ready for chat.`);
+    if (!loaded) throw new Error(t('errors.downloadedNotReady', { model: modelName }));
 
     saveLastReadyModelName(loaded.model_name);
     setLastReadyModelName(loaded.model_name);
@@ -1880,7 +1986,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return snapshotFromLoaded(loaded)
       || snapshotFromModelInfo(info || initialInfo)
       || snapshotFromName(modelName, [loaded])!;
-  }, [knownModelInfos, loadModelWithPolicy, onModelSelect, onRefresh, waitForExistingModelDownload]);
+  }, [knownModelInfos, loadModelWithPolicy, onModelSelect, onRefresh, t, waitForExistingModelDownload]);
 
   const speakWithPinnedTts = useCallback(async (text: string, source: 'assistant' | 'user', force = false) => {
     const trimmed = text.trim();
@@ -1935,13 +2041,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     const generatedAudioUrl = generatedAudio?.url ? trackGeneratedMediaUrl(generatedAudio.url) : undefined;
     const generated3dUrl = generated3d?.url ? trackGeneratedMediaUrl(generated3d.url) : undefined;
     const mediaFallback = generated3d
-      ? 'Generated a 3D model from the reference image.'
+      ? t('toolSummary.generated3d')
       : generatedImages.length > 0
-        ? `Generated ${generatedImages.length} image${generatedImages.length === 1 ? '' : 's'} from your prompt.`
+        ? t('toolSummary.generatedImages', { count: generatedImages.length })
         : generatedAudio
-          ? 'Generated speech audio from your text.'
+          ? t('toolSummary.generatedAudio')
           : '';
-    const assistantContent = stats.content || mediaFallback || summarizeToolOnlyResponse(toolCalls);
+    const assistantContent = stats.content || mediaFallback || summarizeToolOnlyResponse(toolCalls, t);
     updateConversation(convoId, c => ({
       ...c,
       messages: [...c.messages, {
@@ -1960,17 +2066,17 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       updatedAt: Date.now(),
     }));
     if (!generatedAudio && !generated3d && !generatedImages.length) void speakWithPinnedTts(assistantContent, 'assistant');
-  }, [speakWithPinnedTts, trackGeneratedMediaUrl, updateConversation]);
+  }, [speakWithPinnedTts, t, trackGeneratedMediaUrl, updateConversation]);
 
   const handleStreamError = useCallback((convoId: string, message: string) => {
     const model = streamModelsRef.current[convoId] || null;
     delete streamModelsRef.current[convoId];
     appendAssistantMessage(convoId, {
-      content: friendlyChatError(message),
+      content: friendlyChatError(message, t),
       model,
       isError: true,
     });
-  }, [appendAssistantMessage]);
+  }, [appendAssistantMessage, t]);
 
   const streaming = useChatStreaming(handleStreamDone, handleStreamError);
 
@@ -2022,7 +2128,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   useEffect(() => {
     if (isStreaming) {
       if (!wasStreamingRef.current) {
-        setStreamStatus('Assistant is responding');
+        setStreamStatus(t('a11y.assistantResponding'));
         liveBufferRef.current = '';
         setLiveText('');
       }
@@ -2037,9 +2143,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       liveTimerRef.current = null;
     }
 
-    setStreamStatus('Response complete');
+    setStreamStatus(t('a11y.responseComplete'));
     wasStreamingRef.current = false;
-  }, [isStreaming]);
+  }, [isStreaming, t]);
 
   useEffect(() => {
     if (!isStreaming) {
@@ -2258,8 +2364,9 @@ ${finalText}`
     const modelSnapshot = currentModelSnapshot;
     const userMessage: Message = {
       role: 'user',
-      content: 'Live microphone recording',
-      audioName: 'Microphone',
+      content: '',
+      contentKind: 'live-microphone',
+      audioName: 'microphone',
       model: modelSnapshot,
     };
     const assistantMessage: Message = {
@@ -2271,7 +2378,8 @@ ${finalText}`
     if (!activeId) {
       const newConvo: Conversation = {
         id: generateId(),
-        title: 'Live microphone recording',
+        title: '',
+        titleKind: 'live-microphone',
         model: modelSnapshot,
         messages: [userMessage, assistantMessage],
         updatedAt: Date.now(),
@@ -2286,7 +2394,9 @@ ${finalText}`
       ...c,
       messages: [...c.messages, userMessage, assistantMessage],
       model: modelSnapshot,
-      title: c.messages.length === 0 ? 'Live microphone recording' : c.title,
+      ...(c.messages.length === 0
+        ? { title: '', titleKind: 'live-microphone' as const, titleArg: undefined }
+        : { title: c.title, titleKind: c.titleKind, titleArg: c.titleArg }),
       updatedAt: Date.now(),
     }));
   }, [activeId, currentModelSnapshot, modeSupportsChatCompletions, updateConversation]);
@@ -2327,7 +2437,7 @@ ${finalText}`
       realtimeRef.current = null;
       stopRecording();
       clearLiveMicState();
-      setLiveError(friendlyErrorMessage(err));
+      setLiveError(err instanceof AudioCaptureFailure ? audioCaptureErrorText(err, t) : friendlyErrorMessage(err));
     }
   }, [
     capabilityBusy,
@@ -2341,6 +2451,7 @@ ${finalText}`
     startRecording,
     stopRecording,
     supportsRealtimeAudio,
+    t,
   ]);
 
   const handleMicStop = useCallback(() => {
@@ -2379,7 +2490,7 @@ ${finalText}`
     try {
       const api = await getApiClient();
       if (model.capability === 'image') {
-        if (!text) throw new Error('Image mode needs a text prompt.');
+        if (!text) throw new Error(t('errors.imagePromptRequired'));
         imageSettingsCommittedRef.current = true;
         const imageOptions: Record<string, unknown> = {
           size: `${imageSettings.width}x${imageSettings.height}`,
@@ -2393,12 +2504,12 @@ ${finalText}`
           : await api.imageGeneration(model.name, text, imageOptions);
         const generatedImages = [...resultImages];
         let content = effectiveImageMode === 'edit'
-          ? `Edited ${resultImages.length} image${resultImages.length === 1 ? '' : 's'} from your prompt.`
-          : `Generated ${resultImages.length} image${resultImages.length === 1 ? '' : 's'} from your prompt.`;
+          ? t('capabilityResults.editedImages', { count: resultImages.length })
+          : t('capabilityResults.generatedImages', { count: resultImages.length });
         if (imageSettings.upscaleModel && resultImages[0]) {
           const upscaled = await api.imageUpscale(imageSettings.upscaleModel, resultImages[0]);
           generatedImages.push(upscaled);
-          content = `${content} Added an upscaled version.`;
+          content = `${content} ${t('capabilityResults.upscaled')}`;
         }
         appendAssistantMessage(convoId, {
           content,
@@ -2406,7 +2517,7 @@ ${finalText}`
           model,
         });
       } else if (model.capability === 'audio-generation') {
-        if (!text) throw new Error('Audio generation needs a prompt.');
+        if (!text) throw new Error(t('errors.audioGenerationPromptRequired'));
         const isAceStepModel = String(model.recipe || '').toLowerCase().includes('acestep')
           || /ace[-_ ]?step/.test(String(model.name || '').toLowerCase());
         const audioOptions: Record<string, unknown> = {
@@ -2426,8 +2537,8 @@ ${finalText}`
         const audio = await api.audioGeneration(model.name, text, audioOptions);
         appendAssistantMessage(convoId, {
           content: isAceStepModel
-            ? `Generated ${audioGenerationSettings.lyrics.trim() ? 'a vocal track' : 'an instrumental track'} from your prompt.`
-            : 'Generated a sound effect from your prompt.',
+            ? t(audioGenerationSettings.lyrics.trim() ? 'capabilityResults.vocalTrack' : 'capabilityResults.instrumentalTrack')
+            : t('capabilityResults.soundEffect'),
           audioUrl: trackGeneratedMediaUrl(audio.url),
           audioName: audio.filename,
           model,
@@ -2436,8 +2547,8 @@ ${finalText}`
         let referenceImage = images[0] || '';
         let generatedReference: string[] | undefined;
         if (model3dSettings.sourceMode === 'text') {
-          if (!text) throw new Error('Text-to-3D needs an object description.');
-          if (!model3dSettings.imageModel) throw new Error('Choose a downloaded image model for the text-to-3D reference step.');
+          if (!text) throw new Error(t('errors.textTo3dDescriptionRequired'));
+          if (!model3dSettings.imageModel) throw new Error(t('errors.textTo3dImageModelRequired'));
           const imageInfo = findModelInfoByName(knownModelInfos, model3dSettings.imageModel) || null;
           if (!loadedModels.some(item => item.model_name.toLowerCase() === model3dSettings.imageModel.toLowerCase())) {
             await loadModelWithPolicy(model3dSettings.imageModel, imageInfo);
@@ -2451,7 +2562,7 @@ ${finalText}`
           generatedReference = [referenceImage];
           await loadModelWithPolicy(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
         } else if (!referenceImage) {
-          throw new Error('Image-to-3D needs one reference image.');
+          throw new Error(t('errors.imageTo3dReferenceRequired'));
         }
         const result = await api.model3dGeneration(model.name, referenceImage, {
           resolution: model3dSettings.resolution,
@@ -2460,29 +2571,29 @@ ${finalText}`
         });
         appendAssistantMessage(convoId, {
           content: model3dSettings.sourceMode === 'text'
-            ? 'Rendered a reference image and reconstructed it as a textured 3D model.'
-            : 'Reconstructed the reference image as a textured 3D model.',
+            ? t('capabilityResults.textTo3d')
+            : t('capabilityResults.imageTo3d'),
           generatedImages: generatedReference,
           model3dUrl: trackGeneratedMediaUrl(result.url),
           model3dName: result.filename,
           model,
         });
       } else if (model.capability === 'tts') {
-        if (!text) throw new Error('TTS mode needs text to speak.');
+        if (!text) throw new Error(t('errors.ttsTextRequired'));
         let targetModel = model.name;
         const { loadModelTuning } = await import(
           /* webpackChunkName: "model-configuration" */ '../modelConfiguration'
         );
         let voice = ttsVoiceFromRecipeOptions(loadModelTuning(model.name)?.recipe_options || {});
         let speechOptions: Record<string, unknown> = {};
-        let content = 'Generated speech audio from your text.';
+        let content = t('capabilityResults.speechAudio');
         let reloadTargetAfterVoiceDesign = false;
 
         if (isOpenMossTts) {
           voice = openMossSettings.voiceDescription.trim();
           if (openMossSettings.mode === 'describe') {
             if (!openMossVoiceDesignModel) {
-              throw new Error('Install MOSS-VoiceGen to design a voice from a description.');
+              throw new Error(t('errors.installVoiceGen'));
             }
             targetModel = openMossVoiceDesignModel;
             if (openMossCloneModel) {
@@ -2505,17 +2616,17 @@ ${finalText}`
               targetModel = openMossCloneModel;
               voice = '';
               reloadTargetAfterVoiceDesign = true;
-              content = 'Designed a voice from your description and generated speech with it.';
+              content = t('capabilityResults.designedVoice');
             } else {
-              content = 'Generated speech with the described voice.';
+              content = t('capabilityResults.describedVoice');
             }
           } else if (openMossSettings.mode === 'clone') {
             const sample = audioFiles[0];
-            if (!sample) throw new Error('Attach a WAV voice sample to clone.');
-            if (!openMossCloneModel) throw new Error('Install OpenMOSS-TTS to clone a voice sample.');
+            if (!sample) throw new Error(t('errors.cloneSampleRequired'));
+            if (!openMossCloneModel) throw new Error(t('errors.installOpenMossTts'));
             targetModel = openMossCloneModel;
-            speechOptions.reference_wav_b64 = await wavVoiceSampleToBase64(sample);
-            content = 'Generated speech using the attached voice sample.';
+            speechOptions.reference_wav_b64 = await wavVoiceSampleToBase64(sample, t);
+            content = t('capabilityResults.clonedVoice');
           }
 
           if (reloadTargetAfterVoiceDesign || !loadedModels.some(item => item.model_name.toLowerCase() === targetModel.toLowerCase())) {
@@ -2536,7 +2647,7 @@ ${finalText}`
         });
       } else if (model.capability === 'audio') {
         const file = audioFiles[0];
-        if (!file) throw new Error('Audio mode needs an audio file to transcribe.');
+        if (!file) throw new Error(t('errors.audioFileRequired'));
         const transcript = await api.audioTranscription(model.name, file);
         appendAssistantMessage(convoId, {
           content: transcript,
@@ -2544,12 +2655,12 @@ ${finalText}`
         });
         void speakWithPinnedTts(transcript, 'assistant');
       } else {
-        throw new Error(`${capabilityLabel(model.capability)} models cannot be used from the chat composer yet.`);
+        throw new Error(t('errors.capabilityUnsupported', { capability: model.capability }));
       }
       onRefresh();
     } catch (err) {
       appendAssistantMessage(convoId, {
-        content: friendlyChatError(friendlyErrorMessage(err)),
+        content: friendlyChatError(friendlyErrorMessage(err), t),
         model,
         isError: true,
       });
@@ -2565,7 +2676,7 @@ ${finalText}`
     appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings,
     isOpenMossTts, knownModelInfos, loadedModels, model3dSettings, onRefresh,
     loadModelWithPolicy, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
-    speakWithPinnedTts, trackGeneratedMediaUrl,
+    speakWithPinnedTts, t, trackGeneratedMediaUrl,
   ]);
 
   const startAssistantResponse = useCallback(async (
@@ -2587,7 +2698,7 @@ ${finalText}`
         ...c,
         messages: [...c.messages, userMessage],
         model: modelSnapshot,
-        title: c.messages.length === 0 ? titleFromInput(text, hasImages, audioFiles) : c.title,
+        ...(c.messages.length === 0 ? titleFromInput(text, hasImages, audioFiles) : { title: c.title, titleKind: c.titleKind, titleArg: c.titleArg }),
         updatedAt: Date.now(),
       }));
       void speakWithPinnedTts(text, 'user');
@@ -2597,7 +2708,7 @@ ${finalText}`
 
     if (hasImages && modeSupportsChatCompletions && !collectionInfo && !supportsChatImageInput) {
       appendAssistantMessage(convoId, {
-        content: friendlyChatError('The selected text model does not support image input. Choose a vision-capable model to send images.'),
+        content: friendlyChatError(t('errors.imageInputUnsupported'), t),
         model: modelSnapshot,
         isError: true,
       });
@@ -2607,7 +2718,7 @@ ${finalText}`
     if (!modeSupportsChatCompletions) {
       if (modelSnapshot.capability === 'audio' && audioFiles.length === 0) {
         appendAssistantMessage(convoId, {
-          content: friendlyChatError('Retrying an audio transcription needs the original audio file. Please attach it again.'),
+          content: friendlyChatError(t('errors.audioRetryNeedsFile'), t),
           model: modelSnapshot,
           isError: true,
         });
@@ -2663,7 +2774,7 @@ ${finalText}`
               requestText = `${requestText || 'Please respond to this audio file.'}\n\nAudio transcript (${audioFiles[0].name}):\n${transcript}`.trim();
             } catch (err) {
               appendAssistantMessage(convoId, {
-                content: friendlyChatError(friendlyErrorMessage(err)),
+                content: friendlyChatError(friendlyErrorMessage(err), t),
                 model: modelSnapshot,
                 isError: true,
               });
@@ -2698,7 +2809,7 @@ ${finalText}`
         persistMcpEnabled(false);
         try { localStorage.setItem(scopedKey(MCP_ENABLED_KEY), 'false'); } catch { /* ignore */ }
         appendAssistantMessage(convoId, {
-          content: friendlyChatError(`MCP setup failed and was switched off for this chat. Continuing without tools: ${friendlyErrorMessage(err)}`),
+          content: friendlyChatError(t('errors.mcpSetupFailed', { message: friendlyErrorMessage(err) }), t),
           model: modelSnapshot,
           isError: true,
         });
@@ -2820,7 +2931,7 @@ ${finalText}`
     if (!convoId) {
       const newConvo: Conversation = {
         id: generateId(),
-        title: titleFromInput(text, hasImages, audioFiles),
+        ...titleFromInput(text, hasImages, audioFiles),
         model: initialSnapshot,
         messages: [userMessage],
         updatedAt: Date.now(),
@@ -2834,7 +2945,7 @@ ${finalText}`
         ...conversation,
         messages: [...conversation.messages, userMessage],
         model: initialSnapshot,
-        title: conversation.messages.length === 0 ? titleFromInput(text, hasImages, audioFiles) : conversation.title,
+        ...(conversation.messages.length === 0 ? titleFromInput(text, hasImages, audioFiles) : { title: conversation.title, titleKind: conversation.titleKind, titleArg: conversation.titleArg }),
         updatedAt: Date.now(),
       }));
     }
@@ -2846,7 +2957,7 @@ ${finalText}`
 
     if (connectionStatus !== 'connected') {
       appendAssistantMessage(convoId, {
-        content: friendlyChatError('Lemonade Server is not connected. Reconnect the server, then retry this message.'),
+        content: friendlyChatError(t('errors.serverDisconnected'), t),
         model: initialSnapshot,
         isError: true,
       });
@@ -2877,7 +2988,7 @@ ${finalText}`
       );
     } catch (error) {
       appendAssistantMessage(convoId, {
-        content: friendlyChatError(friendlyErrorMessage(error)),
+        content: friendlyChatError(friendlyErrorMessage(error), t),
         model: initialSnapshot,
         isError: true,
       });
@@ -2900,7 +3011,7 @@ ${finalText}`
     const originalUserMessage = convo.messages[userIndex];
     if (originalUserMessage.audioName) {
       appendAssistantMessage(activeId, {
-        content: friendlyChatError('Retrying a request with an audio attachment needs the original file. Please attach it again.'),
+        content: friendlyChatError(t('errors.audioAttachmentRetryNeedsFile'), t),
         model: currentModelSnapshot,
         isError: true,
       });
@@ -2949,7 +3060,7 @@ ${finalText}`
       ...c,
       messages: [...priorMessages, editedUserMessage],
       model: currentModelSnapshot,
-      title: messageIndex === 0 ? titleFromInput(text, !!editedUserMessage.images?.length) : c.title,
+      ...(messageIndex === 0 ? titleFromInput(text, !!editedUserMessage.images?.length) : { title: c.title, titleKind: c.titleKind, titleArg: c.titleArg }),
       updatedAt: Date.now(),
     } : c));
 
@@ -3087,11 +3198,11 @@ ${finalText}`
       const api = await getApiClient();
       await api.unloadModel(modelName);
       await Promise.resolve(onRefresh());
-      setUnloadAnnouncement(`${modelName} unloaded`);
+      setUnloadAnnouncement(t('a11y.modelUnloaded', { model: modelName }));
     } finally {
       setModelPickerUnloading(null);
     }
-  }, [modelPickerUnloading, onRefresh]);
+  }, [modelPickerUnloading, onRefresh, t]);
 
   const handleLoadedCardUnload = useCallback((modelName: string) => {
     if (modelPickerUnloading) return;
@@ -3101,12 +3212,12 @@ ${finalText}`
         const api = await getApiClient();
         await api.unloadModel(modelName);
         await Promise.resolve(onRefresh());
-        setUnloadAnnouncement(`${modelName} unloaded`);
+        setUnloadAnnouncement(t('a11y.modelUnloaded', { model: modelName }));
       } finally {
         setModelPickerUnloading(null);
       }
     })();
-  }, [modelPickerUnloading, onRefresh]);
+  }, [modelPickerUnloading, onRefresh, t]);
 
   const handleModelPickerSelect = useCallback(async (option: ModelPickerOption) => {
     if (option.loaded) {
@@ -3134,7 +3245,7 @@ ${finalText}`
     if (connectionStatus !== 'connected' || modelPickerLoading) return;
     const { downloadStore } = await getDownloadStoreModule();
     if (activeDownloadForModel(downloadStore.snapshot(), option.name)) {
-      setModelPickerError(`${option.name} is still downloading. Wait for the download to finish before loading it.`);
+      setModelPickerError(t('model.downloadInProgress', { model: option.name }));
       return;
     }
     setModelPickerError(null);
@@ -3195,23 +3306,25 @@ ${finalText}`
             ? (!!inputValue.trim() && !openMossDescribeUnavailable && !openMossCloneUnavailable)
             : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
-    ? 'Draft a message. Connect and load a model to send…'
+    ? t('composer.placeholders.noModel')
     : currentIsOmniCollection
-      ? `Message ${currentModel} through the Omni collection…`
+      ? t('composer.placeholders.omni', { model: currentModel })
       : currentCapability === 'chat' && supportsChatImageInput && supportsChatAudioInput
-        ? `Message ${currentModel} with text, images, or audio…`
+        ? t('composer.placeholders.chatMedia', { model: currentModel })
       : currentCapability === 'chat' && supportsChatImageInput
-        ? `Message ${currentModel} with text or images…`
+        ? t('composer.placeholders.chatImages', { model: currentModel })
       : currentCapability === 'chat' && supportsChatAudioInput
-        ? `Message ${currentModel} with text or audio…`
+        ? t('composer.placeholders.chatAudio', { model: currentModel })
       : currentCapability === 'image'
-      ? (imageMode === 'edit' ? `Describe the edit for ${currentModel}…` : `Describe an image for ${currentModel}…`)
+        ? (imageMode === 'edit'
+          ? t('composer.placeholders.imageEdit', { model: currentModel })
+          : t('composer.placeholders.imageGenerate', { model: currentModel }))
       : currentCapability === 'audio'
-        ? `Attach audio or use the mic with ${currentModel}…`
+        ? t('composer.placeholders.audioTranscribe', { model: currentModel })
         : currentCapability === 'audio-generation'
-          ? (isAceStepAudio ? 'Describe the music style, mood, tempo, instruments, and voice…' : 'Describe the sound effect to generate…')
+          ? t(isAceStepAudio ? 'composer.placeholders.music' : 'composer.placeholders.sound')
           : currentCapability === 'model3d'
-            ? (model3dSettings.sourceMode === 'image' ? 'Attach a reference image for 3D reconstruction…' : 'Describe the object to render and reconstruct in 3D…')
+            ? t(model3dSettings.sourceMode === 'image' ? 'composer.placeholders.model3dImage' : 'composer.placeholders.model3dText')
             : currentCapability === 'tts'
               ? (isOpenMossCloneMode ? 'Type text to speak, then attach a WAV voice sample…' : `Text to speak with ${currentModel}…`)
               : `Message ${currentModel}…`;
@@ -3265,31 +3378,32 @@ ${finalText}`
 
   const composerHint = modelPreparation
     ? (modelPreparation.phase === 'loading'
-      ? `Loading ${modelPreparation.modelName} for chat…`
-      : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`)
+      ? t('stream.loadingForChat', { model: modelPreparation.modelName })
+      : t(modelPreparation.phase === 'waiting' ? 'stream.waitingForModel' : 'stream.downloadingModel', {
+          model: modelPreparation.modelName,
+          progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
+        }))
     : supportsChatAudioInput && modeSupportsChatCompletions
-    ? (supportsRealtimeAudio
-      ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
-      : 'Chat + audio mode · attached audio is routed through chat completions')
+      ? t(supportsRealtimeAudio ? 'composer.hints.chatAudioRealtime' : 'composer.hints.chatAudio')
     : currentIsOmniCollection
-    ? 'Omni collection mode · requests are orchestrated across collection components'
+      ? t('composer.hints.omni')
     : currentCapability === 'image'
-      ? (imageMode === 'edit' ? 'Image mode · attach one source image and prompt becomes /images/edits' : 'Image mode · prompt becomes /images/generations')
+      ? t(imageMode === 'edit' ? 'composer.hints.imageEdit' : 'composer.hints.imageGenerate')
     : currentCapability === 'audio'
-      ? 'Transcription mode · attach a file for /audio/transcriptions or use live mic via /v1/realtime'
-      : currentCapability === 'audio-generation'
-        ? (isAceStepAudio ? 'Music mode · instrumental or optional structured lyrics via /audio/generations' : 'Sound mode · prompt becomes /audio/generations')
-        : currentCapability === 'model3d'
-          ? (model3dSettings.sourceMode === 'image' ? '3D mode · image becomes /3d/generations · export GLB or geometry-only STL' : '3D mode · image model renders a reference, then TRELLIS reconstructs it')
-          : currentCapability === 'tts'
-            ? (isOpenMossTts
-              ? openMossSettings.mode === 'describe'
-                ? 'OpenMOSS · describe a voice; MOSS-VoiceGen creates a reference for speech synthesis'
-                : openMossSettings.mode === 'clone'
-                  ? 'OpenMOSS · attach one WAV sample to clone its voice'
-                  : 'OpenMOSS · optional voice style instruction via /audio/speech'
-              : 'TTS mode · text becomes /audio/speech')
-            : 'Enter to send · Shift+Enter for newline · Paste or drop images';
+      ? t('composer.hints.audio')
+    : currentCapability === 'audio-generation'
+      ? t(isAceStepAudio ? 'composer.hints.music' : 'composer.hints.sound')
+    : currentCapability === 'model3d'
+      ? t(model3dSettings.sourceMode === 'image' ? 'composer.hints.model3dImage' : 'composer.hints.model3dText')
+    : currentCapability === 'tts'
+      ? (isOpenMossTts
+        ? t(openMossSettings.mode === 'describe'
+          ? 'composer.hints.openMossDescribe'
+          : openMossSettings.mode === 'clone'
+            ? 'composer.hints.openMossClone'
+            : 'composer.hints.openMossPlain')
+        : t('composer.hints.tts'))
+      : t('composer.hints.default');
 
   const upscalingModels = useMemo(
     () => knownModelInfos
@@ -3312,10 +3426,17 @@ ${finalText}`
     const capability = c.model?.capability || 'chat';
     const isSelected = c.id === activeId;
     const isTabTarget = isSelected || (idx === 0 && !activeId);
-    const convTitle = c.title || deriveTitle(c.messages);
+    const convTitle = conversationTitleText(c, t);
     const isStreaming = streaming.streamingConvoIds.has(c.id);
     const lastMessage = c.messages[c.messages.length - 1];
     const failed = !isStreaming && Boolean(lastMessage?.isError);
+
+    const updatedLabel = timeAgo(c.updatedAt, formatRelativeTime);
+    const rowStatus = isStreaming
+      ? t('history.generating')
+      : failed
+        ? t('history.lastReplyFailed')
+        : '';
 
     return (
       <WorkspaceListRow
@@ -3325,17 +3446,22 @@ ${finalText}`
         capability={identityFor(capability, c.model?.recipe)}
         title={convTitle}
         meta={c.model?.name || undefined}
-        anchor={timeAgo(c.updatedAt)}
+        anchor={updatedLabel}
         status={isStreaming ? 'live' : failed ? 'error' : undefined}
-        statusText={isStreaming ? 'Generating' : failed ? 'Last reply failed' : undefined}
-        statusLabel={isStreaming ? 'Generating a reply' : failed ? 'The last reply failed' : undefined}
+        statusText={rowStatus || undefined}
+        statusLabel={isStreaming ? t('history.generatingAria') : failed ? t('history.lastReplyFailedAria') : undefined}
         selected={isSelected}
         tabIndex={isTabTarget ? 0 : -1}
-        ariaLabel={`${convTitle}${c.model?.name ? `, ${c.model.name}` : ''}${isStreaming ? ', generating' : failed ? ', last reply failed' : ''}, ${timeAgo(c.updatedAt)}`}
+        ariaLabel={t('history.rowAria', {
+          title: convTitle,
+          model: c.model?.name ? `, ${c.model.name}` : '',
+          status: rowStatus ? `, ${rowStatus}` : '',
+          time: updatedLabel,
+        })}
         onClick={onSelect}
         action={{
           icon: 'trash',
-          label: `Delete conversation: ${convTitle}`,
+          label: t('history.delete', { title: convTitle }),
           onClick: () => handleDeleteConversation(c.id),
         }}
       />
@@ -3353,27 +3479,27 @@ ${finalText}`
       {/* Conversation rail */}
       <aside className={`rail workspace-rail${railExpanded ? '' : ' is-collapsed'}`}>
         <WorkspaceRailHeader
-          title="History"
-          sidebarLabel="conversation"
+          title={t('history.title')}
+          sidebarLabel={t('history.sidebarLabel')}
           purpose="history"
           collapsed={!railExpanded}
           onToggle={handleRailToggle}
         />
 
         <div className="rail__new-wrap">
-          <button type="button" className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium rail__new" onClick={handleNewChat} aria-label="New chat">
+          <button type="button" className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium rail__new" onClick={handleNewChat} aria-label={t('history.newChat')}>
             <Icon name="compose" size={14} aria-hidden="true" />
-            <span className="workspace-action-button__label">New chat</span>
+            <span className="workspace-action-button__label">{t('history.newChat')}</span>
           </button>
         </div>
 
-        <WorkspaceList className="rail__list" label="Conversations" wrap onRowActivate={handleSelectConversation}>
+        <WorkspaceList className="rail__list" label={t('history.conversations')} wrap onRowActivate={handleSelectConversation}>
           {conversations.map((c, idx) => renderConversationRow(
             c, idx, 'rail', () => handleSelectConversation(c.id),
           ))}
         </WorkspaceList>
         {conversations.length === 0 && (
-          <p className="rail__empty">No conversations yet</p>
+          <p className="rail__empty">{t('history.empty')}</p>
         )}
 
       </aside>
@@ -3387,7 +3513,7 @@ ${finalText}`
         id="conversation-history-panel"
         className={`bottom-sheet ${mobileSheetOpen ? 'bottom-sheet--open' : ''}`}
         role={mobileSheetOpen ? 'dialog' : undefined}
-        aria-label="Conversations"
+        aria-label={t('history.conversations')}
         aria-modal={mobileSheetOpen ? true : undefined}
         aria-hidden={!mobileSheetOpen}
       >
@@ -3395,13 +3521,13 @@ ${finalText}`
           <div className="bottom-sheet__handle-pill" />
         </div>
         <div className="bottom-sheet__header">
-          <strong>Conversations</strong>
+          <strong>{t('history.conversations')}</strong>
           <button
             type="button"
             className="btn btn--quiet btn--toolbar btn--icon-only workspace-action-button workspace-action-button--quiet workspace-action-button--toolbar workspace-action-button--icon-only"
             onClick={closeMobileSheet}
-            aria-label="Close conversation history"
-            title="Close panel"
+            aria-label={t('history.close')}
+            title={t('history.closePanel')}
           >
             <Icon name="x" size={16} aria-hidden="true" />
           </button>
@@ -3416,12 +3542,12 @@ ${finalText}`
           }}
         >
           <Icon name="compose" size={14} aria-hidden="true" />
-          <span className="workspace-action-button__label">New chat</span>
+          <span className="workspace-action-button__label">{t('history.newChat')}</span>
         </button>
 
         <WorkspaceList
           className="bottom-sheet__list rail__list"
-          label="Conversations"
+          label={t('history.conversations')}
           wrap
           onRowActivate={id => {
             handleSelectConversation(id);
@@ -3442,14 +3568,14 @@ ${finalText}`
         </WorkspaceList>
 
         {conversations.length === 0 && (
-          <p className="rail__empty">No conversations yet</p>
+          <p className="rail__empty">{t('history.empty')}</p>
         )}
       </div>
 
       {/* Main pane */}
       <div className="chat__main" ref={threadRef}>
         <WorkspaceMobileMenuButton
-          menuLabel="Open conversation history"
+          menuLabel={t('history.open')}
           panelId="conversation-history-panel"
           expanded={mobileSheetOpen}
           onClick={() => { if (mobileSheetOpen) closeMobileSheet(); else setMobileSheetOpen(true); }}
@@ -3474,7 +3600,7 @@ ${finalText}`
                   key={i}
                   message={msg}
                   activeModel={currentModelSnapshot}
-                  userLabel="You"
+                  userLabel={t('user.you')}
                   defaultThinkingOpen={!globalModelSettings.collapseThinkingByDefault}
                   onOptionSelect={handleOptionSelect}
                   onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}
@@ -3486,15 +3612,15 @@ ${finalText}`
               {isStreaming && (
                 <article className="message message--assistant">
                   <div className="message__avatar">
-                    {modelInitial(currentModelSnapshot)}
+                    {modelInitial(currentModelSnapshot, t('message.assistant'))}
                   </div>
                   <div className="message__body">
                     <div className="message__author-row">
-                      <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
+                      <div className="message__author">{modelDisplayName(currentModelSnapshot, t('message.assistant'))}</div>
                     </div>
                     {streamingThinking && (
                       <details className="message__thinking" open={streaming.thinkingExpanded}>
-                        <summary>Thinking…</summary>
+                        <summary>{t('stream.thinking')}</summary>
                         <div
                           className="message__thinking-content"
                           ref={thinkingContentRef}
@@ -3517,7 +3643,7 @@ ${finalText}`
                       <div className="message__live-stats">
                         <span>{currentLiveStats.tps.toFixed(1)} tok/s</span>
                         {currentLiveStats.ttft != null && <span>{(currentLiveStats.ttft / 1000).toFixed(2)}s TTFT</span>}
-                        <span>{currentLiveStats.tokens + currentLiveStats.reasoningTokens} tokens</span>
+                        <span>{t('message.tokens', { count: currentLiveStats.tokens + currentLiveStats.reasoningTokens })}</span>
                         <span>{(currentLiveStats.elapsed / 1000).toFixed(1)}s</span>
                       </div>
                     )}
@@ -3535,8 +3661,11 @@ ${finalText}`
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
                       {modelPreparation.phase === 'loading'
-                        ? `Loading ${modelPreparation.modelName} for chat…`
-                        : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`}
+                        ? t('stream.loadingForChat', { model: modelPreparation.modelName })
+                        : t(modelPreparation.phase === 'waiting' ? 'stream.waitingForModel' : 'stream.downloadingModel', {
+                            model: modelPreparation.modelName,
+                            progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
+                          })}
                     </div>
                   </div>
                 </article>
@@ -3547,11 +3676,11 @@ ${finalText}`
                   <div className="message__avatar"><CapabilityIcon capability={currentCapability} size={16} /></div>
                   <div className="message__body">
                     <div className="message__author-row">
-                      <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
+                      <div className="message__author">{modelDisplayName(currentModelSnapshot, t('message.assistant'))}</div>
                     </div>
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
-                      Working in {capabilityLabel(snapshotIdentity(currentModelSnapshot))} mode…
+                      {t('stream.workingInMode', { mode: modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentModelSnapshot?.recipe, t) })}
                     </div>
                   </div>
                 </article>
@@ -3563,7 +3692,7 @@ ${finalText}`
 
       {showInlineLogs && (
         <>
-          <aside className="chat__logs" aria-label="Lemonade logs">
+          <aside className="chat__logs" aria-label={t('logs.aria')}>
             <Suspense fallback={<div className="view-loading view-loading--compact"><span className="spinner" aria-hidden="true" /></div>}>
               <LogViewer />
             </Suspense>
@@ -3572,7 +3701,7 @@ ${finalText}`
             className="chat__logs-resizer"
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize logs panel"
+            aria-label={t('logs.resize')}
             aria-valuemin={CHAT_LOGS_MIN_WIDTH}
             aria-valuemax={maxChatLogsWidthForLayout(chatContainerWidth, railExpanded)}
             aria-valuenow={effectiveChatLogsWidth}
@@ -3589,7 +3718,7 @@ ${finalText}`
         <div className="composer__toolbar">
           {(modelPickerOptions.length > 0 || modelPickerOpen) && (
             <div className="composer__model-picker" ref={modelPickerRef}>
-              <span className="composer__model-label">Model</span>
+              <span className="composer__model-label">{t('model.label')}</span>
               <button
                 type="button"
                 className="composer__model-button"
@@ -3600,33 +3729,25 @@ ${finalText}`
                 {currentLoadedModel ? (
                   <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
                     <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
-                    <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
+                    <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe, t)}</span>
                   </span>
                 ) : (
                   <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
                 )}
-                {!currentLoadedModel && currentDefaultModel && (
-                  <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
-                  </span>
-                )}
                 <span className="composer__model-button-name">{currentModel}</span>
-                {currentLoadedModel && currentDefaultModel && (
-                  <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
-                  </span>
-                )}
                 {selectableModels.length > 0 && (
                   <span className="composer__model-button-badge">({selectableModels.length})</span>
                 )}
                 <span className="composer__model-button-caret">▾</span>
               </button>
               {modelPickerOpen && (
-                <div className="composer__model-menu" role="dialog" aria-label="Search models">
+                <div className="composer__model-menu" role="dialog" aria-label={t('model.search')}>
                   <label className="composer__model-search">
                     <Icon name="search" size={14} />
                     <input
                       autoFocus
                       value={modelPickerQuery}
-                      placeholder="Search ready or Lemonade default models…"
+                      placeholder={t('model.searchPlaceholder')}
                       onChange={e => setModelPickerQuery(e.target.value)}
                       // Typing filters, then Down hands off to the list's own
                       // roving-tabindex navigation.
@@ -3642,7 +3763,7 @@ ${finalText}`
                   <WorkspaceList
                     listRef={modelPickerListRef}
                     className="composer__model-results"
-                    label="Models"
+                    label={t('model.models')}
                     onRowActivate={name => {
                       const option = modelPickerOptions.find(item => item.name === name);
                       if (option) handleModelPickerSelect(option);
@@ -3655,7 +3776,7 @@ ${finalText}`
                       const structure = modelStructure(option.recipe);
                       const capability = structure === 'single' ? option.capability : structure;
                       // Collections route to backends rather than being one, so
-                      // they name no engine — same rule as the models catalog.
+                      // they name no engine - same rule as the models catalog.
                       const isCollection = structure !== 'single';
                       // The picker gives its trailing slot to eject, so the
                       // engine joins the facts instead of competing for it.
@@ -3675,11 +3796,11 @@ ${finalText}`
                           meta={detailParts}
                           glyphs={option.audioInput && option.capability === 'chat' ? ['audio'] : undefined}
                           status={busy ? 'busy' : option.loaded ? 'live' : undefined}
-                          statusText={isLoading ? 'Loading…' : isUnloading ? 'Ejecting…' : undefined}
+                          statusText={isLoading ? t('model.loadingStatus') : isUnloading ? t('model.ejectingStatus') : undefined}
                           selected={option.name === currentModel}
                           disabled={busy}
                           tabIndex={option.name === currentModel ? 0 : -1}
-                          ariaLabel={`${option.name}, ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe)}, ${option.detail}${option.defaultLabel ? `, ${option.defaultLabel}` : ''}`}
+                          ariaLabel={`${option.name}, ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe, t)}, ${option.detail}${option.defaultLabel ? `, ${option.defaultLabel}` : ''}`}
                           onClick={() => handleModelPickerSelect(option)}
                           // Each row offers the one thing left to do to it. Eject
                           // latches because a loaded model is holding memory and
@@ -3687,22 +3808,22 @@ ${finalText}`
                           // are ordinary affordances that wait to be reached for.
                           action={busy ? undefined : option.loaded ? {
                             icon: 'eject',
-                            label: `Eject model ${option.name}`,
+                            label: t('model.eject', { model: option.name }),
                             onClick: () => handleModelPickerUnload(option.name),
                             latched: true,
                           } : {
                             icon: option.downloaded ? 'play' : 'download',
                             label: option.downloaded
-                              ? `Load model ${option.name}`
-                              : `Download model ${option.name}`,
+                              ? t('model.load', { model: option.name })
+                              : t('model.download', { model: option.name }),
                             onClick: () => { void handleModelPickerSelect(option); },
                           }}
                         />
                       );
                     })}
-                    {modelPickerOptions.length === 0 && <li className="composer__model-empty">No matching models</li>}
+                    {modelPickerOptions.length === 0 && <li className="composer__model-empty">{t('model.noMatches')}</li>}
                   </WorkspaceList>
-                  {modelPickerLoading && <div className="composer__model-loading-bar">Loading {modelPickerLoading}…</div>}
+                  {modelPickerLoading && <div className="composer__model-loading-bar">{t('model.loading', { model: modelPickerLoading })}</div>}
                   {modelPickerError && <div className="composer__model-error">{modelPickerError}</div>}
                 </div>
               )}
@@ -3713,8 +3834,8 @@ ${finalText}`
               type="button"
               className="composer__tools-toggle composer__effective-settings"
               onClick={() => setEffectiveSettingsOpen(true)}
-              title="Effective settings"
-              aria-label="Effective settings"
+              title={t('model.effectiveSettings')}
+              aria-label={t('model.effectiveSettings')}
             >
               <Icon name="sliders-horizontal" size={13} />
             </button>
@@ -3725,7 +3846,7 @@ ${finalText}`
             aria-pressed={showInlineLogs}
             title={showInlineLogs ? 'Hide logs' : 'Show logs'}
           >
-            <Icon name="logs" size={13} /> Logs
+            <Icon name="logs" size={13} /> {t('model.logs')}
           </button>
         </div>
         {currentModel && effectiveSettingsOpen && (
@@ -3762,9 +3883,9 @@ ${finalText}`
         )}
         <div className={`composer__entry${hasComposerSettings ? ' composer__entry--with-settings' : ''}`}>
         {currentCapability === 'image' && (
-          <div className="composer__image-settings" aria-label="Image generation settings">
+          <div className="composer__image-settings" aria-label={t('image.settings')}>
             <label className="composer__image-setting composer__image-setting--mode">
-              <span>Mode</span>
+              <span>{t('image.mode')}</span>
               <select
                 value={imageMode}
                 onChange={e => {
@@ -3774,12 +3895,12 @@ ${finalText}`
                 }}
                 disabled={isBusy}
               >
-                <option value="generate">Generate</option>
-                {supportsImageEdit && <option value="edit">Edit</option>}
+                <option value="generate">{t('image.generate')}</option>
+                {supportsImageEdit && <option value="edit">{t('image.edit')}</option>}
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Steps</span>
+              <span>{t('image.steps')}</span>
               <input
                 type="number"
                 min={1}
@@ -3790,7 +3911,7 @@ ${finalText}`
               />
             </label>
             <label className="composer__image-setting">
-              <span>CFG Scale</span>
+              <span>{t('image.cfgScale')}</span>
               <input
                 type="number"
                 min={1}
@@ -3802,7 +3923,7 @@ ${finalText}`
               />
             </label>
             <label className="composer__image-setting">
-              <span>Width</span>
+              <span>{t('image.width')}</span>
               <select
                 value={imageSettings.width}
                 onChange={e => markImageSettingsEdited(prev => ({ ...prev, width: parseInt(e.target.value, 10) }))}
@@ -3812,7 +3933,7 @@ ${finalText}`
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Height</span>
+              <span>{t('image.height')}</span>
               <select
                 value={imageSettings.height}
                 onChange={e => markImageSettingsEdited(prev => ({ ...prev, height: parseInt(e.target.value, 10) }))}
@@ -3822,7 +3943,7 @@ ${finalText}`
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Seed</span>
+              <span>{t('image.seed')}</span>
               <input
                 type="number"
                 min={-1}
@@ -3841,22 +3962,22 @@ ${finalText}`
               />
             </label>
             <label className="composer__image-setting composer__image-setting--upscale">
-              <span>Upscale</span>
+              <span>{t('image.upscale')}</span>
               <select
                 value={imageSettings.upscaleModel}
                 onChange={e => markImageSettingsEdited(prev => ({ ...prev, upscaleModel: e.target.value }))}
                 disabled={isBusy || upscalingModels.length === 0}
               >
-                <option value="">Off</option>
+                <option value="">{t('image.off')}</option>
                 {upscalingModels.map(name => <option key={name} value={name}>{name}</option>)}
               </select>
             </label>
           </div>
         )}
         {currentCapability === 'audio-generation' && (
-          <div className="composer__capability-settings composer__audio-generation-settings" aria-label="Audio generation settings">
+          <div className="composer__capability-settings composer__audio-generation-settings" aria-label={t('audio.settings')}>
             <label className="composer__image-setting">
-              <span>Duration</span>
+              <span>{t('audio.duration')}</span>
               <input
                 type="number"
                 min={1}
@@ -3868,7 +3989,7 @@ ${finalText}`
               <small>s</small>
             </label>
             <label className="composer__image-setting">
-              <span>Steps</span>
+              <span>{t('audio.steps')}</span>
               <input
                 type="number"
                 min={1}
@@ -3880,7 +4001,7 @@ ${finalText}`
             </label>
             {!isAceStepAudio && (
               <label className="composer__image-setting">
-                <span>CFG</span>
+                <span>{t('audio.cfg')}</span>
                 <input
                   type="number"
                   min={0}
@@ -3893,7 +4014,7 @@ ${finalText}`
               </label>
             )}
             <label className="composer__image-setting">
-              <span>Seed</span>
+              <span>{t('audio.seed')}</span>
               <input
                 type="number"
                 min={-1}
@@ -3905,24 +4026,24 @@ ${finalText}`
             </label>
             {isAceStepAudio && (
               <label className="composer__image-setting composer__image-setting--language">
-                <span>Lyrics language</span>
+                <span>{t('audio.lyricsLanguage')}</span>
                 <input
                   type="text"
                   maxLength={12}
                   value={audioGenerationSettings.vocalLanguage}
                   onChange={e => setAudioGenerationSettings(prev => ({ ...prev, vocalLanguage: e.target.value }))}
-                  placeholder="en"
+                  placeholder={t('audio.languagePlaceholder')}
                   disabled={isBusy}
                 />
               </label>
             )}
             {isAceStepAudio && (
               <label className="composer__audio-lyrics">
-                <span>Lyrics <small>optional · leave empty for instrumental</small></span>
+                <span>{t('audio.lyrics')} <small>{t('audio.lyricsOptional')}</small></span>
                 <textarea
                   value={audioGenerationSettings.lyrics}
                   onChange={e => setAudioGenerationSettings(prev => ({ ...prev, lyrics: e.target.value }))}
-                  placeholder={'[verse]\nMoonlight spills across the floor…\n\n[chorus]\nWe sing until the morning light…'}
+                  placeholder={t('audio.lyricsPlaceholder')}
                   rows={3}
                   disabled={isBusy}
                 />
@@ -3931,9 +4052,9 @@ ${finalText}`
           </div>
         )}
         {currentCapability === 'tts' && isOpenMossTts && (
-          <div className="composer__capability-settings composer__openmoss-settings" aria-label="OpenMOSS voice settings">
+          <div className="composer__capability-settings composer__openmoss-settings" aria-label={t('voice.settings')}>
             <label className="composer__image-setting composer__image-setting--mode">
-              <span>Voice mode</span>
+              <span>{t('voice.mode')}</span>
               <select
                 value={openMossSettings.mode}
                 onChange={event => {
@@ -3943,29 +4064,29 @@ ${finalText}`
                 }}
                 disabled={isBusy}
               >
-                <option value="plain">Plain</option>
-                <option value="describe">Describe voice</option>
-                <option value="clone">Clone WAV sample</option>
+                <option value="plain">{t('voice.plain')}</option>
+                <option value="describe">{t('voice.describe')}</option>
+                <option value="clone">{t('voice.clone')}</option>
               </select>
             </label>
             <label className="composer__openmoss-description">
               <span>
                 {openMossSettings.mode === 'describe'
-                  ? 'Voice description'
+                  ? t('voice.descriptionLabel')
                   : openMossSettings.mode === 'clone'
-                    ? 'Style note'
-                    : 'Voice style'}
-                <small>{openMossSettings.mode === 'clone' ? 'optional' : 'optional instruction'}</small>
+                    ? t('voice.styleNote')
+                    : t('voice.styleLabel')}
+                <small>{openMossSettings.mode === 'clone' ? t('voice.optional') : t('voice.optionalInstruction')}</small>
               </span>
               <input
                 type="text"
                 value={openMossSettings.voiceDescription}
                 onChange={event => setOpenMossSettings(previous => ({ ...previous, voiceDescription: event.target.value }))}
                 placeholder={openMossSettings.mode === 'describe'
-                  ? 'Warm low female voice, British accent…'
+                  ? t('voice.placeholders.describe')
                   : openMossSettings.mode === 'clone'
-                    ? 'Calm, conversational delivery…'
-                    : 'Cheerful, whispering, dramatic…'}
+                    ? t('voice.placeholders.clone')
+                    : t('voice.placeholders.style')}
                 disabled={isBusy}
               />
             </label>
@@ -3976,24 +4097,24 @@ ${finalText}`
             >
               {openMossSettings.mode === 'describe'
                 ? openMossDescribeUnavailable
-                  ? 'Install MOSS-VoiceGen to enable described voices.'
+                  ? t('voice.status.installVoiceGen')
                   : openMossCloneModel
-                    ? `Voice design: ${openMossVoiceDesignModel} → speech: ${openMossCloneModel}`
-                    : `Using ${openMossVoiceDesignModel} directly for described speech.`
+                    ? t('voice.status.designPipeline', { designModel: openMossVoiceDesignModel, speechModel: openMossCloneModel })
+                    : t('voice.status.directDescribe', { model: openMossVoiceDesignModel })
                 : openMossSettings.mode === 'clone'
                   ? !openMossCloneModel
-                    ? 'Install OpenMOSS-TTS to clone a WAV voice sample.'
+                    ? t('voice.status.installCloneModel')
                     : pendingAudioFiles.length > 0
-                      ? `Voice sample ready: ${pendingAudioFiles[0].name}`
-                      : 'Attach one WAV voice sample with the paperclip below.'
-                  : 'The selected OpenMOSS model receives the optional voice style directly.'}
+                      ? t('voice.status.sampleReady', { name: pendingAudioFiles[0].name })
+                      : t('voice.status.attachSample')
+                  : t('voice.status.directStyle')}
             </div>
           </div>
         )}
         {currentCapability === 'model3d' && (
-          <div className="composer__capability-settings composer__model3d-settings" aria-label="3D generation settings">
+          <div className="composer__capability-settings composer__model3d-settings" aria-label={t('model3d.settings')}>
             <label className="composer__image-setting composer__image-setting--mode">
-              <span>Source</span>
+              <span>{t('model3d.source')}</span>
               <select
                 value={model3dSettings.sourceMode}
                 onChange={e => {
@@ -4003,48 +4124,48 @@ ${finalText}`
                 }}
                 disabled={isBusy}
               >
-                <option value="image">Image → 3D</option>
-                <option value="text">Text → image → 3D</option>
+                <option value="image">{t('model3d.imageTo3d')}</option>
+                <option value="text">{t('model3d.textTo3d')}</option>
               </select>
             </label>
             {model3dSettings.sourceMode === 'text' && (
               <label className="composer__image-setting composer__image-setting--model">
-                <span>Image model</span>
+                <span>{t('model3d.imageModel')}</span>
                 <select
                   value={model3dSettings.imageModel}
                   onChange={e => setModel3dSettings(prev => ({ ...prev, imageModel: e.target.value }))}
                   disabled={isBusy || imageGenerationModels.length === 0}
                 >
-                  {imageGenerationModels.length === 0 && <option value="">Download an image model first</option>}
+                  {imageGenerationModels.length === 0 && <option value="">{t('model3d.downloadImageModel')}</option>}
                   {imageGenerationModels.map(name => <option key={name} value={name}>{name}</option>)}
                 </select>
               </label>
             )}
             <label className="composer__image-setting">
-              <span>Resolution</span>
+              <span>{t('model3d.resolution')}</span>
               <select
                 value={model3dSettings.resolution}
                 onChange={e => setModel3dSettings(prev => ({ ...prev, resolution: Number(e.target.value) as 512 | 1024 | 1536 }))}
                 disabled={isBusy}
               >
-                <option value={512}>512 · fast</option>
-                <option value={1024}>1024 · sharp</option>
-                <option value={1536}>1536 · heavy</option>
+                <option value={512}>{t('model3d.fast')}</option>
+                <option value={1024}>{t('model3d.sharp')}</option>
+                <option value={1536}>{t('model3d.heavy')}</option>
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Background</span>
+              <span>{t('model3d.background')}</span>
               <select
                 value={model3dSettings.backgroundRemoval}
                 onChange={e => setModel3dSettings(prev => ({ ...prev, backgroundRemoval: e.target.value as 'birefnet' | 'threshold' }))}
                 disabled={isBusy}
               >
-                <option value="birefnet">Auto matte</option>
-                <option value="threshold">Plain background</option>
+                <option value="birefnet">{t('model3d.autoMatte')}</option>
+                <option value="threshold">{t('model3d.plainBackground')}</option>
               </select>
             </label>
             <label className="composer__image-setting">
-              <span>Seed</span>
+              <span>{t('image.seed')}</span>
               <input
                 type="number"
                 min={-1}
@@ -4060,8 +4181,8 @@ ${finalText}`
           <div className="composer__images">
             {pendingImages.map((src, i) => (
               <div key={i} className="composer__image-thumb">
-                <img src={src} alt={`Attachment ${i + 1}`} />
-                <button className="composer__image-remove" onClick={() => removeImage(i)} aria-label="Remove image">×</button>
+                <img src={src} alt={t('image.attachment', { index: i + 1 })} />
+                <button className="composer__image-remove" onClick={() => removeImage(i)} aria-label={t('image.remove')}>×</button>
               </div>
             ))}
           </div>
@@ -4071,20 +4192,20 @@ ${finalText}`
             {pendingAudioFiles.map((file, i) => (
               <div key={`${file.name}-${i}`} className="composer__file-chip">
                 <span><Icon name="mic" size={13} /> {file.name}</span>
-                <button onClick={removeAudio} aria-label="Remove audio file">×</button>
+                <button onClick={removeAudio} aria-label={t('audio.remove')}>×</button>
               </div>
             ))}
           </div>
         )}
-        {(isLiveRecording || liveTranscript || liveError || micError) && (supportsRealtimeAudio || currentCapability === 'audio') && (
-          <div className={`composer__live${liveError || micError ? ' composer__live--error' : ''}`}>
+        {(isLiveRecording || liveTranscript || liveError || micErrorText) && (supportsRealtimeAudio || currentCapability === 'audio') && (
+          <div className={`composer__live${liveError || micErrorText ? ' composer__live--error' : ''}`}>
             <div className="composer__live-head">
               <span className={`composer__live-dot${isSpeaking ? ' composer__live-dot--speaking' : ''}`} />
-              <span>{isLiveRecording ? (isLiveConnected ? 'Live microphone' : 'Connecting microphone…') : 'Microphone'}</span>
+              <span>{isLiveRecording ? (isLiveConnected ? t('composer.live.microphoneLive') : t('composer.live.connecting')) : t('composer.live.microphone')}</span>
               {isLiveRecording && <span className="composer__live-meter"><span style={{ width: `${Math.round(audioLevel * 100)}%` }} /></span>}
             </div>
             <div className="composer__live-text">
-              {liveError || micError || liveTranscript || 'Listening… start speaking to see transcription.'}
+              {liveError || micErrorText || liveTranscript || t('composer.live.listening')}
             </div>
           </div>
         )}
@@ -4101,15 +4222,15 @@ ${finalText}`
                 });
               }}
               disabled={!currentModel || isBusy || (!modeSupportsMcp && (!canAttach || imageAttachmentLimitReached))}
-              title="Add files, photos, or tools"
-              aria-label="Add files, photos, or tools"
+              title={t('add.button')}
+              aria-label={t('add.button')}
               aria-haspopup={mcpPickerOpen ? 'dialog' : 'menu'}
               aria-expanded={addMenuOpen}
             >
               <Icon name="plus" size={20} />
             </button>
             {addMenuOpen && !mcpPickerOpen && (
-              <div className="composer__add-menu" role="menu" aria-label="Add to chat">
+              <div className="composer__add-menu" role="menu" aria-label={t('add.menu')}>
                 <button
                   type="button"
                   className="composer__add-row"
@@ -4122,18 +4243,18 @@ ${finalText}`
                 >
                   <span className="composer__add-icon"><Icon name="paperclip" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Add files</strong>
+                    <strong>{t('add.files')}</strong>
                     <small>{isOpenMossCloneMode
-                      ? 'WAV audio file'
+                      ? t('add.fileTypes.wav')
                       : currentCapability === 'model3d'
-                        ? 'PNG, JPEG, BMP, or GIF image'
+                        ? t('add.fileTypes.images')
                         : acceptsImageAttachments && acceptsAudioAttachments
-                          ? 'Images and audio files'
+                          ? t('add.fileTypes.imagesAndAudio')
                           : acceptsImageAttachments
-                            ? 'Images'
+                            ? t('add.fileTypes.imageFiles')
                             : acceptsAudioAttachments
-                              ? 'Audio files'
-                              : 'Not available for this model'}</small>
+                              ? t('add.fileTypes.audioFiles')
+                              : t('add.fileTypes.unavailable')}</small>
                   </span>
                 </button>
                 <button
@@ -4143,15 +4264,15 @@ ${finalText}`
                   data-mcp-entry="tools"
                   onClick={openMcpPicker}
                   disabled={!modeSupportsMcp}
-                  aria-label="Tools"
+                  aria-label={t('add.tools')}
                   aria-haspopup="dialog"
                 >
                   <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Tools</strong>
+                    <strong>{t('add.tools')}</strong>
                     <small>{useMcp
-                      ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
-                      : 'Lemonade tools and external MCP servers'}</small>
+                      ? t('tools.selectedSummary', { count: selectedMcpToolCount })
+                      : t('tools.description')}</small>
                   </span>
                 </button>
               </div>
@@ -4175,9 +4296,9 @@ ${finalText}`
                     }
                   }}
                 >
-                  <button ref={mcpBackButtonRef} type="button" className="composer__mcp-back" onClick={closeMcpPicker} aria-label="Back to add to chat options">
+                  <button ref={mcpBackButtonRef} type="button" className="composer__mcp-back" onClick={closeMcpPicker} aria-label={t('add.backAria')}>
                     <span aria-hidden="true">←</span>
-                    <span>Back</span>
+                    <span>{t('add.back')}</span>
                   </button>
                   <div className="composer__mcp-header">
                     <label className="composer__mcp-master">
@@ -4188,13 +4309,13 @@ ${finalText}`
                         onChange={event => persistMcpEnabled(event.target.checked)}
                       />
                       <span>
-                        <strong id="composer-mcp-dialog-title">Tools for this chat</strong>
-                        <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
+                        <strong id="composer-mcp-dialog-title">{t('tools.title')}</strong>
+                        <small>{t('tools.summary', { servers: selectedMcpServerIds.length, count: selectedMcpToolCount })}</small>
                       </span>
                     </label>
-                    <button type="button" className="btn btn--ghost" onClick={resetMcpSelection}>Built-in default</button>
+                    <button type="button" className="btn btn--ghost" onClick={resetMcpSelection}>{t('tools.builtInDefault')}</button>
                   </div>
-                  <div className="composer__mcp-tabs" role="tablist" aria-label="Tool providers">
+                  <div className="composer__mcp-tabs" role="tablist" aria-label={t('tools.providers')}>
                     <button
                       type="button"
                       role="tab"
@@ -4202,7 +4323,7 @@ ${finalText}`
                       className={`composer__mcp-tab${mcpPickerTab === 'lemonade' ? ' is-active' : ''}`}
                       onClick={() => setMcpPickerTab('lemonade')}
                     >
-                      Lemonade tools
+                      {t('tools.lemonade')}
                     </button>
                     <button
                       type="button"
@@ -4211,16 +4332,16 @@ ${finalText}`
                       className={`composer__mcp-tab${mcpPickerTab === 'external' ? ' is-active' : ''}`}
                       onClick={() => setMcpPickerTab('external')}
                     >
-                      External MCP servers
+                      {t('tools.external')}
                     </button>
                   </div>
                   {mcpPickerLoading ? (
-                    <p className="composer__mcp-empty">Loading MCP tools…</p>
+                    <p className="composer__mcp-empty">{t('tools.loading')}</p>
                   ) : mcpPickerError ? (
                     <div className="composer__mcp-error" role="alert">{mcpPickerError}</div>
                   ) : visibleMcpOptions.length === 0 ? (
                     <p className="composer__mcp-empty">
-                      {mcpPickerTab === 'external' ? 'No external MCP servers are connected.' : 'No Lemonade tools available.'}
+                      {t(mcpPickerTab === 'external' ? 'tools.noneExternal' : 'tools.noneLemonade')}
                     </p>
                   ) : (
                     <div className="composer__mcp-servers">
@@ -4239,14 +4360,14 @@ ${finalText}`
                               <span className="composer__mcp-server-text">
                                 <strong>{server.name}</strong>
                                 <small>{server.transport === 'builtin'
-                                  ? 'Built in'
-                                  : `${server.transport === 'streamable-http' ? 'HTTP endpoint' : 'Local process'} · ${server.status}`} · {server.toolOptions.length || server.tools} tool{(server.toolOptions.length || server.tools) === 1 ? '' : 's'}</small>
+                                  ? t('tools.builtIn')
+                                  : `${t(server.transport === 'streamable-http' ? 'tools.httpEndpoint' : 'tools.localProcess')} · ${server.status}`} · {t('tools.toolCount', { count: server.toolOptions.length || server.tools })}</small>
                               </span>
                             </label>
                             {serverSelected && (
                               <div className="composer__mcp-tools">
                                 {server.toolOptions.length === 0 ? (
-                                  <p className="composer__mcp-empty">No tools discovered for this server.</p>
+                                  <p className="composer__mcp-empty">{t('tools.noneForServer')}</p>
                                 ) : server.toolOptions.map(tool => {
                                   const toolSelected = selectedMcpToolNameSet === null || selectedMcpToolNameSet.has(tool.runtimeName);
                                   return (
@@ -4272,7 +4393,7 @@ ${finalText}`
                     </div>
                   )}
                   <div className="composer__mcp-footer">
-                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>Select all tools for selected servers</button>
+                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>{t('tools.selectAll')}</button>
                   </div>
                 </div>
               </div>
@@ -4296,7 +4417,7 @@ ${finalText}`
             onPaste={handlePaste}
             disabled={isBusy}
             rows={1}
-            aria-label="Message"
+            aria-label={t('composer.message')}
           />
           {modeSupportsChatCompletions && (
             <div
@@ -4319,21 +4440,21 @@ ${finalText}`
                   setThinkingMenuOpen(open => !open);
                 }}
                 disabled={isBusy}
-                aria-label={`Reasoning: ${thinkingMode === 'off' ? 'Off' : 'Thinking'}`}
+                aria-label={t('reasoning.aria', { mode: t(thinkingMode === 'off' ? 'reasoning.off' : 'reasoning.thinking') })}
                 aria-haspopup="menu"
                 aria-expanded={thinkingMenuOpen}
               >
-                <span>{thinkingMode === 'off' ? 'Off' : 'Thinking'}</span>
+                <span>{t(thinkingMode === 'off' ? 'reasoning.off' : 'reasoning.thinking')}</span>
                 <Icon name="chevron-down" size={12} aria-hidden="true" />
               </button>
               {!thinkingMenuOpen && (
                 <div className="composer__thinking-tooltip" role="tooltip" aria-hidden="true">
-                  <span>Reasoning</span>
+                  <span>{t('reasoning.title')}</span>
                   <kbd>Ctrl ⇧ M</kbd>
                 </div>
               )}
               {thinkingMenuOpen && (
-                <div className="composer__thinking-menu" role="menu" aria-label="Reasoning">
+                <div className="composer__thinking-menu" role="menu" aria-label={t('reasoning.title')}>
                   {(['normal', 'off'] as const).map(mode => {
                     const selected = thinkingMode === mode;
                     const enabled = mode !== 'off';
@@ -4347,9 +4468,9 @@ ${finalText}`
                         onClick={() => selectThinkingMode(mode)}
                       >
                         <span className="composer__thinking-option-copy">
-                          <span className="composer__thinking-option-label">{enabled ? 'Thinking' : 'Off'}</span>
+                          <span className="composer__thinking-option-label">{t(enabled ? 'reasoning.thinking' : 'reasoning.off')}</span>
                           <span className="composer__thinking-option-description">
-                            {enabled ? 'Model thinks before answering' : 'Direct answer'}
+                            {t(enabled ? 'reasoning.thinkingDescription' : 'reasoning.offDescription')}
                           </span>
                         </span>
                         {selected && <Icon name="check" size={13} aria-hidden="true" />}
@@ -4365,21 +4486,21 @@ ${finalText}`
               className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
               onClick={isLiveRecording ? handleMicStop : handleMicStart}
               disabled={!currentModel || (!supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
-              title={isLiveRecording ? 'Stop live microphone transcription' : supportsRealtimeAudio ? 'Start live microphone transcription' : 'Live microphone needs HTTPS/localhost and a realtime-capable audio model'}
-              aria-label={isLiveRecording ? 'Stop live microphone transcription' : 'Start live microphone transcription'}
+              title={isLiveRecording ? t('composer.micStop') : supportsRealtimeAudio ? t('composer.micStart') : t('composer.micUnavailable')}
+              aria-label={isLiveRecording ? t('composer.micStop') : t('composer.micStart')}
               aria-pressed={isLiveRecording}
             >
               <Icon name="mic" size={16} />
             </button>
           )}
           {isStreaming ? (
-            <button className="composer__stop" onClick={handleStop} aria-label="Stop generating" title="Stop"><Icon name="stop" size={16} /></button>
+            <button className="composer__stop" onClick={handleStop} aria-label={t('composer.stop')} title={t('composer.stopTitle')}><Icon name="stop" size={16} /></button>
           ) : (
             <button
               className="composer__send"
               onClick={() => handleSend()}
               disabled={!canSubmit}
-              aria-label="Send"
+              aria-label={t('composer.send')}
             ><Icon name="send" size={16} /></button>
           )}
         </div>
@@ -4410,32 +4531,34 @@ interface EmptyStateProps {
   customModelInfos: ModelInfo[];
 }
 
-const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onOpenModelDetails, onUnloadModel, unloadingModel, onChipClick, customModelInfos }) => (
+const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onOpenModelDetails, onUnloadModel, unloadingModel, onChipClick, customModelInfos }) => {
+  const { t } = useI18n('chat');
+  return (
   <>
     <div className="hero">
-      <h1 className="hero__title">Get to know Lemonade</h1>
+      <h1 className="hero__title">{t('emptyState.title')}</h1>
       <p className="hero__subtitle">
         {loadedModels.length > 0
-          ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} ready. Ask a question or explore what Lemonade can do.`
-          : 'Ask a question to learn how Lemonade works and get started with your first model.'}
+          ? t('emptyState.ready', { count: loadedModels.length })
+          : t('emptyState.noModels')}
       </p>
 
       <div className="chips" role="list">
-        <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
+        <button className="chip" role="listitem" onClick={() => onChipClick(t('emptyState.chips.use.prompt'))}>
           <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
-          How do I use Lemonade?
+          {t('emptyState.chips.use.label')}
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
+        <button className="chip" role="listitem" onClick={() => onChipClick(t('emptyState.chips.add.prompt'))}>
           <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
-          How do I add a model?
+          {t('emptyState.chips.add.label')}
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
+        <button className="chip" role="listitem" onClick={() => onChipClick(t('emptyState.chips.tools.prompt'))}>
           <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
-          What are Lemonade tools?
+          {t('emptyState.chips.tools.label')}
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
+        <button className="chip" role="listitem" onClick={() => onChipClick(t('emptyState.chips.hardware.prompt'))}>
           <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
-          What can my hardware run?
+          {t('emptyState.chips.hardware.label')}
         </button>
       </div>
     </div>
@@ -4443,7 +4566,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
     {loadedModels.length > 0 && (
       <>
         <div className="section-label">
-          <span>Loaded right now</span>
+          <span>{t('emptyState.loaded')}</span>
           <span className="section-label__rule" />
         </div>
         <div className="active-models">
@@ -4451,7 +4574,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
             const customInfo = customModelInfos.find(cm => (cm.name || cm.id) === m.model_name);
             const cap = customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(m);
             const audioInput = modelSupportsChatAudioInput(customInfo || null, m);
-            const modeLabel = modelModeDisplayLabel(cap, audioInput, m.recipe);
+            const modeLabel = modelModeDisplayLabel(cap, audioInput, m.recipe, t);
             const modeBadge = modelModeBadge(cap, m.recipe);
             const selectable = canSelectInComposer(m) || isComposerSelectableCapability(cap);
             const isActive = currentModel === m.model_name;
@@ -4464,41 +4587,41 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
                         type="button"
                         className="active-card__name"
                         onClick={() => onOpenModelDetails(m.model_name)}
-                        title={`Open ${m.model_name} in Models`}
+                        title={t('emptyState.openModel', { model: m.model_name })}
                       >
                         {m.model_name}
                       </button>
                     </div>
-                    <div className="active-card__meta">{m.recipe || 'runtime'} · {m.checkpoint || 'default'}</div>
+                    <div className="active-card__meta">{m.recipe || t('emptyState.runtime')} · {m.checkpoint || t('emptyState.default')}</div>
                   </div>
-                  <span className="active-card__device">{m.device || 'device unknown'}</span>
+                  <span className="active-card__device">{m.device || t('emptyState.deviceUnknown')}</span>
                 </div>
                 <div className="active-card__badges">
                   <span className={`cap-badge cap-badge--${modeBadge}`}><ModelModeIcons capability={cap} recipe={m.recipe} audioInput={audioInput} size={13} /> {modeLabel}</span>
                 </div>
                 <div className="active-card__actions">
                   {isActive ? (
-                    <span className="active-card__status">● Active {modeLabel} mode</span>
+                    <span className="active-card__status">{t('emptyState.activeMode', { mode: modeLabel })}</span>
                   ) : selectable ? (
                     <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
-                      Use in {modeLabel}
+                      {t('emptyState.useMode', { mode: modeLabel })}
                     </button>
                   ) : (
-                    <span className="active-card__status active-card__status--muted">Utility model only</span>
+                    <span className="active-card__status active-card__status--muted">{t('emptyState.utilityOnly')}</span>
                   )}
                 </div>
                 <div className="active-card__footer">
                   <button type="button" className="active-card__details" onClick={() => onOpenModelDetails(m.model_name)}>
-                    View details
+                    {t('emptyState.viewDetails')}
                   </button>
                   <button
                     type="button"
                     className="active-card__eject"
                     onClick={() => onUnloadModel(m.model_name)}
                     disabled={unloadingModel === m.model_name}
-                    title={`Unload ${m.model_name}`}
+                    title={t('emptyState.unloadTitle', { model: m.model_name })}
                   >
-                    {unloadingModel === m.model_name ? 'Unloading…' : 'Unload'}
+                    {unloadingModel === m.model_name ? t('emptyState.unloading') : t('emptyState.unload')}
                   </button>
                 </div>
               </article>
@@ -4508,28 +4631,15 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
       </>
     )}
   </>
-);
+  );
+};
 
 /* ─── Message bubble ──────────────────────────────────── */
 
 /* ── Tool call indicator ─────────────────────────────────── */
 
-const TOOL_LABELS: Record<string, string> = {
-  list_models: 'List models',
-  get_model_info: 'Get model info',
-  load_model: 'Load model',
-  unload_model: 'Unload model',
-  get_loaded_models: 'Get loaded models',
-  get_server_health: 'Server health',
-  pull_model: 'Pull model',
-  delete_model: 'Delete model',
-  get_system_info: 'System info',
-  list_backends: 'List backends',
-  install_backend: 'Install backend',
-  ask_question: 'Asking you',
-};
-
 const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (text: string) => void }> = ({ calls, onOptionSelect }) => {
+  const { t } = useI18n('chat');
   // Track which choice was selected per call index. Map key is the call's position in the array.
   const [selections, setSelections] = useState<Map<number, string>>(() => new Map());
 
@@ -4537,6 +4647,7 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
   return (
     <div className="message__tool-calls">
       {calls.map((tc, i) => {
+        const resultText = toolResultText(tc, t);
         // Render ask_question as interactive buttons directly from tool call data
         if (tc.name === 'ask_question' && tc.rawArgs && tc.status === 'done') {
           try {
@@ -4567,16 +4678,16 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
                   ))}
                 </div>
                 {selectedChoice && (
-                  <div className="options-block__confirmation">✓ You chose: {selectedChoice}</div>
+                  <div className="options-block__confirmation">{t('options.chosen', { choice: selectedChoice })}</div>
                 )}
                 {!selectedChoice && allowCustom && (
                   <div className="options-block__custom">
-                    <input className="options-block__input" placeholder="Or type your own…"
+                    <input className="options-block__input" placeholder={t('options.customPlaceholder')}
                       onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) { handleSelect((e.target as HTMLInputElement).value.trim()); } }} />
                     <button className="options-block__submit" onClick={e => {
                       const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement;
                       if (input?.value.trim()) handleSelect(input.value.trim());
-                    }}>Send</button>
+                    }}>{t('options.send')}</button>
                   </div>
                 )}
               </div>
@@ -4587,10 +4698,10 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
           <details key={i} className={`message__tool-call message__tool-call--${tc.status}`}>
             <summary>
               <span className="message__tool-call-icon">{tc.status === 'running' ? <Icon name="clock" size={13} /> : tc.status === 'error' ? <Icon name="x" size={13} /> : <Icon name="check" size={13} />}</span>
-              <span className="message__tool-call-name">{TOOL_LABELS[tc.name] || tc.name}</span>
+              <span className="message__tool-call-name">{TOOL_LABEL_KEYS[tc.name] ? t(TOOL_LABEL_KEYS[tc.name]) : tc.name}</span>
               {tc.args && <span className="message__tool-call-args">{tc.args}</span>}
             </summary>
-            {tc.result && <div className="message__tool-call-result">{tc.result}</div>}
+            {resultText && <div className="message__tool-call-result">{resultText}</div>}
           </details>
         );
       })}
@@ -4601,15 +4712,41 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 /* ── Message bubble ──────────────────────────────────────── */
 
 const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; defaultThinkingOpen?: boolean; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, defaultThinkingOpen = false, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
+  const { t } = useI18n('chat');
   const [thinkingOpen, setThinkingOpen] = useState(defaultThinkingOpen);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content || '');
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!isEditing) setEditDraft(message.content || '');
   }, [isEditing, message.content]);
 
+  useEffect(() => () => {
+    if (copyResetRef.current) clearTimeout(copyResetRef.current);
+  }, []);
+
+  const handleCopyMessage = useCallback(async () => {
+    const text = message.content || message.thinking || '';
+    if (!text) return;
+    if (copyResetRef.current) clearTimeout(copyResetRef.current);
+    try {
+      await copyTextToClipboard(text);
+      setCopyState('copied');
+    } catch {
+      setCopyState('failed');
+    }
+    copyResetRef.current = setTimeout(() => setCopyState('idle'), 2000);
+  }, [message.content, message.thinking]);
+
   if (message.role === 'user') {
+    const audioFileMatch = /^Audio file: (.+)$/.exec(message.content || '');
+    const displayedUserContent = message.contentKind === 'live-microphone'
+      ? t('history.liveMicrophoneRecording')
+      : audioFileMatch
+        ? t('audio.fileMessage', { file: audioFileMatch[1] })
+        : message.content;
     const saveEdit = () => {
       const trimmed = editDraft.trim();
       if (!trimmed) return;
@@ -4624,12 +4761,12 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           {message.images && message.images.length > 0 && (
             <div className="message__images">
               {message.images.map((src, i) => (
-                <img key={i} src={src} alt={`Attached image ${i + 1}`} className="message__image" />
+                <img key={i} src={src} alt={t('message.attachedImage', { index: i + 1 })} className="message__image" />
               ))}
             </div>
           )}
           {message.audioName && (
-            <div className="message__file-chip"><Icon name="mic" size={13} /> {message.audioName}</div>
+            <div className="message__file-chip"><Icon name="mic" size={13} /> {message.contentKind === 'live-microphone' ? t('composer.live.microphone') : message.audioName}</div>
           )}
           {isEditing ? (
             <div className="message__edit">
@@ -4641,19 +4778,19 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
                 autoFocus
               />
               <div className="message__edit-actions">
-                <button type="button" className="message__action" onClick={saveEdit} disabled={!editDraft.trim()}><Icon name="send" size={13} /> Save & resend</button>
-                <button type="button" className="message__action" onClick={() => { setEditDraft(message.content || ''); setIsEditing(false); }}><Icon name="x" size={13} /> Cancel</button>
+                <button type="button" className="message__action" onClick={saveEdit} disabled={!editDraft.trim()}><Icon name="send" size={13} /> {t('message.saveResend')}</button>
+                <button type="button" className="message__action" onClick={() => { setEditDraft(message.content || ''); setIsEditing(false); }}><Icon name="x" size={13} /> {t('message.cancel')}</button>
               </div>
             </div>
-          ) : message.content ? (
+          ) : displayedUserContent ? (
             <div className="message__content message__content--user">
-              <MarkdownMessage content={message.content} />
+              <MarkdownMessage content={displayedUserContent} />
             </div>
           ) : null}
           {!isEditing && onEditUser && message.content && (
-            <div className="message__actions" aria-label="Message actions">
+            <div className="message__actions" aria-label={t('message.actions')}>
               <button type="button" className="message__action" onClick={() => setIsEditing(true)}>
-                <Icon name="edit" size={13} /> Edit & resend
+                <Icon name="edit" size={13} /> {t('message.editResend')}
               </button>
             </div>
           )}
@@ -4668,11 +4805,11 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
   return (
     <article className={articleClass}>
       <div className="message__avatar">
-        {message.isError ? '!' : modelInitial(displayModel)}
+        {message.isError ? '!' : modelInitial(displayModel, t('message.assistant'))}
       </div>
       <div className="message__body">
         <div className="message__author-row">
-          <div className="message__author">{message.isError ? 'Lemonade' : modelDisplayName(displayModel)}</div>
+          <div className="message__author">{message.isError ? 'Lemonade' : modelDisplayName(displayModel, t('message.assistant'))}</div>
         </div>
         {message.thinking && (
           <details
@@ -4680,7 +4817,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             open={thinkingOpen}
             onToggle={e => setThinkingOpen((e.target as HTMLDetailsElement).open)}
           >
-            <summary>Reasoning{reasoningSummary(message.stats)}</summary>
+            <summary>{t('message.reasoning', { summary: reasoningSummary(message.stats, t) })}</summary>
             <div className="message__thinking-content">
               <MarkdownMessage content={message.thinking} />
             </div>
@@ -4691,24 +4828,24 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
         {message.generatedImages && message.generatedImages.length > 0 && (
           <div className="message__images message__images--generated">
             {message.generatedImages.map((src, i) => (
-              <img key={i} src={src} alt={`Generated image ${i + 1}`} className="message__image message__image--generated" />
+              <img key={i} src={src} alt={t('message.generatedImage', { index: i + 1 })} className="message__image message__image--generated" />
             ))}
           </div>
         )}
         {message.audioUrl && (
           <div className="message__audio">
-            <audio controls src={message.audioUrl}>Your browser does not support audio playback.</audio>
+            <audio controls src={message.audioUrl}>{t('message.audioUnsupported')}</audio>
             <a
               href={message.audioUrl}
               download={(message.audioName || `${displayModel?.name || 'lemonade-audio'}.wav`).replace(/[^a-z0-9._-]+/gi, '-')}
               className="message__action message__audio-download"
             >
-              <Icon name="download" size={13} /> Download audio
+              <Icon name="download" size={13} /> {t('message.downloadAudio')}
             </a>
           </div>
         )}
         {message.model3dUrl && (
-          <Suspense fallback={<div className="model3d-viewer model3d-viewer--loading" role="status">Preparing 3D result…</div>}>
+          <Suspense fallback={<div className="model3d-viewer model3d-viewer--loading" role="status">{t('model3d.preparing')}</div>}>
             <Model3DResult src={message.model3dUrl} name={message.model3dName || displayModel?.name} />
           </Suspense>
         )}
@@ -4716,26 +4853,32 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           <div className="message__metrics">
             <span>{message.stats.tps} tok/s</span>
             {message.stats.ttft && <span>{(Number(message.stats.ttft) / 1000).toFixed(2)}s TTFT</span>}
-            <span>{message.stats.tokens} tokens</span>
+            <span>{t('message.tokens', { count: message.stats.tokens })}</span>
           </div>
         )}
-        <div className="message__actions" aria-label="Message actions">
+        <div className="message__actions" aria-label={t('message.actions')}>
           <button
             type="button"
-            className="message__action"
-            onClick={() => copyTextToClipboard(message.content || message.thinking || '')}
+            className={`message__action${copyState === 'copied' ? ' message__action--copied' : copyState === 'failed' ? ' message__action--copy-failed' : ''}`}
+            onClick={() => { void handleCopyMessage(); }}
             disabled={!(message.content || message.thinking)}
+            aria-label={copyState === 'copied' ? t('message.copied') : copyState === 'failed' ? t('message.copyFailed') : t('message.copy')}
+            title={copyState === 'copied' ? t('message.copied') : copyState === 'failed' ? t('message.copyFailed') : t('message.copy')}
           >
-            <Icon name="copy" size={13} /> Copy
+            <Icon name={copyState === 'copied' ? 'check' : copyState === 'failed' ? 'x' : 'copy'} size={13} />
+            {copyState === 'copied' ? t('message.copied') : copyState === 'failed' ? t('message.copyFailed') : t('message.copy')}
           </button>
+          <span className="sr-only" role="status" aria-live="polite">
+            {copyState === 'copied' ? t('message.copySuccessAnnouncement') : copyState === 'failed' ? t('message.copyFailureAnnouncement') : ''}
+          </span>
           {onSpeak && (
             <button type="button" className="message__action" onClick={onSpeak}>
-              <Icon name="tts" size={13} /> Read aloud
+              <Icon name="tts" size={13} /> {t('message.readAloud')}
             </button>
           )}
           {onRetry && (
             <button type="button" className="message__action" onClick={onRetry}>
-              ↻ Retry
+              ↻ {t('message.retry')}
             </button>
           )}
         </div>

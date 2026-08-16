@@ -1,0 +1,71 @@
+{
+  "actions": {
+    "add": "Hinzufügen",
+    "cancel": "Abbrechen",
+    "clear": "Leeren",
+    "close": "Schließen",
+    "connect": "Verbinden",
+    "open": "Öffnen",
+    "refresh": "Aktualisieren",
+    "remove": "Entfernen",
+    "retry": "Erneut versuchen",
+    "save": "Speichern",
+    "search": "Suchen",
+    "set": "Festlegen"
+  },
+  "status": {
+    "connected": "Verbunden",
+    "connecting": "Verbindung wird hergestellt…",
+    "offline": "Offline",
+    "loading": "Wird geladen…",
+    "saving": "Wird gespeichert…",
+    "refreshing": "Wird aktualisiert…"
+  },
+  "language": {
+    "system": "Systemsprache",
+    "systemDescription": "Beim Start von Lemonade die Sprache des Betriebssystems verwenden.",
+    "current": "Aktuelle Sprache"
+  },
+  "sidebar": {
+    "expand": "{{label}}-Seitenleiste erweitern",
+    "collapse": "{{label}}-Seitenleiste einklappen",
+    "close": "{{label}}-Panel schließen",
+    "closePanel": "Panel schließen"
+  },
+  "markdown": {
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "copyFailed": "Kopieren fehlgeschlagen",
+    "copyCode": "Code kopieren",
+    "copyFailedTitle": "Code konnte nicht in die Zwischenablage kopiert werden",
+    "customPlaceholder": "Oder eigene Antwort eingeben...",
+    "send": "Senden",
+    "diagramLoading": "Diagramm wird geladen...",
+    "diagramError": "Syntaxfehler im Diagramm",
+    "showDiagram": "Diagramm anzeigen",
+    "showSource": "Quelltext anzeigen"
+  },
+  "detail": {
+    "back": "Zurück zur Liste",
+    "close": "Detailbereich schließen"
+  },
+  "capabilityTags": {
+    "additional": "Weitere Fähigkeiten: {{capabilities}}",
+    "hot": "Beliebt",
+    "popular": "Populär",
+    "chat": "Chat",
+    "omni": "Omni",
+    "vision": "Vision",
+    "tool": "Tool-Nutzung",
+    "reasoning": "Reasoning",
+    "code": "Code",
+    "audio": "Audio",
+    "audio-generation": "Musik & SFX",
+    "image": "Bild",
+    "tts": "Sprachausgabe (TTS)",
+    "model3d": "3D",
+    "embedding": "Embeddings",
+    "reranking": "Reranking",
+    "classification": "Klassifikation"
+  }
+}

@@ -37,7 +37,15 @@
     "test:ui-regressions": "node tests/ui-regression-contracts.runtime.cjs && node tests/backend-manager-lifecycle.runtime.cjs",
     "test:model-nav-filters": "node tests/model-nav-filter-layout.runtime.cjs",
     "test:model-state": "node tests/model-state-deduplication.runtime.cjs",
-    "test:download-polling": "node tests/download-polling-lifecycle.runtime.cjs"
+    "test:download-polling": "node tests/download-polling-lifecycle.runtime.cjs",
+    "i18n:sync": "node scripts/i18n-sync.mjs",
+    "i18n:add": "node scripts/i18n-add.mjs",
+    "i18n:check": "node scripts/i18n-check.mjs",
+    "predev:renderer": "npm run i18n:sync",
+    "prebuild:renderer": "npm run i18n:sync",
+    "prebuild:renderer:prod": "npm run i18n:sync",
+    "pretypecheck": "npm run i18n:check",
+    "test:i18n": "node scripts/i18n-check.mjs && node tests/i18n-runtime.runtime.cjs && node tests/chat-tool-results.runtime.cjs && node tests/router-i18n.runtime.cjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
