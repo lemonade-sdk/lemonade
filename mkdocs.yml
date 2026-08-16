@@ -86,6 +86,7 @@ nav:
     - Testing: dev/testing.md
     - C++: dev/getting-started.md
     - Adding a Backend: dev/adding-a-backend.md
+    - Backend Admission Policy: dev/backend-admission-policy.md
     - Backends Reference: dev/backends-reference.md
     - Desktop App: dev/app.md
     - Web UI: dev/web-ui.md
