@@ -23,7 +23,6 @@
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/model_name_utils.h"
-#include "lemon/utils/custom_args.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
@@ -2404,7 +2403,6 @@ void Server::auto_load_model_if_needed(
     // Load model with do_not_upgrade=true, applying per-request options on first load.
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    // SD-cpp boolean→args merging is handled in SDServer::load() from effective_options.
     router_->load_model(requested_model, info,
                         RecipeOptions(info.recipe, request_options), true,
                         /*allow_reload_on_option_change=*/false,
@@ -5798,9 +5796,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Extract optional per-model settings. An omitted or empty option falls
         // through to the Router defaults; an explicit ctx_size of -1 requests
         // automatic sizing for this load.
-        // SD-cpp boolean→args merging is handled in SDServer::load() from effective_options.
-        json loadOptions = request_json;
-        RecipeOptions options = RecipeOptions(info.recipe, loadOptions);
+        RecipeOptions options = RecipeOptions(info.recipe, request_json);
         bool save_options = request_json.value("save_options", false);
         std::optional<bool> pinned_opt = std::nullopt;
         if (request_json.contains("pinned") && request_json["pinned"].is_boolean()) {

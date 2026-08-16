@@ -27,9 +27,9 @@ inline const BackendDescriptor descriptor = {
          "SD.cpp backend to use", "Stable Diffusion Options"},
         {"sdcpp_args", "--sdcpp-args", "", "ARGS",
          "Custom arguments to pass to sd-server (must not conflict with managed args)", "Stable Diffusion Options"},
-        {"diffusion_fa", "--diffusion-fa", false, "BOOL", "Enable fused-attention", "Stable Diffusion.cpp Options"},
-        {"diffusion_conv_direct", "--diffusion-conv-direct", false, "BOOL", "Enable direct convolution", "Stable Diffusion.cpp Options"},
-        {"vae_conv_direct", "--vae-conv-direct", false, "BOOL", "Enable VAE direct convolution", "Stable Diffusion.cpp Options"},
+        {"diffusion_fa", "--diffusion-fa", false, "BOOL", "Enable fused-attention", "Stable Diffusion Options"},
+        {"diffusion_conv_direct", "--diffusion-conv-direct", false, "BOOL", "Enable direct convolution", "Stable Diffusion Options"},
+        {"vae_conv_direct", "--vae-conv-direct", false, "BOOL", "Enable VAE direct convolution", "Stable Diffusion Options"},
         // Image generation defaults (recipe-level only, not CLI flags).
         {"steps", "", 20, "SIZE", "Number of diffusion steps", "Stable Diffusion Options"},
         {"cfg_scale", "", 7.0, "SIZE", "Classifier-free guidance scale", "Stable Diffusion Options"},

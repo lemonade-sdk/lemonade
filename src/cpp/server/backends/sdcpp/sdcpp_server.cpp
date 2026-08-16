@@ -541,7 +541,7 @@ std::string SDServer::build_merged_sdcpp_args(
 
     // Determine which flags are forced by the backend
     auto is_backend_forced = [&](const std::string& flag) {
-        if (flag == "--diffusion-fa" && (backend == "vulkan" || backend == "cuda")) return true;
+        if (flag == "--diffusion-fa" && backend == "vulkan") return true;
         if (flag == "--vae-tiling" && backend == "vulkan") return true;
         return false;
     };
