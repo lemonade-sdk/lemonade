@@ -63,7 +63,7 @@ async function openCustomModelEditor(
   await page.waitForSelector('.custom-model-form');
 
   if (mode === 'omni-collection') {
-    await page.getByRole('button', { name: 'Omni collection', exact: true }).click();
+    await page.getByRole('button', { name: 'Omni Collection', exact: true }).click();
   }
 }
 
@@ -1885,8 +1885,8 @@ test.describe('Accessibility — master-detail model view (#2355 Slice 1)', () =
     await openCustomModels.click();
 
     const typeGroup = page.getByRole('group', { name: 'Custom model type' });
-    const customBtn = typeGroup.getByRole('button', { name: 'Custom model', exact: true });
-    const omniBtn = typeGroup.getByRole('button', { name: 'Omni collection', exact: true });
+    const customBtn = typeGroup.getByRole('button', { name: 'Custom Model', exact: true });
+    const omniBtn = typeGroup.getByRole('button', { name: 'Omni Collection', exact: true });
     await expect(typeGroup).toBeVisible();
     await expect(customBtn).toBeVisible();
     await expect(omniBtn).toBeVisible();
