@@ -7,6 +7,7 @@
     "vulkan_bin": "builtin"
   },
   "auto_check_model_updates": true,
+  "broadcast": true,
   "cloud_providers": [],
   "config_version": 2,
   "ctx_size": -1,
@@ -44,7 +45,6 @@
     "cpu_args": "",
     "cpu_bin": "builtin"
   },
-  "no_broadcast": false,
   "no_fetch_executables": false,
   "offline": false,
   "onnxruntime": {

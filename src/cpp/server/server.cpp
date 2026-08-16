@@ -1,5 +1,6 @@
 #include "lemon/server.h"
 #include "lemon/audio_types.h"
+#include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
 #include <optional>
 #include "lemon/collection_orchestrator.h"
@@ -1079,6 +1080,21 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_model_files(req, res);
     });
 
+    // Per-model recipe options. Same ordering constraint as /files above: must
+    // precede the generic /models/(.+) route.
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        const std::string route = std::string(prefix) + R"(/models/(.+)/options)";
+        web_server.Get(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_get(req, res);
+        });
+        web_server.Post(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_post(req, res);
+        });
+        web_server.Delete(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_delete(req, res);
+        });
+    }
+
     // Model by ID (need to register for both versions with regex, with and without /api prefix)
     web_server.Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
@@ -2027,8 +2043,8 @@ void Server::run() {
         // Enumerate all RFC1918 interfaces to determine if we can broadcast.
         // The beacon will send per-interface with the correct IP in the payload.
         auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
-        bool no_bcast = config_->no_broadcast();
-        if (!rfc1918Interfaces.empty() && !no_bcast) {
+        bool bcast = config_->broadcast();
+        if (!rfc1918Interfaces.empty() && bcast) {
             std::cout << "[Server] [Net Broadcast] Broadcasting on " << rfc1918Interfaces.size()
                       << " RFC1918 interface(s):";
             for (const auto& iface : rfc1918Interfaces) {
@@ -2040,8 +2056,8 @@ void Server::run() {
                 port_,
                 2
             );
-        } else if (!rfc1918Interfaces.empty() && no_bcast) {
-            LOG(INFO, "Server") << "Broadcasting disabled by --no-broadcast option" << std::endl;
+        } else if (!rfc1918Interfaces.empty() && !bcast) {
+            LOG(INFO, "Server") << "Broadcasting disabled by configuration or CLI option" << std::endl;
         } else {
             LOG(INFO, "Server") << "Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl
                         << "or hostname that resolves to RFC1918 IPv4." << std::endl;
@@ -2996,6 +3012,265 @@ void Server::handle_model_files(const httplib::Request& req, httplib::Response& 
         auto error_response = create_model_error(model_id, "Model not found");
         res.set_content(error_response.dump(), "application/json");
     }
+}
+
+// `pinned` is live-process state: Router::load_model keeps a running server's
+// own pin rather than the resolved one, so a value saved here would not reach a
+// model that is already up. /v1/load and /internal/pin own it, and this endpoint
+// neither reports it in effective/defaults nor accepts it.
+static bool is_live_process_option(const std::string& key) {
+    return key == "pinned";
+}
+
+static std::string shell_single_quote(const std::string& s) {
+    std::string quoted = "'";
+    for (char c : s) {
+        if (c == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted += c;
+        }
+    }
+    return quoted + "'";
+}
+
+// Fill in every option the recipe accepts, resolving unset keys through the
+// default chain, so a client can render a complete form from one response.
+static nlohmann::json resolve_all_recipe_options(const RecipeOptions& options) {
+    nlohmann::json resolved = options.to_resolved_json();
+    resolved.erase("pinned");
+    return resolved;
+}
+
+static bool option_type_matches(const nlohmann::json& expected, const nlohmann::json& value) {
+    if (expected.is_number()) return value.is_number();
+    if (expected.is_string()) return value.is_string();
+    // Booleans, and the tri-state options whose default is null to mean "follow
+    // the global setting", both only ever hold a boolean once set.
+    return value.is_boolean();
+}
+
+// Reject values that pass the type check but would break the load they are
+// saved for. Returns an error message, or empty when the value is usable.
+static std::string validate_option_value(const std::string& key,
+                                         const nlohmann::json& expected,
+                                         const nlohmann::json& value) {
+    if (key == "ctx_size") {
+        // A literal above INT64_MAX parses as an unsigned and wraps on the way
+        // to int64_t, so 2^64-1 would arrive as -1 and read as "size it
+        // automatically". Rule it out before the conversion.
+        const bool fits_int64 = value.is_number_integer() &&
+            (!value.is_number_unsigned() ||
+             value.get<uint64_t>() <= static_cast<uint64_t>(INT64_MAX));
+        // 0 is not a shorthand for anything here: only -1 auto-resolves, so a 0
+        // reaches the backend verbatim and FastFlowLM and vLLM both reject it.
+        if (!fits_int64 || value.get<int64_t>() < -1 || value == 0) {
+            return "'ctx_size' must be a positive whole number, "
+                   "or -1 to size it automatically";
+        }
+        return "";
+    }
+
+    // A fractional value for a whole-number option is silently ignored by the
+    // consumers that read it, so refuse it.
+    if (expected.is_number_integer() && !value.is_number_integer()) {
+        return "'" + key + "' must be a whole number";
+    }
+    return "";
+}
+
+void Server::respond_with_model_options(
+    const httplib::Request& req, httplib::Response& res,
+    const std::function<bool(const std::string&, ModelInfo&, httplib::Response&)>& mutation) {
+    const std::string model_id = utils::normalize_model_name(req.matches[1]);
+    std::string model_key = model_id;
+
+    if (!model_manager_->model_exists(model_key)) {
+        std::optional<std::string> target;
+        if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+            target = alias_manager_->resolve_alias(model_id);
+        }
+        std::string canonical_target = target ? model_manager_->resolve_model_name(*target) : "";
+        if (target && model_manager_->model_exists(canonical_target)) {
+            model_key = canonical_target;
+        } else if (target && model_manager_->model_exists(*target)) {
+            model_key = *target;
+        } else {
+            res.status = 404;
+            res.set_content(create_model_error(model_id, "Model not found").dump(), "application/json");
+            return;
+        }
+    }
+
+    // Work in canonical names from here on: a user model's requested id is its
+    // bare public name, which not every downstream lookup resolves for itself.
+    model_key = model_manager_->resolve_model_name(model_key);
+
+    try {
+        ModelInfo info = model_manager_->get_model_info(model_key);
+        if (mutation && !mutation(model_key, info, res)) return;
+
+        const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
+        RecipeOptions effective = router_->resolve_effective_options(info, no_request_options);
+
+        ModelInfo without_saved = info;
+        without_saved.recipe_options = model_manager_->get_model_default_options(info);
+        RecipeOptions defaults = router_->resolve_effective_options(without_saved, no_request_options);
+
+        // `effective` and `defaults` double as replayable /v1/load bodies.
+        nlohmann::json effective_json = resolve_all_recipe_options(effective);
+        nlohmann::json defaults_json = resolve_all_recipe_options(defaults);
+        effective_json["model_name"] = model_id;
+        defaults_json["model_name"] = model_id;
+
+        const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
+        const nlohmann::json effective_ctx = effective.get_option("ctx_size");
+        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
+            : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+
+        // The load command, with the two things only the caller knows left as
+        // environment references. lemond always listens in the clear, so a
+        // client that reached it through a TLS-terminating proxy is on https
+        // and this process cannot tell; the Host header is a guess of the same
+        // kind, supplied by the caller.
+        std::string load_command =
+            "curl -X POST $LEMONADE_BASE_URL/v1/load -H \"Content-Type: application/json\"";
+        if (!api_key_.empty()) {
+            load_command += " -H \"Authorization: Bearer $LEMONADE_API_KEY\"";
+        }
+        load_command += " -d " + shell_single_quote(effective_json.dump());
+
+        nlohmann::json response = {
+            {"model_name", model_id},
+            {"recipe", info.recipe},
+            {"saved", model_manager_->get_saved_model_options(model_key)},
+            {"effective", effective_json},
+            {"defaults", defaults_json},
+            {"resolved_ctx_size", resolved_ctx},
+            {"load_command", load_command}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Failed to handle options for '" << model_id
+                             << "': " << e.what() << std::endl;
+        if (!model_manager_->model_exists(model_key)) {
+            // The model went away between the existence check and the read.
+            res.status = 404;
+            res.set_content(create_model_error(model_key, e.what()).dump(), "application/json");
+            return;
+        }
+        // Anything else is a server-side failure, most often the options file
+        // being unwritable. Reporting it through create_model_error would call
+        // it a load failure, which this endpoint never performs.
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", "Failed to read or update options for '" + model_id + "': " + e.what()},
+            {"type", "server_error"},
+            {"code", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_model_options_get(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res, nullptr);
+}
+
+void Server::handle_model_options_post(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res,
+        [this, &req](const std::string& model_key, ModelInfo& info, httplib::Response& r) {
+            nlohmann::json body;
+            if (!parse_required_json_body(req, r, body)) return false;
+            if (!body.is_object()) {
+                r.status = 400;
+                r.set_content(nlohmann::json{{"error", "Request body must be a JSON object of recipe options"}}
+                                  .dump(), "application/json");
+                return false;
+            }
+
+            bool dry_run = false;
+            if (body.contains("dry_run")) {
+                if (!body["dry_run"].is_boolean()) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "'dry_run' must be a boolean"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                dry_run = body["dry_run"].get<bool>();
+                body.erase("dry_run");
+            }
+
+            const auto keys = RecipeOptions::keys_for_recipe(info.recipe);
+            const std::set<std::string> allowed(keys.begin(), keys.end());
+            const RecipeOptions unset(info.recipe, nlohmann::json::object());
+
+            // Validate everything before writing anything, and express each
+            // change as set-or-erase so the merge can happen atomically.
+            nlohmann::json changes = nlohmann::json::object();
+            for (const auto& [key, value] : body.items()) {
+                // The URL names the model; tolerate the body's copy so the
+                // `effective` object (a /v1/load body) can be posted back here.
+                if (key == "model_name") continue;
+                if (!allowed.count(key)) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "Unknown option '" + key +
+                                                           "' for recipe '" + info.recipe + "'"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                if (is_live_process_option(key)) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "'" + key + "' applies to a running "
+                        "model; use /v1/load or /internal/pin"}}.dump(), "application/json");
+                    return false;
+                }
+                // null removes the key. The other values the option system
+                // reads as "not set" ("", -1, "auto") still clear every option
+                // except ctx_size, where -1 is a value and a malformed size is
+                // an error rather than an absence.
+                const bool clears = value.is_null() ||
+                    (key != "ctx_size" && RecipeOptions::is_default_sentinel(key, value));
+                if (clears) {
+                    changes[key] = nullptr;
+                    continue;
+                }
+                const nlohmann::json expected = unset.get_option(key);
+                if (!option_type_matches(expected, value)) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "Invalid type for option '" + key + "'"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                const std::string invalid = validate_option_value(key, expected, value);
+                if (!invalid.empty()) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", invalid}}.dump(), "application/json");
+                    return false;
+                }
+                changes[key] = value;
+            }
+
+            if (dry_run) {
+                info.recipe_options = model_manager_->preview_saved_model_options(info, changes);
+                return true;
+            }
+            if (!changes.empty()) {
+                model_manager_->update_saved_model_options(model_key, changes);
+            }
+            info = model_manager_->get_model_info(model_key);
+            return true;
+        });
+}
+
+void Server::handle_model_options_delete(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res,
+        [this](const std::string& model_key, ModelInfo& info, httplib::Response&) {
+            if (!model_manager_->get_saved_model_options(model_key).empty()) {
+                model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
+            }
+            info = model_manager_->get_model_info(model_key);
+            return true;
+        });
 }
 
 void Server::handle_collection_chat_completions(const nlohmann::json& request_json,
@@ -5144,7 +5419,9 @@ bool Server::parse_required_json_body(const httplib::Request& req,
     try {
         out = nlohmann::json::parse(req.body);
         return true;
-    } catch (const nlohmann::json::parse_error& e) {
+    } catch (const nlohmann::json::exception& e) {
+        // Not just parse_error: a numeric literal too large for a double raises
+        // out_of_range, which is a sibling type and would otherwise escape as a 500.
         res.status = 400;
         nlohmann::json error = {{"error", std::string("Invalid JSON in request body: ") + e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -5516,7 +5793,9 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
         auto info = model_manager_->get_model_info(model_name);
 
-        // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
+        // Extract optional per-model settings. An omitted or empty option falls
+        // through to the Router defaults; an explicit ctx_size of -1 requests
+        // automatic sizing for this load.
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         bool save_options = request_json.value("save_options", false);
         std::optional<bool> pinned_opt = std::nullopt;
@@ -5528,10 +5807,12 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
-        // Persist request options to model info if requested
+        // Persist request options to model info if requested. Re-read so this
+        // load still sees the model's own registry-level options rather than
+        // just the request's.
         if (save_options) {
-            info.recipe_options = options;
-            model_manager_->save_model_options(info);
+            model_manager_->set_saved_model_options(model_name, options.to_json());
+            info = model_manager_->get_model_info(model_name);
         }
 
         // Download model if needed (first-time use or missing files). Collections have no
@@ -6723,10 +7004,10 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
             utils::HttpClient::set_default_timeout(timeout);
-        } else if (key == "no_broadcast") {
-            bool nb = config_->no_broadcast();
-            LOG(INFO, "Server") << "Broadcast " << (nb ? "disabled" : "enabled") << std::endl;
-            if (nb) {
+        } else if (key == "broadcast" || key == "no_broadcast") {
+            bool bcast = config_->broadcast();
+            LOG(INFO, "Server") << "Broadcast " << (bcast ? "enabled" : "disabled") << std::endl;
+            if (!bcast) {
                 udp_beacon_.stopBroadcasting();
             } else {
                 auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();

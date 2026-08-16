@@ -28,6 +28,7 @@ are rewritten; surrounding prose is left untouched.
 
 import argparse
 import json
+import os
 import re
 import socket
 import subprocess
@@ -103,7 +104,14 @@ class Lemond:
 
     def _get(self, path: str, timeout: float = 5):
         url = f"http://127.0.0.1:{self.port}{path}"
-        with urllib.request.urlopen(url, timeout=timeout) as r:
+        req = urllib.request.Request(url)
+        api_key = os.environ.get("LEMONADE_ADMIN_API_KEY") or os.environ.get(
+            "LEMONADE_API_KEY"
+        )
+        if api_key:
+            req.add_header("Authorization", f"Bearer {api_key}")
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=timeout) as r:
             return r.read()
 
     def system_info(self) -> dict:
