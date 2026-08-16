@@ -138,7 +138,7 @@
   },
   "vllm": {
     "comment": "'rocm' is the default (RDNA) pin. 'rocm_arch_overrides' pins per detected asset family (rocm_asset_family output) where AMD's vLLM/ROCm wheel cadence diverges: CDNA-dcgpu (gfx942, gfx950) shares no release tag with the RDNA line, so it pins its own version. gfx950 (CDNA4) rides the same CDNA vLLM/ROCm line as gfx942 (CDNA3). Review each override at release time - feature/fix parity across arch lines lags until bumped.",
-    "rocm": "vllm0.20.1-rocm7.12.0",
+    "rocm": "vllm-omni0.25.0rc1-rocm7.15.0-gfx1151",
     "rocm_arch_overrides": {
       "gfx942": "vllm0.19.1-rocm7.13.0",
       "gfx950": "vllm0.19.1-rocm7.13.0"
