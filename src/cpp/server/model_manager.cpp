@@ -4382,13 +4382,19 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             file_entry["name"] = filename;
             std::string repo_commit = repo_commit_hashes.count(repo_id) ? repo_commit_hashes[repo_id] : "main";
             std::string file_url = "https://huggingface.co/" + repo_id + "/resolve/" + repo_commit + "/" + filename;
-            // Honor HF_HUB_DISABLE_XET: when set, append ?download=1 to bypass
-            // the Xet content-addressable storage bridge, which can stall on
-            // certain HF repo backends. This mirrors the behavior of the Python
-            // huggingface_hub library.
-            static const char* xet_disable = std::getenv("HF_HUB_DISABLE_XET");
-            if (xet_disable && (std::string(xet_disable) == "1" || std::string(xet_disable) == "true")) {
-                file_url += "?download=1";
+            // Honor HF_HUB_DISABLE_XET: when set to a truthy value (1/ON/YES/TRUE,
+            // case-insensitive), append ?download=1 to bypass the Xet
+            // content-addressable storage bridge and use regular HTTP transport
+            // instead.
+            const char* xet_disable = std::getenv("HF_HUB_DISABLE_XET");
+            if (xet_disable) {
+                std::string val(xet_disable);
+                // lowercase for case-insensitive comparison
+                std::transform(val.begin(), val.end(), val.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (val == "1" || val == "on" || val == "yes" || val == "true") {
+                    file_url += "?download=1";
+                }
             }
             file_entry["url"] = file_url;
             file_entry["size"] = file_sizes.count(size_key) ? file_sizes[size_key] : 0;
