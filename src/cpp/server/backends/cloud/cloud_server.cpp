@@ -423,11 +423,16 @@ json CloudServer::rewrite_model_field(const json& request) const {
     return modified;
 }
 
-json CloudServer::normalize_response_model(json response, const json& original_request) const {
-    if (response.is_object() && response.contains("model")) {
-        response["model"] = original_request.value("model", get_model_name());
+json CloudServer::restore_public_model(json response, const std::string& public_model) {
+    if (!public_model.empty() && response.is_object() && response.contains("model")) {
+        response["model"] = public_model;
     }
     return response;
+}
+
+json CloudServer::normalize_response_model(json response, const json& original_request) const {
+    return restore_public_model(
+        std::move(response), original_request.value("model", get_model_name()));
 }
 
 std::string CloudServer::rewrite_sse_model_line(const std::string& line,
@@ -645,6 +650,15 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 }
             };
 
+            // Detect [DONE] only on reassembled SSE lines. A raw chunk search
+            // misses markers split across reads (e.g. "data: [DO" + "NE]\n")
+            // and would emit a second synthetic [DONE] after the real one.
+            auto note_done_marker = [&](const std::string& line) {
+                if (line.rfind("data: ", 0) == 0 && line.substr(6) == "[DONE]") {
+                    has_done_marker = true;
+                }
+            };
+
             auto result = utils::HttpClient::post_stream(
                 url,
                 forwarded_body,
@@ -659,15 +673,12 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                         }
                     }
                     if (streaming_mode) {
-                        if (std::string_view(data, length).find("[DONE]") != std::string_view::npos) {
-                            has_done_marker = true;
-                        }
-
                         // Parse SSE lines; rewrite echoed upstream model ids
                         // back to the public name before flushing to the client.
                         sse_line_buffer.append(data, length);
                         bool ok = true;
                         StreamingProxy::process_sse_lines(sse_line_buffer, [&](const std::string& line) {
+                            note_done_marker(line);
                             process_cloud_line(line);
                             std::string out = rewrite_sse_model_line(line, public_model);
                             out.push_back('\n');
@@ -731,6 +742,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             // flush the buffer now so the client at least sees the payload.
             if (streaming_mode) {
                 StreamingProxy::flush_sse_line_buffer(sse_line_buffer, [&](const std::string& line) {
+                    note_done_marker(line);
                     process_cloud_line(line);
                     std::string out = rewrite_sse_model_line(line, public_model);
                     out.push_back('\n');
