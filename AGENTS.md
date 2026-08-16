@@ -22,7 +22,7 @@ Lemonade is a local LLM server providing GPU and NPU acceleration for running la
 | Backend | Class | Capabilities | Device | Purpose |
 |---------|-------|-------------|--------|---------|
 | llama.cpp | `LlamaCppServer` | Completion, Embeddings, Reranking | GPU | LLM inference — CPU/GPU (Vulkan, ROCm, Metal) |
-| FastFlowLM | `FastFlowLMServer` | Completion, Embeddings, Reranking, Audio | NPU | NPU inference (multi-modal: LLM, ASR, embeddings, reranking) |
+| FastFlowLM | `FastFlowLMServer` | Completion, Embeddings, Audio | NPU | NPU inference (multi-modal: LLM, ASR, embeddings) |
 | RyzenAI | `RyzenAIServer` | Completion | NPU | Hybrid NPU inference |
 | vLLM | `VLLMServer` | Completion | GPU | LLM inference — ROCm on AMD iGPU/dGPU (Linux). **Experimental**, validated only on gfx1151 (Strix Halo). |
 | whisper.cpp | `WhisperServer` | Audio | CPU | Audio transcription |
@@ -178,7 +178,7 @@ Pass `DEPENDS` only when the CI build needs targets beyond the `COMMAND` executa
 
 **Never write comments that explain WHAT the code does** — well-named identifiers already do that. Don't reference the current task, fix, or callers ("used by X", "added for the Y flow", "handles the case from issue #123") — those belong in the PR description and rot as the codebase evolves.
 
-**PR descriptions should be concise.** 1-3 sentences for the summary. No essays. The diff shows what changed; the description explains why and any non-obvious context. Bullet points over paragraphs.
+**PR descriptions should be concise.** 1-3 sentences for the summary. No essays. The diff shows what changed; the description explains why and any non-obvious context. Bullet points over paragraphs. When creating a PR, use `.github/pull_request_template.md` and fill every section — Summary (with `Fixes #` link), Scope, Testing (confirm build + describe what was tested), Documentation (select one), Breaking Changes (select one), and AI-assisted contribution.
 
 ### C++
 - C++17, `lemon::` namespace
@@ -244,3 +244,4 @@ These MUST be maintained in all changes:
 - UI/frontend changes are handled by core maintainers only
 - Python formatting with Black is required
 - PRs trigger CI for linting, formatting, and integration tests
+- Use `.github/pull_request_template.md` for all PRs and fill every section

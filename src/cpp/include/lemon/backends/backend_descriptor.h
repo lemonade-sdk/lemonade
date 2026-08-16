@@ -61,11 +61,24 @@ struct BackendDescriptor {
 
     std::vector<BackendOption>    options;                       // backend-specific knobs (common ones are automatic)
     std::vector<BackendSupport>   support;                       // which OS / GPU families it runs on ({} = no local gating)
-    std::vector<std::string>      default_labels;                // labels injected when a model omits them
+
+    // Every deployment mode this backend can serve, most-default first. A model
+    // whose labels name no mode falls back to supported_modes[0]; a model whose
+    // labels name a mode absent from this list is refused at registration,
+    // because the backend would fail the request at inference time.
+    //
+    // BackendModeContractTest asserts this list matches the capability
+    // interfaces the paired server class actually implements.
+    std::vector<std::string>      supported_modes{"chat"};
+
     std::vector<std::string>      required_checkpoints{"main"};  // unconditional files; conditional ones checked in load()
 
+    // Non-mode labels stamped onto every model of this recipe. Capabilities
+    // describe what a model additionally supports; they never change the mode it
+    // deploys in.
+    std::vector<std::string>      default_capabilities;
+
     // Editorial metadata for the generated docs (README support matrix, website).
-    std::string modality;           // "Text generation" | "Speech-to-text" | "Text-to-speech" | "Image generation"
     bool        experimental = false; // true renders "(experimental)" next to the recipe in generated docs
     std::string web_display_name;   // name used on the docs website ("" = fall back to display_name)
 

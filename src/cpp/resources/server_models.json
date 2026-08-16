@@ -3,30 +3,45 @@
         "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 0.834
     },
     "Llama-3.2-1B-Instruct-CPU": {
         "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-uint4-float16-cpu-onnx",
         "recipe": "ryzenai-llm",
         "suggested": false,
+        "labels": [
+            "chat"
+        ],
         "size": 1.76
     },
     "Llama-3.2-3B-Instruct-CPU": {
         "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx",
         "recipe": "ryzenai-llm",
         "suggested": false,
+        "labels": [
+            "chat"
+        ],
         "size": 3.38
     },
     "Phi-3-Mini-Instruct-CPU": {
         "checkpoint": "amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 2.39
     },
     "Qwen-1.5-7B-Chat-CPU": {
         "checkpoint": "amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 6.32
     },
     "DeepSeek-R1-Distill-Llama-8B-CPU": {
@@ -34,6 +49,7 @@
         "recipe": "ryzenai-llm",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 6.2
@@ -43,6 +59,7 @@
         "recipe": "ryzenai-llm",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 6.2
@@ -51,6 +68,9 @@
         "checkpoint": "amd/AMD-OLMo-1B-SFT-DPO-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 1.48
     },
     "CodeLlama-7b-Instruct-hf-Hybrid": {
@@ -59,6 +79,7 @@
         "suggested": true,
         "size": 7.24,
         "labels": [
+            "chat",
             "coding"
         ]
     },
@@ -68,6 +89,7 @@
         "suggested": true,
         "size": 9.09,
         "labels": [
+            "chat",
             "reasoning"
         ]
     },
@@ -77,6 +99,7 @@
         "suggested": true,
         "size": 2.19,
         "labels": [
+            "chat",
             "reasoning"
         ]
     },
@@ -86,6 +109,7 @@
         "suggested": true,
         "size": 8.67,
         "labels": [
+            "chat",
             "reasoning"
         ]
     },
@@ -93,102 +117,153 @@
         "checkpoint": "amd/Llama-2-7b-chat-hf-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 7.31
     },
     "Llama-2-7b-hf-Hybrid": {
         "checkpoint": "amd/Llama-2-7b-hf-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 7.31
     },
     "Llama-3.1-8B-Hybrid": {
         "checkpoint": "amd/Llama-3.1-8B-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 9.09
     },
     "Llama-3.2-1B-Hybrid": {
         "checkpoint": "amd/Llama-3.2-1B-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 1.89
     },
     "Llama-3.2-1B-Instruct-Hybrid": {
         "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 1.89
     },
     "Llama-3.2-3B-Hybrid": {
         "checkpoint": "amd/Llama-3.2-3B-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 4.28
     },
     "Llama-3.2-3B-Instruct-Hybrid": {
         "checkpoint": "amd/Llama-3.2-3B-Instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 4.28
     },
     "Meta-Llama-3-8B-Hybrid": {
         "checkpoint": "amd/Meta-Llama-3-8B-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 9.06
     },
     "Meta-Llama-3.1-8B-Instruct-Hybrid": {
         "checkpoint": "amd/Meta-Llama-3.1-8B-Instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 9.09
     },
     "Mistral-7B-Instruct-v0.1-Hybrid": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 7.34
     },
     "Mistral-7B-Instruct-v0.2-Hybrid": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.2-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 7.34
     },
     "Mistral-7B-Instruct-v0.3-Hybrid": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 7.35
     },
     "Mistral-7B-v0.3-Hybrid": {
         "checkpoint": "amd/Mistral-7B-v0.3-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 7.35
     },
     "Phi-3-mini-128k-instruct-Hybrid": {
         "checkpoint": "amd/Phi-3-mini-128k-instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 4.21
     },
     "Phi-3-mini-4k-instruct-Hybrid": {
         "checkpoint": "amd/Phi-3-mini-4k-instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 4.19
     },
     "Phi-3.5-mini-instruct-Hybrid": {
         "checkpoint": "amd/Phi-3.5-mini-instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 4.21
     },
     "Phi-4-mini-instruct-Hybrid": {
         "checkpoint": "amd/Phi-4-mini-instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 5.47
     },
     "Phi-4-mini-reasoning-Hybrid": {
@@ -197,6 +272,7 @@
         "suggested": true,
         "size": 5.47,
         "labels": [
+            "chat",
             "reasoning"
         ]
     },
@@ -204,48 +280,72 @@
         "checkpoint": "amd/Qwen-2.5_1.5B_Instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 2.17
     },
     "Qwen1.5-7B-Chat-Hybrid": {
         "checkpoint": "amd/Qwen1.5-7B-Chat-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 8.83
     },
     "Qwen2-1.5B-Hybrid": {
         "checkpoint": "amd/Qwen2-1.5B-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 2.19
     },
     "Qwen2-7B-Hybrid": {
         "checkpoint": "amd/Qwen2-7B-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 8.68
     },
     "Qwen2.5-0.5B-Instruct-Hybrid": {
         "checkpoint": "amd/Qwen2.5-0.5B-Instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 0.828
     },
     "Qwen2.5-14B-instruct-Hybrid": {
         "checkpoint": "amd/Qwen2.5-14B-instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 16.5
     },
     "Qwen2.5-3B-Instruct-Hybrid": {
         "checkpoint": "amd/Qwen2.5_3B_Instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 3.97
     },
     "Qwen2.5-7B-Instruct-Hybrid": {
         "checkpoint": "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 8.65
     },
     "Qwen2.5-Coder-0.5B-Instruct-Hybrid": {
@@ -254,6 +354,7 @@
         "suggested": true,
         "size": 0.828,
         "labels": [
+            "chat",
             "coding"
         ]
     },
@@ -263,6 +364,7 @@
         "suggested": true,
         "size": 2.17,
         "labels": [
+            "chat",
             "coding"
         ]
     },
@@ -272,6 +374,7 @@
         "suggested": true,
         "size": 8.65,
         "labels": [
+            "chat",
             "coding"
         ]
     },
@@ -281,6 +384,7 @@
         "suggested": true,
         "size": 2.55,
         "labels": [
+            "chat",
             "reasoning"
         ]
     },
@@ -290,6 +394,7 @@
         "suggested": true,
         "size": 16.5,
         "labels": [
+            "chat",
             "reasoning"
         ]
     },
@@ -299,6 +404,7 @@
         "suggested": true,
         "size": 5.17,
         "labels": [
+            "chat",
             "reasoning"
         ]
     },
@@ -308,6 +414,7 @@
         "suggested": true,
         "size": 9.42,
         "labels": [
+            "chat",
             "reasoning"
         ]
     },
@@ -315,24 +422,36 @@
         "checkpoint": "amd/SmolLM-135M-Instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 0.232
     },
     "SmolLM2-135M-Instruct-Hybrid": {
         "checkpoint": "amd/SmolLM2-135M-Instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 0.233
     },
     "chatglm3-6b-Hybrid": {
         "checkpoint": "amd/chatglm3-6b-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 6.9
     },
     "gemma-2-2b-Hybrid": {
         "checkpoint": "amd/gemma-2-2b-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 4.04
     },
     "CodeLlama-7b-Instruct-hf-NPU": {
@@ -341,6 +460,7 @@
         "suggested": true,
         "size": 7.54,
         "labels": [
+            "chat",
             "coding"
         ]
     },
@@ -350,6 +470,7 @@
         "suggested": true,
         "size": 9.3,
         "labels": [
+            "chat",
             "reasoning"
         ]
     },
@@ -359,6 +480,7 @@
         "suggested": true,
         "size": 2.3,
         "labels": [
+            "chat",
             "reasoning"
         ]
     },
@@ -368,6 +490,7 @@
         "suggested": true,
         "size": 8.87,
         "labels": [
+            "chat",
             "reasoning"
         ]
     },
@@ -377,6 +500,7 @@
         "suggested": true,
         "size": 6.68,
         "labels": [
+            "chat",
             "vision"
         ]
     },
@@ -384,126 +508,189 @@
         "checkpoint": "amd/Llama-2-7b-chat-hf-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 7.47
     },
     "Llama-2-7b-hf-NPU": {
         "checkpoint": "amd/Llama-2-7b-hf-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 7.47
     },
     "Llama-3.1-8B-NPU": {
         "checkpoint": "amd/Llama-3.1-8B-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 9.3
     },
     "Llama-3.2-1B-Instruct-NPU": {
         "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 1.96
     },
     "Llama-3.2-1B-NPU": {
         "checkpoint": "amd/Llama-3.2-1B-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 1.96
     },
     "Meta-Llama-3-8B-NPU": {
         "checkpoint": "amd/Meta-Llama-3-8B-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 9.23
     },
     "Meta-Llama-3.1-8B-Instruct-NPU": {
         "checkpoint": "amd/Meta-Llama-3.1-8B-Instruct-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 9.3
     },
     "Mistral-7B-Instruct-v0.1-NPU": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 8.01
     },
     "Mistral-7B-Instruct-v0.2-NPU": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.2-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 8.01
     },
     "Mistral-7B-Instruct-v0.3-NPU": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 8.09
     },
     "Mistral-7B-v0.3-NPU": {
         "checkpoint": "amd/Mistral-7B-v0.3-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 8.09
     },
     "Phi-3-mini-128k-instruct-NPU": {
         "checkpoint": "amd/Phi-3-mini-128k-instruct-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 4.35
     },
     "Phi-3-mini-4k-instruct-NPU": {
         "checkpoint": "amd/Phi-3-mini-4k-instruct-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 4.3
     },
     "Phi-3.5-mini-instruct-NPU": {
         "checkpoint": "amd/Phi-3.5-mini-instruct-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 4.35
     },
     "Phi-4-mini-instruct-NPU": {
         "checkpoint": "amd/Phi-4-mini-instruct-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 5.59
     },
     "Qwen-2.5-1.5B-Instruct-NPU": {
         "checkpoint": "amd/Qwen-2.5_1.5B_Instruct-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 2.25
     },
     "Qwen1.5-7B-Chat-NPU": {
         "checkpoint": "amd/Qwen1.5-7B-Chat-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 9.02
     },
     "Qwen2-1.5B-NPU": {
         "checkpoint": "amd/Qwen2-1.5B-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 2.3
     },
     "Qwen2-7B-NPU": {
         "checkpoint": "amd/Qwen2-7B-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 8.88
     },
     "Qwen2.5-3B-Instruct-NPU": {
         "checkpoint": "amd/Qwen2.5-3B-Instruct-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 4.1
     },
     "Qwen2.5-7B-Instruct-NPU": {
         "checkpoint": "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 8.83
     },
     "Qwen2.5-Coder-1.5B-Instruct-NPU": {
@@ -512,6 +699,7 @@
         "suggested": true,
         "size": 2.25,
         "labels": [
+            "chat",
             "coding"
         ]
     },
@@ -521,6 +709,7 @@
         "suggested": true,
         "size": 8.83,
         "labels": [
+            "chat",
             "coding"
         ]
     },
@@ -528,12 +717,18 @@
         "checkpoint": "amd/chatglm3-6b-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 7.04
     },
     "gpt-oss-20b-NPU": {
         "checkpoint": "amd/gpt-oss-20b-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 13.4
     },
     "MiniCPM5-1B-GGUF": {
@@ -542,6 +737,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "hot",
             "reasoning"
         ],
@@ -553,6 +749,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 4.97
@@ -562,6 +759,9 @@
         "checkpoint": "OpenBMB/MiniCPM4-8B-GGUF:MiniCPM4-8B-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 4.97
     },
     "MiniCPM3-4B-GGUF": {
@@ -569,6 +769,9 @@
         "checkpoint": "OpenBMB/MiniCPM3-4B-GGUF:minicpm3-4b-q4_k_m.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 2.47
     },
     "MiniCPM-V-4.6-GGUF": {
@@ -578,6 +781,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "hot",
             "vision"
         ],
@@ -590,6 +794,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning",
             "vision"
         ],
@@ -602,6 +807,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 6.12
@@ -613,6 +819,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 3.15
@@ -626,6 +833,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "hot",
             "tool-calling",
             "vision",
@@ -642,6 +850,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 6.12
@@ -653,6 +862,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 5.73
@@ -662,6 +872,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 0.38
@@ -670,6 +881,9 @@
         "checkpoint": "unsloth/gemma-3-270m-it-GGUF:gemma-3-270m-it-UD-IQ2_M.gguf",
         "recipe": "llamacpp",
         "suggested": false,
+        "labels": [
+            "chat"
+        ],
         "size": 0.18
     },
     "Qwen3-1.7B-GGUF": {
@@ -677,6 +891,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 1.06
@@ -686,6 +901,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 2.38
@@ -695,6 +911,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 5.25
@@ -704,6 +921,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 5.25
@@ -713,6 +931,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 8.54
@@ -722,6 +941,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "tool-calling"
         ],
         "size": 2.5
@@ -731,6 +951,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 17.4
@@ -740,6 +961,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "tool-calling"
         ],
         "size": 17.4
@@ -749,6 +971,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "coding",
             "tool-calling",
             "hot"
@@ -760,6 +983,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "coding",
             "tool-calling",
             "hot"
@@ -770,8 +994,23 @@
         "checkpoint": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": [],
+        "labels": [
+            "chat"
+        ],
         "size": 22.8
+    },
+    "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF": {
+        "checkpoint": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF:NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "mtp",
+            "hot"
+        ],
+        "size": 25.5
     },
     "Gemma-3-4b-it-GGUF": {
         "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
@@ -779,6 +1018,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 3.34
@@ -789,6 +1029,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "hot",
             "tool-calling",
             "vision",
@@ -802,6 +1043,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "hot",
             "tool-calling",
             "vision",
@@ -815,6 +1057,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "tool-calling",
             "vision",
             "llamacpp"
@@ -830,6 +1073,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "hot",
             "tool-calling",
             "vision",
@@ -847,6 +1091,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "hot",
             "tool-calling",
             "vision",
@@ -864,6 +1109,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "tool-calling",
             "llamacpp",
             "vision",
@@ -877,6 +1123,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "tool-calling",
             "vision",
             "llamacpp"
@@ -889,6 +1136,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "tool-calling",
             "vision",
             "llamacpp"
@@ -900,6 +1148,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "llamacpp"
         ],
         "size": 1.16
@@ -909,6 +1158,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "llamacpp"
         ],
         "size": 0.572
@@ -918,6 +1168,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "llamacpp"
         ],
         "size": 0.25
@@ -926,60 +1177,90 @@
         "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Phi-4-mini-instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 2.49
     },
     "LFM2-1.2B-GGUF": {
         "checkpoint": "LiquidAI/LFM2-1.2B-GGUF:LFM2-1.2B-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 0.731
     },
     "LFM2.5-1.2B-Instruct-GGUF": {
         "checkpoint": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 0.731
     },
     "LFM2.5-8B-A1B": {
         "checkpoint": "LiquidAI/LFM2.5-8B-A1B-GGUF:LFM2.5-8B-A1B-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 5.16
     },
     "PromptBridge-0.6b-Alpha-GGUF": {
         "checkpoint": "mradermacher/PromptBridge-0.6b-Alpha-GGUF:PromptBridge-0.6b-Alpha.Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": false,
+        "labels": [
+            "chat"
+        ],
         "size": 0.397
     },
     "Jan-nano-128k-GGUF": {
         "checkpoint": "Menlo/Jan-nano-128k-gguf:jan-nano-128k-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 2.5
     },
     "Jan-v1-4B-GGUF": {
         "checkpoint": "janhq/Jan-v1-4B-GGUF:Jan-v1-4B-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 2.5
     },
     "Llama-3.2-1B-Instruct-GGUF": {
         "checkpoint": "unsloth/Llama-3.2-1B-Instruct-GGUF:Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 0.834
     },
     "Llama-3.2-3B-Instruct-GGUF": {
         "checkpoint": "unsloth/Llama-3.2-3B-Instruct-GGUF:Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 2.06
     },
     "SmolLM3-3B-GGUF": {
         "checkpoint": "unsloth/SmolLM3-3B-128K-GGUF:SmolLM3-3B-128K-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 1.94
     },
     "Ministral-3-3B-Instruct-2512-GGUF": {
@@ -988,6 +1269,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 2.99
@@ -998,6 +1280,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 6.04
@@ -1008,6 +1291,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 3.27
@@ -1018,6 +1302,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 3.33
@@ -1028,6 +1313,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 6.19
@@ -1039,6 +1325,7 @@
         "suggested": true,
         "hf_load": true,
         "labels": [
+            "chat",
             "vision",
             "chat-transcription"
         ],
@@ -1051,6 +1338,7 @@
         "suggested": true,
         "hf_load": true,
         "labels": [
+            "chat",
             "vision",
             "chat-transcription"
         ],
@@ -1061,6 +1349,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "tool-calling"
         ],
         "size": 46.1
@@ -1071,6 +1360,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling"
         ],
@@ -1082,6 +1372,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling"
         ],
@@ -1093,6 +1384,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling",
             "hot"
@@ -1105,6 +1397,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling",
             "mtp"
@@ -1117,6 +1410,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling"
         ],
@@ -1128,6 +1422,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling"
         ],
@@ -1139,6 +1434,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling"
         ],
@@ -1150,6 +1446,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling",
             "mtp"
@@ -1162,6 +1459,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling"
         ],
@@ -1173,6 +1471,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling",
             "hot"
@@ -1185,6 +1484,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling",
             "mtp"
@@ -1197,6 +1497,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "vision",
             "tool-calling"
         ],
@@ -1208,6 +1509,22 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "mtp",
+            "hot"
+        ],
+        "size": 18.8
+    },
+    "Qwen3.8-27B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
             "vision",
             "tool-calling",
             "mtp",
@@ -1221,6 +1538,7 @@
         "recipe": "llamacpp",
         "suggested": false,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 63.2
@@ -1231,6 +1549,7 @@
         "recipe": "llamacpp",
         "suggested": false,
         "labels": [
+            "chat",
             "vision"
         ],
         "size": 65.4
@@ -1303,6 +1622,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "coding",
             "tool-calling"
         ],
@@ -1313,6 +1633,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "coding"
         ],
         "size": 19.9
@@ -1322,6 +1643,7 @@
         "recipe": "llamacpp",
         "suggested": false,
         "labels": [
+            "chat",
             "reasoning",
             "tool-calling"
         ],
@@ -1332,6 +1654,7 @@
         "recipe": "llamacpp",
         "suggested": false,
         "labels": [
+            "chat",
             "reasoning",
             "tool-calling"
         ],
@@ -1342,6 +1665,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "hot",
             "reasoning",
             "tool-calling"
@@ -1353,6 +1677,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "hot",
             "reasoning",
             "tool-calling"
@@ -1364,6 +1689,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 67.7
@@ -1373,6 +1699,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "tool-calling"
         ],
         "size": 17.5
@@ -1382,6 +1709,7 @@
         "recipe": "llamacpp",
         "suggested": false,
         "labels": [
+            "chat",
             "coding"
         ],
         "size": 4.68
@@ -1391,6 +1719,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "chat",
             "tool-calling"
         ],
         "size": 4.25
@@ -1399,12 +1728,18 @@
         "checkpoint": "LiquidAI/LFM2-8B-A1B-GGUF:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 5.04
     },
     "LFM2-24B-A2B-GGUF": {
         "checkpoint": "LiquidAI/LFM2-24B-A2B-GGUF:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 14.4
     },
     "Whisper-Tiny": {
@@ -1705,40 +2040,27 @@
         "checkpoint": "lemonade-sdk/LMX-Omni-52B-Halo",
         "recipe": "collection.omni",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 44.77
     },
     "LMX-Omni-5.5B-Lite": {
         "checkpoint": "lemonade-sdk/LMX-Omni-5.5B-Lite",
         "recipe": "collection.omni",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 9.30
-    },
-    "Ultra Collection": {
-        "checkpoint": "",
-        "recipe": "collection.omni",
-        "suggested": false,
-        "components": [
-            "Qwen3.5-35B-A3B-GGUF",
-            "Flux-2-Klein-9B-GGUF",
-            "Whisper-Large-v3-Turbo",
-            "kokoro-v1"
-        ]
-    },
-    "Lite Collection": {
-        "checkpoint": "",
-        "recipe": "collection.omni",
-        "suggested": false,
-        "components": [
-            "Qwen3.5-4B-GGUF",
-            "SD-Turbo",
-            "Whisper-Tiny",
-            "kokoro-v1"
-        ]
     },
     "RPG-HaloTales-V1": {
         "checkpoint": "lemonade-sdk/RPG-HaloTales-V1",
         "recipe": "collection.omni",
         "suggested": true,
+        "labels": [
+            "chat"
+        ],
         "size": 39.77
     },
     "kokoro-v1": {
@@ -1872,6 +2194,25 @@
             "height": 1024
         }
     },
+    "Z-Image-Turbo-TheNoise": {
+        "checkpoints": {
+            "main": "Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+            "text_encoder": "Comfy-Org/z_image_turbo:split_files/text_encoders/qwen_3_4b.safetensors",
+            "vae": "Comfy-Org/z_image_turbo:split_files/vae/ae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 20.7,
+        "image_defaults": {
+            "steps": 8,
+            "cfg_scale": 1.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
         "recipe": "sd-cpp",
@@ -1897,6 +2238,7 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning"
         ],
         "size": 1.77
@@ -1906,6 +2248,7 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning",
             "tool-calling"
         ],
@@ -1916,6 +2259,7 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning",
             "hot",
             "tool-calling"
@@ -1927,6 +2271,7 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning",
             "tool-calling"
         ],
@@ -1937,6 +2282,7 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning",
             "tool-calling",
             "vision"
@@ -1948,6 +2294,7 @@
         "recipe": "vllm",
         "suggested": false,
         "labels": [
+            "chat",
             "reasoning",
             "tool-calling",
             "vision",
@@ -1960,6 +2307,7 @@
         "recipe": "vllm",
         "suggested": false,
         "labels": [
+            "chat",
             "reasoning",
             "tool-calling",
             "vision",
@@ -1972,6 +2320,7 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning",
             "tool-calling",
             "vision"
@@ -1983,6 +2332,7 @@
         "recipe": "vllm",
         "suggested": false,
         "labels": [
+            "chat",
             "reasoning",
             "tool-calling",
             "vision",
@@ -1995,6 +2345,7 @@
         "recipe": "vllm",
         "suggested": false,
         "labels": [
+            "chat",
             "reasoning",
             "tool-calling",
             "vision",
@@ -2007,6 +2358,7 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
+            "chat",
             "reasoning",
             "tool-calling"
         ],

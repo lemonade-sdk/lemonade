@@ -303,6 +303,16 @@ class LLMTests(ServerTestBase):
         print(f"Response: {response.output[0].content[0].text}")
         self.assertGreater(len(response.output[0].content[0].text), 0)
 
+        # Non-streaming Responses requests record telemetry like chat does.
+        stats = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT).json()
+        self.assertGreater(
+            stats.get("input_tokens", 0),
+            0,
+            f"responses request did not record telemetry: {stats}",
+        )
+        self.assertGreater(stats.get("output_tokens", 0), 0)
+        self.assertIn("cache_tokens", stats)
+
     @skip_if_unsupported("responses_api_streaming")
     def test_008_responses_api_streaming(self):
         """Test the Responses API endpoint with streaming."""
@@ -1033,6 +1043,53 @@ class LLMTests(ServerTestBase):
                 self.fail("No slot id found to erase in /api/v1/slots response")
         else:
             self.fail("No slots available to test erasure in /api/v1/slots endpoint")
+
+    @skip_if_unsupported("slots")
+    def test_023b_cache_tokens_telemetry(self):
+        """A repeated conversation prefix surfaces cache_tokens in /stats."""
+        client = self.get_openai_client()
+        model = self.get_test_model("llm")
+
+        shared_history = [
+            {
+                "role": "system",
+                "content": "You are a concise assistant. " + "Context filler. " * 60,
+            },
+            {"role": "user", "content": "Reply with the single word: ready."},
+        ]
+        first = client.chat.completions.create(
+            model=model,
+            messages=shared_history,
+            max_completion_tokens=10,
+            stream=False,
+        )
+        followup = shared_history + [
+            {"role": "assistant", "content": first.choices[0].message.content},
+            {"role": "user", "content": "Reply with the single word: again."},
+        ]
+        client.chat.completions.create(
+            model=model,
+            messages=followup,
+            max_completion_tokens=10,
+            stream=False,
+        )
+
+        response = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("cache_tokens", data)
+        self.assertIn("cache_tokens_total", data)
+        self.assertGreater(
+            data["cache_tokens"],
+            0,
+            "second request repeats the first request's prefix, so llama-server "
+            f"should reuse cached prompt tokens (stats: {data})",
+        )
+        self.assertGreater(data["cache_tokens_total"], 0)
+        print(
+            f"[OK] cache telemetry: cache_tokens={data['cache_tokens']}, "
+            f"cache_tokens_total={data['cache_tokens_total']}"
+        )
 
     @skip_if_unsupported("tokenize")
     def test_024_tokenize(self):

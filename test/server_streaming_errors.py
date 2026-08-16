@@ -14,13 +14,18 @@ import time
 
 import requests
 
-from utils.server_base import ServerTestBase, run_server_tests
+from utils.server_base import ServerTestBase, model_recipe_options, run_server_tests
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
     TIMEOUT_DEFAULT,
     TIMEOUT_MODEL_OPERATION,
 )
+
+# The overflow tests pin the model to a context their prompt cannot fit in;
+# with nothing saved, ctx_size is sized from available memory and can exceed it.
+OVERFLOW_CTX_SIZE = 2048
+OVERFLOW_PROMPT = "The quick brown fox jumps over the lazy dog. " * 600  # ~6 000 tokens
 
 
 class StreamingErrorTests(ServerTestBase):
@@ -197,17 +202,16 @@ class StreamingErrorTests(ServerTestBase):
         HTTP response, llama.cpp returns 400 (prompt exceeds n_ctx), and without
         the fix sink.done() is never called, leaving the stream open.
         """
-        self._ensure_test_model_loaded()
+        with model_recipe_options(ENDPOINT_TEST_MODEL, ctx_size=OVERFLOW_CTX_SIZE):
+            self._ensure_test_model_loaded()
 
-        # ~5 000 tokens — well above the 2048-token context of Tiny-Test-Model-GGUF
-        overflow_prompt = "The quick brown fox jumps over the lazy dog. " * 600
+            response = self._post_streaming(
+                ENDPOINT_TEST_MODEL,
+                messages=[{"role": "user", "content": OVERFLOW_PROMPT}],
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            lines = self._consume_stream(response)
 
-        response = self._post_streaming(
-            ENDPOINT_TEST_MODEL,
-            messages=[{"role": "user", "content": overflow_prompt}],
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        lines = self._consume_stream(response)
         print(f"[OK] Context overflow: stream closed cleanly ({len(lines)} line(s))")
 
     def test_004a_context_overflow_error_is_sse_framed(self):
@@ -217,16 +221,15 @@ class StreamingErrorTests(ServerTestBase):
         error body written without framing is invisible to every OpenAI-style
         client even though its bytes are on the wire.
         """
-        self._ensure_test_model_loaded()
+        with model_recipe_options(ENDPOINT_TEST_MODEL, ctx_size=OVERFLOW_CTX_SIZE):
+            self._ensure_test_model_loaded()
 
-        overflow_prompt = "The quick brown fox jumps over the lazy dog. " * 600
-
-        response = self._post_streaming(
-            ENDPOINT_TEST_MODEL,
-            messages=[{"role": "user", "content": overflow_prompt}],
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        lines = self._consume_stream(response)
+            response = self._post_streaming(
+                ENDPOINT_TEST_MODEL,
+                messages=[{"role": "user", "content": OVERFLOW_PROMPT}],
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            lines = self._consume_stream(response)
 
         sse_fields = ("data:", "event:", "id:", "retry:", ":")
         unframed = [line for line in lines if not line.startswith(sse_fields)]

@@ -20,7 +20,8 @@ Usage:
 import json as _json
 import threading
 import platform
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import requests
 
@@ -32,11 +33,23 @@ from utils.server_base import (
 )
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
+MOCK_CLOUD_USAGE = {
+    "prompt_tokens": 50,
+    "completion_tokens": 2,
+    "total_tokens": 52,
+    "prompt_tokens_details": {"cached_tokens": 37},
+}
 
-def start_mock_cloud_provider(upstream_ids, marker_content):
+
+def start_mock_cloud_provider(upstream_ids, marker_content, record_state=None):
     """In-process OpenAI-compatible provider: GET /v1/models + POST
-    /v1/chat/completions. The chat reply content is `marker_content` so a test
-    can prove a request actually reached this (cloud) provider. Returns
+    /v1/chat/completions (non-streaming and SSE). The chat reply content is
+    `marker_content` so a test can prove a request actually reached this
+    (cloud) provider. Streaming replies append a usage-only frame
+    (MOCK_CLOUD_USAGE) only when the request sets
+    stream_options.include_usage, mirroring OpenAI-wire providers. When
+    `record_state` (a dict) is given, the last parsed chat request body is
+    stored under record_state["last_chat_request"]. Returns
     (base_url ending in /v1, stop_fn)."""
 
     class _FakeProvider(BaseHTTPRequestHandler):
@@ -64,6 +77,47 @@ def start_mock_cloud_provider(upstream_ids, marker_content):
                 parsed = _json.loads(body or b"{}")
             except _json.JSONDecodeError:
                 parsed = {}
+            if self.server.record_state is not None:
+                self.server.record_state["last_chat_request"] = parsed
+            if parsed.get("stream"):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+
+                def sse(obj):
+                    self.wfile.write(b"data: " + _json.dumps(obj).encode() + b"\n\n")
+
+                base_chunk = {
+                    "id": "cmpl-mock",
+                    "object": "chat.completion.chunk",
+                    "created": 1,
+                    "model": parsed.get("model", upstream_ids[0]),
+                }
+                sse(
+                    {
+                        **base_chunk,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "role": "assistant",
+                                    "content": marker_content,
+                                },
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                )
+                sse(
+                    {
+                        **base_chunk,
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                    }
+                )
+                if (parsed.get("stream_options") or {}).get("include_usage"):
+                    sse({**base_chunk, "choices": [], "usage": MOCK_CLOUD_USAGE})
+                self.wfile.write(b"data: [DONE]\n\n")
+                return
             resp = {
                 "id": "cmpl-mock",
                 "object": "chat.completion",
@@ -92,7 +146,8 @@ def start_mock_cloud_provider(upstream_ids, marker_content):
         def log_message(self, *_args):
             pass
 
-    httpd = HTTPServer(("127.0.0.1", 0), _FakeProvider)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _FakeProvider)
+    httpd.record_state = record_state
     port = httpd.server_address[1]
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -365,6 +420,64 @@ class RouterTests(ServerTestBase):
         self.assertEqual(header, "sensitive-stays-local")
         print(f"[OK] consent=denied coding prompt -> {DEFAULT_MODEL} (first-match)")
 
+    def test_605_route_switch_counter(self):
+        """Same-conversation requests that change candidates bump routing_switches_total."""
+
+        def stats():
+            resp = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(resp.status_code, 200, resp.text)
+            return resp.json()
+
+        def routed_chat(messages, metadata=None):
+            body = {
+                "model": COLLECTION_NAME,
+                "messages": messages,
+                "max_tokens": 8,
+                "temperature": 0.0,
+                "route_trace": True,
+            }
+            if metadata is not None:
+                body["metadata"] = metadata
+            resp = requests.post(
+                f"{self.base_url}/chat/completions", json=body, timeout=600
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"status {resp.status_code}: {resp.text}"
+            )
+            return resp.json().get("x_lemonade_route", {})
+
+        before = stats()
+
+        # All three requests share the conversation fingerprint (same first user
+        # message); the routed turn is the LAST user message, which changes.
+        first_turn = [{"role": "user", "content": "Give me a fun fact about otters."}]
+        decision_a = routed_chat(first_turn, metadata={"consent": "denied"})
+        self.assertEqual(decision_a.get("route_to"), DEFAULT_MODEL)
+
+        followup = first_turn + [
+            {"role": "assistant", "content": "Otters hold hands while sleeping."},
+            {"role": "user", "content": "Now write a function about otters."},
+        ]
+        decision_b = routed_chat(followup)
+        self.assertEqual(decision_b.get("route_to"), CAPABLE_MODEL)
+
+        decision_c = routed_chat(followup)
+        self.assertEqual(decision_c.get("route_to"), CAPABLE_MODEL)
+
+        after = stats()
+        self.assertEqual(
+            after["routing_decisions_total"] - before["routing_decisions_total"],
+            3,
+            f"before={before} after={after}",
+        )
+        self.assertEqual(
+            after["routing_switches_total"] - before["routing_switches_total"],
+            1,
+            "exactly one switch expected: default -> capable, then unchanged "
+            f"(before={before} after={after})",
+        )
+        print("[OK] route-switch counter: 3 decisions, 1 switch")
+
     def test_604_no_trace_when_not_requested(self):
         """Without route_trace the decision omits the per-condition trace."""
         body = {
@@ -542,6 +655,231 @@ class RouterTests(ServerTestBase):
             print(f"[OK] casual -> {DEFAULT_MODEL} (local default)")
         finally:
             self._delete_collection(collection)
+            requests.delete(
+                f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
+            )
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            stop_provider()
+
+    def test_611_cloud_streaming_usage_injection(self):
+        """Cloud streaming records provider usage without changing the client stream.
+
+        The server injects stream_options.include_usage into the forwarded
+        request and swallows the resulting usage-only frame, so telemetry gets
+        cached-token counts while a client that never asked for usage never
+        sees one. A client that DOES ask keeps receiving the usage frame.
+        """
+        provider = "teststreamcloud"
+        upstream_id = "vendor/stream-cloud-model"
+        marker = "streamed-by-cloud-provider"
+        record_state = {}
+
+        base_url, stop_provider = start_mock_cloud_provider(
+            [upstream_id], marker, record_state=record_state
+        )
+        try:
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"install failed: {resp.text}")
+            resp = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"auth failed: {resp.text}")
+
+            models = requests.get(
+                f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+            ).json()
+            cloud_ids = [
+                m["id"]
+                for m in models.get("data", [])
+                if m["id"].startswith(f"{provider}.")
+            ]
+            self.assertEqual(
+                len(cloud_ids), 1, f"expected one cloud model, got {cloud_ids}"
+            )
+            cloud_model = cloud_ids[0]
+
+            def stream_chat(extra_body):
+                body = {
+                    "model": cloud_model,
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "Stream something."}],
+                    **extra_body,
+                }
+                resp = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json=body,
+                    stream=True,
+                    timeout=600,
+                )
+                self.assertEqual(resp.status_code, 200, resp.text)
+                lines = [ln.decode("utf-8") for ln in resp.iter_lines() if ln]
+                return lines
+
+            # Client does NOT request usage: the injected frame must be swallowed.
+            lines = stream_chat({})
+            self.assertTrue(
+                any(marker in ln for ln in lines),
+                f"content chunk missing from client stream: {lines}",
+            )
+            self.assertTrue(any("[DONE]" in ln for ln in lines))
+            self.assertFalse(
+                any("prompt_tokens_details" in ln or '"usage"' in ln for ln in lines),
+                f"usage frame leaked into client stream: {lines}",
+            )
+            last_request = record_state.get("last_chat_request", {})
+            self.assertTrue(
+                (last_request.get("stream_options") or {}).get("include_usage"),
+                f"include_usage was not injected upstream: {last_request}",
+            )
+
+            stats = requests.get(
+                f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(
+                stats.get("cache_tokens"),
+                MOCK_CLOUD_USAGE["prompt_tokens_details"]["cached_tokens"],
+                f"cloud cached tokens not recorded: {stats}",
+            )
+            self.assertEqual(
+                stats.get("input_tokens"), MOCK_CLOUD_USAGE["prompt_tokens"]
+            )
+            print("[OK] injected include_usage: telemetry recorded, stream clean")
+
+            # Client explicitly requests usage: the frame passes through.
+            lines = stream_chat({"stream_options": {"include_usage": True}})
+            self.assertTrue(
+                any("prompt_tokens_details" in ln for ln in lines),
+                f"client-requested usage frame missing: {lines}",
+            )
+            print("[OK] client-requested include_usage: usage frame forwarded")
+        finally:
+            requests.delete(
+                f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
+            )
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            stop_provider()
+
+    def test_612_concurrent_requests_record_atomic_telemetry(self):
+        """Concurrent requests never interleave one request's telemetry fields
+        with another's.
+
+        Every mock-provider streaming request reports the same usage
+        (MOCK_CLOUD_USAGE), so after N concurrent requests the latest gauges
+        must equal that usage exactly — under the old split-lock recording, one
+        request's cache reset could land after another request's cache value
+        and leave `cache_tokens` null/stale — and the cumulative counters must
+        be exact multiples.
+        """
+        provider = "testconccloud"
+        upstream_id = "vendor/concurrent-cloud-model"
+        marker = "concurrent-cloud-reply"
+        rounds, workers = 2, 8
+
+        base_url, stop_provider = start_mock_cloud_provider([upstream_id], marker)
+        try:
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"install failed: {resp.text}")
+            resp = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"auth failed: {resp.text}")
+            models = requests.get(
+                f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+            ).json()
+            cloud_ids = [
+                m["id"]
+                for m in models.get("data", [])
+                if m["id"].startswith(f"{provider}.")
+            ]
+            self.assertEqual(len(cloud_ids), 1, f"cloud model missing: {cloud_ids}")
+            cloud_model = cloud_ids[0]
+
+            def stream_once(_i):
+                resp = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    json={
+                        "model": cloud_model,
+                        "stream": True,
+                        "messages": [{"role": "user", "content": "Go."}],
+                    },
+                    stream=True,
+                    timeout=600,
+                )
+                self.assertEqual(resp.status_code, 200, resp.text)
+                for _ in resp.iter_lines():
+                    pass
+
+            before = requests.get(
+                f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT
+            ).json()
+
+            total = 0
+            for _ in range(rounds):
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    list(pool.map(stream_once, range(workers)))
+                total += workers
+
+            after = requests.get(
+                f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT
+            ).json()
+
+            cached = MOCK_CLOUD_USAGE["prompt_tokens_details"]["cached_tokens"]
+            prompt = MOCK_CLOUD_USAGE["prompt_tokens"]
+            self.assertEqual(
+                after.get("cache_tokens"),
+                cached,
+                f"latest cache gauge corrupted by concurrency: {after}",
+            )
+            self.assertEqual(after.get("input_tokens"), prompt)
+            self.assertEqual(after.get("prompt_tokens"), prompt)
+            self.assertEqual(
+                after["cache_tokens_total"] - before["cache_tokens_total"],
+                cached * total,
+                f"cache totals lost updates: before={before} after={after}",
+            )
+            self.assertEqual(
+                after["request_count_total"] - before["request_count_total"], total
+            )
+            print(f"[OK] {total} concurrent requests: atomic telemetry intact")
+        finally:
             requests.delete(
                 f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
             )

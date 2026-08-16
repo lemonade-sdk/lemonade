@@ -1032,6 +1032,7 @@ set(LEMON_DESCRIPTOR_INCLUDES "")
 set(LEMON_DESCRIPTOR_ENTRIES "")
 set(LEMON_FACTORY_INCLUDES "")
 set(LEMON_FACTORY_ENTRIES "")
+set(LEMON_CAPABILITY_ENTRIES "")
 # The data registry (descriptors, header-only) links into both binaries; the
 # factory registry + per-backend server sources are server-only.
 # Absolute paths so the CLI subdirectory can reuse LEMON_BACKEND_DESCRIPTOR_SOURCES.
@@ -1060,6 +1061,8 @@ foreach(_backend_entry ${LEMON_BACKENDS})
         "#include \"lemon/backends/${_backend_stem}/${_backend_stem}_server.h\"\n")
     string(APPEND LEMON_FACTORY_ENTRIES
         "        { &lemon::backends::${_backend_stem}::descriptor, &lemon::backends::${_backend_stem}::create, lemon::backends::${_backend_stem}::spec(), lemon::backends::${_backend_stem}::ops() },\n")
+    string(APPEND LEMON_CAPABILITY_ENTRIES
+        "        { &lemon::backends::${_backend_stem}::descriptor, lemon::backends::${_backend_stem}::capabilities() },\n")
 endforeach()
 
 configure_file(
@@ -1069,6 +1072,10 @@ configure_file(
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_factories_generated.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/include/backend_factories_generated.h
+    @ONLY)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_capabilities_generated.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/backend_capabilities_generated.h
     @ONLY)
 
 # lemond gets both descriptor data and factories; the CLI gets only the data
@@ -1525,6 +1532,10 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
         # Install .desktop file for web app
         install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-web-app.desktop
             DESTINATION share/applications
+        )
+        # Install MetaInfo file for web app
+        install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.webapp.metainfo.xml
+            DESTINATION share/metainfo
         )
         # Create symlink in standard applications path only if not installing to /usr
         if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
@@ -2049,6 +2060,10 @@ if(UNIX AND NOT APPLE)
             install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-app.desktop
                 DESTINATION share/applications
             )
+            # Install MetaInfo file for the Tauri app
+            install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.app.metainfo.xml
+                DESTINATION share/metainfo
+            )
             # Create symlink in standard applications path only if not installing to /usr
             if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
                 install(CODE "
@@ -2309,6 +2324,26 @@ if(BUILD_TESTING AND EXISTS "${_GGUF_CAPS_TEST_SRC}")
     add_cpp_ci_test(GgufCapabilitiesTest CI OFF COMMAND test_gguf_capabilities)
 endif()
 
+# Transcription response_format interpretation (issue #1833): the requested
+# format, not a parse attempt, decides how a successful body is read.
+# Header-only unit under test, so no extra source files are required.
+set(_TRANSCRIPTION_FORMAT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_transcription_response_format.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_TRANSCRIPTION_FORMAT_TEST_SRC}")
+    add_executable(test_transcription_response_format
+        test/cpp/test_transcription_response_format.cpp
+    )
+    target_include_directories(test_transcription_response_format PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_transcription_response_format PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(TranscriptionResponseFormatTest CI ON COMMAND test_transcription_response_format)
+endif()
+
 set(_GGUF_SHARD_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_shard_utils.cpp"
 )
@@ -2325,6 +2360,26 @@ if(BUILD_TESTING AND EXISTS "${_GGUF_SHARD_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(GgufShardUtilsTest CI ON COMMAND test_gguf_shard_utils)
+endif()
+
+# Per-model artifact selection and snapshot baselines used to decide whether an
+# upstream commit actually touches a downloaded model.
+set(_HF_UPDATE_CHECK_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hf_update_check.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_HF_UPDATE_CHECK_TEST_SRC}")
+    add_executable(test_hf_update_check
+        test/cpp/test_hf_update_check.cpp
+    )
+    target_include_directories(test_hf_update_check PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_hf_update_check PRIVATE lemonade-server-core)
+    add_dependencies(test_hf_update_check copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(HfUpdateCheckTest CI ON COMMAND test_hf_update_check)
 endif()
 
 # Model residency role/pool contract for router dependencies
@@ -2380,6 +2435,31 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_TYPE_CLASSIFIER_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelTypeClassifierTest CI ON COMMAND test_model_type_classifier)
+endif()
+
+# Descriptor contract: every mode a backend advertises in `supported_modes` is
+# backed by a capability interface its server class implements. Compiles the
+# server class definitions (for the compile-time capability mask) but calls
+# nothing on them, so it links only the descriptor registry.
+set(_BACKEND_MODE_CONTRACT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_mode_contract.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
+    add_executable(test_backend_mode_contract
+        test/cpp/test_backend_mode_contract.cpp
+        ${LEMON_BACKEND_DESCRIPTOR_SOURCES}
+    )
+    target_include_directories(test_backend_mode_contract PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_backend_mode_contract PRIVATE
+        nlohmann_json::nlohmann_json
+        lemonade-httplib
+    )
+
+    include(CTest)
+    add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
 endif()
 
 # Job engine pure core: the `when`/`branch` expression evaluator + reference
@@ -2800,11 +2880,18 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
     add_cpp_ci_test(ConfigMigrationTest CI OFF COMMAND test_config_migration)
 endif()
 
+set(_CONFIG_DISCOVERY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_discovery.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONFIG_DISCOVERY_TEST_SRC}")
+    add_executable(test_config_discovery test/cpp/test_config_discovery.cpp)
+    target_link_libraries(test_config_discovery PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigDiscoveryTest CI ON COMMAND test_config_discovery)
+endif()
+
 set(_CONFIG_TELEMETRY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_telemetry.cpp")
 if(BUILD_TESTING AND EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
     target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
-    add_cpp_ci_test(ConfigTelemetryTest CI OFF COMMAND test_config_telemetry)
+    add_cpp_ci_test(ConfigTelemetryTest CI ON COMMAND test_config_telemetry)
 endif()
 
 set(_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC
@@ -2817,6 +2904,19 @@ if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC}")
     target_link_libraries(test_runtime_config_backend_validation PRIVATE lemonade-server-core)
     add_cpp_ci_test(RuntimeConfigBackendValidationTest CI ON
         COMMAND test_runtime_config_backend_validation
+    )
+endif()
+
+set(_RUNTIME_CONFIG_DIRECTORY_VALIDATION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_runtime_config_directory_validation.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_DIRECTORY_VALIDATION_TEST_SRC}")
+    add_executable(test_runtime_config_directory_validation
+        test/cpp/test_runtime_config_directory_validation.cpp
+    )
+    target_link_libraries(test_runtime_config_directory_validation PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RuntimeConfigDirectoryValidationTest CI ON
+        COMMAND test_runtime_config_directory_validation
     )
 endif()
 
@@ -2896,6 +2996,13 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_executable(test_http_client_security test/cpp/test_http_client_security.cpp)
     target_link_libraries(test_http_client_security PRIVATE lemonade-server-core)
     add_cpp_ci_test(HttpClientSecurityTest CI OFF COMMAND test_http_client_security)
+endif()
+
+set(_STREAMING_PROXY_CANCEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_cancel.cpp")
+if(BUILD_TESTING AND EXISTS "${_STREAMING_PROXY_CANCEL_TEST_SRC}")
+    add_executable(test_streaming_proxy_cancel test/cpp/test_streaming_proxy_cancel.cpp)
+    target_link_libraries(test_streaming_proxy_cancel PRIVATE lemonade-server-core)
+    add_cpp_ci_test(StreamingProxyCancelTest CI OFF COMMAND test_streaming_proxy_cancel)
 endif()
 
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")
