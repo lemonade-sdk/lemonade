@@ -1,8 +1,11 @@
 #pragma once
 
 #include <string>
-#include <shared_mutex>
 #include <functional>
+#include <map>
+#include <optional>
+#include <shared_mutex>
+#include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -27,7 +30,8 @@ public:
     int websocket_port() const;
     std::string log_level() const;
     std::string extra_models_dir() const;
-    bool no_broadcast() const;
+    bool broadcast() const;
+    void set_broadcast_override(std::optional<bool> override_val);
     long global_timeout() const;
     int max_loaded_models() const;
     std::string models_dir() const;
@@ -145,6 +149,9 @@ private:
 
     // Config stored as nested JSON matching config.json structure.
     json config_;
+
+    // Transient CLI overrides (not persisted to disk)
+    std::optional<bool> broadcast_override_;
 
     // Valid log levels
     static const std::vector<std::string> valid_log_levels_;

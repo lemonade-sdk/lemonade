@@ -786,19 +786,7 @@ void Router::load_model(const std::string& model_name,
     const std::string canonical_model_name = resolve_model_name(model_name);
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
-    const std::string backend_option = model_info.recipe + "_backend";
-
-    RecipeOptions tentative = options.inherit(model_info.recipe_options.inherit(
-    RecipeOptions(model_info.recipe, config_->recipe_options(""))));
-    json backend_json = tentative.get_option(backend_option);
-    const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
-
-    // Second pass: rebuild defaults using the resolved backend.
-    // Per-architecture defaults sit between global config and model-level recipe_options.
-    RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
-    RecipeOptions arch_opts(model_info.recipe,
-                            model_manager_->get_architecture_defaults(model_info.gguf.architecture));
-    RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
+    RecipeOptions effective_options = resolve_effective_options(model_info, options);
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
@@ -862,10 +850,21 @@ void Router::load_model(const std::string& model_name,
             existing = nullptr;
         }
         if (existing) {
-            json existing_opts = existing->get_recipe_options().to_json();
-            json requested_opts = effective_options.to_json();
+            // Compare resolved rather than stored sets: a request that spells
+            // out an option the running process left to its default (e.g. a
+            // replayed `effective` from /v1/models/{id}/options) is the same
+            // load, not an option change.
+            json existing_opts = existing->get_recipe_options().to_resolved_json();
+            json requested_opts = effective_options.to_resolved_json();
             existing_opts.erase("pinned");
             requested_opts.erase("pinned");
+            // An auto-sized process holds the number auto-tune picked, which no
+            // request can spell. Asking for auto again asks for what is running.
+            if (existing->ctx_size_is_auto() &&
+                requested_opts.value("ctx_size", json(nullptr)) == -1) {
+                existing_opts.erase("ctx_size");
+                requested_opts.erase("ctx_size");
+            }
             if (allow_reload_on_option_change && existing_opts != requested_opts) {
                 LOG(INFO, "Router") << "Options changed, reloading model: " << canonical_model_name << std::endl;
                 evict_server(existing);
@@ -980,6 +979,7 @@ void Router::load_model(const std::string& model_name,
         // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
         int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
+        const bool ctx_size_auto = auto_ctx != -2;
         if (auto_ctx > 0) {
             LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
             effective_options.set_option("ctx_size", auto_ctx);
@@ -992,6 +992,7 @@ void Router::load_model(const std::string& model_name,
 
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        new_server->set_ctx_size_auto(ctx_size_auto);
         new_server->set_residency_class(requested_residency_class);
         new_server->set_pinned(final_pinned);
         new_server->update_access_time();
@@ -1100,6 +1101,7 @@ void Router::load_model(const std::string& model_name,
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+            retry_server->set_ctx_size_auto(ctx_size_auto);
             retry_server->set_residency_class(requested_residency_class);
             retry_server->set_pinned(final_pinned);
             retry_server->update_access_time();
@@ -1357,6 +1359,23 @@ bool Router::is_model_loaded(const std::string& model_name) const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     auto* server = find_server_by_model_name(resolve_model_name(model_name));
     return server != nullptr && server->is_backend_alive();
+}
+
+RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
+                                                const RecipeOptions& request_options) const {
+    const std::string backend_option = model_info.recipe + "_backend";
+
+    RecipeOptions tentative = request_options.inherit(model_info.recipe_options.inherit(
+        RecipeOptions(model_info.recipe, config_->recipe_options(""))));
+    json backend_json = tentative.get_option(backend_option);
+    const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
+
+    // Second pass: rebuild defaults using the resolved backend.
+    // Per-architecture defaults sit between global config and model-level recipe_options.
+    RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
+    RecipeOptions arch_opts(model_info.recipe,
+                            model_manager_->get_architecture_defaults(model_info.gguf.architecture));
+    return request_options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
 }
 
 RecipeOptions Router::get_model_recipe_options(const std::string& model_name) const {

@@ -883,6 +883,8 @@ class EndpointTests(ServerTestBase):
 
     def test_012_load_uses_saved_options(self):
         """Test that load reads previously saved options from recipe_options.json."""
+        self._snapshot_options()
+
         # First, save options with a specific ctx_size
         custom_ctx_size = 3072
         requests.post(
@@ -1073,6 +1075,430 @@ class EndpointTests(ServerTestBase):
             f"[OK] /load after auto-load was a no-op and kept PID "
             f"{loaded_after['pid']}"
         )
+
+    def _options_url(self, model=ENDPOINT_TEST_MODEL):
+        return f"{self.base_url}/models/{model}/options"
+
+    def _reset_options(self, model=ENDPOINT_TEST_MODEL):
+        """Erase the model's recipe_options.json entry and return the response."""
+        return requests.delete(self._options_url(model), timeout=TIMEOUT_DEFAULT)
+
+    def _snapshot_options(self, model=ENDPOINT_TEST_MODEL):
+        """Register a cleanup restoring the model's saved options as they are now.
+
+        Saved options outlive the test that wrote them, and outlive this whole
+        suite: several suites share one server, so a test that persists an
+        option has to put it back.
+        """
+        saved = requests.get(self._options_url(model), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
+        self.addCleanup(self._restore_options, saved, model)
+
+    def _restore_options(self, saved, model=ENDPOINT_TEST_MODEL):
+        self._reset_options(model)
+        if saved:
+            requests.post(self._options_url(model), json=saved, timeout=TIMEOUT_DEFAULT)
+
+    def _set_global_ctx_size(self, ctx_size):
+        """Set the server-wide default context size."""
+        response = requests.post(
+            f"{self.internal_url}/set",
+            json={"ctx_size": ctx_size},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def test_012m_model_options_save_without_loading(self):
+        """POST /models/{id}/options persists options without loading the model."""
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.addCleanup(self._reset_options)
+        self.assertEqual(self._reset_options().status_code, 200)
+
+        before = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(before.status_code, 200)
+        self.assertEqual(before.json()["saved"], {})
+
+        # model_name mirrors what `effective` reports, so the whole object can
+        # be replayed against /load or back here; it must not be persisted.
+        response = requests.post(
+            self._options_url(),
+            json={"ctx_size": 8192, "model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["saved"], {"ctx_size": 8192})
+        self.assertEqual(data["effective"]["ctx_size"], 8192)
+        self.assertEqual(data["effective"]["model_name"], ENDPOINT_TEST_MODEL)
+
+        # The save must be visible to /models/{id} without a load having happened
+        model_info = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}", timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(model_info["recipe_options"].get("ctx_size"), 8192)
+
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        loaded = [m["model_name"] for m in health.get("all_models_loaded", [])]
+        self.assertNotIn(
+            ENDPOINT_TEST_MODEL,
+            loaded,
+            "Saving options must not load the model",
+        )
+
+        self._reset_options()
+        print("[OK] Saved recipe options without loading the model")
+
+    def test_012o_model_options_merge_and_delete(self):
+        """POST merges into the saved entry; null clears a key; DELETE erases it all."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+        defaults = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "defaults"
+        ]
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
+        )
+        merged = requests.post(
+            self._options_url(),
+            json={"llamacpp_args": "--no-mmap"},
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        self.assertEqual(merged["saved"].get("ctx_size"), 4096)
+        self.assertEqual(merged["saved"].get("llamacpp_args"), "--no-mmap")
+
+        # Clearing one key leaves the other alone
+        partial = requests.post(
+            self._options_url(), json={"llamacpp_args": ""}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(partial["saved"], {"ctx_size": 4096})
+
+        # null clears a key too, and the model falls back through the chain
+        cleared_key = requests.post(
+            self._options_url(), json={"ctx_size": None}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(cleared_key["saved"], {})
+        self.assertEqual(
+            cleared_key["effective"]["ctx_size"],
+            defaults["ctx_size"],
+            "Clearing an option should fall back to the default chain",
+        )
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
+        )
+        cleared = self._reset_options()
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(cleared.json()["saved"], {})
+        self.assertEqual(cleared.json()["effective"], cleared.json()["defaults"])
+
+        print("[OK] Options merge on POST, clear on null, and are erased by DELETE")
+
+    def test_012p_model_options_rejects_invalid_input(self):
+        """Unknown, wrong-recipe, wrong-typed, and unsettable options are refused."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+
+        reported = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertNotIn(
+            "pinned",
+            reported["effective"],
+            "pinned is live-process state, so this endpoint must not report it",
+        )
+
+        for body in (
+            {"nonsense": 1},  # not an option at all
+            {"steps": 30},  # sd-cpp option on an llamacpp model
+            {"ctx_size": "big"},  # wrong type
+            {"ctx_size": "8192"},  # numeric, but still a string
+            {"ctx_size": ""},  # strings never clear ctx_size; only null does
+            {"ctx_size": "auto"},  # -1 is the one spelling of automatic
+            {"ctx_size": -5},  # out of range: only -1 is a valid negative
+            {"ctx_size": 0},  # only -1 auto-resolves; 0 reaches the backend
+            {"ctx_size": 4096.5},  # not a whole number
+            {"auto_evict": "sometimes"},  # wrong type for a null-default option
+            {"evict_idle_timeout": 600.5},  # fractional value for a whole-number option
+            # Live-process state, owned by /load and /internal/pin
+            {"pinned": True},
+        ):
+            response = requests.post(
+                self._options_url(), json=body, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(response.status_code, 400, f"Expected 400 for body {body}")
+            self.assertIn("error", response.json())
+
+        # Numeric literals no int64 can hold. The first overflows a double,
+        # which the JSON parser reports as a distinct error class; the second
+        # would wrap to -1 and read as "size it automatically".
+        for raw_body in ('{"ctx_size": 1e400}', '{"ctx_size": 18446744073709551615}'):
+            response = requests.post(
+                self._options_url(),
+                data=raw_body,
+                headers={"Content-Type": "application/json"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                response.status_code, 400, f"Expected 400 for body {raw_body}"
+            )
+            self.assertIn("error", response.json())
+
+        # Nothing was persisted by any of the rejected requests
+        self.assertEqual(
+            requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["saved"],
+            {},
+        )
+
+        not_found = requests.get(
+            self._options_url(model="ThisModelDoesNotExist"), timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(not_found.status_code, 404)
+
+        print("[OK] Model options endpoint rejects invalid input")
+
+    def test_012r_model_options_explicit_auto_beats_global(self):
+        """ctx_size=-1 is saved as automatic and overrides a global ctx_size.
+
+        Clearing the option is not enough on its own: the model then inherits
+        whatever the server-wide ctx_size is. Saving -1 is what says "size this
+        one model from available memory regardless".
+        """
+        original_ctx_size = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()["ctx_size"]
+        self.addCleanup(self._reset_options)
+        self.addCleanup(self._set_global_ctx_size, original_ctx_size)
+        self._reset_options()
+
+        self._set_global_ctx_size(8192)
+
+        inherited = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertEqual(
+            inherited["effective"]["ctx_size"],
+            8192,
+            "With nothing saved, the model should inherit the global ctx_size",
+        )
+
+        data = requests.post(
+            self._options_url(), json={"ctx_size": -1}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(
+            data["saved"].get("ctx_size"),
+            -1,
+            "ctx_size=-1 should persist the auto sentinel",
+        )
+        self.assertEqual(
+            data["effective"]["ctx_size"],
+            -1,
+            "ctx_size=-1 should override the global ctx_size",
+        )
+        self.assertEqual(
+            data["defaults"]["ctx_size"],
+            8192,
+            "Defaults should still show what clearing the option gives",
+        )
+
+        cleared = requests.post(
+            self._options_url(), json={"ctx_size": None}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(cleared["saved"], {})
+        self.assertEqual(
+            cleared["effective"]["ctx_size"],
+            8192,
+            "Clearing the option should fall back to the global ctx_size",
+        )
+
+        print("[OK] Saved ctx_size=-1 overrides an explicit global ctx_size")
+
+    def test_012t_effective_replays_as_a_load_command(self):
+        """`effective` is the exact /v1/load body that reproduces the load.
+
+        Load with saved options, erase them, then replay `effective` verbatim:
+        if it fully captures the load command, the router resolves identical
+        options and keeps the backend process; any gap forces a reload.
+
+        An explicit ctx_size and an automatic one take different paths through
+        that check: the running process holds the concrete size auto-tune chose,
+        which no request can spell, so -1 has to be recognized as the size it
+        already resolved to."""
+        self.addCleanup(self._reset_options)
+
+        for ctx_size in (3072, -1):
+            with self.subTest(ctx_size=ctx_size):
+                self._reset_options()
+                requests.post(
+                    self._options_url(),
+                    json={"ctx_size": ctx_size, "llamacpp_args": "--no-mmap"},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                effective = requests.get(
+                    self._options_url(), timeout=TIMEOUT_DEFAULT
+                ).json()["effective"]
+                self.assertEqual(effective["model_name"], ENDPOINT_TEST_MODEL)
+                self.assertEqual(effective["ctx_size"], ctx_size)
+
+                load = requests.post(
+                    f"{self.base_url}/load",
+                    json={"model_name": ENDPOINT_TEST_MODEL},
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(load.status_code, 200, load.text)
+                loaded_before = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+                self._assert_loaded_model_pid(loaded_before)
+
+                self._reset_options()
+                replay = requests.post(
+                    f"{self.base_url}/load",
+                    json=effective,
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(replay.status_code, 200, replay.text)
+                loaded_after = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+                self._assert_loaded_model_pid(loaded_after)
+                self.assertEqual(
+                    loaded_after["pid"],
+                    loaded_before["pid"],
+                    "Replaying `effective` must resolve to the same load",
+                )
+
+        print("[OK] `effective` replays verbatim as a /v1/load command")
+
+    def test_012u_options_resolve_ctx_size_and_dry_run(self):
+        """resolved_ctx_size is concrete, and dry_run resolves without saving."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+
+        preview = requests.post(
+            self._options_url(),
+            json={"ctx_size": 4096, "dry_run": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(preview.status_code, 200, preview.text)
+        data = preview.json()
+        self.assertEqual(data["effective"]["ctx_size"], 4096)
+        self.assertEqual(data["resolved_ctx_size"], 4096)
+        self.assertEqual(data["saved"], {}, "dry_run must not persist anything")
+
+        # load_command is effective posted to /v1/load, with the base URL left
+        # to the caller: lemond only ever listens over plain HTTP, so it cannot
+        # know the scheme a client reached it through.
+        command = data["load_command"]
+        self.assertTrue(
+            command.startswith("curl -X POST $LEMONADE_BASE_URL/v1/load"), command
+        )
+        self.assertIn('"ctx_size":4096', command)
+        self.assertIn(f'"model_name":"{ENDPOINT_TEST_MODEL}"', command)
+
+        after = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertEqual(after["saved"], {}, "dry_run must not persist anything")
+        self.assertGreater(
+            after["resolved_ctx_size"],
+            0,
+            "An automatic ctx_size resolves to a concrete positive size",
+        )
+
+        rejected = requests.post(
+            self._options_url(),
+            json={"ctx_size": 0, "dry_run": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(rejected.status_code, 400, "dry_run still validates")
+
+        print("[OK] resolved_ctx_size is concrete and dry_run persists nothing")
+
+    def test_012v_load_command_omits_client_supplied_host(self):
+        """The command is built from what the server knows, not what it is told.
+
+        `Host` is the caller's own claim about where it sent the request, and
+        the command is meant to be run, so none of it may reach the string.
+        """
+        forged = "evil.example.com; touch /tmp/lemonade-load-command"
+        response = requests.get(
+            self._options_url(),
+            headers={"Host": forged},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        command = response.json()["load_command"]
+        self.assertIn("$LEMONADE_BASE_URL/v1/load", command)
+        self.assertNotIn("evil.example.com", command)
+        self.assertNotIn("touch", command)
+
+        print("[OK] load_command never repeats the caller's Host header")
+
+    def test_012w_load_command_carries_auth_when_a_key_is_required(self):
+        """A key-protected server renders the header its own /v1/load demands.
+
+        Without it the command reports a load that would come back 401. The key
+        itself stays out of the response: only the variable holding it is named.
+        """
+        lemond_binary = _resolve_lemond_binary()
+        if not lemond_binary:
+            self.skipTest("lemond binary not found (build it or add it to PATH)")
+
+        api_key = "options-load-command-key"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        port = _pick_free_port()
+        cache_dir = tempfile.mkdtemp(prefix="lemond_optauth_")
+        log_path = os.path.join(cache_dir, "lemond.log")
+        env = os.environ.copy()
+        env["LEMONADE_API_KEY"] = api_key
+        env.pop("LEMONADE_ADMIN_API_KEY", None)
+
+        server = None
+        try:
+            with open(log_path, "w", encoding="utf-8") as log_file:
+                server = subprocess.Popen(
+                    [lemond_binary, cache_dir, "--port", str(port)],
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                )
+
+            deadline = time.time() + 60
+            healthy = False
+            while time.time() < deadline:
+                if server.poll() is not None:
+                    break  # exited early; surface the log below
+                if _lemond_health_ok(port, headers):
+                    healthy = True
+                    break
+                time.sleep(1)
+
+            if not healthy:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    log = f.read()
+                self.fail(
+                    f"lemond never became healthy on port {port}.\n"
+                    f"=== lemond log ===\n{log}"
+                )
+
+            response = requests.get(
+                f"http://localhost:{port}/api/v1/models/{ENDPOINT_TEST_MODEL}/options",
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            command = response.json()["load_command"]
+            self.assertIn('-H "Authorization: Bearer $LEMONADE_API_KEY"', command)
+            self.assertNotIn(api_key, command)
+
+            print("[OK] load_command carries the Authorization header /load requires")
+        finally:
+            if server is not None and server.poll() is None:
+                server.terminate()
+                try:
+                    server.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    server.kill()
+                    server.wait(timeout=10)
+            shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
