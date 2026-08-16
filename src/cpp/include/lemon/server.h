@@ -307,15 +307,14 @@ private:
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
-    // Auto-upscale an image response if the source model has an "upscale_model"
-    // recipe option configured. Returns a new JSON response with the upscaled
-    // image, or the original response unchanged if no upscaler is set.
-    // On failure, sets res status/body and returns false.
-    // If skip_upscale_request is true, skip auto-upscale even if configured (per-request override).
-    bool apply_upscale_if_configured(
+    // Auto-upscale the response image(s) if the source model has an "upscale_model"
+    // recipe option configured. Images that fail to upscale are returned unchanged
+    // (original resolution), so a transient upscale failure never discards a
+    // successful generation. If skip_upscale_request is true, skip auto-upscale even
+    // if configured (per-request override).
+    void apply_upscale_if_configured(
         const std::string& model_name,
         nlohmann::json& response,
-        httplib::Response& res,
         bool skip_upscale_request = false);
 
     // Internal helper: resolve upscale model path, pick backend, run sd-cli.
@@ -326,6 +325,11 @@ private:
         const std::string& upscale_model_name,
         const std::string& main_model_name,
         httplib::Response* res);
+
+    // Parse a boolean from a multipart form field ("true"/"1"/"yes"/"on",
+    // case-insensitive); anything else is false.
+    static bool parse_bool_form_field(const httplib::MultipartFormData& form,
+                                      const std::string& name);
 
     bool parse_required_json_body(const httplib::Request& req,
                                   httplib::Response& res,

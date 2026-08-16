@@ -132,6 +132,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `cfg_scale` | — | SIZE | 7.0 | Classifier-free guidance scale |
 | `width` | — | SIZE | 512 | Output image width |
 | `height` | — | SIZE | 512 | Output image height |
+| `upscale_model` | — | MODEL | "" | ESRGAN upscaler to apply after generation (set model options, not in-chat) |
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
 

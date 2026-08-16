@@ -14,6 +14,7 @@
 #include "lemon/jobs/job_manager.h"
 #include "lemon/mcp_server.h"
 #include "lemon/mcp_client.h"
+#include "lemon/model_types.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
@@ -4853,9 +4854,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             }
             // Auto-upscale if the loaded model has an upscale_model recipe option
             bool skip_upscale = request_json.value("skip_upscale", false);
-            if (!apply_upscale_if_configured(requested_model, response, res, skip_upscale)) {
-                return; // Error already set by apply_upscale_if_configured
-            }
+            apply_upscale_if_configured(requested_model, response, skip_upscale);
             res.set_content(response.dump(), "application/json");
         }
 
@@ -4954,15 +4953,14 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
     return true;
 }
 
-// Parse a boolean value from a multipart form field.
-// Accepts "true", "1", "yes", "on" (case-insensitive) as truthy; everything else is false.
-static bool parse_bool_form_field(const httplib::MultipartFormData& form,
-                                  const std::string& name) {
+bool Server::parse_bool_form_field(const httplib::MultipartFormData& form,
+                                   const std::string& name) {
     if (!form.has_field(name)) return false;
     const std::string& val = form.get_field(name);
     if (val == "1") return true;
     std::string lower = val;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return lower == "true" || lower == "yes" || lower == "on";
 }
 
@@ -5089,9 +5087,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             res.status = 500;
         }
         // Auto-upscale if the loaded model has an upscale_model recipe option
-        if (!apply_upscale_if_configured(edit_model_name, response, res, parse_bool_form_field(req.form, "skip_upscale"))) {
-            return; // Error already set by apply_upscale_if_configured
-        }
+        apply_upscale_if_configured(edit_model_name, response, parse_bool_form_field(req.form, "skip_upscale"));
         res.set_content(response.dump(), "application/json");
 
     } catch (const nlohmann::json::exception& e) {
@@ -5146,9 +5142,7 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
             res.status = 500;
         }
         // Auto-upscale if the loaded model has an upscale_model recipe option
-        if (!apply_upscale_if_configured(var_model_name, response, res, parse_bool_form_field(req.form, "skip_upscale"))) {
-            return; // Error already set by apply_upscale_if_configured
-        }
+        apply_upscale_if_configured(var_model_name, response, parse_bool_form_field(req.form, "skip_upscale"));
         res.set_content(response.dump(), "application/json");
 
     } catch (const nlohmann::json::exception& e) {
@@ -5170,10 +5164,9 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
     }
 }
 
-bool Server::apply_upscale_if_configured(
+void Server::apply_upscale_if_configured(
     const std::string& model_name,
     nlohmann::json& response,
-    httplib::Response& res,
     bool skip_upscale_request) {
     // Check if this model has an upscale_model recipe option configured
     std::string upscale_model_name;
@@ -5183,76 +5176,59 @@ bool Server::apply_upscale_if_configured(
         if (upscale_opt.is_string() && !upscale_opt.get<std::string>().empty()) {
             upscale_model_name = upscale_opt.get<std::string>();
         } else {
-            return true; // No upscaler configured
+            return; // No upscaler configured
         }
     } catch (const std::exception&) {
-        return true; // Model not found or error — pass through
+        return; // Model not found or error — pass through
     }
 
     // Per-request override: caller can opt out of model-level auto-upscale
     if (skip_upscale_request) {
         LOG(INFO, "Server") << "Skipping auto-upscale for model '" << model_name
                             << "' (per-request skip_upscale=true)" << std::endl;
-        return true;
+        return;
     }
 
-    LOG(INFO, "Server") << "Auto-upscaling image for model '" << model_name
+    if (!response.contains("data") || !response["data"].is_array()) {
+        LOG(WARNING, "Server") << "Response has no image data to upscale" << std::endl;
+        return; // Nothing to upscale — pass through
+    }
+
+    LOG(INFO, "Server") << "Auto-upscaling images for model '" << model_name
                         << "' using '" << upscale_model_name << '"' << std::endl;
 
-    // Extract the base64 image from the response
-    std::string b64_image;
-    if (response.contains("data") && response["data"].is_array() &&
-        response["data"].size() > 0 &&
-        response["data"][0].contains("b64_json") &&
-        response["data"][0]["b64_json"].is_string()) {
-        b64_image = response["data"][0]["b64_json"].get<std::string>();
-    } else {
-        LOG(WARNING, "Server") << "Response has no b64_json image to upscale" << std::endl;
-        return true; // Nothing to upscale — pass through
-    }
-
-    // Run the shared upscaling pipeline
-    auto upscaled = do_upscale(b64_image, upscale_model_name, model_name, &res);
-    if (!upscaled.has_value()) {
-        return false; // Error response already set by do_upscale
-    }
-
-    response["data"][0]["b64_json"] = upscaled.value();
-
-    // Response transparency: signal to caller that auto-upscale was applied
-    // and provide the final dimensions so UI sizing isn't surprised.
-    std::string upscaled_b64 = upscaled.value();
-    // Decode just enough base64 to read PNG header (24 bytes = ~32 base64 chars)
-    const int png_header_bytes = 24;
-    const int b64_chars_needed = ((png_header_bytes + 2) / 3) * 4;
-    if (upscaled_b64.size() >= static_cast<size_t>(b64_chars_needed)) {
-        std::string raw(png_header_bytes, '\0');
-        int out_len = 0;
-        std::string b64_chunk = upscaled_b64.substr(0, b64_chars_needed);
-        // Minimal base64 decode of just the first chunk
-        const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        auto b64_val = [b64_table](char c) -> int {
-            const char* p = strchr(b64_table, c);
-            return p ? static_cast<int>(p - b64_table) : 0;
-        };
-        for (int i = 0; i < b64_chars_needed && out_len < png_header_bytes; i += 4) {
-            int v0 = b64_val(b64_chunk[i]);
-            int v1 = (i + 1 < b64_chars_needed) ? b64_val(b64_chunk[i + 1]) : 0;
-            int v2 = (i + 2 < b64_chars_needed && b64_chunk[i + 2] != '=') ? b64_val(b64_chunk[i + 2]) : 0;
-            int v3 = (i + 3 < b64_chars_needed && b64_chunk[i + 3] != '=') ? b64_val(b64_chunk[i + 3]) : 0;
-            if (out_len < png_header_bytes) raw[out_len++] = static_cast<char>((v0 << 2) | (v1 >> 4));
-            if (out_len < png_header_bytes) raw[out_len++] = static_cast<char>(((v1 & 0x0F) << 4) | (v2 >> 2));
-            if (out_len < png_header_bytes) raw[out_len++] = static_cast<char>(((v2 & 0x03) << 6) | v3);
+    int upscaled_count = 0;
+    for (auto& item : response["data"]) {
+        if (!item.is_object() || !item.contains("b64_json") || !item["b64_json"].is_string()) {
+            continue;
         }
-        if (auto dims = lemon::utils::get_png_dimensions(raw)) {
-            response["data"][0]["upscaled"] = true;
-            response["data"][0]["width"] = std::get<0>(*dims);
-            response["data"][0]["height"] = std::get<1>(*dims);
+        std::string b64_image = item["b64_json"].get<std::string>();
+        // res == nullptr so do_upscale never writes an error response: a failed
+        // upscale keeps the original image rather than failing the whole request.
+        auto upscaled = do_upscale(b64_image, upscale_model_name, model_name, nullptr);
+        if (!upscaled.has_value()) {
+            LOG(WARNING, "Server") << "Auto-upscale failed for model '" << model_name
+                                   << "', returning the original image" << std::endl;
+            continue; // Keep the original image
         }
+        item["b64_json"] = upscaled.value();
+
+        // Response transparency: signal that auto-upscale was applied and provide
+        // the final dimensions so UI sizing isn't surprised. Decode just the PNG
+        // header (24 bytes = 32 base64 chars).
+        std::string raw_header = utils::JsonUtils::base64_decode(upscaled.value().substr(0, 32));
+        if (auto dims = lemon::utils::get_png_dimensions(raw_header)) {
+            item["upscaled"] = true;
+            item["width"] = std::get<0>(*dims);
+            item["height"] = std::get<1>(*dims);
+        }
+        ++upscaled_count;
     }
 
-    LOG(INFO, "Server") << "Auto-upscale complete for model '" << model_name << '"' << std::endl;
-    return true;
+    if (upscaled_count > 0) {
+        LOG(INFO, "Server") << "Auto-upscale complete for model '" << model_name
+                            << "' (" << upscaled_count << " image(s))" << std::endl;
+    }
 }
 
 std::optional<std::string> Server::do_upscale(
@@ -5264,6 +5240,14 @@ std::optional<std::string> Server::do_upscale(
     std::string upscale_model_path;
     try {
         auto info = model_manager_->get_model_info(upscale_model_name);
+        if (!lemon::has_label(info.labels, "upscaling")) {
+            if (res) {
+                res->status = 400;
+                nlohmann::json error = {{"error", {{"message", "Upscale model is not labeled 'upscaling': " + upscale_model_name}, {"type", "invalid_request_error"}}}};
+                res->set_content(error.dump(), "application/json");
+            }
+            return std::nullopt;
+        }
         if (!model_manager_->is_model_downloaded(upscale_model_name)) {
             LOG(INFO, "Server") << "Upscale model not cached, downloading..." << std::endl;
             model_manager_->download_registered_model(info, true);
@@ -5390,18 +5374,22 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
         if (!request_json.contains("image") || !request_json["image"].is_string()) {
             res.status = 400;
-            res.set_content(nlohmann::json{{"error", {{
-                "message", "Missing 'image' field (base64 encoded)"
-            }}, {"type", "invalid_request_error"}}}.dump(), "application/json");
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'image' field (base64 encoded)"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
             return;
         }
 
         std::string upscale_model_name = request_json.value("model", "");
         if (upscale_model_name.empty()) {
             res.status = 400;
-            res.set_content(nlohmann::json{{"error", {{
-                "message", "Missing 'model' field"
-            }}, {"type", "invalid_request_error"}}}.dump(), "application/json");
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
             return;
         }
 
@@ -5421,16 +5409,19 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
     } catch (const nlohmann::json::exception& e) {
         LOG(ERROR, "Server") << "JSON parse error in handle_image_upscale: " << e.what() << std::endl;
         res.status = 400;
-        res.set_content(nlohmann::json{{"error", {{
-            "message", "Invalid JSON: " + std::string(e.what())
-        }}, {"type", "invalid_request_error"}}}.dump(), "application/json");
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid JSON: " + std::string(e.what())},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_image_upscale: " << e.what() << std::endl;
         res.status = 500;
-        res.set_content(nlohmann::json{{"error", {{
-            "message", e.what(),
-            {"type", "internal_error"}
-        }}}}.dump(), "application/json");
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "server_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
     }
 }
 
