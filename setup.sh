@@ -269,7 +269,7 @@ else
     print_warning "pkg-config not found, assuming libraries need to be installed"
     if [ "$OS" = "linux" ]; then
         if command_exists apt; then
-            missing_packages+=("pkg-config" "curl" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev")
+            missing_packages+=("pkg-config" "curl" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev" "libomp1")
         elif command_exists pacman; then
             missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd" "libdrm" "libcap")
         elif is_rpm_ostree; then

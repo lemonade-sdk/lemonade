@@ -63,10 +63,15 @@ runs:
         DEB_DEPENDS=$(dpkg-deb -f "$DEB_FILE" Depends 2>/dev/null || true)
         if [ -n "$DEB_DEPENDS" ] && command -v apt-get >/dev/null 2>&1; then
             echo "Installing .deb runtime dependencies: $DEB_DEPENDS"
+            # Enable universe repo — some runtime deps (e.g. libomp1 for ROCm
+            # backends) live there and aren't available in the restricted set
+            # that GitHub Actions Ubuntu runners enable by default.
             if [ "$(id -u)" -eq 0 ]; then
+                add-apt-repository -y universe 2>/dev/null || true
                 apt-get update
                 apt-get satisfy -y "$DEB_DEPENDS"
             elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+                sudo add-apt-repository -y universe 2>/dev/null || true
                 sudo apt-get update
                 sudo apt-get satisfy -y "$DEB_DEPENDS"
             else
