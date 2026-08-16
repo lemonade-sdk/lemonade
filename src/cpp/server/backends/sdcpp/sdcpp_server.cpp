@@ -556,17 +556,25 @@ std::string SDServer::build_merged_sdcpp_args(
 
     // Parse existing args (from recipe_options / config), keeping only
     // non-boolean-option flags. This preserves user's custom args like
-    // --control-net, --upscale-model, etc.
+    // --control-net, --upscale-model, etc. Legacy configs spell boolean
+    // options directly in sdcpp_args (e.g. "--diffusion-fa"); those spellings
+    // are remembered so they survive the rebuild below.
     std::string recipe_args = options.get_option("sdcpp_args");
     auto all_tokens = lemon::utils::parse_custom_args(recipe_args, true);
     std::vector<std::string> other_args;
+    std::set<std::string> spelled_flags;
     for (const auto& token : all_tokens) {
-        if (known_flags.find(token) == known_flags.end()) {
+        if (known_flags.find(token) != known_flags.end()) {
+            spelled_flags.insert(token);
+        } else {
             other_args.push_back(token);
         }
     }
 
-    // Rebuild: other args first, then enabled boolean flags
+    // Rebuild: other args first, then enabled boolean flags. A flag that was
+    // spelled out in the existing args string stays enabled (backward
+    // compatibility for pre-typed-option configs); the typed options add flags
+    // that weren't already requested.
     std::vector<std::string> merged_list = other_args;
     for (const auto& bo : effective_bool_opts) {
         bool enabled = false;
@@ -574,9 +582,10 @@ std::string SDServer::build_merged_sdcpp_args(
             enabled = true;  // always on for Vulkan (backend-forced)
         } else {
             auto opt_val = options.get_option(bo.name);
-            enabled = opt_val.is_boolean() ? opt_val.get<bool>() : false;
+            enabled = opt_val.is_boolean() && opt_val.get<bool>();
         }
         if (is_backend_forced(bo.cli_flag)) enabled = true;
+        if (spelled_flags.count(bo.cli_flag) > 0) enabled = true;
         if (enabled) merged_list.push_back(bo.cli_flag);
     }
 

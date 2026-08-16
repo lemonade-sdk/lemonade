@@ -77,7 +77,8 @@ private:
     // Discovers which BOOL options have CLI flags from the backend descriptor,
     // so new options don't require code changes. Backend-forced flags (e.g.
     // --diffusion-fa for Vulkan/CUDA, --vae-tiling for Vulkan) are applied
-    // regardless of user setting.
+    // regardless of user setting. Boolean flags spelled out in an existing
+    // sdcpp_args string (pre-typed-option configs) are preserved as enabled.
     std::string build_merged_sdcpp_args(const RecipeOptions& options,
                                         const std::string& backend) const;
 };
