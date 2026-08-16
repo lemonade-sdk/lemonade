@@ -394,8 +394,21 @@ void LlamaCppServer::load(const std::string& model_name,
         LOG(INFO, "LlamaCpp") << "Model uses DFlash, adding draft decoding defaults" << std::endl;
         push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-dflash");
     } else if (uses_mtp) {
-        LOG(INFO, "LlamaCpp") << "Model uses MTP, adding draft decoding defaults" << std::endl;
-        push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-mtp");
+        // MTP speculative decoding: only guard for architectures whose draft
+        // generation accesses vision tensors (e.g. GLM4-MOE / glm4-moe.cpp).
+        // Text-only MTP models (Gemma-4, Qwen3.x) are fine without mmproj.
+        // See #2451, #2458.
+        const bool is_glm4_moe = model_info.gguf.architecture.find("glm4") != std::string::npos
+                              || model_info.gguf.architecture.find("chatglm4") != std::string::npos;
+        if (is_glm4_moe && mmproj_path.empty() && !model_info.extra<bool>("hf_load", false)) {
+            LOG(WARNING, "LlamaCpp") << "Model has MTP capability but no mmproj found; "
+                                     << "skipping speculative decoding to avoid crash" << std::endl;
+        } else {
+            LOG(INFO, "LlamaCpp") << "Model uses MTP, adding draft decoding defaults" << std::endl;
+            push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-mtp");
+            push_overridable_arg(args, llamacpp_args, "--spec-draft-n-max", "3");
+            push_overridable_arg(args, llamacpp_args, "--spec-draft-p-min", "0.75");
+        }
     }
 
     // Disable llamacpp webui by default
