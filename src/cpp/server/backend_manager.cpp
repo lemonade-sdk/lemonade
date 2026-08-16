@@ -14,6 +14,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <ctime>
 #include <map>
 #include <optional>
 #include <thread>
@@ -390,6 +391,26 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
 
 std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
                                                      bool throw_on_failure) {
+    // Rate-limit guard: GitHub returns 429/403 when unauthenticated requests
+    // exceed 60 req/hr per IP. Once hit, back off until Retry-After expires
+    // instead of spamming the API (which resets the clock on each 429).
+    static std::chrono::steady_clock::time_point s_rate_limit_until;
+    {
+        auto now = std::chrono::steady_clock::now();
+        if (now < s_rate_limit_until) {
+            auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
+                s_rate_limit_until - now).count();
+            LOG(WARNING, "BackendManager") << "GitHub API rate limited for " << repo
+                                           << ", skipping (" << remaining << "s remaining)" << std::endl;
+            if (throw_on_failure) {
+                throw std::runtime_error(
+                    "GitHub API rate limited for " + repo
+                    + " (" + std::to_string(remaining) + "s remaining)");
+            }
+            return "";
+        }
+    }
+
     {
         std::lock_guard<std::mutex> lock(latest_version_cache_mutex_);
         auto it = latest_version_cache_.find(repo);
@@ -430,13 +451,40 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
         return "";
     }
     if (resp.status_code < 200 || resp.status_code >= 300) {
+        // On rate-limit responses (429 or 403), parse Retry-After and set a
+        // backoff clock so we don't spam the API until the window expires.
+        if (resp.status_code == 429 || resp.status_code == 403) {
+            int retry_seconds = 60;
+            auto retry_it = resp.headers.find("Retry-After");
+            if (retry_it != resp.headers.end()) {
+                try { retry_seconds = std::stoi(retry_it->second); } catch (...) {}
+            }
+            // Fallback: x-ratelimit-reset (Unix timestamp) if no Retry-After
+            if (retry_it == resp.headers.end()) {
+                auto reset_it = resp.headers.find("x-ratelimit-reset");
+                if (reset_it != resp.headers.end()) {
+                    try {
+                        auto reset_t = static_cast<std::time_t>(std::stoll(reset_it->second));
+                        auto now_t = std::chrono::system_clock::to_time_t(
+                            std::chrono::system_clock::now());
+                        if (reset_t > now_t) retry_seconds = static_cast<int>(reset_t - now_t);
+                    } catch (...) {}
+                }
+            }
+            s_rate_limit_until = std::chrono::steady_clock::now()
+                + std::chrono::seconds(retry_seconds);
+            LOG(WARNING, "BackendManager") << "GitHub returned HTTP " << resp.status_code
+                                           << " for " << repo << ", backing off "
+                                           << retry_seconds << "s" << std::endl;
+        } else {
+            LOG(WARNING, "BackendManager") << "GitHub returned HTTP " << resp.status_code
+                                           << " for " << repo << std::endl;
+        }
         if (throw_on_failure) {
             throw std::runtime_error(
                 "GitHub returned HTTP " + std::to_string(resp.status_code)
                 + " when querying latest release of " + repo);
         }
-        LOG(WARNING, "BackendManager") << "GitHub returned HTTP " << resp.status_code
-                                       << " for " << repo << std::endl;
         return "";
     }
 
