@@ -1527,7 +1527,7 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
             DESTINATION share/applications
         )
         # Install MetaInfo file for web app
-        install(FILES ${CMAKE_SOURCE_DIR}/data/com.lemonade.WebApp.metainfo.xml
+        install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.webapp.metainfo.xml
             DESTINATION share/metainfo
         )
         # Create symlink in standard applications path only if not installing to /usr
@@ -2054,7 +2054,7 @@ if(UNIX AND NOT APPLE)
                 DESTINATION share/applications
             )
             # Install MetaInfo file for the Tauri app
-            install(FILES ${CMAKE_SOURCE_DIR}/data/com.lemonade.App.metainfo.xml
+            install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.app.metainfo.xml
                 DESTINATION share/metainfo
             )
             # Create symlink in standard applications path only if not installing to /usr
