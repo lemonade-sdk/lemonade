@@ -967,6 +967,8 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 
 > Note: loading a collection (`recipe: "collection.omni"`) loads each of its components in turn. Per-model options like `ctx_size` or `llamacpp_backend` are not forwarded to components — set them on each component's own `recipe_options.json` entry instead.
 
+Recipe option fields on `/v1/load` have three-state semantics. Omitting a field keeps using its saved per-model value. Passing explicit `null` ignores only that saved key for this load and falls through to the lower default layers without changing `recipe_options.json`. Passing a concrete value overrides the saved value. `ctx_size: -1` is a concrete value meaning automatic context sizing, not a tombstone. With `save_options: true`, concrete values are persisted as usual while a `null` tombstone preserves the existing saved value for that key.
+
 ### Parameters
 
 | Parameter | Required | Applies to | Description |
