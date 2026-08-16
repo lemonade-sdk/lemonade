@@ -1148,7 +1148,9 @@ class EndpointTests(ServerTestBase):
         loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
         self.assertNotIn("--threads 1", loaded_args)
 
-        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["saved"]
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
         self.assertEqual(saved.get("llamacpp_args"), "--threads 1")
 
     def test_012lb_load_null_keeps_other_saved_keys(self):
@@ -1187,7 +1189,9 @@ class EndpointTests(ServerTestBase):
         self.assertNotIn("--threads 1", recipe_options.get("llamacpp_args", ""))
         self.assertEqual(recipe_options.get("ctx_size"), 3072)
 
-        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["saved"]
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
         self.assertEqual(saved.get("llamacpp_args"), "--threads 1")
         self.assertEqual(saved.get("ctx_size"), 3072)
 
