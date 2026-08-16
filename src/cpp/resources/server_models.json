@@ -999,6 +999,19 @@
         ],
         "size": 22.8
     },
+    "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF": {
+        "checkpoint": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF:NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "mtp",
+            "hot"
+        ],
+        "size": 25.5
+    },
     "Gemma-3-4b-it-GGUF": {
         "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
         "mmproj": "mmproj-model-f16.gguf",
@@ -1497,6 +1510,21 @@
         "suggested": true,
         "labels": [
             "chat",
+            "vision",
+            "tool-calling",
+            "mtp",
+            "hot"
+        ],
+        "size": 18.8
+    },
+    "Qwen3.8-27B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
             "vision",
             "tool-calling",
             "mtp",
