@@ -81,12 +81,27 @@ lemonade pull user.MyCodingModel \
     --label tool-calling
 ```
 
+### Multi-Token Prediction (MTP) models
+
+Models with separate MTP head / draft checkpoint files (e.g. Gemma 4) can be registered with an optional `draft` checkpoint. The `mtp` label enables `--spec-type draft-mtp` for speculative decoding acceleration. The `draft` checkpoint is optional — without it, the model loads and runs normally but without MTP acceleration.
+
+```bash
+lemonade pull user.My-Gemma-4-MTP \
+    --checkpoint main unsloth/Gemma-4-27B-IT-GGUF:Q4_K_M \
+    --checkpoint draft unsloth/Gemma-4-27B-IT-MTP-GGUF:gemma-4-27b-mtp-q4_k_m.gguf \
+    --checkpoint mmproj unsloth/Gemma-4-27B-IT-GGUF:mmproj-model-f16.gguf \
+    --recipe llamacpp \
+    --label mtp \
+    --label vision \
+    --label tool-calling
+```
+
 Supported registration flags:
 
 | Flag | Description |
 |------|-------------|
 | `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` (default) or `modelscope`. |
-| `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
+| `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj`, `main` + `vae`, or `main` + `draft`. Known types: `main`, `mmproj`, `vae`, `draft`, `npu_cache`. |
 | `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `mlx-engine`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |

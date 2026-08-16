@@ -1691,6 +1691,7 @@ static bool are_required_checkpoints_complete(const ModelInfo& info) {
         (void)checkpoint;
 
         if (type == "npu_cache") continue;
+        if (type == "draft") continue;  // draft checkpoint is optional for MTP; missing is OK
 
         const std::string resolved_path = info.resolved_path(type);
         if (!is_checkpoint_path_complete(resolved_path)) {
@@ -4014,7 +4015,7 @@ void ModelManager::download_from_registry(const ModelInfo& info,
     // Auxiliary checkpoints inherit the model-level registry source. This is
     // intentional: a registration has one provenance and update domain.
     for (const auto& [type, checkpoint] : info.checkpoints) {
-        if (type == "main" || type == "npu_cache") continue;
+        if (type == "main" || type == "npu_cache" || type == "draft") continue;
         const std::string repo_id = checkpoint_to_repo_id(checkpoint);
         const std::string variant = checkpoint_to_variant(checkpoint);
         if (repo_id.empty() || variant.empty()) {
