@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "Dockerfile"
+      - "docker-entrypoint.sh"
       - ".dockerignore"
       - "src/cpp/**"
       - "include/**"
@@ -60,6 +61,37 @@ jobs:
           docker exec lemonade-test sh -lc 'command -v lemonade && command -v lemond'
           docker exec lemonade-test sh -lc 'lemonade status'
 
+      - name: Unprivileged process + device group injection check
+        run: |
+          # The entrypoint runs as root, maps host device groups onto the
+          # lemonade user, then drops privileges. Verify the server process
+          # ends up as UID 10001 with an injected supplementary device group.
+          FAKE_GID=64200
+          mkdir -p /tmp/fakedri
+          : > /tmp/fakedri/renderD128
+          sudo chown 0:${FAKE_GID} /tmp/fakedri/renderD128
+
+          docker run -d --name lemonade-perms \
+            -v /tmp/fakedri/renderD128:/dev/dri/renderD128 \
+            lemonade:test
+
+          for i in {1..30}; do
+            if docker exec lemonade-perms sh -c 'test -r /proc/1/status'; then
+              break
+            fi
+            sleep 1
+          done
+
+          UID_LINE=$(docker exec lemonade-perms grep '^Uid:' /proc/1/status)
+          echo "$UID_LINE"
+          echo "$UID_LINE" | awk '{ exit ($2 == 10001) ? 0 : 1 }'
+
+          GROUPS_LINE=$(docker exec lemonade-perms grep '^Groups:' /proc/1/status)
+          echo "$GROUPS_LINE"
+          echo "$GROUPS_LINE" | tr ' \t' '\n' | grep -qx "${FAKE_GID}"
+
+          docker rm -f lemonade-perms
+
       - name: Load model
         run: |
           curl -X POST http://localhost:13305/api/v1/load \
@@ -87,3 +119,5 @@ jobs:
         run: |
           docker logs lemonade-test || true
           docker rm -f lemonade-test || true
+          docker logs lemonade-perms || true
+          docker rm -f lemonade-perms || true

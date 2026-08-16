@@ -12,6 +12,16 @@
 > on every host interface. To limit exposure:
 > - Publish to host loopback only: `-p 127.0.0.1:13305:13305`.
 > - Require authentication by setting `-e LEMONADE_API_KEY=<key>`.
+>
+> **Runtime user model**
+>
+> The image no longer sets a `USER`; it starts as root so the entrypoint can
+> map host accelerator device groups (see the ROCm section below) before
+> dropping privileges. The `lemond` server process itself runs as the
+> unprivileged UID 10001. However, `docker exec`, the healthcheck, and any
+> command run with an overridden entrypoint default to **root**. To get an
+> unprivileged shell, pass the user explicitly:
+> `docker exec -u lemonade lemonade-server sh`.
 
 ### Docker Run with Default Configuration
 
@@ -331,7 +341,7 @@ ENV XDG_RUNTIME_DIR=/run/lemonade
 COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade ./lemonade
 COPY --from=builder /app/build/resources ./resources
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY lemonade/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Make executables executable
 RUN chmod +x ./lemond ./lemonade /usr/local/bin/docker-entrypoint.sh
