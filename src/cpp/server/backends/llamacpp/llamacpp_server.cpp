@@ -795,6 +795,20 @@ public:
         // reclassify the model away from its endpoint type.
         if (info.type == ModelType::LLM) {
             apply_gguf_capability_labels(info.labels, info.gguf.caps);
+            // GLM-4 MoE models crash with MTP speculative decoding because
+            // the GGUF conversion doesn't include multimodal metadata the graph
+            // builder expects when constructing the draft context. Strip the
+            // mtp label until upstream llama.cpp fixes glm4-moe.cpp draft
+            // context construction. See #2451, #2621.
+            std::string arch_lower = info.gguf.architecture;
+            std::transform(arch_lower.begin(), arch_lower.end(),
+                           arch_lower.begin(), ::tolower);
+            if (arch_lower.find("glm4") == 0) {
+                auto it = std::remove(info.labels.begin(), info.labels.end(), "mtp");
+                if (it != info.labels.end()) {
+                    info.labels.erase(it, info.labels.end());
+                }
+            }
         }
     }
 
