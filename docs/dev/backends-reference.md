@@ -146,12 +146,10 @@ the generator instead. Prose outside the markers is preserved. -->
 | `height` | — | SIZE | 512 | Output image height |
 | `sampler` | — | ARGS | "" | Denoising solver (euler \| er_sde) |
 | `negative_prompt` | — | ARGS | "" | Negative prompt |
-| `upscale` | — | BOOL | false | 2x latent upscale with refine denoise |
 | `qwen_vae_enhance` | — | BOOL | false | Nyquist notch post-filter (removes 2px grid artifacts) |
 | `film_grain` | — | SIZE | 0.0 | Film grain strength (0.0-10.0) |
 | `sharpening` | — | SIZE | 0.0 | RCAS sharpening strength (0.0-1.0) |
 | `lora_specs` | — | ARGS | "" | Comma-separated LoRA specs, e.g. "style:0.8,sub/detail:0.5" |
-| `lora_dir` | — | ARGS | "" | Directory containing LoRA .safetensors files (subdirectories allowed) |
 
 #### `thinksound` — ThinkSound
 
