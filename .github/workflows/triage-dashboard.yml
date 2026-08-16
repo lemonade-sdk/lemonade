@@ -26,6 +26,8 @@ on:
 
 jobs:
   build:
+    # This deployment targets an upstream-only repository and must not run in forks.
+    if: github.repository == 'lemonade-sdk/lemonade'
     runs-on: ubuntu-latest
     permissions:
       contents: read
