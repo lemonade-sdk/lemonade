@@ -181,5 +181,64 @@ int main() {
     }
     fs::remove_all(temp_test_dir);
 
+    // 9. Test deployment defaults (LEMONADE_DEFAULTS_PATH) with legacy no_broadcast: true
+    fs::path temp_defaults_dir = fs::temp_directory_path() / ("lemonade_test_defaults_" + std::to_string(std::time(nullptr)));
+    fs::create_directories(temp_defaults_dir);
+
+    try {
+        fs::path defaults_file = temp_defaults_dir / "custom_defaults.json";
+        {
+            std::ofstream out(defaults_file);
+            out << "{\"no_broadcast\": true}\n";
+        }
+
+#ifdef _WIN32
+        _putenv_s("LEMONADE_DEFAULTS_PATH", defaults_file.string().c_str());
+#else
+        setenv("LEMONADE_DEFAULTS_PATH", defaults_file.string().c_str(), 1);
+#endif
+
+        json defaults = ConfigFile::get_defaults();
+        check(defaults["broadcast"] == false, "LEMONADE_DEFAULTS_PATH legacy no_broadcast: true overrides broadcast to false");
+        check(!defaults.contains("no_broadcast"), "LEMONADE_DEFAULTS_PATH removes legacy no_broadcast from defaults object");
+
+        // When user creates a fresh config under these defaults, broadcast is false
+        fs::path fresh_cache_dir = temp_defaults_dir / "cache";
+        json fresh_loaded = ConfigFile::load(fresh_cache_dir.string());
+        check(fresh_loaded["broadcast"] == false, "fresh config inherited broadcast=false from deployment defaults");
+
+#ifdef _WIN32
+        _putenv_s("LEMONADE_DEFAULTS_PATH", "");
+#else
+        unsetenv("LEMONADE_DEFAULTS_PATH");
+#endif
+    } catch (const std::exception& e) {
+        check(false, (std::string("LEMONADE_DEFAULTS_PATH test failed: ") + e.what()).c_str());
+    }
+    fs::remove_all(temp_defaults_dir);
+
+    // 10. Test that malformed legacy values in config.json are rejected
+    fs::path malformed_dir = fs::temp_directory_path() / ("lemonade_test_malformed_" + std::to_string(std::time(nullptr)));
+    fs::create_directories(malformed_dir);
+
+    try {
+        fs::path cfg_file = malformed_dir / "config.json";
+        {
+            std::ofstream out(cfg_file);
+            out << "{\"config_version\": 2, \"port\": 13305, \"no_broadcast\": \"true\"}\n";
+        }
+
+        bool threw_malformed = false;
+        try {
+            ConfigFile::load(malformed_dir.string());
+        } catch (const std::invalid_argument&) {
+            threw_malformed = true;
+        }
+        check(threw_malformed, "ConfigFile::load rejects malformed non-boolean no_broadcast string");
+    } catch (const std::exception& e) {
+        check(false, (std::string("malformed test failed: ") + e.what()).c_str());
+    }
+    fs::remove_all(malformed_dir);
+
     return test_helpers::report_results("C++ config/discovery");
 }
