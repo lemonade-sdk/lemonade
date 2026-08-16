@@ -227,6 +227,50 @@ int main() {
             std::to_string(merged.get_option("cfg_scale").get<float>()), "0.0");
     }
 
+    // --- has_option: "set in a layer" vs. descriptor-default fallback ---
+    // Backends use has_option() to decide whether to send a value at all;
+    // unset values fall through to the backend's own native defaults.
+
+    // C1: a layer sets only steps; cfg_scale stays unset even though get_option
+    // would resolve it to the descriptor default (7.0)
+    {
+        json only_steps = {{"steps", 8}};
+        RecipeOptions merged = RecipeOptions::merge_precedence_layers(
+            "sd-cpp", only_steps, json(nullptr), json(nullptr));
+
+        failures += fail("has_option: steps set by a layer",
+            merged.has_option("steps"), "", "");
+        failures += fail("has_option: cfg_scale not set by any layer",
+            !merged.has_option("cfg_scale"), "", "");
+        failures += fail("has_option: unset option still resolves to descriptor default",
+            merged.get_option("cfg_scale").get<float>() == 7.0f,
+            std::to_string(merged.get_option("cfg_scale").get<float>()), "7.0");
+    }
+
+    // C2: no layers at all — nothing is set, everything falls through
+    {
+        RecipeOptions merged = RecipeOptions::merge_precedence_layers(
+            "sd-cpp", json(nullptr), json(nullptr), json(nullptr));
+
+        failures += fail("has_option: no layers means steps unset",
+            !merged.has_option("steps"), "", "");
+        failures += fail("has_option: no layers means width unset",
+            !merged.has_option("width"), "", "");
+    }
+
+    // C3: inherit propagates set-ness from the lower layer
+    {
+        json parent_opts = {{"steps", 20}};
+        RecipeOptions parent("sd-cpp", parent_opts);
+        RecipeOptions child("sd-cpp", json::object());
+        RecipeOptions merged = child.inherit(parent);
+
+        failures += fail("has_option: key inherited from lower layer is set",
+            merged.has_option("steps"), "", "");
+        failures += fail("has_option: key absent everywhere stays unset",
+            !merged.has_option("cfg_scale"), "", "");
+    }
+
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
 }

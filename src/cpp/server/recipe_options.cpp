@@ -278,6 +278,10 @@ json RecipeOptions::get_option(const std::string& opt) const {
     return get_defaults().contains(opt) ? get_defaults()[opt] : json();
 }
 
+bool RecipeOptions::has_option(const std::string& opt) const {
+    return options_.contains(opt);
+}
+
 void RecipeOptions::set_option(const std::string& opt, const json& value) {
     options_[opt] = value;
 }

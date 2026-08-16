@@ -418,6 +418,8 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
     //
     // The effective RecipeOptions already has layers 2-6 baked in at the
     // correct precedence level, so we just read from recipe_options_ directly.
+    // A value absent from every layer is omitted, letting sd-server apply its
+    // own native defaults.
     json extra_args;
     json sample_params = json::object();
     json guidance = json::object();
@@ -440,24 +442,31 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         }
         return fallback;
     };
+    auto option_int = [&](const std::string& key) -> int {
+        return recipe_options_.has_option(key) ? static_cast<int>(recipe_options_.get_option(key)) : 0;
+    };
+    auto option_float = [&](const std::string& key) -> float {
+        return recipe_options_.has_option(key) ? static_cast<float>(recipe_options_.get_option(key)) : 0.0f;
+    };
+    auto option_string = [&](const std::string& key) -> std::string {
+        return recipe_options_.has_option(key) ? recipe_options_.get_option(key).get<std::string>() : "";
+    };
 
     // steps -> sample_params.sample_steps
-    int steps = resolve_int("steps", static_cast<int>(recipe_options_.get_option("steps")));
+    int steps = resolve_int("steps", option_int("steps"));
     if (steps > 0) sample_params["sample_steps"] = steps;
 
     // cfg_scale -> sample_params.guidance.txt_cfg
-    float cfg_scale = resolve_float("cfg_scale", recipe_options_.get_option("cfg_scale"));
+    float cfg_scale = resolve_float("cfg_scale", option_float("cfg_scale"));
     if (cfg_scale > 0.0f) guidance["txt_cfg"] = cfg_scale;
 
     // sample_method -> sample_params.sample_method
-    std::string sample_method = resolve_string("sample_method",
-        recipe_options_.get_option("sampling_method"));
+    std::string sample_method = resolve_string("sample_method", option_string("sampling_method"));
     if (!sample_method.empty()) sample_params["sample_method"] = sample_method;
 
     // flow_shift -> sample_params.flow_shift
     if (include_flow_shift) {
-        float flow_shift = resolve_float("flow_shift",
-            recipe_options_.get_option("flow_shift"));
+        float flow_shift = resolve_float("flow_shift", option_float("flow_shift"));
         if (flow_shift > 0.0f) sample_params["flow_shift"] = flow_shift;
     }
 
@@ -488,7 +497,10 @@ std::string SDServer::resolve_size(const json& request) const {
         return std::to_string(request["width"].get<int>()) + "x"
              + std::to_string(request["height"].get<int>());
     }
-    // Use effective recipe_options which already has image_defaults baked in
+    // Fall back to the effective recipe options (user/model/image_defaults
+    // layers). When none of them sets a size, return "" so sd-server picks
+    // its own native defaults.
+    if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
     int w = static_cast<int>(recipe_options_.get_option("width"));
     int h = static_cast<int>(recipe_options_.get_option("height"));
     if (w <= 0 || h <= 0) return "";

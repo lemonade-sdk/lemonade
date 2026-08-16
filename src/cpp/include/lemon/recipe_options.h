@@ -17,6 +17,7 @@ public:
     std::string to_log_string(bool resolve_defaults=true) const;
     RecipeOptions inherit(const RecipeOptions& options) const;
     json get_option(const std::string& opt) const;
+    bool has_option(const std::string& opt) const;
     void set_option(const std::string& opt, const json& value);
     void remove_option(const std::string& opt);
     std::string get_recipe() const { return recipe_; };
