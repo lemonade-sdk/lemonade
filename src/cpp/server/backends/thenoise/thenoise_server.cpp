@@ -11,6 +11,7 @@
 #include <ctime>
 #include <filesystem>
 #include <random>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -331,12 +332,20 @@ json TheNoiseServer::build_request(const json& request) const {
     }
 
     // Pass through any request parameters this adapter does not map so they
-    // reach the backend untouched. Skip keys already folded into the body and
-    // the ones consumed/transformed above (model, n, size, cfg_scale) so they
-    // are not forwarded in their raw form.
+    // reach the backend untouched. Skip every key the adapter handles (derived
+    // from the descriptor options) plus the ones it consumes/transforms that
+    // are not descriptor options, so raw forms are never re-forwarded.
+    std::set<std::string> handled;
+    for (const auto& opt : thenoise::descriptor.options) {
+        handled.insert(opt.name);
+    }
+    for (const char* key : {
+        "prompt", "seed", "size", "model", "n"
+    }) {
+        handled.insert(key);
+    }
     for (auto& [key, value] : request.items()) {
-        if (body.contains(key)) continue;
-        if (key == "model" || key == "n" || key == "size" || key == "cfg_scale") continue;
+        if (handled.count(key)) continue;
         body[key] = value;
     }
 
