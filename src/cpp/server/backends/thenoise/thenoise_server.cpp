@@ -124,10 +124,21 @@ void TheNoiseServer::load(const std::string& model_name,
         "--port", std::to_string(port_)
     };
 
-    std::string lora_dir = options.get_option("lora_dir");
+    // lora_dir / upscaler_dir are server-wide config (config.json
+    // "thenoise" section) and are not overridable per model.
+    std::string lora_dir;
+    std::string upscaler_dir;
+    if (auto* cfg = RuntimeConfig::global()) {
+        lora_dir = cfg->backend_string("thenoise", "lora_dir");
+        upscaler_dir = cfg->backend_string("thenoise", "upscaler_dir");
+    }
     if (!lora_dir.empty()) {
         args.push_back("--lora-dir");
         args.push_back(lora_dir);
+    }
+    if (!upscaler_dir.empty()) {
+        args.push_back("--upscaler-dir");
+        args.push_back(upscaler_dir);
     }
 
     // The portable thenoise launcher sets up LD_LIBRARY_PATH / CC / ROCm env itself.
@@ -285,12 +296,6 @@ json TheNoiseServer::build_request(const json& request) const {
         body["sampler"] = sampler;
     }
 
-    // upscale
-    bool upscale = resolve_bool("upscale", recipe_options_.get_option("upscale"));
-    if (upscale) {
-        body["upscale"] = true;
-    }
-
     // qwen_vae_enhance
     bool qwen_vae_enhance = resolve_bool("qwen_vae_enhance",
         recipe_options_.get_option("qwen_vae_enhance"));
@@ -323,6 +328,16 @@ json TheNoiseServer::build_request(const json& request) const {
         const json opt = recipe_options_.get_option("lora_specs");
         std::string specs = opt.is_string() ? opt.get<std::string>() : "";
         if (!specs.empty()) body["lora_specs"] = split_lora_specs(specs);
+    }
+
+    // Pass through any request parameters this adapter does not map so they
+    // reach the backend untouched. Skip keys already folded into the body and
+    // the ones consumed/transformed above (model, n, size, cfg_scale) so they
+    // are not forwarded in their raw form.
+    for (auto& [key, value] : request.items()) {
+        if (body.contains(key)) continue;
+        if (key == "model" || key == "n" || key == "size" || key == "cfg_scale") continue;
+        body[key] = value;
     }
 
     return body;

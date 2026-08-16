@@ -2166,6 +2166,25 @@
             "height": 1024
         }
     },
+    "Z-Image-Turbo-TheNoise": {
+        "checkpoints": {
+            "main": "Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+            "text_encoder": "Comfy-Org/z_image_turbo:split_files/text_encoders/qwen_3_4b.safetensors",
+            "vae": "Comfy-Org/z_image_turbo:split_files/vae/ae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 20.7,
+        "image_defaults": {
+            "steps": 8,
+            "cfg_scale": 1.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
         "recipe": "sd-cpp",
