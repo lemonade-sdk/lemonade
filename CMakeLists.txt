@@ -2859,10 +2859,17 @@ endif()
 
 
 set(_PROCESS_SSE_LINES_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_process_sse_lines.cpp")
-if(EXISTS "${_PROCESS_SSE_LINES_TEST_SRC}")
+if(BUILD_TESTING AND EXISTS "${_PROCESS_SSE_LINES_TEST_SRC}")
     add_executable(test_process_sse_lines test/cpp/test_process_sse_lines.cpp)
     target_link_libraries(test_process_sse_lines PRIVATE lemonade-server-core)
     add_cpp_ci_test(ProcessSseLinesTest CI ON COMMAND test_process_sse_lines)
+endif()
+
+set(_CLOUD_RESPONSE_MODEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_response_model.cpp")
+if(BUILD_TESTING AND EXISTS "${_CLOUD_RESPONSE_MODEL_TEST_SRC}")
+    add_executable(test_cloud_response_model test/cpp/test_cloud_response_model.cpp)
+    target_link_libraries(test_cloud_response_model PRIVATE lemonade-server-core)
+    add_cpp_ci_test(CloudResponseModelTest CI ON COMMAND test_cloud_response_model)
 endif()
 
 
