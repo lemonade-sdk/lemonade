@@ -82,6 +82,7 @@ The following options are available for all commands:
 | `--host HOST` | Server host address | `127.0.0.1` |
 | `--port PORT` | Server port number | `13305` |
 | `--api-key KEY` | API key for authentication | None |
+| `--discovery` / `--no-discovery` | Enable or disable auto-discovery of local server via UDP beacon | Enabled |
 
 These options can also be set via environment variables:
 - `LEMONADE_HOST` for `--host`
