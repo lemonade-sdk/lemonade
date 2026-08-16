@@ -31,10 +31,13 @@ Do not edit the bundle by hand. To move to a new version, verify the npm tarball
 integrity, extract the pristine artifact, and re-pin the SHA-256:
 
 ```bash
+set -euo pipefail
+
 VERSION=<new-version>
 
 # (1) Fetch the registry tarball — npm publishes `dist.integrity` as sha512.
-TARBALL="/tmp/model-viewer-${VERSION}.tgz"
+TARBALL=$(mktemp /tmp/model-viewer-XXXXXX.tgz)
+trap 'rm -rf "$TARBALL" /tmp/model-viewer-extract' EXIT
 curl -sL "https://registry.npmjs.org/@google/model-viewer/-/model-viewer-${VERSION}.tgz" -o "$TARBALL"
 
 # (2) Independently verify npm's published integrity hash.
@@ -58,8 +61,9 @@ if [ "$ACTUAL" != "$EXPECTED" ]; then
 fi
 
 # (3) Extract the bundle — now we can trust this came from npm.
-tar xzf "$TARBALL" -C /tmp
-cp "/tmp/package/dist/model-viewer.min.js" src/app/src/renderer/vendor/model-viewer.min.js
+mkdir -p /tmp/model-viewer-extract
+tar xzf "$TARBALL" -C /tmp/model-viewer-extract
+cp "/tmp/model-viewer-extract/package/dist/model-viewer.min.js" src/app/src/renderer/vendor/model-viewer.min.js
 
 # (4) Re-pin the sidecar hash.
 cd src/app/src/renderer/vendor
