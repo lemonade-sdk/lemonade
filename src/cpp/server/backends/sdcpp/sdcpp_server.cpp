@@ -191,8 +191,6 @@ void SDServer::load(const std::string& model_name,
     LOG(INFO, "SDServer") << "Loading model: " << model_name << std::endl;
     LOG(DEBUG, "SDServer") << "Per-model settings: " << options.to_log_string() << std::endl;
 
-    image_defaults_ = model_info.image_defaults;
-
     std::string backend = options.get_option("sd-cpp_backend");
     if (backend.empty()) {
         auto supported = SystemInfo::get_supported_backends("sd-cpp");
@@ -397,7 +395,6 @@ void SDServer::unload() {
         LOG(INFO, "SDServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
         utils::ProcessManager::stop_process(handle);
     }
-    image_defaults_ = ImageDefaults{};
 }
 
 json SDServer::build_extra_args(const json& request, bool include_flow_shift) const {
@@ -411,8 +408,16 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
     // The old flat keys (`steps`, `cfg_scale`) are silently ignored, which is why
     // setting them at the top level of extra_args has no effect.
     //
-    // Precedence for each value: request override -> model image_defaults
-    // -> recipe_options.
+    // Precedence for each value (highest → lowest):
+    //   1. Per-request settings in the JSON request body
+    //   2. User-saved recipe options (saved via API/CLI)
+    //   3. Model recipe_options (registry entry)
+    //   4. Model image_defaults (from server_models.json)
+    //   5. Architecture defaults
+    //   6. Global config defaults
+    //
+    // The effective RecipeOptions already has layers 2-6 baked in at the
+    // correct precedence level, so we just read from recipe_options_ directly.
     json extra_args;
     json sample_params = json::object();
     json guidance = json::object();
@@ -436,47 +441,23 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         return fallback;
     };
 
-    // Helper: 3-tier resolution (user-set > image_defaults > baked-in default)
-    // Use is_explicit_option() to distinguish user/model-saved options from inherited defaults
-    auto resolved_int = [&](const std::string& key, int ifd) -> int {
-        if (recipe_options_.is_explicit_option(key))
-            return static_cast<int>(recipe_options_.get_option(key));
-        if (image_defaults_.has_defaults)
-            return ifd;
-        return static_cast<int>(recipe_options_.get_option(key));
-    };
-    auto resolved_float = [&](const std::string& key, float ifd) -> float {
-        if (recipe_options_.is_explicit_option(key))
-            return recipe_options_.get_option(key);
-        if (image_defaults_.has_defaults)
-            return ifd;
-        return recipe_options_.get_option(key);
-    };
-    auto resolved_string = [&](const std::string& key, const std::string& ifd) -> std::string {
-        if (recipe_options_.is_explicit_option(key))
-            return recipe_options_.get_option(key);
-        if (image_defaults_.has_defaults && !ifd.empty())
-            return ifd;
-        return recipe_options_.get_option(key);
-    };
-
     // steps -> sample_params.sample_steps
-    int steps = resolve_int("steps", resolved_int("steps", image_defaults_.has_defaults ? image_defaults_.steps : 0));
+    int steps = resolve_int("steps", static_cast<int>(recipe_options_.get_option("steps")));
     if (steps > 0) sample_params["sample_steps"] = steps;
 
     // cfg_scale -> sample_params.guidance.txt_cfg
-    float cfg_scale = resolve_float("cfg_scale", resolved_float("cfg_scale", image_defaults_.has_defaults ? image_defaults_.cfg_scale : 0.0f));
+    float cfg_scale = resolve_float("cfg_scale", recipe_options_.get_option("cfg_scale"));
     if (cfg_scale > 0.0f) guidance["txt_cfg"] = cfg_scale;
 
     // sample_method -> sample_params.sample_method
     std::string sample_method = resolve_string("sample_method",
-        resolved_string("sampling_method", image_defaults_.has_defaults ? image_defaults_.sampling_method : ""));
+        recipe_options_.get_option("sampling_method"));
     if (!sample_method.empty()) sample_params["sample_method"] = sample_method;
 
     // flow_shift -> sample_params.flow_shift
     if (include_flow_shift) {
         float flow_shift = resolve_float("flow_shift",
-            resolved_float("flow_shift", image_defaults_.has_defaults ? image_defaults_.flow_shift : 0.0f));
+            recipe_options_.get_option("flow_shift"));
         if (flow_shift > 0.0f) sample_params["flow_shift"] = flow_shift;
     }
 
@@ -507,22 +488,10 @@ std::string SDServer::resolve_size(const json& request) const {
         return std::to_string(request["width"].get<int>()) + "x"
              + std::to_string(request["height"].get<int>());
     }
-    // Priority: recipe_options (user-saved) > image_defaults
-    int w, h;
-    if (recipe_options_.is_explicit_option("width"))
-        w = static_cast<int>(recipe_options_.get_option("width"));
-    else if (image_defaults_.has_defaults)
-        w = image_defaults_.width;
-    else
-        return "";
-
-    if (recipe_options_.is_explicit_option("height"))
-        h = static_cast<int>(recipe_options_.get_option("height"));
-    else if (image_defaults_.has_defaults)
-        h = image_defaults_.height;
-    else
-        return "";
-
+    // Use effective recipe_options which already has image_defaults baked in
+    int w = static_cast<int>(recipe_options_.get_option("width"));
+    int h = static_cast<int>(recipe_options_.get_option("height"));
+    if (w <= 0 || h <= 0) return "";
     return std::to_string(w) + "x" + std::to_string(h);
 }
 

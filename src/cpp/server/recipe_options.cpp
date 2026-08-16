@@ -177,7 +177,6 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     for (auto key : to_copy) {
         if (options.contains(key) && !is_empty_option(key, options[key])) {
             options_[key] = options[key];
-            explicit_keys_.insert(key);
         }
     }
 }
@@ -188,6 +187,20 @@ static std::string format_option_for_logging(const json& opt) {
     if (opt.is_number_float()) return std::to_string((double) opt);
     if (opt.is_number_integer()) return std::to_string((int) opt);
     return opt;
+}
+
+RecipeOptions RecipeOptions::merge_precedence_layers(const std::string& recipe,
+                                                     const json& lowest,
+                                                     const json& middle,
+                                                     const json& highest) {
+    json merged = lowest.is_object() ? lowest : json::object();
+    for (const json* layer : {&middle, &highest}) {
+        if (!layer->is_object()) continue;
+        for (auto it = layer->begin(); it != layer->end(); ++it) {
+            merged[it.key()] = it.value();
+        }
+    }
+    return RecipeOptions(recipe, merged);
 }
 
 json RecipeOptions::to_json() const {
@@ -211,7 +224,6 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
 
 RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
     json merged = options_;
-    std::set<std::string> merged_explicit_keys = explicit_keys_;
     // Read defensively: a hand-edited recipe_options.json can hold any type
     // here, and throwing would take down every read of the model.
     const json own_merge_args = options_.contains("merge_args") ? options_["merge_args"]
@@ -230,10 +242,6 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
 
             if (target_str.empty()) {
                 merged[it.key()] = incoming_str;
-                // Only mark as explicit if it was explicit in parent
-                if (options.is_explicit_option(it.key())) {
-                    merged_explicit_keys.insert(it.key());
-                }
             } else if (incoming_str.empty()) {
                 merged[it.key()] = target_str;
             } else {
@@ -248,16 +256,10 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
             }
         } else if (!merged.contains(it.key()) && !is_empty_option(it.key(), it.value())) {
             merged[it.key()] = it.value();
-            // Only mark as explicit if it was explicit in parent
-            if (options.is_explicit_option(it.key())) {
-                merged_explicit_keys.insert(it.key());
-            }
         }
     }
 
-    RecipeOptions result(recipe_, merged);
-    result.explicit_keys_ = merged_explicit_keys;
-    return result;
+    return RecipeOptions(recipe_, merged);
 }
 
 json RecipeOptions::get_option(const std::string& opt) const {
@@ -276,22 +278,12 @@ json RecipeOptions::get_option(const std::string& opt) const {
     return get_defaults().contains(opt) ? get_defaults()[opt] : json();
 }
 
-bool RecipeOptions::has_option(const std::string& opt) const {
-    return options_.contains(opt);
-}
-
-bool RecipeOptions::is_explicit_option(const std::string& opt) const {
-    return explicit_keys_.find(opt) != explicit_keys_.end();
-}
-
 void RecipeOptions::set_option(const std::string& opt, const json& value) {
     options_[opt] = value;
-    explicit_keys_.insert(opt);
 }
 
 void RecipeOptions::remove_option(const std::string& opt) {
     options_.erase(opt);
-    explicit_keys_.erase(opt);
 }
 
 #ifdef LEMONADE_CLI
