@@ -116,6 +116,8 @@ RegistrySearchResponse normalize_registry_search_response(
     const nlohmann::json& body,
     std::size_t limit = 12);
 
+bool registry_task_is_excluded(const std::string& task);
+
 // Search a remote model registry. Provider-side GGUF filters are candidate
 // hints only; callers must use /pull/variants as the authoritative file-level
 // compatibility check before presenting a downloadable marketplace result.
