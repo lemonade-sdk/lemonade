@@ -37,7 +37,8 @@ VERSION=<new-version>
 
 # (1) Fetch the registry tarball — npm publishes `dist.integrity` as sha512.
 TARBALL=$(mktemp /tmp/model-viewer-XXXXXX.tgz)
-trap 'rm -rf "$TARBALL" /tmp/model-viewer-extract' EXIT
+EXTRACT=$(mktemp -d)
+trap 'rm -rf "$TARBALL" "$EXTRACT"' EXIT
 curl -sL "https://registry.npmjs.org/@google/model-viewer/-/model-viewer-${VERSION}.tgz" -o "$TARBALL"
 
 # (2) Independently verify npm's published integrity hash.
@@ -61,14 +62,18 @@ if [ "$ACTUAL" != "$EXPECTED" ]; then
 fi
 
 # (3) Extract the bundle — now we can trust this came from npm.
-mkdir -p /tmp/model-viewer-extract
-tar xzf "$TARBALL" -C /tmp/model-viewer-extract
-cp "/tmp/model-viewer-extract/package/dist/model-viewer.min.js" src/app/src/renderer/vendor/model-viewer.min.js
+tar xzf "$TARBALL" -C "$EXTRACT"
+cp "$EXTRACT/package/dist/model-viewer.min.js" src/app/src/renderer/vendor/model-viewer.min.js
 
 # (4) Re-pin the sidecar hash.
 cd src/app/src/renderer/vendor
 sha256sum model-viewer.min.js > model-viewer.min.js.sha256
 ```
+
+> **Note:** The verified `@google/model-viewer@4.3.1` artifact produces SHA-256
+> `283b0672…`, which is the exact value already in `model-viewer.min.js.sha256`.
+> That is why the bundle itself does not appear as a diff — this PR is pinning the
+> existing file to its upstream provenance with integrity verification.
 
 Then update **Version** and the two hashes above, and verify the 3D panel preview
 still renders in both the Tauri app and the web-app.
