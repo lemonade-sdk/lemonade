@@ -4,7 +4,7 @@ import { serverFetch } from './serverConfig';
 import { fetchSystemInfoData, Recipes } from './systemData';
 import { ModelsData } from './modelData';
 import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
-import { getCollectionComponents, isCollectionModel } from './collectionModels';
+import { getCollectionComponents, isCollectionModel, isRouterCollection } from './collectionModels';
 
 function extractServerErrorMessage(errorText: string, fallback: string): string {
   if (!errorText) return fallback;
@@ -694,6 +694,7 @@ async function ensureModelReadyInternal(
   options: {
     onModelLoading?: () => void;
     skipHealthCheck?: boolean;
+    skipLoad?: boolean;
     loadBody?: Record<string, unknown>;
   } | undefined,
   visited: Set<string>,
@@ -706,14 +707,20 @@ async function ensureModelReadyInternal(
     const modelInfo = modelsData[modelName];
     if (isCollectionModel(modelInfo)) {
       options?.onModelLoading?.();
+      // Router candidates only get installed/downloaded here. Loading is left
+      // to the server's dispatch, which loads just the routed candidate —
+      // pre-loading all of them thrashes the LRU cache and makes one broken
+      // candidate abort the whole turn.
+      const skipLoad = options?.skipLoad || isRouterCollection(modelInfo);
       const components = getCollectionComponents(modelInfo);
       for (const component of components) {
         if (!modelsData[component]) {
-          throw new Error(`Omni-model "${modelName}" references missing component "${component}".`);
+          throw new Error(`Collection model "${modelName}" references missing component "${component}".`);
         }
         await ensureModelReadyInternal(component, modelsData, {
           onModelLoading: options?.onModelLoading,
           skipHealthCheck: options?.skipHealthCheck,
+          skipLoad,
         }, visited);
       }
       return;
@@ -796,6 +803,9 @@ async function ensureModelReadyInternal(
     }
 
     // Step 6: Load model into memory (merge loadBody if provided)
+    if (options?.skipLoad) {
+      return;
+    }
     const loadModel = async () => {
       const loadPayload: Record<string, unknown> = { model_name: modelName, ...options?.loadBody };
       const loadResponse = await serverFetch('/load', {
