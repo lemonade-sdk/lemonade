@@ -259,18 +259,16 @@ function backendArgsTarget(config: BackendRuntimeConfig, backendKeyValue: string
   if (!section) return null;
 
   const backendField = `${normalizeBackendConfigField(backend)}_args`;
-  const field = Object.prototype.hasOwnProperty.call(section, backendField)
-    ? backendField
-    : Object.prototype.hasOwnProperty.call(section, 'args') ? 'args' : null;
+  const hasPerBackendArgs = Object.keys(section).some(key => key.endsWith('_args'));
+  let field: string | null = null;
+  if (Object.prototype.hasOwnProperty.call(section, backendField)) {
+    field = backendField;
+  } else if (!hasPerBackendArgs && Object.prototype.hasOwnProperty.call(section, 'args')) {
+    field = 'args';
+  }
   if (!field) return null;
 
-  const value = section[field];
-  const effectiveValue = field !== 'args'
-    && (typeof value !== 'string' || value.trim() === '')
-    && typeof section.args === 'string'
-    ? section.args
-    : value;
-  return { flatKey: `${sectionName}_${field}`, effectiveValue };
+  return { flatKey: `${sectionName}_${field}`, effectiveValue: section[field] };
 }
 
 function backendTuningsFromServerConfig(

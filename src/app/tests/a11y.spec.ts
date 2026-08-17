@@ -762,16 +762,16 @@ test.describe('Accessibility — backend argument tuning', () => {
 
   test.beforeEach(async ({ page }) => {
     runtimeConfig = {
-      llamacpp: { args: '', vulkan_args: '', rocm_args: '', cuda_args: '' },
+      llamacpp: { args: '', cpu_args: '', vulkan_args: '', rocm_args: '' },
     };
     await page.route('**/internal/config**', route => route.fulfill({ json: runtimeConfig }));
     await page.route('**/internal/set**', async route => {
       const changes = route.request().postDataJSON() as Record<string, unknown>;
       for (const [flatKey, value] of Object.entries(changes)) {
         if (flatKey === 'llamacpp_args') runtimeConfig.llamacpp.args = String(value ?? '');
+        else if (flatKey === 'llamacpp_cpu_args') runtimeConfig.llamacpp.cpu_args = String(value ?? '');
         else if (flatKey === 'llamacpp_vulkan_args') runtimeConfig.llamacpp.vulkan_args = String(value ?? '');
         else if (flatKey === 'llamacpp_rocm_args') runtimeConfig.llamacpp.rocm_args = String(value ?? '');
-        else if (flatKey === 'llamacpp_cuda_args') runtimeConfig.llamacpp.cuda_args = String(value ?? '');
       }
       await route.fulfill({ json: { status: 'success', updated: changes } });
     });
@@ -830,7 +830,8 @@ test.describe('Accessibility — backend argument tuning', () => {
     await expect(trigger).toBeFocused();
     await expect(page.locator('[data-cell="llamacpp:cpu"] [data-cell-backend-args="user"]')).toContainText('Args · Manual');
 
-    expect(runtimeConfig.llamacpp.args).toBe('--threads 8 --ctx-size 65536');
+    expect(runtimeConfig.llamacpp.cpu_args).toBe('--threads 8 --ctx-size 65536');
+    expect(runtimeConfig.llamacpp.args).toBe('');
     const browserCopy = await page.evaluate(() => Object.keys(localStorage).some(key => key.includes('backend_tunings')));
     expect(browserCopy).toBe(false);
   });
@@ -846,7 +847,7 @@ test.describe('Accessibility — backend argument tuning', () => {
   });
 
   test('A172 — saved backend args can be cleared without affecting another backend entry', async ({ page }) => {
-    runtimeConfig.llamacpp.args = '--cpu';
+    runtimeConfig.llamacpp.cpu_args = '--cpu';
     runtimeConfig.llamacpp.vulkan_args = '--vulkan';
     await gotoBackends(page);
     await page.locator('[data-backend-args-button="llamacpp:cpu"]').click();
