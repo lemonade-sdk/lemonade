@@ -87,7 +87,7 @@ jobs:
       - name: Install ccache
         run: |
           if command -v pacman >/dev/null 2>&1; then
-            pacman -Syu --needed --noconfirm ccache
+            pacman -Syu --needed --noconfirm ccache mbedtls
           elif command -v zypper >/dev/null 2>&1; then
             zypper install -y ccache
           elif command -v apt-get >/dev/null 2>&1; then
@@ -166,10 +166,22 @@ jobs:
 
           echo "=== lemond dependencies ==="
           ldd lemond
+          if ldd lemond | grep -q "not found"; then
+              echo "ERROR: lemond has unresolved shared-library dependencies"
+              exit 1
+          fi
+          if [ "${{ matrix.distro }}" = "Arch" ] && ! ldd lemond | grep -q 'libmbedtls\.so'; then
+              echo "ERROR: Arch lemond is not linked against the system mbedTLS library"
+              exit 1
+          fi
 
           echo ""
           echo "=== lemonade dependencies ==="
           ldd lemonade
+          if ldd lemonade | grep -q "not found"; then
+              echo "ERROR: lemonade has unresolved shared-library dependencies"
+              exit 1
+          fi
 
           echo ""
           echo "All dependencies resolved successfully on ${{ matrix.distro }}!"
