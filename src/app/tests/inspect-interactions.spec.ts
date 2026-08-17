@@ -87,7 +87,7 @@ test.beforeEach(async ({ page }) => {
             id: 'ACE-Step-music',
             name: 'ACE-Step-music',
             model_name: 'ACE-Step-music',
-            labels: ['audio', 'music-generation']
+            labels: ['audio-generation', 'music-generation']
           }
         ]
       })

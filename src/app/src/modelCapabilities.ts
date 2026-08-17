@@ -1,8 +1,15 @@
 import type { LoadedModel, ModelInfo } from './api';
 
+/**
+ * Mirrors the server's deployment modes one-for-one — see the "Deployment
+ * labels" table in docs/api/openai.md and find_deployment_mode() in
+ * src/cpp/include/lemon/model_types.h.
+ *
+ * Being a collection is not a capability: an Omni or Router collection serves
+ * chat and says so with the `chat` label, so its collection-ness is structure.
+ */
 export type ModelCapability =
   | 'chat'
-  | 'omni'
   | 'image'
   | 'audio'
   | 'audio-generation'
@@ -10,7 +17,12 @@ export type ModelCapability =
   | 'model3d'
   | 'embedding'
   | 'reranking'
+  | 'classification'
   | 'unknown';
+
+export type ModelStructure = 'single' | 'omni' | 'router';
+
+export type ModelIdentity = ModelCapability | 'omni' | 'router';
 
 export interface ModelSnapshot {
   name: string;
@@ -21,106 +33,55 @@ export interface ModelSnapshot {
   checkpoint?: string;
 }
 
-const TYPE_TO_CAPABILITY: Record<string, ModelCapability> = {
-  llm: 'chat', chat: 'chat', text: 'chat', language: 'chat',
-  // A single multimodal model still uses the Chat surface. `omni` is reserved
-  // for collection.omni orchestration, not for ordinary VLM/audio-capable LLMs.
-  vision: 'chat', vlm: 'chat', 'vision-language': 'chat', omni: 'chat', multimodal: 'chat', 'multi-modal': 'chat',
-  'audio-chat': 'chat', realtime: 'chat',
-  image: 'image', diffusion: 'image', 'image-generation': 'image',
-  audio: 'audio', transcription: 'audio', 'realtime-transcription': 'audio', asr: 'audio', stt: 'audio', 'speech-to-text': 'audio',
-  'audio-generation': 'audio-generation', 'music-generation': 'audio-generation', 'sound-generation': 'audio-generation', sfx: 'audio-generation', music: 'audio-generation',
-  tts: 'tts', speech: 'tts', 'text-to-speech': 'tts',
-  '3d': 'model3d', model3d: 'model3d', '3d-generation': 'model3d', 'image-to-3d': 'model3d', mesh: 'model3d',
-  embedding: 'embedding', embeddings: 'embedding', reranking: 'reranking', reranker: 'reranking',
+/**
+ * A model declares exactly one of these; the server stamps a recipe default when
+ * a registration names none, so anything served carries one. Keep in sync with
+ * docs/api/openai.md — model-kind-classification.runtime.cjs fails on drift.
+ */
+export const DEPLOYMENT_LABEL_KIND: Record<string, ModelCapability> = {
+  chat: 'chat',
+  transcription: 'audio',
+  embeddings: 'embedding',
+  embedding: 'embedding',
+  reranking: 'reranking',
+  image: 'image',
+  tts: 'tts',
+  'audio-generation': 'audio-generation',
+  classification: 'classification',
+  classifier: 'classification',
+  '3d': 'model3d',
 };
 
-const NON_CHAT_RECIPE_HINTS: Array<[string, ModelCapability]> = [
-  ['trellis', 'model3d'],
-  ['acestep', 'audio-generation'], ['ace-step', 'audio-generation'], ['thinksound', 'audio-generation'],
-  ['stable-diffusion', 'image'], ['diffusion', 'image'], ['sd-cpp', 'image'],
-  ['whisper', 'audio'], ['moonshine', 'audio'], ['asr', 'audio'], ['speech-to-text', 'audio'],
-  ['openmoss', 'tts'], ['kokoro', 'tts'], ['text-to-speech', 'tts'], ['tts', 'tts'],
-  ['embedding', 'embedding'], ['rerank', 'reranking'],
-];
+/** ModelType strings the router reports for loaded models (model_type_to_string). */
+const LOADED_TYPE_KIND: Record<string, ModelCapability> = {
+  llm: 'chat',
+  embedding: 'embedding',
+  reranking: 'reranking',
+  transcription: 'audio',
+  image: 'image',
+  tts: 'tts',
+  'audio-generation': 'audio-generation',
+  classification: 'classification',
+  mesh: 'model3d',
+};
 
-const CHAT_RECIPE_HINTS = new Set(['llamacpp', 'flm', 'ryzenai-llm', 'vllm']);
-
-const MULTIMODAL_CHAT_NAME_PATTERNS = [
-  /(^|[._\-/])omni([._\-/]|$)/,
-  /(^|[._\-/])multimodal([._\-/]|$)/,
-  /(^|[._\-/])multi-modal([._\-/]|$)/,
-  /(^|[._\-/])vision-language([._\-/]|$)/,
-  /(^|[._\-/])vlm([._\-/]|$)/,
-  /(^|[._\-/])vl([._\-/]|$)/,
-  /(^|[._\-/])llava([._\-/]|$)/,
-  /(^|[._\-/])bakllava([._\-/]|$)/,
-  /(^|[._\-/])moondream([._\-/]|$)/,
-  /(^|[._\-/])pixtral([._\-/]|$)/,
-  /(^|[._\-/])mllama([._\-/]|$)/,
-  /(^|[._\-/])qwen\d*(?:\.\d+)?-vl([._\-/]|$)/,
-  /(^|[._\-/])minicpm-v([._\-/]|$)/,
-  /(^|[._\-/])minicpmv([._\-/]|$)/,
-  /(^|[._\-/])phi-4-multimodal([._\-/]|$)/,
-];
-
-export function normalizeModelType(type?: string | null): string {
-  return (type || 'unknown').toLowerCase().trim() || 'unknown';
-}
-
-export function capabilityFromType(type?: string | null): ModelCapability {
-  return TYPE_TO_CAPABILITY[normalizeModelType(type)] || 'unknown';
-}
-
-export function isRouterRecipe(recipe?: string | null): boolean {
-  const r = normalizeModelType(recipe);
-  return r === 'collection.router' || r.startsWith('collection.router.');
-}
-
-export function capabilityFromRecipe(recipe?: string | null): ModelCapability {
-  const r = normalizeModelType(recipe);
-  if (!r || r === 'unknown') return 'unknown';
-  if (r === 'collection.omni' || r.startsWith('collection.omni.')) return 'omni';
-  if (r === 'collection.router' || r.startsWith('collection.router.')) return 'chat';
-  if (r === 'collection') return 'omni';
-  for (const [hint, cap] of NON_CHAT_RECIPE_HINTS) {
-    if (r === hint || r.includes(hint)) return cap;
-  }
-  if (CHAT_RECIPE_HINTS.has(r)) return 'chat';
-  if (r.includes('multimodal') || r.includes('vision-language') || r.includes('audio-chat')) return 'chat';
-  return 'unknown';
-}
-
-export function capabilityFromName(name?: string | null): ModelCapability {
-  const n = normalizeModelType(name);
-  if (!n || n === 'unknown') return 'unknown';
-  if (n.includes('trellis') || n.includes('image-to-3d') || n.includes('model3d')) return 'model3d';
-  if (n.includes('ace-step') || n.includes('acestep') || n.includes('thinksound')) return 'audio-generation';
-  if (n.includes('openmoss') || n.includes('moss-tts') || n.includes('moss_tts') || n.includes('voicegen')) return 'tts';
-  if (n.includes('embed')) return 'embedding';
-  if (n.includes('rerank')) return 'reranking';
-  if (/(^|[._\-/])(audio-chat|speech-chat)([._\-/]|$)/.test(n)) return 'chat';
-  if (MULTIMODAL_CHAT_NAME_PATTERNS.some(pattern => pattern.test(n))) return 'chat';
-  return 'unknown';
-}
-
-const CHAT_PRIMARY_LABELS = new Set([
-  'chat', 'llm', 'text', 'language', 'instruct', 'text-generation',
-  'tool-calling', 'tools', 'reasoning', 'coding', 'code',
-]);
+const OMNI_COLLECTION_RECIPE = 'collection.omni';
+const OMNI_COLLECTION_PREFIX = `${OMNI_COLLECTION_RECIPE}.`;
+const ROUTER_COLLECTION_RECIPE = 'collection.router';
+const ROUTER_COLLECTION_PREFIX = `${ROUTER_COLLECTION_RECIPE}.`;
 
 const AUDIO_INPUT_LABELS = new Set([
   'audio-input', 'audio-chat', 'chat-transcription', 'speech-input',
 ]);
 
-const IMAGE_INPUT_LABELS = new Set([
+export const IMAGE_INPUT_LABELS = new Set([
   'vision', 'image-input', 'vision-language', 'vlm', 'image-text-to-text',
   'multimodal', 'multi-modal',
 ]);
 
-const STANDALONE_AUDIO_LABELS = new Set([
-  'audio', 'transcription', 'realtime-transcription', 'asr', 'stt', 'speech-to-text',
-]);
+export function normalizeModelType(type?: string | null): string {
+  return (type || 'unknown').toLowerCase().trim() || 'unknown';
+}
 
 function normalizedStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -130,7 +91,63 @@ function normalizedStringList(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function modelDescriptorStrings(model?: ModelInfo | LoadedModel | null): string[] {
+/**
+ * `chat` is tested first so an omni model that also declares a mode it could
+ * serve standalone still resolves to chat, exactly as find_deployment_mode()
+ * does. Input modalities and characteristics name no mode and are ignored.
+ */
+export function deploymentKindFromLabels(labels?: readonly string[] | null): ModelCapability {
+  const lower = normalizedStringList(labels);
+  if (lower.includes('chat')) return 'chat';
+  for (const label of lower) {
+    const kind = DEPLOYMENT_LABEL_KIND[label];
+    if (kind) return kind;
+  }
+  return 'unknown';
+}
+
+export function modelStructure(recipe?: string | null): ModelStructure {
+  const r = normalizeModelType(recipe);
+  if (r === OMNI_COLLECTION_RECIPE || r.startsWith(OMNI_COLLECTION_PREFIX) || r === 'collection') return 'omni';
+  if (r === ROUTER_COLLECTION_RECIPE || r.startsWith(ROUTER_COLLECTION_PREFIX)) return 'router';
+  return 'single';
+}
+
+export function isRouterRecipe(recipe?: string | null): boolean {
+  return modelStructure(recipe) === 'router';
+}
+
+export function isCollectionRecipe(recipe?: string | null): boolean {
+  return modelStructure(recipe) !== 'single';
+}
+
+export function capabilityFromModelInfo(model: ModelInfo): ModelCapability {
+  return deploymentKindFromLabels(model?.labels);
+}
+
+export function capabilityFromLoaded(model?: LoadedModel | null): ModelCapability {
+  if (!model) return 'unknown';
+  // The router reports the mode it actually launched the subprocess for.
+  const fromType = LOADED_TYPE_KIND[normalizeModelType(model.type)];
+  if (fromType) return fromType;
+  const labelled = deploymentKindFromLabels(model.labels);
+  if (labelled !== 'unknown') return labelled;
+  // A loaded collection is synthesized client-side from its components, so it
+  // carries neither a router ModelType nor labels — only the recipe.
+  return isCollectionRecipe(model.recipe) ? 'chat' : 'unknown';
+}
+
+/** A collection routes to backends rather than being one, so it shows itself. */
+export function identityFor(capability: ModelCapability, recipe?: string | null): ModelIdentity {
+  const structure = modelStructure(recipe);
+  return structure === 'single' ? capability : structure;
+}
+
+export function identityFromModelInfo(model: ModelInfo): ModelIdentity {
+  return identityFor(capabilityFromModelInfo(model), (model as any)?.recipe);
+}
+
+function descriptorLabels(model?: ModelInfo | LoadedModel | null): string[] {
   if (!model) return [];
   return [
     ...normalizedStringList((model as any).labels),
@@ -138,223 +155,71 @@ function modelDescriptorStrings(model?: ModelInfo | LoadedModel | null): string[
   ];
 }
 
-function modelInputModalities(model?: ModelInfo | LoadedModel | null): string[] {
+function inputModalities(model?: ModelInfo | LoadedModel | null): string[] {
   if (!model) return [];
   return normalizedStringList((model as any).input_modalities);
 }
 
-function hasChatPrimaryEvidence(model?: ModelInfo | LoadedModel | null): boolean {
+function servesChat(model?: ModelInfo | LoadedModel | null): boolean {
   if (!model) return false;
-  const recipeCap = capabilityFromRecipe(String((model as any).recipe || ''));
-  // Omni collections have their own orchestration surface. Do not reuse the
-  // Chat + Audio decoration for them even though they ultimately call chat APIs.
-  if (recipeCap === 'omni') return false;
-  if (recipeCap === 'chat') return true;
-  const directCaps = [
-    capabilityFromType(String((model as any).capability || '')),
-    capabilityFromType(String((model as any).type || '')),
-  ];
-  if (directCaps.some(cap => cap === 'chat' || cap === 'omni')) return true;
-  return modelDescriptorStrings(model).some(value => CHAT_PRIMARY_LABELS.has(value));
+  // Collections orchestrate their components server-side and expose their own
+  // surface, so they do not take the chat attachment decoration.
+  if (isCollectionRecipe((model as any).recipe)) return false;
+  const labelled = deploymentKindFromLabels((model as any).labels);
+  if (labelled !== 'unknown') return labelled === 'chat';
+  return LOADED_TYPE_KIND[normalizeModelType((model as any).type)] === 'chat';
 }
 
 /**
- * True when audio is an input modality of a chat model. This is intentionally
- * separate from the primary capability: a multimodal LLM stays in Chat mode
- * and merely gains the audio attachment controls. A transcription-only model
- * such as Whisper remains in Audio mode.
+ * True when audio is an input modality of a chat model. Deliberately separate
+ * from the primary capability: a multimodal LLM stays in Chat mode and merely
+ * gains the audio attachment control. A transcription-only model such as
+ * Whisper deploys as Audio and never reaches here.
  */
 export function modelSupportsChatAudioInput(
   modelInfo?: ModelInfo | null,
   loadedModel?: LoadedModel | null,
 ): boolean {
-  const descriptors = [
-    ...modelDescriptorStrings(modelInfo),
-    ...modelDescriptorStrings(loadedModel),
-  ];
-  const inputModalities = [
-    ...modelInputModalities(modelInfo),
-    ...modelInputModalities(loadedModel),
-  ];
-  const primaryIsChat = hasChatPrimaryEvidence(modelInfo) || hasChatPrimaryEvidence(loadedModel);
-  if (!primaryIsChat) return false;
-
-  if (inputModalities.some(value => value === 'audio' || value === 'speech')) return true;
-  if (descriptors.some(value => AUDIO_INPUT_LABELS.has(value))) return true;
-
-  // Some backends currently expose a multimodal LLM as type/label "audio"
-  // without a separate input_modalities field. It is safe to interpret that as
-  // audio input only when the recipe/type independently proves this is a chat
-  // model; standalone transcription recipes never enter this branch.
-  if (descriptors.includes('audio')) return true;
-  if (normalizeModelType(loadedModel?.type) === 'audio') return true;
-  if (normalizeModelType((modelInfo as any)?.type) === 'audio') return true;
-  return false;
+  if (!servesChat(modelInfo) && !servesChat(loadedModel)) return false;
+  const modalities = [...inputModalities(modelInfo), ...inputModalities(loadedModel)];
+  if (modalities.some(value => value === 'audio' || value === 'speech')) return true;
+  return [...descriptorLabels(modelInfo), ...descriptorLabels(loadedModel)]
+    .some(value => AUDIO_INPUT_LABELS.has(value));
 }
 
-/**
- * True when image/vision is an input modality of a chat model. A plain LLM
- * stays in Chat mode but must not expose the image attachment affordance.
- * Collection-based Omni routing is handled separately by the collection
- * component resolver because the collection itself is not a single VLM.
- */
+/** Image input as a modality of a chat model, never a mode of its own. */
 export function modelSupportsChatImageInput(
   modelInfo?: ModelInfo | null,
   loadedModel?: LoadedModel | null,
 ): boolean {
-  const descriptors = [
-    ...modelDescriptorStrings(modelInfo),
-    ...modelDescriptorStrings(loadedModel),
-  ];
-  const inputModalities = [
-    ...modelInputModalities(modelInfo),
-    ...modelInputModalities(loadedModel),
-  ];
-  const primaryIsChat = hasChatPrimaryEvidence(modelInfo) || hasChatPrimaryEvidence(loadedModel);
-  if (!primaryIsChat) return false;
-
-  if (inputModalities.some(value => value === 'image' || value === 'vision')) return true;
-  if (descriptors.some(value => IMAGE_INPUT_LABELS.has(value))) return true;
-
-  const declaredTypes = [
-    normalizeModelType((modelInfo as any)?.capability),
-    normalizeModelType((modelInfo as any)?.type),
-    normalizeModelType((loadedModel as any)?.capability),
-    normalizeModelType(loadedModel?.type),
-  ];
-  if (declaredTypes.some(value => IMAGE_INPUT_LABELS.has(value))) return true;
-
-  const identities = [
-    (modelInfo as any)?.model_name,
-    modelInfo?.name,
-    modelInfo?.id,
-    (modelInfo as any)?.checkpoint,
-    loadedModel?.model_name,
-    loadedModel?.checkpoint,
-  ]
-    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    .map(value => normalizeModelType(value));
-
-  return identities.some(identity => MULTIMODAL_CHAT_NAME_PATTERNS.some(pattern => pattern.test(identity)));
-}
-
-export function capabilityFromLabels(labels?: string[]): ModelCapability {
-  const lower = (labels || []).map(l => l.toLowerCase().trim()).filter(Boolean);
-  const set = new Set(lower);
-
-  if (lower.some(l => ['3d', '3d-generation', 'model3d', 'image-to-3d', 'mesh-generation'].includes(l))) return 'model3d';
-  if (lower.some(l => ['audio-generation', 'music-generation', 'sound-generation', 'sfx', 'music'].includes(l))) return 'audio-generation';
-  if (lower.some(l => l === 'image' || l === 'image-generation' || l === 'edit' || l === 'upscaling')) return 'image';
-  if (lower.some(l => l === 'tts' || l === 'speech' || l === 'text-to-speech' || l === 'voice-design')) return 'tts';
-  if (lower.some(l => l === 'embeddings' || l === 'embedding')) return 'embedding';
-  if (lower.some(l => l === 'reranking' || l === 'reranker')) return 'reranking';
-
-  const hasChatLike = lower.some(l => CHAT_PRIMARY_LABELS.has(l));
-  const hasAudioChat = lower.some(l => AUDIO_INPUT_LABELS.has(l));
-  const hasVisionInput = lower.some(l => ['vision', 'image-input', 'vision-language', 'vlm', 'image-text-to-text'].includes(l));
-  const hasMultimodalChat = lower.some(l => ['omni', 'multimodal', 'multi-modal'].includes(l));
-  const hasStandaloneAudio = lower.some(l => STANDALONE_AUDIO_LABELS.has(l));
-
-  // Labels describe inputs/features of an individual model. They never promote
-  // that model to the Omni collection mode.
-  if (hasMultimodalChat || hasVisionInput || hasAudioChat || (hasChatLike && set.has('audio'))) return 'chat';
-  if (hasStandaloneAudio) return 'audio';
-  if (hasChatLike || hasVisionInput) return 'chat';
-  return 'unknown';
-}
-
-function preferNonChat(cap: ModelCapability): boolean {
-  return cap !== 'chat' && cap !== 'unknown';
-}
-
-export function capabilityFromLoaded(model?: LoadedModel | null): ModelCapability {
-  if (!model) return 'unknown';
-  const recipeCap = capabilityFromRecipe(model.recipe);
-  if (preferNonChat(recipeCap)) return recipeCap;
-
-  const descriptorCap = capabilityFromLabels([
-    ...(model.labels || []),
-    ...(model.capabilities || []),
-    ...(model.input_modalities || []).map(value => `${value}-input`),
-  ]);
-  const typeCap = capabilityFromType(model.type);
-
-  // Runtime health may report "audio" for an audio-capable FLM/LLM. The
-  // backend recipe is the stronger evidence for its primary interaction mode.
-  if (recipeCap === 'chat' && (typeCap === 'audio' || descriptorCap === 'audio')) return 'chat';
-  if (preferNonChat(typeCap)) return typeCap;
-  if (preferNonChat(descriptorCap)) return descriptorCap;
-
-  const nameCap = capabilityFromName(`${model.model_name} ${model.checkpoint || ''}`);
-  if (preferNonChat(nameCap)) return nameCap;
-  if (typeCap === 'chat' || descriptorCap === 'chat' || recipeCap === 'chat') return 'chat';
-  return nameCap;
-}
-
-export function capabilityFromModelInfo(model: ModelInfo): ModelCapability {
-  const recipeCap = capabilityFromRecipe(String((model as any).recipe || ''));
-  const explicitCapability = capabilityFromType(String((model as any).capability || ''));
-  const direct = capabilityFromType(String((model as any).type || ''));
-  const declaredCapabilities = normalizedStringList((model as any).capabilities);
-  const inputModalities = normalizedStringList((model as any).input_modalities);
-  const fromLabels = capabilityFromLabels([
-    ...(model.labels || []),
-    ...declaredCapabilities,
-    ...inputModalities.map(value => `${value}-input`),
-  ]);
-
-  // collection.omni is an explicit Lemonade orchestration recipe and is the
-  // only route to the Omni primary mode.
-  if (recipeCap === 'omni') return 'omni';
-
-  const source = String((model as any).registry_source || (model as any).source || '').trim().toLowerCase();
-  const isRemoteRegistryModel = source === 'huggingface' || source === 'modelscope' || source === 'hf' || source === 'ms';
-  if (isRemoteRegistryModel) {
-    // Remote search rows must not become Chat merely because the repository
-    // name contains a keyword or because every GGUF uses the llamacpp recipe.
-    // Only explicit server/provider evidence is accepted.
-    if (explicitCapability !== 'unknown') return explicitCapability;
-    if (direct !== 'unknown') return direct;
-    if (fromLabels !== 'unknown') return fromLabels;
-    return 'unknown';
-  }
-
-  if (preferNonChat(recipeCap)) return recipeCap;
-
-  // A chat backend with audio input remains a chat model. This handles FLM
-  // models whose runtime metadata currently reports type/label "audio".
-  if (recipeCap === 'chat' && (
-    explicitCapability === 'audio'
-    || direct === 'audio'
-    || fromLabels === 'audio'
-    || modelSupportsChatAudioInput(model, null)
-  )) return 'chat';
-
-  if (explicitCapability !== 'unknown') return explicitCapability;
-  if (preferNonChat(direct)) return direct;
-  if (preferNonChat(fromLabels)) return fromLabels;
-
-  const nameCap = capabilityFromName(`${model.id || ''} ${model.name || ''} ${model.display_name || ''} ${String((model as any).model_name || '')} ${String((model as any).checkpoint || '')}`);
-  if (preferNonChat(nameCap)) return nameCap;
-
-  if (fromLabels === 'chat' || direct === 'chat' || recipeCap === 'chat') return 'chat';
-  return 'unknown';
+  if (!servesChat(modelInfo) && !servesChat(loadedModel)) return false;
+  const modalities = [...inputModalities(modelInfo), ...inputModalities(loadedModel)];
+  if (modalities.some(value => value === 'image' || value === 'vision')) return true;
+  return [...descriptorLabels(modelInfo), ...descriptorLabels(loadedModel)]
+    .some(value => IMAGE_INPUT_LABELS.has(value));
 }
 
 export function canUseChatCompletions(model?: LoadedModel | null): boolean {
-  const cap = capabilityFromLoaded(model);
-  return cap === 'chat' || cap === 'omni';
+  return capabilityFromLoaded(model) === 'chat';
+}
+
+const COMPOSER_CAPABILITIES: ReadonlySet<ModelCapability> = new Set<ModelCapability>([
+  'chat', 'image', 'audio', 'audio-generation', 'tts', 'model3d',
+]);
+
+export function isComposerSelectableCapability(capability: ModelCapability): boolean {
+  return COMPOSER_CAPABILITIES.has(capability);
 }
 
 export function canSelectInComposer(model?: LoadedModel | null): boolean {
-  const cap = capabilityFromLoaded(model);
-  return ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
+  return isComposerSelectableCapability(capabilityFromLoaded(model));
 }
 
-export function capabilityLabel(capability: ModelCapability): string {
+export function capabilityLabel(capability: ModelIdentity): string {
   switch (capability) {
     case 'chat': return 'Chat';
     case 'omni': return 'Omni';
+    case 'router': return 'Router';
     case 'image': return 'Image';
     case 'audio': return 'Audio';
     case 'audio-generation': return 'Music & SFX';
@@ -362,14 +227,16 @@ export function capabilityLabel(capability: ModelCapability): string {
     case 'model3d': return '3D';
     case 'embedding': return 'Embedding';
     case 'reranking': return 'Reranking';
+    case 'classification': return 'Classification';
     default: return 'Unknown';
   }
 }
 
-export function capabilityBadge(capability: ModelCapability): string {
+export function capabilityBadge(capability: ModelIdentity): string {
   switch (capability) {
     case 'chat': return 'chat';
     case 'omni': return 'omni';
+    case 'router': return 'router';
     case 'image': return 'image';
     case 'audio': return 'audio';
     case 'audio-generation': return 'audio-gen';
@@ -377,32 +244,26 @@ export function capabilityBadge(capability: ModelCapability): string {
     case 'model3d': return 'model3d';
     case 'embedding': return 'embed';
     case 'reranking': return 'rank';
+    case 'classification': return 'classify';
     default: return 'model';
   }
 }
 
-export function capabilityIcon(capability: ModelCapability | 'all' | 'vision' | 'code' | 'transcription'): string {
-  switch (capability) {
-    case 'all': return 'All';
-    case 'chat': return 'Chat';
-    case 'omni': return 'Omni';
-    case 'image': return 'Image';
-    case 'audio': return 'Audio';
-    case 'audio-generation': return 'Audio';
-    case 'transcription': return 'Audio';
-    case 'tts': return 'TTS';
-    case 'model3d': return '3D';
-    case 'embedding': return 'Emb';
-    case 'reranking': return 'Rank';
-    case 'vision': return 'Vision';
-    case 'code': return 'Code';
-    default: return 'Model';
-  }
+export function snapshotIdentity(snapshot?: ModelSnapshot | null): ModelIdentity {
+  if (!snapshot) return 'unknown';
+  return identityFor(snapshot.capability, snapshot.recipe);
 }
 
 export function snapshotFromLoaded(model?: LoadedModel | null): ModelSnapshot | null {
   if (!model) return null;
-  return { name: model.model_name, type: normalizeModelType(model.type), capability: capabilityFromLoaded(model), recipe: model.recipe, device: model.device, checkpoint: model.checkpoint };
+  return {
+    name: model.model_name,
+    type: normalizeModelType(model.type),
+    capability: capabilityFromLoaded(model),
+    recipe: model.recipe,
+    device: model.device,
+    checkpoint: model.checkpoint,
+  };
 }
 
 export function snapshotFromModelInfo(model?: ModelInfo | null): ModelSnapshot | null {
@@ -423,12 +284,11 @@ export function snapshotFromName(name: string | null | undefined, loadedModels: 
   if (!name) return null;
   const loaded = loadedModels.find(m => m.model_name === name);
   if (loaded) return snapshotFromLoaded(loaded);
-  return { name, type: 'unknown', capability: capabilityFromName(name) };
+  return { name, type: 'unknown', capability: 'unknown' };
 }
 
 export function selectPreferredLoadedModel(loadedModels: LoadedModel[]): LoadedModel | null {
   return loadedModels.find(m => capabilityFromLoaded(m) === 'chat')
-    || loadedModels.find(m => capabilityFromLoaded(m) === 'omni')
     || loadedModels.find(m => canSelectInComposer(m))
     || loadedModels[0]
     || null;
@@ -441,11 +301,12 @@ export function modelInitial(model: ModelSnapshot | null | undefined): string { 
 export type CapabilityTag =
   | 'hot' | 'popular' | 'chat' | 'omni' | 'vision' | 'tool' | 'reasoning'
   | 'code' | 'audio' | 'audio-generation' | 'image' | 'tts' | 'model3d'
-  | 'embedding' | 'reranking';
+  | 'embedding' | 'reranking' | 'classification';
 
 export const CAPABILITY_TAG_ORDER: CapabilityTag[] = [
   'hot', 'popular', 'chat', 'omni', 'vision', 'tool', 'reasoning',
-  'code', 'audio', 'audio-generation', 'image', 'tts', 'model3d', 'embedding', 'reranking',
+  'code', 'audio', 'audio-generation', 'image', 'tts', 'model3d',
+  'embedding', 'reranking', 'classification',
 ];
 
 export const CAPABILITY_TAG_LABELS: Record<CapabilityTag, string> = {
@@ -453,6 +314,7 @@ export const CAPABILITY_TAG_LABELS: Record<CapabilityTag, string> = {
   tool: 'Tool use', reasoning: 'Reasoning', code: 'Code', audio: 'Audio',
   'audio-generation': 'Music & SFX', image: 'Image', tts: 'Speech (TTS)',
   model3d: '3D', embedding: 'Embeddings', reranking: 'Reranking',
+  classification: 'Classification',
 };
 
 const CAPABILITY_TAG_ALIASES: Record<CapabilityTag, string[]> = {
@@ -471,35 +333,23 @@ const CAPABILITY_TAG_ALIASES: Record<CapabilityTag, string[]> = {
   model3d: ['3d', '3d-generation', 'model3d', 'image-to-3d', 'mesh-generation'],
   embedding: ['embedding', 'embeddings'],
   reranking: ['reranking', 'reranker'],
+  classification: ['classification', 'classifier'],
 };
 
-const BASE_CAPABILITY_TAG: Partial<Record<ModelCapability, CapabilityTag>> = {
+const BASE_CAPABILITY_TAG: Partial<Record<ModelIdentity, CapabilityTag>> = {
   chat: 'chat', omni: 'omni', image: 'image', audio: 'audio',
   'audio-generation': 'audio-generation', tts: 'tts', model3d: 'model3d',
-  embedding: 'embedding', reranking: 'reranking',
+  embedding: 'embedding', reranking: 'reranking', classification: 'classification',
 };
-
-/**
- * The identity a selection row leads with. `capabilityFromRecipe` resolves a
- * router collection to chat because chat is what it ultimately serves; a row
- * instead shows the router itself. Omni needs no such override — it already
- * resolves to `omni` through its recipe.
- */
-export function rowCapability(model: ModelInfo): ModelCapability | 'router' {
-  return isRouterRecipe(String((model as any).recipe || ''))
-    ? 'router'
-    : capabilityFromModelInfo(model);
-}
 
 export function modelCapabilityTags(model: ModelInfo): CapabilityTag[] {
   const declaredCapabilities = Array.isArray((model as any).capabilities)
     ? (model as any).capabilities.filter((value: unknown): value is string => typeof value === 'string')
     : [];
-  const inputModalities = normalizedStringList((model as any).input_modalities);
   const labels = [
     ...(model.labels || []),
     ...declaredCapabilities,
-    ...inputModalities.map(value => `${value}-input`),
+    ...inputModalities(model).map(value => `${value}-input`),
   ]
     .map(l => String(l).toLowerCase().trim())
     .filter(Boolean);
@@ -509,7 +359,7 @@ export function modelCapabilityTags(model: ModelInfo): CapabilityTag[] {
     if (tag === 'omni') continue;
     if (CAPABILITY_TAG_ALIASES[tag].some(alias => labelSet.has(alias))) found.add(tag);
   }
-  const base = BASE_CAPABILITY_TAG[capabilityFromModelInfo(model)];
+  const base = BASE_CAPABILITY_TAG[identityFromModelInfo(model)];
   if (base) found.add(base);
   if (modelSupportsChatAudioInput(model, null)) found.add('audio');
   return CAPABILITY_TAG_ORDER.filter(tag => found.has(tag));

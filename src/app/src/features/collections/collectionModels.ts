@@ -1,5 +1,5 @@
 import type { LoadedModel, ModelInfo } from '../../api';
-import { capabilityFromModelInfo } from '../../modelCapabilities';
+import { capabilityFromModelInfo, modelSupportsChatImageInput } from '../../modelCapabilities';
 
 export const COLLECTION_OMNI_RECIPE = 'collection.omni';
 
@@ -82,8 +82,7 @@ export function getPrimaryChatComponent(model: ModelInfo | null | undefined, all
   if (components.length === 0) return null;
   const chat = components.find(component => {
     const info = findModelInfoByName(allModels, component);
-    const cap = info ? capabilityFromModelInfo(info) : 'unknown';
-    return cap === 'chat' || cap === 'omni' || cap === 'unknown';
+    return info ? capabilityFromModelInfo(info) === 'chat' : false;
   });
   return chat || components[0] || null;
 }
@@ -92,9 +91,7 @@ export function getVisionChatComponent(model: ModelInfo | null | undefined, allM
   const components = getCollectionComponents(model);
   return components.find(component => {
     const info = findModelInfoByName(allModels, component);
-    const labels = (info?.labels || []).map(label => label.toLowerCase());
-    const cap = info ? capabilityFromModelInfo(info) : 'unknown';
-    return cap === 'omni' || labels.includes('vision-language') || labels.includes('image-input') || labels.includes('vlm');
+    return modelSupportsChatImageInput(info, null);
   }) || null;
 }
 

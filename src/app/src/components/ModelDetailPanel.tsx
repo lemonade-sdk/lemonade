@@ -10,7 +10,7 @@ import DOMPurify from 'dompurify';
 import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow } from '../api';
 import api from '../api';
 import { copyTextToClipboard } from '../clipboard';
-import { capabilityFromModelInfo, capabilityLabel } from '../modelCapabilities';
+import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo } from '../modelCapabilities';
 import {
   modelBaseTuningForModel, loadModelTuning, saveModelTuning, resetModelTuning,
   modelSupportsContextSize, sanitizeRecipeOptions,
@@ -329,7 +329,7 @@ function tuningKeysForModel(model: ModelInfo): Array<keyof RecipeOptions> {
 
   const activeKeys = recipeKeysForRecipe(activeRecipe);
   if (activeKeys) add(activeKeys);
-  else if (cap === 'chat' || cap === 'omni' || cap === 'unknown') add(LLAMACPP_RECIPE_KEYS);
+  else if (cap === 'chat') add(LLAMACPP_RECIPE_KEYS);
   else if (cap === 'image') add(IMAGE_RECIPE_KEYS);
   else if (cap === 'audio') add(recipes.includes('moonshine') ? MOONSHINE_RECIPE_KEYS : WHISPER_RECIPE_KEYS);
   else if (cap === 'audio-generation') add(recipes.includes('acestep') ? ACESTEP_RECIPE_KEYS : THINKSOUND_RECIPE_KEYS);
@@ -2198,7 +2198,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const pullPct = pulling[name] ?? 0;
   const isDownloaded = Boolean((model as any).downloaded) && !isPulling;
   const isCustom = modelIsCustom(model);
-  const cap = capabilityFromModelInfo(model);
+  const cap = identityFromModelInfo(model);
 
   const detailMetadata = (
     <>

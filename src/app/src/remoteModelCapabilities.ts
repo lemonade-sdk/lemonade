@@ -9,6 +9,14 @@ export type RemoteCapabilityEvidence = {
   confidence: RemoteCapabilityConfidence;
 };
 
+/** Inverse of DEPLOYMENT_LABEL_KIND, for writing a verdict back as a label. */
+const DEPLOYMENT_LABEL_FOR_KIND: Partial<Record<ModelCapability, string>> = {
+  chat: 'chat', audio: 'transcription', embedding: 'embeddings',
+  reranking: 'reranking', image: 'image', tts: 'tts',
+  'audio-generation': 'audio-generation', classification: 'classification',
+  model3d: '3d',
+};
+
 const REMOTE_FEATURE_LABELS = new Map<string, string>([
   ['tool', 'tool-calling'], ['tools', 'tool-calling'], ['tool-use', 'tool-calling'],
   ['tool-calling', 'tool-calling'], ['function-calling', 'tool-calling'],
@@ -151,8 +159,10 @@ export function remoteCapabilityEvidence(
   const repositoryChat = hasMeaningfulValue(chatTemplate);
   // A validated llama.cpp GGUF plus an mmproj is repository-structure proof of
   // a vision-language model. It does not depend on the repository name or tags.
-  const repositoryOmni = hasUsableGguf && hasMmproj && variants?.recipe === 'llamacpp';
+  const repositoryVisionChat = hasUsableGguf && hasMmproj && variants?.recipe === 'llamacpp';
 
+  // A vision-language repository is a chat model that accepts images, so it
+  // resolves to chat and picks up `vision` from providerVision below.
   let primary: ModelCapability = 'unknown';
   let confidence: RemoteCapabilityConfidence = 'unknown';
   if (repositoryReranking) {
@@ -161,13 +171,7 @@ export function remoteCapabilityEvidence(
   } else if (repositoryEmbedding) {
     primary = 'embedding';
     confidence = 'repository';
-  } else if (repositoryOmni) {
-    primary = 'omni';
-    confidence = 'repository';
-  } else if (repositoryChat && providerVision) {
-    primary = 'omni';
-    confidence = 'repository';
-  } else if (repositoryChat) {
+  } else if (repositoryVisionChat || repositoryChat) {
     primary = 'chat';
     confidence = 'repository';
   } else if (providerReranking) {
@@ -176,22 +180,24 @@ export function remoteCapabilityEvidence(
   } else if (providerEmbedding) {
     primary = 'embedding';
     confidence = 'provider';
-  } else if (providerChat && providerVision) {
-    primary = 'omni';
-    confidence = 'provider';
   } else if (providerChat) {
     primary = 'chat';
     confidence = 'provider';
   }
 
-  if (primary !== 'unknown') {
-    labels.add(primary === 'embedding' ? 'embeddings' : primary);
-  }
+  const deploymentLabel = DEPLOYMENT_LABEL_FOR_KIND[primary];
+  if (deploymentLabel) labels.add(deploymentLabel);
   if (providerVision) labels.add('vision');
 
   return { labels: [...labels], primary, confidence };
 }
 
+/**
+ * The only bridge from a remote search row to a ModelInfo. Inference happens
+ * here, once, and the verdict is written into `labels` as a deployment label —
+ * so everything downstream reads a label like any registered model does and
+ * never re-guesses. Registered models never take this path.
+ */
 export function remoteResultAsModelInfo(
   result: HFModelResult,
   variants?: PullVariantsResult,

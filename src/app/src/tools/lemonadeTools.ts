@@ -4,6 +4,7 @@
  */
 import api, { searchHuggingFace, HFModelResult, PullVariantsResult } from '../api';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
+import { capabilityFromLoaded, deploymentKindFromLabels, modelStructure } from '../modelCapabilities';
 
 /* ── Tool schemas (OpenAI function calling format) ─────────────── */
 
@@ -259,22 +260,18 @@ function normalizeCapabilityFilter(value: unknown): string {
   return raw;
 }
 
+/**
+ * The tool surface reports the same identity the UI shows. Deployment labels
+ * are what classify a model — see modelCapabilities.ts.
+ */
 function capabilityForModel(model: AnyModel | null | undefined): string {
-  const labels = lowerLabels(model);
-  const type = asString(model?.type).toLowerCase();
-  const recipe = asString(model?.recipe).toLowerCase();
-  const name = modelName(model).toLowerCase();
-  const haystack = `${type} ${labels.join(' ')} ${recipe} ${name}`;
-
-  if (haystack.includes('omni') || haystack.includes('collection')) return 'omni';
-  if (['trellis', 'image-to-3d', '3d-generation', 'model3d'].some(token => haystack.includes(token)) || type === '3d') return 'model3d';
-  if (['acestep', 'ace-step', 'thinksound', 'audio-generation', 'music-generation', 'sound-generation', 'sfx'].some(token => haystack.includes(token))) return 'audio-generation';
-  if (['openmoss', 'moss-tts', 'voicegen', 'kokoro', 'text-to-speech', 'voice-design'].some(token => haystack.includes(token)) || type === 'tts') return 'tts';
-  if (labels.some(label => ['image', 'image-generation', 'diffusion', 'image-edit', 'upscaling'].includes(label)) || type === 'image' || recipe === 'sd-cpp') return 'image';
-  if (labels.some(label => ['audio', 'transcription', 'stt', 'speech-to-text', 'realtime-transcription'].includes(label)) || type === 'audio' || ['whispercpp', 'moonshine'].includes(recipe)) return 'audio';
-  if (labels.includes('embedding') || type === 'embedding') return 'embedding';
-  if (labels.includes('reranking') || type === 'reranking' || type === 'rerank') return 'reranking';
-  return 'chat';
+  if (!model) return 'unknown';
+  const recipe = asString(model.recipe);
+  const structure = modelStructure(recipe);
+  if (structure !== 'single') return structure;
+  const labelled = deploymentKindFromLabels(lowerLabels(model));
+  if (labelled !== 'unknown') return labelled;
+  return capabilityFromLoaded(model as any);
 }
 
 function formatSize(gb: unknown): string | undefined {

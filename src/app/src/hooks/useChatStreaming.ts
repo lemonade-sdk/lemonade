@@ -4,6 +4,13 @@ import type { ToolCall, ToolResult } from '../tools/lemonadeTools';
 
 export type { ToolCall } from '../tools/lemonadeTools';
 
+export type ChatThinkingMode = 'normal' | 'off';
+
+export function chatThinkingParams(mode: ChatThinkingMode): Record<string, unknown> {
+  return { enable_thinking: mode !== 'off' };
+}
+
+
 const MAX_TOOL_ROUNDS = 5;
 const TOOL_FOLLOWUP_PROMPT = [
   "Use the tool result to answer the user's last request with concrete, specific details.",
@@ -100,7 +107,13 @@ export interface ChatStreamingResult {
   streamingConvoIds: Set<string>;
   getStream: (convoId: string) => StreamState | undefined;
   getLiveStats: (convoId: string) => LiveStreamStats | undefined;
-  send: (convoId: string, model: string, messages: ChatMessage[], tools?: boolean | ChatToolRuntime | null) => Promise<void>;
+  send: (
+    convoId: string,
+    model: string,
+    messages: ChatMessage[],
+    tools?: boolean | ChatToolRuntime | null,
+    thinkingMode?: ChatThinkingMode,
+  ) => Promise<void>;
   stop: (convoId: string) => { content: string; thinking?: string } | null;
 }
 
@@ -154,7 +167,13 @@ export function useChatStreaming(
     [liveStats],
   );
 
-  const send = useCallback(async (convoId: string, model: string, messages: ChatMessage[], tools: boolean | ChatToolRuntime | null = false) => {
+  const send = useCallback(async (
+    convoId: string,
+    model: string,
+    messages: ChatMessage[],
+    tools: boolean | ChatToolRuntime | null = false,
+    thinkingMode: ChatThinkingMode = 'normal',
+  ) => {
     let runtime: ChatToolRuntime | null = tools && typeof tools === 'object' ? tools : null;
     if (tools === true) {
       const { LEMONADE_TOOLS, executeTool } = await import(
@@ -180,6 +199,7 @@ export function useChatStreaming(
       const { default: api } = await import(/* webpackChunkName: "api-client" */ '../api');
       return new Promise<void>((resolve, reject) => {
         api.chatCompletion(model, fullMessages, {
+          params: chatThinkingParams(thinkingMode),
           tools: runtime?.tools?.length ? runtime.tools : undefined,
           onReasoning: (_token, fullReasoning) => {
             const buf = tokenBufferRef.current;

@@ -81,6 +81,7 @@
   --cap-audio-generation: #1693A5;
   --cap-tts:        #B35A9F;
   --cap-model3d:   #65758A;
+  --cap-classification: #6A8F3C;
 
   --provider-hugging-face:    #FF9D00;
   --provider-hugging-face-fg: #FFB84D;
@@ -1030,7 +1031,7 @@
   background: var(--surface-3);
   color: var(--text-secondary);
   text-transform: none;
-}.cap-badge--chat   { background: color-mix(in srgb, var(--cap-chat) 18%, transparent); color: var(--cap-chat); }.cap-badge--router { background: color-mix(in srgb, var(--cap-router) 18%, transparent); color: var(--cap-router); }.cap-badge--vision { background: color-mix(in srgb, var(--cap-vision) 18%, transparent); color: var(--cap-vision); }.cap-badge--code   { background: color-mix(in srgb, var(--cap-code) 18%, transparent); color: var(--cap-code); }.cap-badge--embed  { background: color-mix(in srgb, var(--cap-embedding) 18%, transparent); color: var(--cap-embedding); }.cap-badge--rerank { background: color-mix(in srgb, var(--cap-reranking) 18%, transparent); color: var(--cap-reranking); }.cap-badge--audio  { background: color-mix(in srgb, var(--cap-audio) 18%, transparent); color: var(--cap-audio); }.cap-badge--tts    { background: color-mix(in srgb, var(--cap-tts) 18%, transparent); color: var(--cap-tts); }.cap-badge--image  { background: color-mix(in srgb, var(--cap-image) 18%, transparent); color: var(--cap-image); }.thread {
+}.cap-badge--chat   { background: color-mix(in srgb, var(--cap-chat) 18%, transparent); color: var(--cap-chat); }.cap-badge--router { background: color-mix(in srgb, var(--cap-router) 18%, transparent); color: var(--cap-router); }.cap-badge--vision { background: color-mix(in srgb, var(--cap-vision) 18%, transparent); color: var(--cap-vision); }.cap-badge--code   { background: color-mix(in srgb, var(--cap-code) 18%, transparent); color: var(--cap-code); }.cap-badge--embed  { background: color-mix(in srgb, var(--cap-embedding) 18%, transparent); color: var(--cap-embedding); }.cap-badge--rerank { background: color-mix(in srgb, var(--cap-reranking) 18%, transparent); color: var(--cap-reranking); }.cap-badge--audio  { background: color-mix(in srgb, var(--cap-audio) 18%, transparent); color: var(--cap-audio); }.cap-badge--tts    { background: color-mix(in srgb, var(--cap-tts) 18%, transparent); color: var(--cap-tts); }.cap-badge--image  { background: color-mix(in srgb, var(--cap-image) 18%, transparent); color: var(--cap-image); }.cap-badge--classify { background: color-mix(in srgb, var(--cap-classification) 18%, transparent); color: var(--cap-classification); }.thread {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -2365,7 +2366,7 @@ option:checked {
   font-weight: var(--weight-semibold);
   line-height: 1;
   white-space: nowrap;
-}.composer__model-mode--chat { color: var(--cap-chat); }.composer__model-mode--image { color: var(--cap-image); }.composer__model-mode--audio { color: var(--cap-audio); }.composer__model-mode--tts { color: var(--cap-tts); }.composer__model-mode--omni { color: var(--cap-omni); }.composer__model-mode--router { color: var(--cap-router); }.composer__model-mode--audio-gen { color: var(--cap-audio-generation); }.composer__model-mode--model3d { color: color-mix(in srgb, var(--cap-model3d) 75%, var(--text-primary)); }.composer__model-mode--embed { color: var(--cap-embedding); }.composer__model-mode--rank { color: var(--cap-reranking); }.composer__model-mode--model { color: var(--text-tertiary); }.composer__model-mode svg {
+}.composer__model-mode--chat { color: var(--cap-chat); }.composer__model-mode--image { color: var(--cap-image); }.composer__model-mode--audio { color: var(--cap-audio); }.composer__model-mode--tts { color: var(--cap-tts); }.composer__model-mode--omni { color: var(--cap-omni); }.composer__model-mode--router { color: var(--cap-router); }.composer__model-mode--audio-gen { color: var(--cap-audio-generation); }.composer__model-mode--model3d { color: color-mix(in srgb, var(--cap-model3d) 75%, var(--text-primary)); }.composer__model-mode--embed { color: var(--cap-embedding); }.composer__model-mode--rank { color: var(--cap-reranking); }.composer__model-mode--classify { color: var(--cap-classification); }.composer__model-mode--model { color: var(--text-tertiary); }.composer__model-mode svg {
   color: currentColor;
 }.cap-badge .app-icon,
 .composer__model-mode .app-icon {

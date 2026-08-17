@@ -18,7 +18,7 @@ const MarkdownMessage: React.FC<React.ComponentProps<typeof LazyMarkdownMessage>
     <LazyMarkdownMessage {...props} />
   </Suspense>
 );
-import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
+import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact, type ChatThinkingMode } from '../hooks/useChatStreaming';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
@@ -37,7 +37,11 @@ import {
   snapshotFromLoaded,
   snapshotFromModelInfo,
   snapshotFromName,
+  snapshotIdentity,
+  identityFor,
+  isComposerSelectableCapability,
   isRouterRecipe,
+  modelStructure,
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
 import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../features/chatHistory/historySettings';
@@ -115,30 +119,85 @@ function getDownloadStoreModule(): Promise<typeof import('../features/downloadMa
   return downloadStoreModulePromise;
 }
 
-const CHAT_LOGS_WIDTH_KEY = 'chat_logs_panel_width';
-const CHAT_LOGS_DEFAULT_WIDTH = 520;
-const CHAT_LOGS_MIN_WIDTH = 340;
-const CHAT_LOGS_MAX_WIDTH = 920;
+const CHAT_LOGS_WIDTH_KEY = 'chat_logs_split_width';
+const CHAT_THINKING_MODE_KEY = 'chat_thinking_mode';
+const CHAT_COMPOSER_INPUT_MIN_HEIGHT = 40;
+const CHAT_COMPOSER_INPUT_MAX_HEIGHT = 200;
 
-function maxChatLogsWidthForViewport(railExpanded = true): number {
-  if (typeof window === 'undefined') return CHAT_LOGS_MAX_WIDTH;
-  const railWidth = railExpanded ? 280 : 56;
-  const viewportMax = window.innerWidth - railWidth - 380;
-  return Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(CHAT_LOGS_MAX_WIDTH, viewportMax));
+const CHAT_LOGS_DEFAULT_WIDTH = 520;
+const CHAT_LOGS_DEFAULT_EDGE_RATIO = 0.60;
+const CHAT_LOGS_MAX_EDGE_RATIO = 0.70;
+const CHAT_LOGS_MIN_WIDTH = 340;
+const CHAT_LOGS_MAX_WIDTH = 1280;
+const CHAT_LOGS_MIN_REVEALED_CHAT_WIDTH = 360;
+const CHAT_LOGS_RESIZER_WIDTH = 12;
+const CHAT_RAIL_COLLAPSED_WIDTH = 56;
+const CHAT_RAIL_EXPANDED_WIDTH = 248;
+const CHAT_MOBILE_BREAKPOINT = 768;
+
+function chatRailWidth(railExpanded = true): number {
+  if (typeof window !== 'undefined' && window.innerWidth <= CHAT_MOBILE_BREAKPOINT) return 0;
+  return railExpanded ? CHAT_RAIL_EXPANDED_WIDTH : CHAT_RAIL_COLLAPSED_WIDTH;
 }
 
-function clampChatLogsWidth(width: number, railExpanded = true): number {
-  return Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(maxChatLogsWidthForViewport(railExpanded), Math.round(width)));
+function chatLogsResizerWidth(): number {
+  if (typeof window !== 'undefined' && window.innerWidth <= CHAT_MOBILE_BREAKPOINT) return 0;
+  return CHAT_LOGS_RESIZER_WIDTH;
+}
+
+function maxChatLogsWidthForLayout(containerWidth: number, railExpanded = true): number {
+  const railWidth = chatRailWidth(railExpanded);
+  const resizerWidth = chatLogsResizerWidth();
+  const availableWidth = Math.max(0, containerWidth - railWidth - resizerWidth);
+  const chatWidthMax = availableWidth - CHAT_LOGS_MIN_REVEALED_CHAT_WIDTH;
+  const edgeMax = Math.round(containerWidth * CHAT_LOGS_MAX_EDGE_RATIO) - railWidth - resizerWidth;
+  const layoutMax = Math.min(chatWidthMax, edgeMax);
+  return Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(CHAT_LOGS_MAX_WIDTH, layoutMax));
+}
+
+function clampChatLogsWidth(width: number, containerWidth: number, railExpanded = true): number {
+  return Math.max(
+    CHAT_LOGS_MIN_WIDTH,
+    Math.min(maxChatLogsWidthForLayout(containerWidth, railExpanded), Math.round(width)),
+  );
+}
+
+function defaultChatLogsWidth(containerWidth: number, railExpanded = false): number {
+  const railWidth = chatRailWidth(railExpanded);
+  const resizerWidth = chatLogsResizerWidth();
+  const edgeTarget = Math.round(containerWidth * CHAT_LOGS_DEFAULT_EDGE_RATIO);
+  const layoutTarget = edgeTarget - railWidth - resizerWidth;
+  return clampChatLogsWidth(
+    Math.max(CHAT_LOGS_DEFAULT_WIDTH, layoutTarget),
+    containerWidth,
+    railExpanded,
+  );
+}
+
+function initialChatLayoutWidth(): number {
+  if (typeof window === 'undefined') return 1280;
+  return Math.max(0, Math.round(window.innerWidth));
 }
 
 function loadChatLogsWidth(): number {
-  if (typeof window === 'undefined') return CHAT_LOGS_DEFAULT_WIDTH;
+  const initialWidth = initialChatLayoutWidth();
+  if (typeof window === 'undefined') return defaultChatLogsWidth(initialWidth, false);
   try {
-    const stored = Number(window.localStorage.getItem(scopedKey(CHAT_LOGS_WIDTH_KEY)));
-    const width = Number.isFinite(stored) ? stored : CHAT_LOGS_DEFAULT_WIDTH;
-    return clampChatLogsWidth(width, true);
+    const raw = window.localStorage.getItem(scopedKey(CHAT_LOGS_WIDTH_KEY));
+    const stored = raw === null ? Number.NaN : Number(raw);
+    return Number.isFinite(stored)
+      ? Math.max(CHAT_LOGS_MIN_WIDTH, Math.min(CHAT_LOGS_MAX_WIDTH, Math.round(stored)))
+      : defaultChatLogsWidth(initialWidth, false);
   } catch {
-    return clampChatLogsWidth(CHAT_LOGS_DEFAULT_WIDTH, true);
+    return defaultChatLogsWidth(initialWidth, false);
+  }
+}
+
+function persistChatLogsWidth(width: number): void {
+  try {
+    window.localStorage.setItem(scopedKey(CHAT_LOGS_WIDTH_KEY), String(Math.round(width)));
+  } catch {
+    // Non-critical: split-pane width persistence is best-effort only.
   }
 }
 
@@ -168,6 +227,38 @@ function saveScopedStringArray(key: string, values: string[] | null): void {
   } catch {
     // Non-critical UI preference persistence.
   }
+}
+
+function loadChatThinkingMode(): ChatThinkingMode {
+  try {
+    return localStorage.getItem(scopedKey(CHAT_THINKING_MODE_KEY)) === 'off' ? 'off' : 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
+function saveChatThinkingMode(mode: ChatThinkingMode): void {
+  try {
+    localStorage.setItem(scopedKey(CHAT_THINKING_MODE_KEY), mode);
+  } catch {
+    // Non-critical UI preference persistence.
+  }
+}
+
+function resizeChatComposerInput(textarea: HTMLTextAreaElement | null): void {
+  if (!textarea) return;
+
+  // Measure from the content each time so the field can both grow and shrink.
+  // This JS path is intentional instead of field-sizing: content so WebKit/Safari
+  // gets the same behavior as Chromium.
+  textarea.style.height = 'auto';
+  const contentHeight = textarea.scrollHeight;
+  const height = Math.min(
+    CHAT_COMPOSER_INPUT_MAX_HEIGHT,
+    Math.max(CHAT_COMPOSER_INPUT_MIN_HEIGHT, contentHeight),
+  );
+  textarea.style.height = `${height}px`;
+  textarea.style.overflowY = contentHeight > CHAT_COMPOSER_INPUT_MAX_HEIGHT ? 'auto' : 'hidden';
 }
 
 function loadPersistencePreference(): boolean {
@@ -330,7 +421,7 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
 }
 
 function modelModeBadge(capability: ModelCapability, recipe?: string | null): string {
-  return isRouterRecipe(recipe) ? 'router' : capabilityBadge(capability);
+  return capabilityBadge(identityFor(capability, recipe));
 }
 
 const ModelModeIcons: React.FC<{
@@ -339,8 +430,9 @@ const ModelModeIcons: React.FC<{
   audioInput?: boolean;
   size?: number;
 }> = ({ capability, recipe, audioInput = false, size = 14 }) => {
-  if (isRouterRecipe(recipe)) {
-    return <Icon name="router" size={size} aria-hidden="true" />;
+  const identity = identityFor(capability, recipe);
+  if (identity !== capability) {
+    return <CapabilityIcon capability={identity} size={size} aria-hidden="true" />;
   }
   const showAudio = audioInput && capability === 'chat';
   return (
@@ -358,7 +450,8 @@ function modelModeLabel(capability: ModelCapability, audioInput = false): string
 }
 
 function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, recipe?: string | null): string {
-  return isRouterRecipe(recipe) ? 'Router' : modelModeLabel(capability, audioInput);
+  const identity = identityFor(capability, recipe);
+  return identity === capability ? modelModeLabel(capability, audioInput) : capabilityLabel(identity);
 }
 
 function deriveTitle(messages: Message[]): string {
@@ -788,6 +881,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings());
   const [globalModelSettings, setGlobalModelSettings] = useState(() => loadGlobalModelSettings());
   const [railExpanded, setRailExpanded] = useState(true);
+  const autoCollapsedRailForLogsRef = useRef(false);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const sheetHandleRef = useRef<HTMLDivElement>(null);
   const sheetTriggerRef = useRef<HTMLButtonElement>(null);
@@ -806,11 +900,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
   const [mcpPickerTab, setMcpPickerTab] = useState<'lemonade' | 'external'>('lemonade');
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [thinkingMode, setThinkingMode] = useState<ChatThinkingMode>(() => loadChatThinkingMode());
+  const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
   const [mcpOptions, setMcpOptions] = useState<McpServerToolOption[]>([]);
   const [mcpPickerLoading, setMcpPickerLoading] = useState(false);
   const [mcpPickerError, setMcpPickerError] = useState('');
   const [showInlineLogs, setShowInlineLogs] = useState(false);
   const [chatLogsWidth, setChatLogsWidth] = useState(() => loadChatLogsWidth());
+  const [chatContainerWidth, setChatContainerWidth] = useState(() => initialChatLayoutWidth());
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerQuery, setModelPickerQuery] = useState('');
   const modelPickerListRef = useRef<HTMLUListElement>(null);
@@ -823,11 +920,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [effectiveSettingsOpen, setEffectiveSettingsOpen] = useState(false);
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState(DEFAULT_CONTEXT_SIZE);
   const [currentModelTuning, setCurrentModelTuning] = useState<ModelTuning | null>(null);
+  const chatRootRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const thinkingMenuRef = useRef<HTMLDivElement>(null);
+  const thinkingTriggerRef = useRef<HTMLButtonElement>(null);
   const mcpReturnFocusEntryRef = useRef<'tools'>('tools');
   const mcpBackButtonRef = useRef<HTMLButtonElement | null>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
@@ -896,31 +996,53 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, [connectionStatus]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(scopedKey(CHAT_LOGS_WIDTH_KEY), String(chatLogsWidth));
-    } catch {
-      // Non-critical: inline log width persistence is best-effort only.
-    }
-  }, [chatLogsWidth]);
+    const root = chatRootRef.current;
+    if (!root) return;
 
+    const updateWidth = () => {
+      const nextWidth = Math.max(0, Math.round(root.getBoundingClientRect().width));
+      if (nextWidth > 0) setChatContainerWidth(current => current === nextWidth ? current : nextWidth);
+    };
+
+    updateWidth();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateWidth);
+      return () => window.removeEventListener('resize', updateWidth);
+    }
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
+
+  // chatLogsWidth is the user's preferred split size. effectiveChatLogsWidth
+  // may be smaller while History is expanded or the window is narrow, but that
+  // temporary constraint is deliberately not written back to localStorage.
+  const effectiveChatLogsWidth = clampChatLogsWidth(chatLogsWidth, chatContainerWidth, railExpanded);
   const chatLayoutStyle = useMemo(() => ({
-    '--chat-logs-width': `${chatLogsWidth}px`,
-  } as React.CSSProperties), [chatLogsWidth]);
+    '--chat-logs-width': `${effectiveChatLogsWidth}px`,
+    '--chat-logs-resizer-width': `${CHAT_LOGS_RESIZER_WIDTH}px`,
+  } as React.CSSProperties), [effectiveChatLogsWidth]);
 
   const handleChatLogsResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (window.innerWidth <= 980) return;
+    if (window.innerWidth <= CHAT_MOBILE_BREAKPOINT) return;
     event.preventDefault();
 
     const startX = event.clientX;
-    const startWidth = chatLogsWidth;
+    const startWidth = clampChatLogsWidth(chatLogsWidth, chatContainerWidth, railExpanded);
+    let latestWidth = startWidth;
     const handle = event.currentTarget;
     try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      // The handle sits on the left edge of the logs panel: dragging left makes
-      // the panel wider, dragging right makes it narrower.
-      const nextWidth = clampChatLogsWidth(startWidth - (moveEvent.clientX - startX), railExpanded);
-      setChatLogsWidth(nextWidth);
+      // Logs sit to the left of chat, so moving their right separator to the
+      // right grows the logs pane and moving it left shrinks the pane.
+      latestWidth = clampChatLogsWidth(
+        startWidth + (moveEvent.clientX - startX),
+        chatContainerWidth,
+        railExpanded,
+      );
+      setChatLogsWidth(latestWidth);
     };
 
     const stopResize = () => {
@@ -928,6 +1050,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       window.removeEventListener('pointerup', stopResize);
       window.removeEventListener('pointercancel', stopResize);
       document.body.classList.remove('is-resizing-chat-logs');
+      persistChatLogsWidth(latestWidth);
       try { handle.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
     };
 
@@ -935,24 +1058,31 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', stopResize, { once: true });
     window.addEventListener('pointercancel', stopResize, { once: true });
-  }, [chatLogsWidth, railExpanded]);
+  }, [chatContainerWidth, chatLogsWidth, railExpanded]);
 
   const handleChatLogsResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 48 : 20;
+    const currentWidth = clampChatLogsWidth(chatLogsWidth, chatContainerWidth, railExpanded);
+    let nextWidth: number | null = null;
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      setChatLogsWidth(width => clampChatLogsWidth(width + step, railExpanded));
+      nextWidth = clampChatLogsWidth(currentWidth - step, chatContainerWidth, railExpanded);
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
-      setChatLogsWidth(width => clampChatLogsWidth(width - step, railExpanded));
+      nextWidth = clampChatLogsWidth(currentWidth + step, chatContainerWidth, railExpanded);
     } else if (event.key === 'Home') {
       event.preventDefault();
-      setChatLogsWidth(CHAT_LOGS_MIN_WIDTH);
+      nextWidth = CHAT_LOGS_MIN_WIDTH;
     } else if (event.key === 'End') {
       event.preventDefault();
-      setChatLogsWidth(clampChatLogsWidth(CHAT_LOGS_MAX_WIDTH, railExpanded));
+      nextWidth = maxChatLogsWidthForLayout(chatContainerWidth, railExpanded);
     }
-  }, [railExpanded]);
+
+    if (nextWidth !== null) {
+      setChatLogsWidth(nextWidth);
+      persistChatLogsWidth(nextWidth);
+    }
+  }, [chatContainerWidth, chatLogsWidth, railExpanded]);
 
   const [customModelInfos, setCustomModelInfos] = useState<ModelInfo[]>([]);
   useEffect(() => {
@@ -1039,10 +1169,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
   }, [currentLoadedModel, currentCustomModelInfo, currentKnownModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
+  // A collection deploys as chat; its Omni surface comes from the recipe.
+  const currentIsOmniCollection = snapshotIdentity(currentModelSnapshot) === 'omni';
   const currentDefaultModel = lemonadeDefaultModel(currentModel);
 
   useEffect(() => {
-    if (!currentLoadedModel || (currentCapability !== 'chat' && currentCapability !== 'omni')) return;
+    if (!currentLoadedModel || currentCapability !== 'chat') return;
     saveLastReadyModelName(currentLoadedModel.model_name);
     setLastReadyModelName(currentLoadedModel.model_name);
   }, [currentCapability, currentLoadedModel]);
@@ -1110,7 +1242,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     }));
   }, [currentCapability, imageGenerationModels]);
   useEffect(() => {
-    const specialCapability = !['chat', 'omni', 'unknown'].includes(currentCapability);
+    const specialCapability = !['chat', 'unknown'].includes(currentCapability);
     if (!modelPickerOpen && !specialCapability) return;
 
     let cancelled = false;
@@ -1201,7 +1333,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   useEffect(() => {
     const keepsAudioAttachments = currentCapability === 'audio'
-      || currentCapability === 'omni'
+      || currentIsOmniCollection
       || modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel);
     if (keepsAudioAttachments) return;
     if (isOpenMossTts && openMossSettings.mode === 'clone') return;
@@ -1227,7 +1359,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     [currentKnownModelInfo, currentLoadedModel],
   );
   const supportsChatImageInput = useMemo(() => {
-    if (currentCapability === 'omni') {
+    if (currentIsOmniCollection) {
       return Boolean(getVisionChatComponent(currentKnownModelInfo, knownModelInfos));
     }
     return currentCapability === 'chat'
@@ -1296,7 +1428,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return modelSupportsChatAudioInput(info, model);
   }, [knownModelInfos]);
   const selectableModels = useMemo(
-    () => loadedModels.filter(m => canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(capabilityForLoaded(m))),
+    () => loadedModels.filter(m => canSelectInComposer(m) || isComposerSelectableCapability(capabilityForLoaded(m))),
     [loadedModels, capabilityForLoaded],
   );
   type ModelPickerOption = {
@@ -1320,7 +1452,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     const addOption = (option: ModelPickerOption) => {
       const key = option.name.toLowerCase();
       if (!option.name || seen.has(key)) return;
-      if (!['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(option.capability)) return;
+      if (!isComposerSelectableCapability(option.capability)) return;
       const configuredDefault = lemonadeDefaultModel(option.name);
       seen.add(key);
       options.push(configuredDefault ? {
@@ -1376,9 +1508,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     return filtered.slice(0, 80);
   }, [audioInputForLoaded, capabilityForLoaded, downloadItems, knownModelInfos, modelPickerQuery, selectableModels]);
 
-  const modeSupportsChatCompletions = currentCapability === 'chat' || currentCapability === 'omni';
+  const modeSupportsChatCompletions = currentCapability === 'chat';
   const modeSupportsMcp = modeSupportsChatCompletions;
-  const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
+  const canUseAudioInput = currentIsOmniCollection || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
 
   const persistMcpEnabled = useCallback((next: boolean) => {
     setUseMcp(next);
@@ -1443,6 +1575,24 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     window.addEventListener('pointerdown', onPointerDown);
     return () => window.removeEventListener('pointerdown', onPointerDown);
   }, [addMenuOpen]);
+
+  useEffect(() => {
+    if (!thinkingMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const root = thinkingMenuRef.current;
+      if (!root || root.contains(event.target as Node)) return;
+      setThinkingMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [thinkingMenuOpen]);
+
+  const selectThinkingMode = useCallback((mode: ChatThinkingMode) => {
+    setThinkingMode(mode);
+    saveChatThinkingMode(mode);
+    setThinkingMenuOpen(false);
+    requestAnimationFrame(() => thinkingTriggerRef.current?.focus());
+  }, []);
 
   const resetMcpSelection = useCallback(() => {
     const nextIds = DEFAULT_MCP_SERVER_IDS;
@@ -1830,6 +1980,25 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const modelPreparation = activeId ? modelPreparations[activeId] || null : null;
   const capabilityBusy = activeId ? capabilityBusyConvoIds.has(activeId) : false;
   const isBusy = isStreaming || capabilityBusy || isLiveRecording || modelPreparation !== null;
+
+  useEffect(() => {
+    if (isBusy) setThinkingMenuOpen(false);
+  }, [isBusy]);
+
+  useEffect(() => {
+    const onThinkingShortcut = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'm' || !event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return;
+      if (!modeSupportsChatCompletions || isBusy) return;
+      event.preventDefault();
+      setAddMenuOpen(false);
+      setMcpPickerOpen(false);
+      setThinkingMenuOpen(open => !open);
+      requestAnimationFrame(() => thinkingTriggerRef.current?.focus());
+    };
+    window.addEventListener('keydown', onThinkingShortcut);
+    return () => window.removeEventListener('keydown', onThinkingShortcut);
+  }, [isBusy, modeSupportsChatCompletions]);
+
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
   const streamingToolStatus = currentStream?.toolStatus || '';
@@ -1967,9 +2136,31 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     if (window.innerWidth <= 480) {
       setMobileSheetOpen(prev => !prev);
     } else {
+      // Once the user touches History while logs are open, their choice wins;
+      // closing logs must not undo it as an automatic layout adjustment.
+      if (showInlineLogs) autoCollapsedRailForLogsRef.current = false;
       setRailExpanded(prev => !prev);
     }
-  }, []);
+  }, [showInlineLogs]);
+
+  const handleToggleInlineLogs = useCallback(() => {
+    if (showInlineLogs) {
+      setShowInlineLogs(false);
+      if (autoCollapsedRailForLogsRef.current) {
+        autoCollapsedRailForLogsRef.current = false;
+        setRailExpanded(true);
+      }
+      return;
+    }
+
+    // Give logs a real pane instead of covering chat. Reclaim the expanded
+    // History width on open, while still letting the user immediately expand
+    // History again if that is their preferred layout.
+    const canShowDesktopRail = window.innerWidth > CHAT_MOBILE_BREAKPOINT;
+    autoCollapsedRailForLogsRef.current = canShowDesktopRail && railExpanded;
+    if (autoCollapsedRailForLogsRef.current) setRailExpanded(false);
+    setShowInlineLogs(true);
+  }, [railExpanded, showInlineLogs]);
 
   const closeMobileSheet = useCallback(() => {
     setMobileSheetOpen(false);
@@ -2574,7 +2765,7 @@ ${finalText}`
     }
 
     streamModelsRef.current[convoId] = modelSnapshot;
-    await streaming.send(convoId, requestModelName, chatMessages, toolRuntime);
+    await streaming.send(convoId, requestModelName, chatMessages, toolRuntime, thinkingMode);
   }, [
     appendAssistantMessage,
     currentCapability,
@@ -2590,6 +2781,7 @@ ${finalText}`
     selectedMcpServerIds,
     selectedMcpToolNames,
     supportsChatImageInput,
+    thinkingMode,
     runCapabilityRequest,
     speakWithPinnedTts,
     streaming,
@@ -3004,7 +3196,7 @@ ${finalText}`
             : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
     ? 'Draft a message. Connect and load a model to send…'
-    : currentCapability === 'omni'
+    : currentIsOmniCollection
       ? `Message ${currentModel} through the Omni collection…`
       : currentCapability === 'chat' && supportsChatImageInput && supportsChatAudioInput
         ? `Message ${currentModel} with text, images, or audio…`
@@ -3023,6 +3215,49 @@ ${finalText}`
             : currentCapability === 'tts'
               ? (isOpenMossCloneMode ? 'Type text to speak, then attach a WAV voice sample…' : `Text to speak with ${currentModel}…`)
               : `Message ${currentModel}…`;
+
+  useEffect(() => {
+    resizeChatComposerInput(inputRef.current);
+  }, [composerPlaceholder, inputValue]);
+
+  useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+
+    let animationFrame = 0;
+    let lastObservedWidth = textarea.clientWidth;
+    const scheduleResize = () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(() => resizeChatComposerInput(inputRef.current));
+    };
+
+    // Width changes can come from the viewport, side panels, or the controls
+    // beside the textarea. Observe the field itself and ignore height-only
+    // notifications to avoid a resize loop when auto-sizing it.
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(entries => {
+        const width = entries[0]?.contentRect.width ?? textarea.clientWidth;
+        if (Math.abs(width - lastObservedWidth) < 0.5) return;
+        lastObservedWidth = width;
+        scheduleResize();
+      })
+      : null;
+    resizeObserver?.observe(textarea);
+
+    // Window is the fallback for older WebViews. visualViewport catches iOS
+    // Safari viewport changes such as rotation and the on-screen keyboard.
+    window.addEventListener('resize', scheduleResize);
+    const visualViewport = window.visualViewport;
+    visualViewport?.addEventListener('resize', scheduleResize);
+
+    return () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', scheduleResize);
+      visualViewport?.removeEventListener('resize', scheduleResize);
+    };
+  }, []);
+
   const hasComposerSettings = currentCapability === 'image'
     || currentCapability === 'audio-generation'
     || currentCapability === 'model3d'
@@ -3036,7 +3271,7 @@ ${finalText}`
     ? (supportsRealtimeAudio
       ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
       : 'Chat + audio mode · attached audio is routed through chat completions')
-    : currentCapability === 'omni'
+    : currentIsOmniCollection
     ? 'Omni collection mode · requests are orchestrated across collection components'
     : currentCapability === 'image'
       ? (imageMode === 'edit' ? 'Image mode · attach one source image and prompt becomes /images/edits' : 'Image mode · prompt becomes /images/generations')
@@ -3087,7 +3322,7 @@ ${finalText}`
         key={c.id}
         id={`${idPrefix}-conv-${c.id}`}
         rowId={c.id}
-        capability={isRouterRecipe(c.model?.recipe) ? 'router' : capability}
+        capability={identityFor(capability, c.model?.recipe)}
         title={convTitle}
         meta={c.model?.name || undefined}
         anchor={timeAgo(c.updatedAt)}
@@ -3110,6 +3345,7 @@ ${finalText}`
   return (
     <>
       <div
+        ref={chatRootRef}
         className={`chat ${railExpanded ? 'rail-expanded' : ''}${showInlineLogs ? ' chat--with-logs' : ''}`}
         style={showInlineLogs ? chatLayoutStyle : undefined}
         data-startup-ready="chat"
@@ -3315,7 +3551,7 @@ ${finalText}`
                     </div>
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
-                      Working in {capabilityLabel(currentCapability)} mode…
+                      Working in {capabilityLabel(snapshotIdentity(currentModelSnapshot))} mode…
                     </div>
                   </div>
                 </article>
@@ -3326,23 +3562,25 @@ ${finalText}`
       </div>
 
       {showInlineLogs && (
-        <aside className="chat__logs" aria-label="Lemonade logs next to chat">
+        <>
+          <aside className="chat__logs" aria-label="Lemonade logs">
+            <Suspense fallback={<div className="view-loading view-loading--compact"><span className="spinner" aria-hidden="true" /></div>}>
+              <LogViewer />
+            </Suspense>
+          </aside>
           <div
             className="chat__logs-resizer"
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize logs panel"
             aria-valuemin={CHAT_LOGS_MIN_WIDTH}
-            aria-valuemax={CHAT_LOGS_MAX_WIDTH}
-            aria-valuenow={chatLogsWidth}
+            aria-valuemax={maxChatLogsWidthForLayout(chatContainerWidth, railExpanded)}
+            aria-valuenow={effectiveChatLogsWidth}
             tabIndex={0}
             onPointerDown={handleChatLogsResizeStart}
             onKeyDown={handleChatLogsResizeKeyDown}
           />
-          <Suspense fallback={<div className="view-loading view-loading--compact"><span className="spinner" aria-hidden="true" /></div>}>
-            <LogViewer />
-          </Suspense>
-        </aside>
+        </>
       )}
 
       {/* Composer */}
@@ -3360,17 +3598,10 @@ ${finalText}`
                 aria-expanded={modelPickerOpen}
               >
                 {currentLoadedModel ? (
-                  isRouterRecipe(currentRecipe) ? (
-                    <span className="composer__model-mode composer__model-mode--router">
-                      <Icon name="router" size={14} aria-hidden="true" />
-                      <span>Router</span>
-                    </span>
-                  ) : (
-                    <span className={`composer__model-mode composer__model-mode--${capabilityBadge(currentCapability)}`}>
-                      <ModelModeIcons capability={currentCapability} audioInput={supportsChatAudioInput} size={14} />
-                      <span>{modelModeLabel(currentCapability, supportsChatAudioInput)}</span>
-                    </span>
-                  )
+                  <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
+                    <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
+                    <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
+                  </span>
                 ) : (
                   <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
                 )}
@@ -3421,10 +3652,11 @@ ${finalText}`
                       const isLoading = modelPickerLoading === option.name;
                       const isUnloading = modelPickerUnloading === option.name;
                       const busy = isLoading || isUnloading;
-                      const capability = isRouterRecipe(option.recipe) ? 'router' : option.capability;
+                      const structure = modelStructure(option.recipe);
+                      const capability = structure === 'single' ? option.capability : structure;
                       // Collections route to backends rather than being one, so
                       // they name no engine — same rule as the models catalog.
-                      const isCollection = capability === 'omni' || capability === 'router';
+                      const isCollection = structure !== 'single';
                       // The picker gives its trailing slot to eject, so the
                       // engine joins the facts instead of competing for it.
                       // A loaded row's status owns the whole meta line, so the
@@ -3489,9 +3721,9 @@ ${finalText}`
           )}
           <button
             className={`composer__tools-toggle ${showInlineLogs ? 'composer__tools-toggle--active' : ''}`}
-            onClick={() => setShowInlineLogs(v => !v)}
+            onClick={handleToggleInlineLogs}
             aria-pressed={showInlineLogs}
-            title="Show logs next to the chat"
+            title={showInlineLogs ? 'Hide logs' : 'Show logs'}
           >
             <Icon name="logs" size={13} /> Logs
           </button>
@@ -3861,6 +4093,7 @@ ${finalText}`
             <button
               className="composer__attach composer__add-trigger"
               onClick={() => {
+                setThinkingMenuOpen(false);
                 setAddMenuOpen(open => {
                   const next = !open;
                   if (!next) setMcpPickerOpen(false);
@@ -4053,18 +4286,6 @@ ${finalText}`
             style={{ display: 'none' }}
             onChange={handleFileSelect}
           />
-          {(supportsRealtimeAudio || isLiveRecording) && (
-            <button
-              className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
-              onClick={isLiveRecording ? handleMicStop : handleMicStart}
-              disabled={!currentModel || (!supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
-              title={isLiveRecording ? 'Stop live microphone transcription' : supportsRealtimeAudio ? 'Start live microphone transcription' : 'Live microphone needs HTTPS/localhost and a realtime-capable audio model'}
-              aria-label={isLiveRecording ? 'Stop live microphone transcription' : 'Start live microphone transcription'}
-              aria-pressed={isLiveRecording}
-            >
-              <Icon name="mic" size={16} />
-            </button>
-          )}
           <textarea
             ref={inputRef}
             className="composer__input"
@@ -4077,6 +4298,80 @@ ${finalText}`
             rows={1}
             aria-label="Message"
           />
+          {modeSupportsChatCompletions && (
+            <div
+              className="composer__thinking"
+              ref={thinkingMenuRef}
+              onKeyDown={event => {
+                if (event.key !== 'Escape' || !thinkingMenuOpen) return;
+                event.preventDefault();
+                setThinkingMenuOpen(false);
+                thinkingTriggerRef.current?.focus();
+              }}
+            >
+              <button
+                ref={thinkingTriggerRef}
+                type="button"
+                className="composer__thinking-trigger"
+                onClick={() => {
+                  setAddMenuOpen(false);
+                  setMcpPickerOpen(false);
+                  setThinkingMenuOpen(open => !open);
+                }}
+                disabled={isBusy}
+                aria-label={`Reasoning: ${thinkingMode === 'off' ? 'Off' : 'Thinking'}`}
+                aria-haspopup="menu"
+                aria-expanded={thinkingMenuOpen}
+              >
+                <span>{thinkingMode === 'off' ? 'Off' : 'Thinking'}</span>
+                <Icon name="chevron-down" size={12} aria-hidden="true" />
+              </button>
+              {!thinkingMenuOpen && (
+                <div className="composer__thinking-tooltip" role="tooltip" aria-hidden="true">
+                  <span>Reasoning</span>
+                  <kbd>Ctrl ⇧ M</kbd>
+                </div>
+              )}
+              {thinkingMenuOpen && (
+                <div className="composer__thinking-menu" role="menu" aria-label="Reasoning">
+                  {(['normal', 'off'] as const).map(mode => {
+                    const selected = thinkingMode === mode;
+                    const enabled = mode !== 'off';
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selected}
+                        className={`composer__thinking-option${selected ? ' is-selected' : ''}`}
+                        onClick={() => selectThinkingMode(mode)}
+                      >
+                        <span className="composer__thinking-option-copy">
+                          <span className="composer__thinking-option-label">{enabled ? 'Thinking' : 'Off'}</span>
+                          <span className="composer__thinking-option-description">
+                            {enabled ? 'Model thinks before answering' : 'Direct answer'}
+                          </span>
+                        </span>
+                        {selected && <Icon name="check" size={13} aria-hidden="true" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+          {(supportsRealtimeAudio || isLiveRecording) && (
+            <button
+              className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
+              onClick={isLiveRecording ? handleMicStop : handleMicStart}
+              disabled={!currentModel || (!supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
+              title={isLiveRecording ? 'Stop live microphone transcription' : supportsRealtimeAudio ? 'Start live microphone transcription' : 'Live microphone needs HTTPS/localhost and a realtime-capable audio model'}
+              aria-label={isLiveRecording ? 'Stop live microphone transcription' : 'Start live microphone transcription'}
+              aria-pressed={isLiveRecording}
+            >
+              <Icon name="mic" size={16} />
+            </button>
+          )}
           {isStreaming ? (
             <button className="composer__stop" onClick={handleStop} aria-label="Stop generating" title="Stop"><Icon name="stop" size={16} /></button>
           ) : (
@@ -4158,7 +4453,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
             const audioInput = modelSupportsChatAudioInput(customInfo || null, m);
             const modeLabel = modelModeDisplayLabel(cap, audioInput, m.recipe);
             const modeBadge = modelModeBadge(cap, m.recipe);
-            const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
+            const selectable = canSelectInComposer(m) || isComposerSelectableCapability(cap);
             const isActive = currentModel === m.model_name;
             return (
               <article className="active-card" key={m.model_name}>
